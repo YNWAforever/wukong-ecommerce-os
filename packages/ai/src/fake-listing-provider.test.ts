@@ -28,6 +28,16 @@ describe("FakeListingProvider", () => {
     expect(result.usage).toMatchObject({ model: "fake-listing-provider", estimatedCostUsd: 0 });
   });
 
+  it("sets product type only when the note says it explicitly", async () => {
+    const provider = new FakeListingProvider();
+    const grapeOnly = await provider.extract({ assets: [], note: "Demo Estate Riesling 2024" });
+    expect(grapeOnly.facts.productType).toBeNull();
+
+    const explicit = await provider.extract({ assets: [], note: "Demo Estate Riesling 2024, wine" });
+    expect(explicit.facts.productType).toBe("wine");
+    expect(explicit.evidence.find((item) => item.field === "productType")?.excerpt).toBe("wine");
+  });
+
   it("generates deterministic bilingual copy from supplied facts without reading environment", async () => {
     const oldKey = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;

@@ -25,8 +25,20 @@ const facts = {
   awards: [],
 };
 
+const groundingNote = "SKU OPAK-DEMO-001; producer Demo Estate; product type wine; country Germany; region Mosel; vintage 2024; grapes Riesling; volume 750 ml; ABV 12.5%; pack quantity 1; price HK$288.";
+
 const evidence = [
+  { field: "sku", sourceAssetId: "note", page: null, excerpt: "OPAK-DEMO-001", confidence: 1 },
   { field: "producer", sourceAssetId: "note", page: null, excerpt: "Demo Estate", confidence: 1 },
+  { field: "productType", sourceAssetId: "note", page: null, excerpt: "wine", confidence: 1 },
+  { field: "country", sourceAssetId: "note", page: null, excerpt: "Germany", confidence: 1 },
+  { field: "region", sourceAssetId: "note", page: null, excerpt: "Mosel", confidence: 1 },
+  { field: "vintage", sourceAssetId: "note", page: null, excerpt: "2024", confidence: 1 },
+  { field: "grapeVarieties", sourceAssetId: "note", page: null, excerpt: "Riesling", confidence: 1 },
+  { field: "volumeMl", sourceAssetId: "note", page: null, excerpt: "750 ml", confidence: 1 },
+  { field: "abvPercent", sourceAssetId: "note", page: null, excerpt: "12.5%", confidence: 1 },
+  { field: "packQuantity", sourceAssetId: "note", page: null, excerpt: "quantity 1", confidence: 1 },
+  { field: "priceHkd", sourceAssetId: "note", page: null, excerpt: "HK$288", confidence: 1 },
 ];
 
 const extractionFixture = { facts, evidence, missingFields: ["stockQuantity"] };
@@ -43,19 +55,30 @@ const listingFixture = {
   imageAssetIds: ["asset_image"],
 };
 
+const profile = {
+  name: "Opak Cellar",
+  currency: "HKD" as const,
+  locales: ["en", "zh-Hant"] as const,
+  tone: "clear and restrained",
+  claimPolicy: ["No invented claims"],
+  requiredFields: ["sku", "producer"],
+};
+
 function fakeClient(...responses: unknown[]) {
   const parse = vi.fn();
   for (const response of responses) parse.mockResolvedValueOnce(response);
   return { client: { responses: { parse } }, parse };
 }
 
+function extractionResponse(overrides: Record<string, unknown> = {}) {
+  return { output_parsed: extractionFixture, usage: {}, output: [], ...overrides };
+}
+
 describe("OpenAIListingProvider", () => {
   it("uses Responses structured parsing, multimodal HTTPS inputs, configured model, and deterministic telemetry", async () => {
-    const { client, parse } = fakeClient({
-      output_parsed: extractionFixture,
+    const { client, parse } = fakeClient(extractionResponse({
       usage: { input_tokens: 100, output_tokens: 50 },
-      output: [],
-    });
+    }));
     const provider = new OpenAIListingProvider(client, {
       model: "gpt-5.6-terra",
       now: vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(125),
@@ -67,7 +90,7 @@ describe("OpenAIListingProvider", () => {
         { id: "asset_image", mimeType: "image/png", readUrl: "https://assets.example/image.png" },
         { id: "asset_pdf", mimeType: "application/pdf", readUrl: "https://assets.example/sheet.pdf" },
       ],
-      note: "Demo Estate",
+      note: groundingNote,
     });
 
     expect(parse).toHaveBeenCalledTimes(1);
@@ -90,49 +113,113 @@ describe("OpenAIListingProvider", () => {
     });
   });
 
+  it("uses the environment model by default and explicit config takes precedence", async () => {
+    const previous = process.env.OPENAI_LISTING_MODEL;
+    process.env.OPENAI_LISTING_MODEL = "gpt-5.6-luna";
+    try {
+      const fromEnv = fakeClient(extractionResponse());
+      await new OpenAIListingProvider(fromEnv.client).extract({ assets: [], note: groundingNote });
+      expect(fromEnv.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-luna" }));
+
+      const explicit = fakeClient(extractionResponse());
+      await new OpenAIListingProvider(explicit.client, { model: "gpt-5.6-terra" })
+        .extract({ assets: [], note: groundingNote });
+      expect(explicit.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-terra" }));
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_LISTING_MODEL;
+      else process.env.OPENAI_LISTING_MODEL = previous;
+    }
+  });
+
+  it.each(["", " unsafe model ", "../model", "model?secret=1"])("rejects unsafe model config %j", (model) => {
+    expect(() => new OpenAIListingProvider(undefined, { model })).toThrow(/model/i);
+  });
+
   it.each([
     ["unsupported MIME", { id: "asset", mimeType: "text/plain", readUrl: "https://assets.example/a.txt" }],
     ["non-HTTPS URL", { id: "asset", mimeType: "image/png", readUrl: "http://assets.example/a.png" }],
     ["local URL", { id: "asset", mimeType: "application/pdf", readUrl: "file:///secret.pdf" }],
   ])("rejects %s before an API request", async (_label, asset) => {
     const { client, parse } = fakeClient();
-    const provider = new OpenAIListingProvider(client);
-    await expect(provider.extract({ assets: [asset], note: null })).rejects.toBeInstanceOf(UnsupportedAssetError);
+    await expect(new OpenAIListingProvider(client).extract({ assets: [asset], note: null }))
+      .rejects.toBeInstanceOf(UnsupportedAssetError);
     expect(parse).not.toHaveBeenCalled();
   });
 
   it("applies the documented long-context pricing multipliers deterministically", async () => {
-    const { client } = fakeClient({
-      output_parsed: extractionFixture,
+    const { client } = fakeClient(extractionResponse({
       usage: { input_tokens: 300_000, output_tokens: 100_000 },
-      output: [],
-    });
-    const result = await new OpenAIListingProvider(client).extract({ assets: [], note: "Demo Estate" });
+    }));
+    const result = await new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote });
     expect(result.usage.estimatedCostUsd).toBe(3.75);
   });
 
-  it("rejects invented evidence references and note excerpts", async () => {
-    const { client } = fakeClient({
+  it.each([
+    { inputUsdPerMillion: -1, outputUsdPerMillion: 15 },
+    { inputUsdPerMillion: 2.5, outputUsdPerMillion: Number.NaN },
+    { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15, longContextThresholdTokens: -1 },
+    { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15, longContextThresholdTokens: Number.NaN },
+    { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15, longContextInputMultiplier: -1 },
+    { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15, longContextOutputMultiplier: Number.NaN },
+  ])("rejects invalid pricing config %#", (pricing) => {
+    expect(() => new OpenAIListingProvider(undefined, { pricing })).toThrow(/pricing/i);
+  });
+
+  it.each([
+    [Number.NaN, 100],
+    [100, Number.NaN],
+    [100, 50],
+  ])("keeps latency finite and non-negative for clocks %s -> %s", async (start, end) => {
+    const { client } = fakeClient(extractionResponse());
+    const result = await new OpenAIListingProvider(client, {
+      now: vi.fn().mockReturnValueOnce(start).mockReturnValueOnce(end),
+    }).extract({ assets: [], note: groundingNote });
+    expect(result.usage.latencyMs).toBe(0);
+    expect(Number.isFinite(result.usage.latencyMs)).toBe(true);
+    expect(Number.isFinite(result.usage.estimatedCostUsd)).toBe(true);
+  });
+
+  it("rejects extracted facts with empty or irrelevant evidence", async () => {
+    const empty = fakeClient(extractionResponse({
+      output_parsed: { ...extractionFixture, evidence: [] },
+    }));
+    await expect(new OpenAIListingProvider(empty.client).extract({ assets: [], note: groundingNote }))
+      .rejects.toBeInstanceOf(ProviderOutputError);
+
+    const irrelevant = fakeClient(extractionResponse({
       output_parsed: {
         ...extractionFixture,
-        evidence: [{ ...evidence[0], sourceAssetId: "asset_unknown", excerpt: "invented" }],
+        evidence: evidence.map((item) => item.field === "producer" ? { ...item, excerpt: "Germany" } : item),
       },
-      output: [],
-    });
-    const provider = new OpenAIListingProvider(client);
-    await expect(provider.extract({ assets: [], note: "Demo Estate" })).rejects.toBeInstanceOf(ProviderOutputError);
+    }));
+    await expect(new OpenAIListingProvider(irrelevant.client).extract({ assets: [], note: groundingNote }))
+      .rejects.toBeInstanceOf(ProviderOutputError);
+  });
+
+  it("rejects invented evidence references, unbounded excerpts, and non-verbatim note excerpts", async () => {
+    for (const badEvidence of [
+      [{ ...evidence[0], sourceAssetId: "asset_unknown" }, ...evidence.slice(1)],
+      [{ ...evidence[0], excerpt: "x".repeat(501) }, ...evidence.slice(1)],
+      [{ ...evidence[0], excerpt: "invented SKU" }, ...evidence.slice(1)],
+    ]) {
+      const { client } = fakeClient(extractionResponse({
+        output_parsed: { ...extractionFixture, evidence: badEvidence },
+      }));
+      await expect(new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote }))
+        .rejects.toBeInstanceOf(ProviderOutputError);
+    }
   });
 
   it("derives missing fields from validated nullable facts instead of trusting the model list", async () => {
-    const { client } = fakeClient({
+    const { client } = fakeClient(extractionResponse({
       output_parsed: {
         ...extractionFixture,
         facts: { ...facts, priceHkd: null },
+        evidence: evidence.filter((item) => item.field !== "priceHkd"),
         missingFields: [],
       },
-      output: [],
-    });
-    const result = await new OpenAIListingProvider(client).extract({ assets: [], note: "Demo Estate" });
+    }));
+    const result = await new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote });
     expect(result.missingFields).toEqual(expect.arrayContaining(["priceHkd", "stockQuantity"]));
   });
 
@@ -145,10 +232,10 @@ describe("OpenAIListingProvider", () => {
   it("performs exactly one repair request only for absent parsed output", async () => {
     const { client, parse } = fakeClient(
       { output_parsed: null, usage: {}, output: [] },
-      { output_parsed: extractionFixture, usage: {}, output: [] },
+      extractionResponse(),
     );
-    const provider = new OpenAIListingProvider(client);
-    await expect(provider.extract({ assets: [], note: "Demo Estate" })).resolves.toMatchObject({ facts });
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote }))
+      .resolves.toMatchObject({ facts });
     expect(parse).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(parse.mock.calls[1]?.[0])).toContain("repair");
   });
@@ -158,8 +245,8 @@ describe("OpenAIListingProvider", () => {
       { output_parsed: null, output: [] },
       { output_parsed: null, output: [] },
     );
-    const provider = new OpenAIListingProvider(client);
-    await expect(provider.extract({ assets: [], note: null })).rejects.toBeInstanceOf(ProviderOutputError);
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: null }))
+      .rejects.toBeInstanceOf(ProviderOutputError);
     expect(parse).toHaveBeenCalledTimes(2);
   });
 
@@ -173,49 +260,63 @@ describe("OpenAIListingProvider", () => {
     expect(refusal.parse).toHaveBeenCalledTimes(1);
 
     const parse = vi.fn().mockRejectedValue(new Error("secret-token-sk-test"));
-    const provider = new OpenAIListingProvider({ responses: { parse } });
-    const error = await provider.extract({ assets: [], note: null }).catch((caught: unknown) => caught);
+    const error = await new OpenAIListingProvider({ responses: { parse } })
+      .extract({ assets: [], note: null }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ProviderApiError);
     expect(String(error)).not.toContain("secret-token");
     expect(parse).toHaveBeenCalledTimes(1);
   });
 
-  it("generates a runtime-validated bilingual listing grounded in supplied facts and image IDs", async () => {
-    const { client, parse } = fakeClient({ output_parsed: { listing: listingFixture }, usage: undefined, output: [] });
-    const provider = new OpenAIListingProvider(client, { model: "gpt-5.6-terra" });
-    const result = await provider.generate({
-      facts,
-      evidence,
-      profile: {
-        name: "Opak Cellar",
-        currency: "HKD",
-        locales: ["en", "zh-Hant"],
-        tone: "clear and restrained",
-        claimPolicy: ["No invented claims"],
-        requiredFields: ["sku", "producer"],
+  it("returns deterministic bilingual claim-safe copy instead of arbitrary model prose", async () => {
+    const adversarialListing = {
+      ...listingFixture,
+      title: { en: "Best award-winning 99-point wine", "zh-Hant": "最佳得獎99分葡萄酒" },
+      description: {
+        en: "Gold medal winner from France with cherry tasting notes and unmatched quality.",
+        "zh-Hant": "法國金獎，櫻桃味，品質無雙。",
       },
-      imageAssetIds: ["asset_image"],
+      seo: {
+        title: { en: "World's best wine", "zh-Hant": "世界最佳葡萄酒" },
+        description: { en: "Critic score 99", "zh-Hant": "酒評家99分" },
+      },
+      tags: ["award-winning", "99-points", "France", "cherry", "best"],
+    };
+    const { client, parse } = fakeClient({ output_parsed: { listing: adversarialListing }, usage: undefined, output: [] });
+    const result = await new OpenAIListingProvider(client, { model: "gpt-5.6-terra" }).generate({
+      facts, evidence, profile, imageAssetIds: ["asset_image"],
     });
 
     expect(parse).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(parse.mock.calls[0]?.[0])).toContain("listing-generation@1.0.0");
-    expect(result.listing).toEqual(listingFixture);
+    expect(result.listing.title.en).toBe("Demo Estate 2024");
+    expect(result.listing.title["zh-Hant"]).toBeTruthy();
+    const safeCopy = JSON.stringify({
+      title: result.listing.title,
+      description: result.listing.description,
+      seo: result.listing.seo,
+      tags: result.listing.tags,
+    }).toLocaleLowerCase();
+    for (const unsupported of ["award", "99-point", "gold medal", "france", "cherry", "best", "最佳", "金獎", "櫻桃", "無雙"]) {
+      expect(safeCopy).not.toContain(unsupported);
+    }
     expect(result.usage.inputTokens).toBe(0);
     expect(result.usage.estimatedCostUsd).toBe(0);
   });
 
-  it("rejects generated protected facts or image IDs not present in the input", async () => {
-    const { client } = fakeClient({
+  it("rejects generated protected facts, image IDs, or unsupported input evidence", async () => {
+    const changed = fakeClient({
       output_parsed: { listing: { ...listingFixture, priceHkd: 999, imageAssetIds: ["asset_unknown"] } },
       output: [],
     });
-    const provider = new OpenAIListingProvider(client);
-    await expect(provider.generate({
+    await expect(new OpenAIListingProvider(changed.client).generate({
+      facts, evidence, profile, imageAssetIds: ["asset_image"],
+    })).rejects.toBeInstanceOf(ProviderOutputError);
+
+    const unsupported = fakeClient({ output_parsed: { listing: listingFixture }, output: [] });
+    await expect(new OpenAIListingProvider(unsupported.client).generate({
       facts,
-      evidence,
-      profile: {
-        name: "Opak Cellar", currency: "HKD", locales: ["en", "zh-Hant"], tone: "plain", claimPolicy: [], requiredFields: [],
-      },
+      evidence: evidence.filter((item) => item.field !== "country"),
+      profile,
       imageAssetIds: ["asset_image"],
     })).rejects.toBeInstanceOf(ProviderOutputError);
   });

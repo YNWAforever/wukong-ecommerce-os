@@ -70,7 +70,15 @@ export class FakeListingProvider implements ListingAIProvider {
     const facts = listingFactsSchema.parse({
       sku,
       producer,
-      productType: /\bwine\b/i.test(note) || grapes.length > 0 ? "wine" : null,
+      productType: /\bwine\b/i.test(note)
+        ? "wine"
+        : /\bspirits?\b/i.test(note)
+          ? "spirits"
+          : /\bsake\b/i.test(note)
+            ? "sake"
+            : /\bproduct\s+type\s+other\b/i.test(note)
+              ? "other"
+              : null,
       country,
       region,
       vintage,
@@ -88,7 +96,7 @@ export class FakeListingProvider implements ListingAIProvider {
     const excerpts: Partial<Record<keyof ListingFacts, string>> = {
       sku: sku === null ? undefined : `SKU ${sku}`,
       producer: producer ?? undefined,
-      productType: facts.productType === null ? undefined : grapes[0],
+      productType: facts.productType ?? undefined,
       country: country ?? undefined,
       region: region ?? undefined,
       vintage: vintage === null ? undefined : String(vintage),
