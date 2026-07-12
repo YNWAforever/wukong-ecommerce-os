@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src",
     "test:integration": "vitest run src/queue.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

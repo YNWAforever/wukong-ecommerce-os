@@ -6,7 +6,7 @@ import { LISTING_QUEUE, type ListingQueuePayload } from "./queue.js";
 export function createListingPipelineProcessor(
   dependencies: PipelineDependencies,
 ): Processor<ListingQueuePayload, Awaited<ReturnType<typeof runListingPipeline>>> {
-  return async (job) => runListingPipeline(job.data, dependencies);
+  return async (job) => runListingPipeline(job.data, dependencies, { attempt: job.attemptsMade + 1, maxAttempts: typeof job.opts.attempts === "number" ? job.opts.attempts : 3 });
 }
 
 export function createListingPipelineWorker(
@@ -37,3 +37,5 @@ export {
   type PipelineDependencies,
   type PipelineResult,
 } from "./listing-pipeline.js";
+
+export { startListingPipelineWorker, type ListingWorkerRuntime, type ListingWorkerRuntimeConfig } from "./runtime.js";

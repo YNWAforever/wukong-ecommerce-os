@@ -100,6 +100,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS listing_versions_workspace_id_uq
   ON listing_versions (workspace_id, id);
 CREATE INDEX IF NOT EXISTS listing_versions_workspace_listing_idx
   ON listing_versions (workspace_id, listing_id);
+ALTER TABLE listing_versions ADD COLUMN IF NOT EXISTS pipeline_idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS listing_versions_workspace_pipeline_idempotency_uq
+  ON listing_versions (workspace_id, listing_id, pipeline_idempotency_key);
 
 CREATE TABLE IF NOT EXISTS source_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -178,6 +181,12 @@ CREATE TABLE IF NOT EXISTS ai_runs (
   created_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz
 );
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS task text;
+ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS idempotency_key text;
+UPDATE ai_runs SET task = COALESCE(task, 'extract'), idempotency_key = COALESCE(idempotency_key, id::text);
+ALTER TABLE ai_runs ALTER COLUMN task SET NOT NULL;
+ALTER TABLE ai_runs ALTER COLUMN idempotency_key SET NOT NULL;
+ALTER TABLE ai_runs ALTER COLUMN prompt_version_id DROP NOT NULL;
 ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS latency_ms integer;
 ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS estimated_cost_usd numeric(14,6);
 UPDATE ai_runs SET latency_ms = 0 WHERE latency_ms IS NULL;
@@ -189,6 +198,8 @@ CREATE INDEX IF NOT EXISTS ai_runs_workspace_listing_idx
   ON ai_runs (workspace_id, listing_id);
 CREATE INDEX IF NOT EXISTS ai_runs_workspace_prompt_version_idx
   ON ai_runs (workspace_id, prompt_version_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ai_runs_workspace_task_idempotency_uq
+  ON ai_runs (workspace_id, listing_id, task, idempotency_key);
 
 CREATE TABLE IF NOT EXISTS shopline_connections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -275,6 +286,9 @@ CREATE TABLE IF NOT EXISTS listing_pipeline_steps (
   CONSTRAINT listing_pipeline_steps_workspace_step_uq UNIQUE (workspace_id, pipeline_run_id, step)
 );
 CREATE INDEX IF NOT EXISTS listing_pipeline_steps_workspace_run_idx ON listing_pipeline_steps (workspace_id, pipeline_run_id);
+ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'completed';
+ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS output jsonb;
+ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE listing_versions
   DROP CONSTRAINT IF EXISTS listing_versions_listing_id_fkey,
   DROP CONSTRAINT IF EXISTS listing_versions_workspace_listing_fkey,

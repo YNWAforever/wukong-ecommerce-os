@@ -46,4 +46,18 @@ describe("listing pipeline run repository", () => {
 
     await expect(forWorkspace(database, "ws_pipeline_other", (repos) => repos.pipelineRuns.getCompleted(owner))).resolves.toBeNull();
   });
-});
+
+  it("claims each step once, stores recovery output, and records terminal failure codes", async () => {
+    const snapshot = await forWorkspace(database, "ws_pipeline_claim", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const input = { idempotencyKey: `listing:ws_pipeline_claim:${listing.id}:0`, listingId: listing.id, activeVersionSequence: 0 };
+      const first = await repos.pipelineRuns.claimStep({ ...input, step: "extracted" });
+      await repos.pipelineRuns.recordStep({ ...input, step: "extracted", output: { missingFields: [] } });
+      const second = await repos.pipelineRuns.claimStep({ ...input, step: "extracted" });
+      await repos.pipelineRuns.fail({ ...input, errorCode: "provider_timeout" });
+      return { first, second, state: await repos.pipelineRuns.getState(input.idempotencyKey) };
+    });
+    expect(snapshot.first).toMatchObject({ claimed: true, completed: false });
+    expect(snapshot.second).toMatchObject({ claimed: false, completed: true, output: { missingFields: [] } });
+    expect(snapshot.state).toMatchObject({ status: "failed", errorCode: "provider_timeout" });
+  });});

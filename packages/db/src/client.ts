@@ -8,6 +8,8 @@ import postgres from "postgres";
 import { createAuditWriter, type WorkspaceAuditWriter } from "./repositories/audit.js";
 import { createListingRepository, type ListingRepository } from "./repositories/listings.js";
 import { createPipelineRunRepository, type PipelineRunRepository } from "./repositories/pipeline-runs.js";
+import { createAiRunRepository, type AiRunRepository } from "./repositories/ai-runs.js";
+import { createWorkspaceRepository, type WorkspaceRepository } from "./repositories/workspaces.js";
 import {
   createSourceAssetRepository,
   type SourceAssetRepository,
@@ -27,6 +29,8 @@ export type WorkspaceRepositories = {
   listings: ListingRepository;
   sourceAssets: SourceAssetRepository;
   pipelineRuns: PipelineRunRepository;
+  aiRuns: AiRunRepository;
+  workspaces: WorkspaceRepository;
   audit: WorkspaceAuditWriter;
 };
 
@@ -88,6 +92,8 @@ export function createDatabase(
         listings: createListingRepository(transaction, workspaceId, scope),
         sourceAssets: createSourceAssetRepository(transaction, workspaceId, scope),
         pipelineRuns: createPipelineRunRepository(transaction, workspaceId, scope),
+        aiRuns: createAiRunRepository(transaction, workspaceId, scope),
+        workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
         audit: createAuditWriter(transaction, workspaceId, scope),
       };
       try {

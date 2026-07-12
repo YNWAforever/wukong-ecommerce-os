@@ -361,8 +361,9 @@ export class OpenAIListingProvider implements ListingAIProvider {
     let response: ProviderResponse;
     try {
       response = await this.getClient().responses.parse(request);
-    } catch {
-      throw new ProviderApiError("AI provider request failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      throw new ProviderApiError(/timeout|timed out|abort|etimedout/i.test(message) ? "AI provider request timed out" : "AI provider request failed");
     }
     if (containsRefusal(response)) throw new ProviderRefusalError("AI provider refused the request");
     if (response.output_parsed != null) return response;
@@ -375,8 +376,9 @@ export class OpenAIListingProvider implements ListingAIProvider {
     };
     try {
       response = await this.getClient().responses.parse(repairRequest);
-    } catch {
-      throw new ProviderApiError("AI provider request failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      throw new ProviderApiError(/timeout|timed out|abort|etimedout/i.test(message) ? "AI provider request timed out" : "AI provider request failed");
     }
     if (containsRefusal(response)) throw new ProviderRefusalError("AI provider refused the request");
     if (response.output_parsed == null) throw new ProviderOutputError("AI provider returned no parsed output");

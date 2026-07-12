@@ -112,12 +112,18 @@ export const listingVersions = pgTable("listing_versions", {
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   listingId: uuid("listing_id").notNull(),
   sequence: integer("sequence").notNull(),
+  pipelineIdempotencyKey: text("pipeline_idempotency_key"),
   content: jsonb("content").$type<CanonicalListing>().notNull(),
   createdBy: text("created_by").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
   uniqueIndex("listing_versions_workspace_id_uq").on(table.workspaceId, table.id),
   uniqueIndex("listing_versions_listing_sequence_uq").on(table.listingId, table.sequence),
+  uniqueIndex("listing_versions_workspace_pipeline_idempotency_uq").on(
+    table.workspaceId,
+    table.listingId,
+    table.pipelineIdempotencyKey,
+  ),
   index("listing_versions_workspace_listing_idx").on(table.workspaceId, table.listingId),
   foreignKey({
     name: "listing_versions_workspace_listing_fkey",
@@ -217,7 +223,9 @@ export const aiRuns = pgTable("ai_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   listingId: uuid("listing_id").notNull(),
-  promptVersionId: uuid("prompt_version_id").notNull(),
+  promptVersionId: uuid("prompt_version_id"),
+  task: text("task").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
   status: text("status").notNull(),
@@ -234,6 +242,12 @@ export const aiRuns = pgTable("ai_runs", {
   createdAt: timestamps.createdAt,
   completedAt: timestamp("completed_at", { withTimezone: true }),
 }, (table) => [
+  uniqueIndex("ai_runs_workspace_task_idempotency_uq").on(
+    table.workspaceId,
+    table.listingId,
+    table.task,
+    table.idempotencyKey,
+  ),
   index("ai_runs_workspace_listing_idx").on(table.workspaceId, table.listingId),
   index("ai_runs_workspace_prompt_version_idx").on(
     table.workspaceId,
@@ -277,6 +291,9 @@ export const listingPipelineSteps = pgTable("listing_pipeline_steps", {
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   pipelineRunId: uuid("pipeline_run_id").notNull(),
   step: text("step").notNull(),
+  state: text("state").default("completed").notNull(),
+  output: jsonb("output"),
+  updatedAt: timestamps.updatedAt,
   createdAt: timestamps.createdAt,
 }, (table) => [
   uniqueIndex("listing_pipeline_steps_workspace_step_uq").on(table.workspaceId, table.pipelineRunId, table.step),

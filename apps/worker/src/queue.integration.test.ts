@@ -10,7 +10,9 @@ describe("listing queue Redis integration", () => {
   const queue = createListingQueue(connection);
 
   beforeAll(async () => {
+    await queue.pause();
     await queue.obliterate({ force: true });
+    await queue.resume();
   });
 
   afterAll(async () => {

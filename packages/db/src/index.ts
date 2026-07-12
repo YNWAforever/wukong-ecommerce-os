@@ -15,6 +15,8 @@ export type {
   SourceAsset,
   SourceAssetRepository,
 } from "./repositories/source-assets.js";
-export type { PipelineRunRepository, PipelineResult } from "./repositories/pipeline-runs.js";
+export type { PipelineRunRepository, PipelineResult, PipelineRunState, PipelineStepName, StepClaim } from "./repositories/pipeline-runs.js";
+export type { AiRunRepository, AppendAiRunInput } from "./repositories/ai-runs.js";
+export type { WorkspaceRepository } from "./repositories/workspaces.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";

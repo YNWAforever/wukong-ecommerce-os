@@ -16,6 +16,7 @@ export type SourceAssetRepository = {
   getByIds(ids: string[]): Promise<SourceAsset[]>;
   getByStorageKey(storageKey: string): Promise<SourceAsset | null>;
   attachToListing(listingId: string, assetIds: string[]): Promise<void>;
+  listForListing(listingId: string): Promise<SourceAsset[]>;
 };
 
 export function createSourceAssetRepository(
@@ -77,6 +78,11 @@ export function createSourceAssetRepository(
         )
         .limit(1);
       return asset ?? null;
+    },
+
+    async listForListing(listingId) {
+      scope.assertOpen();
+      return transaction.select().from(sourceAssets).where(and(eq(sourceAssets.workspaceId, workspaceId), eq(sourceAssets.listingId, listingId)));
     },
 
     async attachToListing(listingId, assetIds) {
