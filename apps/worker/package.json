@@ -1,0 +1,26 @@
+{
+  "name": "@wukong/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run src/queue.integration.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@wukong/ai": "workspace:*",
+    "@wukong/assets": "workspace:*",
+    "@wukong/core": "workspace:*",
+    "@wukong/db": "workspace:*",
+    "bullmq": "^5.80.1",
+    "ioredis": "^5.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

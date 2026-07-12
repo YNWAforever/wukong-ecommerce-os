@@ -15,5 +15,6 @@ export type {
   SourceAsset,
   SourceAssetRepository,
 } from "./repositories/source-assets.js";
+export type { PipelineRunRepository, PipelineResult } from "./repositories/pipeline-runs.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";

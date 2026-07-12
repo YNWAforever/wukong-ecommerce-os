@@ -1,0 +1,49 @@
+import postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createDatabase, forWorkspace } from "../index.js";
+
+const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ?? "postgres://wukong:wukong@localhost:54329/wukong";
+const appUrl = process.env.TEST_DATABASE_URL ?? "postgres://wukong_app:wukong-app-local@localhost:54329/wukong";
+
+describe("listing pipeline run repository", () => {
+  const admin = postgres(adminUrl, { max: 1, onnotice: () => undefined, prepare: false });
+  const database = createDatabase(appUrl, { migrationUrl: adminUrl });
+
+  beforeAll(async () => {
+    await admin.unsafe(`DO $role$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $role$;`);
+    await database.migrate();
+    await admin.unsafe("TRUNCATE TABLE workspaces CASCADE");
+  });
+
+  afterAll(async () => { await database.close(); await admin.end(); });
+
+  it("keeps one recovery record per listing revision and returns its completed result", async () => {
+    const result = await forWorkspace(database, "ws_pipeline", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const input = {
+        idempotencyKey: `listing:ws_pipeline:${listing.id}:0`,
+        listingId: listing.id,
+        activeVersionSequence: 0,
+      };
+      await repos.pipelineRuns.recordStep({ ...input, step: "started" });
+      await repos.pipelineRuns.recordStep({ ...input, step: "started" });
+      await repos.pipelineRuns.complete({ ...input, status: "needs_info", versionId: null });
+      return repos.pipelineRuns.getCompleted(input.idempotencyKey);
+    });
+
+    expect(result).toEqual({ status: "needs_info", versionId: null });
+  });
+
+  it("hides a pipeline recovery record from another workspace", async () => {
+    const owner = await forWorkspace(database, "ws_pipeline_owner", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const idempotencyKey = `listing:ws_pipeline_owner:${listing.id}:0`;
+      await repos.pipelineRuns.recordStep({ idempotencyKey, listingId: listing.id, activeVersionSequence: 0, step: "started" });
+      await repos.pipelineRuns.complete({ idempotencyKey, listingId: listing.id, activeVersionSequence: 0, status: "needs_info", versionId: null });
+      return idempotencyKey;
+    });
+
+    await expect(forWorkspace(database, "ws_pipeline_other", (repos) => repos.pipelineRuns.getCompleted(owner))).resolves.toBeNull();
+  });
+});

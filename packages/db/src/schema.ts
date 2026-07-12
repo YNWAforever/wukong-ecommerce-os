@@ -251,6 +251,38 @@ export const aiRuns = pgTable("ai_runs", {
   }),
 ]);
 
+export const listingPipelineRuns = pgTable("listing_pipeline_runs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  listingId: uuid("listing_id").notNull(),
+  activeVersionSequence: integer("active_version_sequence").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  status: text("status").notNull(),
+  resultStatus: listingStatus("result_status"),
+  versionId: uuid("version_id"),
+  errorCode: text("error_code"),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+}, (table) => [
+  uniqueIndex("listing_pipeline_runs_workspace_id_uq").on(table.workspaceId, table.id),
+  uniqueIndex("listing_pipeline_runs_workspace_idempotency_uq").on(table.workspaceId, table.idempotencyKey),
+  index("listing_pipeline_runs_workspace_listing_idx").on(table.workspaceId, table.listingId),
+  index("listing_pipeline_runs_workspace_version_idx").on(table.workspaceId, table.versionId),
+  foreignKey({ name: "listing_pipeline_runs_workspace_listing_fkey", columns: [table.workspaceId, table.listingId], foreignColumns: [listingDrafts.workspaceId, listingDrafts.id] }).onDelete("cascade"),
+  foreignKey({ name: "listing_pipeline_runs_workspace_version_fkey", columns: [table.workspaceId, table.versionId], foreignColumns: [listingVersions.workspaceId, listingVersions.id] }).onDelete("restrict"),
+]);
+
+export const listingPipelineSteps = pgTable("listing_pipeline_steps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  pipelineRunId: uuid("pipeline_run_id").notNull(),
+  step: text("step").notNull(),
+  createdAt: timestamps.createdAt,
+}, (table) => [
+  uniqueIndex("listing_pipeline_steps_workspace_step_uq").on(table.workspaceId, table.pipelineRunId, table.step),
+  index("listing_pipeline_steps_workspace_run_idx").on(table.workspaceId, table.pipelineRunId),
+  foreignKey({ name: "listing_pipeline_steps_workspace_run_fkey", columns: [table.workspaceId, table.pipelineRunId], foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id] }).onDelete("cascade"),
+]);
 export const shoplineConnections = pgTable("shopline_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),

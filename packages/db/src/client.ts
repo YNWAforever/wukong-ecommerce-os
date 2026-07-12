@@ -7,6 +7,7 @@ import postgres from "postgres";
 
 import { createAuditWriter, type WorkspaceAuditWriter } from "./repositories/audit.js";
 import { createListingRepository, type ListingRepository } from "./repositories/listings.js";
+import { createPipelineRunRepository, type PipelineRunRepository } from "./repositories/pipeline-runs.js";
 import {
   createSourceAssetRepository,
   type SourceAssetRepository,
@@ -25,6 +26,7 @@ export type WorkspaceScope = {
 export type WorkspaceRepositories = {
   listings: ListingRepository;
   sourceAssets: SourceAssetRepository;
+  pipelineRuns: PipelineRunRepository;
   audit: WorkspaceAuditWriter;
 };
 
@@ -85,6 +87,7 @@ export function createDatabase(
       const repositories: WorkspaceRepositories = {
         listings: createListingRepository(transaction, workspaceId, scope),
         sourceAssets: createSourceAssetRepository(transaction, workspaceId, scope),
+        pipelineRuns: createPipelineRunRepository(transaction, workspaceId, scope),
         audit: createAuditWriter(transaction, workspaceId, scope),
       };
       try {

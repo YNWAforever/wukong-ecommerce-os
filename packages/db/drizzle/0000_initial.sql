@@ -248,6 +248,33 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS audit_events_workspace_created_idx
   ON audit_events (workspace_id, created_at);
 
+CREATE TABLE IF NOT EXISTS listing_pipeline_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  listing_id uuid NOT NULL,
+  active_version_sequence integer NOT NULL CHECK (active_version_sequence >= 0),
+  idempotency_key text NOT NULL,
+  status text NOT NULL CHECK (status IN ('started', 'succeeded', 'failed')),
+  result_status listing_status,
+  version_id uuid,
+  error_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT listing_pipeline_runs_workspace_idempotency_uq UNIQUE (workspace_id, idempotency_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS listing_pipeline_runs_workspace_id_uq ON listing_pipeline_runs (workspace_id, id);
+CREATE INDEX IF NOT EXISTS listing_pipeline_runs_workspace_listing_idx ON listing_pipeline_runs (workspace_id, listing_id);
+CREATE INDEX IF NOT EXISTS listing_pipeline_runs_workspace_version_idx ON listing_pipeline_runs (workspace_id, version_id);
+
+CREATE TABLE IF NOT EXISTS listing_pipeline_steps (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  pipeline_run_id uuid NOT NULL,
+  step text NOT NULL CHECK (step IN ('started', 'extracted', 'generated')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT listing_pipeline_steps_workspace_step_uq UNIQUE (workspace_id, pipeline_run_id, step)
+);
+CREATE INDEX IF NOT EXISTS listing_pipeline_steps_workspace_run_idx ON listing_pipeline_steps (workspace_id, pipeline_run_id);
 ALTER TABLE listing_versions
   DROP CONSTRAINT IF EXISTS listing_versions_listing_id_fkey,
   DROP CONSTRAINT IF EXISTS listing_versions_workspace_listing_fkey,
@@ -329,6 +356,27 @@ ALTER TABLE review_events
     REFERENCES listing_drafts (workspace_id, id)
     ON DELETE CASCADE;
 
+ALTER TABLE listing_pipeline_runs
+  DROP CONSTRAINT IF EXISTS listing_pipeline_runs_listing_id_fkey,
+  DROP CONSTRAINT IF EXISTS listing_pipeline_runs_workspace_listing_fkey,
+  ADD CONSTRAINT listing_pipeline_runs_workspace_listing_fkey
+    FOREIGN KEY (workspace_id, listing_id)
+    REFERENCES listing_drafts (workspace_id, id)
+    ON DELETE CASCADE,
+  DROP CONSTRAINT IF EXISTS listing_pipeline_runs_version_id_fkey,
+  DROP CONSTRAINT IF EXISTS listing_pipeline_runs_workspace_version_fkey,
+  ADD CONSTRAINT listing_pipeline_runs_workspace_version_fkey
+    FOREIGN KEY (workspace_id, version_id)
+    REFERENCES listing_versions (workspace_id, id)
+    ON DELETE RESTRICT;
+
+ALTER TABLE listing_pipeline_steps
+  DROP CONSTRAINT IF EXISTS listing_pipeline_steps_pipeline_run_id_fkey,
+  DROP CONSTRAINT IF EXISTS listing_pipeline_steps_workspace_run_fkey,
+  ADD CONSTRAINT listing_pipeline_steps_workspace_run_fkey
+    FOREIGN KEY (workspace_id, pipeline_run_id)
+    REFERENCES listing_pipeline_runs (workspace_id, id)
+    ON DELETE CASCADE;
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspaces FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS workspaces_workspace_policy ON workspaces;
@@ -348,7 +396,8 @@ BEGIN
   FOREACH tenant_table IN ARRAY ARRAY[
     'memberships', 'listing_drafts', 'listing_versions', 'source_assets',
     'field_evidence', 'compliance_flags', 'prompt_versions', 'ai_runs',
-    'shopline_connections', 'publish_jobs', 'review_events', 'audit_events'
+    'shopline_connections', 'publish_jobs', 'review_events', 'audit_events',
+    'listing_pipeline_runs', 'listing_pipeline_steps'
   ]
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tenant_table);
@@ -377,7 +426,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE memberships, listing_drafts, listing_versions,
     source_assets, field_evidence, compliance_flags, prompt_versions, ai_runs,
-    shopline_connections, publish_jobs, review_events
+    shopline_connections, publish_jobs, review_events, listing_pipeline_runs, listing_pipeline_steps
   TO wukong_app;
 REVOKE UPDATE, DELETE ON TABLE audit_events FROM wukong_app;
 GRANT SELECT, INSERT ON TABLE audit_events TO wukong_app;
