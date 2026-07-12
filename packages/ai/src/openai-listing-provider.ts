@@ -243,9 +243,11 @@ function assertFactsGrounded(
     const value = facts[key];
     if (!isMeaningfulFact(value)) continue;
     const evidenceForField = evidence.filter((item) => item.field === key);
-    if (evidenceForField.length === 0) {
+    const isSystemDefault = key === "packQuantity" && value === 1 && evidenceForField.length === 0;
+    if (evidenceForField.length === 0 && !isSystemDefault) {
       throw new ProviderOutputError("AI fact had no supporting evidence");
     }
+    if (isSystemDefault) continue;
     if (key === "criticScores" || key === "awards") {
       assertComplexFactEvidence(key, value as ListingFacts[typeof key], evidenceForField, options.allowedSources);
       continue;

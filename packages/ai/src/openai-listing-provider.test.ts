@@ -200,6 +200,42 @@ describe("OpenAIListingProvider", () => {
       .rejects.toBeInstanceOf(ProviderOutputError);
   });
 
+  it("allows the schema-default pack quantity without source evidence", async () => {
+    const { client } = fakeClient(extractionResponse({
+      output_parsed: {
+        ...extractionFixture,
+        evidence: evidence.filter((item) => item.field !== "packQuantity"),
+      },
+    }));
+
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote }))
+      .resolves.toMatchObject({ facts: expect.objectContaining({ packQuantity: 1 }) });
+  });
+
+  it("rejects a non-default pack quantity without value-consistent evidence", async () => {
+    const { client } = fakeClient(extractionResponse({
+      output_parsed: {
+        ...extractionFixture,
+        facts: { ...facts, packQuantity: 6 },
+        evidence: evidence.filter((item) => item.field !== "packQuantity"),
+      },
+    }));
+
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote }))
+      .rejects.toBeInstanceOf(ProviderOutputError);
+  });
+
+  it("still requires evidence for every other non-null fact", async () => {
+    const { client } = fakeClient(extractionResponse({
+      output_parsed: {
+        ...extractionFixture,
+        evidence: evidence.filter((item) => item.field !== "producer" && item.field !== "packQuantity"),
+      },
+    }));
+
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote }))
+      .rejects.toBeInstanceOf(ProviderOutputError);
+  });
   it("rejects substring evidence collisions while accepting exact multiword, numeric, and source claims", async () => {
     const collisions = [
       {
