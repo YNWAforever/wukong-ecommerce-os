@@ -1,5 +1,6 @@
 import type { CanonicalListing } from "@wukong/core";
 import {
+  type AnyPgColumn,
   foreignKey,
   index,
   integer,
@@ -76,6 +77,10 @@ export const memberships = pgTable("memberships", {
   index("memberships_user_id_idx").on(table.userId),
 ]);
 
+const listingVersionWorkspaceId = (): AnyPgColumn =>
+  listingVersions.workspaceId;
+const listingVersionId = (): AnyPgColumn => listingVersions.id;
+
 export const listingDrafts = pgTable("listing_drafts", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
@@ -91,6 +96,14 @@ export const listingDrafts = pgTable("listing_drafts", {
     table.workspaceId,
     table.activeVersionId,
   ),
+  foreignKey({
+    name: "listing_drafts_workspace_active_version_fkey",
+    columns: [table.workspaceId, table.activeVersionId],
+    foreignColumns: [
+      listingVersionWorkspaceId(),
+      listingVersionId(),
+    ],
+  }).onDelete("restrict"),
 ]);
 
 export const listingVersions = pgTable("listing_versions", {
@@ -156,7 +169,7 @@ export const fieldEvidence = pgTable("field_evidence", {
     name: "field_evidence_workspace_source_asset_fkey",
     columns: [table.workspaceId, table.sourceAssetId],
     foreignColumns: [sourceAssets.workspaceId, sourceAssets.id],
-  }).onDelete("set null"),
+  }).onDelete("restrict"),
 ]);
 
 export const complianceFlags = pgTable("compliance_flags", {

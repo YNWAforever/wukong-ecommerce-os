@@ -467,6 +467,39 @@ describe("workspace isolation", () => {
     expect(rows.every(({ child_fk_indexed }) => child_fk_indexed)).toBe(true);
   });
 
+  it("uses restricted delete actions for nullable tenant relationships", async () => {
+    const rows = await admin`
+      select
+        c.conname,
+        array(
+          select a.attname
+          from unnest(c.conkey) with ordinality key(attnum, position)
+          join pg_attribute a
+            on a.attrelid = c.conrelid and a.attnum = key.attnum
+          order by key.position
+        ) as child_columns,
+        c.confdeltype as delete_action
+      from pg_constraint c
+      where c.conname in (
+        'listing_drafts_workspace_active_version_fkey',
+        'field_evidence_workspace_source_asset_fkey'
+      )
+      order by c.conname
+    `;
+
+    expect(rows).toEqual([
+      {
+        conname: "field_evidence_workspace_source_asset_fkey",
+        child_columns: ["workspace_id", "source_asset_id"],
+        delete_action: "r",
+      },
+      {
+        conname: "listing_drafts_workspace_active_version_fkey",
+        child_columns: ["workspace_id", "active_version_id"],
+        delete_action: "r",
+      },
+    ]);
+  });
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(

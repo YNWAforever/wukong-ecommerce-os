@@ -257,7 +257,7 @@ ALTER TABLE listing_drafts
   ADD CONSTRAINT listing_drafts_workspace_active_version_fkey
     FOREIGN KEY (workspace_id, active_version_id)
     REFERENCES listing_versions (workspace_id, id)
-    ON DELETE SET NULL (active_version_id)
+    ON DELETE RESTRICT
     DEFERRABLE INITIALLY DEFERRED;
 
 ALTER TABLE source_assets
@@ -280,7 +280,7 @@ ALTER TABLE field_evidence
   ADD CONSTRAINT field_evidence_workspace_source_asset_fkey
     FOREIGN KEY (workspace_id, source_asset_id)
     REFERENCES source_assets (workspace_id, id)
-    ON DELETE SET NULL (source_asset_id);
+    ON DELETE RESTRICT;
 
 ALTER TABLE compliance_flags
   DROP CONSTRAINT IF EXISTS compliance_flags_listing_version_id_fkey,
