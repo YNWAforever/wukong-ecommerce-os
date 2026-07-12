@@ -13,7 +13,7 @@ import { failClosedSessionContext } from "../../../lib/session-context-port";
 const listingSchema = z
   .object({
     sourceAssetIds: z
-      .array(z.string().min(1).max(128))
+      .array(z.string().uuid())
       .min(1)
       .max(11)
       .refine((ids) => new Set(ids).size === ids.length, "Asset IDs must be unique"),
@@ -47,6 +47,21 @@ export function createListingHandler(deps: IntakeRouteDeps) {
               409,
               "source_asset_already_used",
               "One or more source assets are already associated.",
+            );
+          }
+
+          const imageKinds = new Set(["image/jpeg", "image/png", "image/webp"]);
+          const imageCount = assets.filter(({ kind }) => imageKinds.has(kind)).length;
+          const pdfCount = assets.filter(({ kind }) => kind === "application/pdf").length;
+          if (
+            imageCount > 10 ||
+            pdfCount > 1 ||
+            imageCount + pdfCount !== assets.length
+          ) {
+            throw new ApiError(
+              400,
+              "invalid_asset_composition",
+              "Listings support up to 10 images and 1 PDF.",
             );
           }
 

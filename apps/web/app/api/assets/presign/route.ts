@@ -1,4 +1,4 @@
-import { SUPPORTED_ASSET_MIME_TYPES } from "@wukong/assets";
+import { AssetInputError, SUPPORTED_ASSET_MIME_TYPES } from "@wukong/assets";
 import { z } from "zod";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -34,8 +34,11 @@ export function createPresignAssetHandler(deps: IntakeRouteDeps) {
           uploadUrl: upload.uploadUrl,
           expiresAt: upload.expiresAt.toISOString(),
         });
-      } catch {
-        throw new ApiError(400, "invalid_asset", "Asset upload request is invalid.");
+      } catch (error) {
+        if (error instanceof AssetInputError) {
+          throw new ApiError(400, "invalid_asset", "Asset upload request is invalid.");
+        }
+        throw error;
       }
     });
   };

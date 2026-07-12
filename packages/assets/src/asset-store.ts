@@ -24,6 +24,13 @@ export type AssetObjectMetadata = {
   mimeType: string;
 };
 
+export class AssetInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AssetInputError";
+  }
+}
+
 export interface AssetStore {
   createUpload(input: CreateUploadInput): Promise<{
     key: string;
@@ -40,7 +47,7 @@ export interface AssetStore {
 
 export function assertWorkspaceId(workspaceId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(workspaceId)) {
-    throw new Error("Invalid workspace ID");
+    throw new AssetInputError("Invalid workspace ID");
   }
 }
 
@@ -48,7 +55,7 @@ export function assertAssetKey(workspaceId: string, key: string): void {
   assertWorkspaceId(workspaceId);
   const prefix = `ws/${workspaceId}/sources/`;
   if (!key.startsWith(prefix) || key.includes("..") || key.includes("\\")) {
-    throw new Error("Asset key does not belong to workspace");
+    throw new AssetInputError("Asset key does not belong to workspace");
   }
   const remainder = key.slice(prefix.length);
   const segments = remainder.split("/");
@@ -57,7 +64,16 @@ export function assertAssetKey(workspaceId: string, key: string): void {
     segments.some((segment) => segment.length === 0) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segments[0] ?? "")
   ) {
-    throw new Error("Invalid asset key");
+    throw new AssetInputError("Invalid asset key");
+  }
+  let canonicalFileName: string;
+  try {
+    canonicalFileName = safeFileName(segments[1] ?? "");
+  } catch {
+    throw new AssetInputError("Invalid asset key");
+  }
+  if (canonicalFileName !== segments[1]) {
+    throw new AssetInputError("Invalid asset key");
   }
 }
 
@@ -71,11 +87,11 @@ export function safeFileName(fileName: string): string {
     trimmed.includes("\\") ||
     trimmed.includes("..")
   ) {
-    throw new Error("Invalid file name");
+    throw new AssetInputError("Invalid file name");
   }
   const safe = trimmed.replace(/[^A-Za-z0-9._-]+/g, "-");
   if (!safe || safe === "." || safe === "..") {
-    throw new Error("Invalid file name");
+    throw new AssetInputError("Invalid file name");
   }
   return safe.slice(0, 255);
 }
@@ -84,10 +100,10 @@ export function assertAssetInput(input: CreateUploadInput): void {
   assertWorkspaceId(input.workspaceId);
   safeFileName(input.fileName);
   if (!SUPPORTED_ASSET_MIME_TYPES.includes(input.mimeType)) {
-    throw new Error("Unsupported MIME type");
+    throw new AssetInputError("Unsupported MIME type");
   }
   if (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > MAX_ASSET_SIZE) {
-    throw new Error("File must be between 1 byte and 20 MB");
+    throw new AssetInputError("File must be between 1 byte and 20 MB");
   }
 }
 

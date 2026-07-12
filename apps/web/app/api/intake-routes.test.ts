@@ -88,8 +88,8 @@ describe("POST /api/listings", () => {
           sourceAssets: {
             async getByIds() {
               return [
-                { id: "asset_1", listingId: null },
-                { id: "asset_2", listingId: null },
+                { id: "00000000-0000-4000-8000-000000000001", kind: "image/png", listingId: null },
+                { id: "00000000-0000-4000-8000-000000000002", kind: "application/pdf", listingId: null },
               ];
             },
             async attachToListing(listingId: string, assetIds: string[]) {
@@ -112,7 +112,7 @@ describe("POST /api/listings", () => {
 
     const response = await handler(
       requestFor("/api/listings", {
-        sourceAssetIds: ["asset_1", "asset_2"],
+        sourceAssetIds: ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"],
         note: "Supplier sheet attached",
       }),
     );
@@ -142,12 +142,12 @@ describe("POST /api/listings", () => {
       },
       getDatabase: () =>
         fakeDatabase({
-          sourceAssets: { async getByIds() { return [{ id: "asset_1", listingId: null }]; } },
+          sourceAssets: { async getByIds() { return [{ id: "00000000-0000-4000-8000-000000000001", kind: "image/png", listingId: null }]; } },
         }) as never,
     });
     const response = await handler(
       requestFor("/api/listings", {
-        sourceAssetIds: ["asset_1", "asset_foreign"],
+        sourceAssetIds: ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000003"],
         note: "",
       }),
     );
