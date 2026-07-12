@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import postgres, { type Sql } from "postgres";
+import postgres from "postgres";
 
 import { createAuditWriter, type WorkspaceAuditWriter } from "./repositories/audit.js";
 import { createListingRepository, type ListingRepository } from "./repositories/listings.js";
@@ -13,6 +13,10 @@ type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
 export type WorkspaceTransaction = Parameters<
   Parameters<DrizzleClient["transaction"]>[0]
 >[0];
+
+export type WorkspaceScope = {
+  assertOpen(): void;
+};
 
 export type WorkspaceRepositories = {
   listings: ListingRepository;
@@ -25,10 +29,11 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
-  readonly client: Sql;
-  readonly drizzle: DrizzleClient;
-  readonly migrationUrl?: string;
   migrate(): Promise<void>;
+  forWorkspace<T>(
+    workspaceId: string,
+    work: (repositories: WorkspaceRepositories) => Promise<T>,
+  ): Promise<T>;
   close(): Promise<void>;
 };
 
@@ -52,10 +57,39 @@ export function createDatabase(
   });
   const drizzleClient = drizzle(client, { schema });
 
+  const runForWorkspace = async <T>(
+    workspaceId: string,
+    work: (repositories: WorkspaceRepositories) => Promise<T>,
+  ): Promise<T> => {
+    if (workspaceId.trim().length === 0) {
+      throw new Error("workspaceId must not be empty");
+    }
+
+    return drizzleClient.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
+      );
+      let closed = false;
+      const scope: WorkspaceScope = {
+        assertOpen() {
+          if (closed) {
+            throw new Error("workspace scope is closed");
+          }
+        },
+      };
+      const repositories: WorkspaceRepositories = {
+        listings: createListingRepository(transaction, workspaceId, scope),
+        audit: createAuditWriter(transaction, workspaceId, scope),
+      };
+      try {
+        return await work(repositories);
+      } finally {
+        closed = true;
+      }
+    });
+  };
+
   return {
-    client,
-    drizzle: drizzleClient,
-    migrationUrl: options.migrationUrl,
     async migrate() {
       if (!options.migrationUrl) {
         throw new Error("migrationUrl is required for migrations");
@@ -78,6 +112,7 @@ export function createDatabase(
         await admin.end();
       }
     },
+    forWorkspace: runForWorkspace,
     async close() {
       await client.end();
     },
@@ -89,18 +124,5 @@ export async function forWorkspace<T>(
   workspaceId: string,
   work: (repositories: WorkspaceRepositories) => Promise<T>,
 ): Promise<T> {
-  if (workspaceId.trim().length === 0) {
-    throw new Error("workspaceId must not be empty");
-  }
-
-  return database.drizzle.transaction(async (transaction) => {
-    await transaction.execute(
-      sql`select set_config('app.workspace_id', ${workspaceId}, true)`,
-    );
-    const repositories: WorkspaceRepositories = {
-      listings: createListingRepository(transaction, workspaceId),
-      audit: createAuditWriter(transaction, workspaceId),
-    };
-    return work(repositories);
-  });
+  return database.forWorkspace(workspaceId, work);
 }

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 
+import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { listingDrafts, workspaces } from "../schema.js";
-import type { WorkspaceTransaction } from "../client.js";
 
 export type Listing = typeof listingDrafts.$inferSelect;
 
@@ -17,6 +17,7 @@ export type ListingRepository = {
 export function createListingRepository(
   transaction: WorkspaceTransaction,
   workspaceId: string,
+  scope: WorkspaceScope,
 ): ListingRepository {
   if (workspaceId.trim().length === 0) {
     throw new Error("workspaceId must not be empty");
@@ -24,6 +25,7 @@ export function createListingRepository(
 
   return {
     async create(input) {
+      scope.assertOpen();
       await transaction
         .insert(workspaces)
         .values({ id: workspaceId, name: workspaceId, profile: {} })
@@ -39,6 +41,7 @@ export function createListingRepository(
     },
 
     async getById(id) {
+      scope.assertOpen();
       const [listing] = await transaction
         .select()
         .from(listingDrafts)

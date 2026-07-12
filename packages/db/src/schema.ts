@@ -1,8 +1,10 @@
 import type { CanonicalListing } from "@wukong/core";
 import {
+  foreignKey,
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -83,54 +85,84 @@ export const listingDrafts = pgTable("listing_drafts", {
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 }, (table) => [
+  uniqueIndex("listing_drafts_workspace_id_uq").on(table.workspaceId, table.id),
   index("listing_drafts_workspace_status_idx").on(table.workspaceId, table.status),
+  index("listing_drafts_workspace_active_version_idx").on(
+    table.workspaceId,
+    table.activeVersionId,
+  ),
 ]);
 
 export const listingVersions = pgTable("listing_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").references(() => listingDrafts.id, { onDelete: "cascade" }).notNull(),
+  listingId: uuid("listing_id").notNull(),
   sequence: integer("sequence").notNull(),
   content: jsonb("content").$type<CanonicalListing>().notNull(),
   createdBy: text("created_by").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
+  uniqueIndex("listing_versions_workspace_id_uq").on(table.workspaceId, table.id),
   uniqueIndex("listing_versions_listing_sequence_uq").on(table.listingId, table.sequence),
   index("listing_versions_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("listing_versions_listing_id_idx").on(table.listingId),
+  foreignKey({
+    name: "listing_versions_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
 ]);
 
 export const sourceAssets = pgTable("source_assets", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").references(() => listingDrafts.id, { onDelete: "cascade" }).notNull(),
+  listingId: uuid("listing_id").notNull(),
   storageKey: text("storage_key").notNull(),
   kind: text("kind").notNull(),
   metadata: jsonb("metadata").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
+  uniqueIndex("source_assets_workspace_id_uq").on(table.workspaceId, table.id),
   index("source_assets_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("source_assets_listing_id_idx").on(table.listingId),
+  foreignKey({
+    name: "source_assets_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
 ]);
 
 export const fieldEvidence = pgTable("field_evidence", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingVersionId: uuid("listing_version_id").references(() => listingVersions.id, { onDelete: "cascade" }).notNull(),
-  sourceAssetId: uuid("source_asset_id").references(() => sourceAssets.id, { onDelete: "set null" }),
+  listingVersionId: uuid("listing_version_id").notNull(),
+  sourceAssetId: uuid("source_asset_id"),
   fieldPath: text("field_path").notNull(),
   evidence: jsonb("evidence").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
-  index("field_evidence_workspace_version_idx").on(table.workspaceId, table.listingVersionId),
-  index("field_evidence_listing_version_id_idx").on(table.listingVersionId),
-  index("field_evidence_source_asset_id_idx").on(table.sourceAssetId),
+  index("field_evidence_workspace_version_idx").on(
+    table.workspaceId,
+    table.listingVersionId,
+  ),
+  index("field_evidence_workspace_source_asset_idx").on(
+    table.workspaceId,
+    table.sourceAssetId,
+  ),
+  foreignKey({
+    name: "field_evidence_workspace_version_fkey",
+    columns: [table.workspaceId, table.listingVersionId],
+    foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "field_evidence_workspace_source_asset_fkey",
+    columns: [table.workspaceId, table.sourceAssetId],
+    foreignColumns: [sourceAssets.workspaceId, sourceAssets.id],
+  }).onDelete("set null"),
 ]);
 
 export const complianceFlags = pgTable("compliance_flags", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingVersionId: uuid("listing_version_id").references(() => listingVersions.id, { onDelete: "cascade" }).notNull(),
+  listingVersionId: uuid("listing_version_id").notNull(),
   code: text("code").notNull(),
   severity: text("severity").notNull(),
   status: text("status").notNull(),
@@ -138,8 +170,15 @@ export const complianceFlags = pgTable("compliance_flags", {
   createdAt: timestamps.createdAt,
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 }, (table) => [
-  index("compliance_flags_workspace_version_idx").on(table.workspaceId, table.listingVersionId),
-  index("compliance_flags_listing_version_id_idx").on(table.listingVersionId),
+  index("compliance_flags_workspace_version_idx").on(
+    table.workspaceId,
+    table.listingVersionId,
+  ),
+  foreignKey({
+    name: "compliance_flags_workspace_version_fkey",
+    columns: [table.workspaceId, table.listingVersionId],
+    foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+  }).onDelete("cascade"),
 ]);
 
 export const promptVersions = pgTable("prompt_versions", {
@@ -151,14 +190,19 @@ export const promptVersions = pgTable("prompt_versions", {
   model: text("model").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
-  uniqueIndex("prompt_versions_workspace_key_version_uq").on(table.workspaceId, table.key, table.version),
+  uniqueIndex("prompt_versions_workspace_id_uq").on(table.workspaceId, table.id),
+  uniqueIndex("prompt_versions_workspace_key_version_uq").on(
+    table.workspaceId,
+    table.key,
+    table.version,
+  ),
 ]);
 
 export const aiRuns = pgTable("ai_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").references(() => listingDrafts.id, { onDelete: "cascade" }).notNull(),
-  promptVersionId: uuid("prompt_version_id").references(() => promptVersions.id).notNull(),
+  listingId: uuid("listing_id").notNull(),
+  promptVersionId: uuid("prompt_version_id").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
   status: text("status").notNull(),
@@ -167,12 +211,29 @@ export const aiRuns = pgTable("ai_runs", {
   error: text("error"),
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
+  latencyMs: integer("latency_ms").notNull(),
+  estimatedCostUsd: numeric("estimated_cost_usd", {
+    precision: 14,
+    scale: 6,
+  }).notNull(),
   createdAt: timestamps.createdAt,
   completedAt: timestamp("completed_at", { withTimezone: true }),
 }, (table) => [
   index("ai_runs_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("ai_runs_listing_id_idx").on(table.listingId),
-  index("ai_runs_prompt_version_id_idx").on(table.promptVersionId),
+  index("ai_runs_workspace_prompt_version_idx").on(
+    table.workspaceId,
+    table.promptVersionId,
+  ),
+  foreignKey({
+    name: "ai_runs_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "ai_runs_workspace_prompt_version_fkey",
+    columns: [table.workspaceId, table.promptVersionId],
+    foreignColumns: [promptVersions.workspaceId, promptVersions.id],
+  }),
 ]);
 
 export const shoplineConnections = pgTable("shopline_connections", {
@@ -183,14 +244,21 @@ export const shoplineConnections = pgTable("shopline_connections", {
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 }, (table) => [
-  uniqueIndex("shopline_connections_workspace_domain_uq").on(table.workspaceId, table.shopDomain),
+  uniqueIndex("shopline_connections_workspace_id_uq").on(
+    table.workspaceId,
+    table.id,
+  ),
+  uniqueIndex("shopline_connections_workspace_domain_uq").on(
+    table.workspaceId,
+    table.shopDomain,
+  ),
 ]);
 
 export const publishJobs = pgTable("publish_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").references(() => listingDrafts.id, { onDelete: "cascade" }).notNull(),
-  connectionId: uuid("connection_id").references(() => shoplineConnections.id).notNull(),
+  listingId: uuid("listing_id").notNull(),
+  connectionId: uuid("connection_id").notNull(),
   status: text("status").notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
   remoteProductId: text("remote_product_id"),
@@ -198,23 +266,43 @@ export const publishJobs = pgTable("publish_jobs", {
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 }, (table) => [
-  uniqueIndex("publish_jobs_workspace_idempotency_uq").on(table.workspaceId, table.idempotencyKey),
+  uniqueIndex("publish_jobs_workspace_idempotency_uq").on(
+    table.workspaceId,
+    table.idempotencyKey,
+  ),
   index("publish_jobs_workspace_status_idx").on(table.workspaceId, table.status),
-  index("publish_jobs_listing_id_idx").on(table.listingId),
-  index("publish_jobs_connection_id_idx").on(table.connectionId),
+  index("publish_jobs_workspace_listing_idx").on(table.workspaceId, table.listingId),
+  index("publish_jobs_workspace_connection_idx").on(
+    table.workspaceId,
+    table.connectionId,
+  ),
+  foreignKey({
+    name: "publish_jobs_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "publish_jobs_workspace_connection_fkey",
+    columns: [table.workspaceId, table.connectionId],
+    foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
+  }),
 ]);
 
 export const reviewEvents = pgTable("review_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").references(() => listingDrafts.id, { onDelete: "cascade" }).notNull(),
+  listingId: uuid("listing_id").notNull(),
   actorId: text("actor_id").notNull(),
   action: text("action").notNull(),
   metadata: jsonb("metadata").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
   index("review_events_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("review_events_listing_id_idx").on(table.listingId),
+  foreignKey({
+    name: "review_events_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
 ]);
 
 export const auditEvents = pgTable("audit_events", {
