@@ -152,8 +152,17 @@ function makeUsage(
   };
 }
 
-function normalizedText(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+function normalizedTokens(value: string): string[] {
+  return value.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+function excerptContainsExactTerm(excerpt: string, expected: string): boolean {
+  const expectedTokens = normalizedTokens(expected);
+  if (expectedTokens.length === 0) return false;
+  const excerptTokens = normalizedTokens(excerpt);
+  return excerptTokens.some((_, start) =>
+    expectedTokens.every((token, offset) => excerptTokens[start + offset] === token),
+  );
 }
 
 function excerptContainsNumber(excerpt: string, expected: number): boolean {
@@ -162,19 +171,19 @@ function excerptContainsNumber(excerpt: string, expected: number): boolean {
 }
 
 function excerptSupportsValue(excerpt: string, value: unknown): boolean {
-  if (typeof value === "string") {
-    const expected = normalizedText(value);
-    return expected.length > 0 && normalizedText(excerpt).includes(expected);
-  }
+  if (typeof value === "string") return excerptContainsExactTerm(excerpt, value);
   if (typeof value === "number") return excerptContainsNumber(excerpt, value);
-  if (Array.isArray(value)) {
-    if (value.length === 0) return true;
-    if (value.every((item) => typeof item === "string")) {
-      const normalizedExcerpt = normalizedText(excerpt);
-      return value.every((item) => normalizedExcerpt.includes(normalizedText(item)));
-    }
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value.every((item) => excerptContainsExactTerm(excerpt, item));
   }
   return false;
+}
+
+function evidenceSupportsValue(evidence: FieldEvidence[], value: unknown): boolean {
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value.every((item) => evidence.some((entry) => excerptSupportsValue(entry.excerpt, item)));
+  }
+  return evidence.some((entry) => excerptSupportsValue(entry.excerpt, value));
 }
 
 function isMeaningfulFact(value: unknown): boolean {
@@ -199,7 +208,7 @@ function assertComplexFactEvidence(
           return [score.source, score.score];
         })()
       : [(item as ListingFacts["awards"][number]).name];
-    if (!supporting.some((entry) => terms.every((term) => normalizedText(entry.excerpt).includes(normalizedText(term))))) {
+    if (!supporting.some((entry) => terms.every((term) => excerptSupportsValue(entry.excerpt, term)))) {
       throw new ProviderOutputError("AI claim evidence did not support its value");
     }
   }
@@ -241,7 +250,7 @@ function assertFactsGrounded(
       assertComplexFactEvidence(key, value as ListingFacts[typeof key], evidenceForField, options.allowedSources);
       continue;
     }
-    if (!evidenceForField.some((item) => excerptSupportsValue(item.excerpt, value))) {
+    if (!evidenceSupportsValue(evidenceForField, value)) {
       throw new ProviderOutputError("AI evidence did not support its fact value");
     }
   }
@@ -328,11 +337,16 @@ export class OpenAIListingProvider implements ListingAIProvider {
 
   constructor(client?: ResponsesClientPort, config: OpenAIListingProviderConfig = {}) {
     this.client = client;
-    this.model = config.model ?? process.env.OPENAI_LISTING_MODEL ?? DEFAULT_MODEL;
+    const configuredModel: unknown = config.model === undefined
+      ? (process.env.OPENAI_LISTING_MODEL ?? DEFAULT_MODEL)
+      : config.model;
+    if (typeof configuredModel !== "string" || !SAFE_MODEL_PATTERN.test(configuredModel)) {
+      throw new TypeError("model must be a safe non-empty identifier");
+    }
+    this.model = configuredModel;
     this.pricing = config.pricing ?? DEFAULT_PRICING;
     this.now = config.now ?? Date.now;
     this.clientFactory = config.clientFactory ?? (() => new OpenAI() as unknown as ResponsesClientPort);
-    if (!SAFE_MODEL_PATTERN.test(this.model)) throw new TypeError("model must be a safe non-empty identifier");
     validatePricing(this.pricing);
   }
 

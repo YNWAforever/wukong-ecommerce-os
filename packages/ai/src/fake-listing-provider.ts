@@ -100,7 +100,7 @@ export class FakeListingProvider implements ListingAIProvider {
       country: country ?? undefined,
       region: region ?? undefined,
       vintage: vintage === null ? undefined : String(vintage),
-      grapeVarieties: grapes[0],
+      grapeVarieties: grapes.length === 0 ? undefined : grapes.join(" and "),
       volumeMl: volumeMl === null ? undefined : `${volumeMl}ml`,
       abvPercent: abvPercent === null ? undefined : `${abvPercent}% ABV`,
       priceHkd: priceHkd === null ? undefined : `HK$${priceHkd}`,

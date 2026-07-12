@@ -38,6 +38,16 @@ describe("FakeListingProvider", () => {
     expect(explicit.evidence.find((item) => item.field === "productType")?.excerpt).toBe("wine");
   });
 
+  it("emits complete note evidence for every extracted grape in a multi-grape fact", async () => {
+    const result = await new FakeListingProvider().extract({
+      assets: [],
+      note: "Demo Estate Riesling and Chardonnay 2024, wine, Germany, Mosel, 750ml, 12.5% ABV",
+    });
+
+    expect(result.facts.grapeVarieties).toEqual(["Riesling", "Chardonnay"]);
+    expect(result.evidence.find((item) => item.field === "grapeVarieties")?.excerpt).toBe("Riesling and Chardonnay");
+  });
+
   it("generates deterministic bilingual copy from supplied facts without reading environment", async () => {
     const oldKey = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;

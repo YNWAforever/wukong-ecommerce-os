@@ -135,6 +135,10 @@ describe("OpenAIListingProvider", () => {
     expect(() => new OpenAIListingProvider(undefined, { model })).toThrow(/model/i);
   });
 
+  it.each([42, true, null, ["gpt-5.6-terra"], { toString: () => "gpt-5.6-terra" }])("rejects non-string model config %j", (model) => {
+    expect(() => new OpenAIListingProvider(undefined, { model: model as never })).toThrow(/model/i);
+  });
+
   it.each([
     ["unsupported MIME", { id: "asset", mimeType: "text/plain", readUrl: "https://assets.example/a.txt" }],
     ["non-HTTPS URL", { id: "asset", mimeType: "image/png", readUrl: "http://assets.example/a.png" }],
@@ -196,6 +200,52 @@ describe("OpenAIListingProvider", () => {
       .rejects.toBeInstanceOf(ProviderOutputError);
   });
 
+  it("rejects substring evidence collisions while accepting exact multiword, numeric, and source claims", async () => {
+    const collisions = [
+      {
+        note: `${groundingNote} product classification winery.`,
+        facts: { ...facts },
+        evidence: evidence.map((item) => item.field === "productType" ? { ...item, excerpt: "winery" } : item),
+      },
+      {
+        note: `${groundingNote} origin Malian.`,
+        facts: { ...facts, country: "Mali" },
+        evidence: evidence.map((item) => item.field === "country" ? { ...item, excerpt: "Malian" } : item),
+      },
+      {
+        note: `${groundingNote} golden award.`,
+        facts: { ...facts, awards: [{ name: "Gold", evidenceId: "note" }] },
+        evidence: [...evidence, { field: "awards", sourceAssetId: "note", page: null, excerpt: "golden award", confidence: 1 }],
+      },
+    ];
+
+    for (const collision of collisions) {
+      const { client } = fakeClient(extractionResponse({
+        output_parsed: { facts: collision.facts, evidence: collision.evidence, missingFields: ["stockQuantity"] },
+      }));
+      await expect(new OpenAIListingProvider(client).extract({ assets: [], note: collision.note }))
+        .rejects.toBeInstanceOf(ProviderOutputError);
+    }
+
+    const positiveNote = `${groundingNote} critic Wine Advocate 95; award Gold Medal.`;
+    const { client } = fakeClient(extractionResponse({
+      output_parsed: {
+        facts: {
+          ...facts,
+          criticScores: [{ source: "Wine Advocate", score: "95", evidenceId: "note" }],
+          awards: [{ name: "Gold Medal", evidenceId: "note" }],
+        },
+        evidence: [
+          ...evidence,
+          { field: "criticScores", sourceAssetId: "note", page: null, excerpt: "Wine Advocate 95", confidence: 1 },
+          { field: "awards", sourceAssetId: "note", page: null, excerpt: "Gold Medal", confidence: 1 },
+        ],
+        missingFields: ["stockQuantity"],
+      },
+    }));
+    await expect(new OpenAIListingProvider(client).extract({ assets: [], note: positiveNote }))
+      .resolves.toMatchObject({ facts: expect.objectContaining({ volumeMl: 750 }) });
+  });
   it("rejects invented evidence references, unbounded excerpts, and non-verbatim note excerpts", async () => {
     for (const badEvidence of [
       [{ ...evidence[0], sourceAssetId: "asset_unknown" }, ...evidence.slice(1)],
