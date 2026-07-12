@@ -12,6 +12,9 @@ export type {
   ListingFacts,
   WorkspaceProfile
 } from "./listing-schema.js";
+
+export type { AuditContext, AuditWriter, DomainAuditEvent } from "./audit.js";
+
 export { resolveFlag, scanCompliance } from "./compliance.js";
 export type { ComplianceFlag } from "./compliance.js";
 

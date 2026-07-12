@@ -1,3 +1,5 @@
+import type { AuditContext, AuditWriter } from "./audit.js";
+
 export type ListingStatus =
   | "received"
   | "processing"
@@ -45,11 +47,26 @@ const transitions: Record<
   failed: { retry: "processing" }
 };
 
-export function transitionListing(
+function getNextListingStatus(
   status: ListingStatus,
   action: ListingAction
 ): ListingStatus {
   const next = transitions[status][action];
   if (!next) throw new Error(`Illegal transition: ${status} -> ${action}`);
+  return next;
+}
+
+export async function transitionListing(
+  status: ListingStatus,
+  action: ListingAction,
+  auditContext: AuditContext,
+  auditWriter: AuditWriter
+): Promise<ListingStatus> {
+  const next = getNextListingStatus(status, action);
+  await auditWriter.write({
+    ...auditContext,
+    action: "listing.transition",
+    metadata: { fromStatus: status, action, toStatus: next }
+  });
   return next;
 }

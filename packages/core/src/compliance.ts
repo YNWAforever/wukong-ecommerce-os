@@ -1,4 +1,6 @@
-export type ComplianceFlag = {
+import type { AuditContext, AuditWriter } from "./audit.js";
+
+type ComplianceFlagFields = {
   id: string;
   field: string;
   rule:
@@ -7,9 +9,13 @@ export type ComplianceFlag = {
     | "rating_without_evidence"
     | "superlative";
   severity: "blocking" | "warning";
-  status: "open" | "resolved";
-  resolutionReason: string | null;
 };
+
+export type ComplianceFlag = ComplianceFlagFields &
+  (
+    | { status: "open"; resolutionReason: null }
+    | { status: "resolved"; resolutionReason: string }
+  );
 
 const blockingPatterns = [
   { rule: "health_claim" as const, pattern: /health benefit|治療|保健功效/i },
@@ -33,12 +39,30 @@ export function scanCompliance(
   );
 }
 
-export function resolveFlag(
+export async function resolveFlag(
   flag: ComplianceFlag,
-  reason: string
-): ComplianceFlag {
-  if (reason.trim().length < 10) {
+  reason: string,
+  auditContext: AuditContext,
+  auditWriter: AuditWriter
+): Promise<ComplianceFlag> {
+  const resolutionReason = reason.trim();
+  if (resolutionReason.length < 10) {
     throw new Error("A meaningful resolution reason is required");
   }
-  return { ...flag, status: "resolved", resolutionReason: reason.trim() };
+  const resolved: ComplianceFlag = {
+    ...flag,
+    status: "resolved",
+    resolutionReason
+  };
+  await auditWriter.write({
+    ...auditContext,
+    action: "compliance.flag_resolved",
+    metadata: {
+      flagId: flag.id,
+      field: flag.field,
+      rule: flag.rule,
+      resolutionReason
+    }
+  });
+  return resolved;
 }
