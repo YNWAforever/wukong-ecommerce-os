@@ -72,11 +72,13 @@ CREATE TABLE IF NOT EXISTS listing_drafts (
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   status listing_status NOT NULL DEFAULT 'received',
   target text NOT NULL DEFAULT 'shopline',
+  note text,
   active_version_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT listing_drafts_target_check CHECK (target = 'shopline')
 );
+ALTER TABLE listing_drafts ADD COLUMN IF NOT EXISTS note text;
 CREATE UNIQUE INDEX IF NOT EXISTS listing_drafts_workspace_id_uq
   ON listing_drafts (workspace_id, id);
 CREATE INDEX IF NOT EXISTS listing_drafts_workspace_status_idx
@@ -102,7 +104,7 @@ CREATE INDEX IF NOT EXISTS listing_versions_workspace_listing_idx
 CREATE TABLE IF NOT EXISTS source_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  listing_id uuid NOT NULL,
+  listing_id uuid,
   storage_key text NOT NULL,
   kind text NOT NULL,
   metadata jsonb NOT NULL,
@@ -110,6 +112,9 @@ CREATE TABLE IF NOT EXISTS source_assets (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS source_assets_workspace_id_uq
   ON source_assets (workspace_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS source_assets_workspace_storage_key_uq
+  ON source_assets (workspace_id, storage_key);
+ALTER TABLE source_assets ALTER COLUMN listing_id DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS source_assets_workspace_listing_idx
   ON source_assets (workspace_id, listing_id);
 

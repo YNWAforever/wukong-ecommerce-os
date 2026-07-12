@@ -86,6 +86,7 @@ export const listingDrafts = pgTable("listing_drafts", {
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   status: listingStatus("status").default("received").notNull(),
   target: text("target").default("shopline").notNull(),
+  note: text("note"),
   activeVersionId: uuid("active_version_id"),
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
@@ -128,13 +129,14 @@ export const listingVersions = pgTable("listing_versions", {
 export const sourceAssets = pgTable("source_assets", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  listingId: uuid("listing_id").notNull(),
+  listingId: uuid("listing_id"),
   storageKey: text("storage_key").notNull(),
   kind: text("kind").notNull(),
   metadata: jsonb("metadata").notNull(),
   createdAt: timestamps.createdAt,
 }, (table) => [
   uniqueIndex("source_assets_workspace_id_uq").on(table.workspaceId, table.id),
+  uniqueIndex("source_assets_workspace_storage_key_uq").on(table.workspaceId, table.storageKey),
   index("source_assets_workspace_listing_idx").on(table.workspaceId, table.listingId),
   foreignKey({
     name: "source_assets_workspace_listing_fkey",

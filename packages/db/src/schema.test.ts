@@ -1,3 +1,4 @@
+import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +22,10 @@ function foreignKeyMetadata(table: Parameters<typeof getTableConfig>[0]) {
 }
 
 describe("nullable tenant relationships", () => {
+  it("allows a finalized source asset to exist before listing creation", () => {
+    expect(getTableColumns(sourceAssets).listingId.notNull).toBe(false);
+  });
+
   it("models the active listing version as a restricted workspace composite FK", () => {
     expect(foreignKeyMetadata(listingDrafts)).toContainEqual({
       columns: ["workspace_id", "active_version_id"],

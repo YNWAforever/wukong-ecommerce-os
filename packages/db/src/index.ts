@@ -10,5 +10,10 @@ export type {
   Listing,
   ListingRepository,
 } from "./repositories/listings.js";
+export type {
+  CreateSourceAssetInput,
+  SourceAsset,
+  SourceAssetRepository,
+} from "./repositories/source-assets.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";

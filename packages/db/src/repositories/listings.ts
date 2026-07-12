@@ -7,6 +7,7 @@ export type Listing = typeof listingDrafts.$inferSelect;
 
 export type CreateListingInput = {
   target: "shopline";
+  note?: string | null;
 };
 
 export type ListingRepository = {
@@ -32,7 +33,7 @@ export function createListingRepository(
         .onConflictDoNothing();
       const [created] = await transaction
         .insert(listingDrafts)
-        .values({ workspaceId, target: input.target })
+        .values({ workspaceId, target: input.target, note: input.note ?? null })
         .returning();
       if (!created) {
         throw new Error("listing insert did not return a row");
