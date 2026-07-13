@@ -84,6 +84,7 @@ export type PublishRepositories = {
 
 export type PublishDependencies = {
   connector: CommerceConnector;
+  connectionId?: string;
   withWorkspace<T>(
     workspaceId: string,
     work: (repositories: PublishRepositories) => Promise<T>,
@@ -94,7 +95,7 @@ export type PublishDependencies = {
   ) => Promise<readonly string[]>;
 };
 
-export type PublishErrorCode = ConnectorErrorCode | "not_approved" | "blocking_flags" | "invalid_payload";
+export type PublishErrorCode = ConnectorErrorCode | "not_approved" | "blocking_flags" | "invalid_payload" | "invalid_connection";
 
 export class PublishDeliveryError extends Error {
   readonly code: PublishErrorCode;
@@ -105,7 +106,9 @@ export class PublishDeliveryError extends Error {
         ? "Unresolved blocking compliance flags prevent delivery"
         : code === "not_approved"
           ? "Only the active approved version can be delivered"
-          : `SHOPLINE publish failed: ${code}`,
+          : code === "invalid_connection"
+            ? "A valid tenant SHOPLINE connection is required"
+            : `SHOPLINE publish failed: ${code}`,
     );
     this.name = "PublishDeliveryError";
     this.code = code;
@@ -165,6 +168,10 @@ export async function publishApprovedProduct(
   input: PublishProductInput,
   dependencies: PublishDependencies,
 ): Promise<PublishResult> {
+  const connectionId = input.connectionId ?? dependencies.connectionId;
+  if (!connectionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(connectionId)) {
+    throw new PublishDeliveryError("invalid_connection");
+  }
   const prepared = await dependencies.withWorkspace(input.workspaceId, async (repositories) => {
     const listing = await repositories.listings.requireForPublish(input.draftId);
     if (listing.target !== "shopline" || !listing.activeVersion) {
@@ -174,17 +181,17 @@ export async function publishApprovedProduct(
     const versionId = listing.activeVersion.id;
     const idempotencyKey = `${input.workspaceId}:${versionId}:shopline:create`;
     const existing = await repositories.publishJobs.getByIdempotencyKey(idempotencyKey);
-    if (existing?.status === "published") return { result: existingResult(existing) };
+    if (listing.flags.some(isUnresolvedBlockingFlag)) {
+      throw new PublishDeliveryError("blocking_flags");
+    }
     if (listing.status === "published") {
+      if (existing?.status === "published") return { result: existingResult(existing) };
       throw new Error("published listing is missing its delivery record");
     }
     if (listing.status !== "approved" && listing.status !== "publishing" && listing.status !== "publish_failed") {
       throw new Error("Only the active approved version can be delivered");
     }
-    if (listing.flags.some(isUnresolvedBlockingFlag)) {
-      throw new PublishDeliveryError("blocking_flags");
-    }
-
+    if (existing?.status === "published") return { result: existingResult(existing) };
     const imageUrls = dependencies.resolveImageUrls
       ? await dependencies.resolveImageUrls(input.workspaceId, listing.activeVersion.content.imageAssetIds)
       : [];

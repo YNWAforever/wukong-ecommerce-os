@@ -10,6 +10,7 @@ import {
 } from "./publish-product.js";
 
 const versionId = "version_approved";
+const VALID_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
 const draftId = "draft_1";
 
 function makeConnector(overrides: Partial<CommerceConnector> = {}): CommerceConnector {
@@ -26,6 +27,7 @@ function makeHarness(
   status: PublishListingSnapshot["status"] = "approved",
   flags: PublishListingSnapshot["flags"] = [],
   jobs: Parameters<typeof makeRepos>[0]["jobs"] = [],
+  connectorId: string | null = VALID_CONNECTION_ID,
 ) {
   const audits: Array<{ action: string; metadata: Record<string, unknown> }> = [];
   const listing: PublishListingSnapshot = {
@@ -39,6 +41,7 @@ function makeHarness(
   const repos = makeRepos(state, audits);
   const deps = {
     connector: makeConnector(),
+    connectionId: connectorId ?? undefined,
     async withWorkspace<T>(_workspace: string, work: (repositories: PublishRepositories) => Promise<T>) {
       return work(repos);
     },
@@ -144,4 +147,23 @@ describe("publishApprovedProduct", () => {
     expect(result.remoteProductId).toBe("remote_123");
     expect(harness.connector.createProduct).toHaveBeenCalledTimes(1);
     expect(harness.state.listing.status).toBe("published");
-  });});
+  });
+  it("rejects missing or invalid connector identity before tenant mutation or HTTP", async () => {
+    const missing = makeHarness("approved", [], [], null);
+    await expect(publishApprovedProduct({ workspaceId, draftId }, missing)).rejects.toMatchObject({ code: "invalid_connection" });
+    expect(missing.state.jobs).toHaveLength(0);
+    expect(missing.connector.createProduct).not.toHaveBeenCalled();
+
+    const invalid = makeHarness("approved");
+    await expect(publishApprovedProduct({ workspaceId, draftId, connectionId: "shopline-default" }, invalid)).rejects.toMatchObject({ code: "invalid_connection" });
+    expect(invalid.state.jobs).toHaveLength(0);
+    expect(invalid.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("does not return a published duplicate after the listing is reopened", async () => {
+    const key = `${workspaceId}:${versionId}:shopline:create`;
+    const harness = makeHarness("reopened", [], [{ id: "job_reopened", idempotencyKey: key, status: "published", remoteProductId: "remote_old", payloadDigest: "e".repeat(64), error: null }]);
+    await expect(publishApprovedProduct({ workspaceId, draftId }, harness)).rejects.toThrow("Only the active approved version can be delivered");
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+});
