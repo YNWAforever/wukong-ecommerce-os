@@ -86,6 +86,7 @@ describe("listing pipeline run repository", () => {
     });
     expect(snapshot.first).toMatchObject({ claimed: true, completed: false });
     expect(snapshot.second).toMatchObject({ claimed: false, completed: true, output: { missingFields: [] } });
+    expect(snapshot.second.leaseToken).toBeNull();
     expect(snapshot.state).toMatchObject({ status: "failed", errorCode: "provider_timeout" });
     });
 
