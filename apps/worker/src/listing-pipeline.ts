@@ -65,6 +65,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
   let claimedLeaseToken: string | null = null;
   let completionStep: PipelineStepName | null = null;
   let completionLeaseToken: string | null = null;
+  let stepUnavailable = false;
 
   try {
     const draft = await deps.withWorkspace(input.workspaceId, async (repos) => {
@@ -109,6 +110,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
       completionStep = "extracted";
       completionLeaseToken = extractionLeaseToken;
     } else if (!extractionClaim.claimed) {
+      stepUnavailable = true;
       throw new Error("extraction step is already running");
     } else {
       extraction = await deps.ai.extract({ assets: await deps.assetInputs(source.assets), note: draft.note });
@@ -180,7 +182,10 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
       });
       return result;
     }
-    if (!generationClaim.claimed || !generationLeaseToken) throw new Error("generation step is already running");
+    if (!generationClaim.claimed || !generationLeaseToken) {
+      stepUnavailable = true;
+      throw new Error("generation step is already running");
+    }
 
     const generation = await deps.ai.generate({
       facts: extraction.facts,
@@ -221,6 +226,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
     });
     return result;
   } catch (error) {
+    if (stepUnavailable) throw error;
     await deps.withWorkspace(input.workspaceId, async (repos) => {
       const leaseToken = claimedLeaseToken ?? completionLeaseToken ?? undefined;
       const leaseStep = claimedStep ?? completionStep ?? activeStep;

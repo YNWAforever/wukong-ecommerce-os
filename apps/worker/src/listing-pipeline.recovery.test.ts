@@ -25,6 +25,17 @@ describe("listing pipeline recovery contract", () => {
     expect(state.steps.get("generated")).toEqual(expect.objectContaining({ state: "completed" }));
     expect(state.audits).not.toContain("listing.pipeline_failed");
   });
+  it("does not persist terminal failure when another worker owns the generation lease", async () => {
+    const { deps, state } = makeHarness({ generationUnavailable: true });
+    const input = { workspaceId, draftId, activeVersionSequence: 0 };
+
+    await expect(runListingPipeline(input, deps, { attempt: 3, maxAttempts: 3 })).rejects.toThrow("generation step is already running");
+
+    expect(state.status).toBe("processing");
+    expect(state.failure).toBeUndefined();
+    expect(state.audits).not.toContain("listing.pipeline_failed");
+  });
+
   it("returns null versionId for needs_info", async () => {
     const { deps } = makeHarness({ missingFields: ["priceHkd"] });
     await expect(runListingPipeline({ workspaceId, draftId, activeVersionSequence: 0 }, deps)).resolves.toEqual({ status: "needs_info", versionId: null });
