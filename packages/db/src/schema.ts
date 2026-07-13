@@ -292,6 +292,7 @@ export const listingPipelineSteps = pgTable("listing_pipeline_steps", {
   pipelineRunId: uuid("pipeline_run_id").notNull(),
   step: text("step").notNull(),
   state: text("state").default("completed").notNull(),
+  leaseToken: uuid("lease_token").defaultRandom().notNull(),
   output: jsonb("output"),
   updatedAt: timestamps.updatedAt,
   createdAt: timestamps.createdAt,

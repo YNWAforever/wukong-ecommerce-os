@@ -26,9 +26,16 @@ describe("listing pipeline run repository", () => {
         listingId: listing.id,
         activeVersionSequence: 0,
       };
-      await repos.pipelineRuns.recordStep({ ...input, step: "started" });
-      await repos.pipelineRuns.recordStep({ ...input, step: "started" });
-      await repos.pipelineRuns.complete({ ...input, status: "needs_info", versionId: null });
+      const claim = await repos.pipelineRuns.claimStep({ ...input, step: "started" });
+      await repos.pipelineRuns.recordStep({ ...input, step: "started", leaseToken: claim.leaseToken! });
+      await repos.pipelineRuns.recordStep({ ...input, step: "started", leaseToken: claim.leaseToken! });
+      await repos.pipelineRuns.complete({
+        ...input,
+        step: "started",
+        leaseToken: claim.leaseToken!,
+        status: "needs_info",
+        versionId: null,
+      });
       return repos.pipelineRuns.getCompleted(input.idempotencyKey);
     });
 
@@ -39,8 +46,28 @@ describe("listing pipeline run repository", () => {
     const owner = await forWorkspace(database, "ws_pipeline_owner", async (repos) => {
       const listing = await repos.listings.create({ target: "shopline" });
       const idempotencyKey = `listing:ws_pipeline_owner:${listing.id}:0`;
-      await repos.pipelineRuns.recordStep({ idempotencyKey, listingId: listing.id, activeVersionSequence: 0, step: "started" });
-      await repos.pipelineRuns.complete({ idempotencyKey, listingId: listing.id, activeVersionSequence: 0, status: "needs_info", versionId: null });
+      const claim = await repos.pipelineRuns.claimStep({
+        idempotencyKey,
+        listingId: listing.id,
+        activeVersionSequence: 0,
+        step: "started",
+      });
+      await repos.pipelineRuns.recordStep({
+        idempotencyKey,
+        listingId: listing.id,
+        activeVersionSequence: 0,
+        step: "started",
+        leaseToken: claim.leaseToken!,
+      });
+      await repos.pipelineRuns.complete({
+        idempotencyKey,
+        listingId: listing.id,
+        activeVersionSequence: 0,
+        step: "started",
+        leaseToken: claim.leaseToken!,
+        status: "needs_info",
+        versionId: null,
+      });
       return idempotencyKey;
     });
 
@@ -52,7 +79,7 @@ describe("listing pipeline run repository", () => {
       const listing = await repos.listings.create({ target: "shopline" });
       const input = { idempotencyKey: `listing:ws_pipeline_claim:${listing.id}:0`, listingId: listing.id, activeVersionSequence: 0 };
       const first = await repos.pipelineRuns.claimStep({ ...input, step: "extracted" });
-      await repos.pipelineRuns.recordStep({ ...input, step: "extracted", output: { missingFields: [] } });
+      await repos.pipelineRuns.recordStep({ ...input, step: "extracted", leaseToken: first.leaseToken!, output: { missingFields: [] } });
       const second = await repos.pipelineRuns.claimStep({ ...input, step: "extracted" });
       await repos.pipelineRuns.fail({ ...input, errorCode: "provider_timeout" });
       return { first, second, state: await repos.pipelineRuns.getState(input.idempotencyKey) };
@@ -60,4 +87,77 @@ describe("listing pipeline run repository", () => {
     expect(snapshot.first).toMatchObject({ claimed: true, completed: false });
     expect(snapshot.second).toMatchObject({ claimed: false, completed: true, output: { missingFields: [] } });
     expect(snapshot.state).toMatchObject({ status: "failed", errorCode: "provider_timeout" });
-  });});
+    });
+
+  it("does not let a stale worker release a reclaimed step owned by a newer worker", async () => {
+    const initial = await forWorkspace(database, "ws_pipeline_lease", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const input = {
+        idempotencyKey: "listing:ws_pipeline_lease:" + listing.id + ":0",
+        listingId: listing.id,
+        activeVersionSequence: 0,
+        step: "extracted" as const,
+      };
+      const workerA = await repos.pipelineRuns.claimStep(input);
+      return { input, workerA };
+    });
+    expect(initial.workerA.leaseToken).toEqual(expect.any(String));
+
+    await admin.unsafe(
+      "UPDATE listing_pipeline_steps SET updated_at = now() - interval '6 minutes' WHERE workspace_id = $1",
+      ["ws_pipeline_lease"],
+    );
+
+    const workerB = await forWorkspace(database, "ws_pipeline_lease", (repos) => repos.pipelineRuns.claimStep(initial.input));
+    expect(workerB).toMatchObject({ claimed: true, completed: false });
+    expect(workerB.leaseToken).toEqual(expect.any(String));
+    expect(workerB.leaseToken).not.toBe(initial.workerA.leaseToken);
+
+    await expect(
+      forWorkspace(database, "ws_pipeline_lease", (repos) =>
+        repos.pipelineRuns.recordStep({
+          idempotencyKey: initial.input.idempotencyKey,
+          listingId: initial.input.listingId,
+          activeVersionSequence: initial.input.activeVersionSequence,
+          step: initial.input.step,
+          leaseToken: initial.workerA.leaseToken!,
+          output: { stale: true },
+        }),
+      ),
+    ).rejects.toThrow("pipeline step lease lost");
+
+    await expect(
+      forWorkspace(database, "ws_pipeline_lease", (repos) =>
+        repos.pipelineRuns.complete({
+          idempotencyKey: initial.input.idempotencyKey,
+          listingId: initial.input.listingId,
+          activeVersionSequence: initial.input.activeVersionSequence,
+          step: initial.input.step,
+          leaseToken: initial.workerA.leaseToken!,
+          status: "needs_info",
+          versionId: null,
+        }),
+      ),
+    ).rejects.toThrow("pipeline step lease lost");
+
+    const afterStaleRelease = await forWorkspace(database, "ws_pipeline_lease", async (repos) => {
+      await repos.pipelineRuns.releaseStep({
+        idempotencyKey: initial.input.idempotencyKey,
+        step: initial.input.step,
+        leaseToken: initial.workerA.leaseToken!,
+      });
+      return repos.pipelineRuns.getState(initial.input.idempotencyKey);
+    });
+    expect(afterStaleRelease?.steps.get("extracted")).toMatchObject({ state: "running" });
+
+    const afterOwnerRelease = await forWorkspace(database, "ws_pipeline_lease", async (repos) => {
+      await repos.pipelineRuns.releaseStep({
+        idempotencyKey: initial.input.idempotencyKey,
+        step: initial.input.step,
+        leaseToken: workerB.leaseToken!,
+      });
+      return repos.pipelineRuns.getState(initial.input.idempotencyKey);
+    });
+    expect(afterOwnerRelease?.steps.has("extracted")).toBe(false);
+  });
+});

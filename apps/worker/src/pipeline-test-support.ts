@@ -9,7 +9,7 @@ export const facts: ListingFacts = { sku: "OPAK-001", producer: "Demo Estate", p
 export const evidence: FieldEvidence[] = [{ field: "priceHkd", sourceAssetId: "asset_1", page: null, excerpt: "HK$288", confidence: 1 }];
 export const listing: CanonicalListing = { ...facts, sku: facts.sku!, producer: facts.producer!, productType: facts.productType!, country: facts.country!, volumeMl: facts.volumeMl!, abvPercent: facts.abvPercent!, priceHkd: facts.priceHkd!, title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" }, seo: { title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" } }, tags: ["Riesling"], imageAssetIds: ["asset_1"] };
 export const profile: WorkspaceProfile = { name: "Opak Cellar", currency: "HKD", locales: ["en", "zh-Hant"], tone: "clear and restrained", claimPolicy: ["No invented claims"], requiredFields: ["sku", "priceHkd"] };
-export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null } };
+export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown; leaseToken: string }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null } };
 export type HarnessOptions = { missingFields?: string[]; extractError?: Error; generateError?: Error; generateProvider?: (input: GenerationInput) => Promise<GenerationResult>; sourceError?: Error; completeError?: Error };
 
 export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
@@ -36,11 +36,30 @@ export function makeHarness(options: HarnessOptions = {}): { state: HarnessState
     workspaces: { async requireProfile() { return profile; } },
     pipelineRuns: {
       async getCompleted() { return state.completed ?? null; },
-      async claimStep(input) { const current = state.steps.get(input.step); if (!current) { state.steps.set(input.step, { state: "running", output: null }); return { claimed: true, completed: false, output: null }; } if (current.state === "completed") return { claimed: false, completed: true, output: current.output }; return { claimed: false, completed: false, output: null }; },
-      async recordStep(input) { state.steps.set(input.step, { state: "completed", output: input.output ?? null }); },
-      async complete(_input) {},
-      async fail(input) { state.failure = input.errorCode; },
-      async releaseStep(input) { const current = state.steps.get(input.step); if (current?.state === "running") state.steps.delete(input.step); },
+      async claimStep(input) {
+        const current = state.steps.get(input.step);
+        if (!current) {
+          const leaseToken = "lease-" + input.step + "-1";
+          state.steps.set(input.step, { state: "running", output: null, leaseToken });
+          return { claimed: true, completed: false, output: null, leaseToken };
+        }
+        if (current.state === "completed") return { claimed: false, completed: true, output: current.output, leaseToken: current.leaseToken };
+        return { claimed: false, completed: false, output: null, leaseToken: null };
+      },
+      async recordStep(input) {
+        const current = state.steps.get(input.step);
+        if (!current || current.leaseToken !== input.leaseToken) throw new Error("pipeline step lease lost");
+        state.steps.set(input.step, { state: "completed", output: input.output ?? null, leaseToken: current.leaseToken });
+      },
+      async complete(input) {
+        const current = state.steps.get(input.step);
+        if (!current || current.leaseToken !== input.leaseToken) throw new Error("pipeline step lease lost");
+      },
+      async fail(input) { state.failure = input.errorCode; return true; },
+      async releaseStep(input) {
+        const current = state.steps.get(input.step);
+        if (current?.state === "running" && current.leaseToken === input.leaseToken) state.steps.delete(input.step);
+      },
     },
     aiRuns: { async append(run) { if (!state.aiRuns.some((existing) => existing.task === run.task && existing.idempotencyKey === run.idempotencyKey)) state.aiRuns.push({ task: run.task, idempotencyKey: run.idempotencyKey }); } },
     audit,

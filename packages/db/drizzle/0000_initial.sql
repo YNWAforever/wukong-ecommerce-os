@@ -289,6 +289,7 @@ CREATE INDEX IF NOT EXISTS listing_pipeline_steps_workspace_run_idx ON listing_p
 ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'completed';
 ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS output jsonb;
 ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE listing_pipeline_steps ADD COLUMN IF NOT EXISTS lease_token uuid NOT NULL DEFAULT gen_random_uuid();
 ALTER TABLE listing_versions
   DROP CONSTRAINT IF EXISTS listing_versions_listing_id_fkey,
   DROP CONSTRAINT IF EXISTS listing_versions_workspace_listing_fkey,
