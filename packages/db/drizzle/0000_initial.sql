@@ -120,6 +120,21 @@ CREATE TABLE IF NOT EXISTS memberships (
 );
 CREATE INDEX IF NOT EXISTS memberships_user_id_idx ON memberships (user_id);
 
+CREATE OR REPLACE FUNCTION auth_get_active_membership(candidate_user_id text)
+RETURNS TABLE(workspace_id text, actor_id text, role text)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $auth_membership$
+  SELECT m.workspace_id, m.user_id, m.role
+  FROM memberships AS m
+  WHERE m.user_id = candidate_user_id
+  ORDER BY m.created_at ASC
+  LIMIT 1;
+$auth_membership$;
+REVOKE ALL ON FUNCTION auth_get_active_membership(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION auth_get_active_membership(text) TO wukong_app;
+
 CREATE TABLE IF NOT EXISTS listing_drafts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -206,13 +221,17 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   key text NOT NULL,
-  version integer NOT NULL CHECK (version > 0),
+  version text NOT NULL,
   template text NOT NULL,
   model text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT prompt_versions_workspace_key_version_uq
     UNIQUE (workspace_id, key, version)
 );
+ALTER TABLE prompt_versions
+  DROP CONSTRAINT IF EXISTS prompt_versions_version_check;
+ALTER TABLE prompt_versions
+  ALTER COLUMN version TYPE text USING version::text;
 CREATE UNIQUE INDEX IF NOT EXISTS prompt_versions_workspace_id_uq
   ON prompt_versions (workspace_id, id);
 

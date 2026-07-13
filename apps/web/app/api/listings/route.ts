@@ -8,7 +8,7 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../lib/route-support";
-import { failClosedSessionContext } from "../../../lib/session-context-port";
+import { authSessionContext } from "../../../lib/session-context";
 
 const listingSchema = z
   .object({
@@ -99,7 +99,7 @@ export function createListingHandler(deps: IntakeRouteDeps) {
 }
 
 export const POST = createListingHandler({
-  sessionContext: failClosedSessionContext,
+  sessionContext: authSessionContext,
   getAssetStore,
   getDatabase,
 });

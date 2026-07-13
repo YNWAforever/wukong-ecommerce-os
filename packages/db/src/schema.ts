@@ -233,7 +233,7 @@ export const promptVersions = pgTable("prompt_versions", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   key: text("key").notNull(),
-  version: integer("version").notNull(),
+  version: text("version").notNull(),
   template: text("template").notNull(),
   model: text("model").notNull(),
   createdAt: timestamps.createdAt,

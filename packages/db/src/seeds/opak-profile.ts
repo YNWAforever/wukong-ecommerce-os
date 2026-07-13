@@ -26,7 +26,7 @@ export const opakProfile: WorkspaceProfile = workspaceProfileSchema.parse({
 export const OPAK_WORKSPACE_ID = "ws_opak";
 export const OPAK_OPERATOR_ID = "user_opak_operator";
 export const OPAK_PROMPT_KEY = "listing-generation";
-export const OPAK_PROMPT_VERSION = 1;
+export const OPAK_PROMPT_VERSION = "1.0.0";
 
 export const opakPromptTemplate = [
   "Generate a SHOPLINE listing for Opak Cellar.",

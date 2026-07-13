@@ -16,10 +16,10 @@ export type OpakSeedStore = {
   upsertUser(input: { id: string; email: string }): Promise<string>;
   upsertMembership(input: { workspaceId: string; userId: string; role: "operator" }): Promise<void>;
   upsertProfile(input: { workspaceId: string; profile: WorkspaceProfile }): Promise<void>;
-  upsertPromptVersion(input: { workspaceId: string; key: string; version: number; template: string; model: string }): Promise<void>;
+  upsertPromptVersion(input: { workspaceId: string; key: string; version: string; template: string; model: string }): Promise<void>;
   upsertInvite(input: { workspaceId: string; email: string; role: "operator"; status: "pending" }): Promise<void>;
 };
-export type OpakSeedResult = { workspaceId: string; userId: string; email: string; promptVersion: number };
+export type OpakSeedResult = { workspaceId: string; userId: string; email: string; promptVersion: string };
 
 export async function seedOpak(store: OpakSeedStore, operatorEmail: string): Promise<OpakSeedResult> {
   const email = parseEmail(operatorEmail);

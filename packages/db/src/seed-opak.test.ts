@@ -29,7 +29,8 @@ describe("Opak pilot seed", () => {
     };
     const first = await seedOpak(store, "operator@opak.example");
     const second = await seedOpak(store, "operator@opak.example");
-    expect(first).toEqual(second);
+    expect(first.promptVersion).toBe("1.0.0");
+    expect(second).toEqual(first);
     expect(store.upsertWorkspace).toHaveBeenCalledTimes(2);
     expect(store.upsertUser).toHaveBeenCalledWith({ id: "user_opak_operator", email: "operator@opak.example" });
     for (const call of vi.mocked(store.upsertUser).mock.calls) {

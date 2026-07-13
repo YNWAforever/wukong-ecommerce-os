@@ -9,7 +9,7 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
-import { failClosedSessionContext } from "../../../../lib/session-context-port";
+import { authSessionContext } from "../../../../lib/session-context";
 
 const presignAssetSchema = z
   .object({
@@ -45,7 +45,7 @@ export function createPresignAssetHandler(deps: IntakeRouteDeps) {
 }
 
 export const POST = createPresignAssetHandler({
-  sessionContext: failClosedSessionContext,
+  sessionContext: authSessionContext,
   getAssetStore,
   getDatabase,
 });

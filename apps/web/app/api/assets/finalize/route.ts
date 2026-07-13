@@ -9,7 +9,7 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
-import { failClosedSessionContext } from "../../../../lib/session-context-port";
+import { authSessionContext } from "../../../../lib/session-context";
 
 const finalizeAssetSchema = z
   .object({
@@ -84,7 +84,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
 }
 
 export const POST = createFinalizeAssetHandler({
-  sessionContext: failClosedSessionContext,
+  sessionContext: authSessionContext,
   getAssetStore,
   getDatabase,
 });

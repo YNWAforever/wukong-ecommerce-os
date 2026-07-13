@@ -113,6 +113,13 @@ export function getAuthResult(): NextAuthResult {
   return runtime;
 }
 
+/** The Auth.js adapter database is reused by the server-side session context. */
+export function getAuthDatabase(): AuthDatabase {
+  getAuthResult();
+  if (!runtimeDatabase) throw new AuthConfigurationUnavailableError();
+  return runtimeDatabase;
+}
+
 export const handlers: NextAuthResult["handlers"] = {
   GET: (request) => getAuthResult().handlers.GET(request),
   POST: (request) => getAuthResult().handlers.POST(request),
