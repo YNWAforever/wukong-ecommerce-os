@@ -178,7 +178,7 @@ export async function publishApprovedProduct(
     if (listing.status === "published") {
       throw new Error("published listing is missing its delivery record");
     }
-    if (listing.status !== "approved" && listing.status !== "publishing") {
+    if (listing.status !== "approved" && listing.status !== "publishing" && listing.status !== "publish_failed") {
       throw new Error("Only the active approved version can be delivered");
     }
     if (listing.flags.some(isUnresolvedBlockingFlag)) {
@@ -206,7 +206,7 @@ export async function publishApprovedProduct(
     if (job.status === "published") return { result: existingResult(job) };
 
     const auditContext = context(input);
-    if (listing.status === "approved") {
+    if (listing.status === "approved" || listing.status === "publish_failed") {
       await repositories.listings.beginPublish(listing.id, auditContext, repositories.audit);
     }
     await repositories.publishJobs.markRunning(idempotencyKey);

@@ -88,7 +88,7 @@ export function createListingRepository(
       scope.assertOpen();
       const listing = await this.requireById(id);
       if (listing.status === "publishing") return;
-      const next = await transitionListing(listing.status, "begin_publish", context, audit);
+      const next = await transitionListing(listing.status, listing.status === "publish_failed" ? "retry" : "begin_publish", context, audit);
       const updated = await transaction.update(listingDrafts).set({ status: next, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status))).returning({ id: listingDrafts.id });
       if (updated.length !== 1) throw new Error("listing status changed while beginning publish");
     },

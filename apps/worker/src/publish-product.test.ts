@@ -136,4 +136,12 @@ describe("publishApprovedProduct", () => {
     expect(harness.state.jobs[0]).toMatchObject({ status: "failed", error: "invalid_credentials_or_permission" });
     expect(JSON.stringify(harness.state.jobs[0])).not.toContain("token leaked");
   });
-});
+
+  it("retries a prior publish_failed delivery with the same idempotency key", async () => {
+    const key = `${workspaceId}:${versionId}:shopline:create`;
+    const harness = makeHarness("publish_failed", [], [{ id: "job_retry", idempotencyKey: key, status: "failed", remoteProductId: null, payloadDigest: null, error: "remote_unavailable" }]);
+    const result = await publishApprovedProduct({ workspaceId, draftId }, harness);
+    expect(result.remoteProductId).toBe("remote_123");
+    expect(harness.connector.createProduct).toHaveBeenCalledTimes(1);
+    expect(harness.state.listing.status).toBe("published");
+  });});
