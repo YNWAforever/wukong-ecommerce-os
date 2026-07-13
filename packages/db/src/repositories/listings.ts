@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 
-import type { AuditContext, AuditWriter, CanonicalListing, ComplianceFlag, FieldEvidence, ListingAction } from "@wukong/core";
+import { canonicalListingSchema } from "@wukong/core";
+import type { AuditContext, AuditWriter, CanonicalListing, ComplianceFlag, FieldEvidence, ListingAction, ListingStatus } from "@wukong/core";
 import { transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { complianceFlags, fieldEvidence, listingDrafts, listingVersions, workspaces } from "../schema.js";
@@ -14,6 +15,10 @@ export type ListingRepository = {
   create(input: CreateListingInput): Promise<Listing>;
   getById(id: string): Promise<Listing | null>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
+  requireForPublish(id: string): Promise<{ id: string; target: "shopline"; status: ListingStatus; activeVersion: { id: string; sequence: number; content: CanonicalListing } | null; flags: ComplianceFlag[] }>;
+  beginPublish(id: string, context: AuditContext, audit: AuditWriter): Promise<void>;
+  markPublished(id: string, versionId: string, remoteProductId: string, payloadDigest: string, context: AuditContext, audit: AuditWriter): Promise<void>;
+  markPublishFailed(id: string, versionId: string, errorCode: string, context: AuditContext, audit: AuditWriter): Promise<void>;
   startProcessing(id: string, context: AuditContext, audit: AuditWriter): Promise<void>;
   appendVersion(id: string, content: CanonicalListing, context: AuditContext, audit: AuditWriter, pipelineIdempotencyKey?: string): Promise<ListingVersion>;
   replaceEvidence(versionId: string, evidence: FieldEvidence[]): Promise<void>;
@@ -54,6 +59,61 @@ export function createListingRepository(
       return { ...listing, activeVersionSequence: active?.sequence ?? 0 };
     },
 
+    async requireForPublish(id) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      const activeVersion = listing.activeVersionId
+        ? (await transaction.select({ id: listingVersions.id, sequence: listingVersions.sequence, content: listingVersions.content }).from(listingVersions).where(and(eq(listingVersions.workspaceId, workspaceId), eq(listingVersions.id, listing.activeVersionId))).limit(1))[0] ?? null
+        : null;
+      const rows = activeVersion
+        ? await transaction.select({ code: complianceFlags.code, severity: complianceFlags.severity, status: complianceFlags.status, details: complianceFlags.details }).from(complianceFlags).where(and(eq(complianceFlags.workspaceId, workspaceId), eq(complianceFlags.listingVersionId, activeVersion.id)))
+        : [];
+      const flags: ComplianceFlag[] = rows.flatMap((row): ComplianceFlag[] => {
+        const details = (row.details ?? {}) as Record<string, unknown>;
+        if ((row.severity !== "blocking" && row.severity !== "warning") || (row.status !== "open" && row.status !== "resolved")) return [];
+        const idValue = typeof details.id === "string" ? details.id : `${row.code}:${String(details.field ?? "unknown")}`;
+        const field = typeof details.field === "string" ? details.field : "unknown";
+        if (row.status === "resolved") {
+          const reason = typeof details.resolutionReason === "string" ? details.resolutionReason : "";
+          return [{ id: idValue, field, rule: row.code as ComplianceFlag["rule"], severity: row.severity as "blocking" | "warning", status: "resolved", resolutionReason: reason }];
+        }
+        return [{ id: idValue, field, rule: row.code as ComplianceFlag["rule"], severity: row.severity as "blocking" | "warning", status: "open", resolutionReason: null }];
+      });
+      const parsedContent = activeVersion ? canonicalListingSchema.safeParse(activeVersion.content) : null;
+      if (activeVersion && !parsedContent?.success) throw new Error("active listing version content is invalid");
+      return { id: listing.id, target: "shopline" as const, status: listing.status as ListingStatus, activeVersion: activeVersion && parsedContent?.success ? { id: activeVersion.id, sequence: activeVersion.sequence, content: parsedContent.data } : null, flags };
+    },
+
+    async beginPublish(id, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.status === "publishing") return;
+      const next = await transitionListing(listing.status, "begin_publish", context, audit);
+      const updated = await transaction.update(listingDrafts).set({ status: next, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status))).returning({ id: listingDrafts.id });
+      if (updated.length !== 1) throw new Error("listing status changed while beginning publish");
+    },
+
+    async markPublished(id, versionId, remoteProductId, payloadDigest, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.status === "published" && listing.activeVersionId === versionId) return;
+      if (listing.status !== "publishing") throw new Error("listing is not publishing");
+      const next = await transitionListing(listing.status, "publish_succeeded", context, audit);
+      const updated = await transaction.update(listingDrafts).set({ status: next, activeVersionId: versionId, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status))).returning({ id: listingDrafts.id });
+      if (updated.length !== 1) throw new Error("listing status changed while completing publish");
+      await audit.write({ ...context, action: "listing.published", metadata: { versionId, remoteProductId, payloadDigest } });
+    },
+
+    async markPublishFailed(id, versionId, errorCode, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.status === "publish_failed") return;
+      if (listing.status !== "publishing") throw new Error("listing is not publishing");
+      const next = await transitionListing(listing.status, "publish_failed", context, audit);
+      const updated = await transaction.update(listingDrafts).set({ status: next, activeVersionId: versionId, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status))).returning({ id: listingDrafts.id });
+      if (updated.length !== 1) throw new Error("listing status changed while failing publish");
+      await audit.write({ ...context, action: "listing.publish_failed", metadata: { versionId, errorCode } });
+    },
     async startProcessing(id, context, audit) {
       scope.assertOpen();
       const listing = await this.requireById(id);

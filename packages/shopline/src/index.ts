@@ -20,3 +20,13 @@ export type {
 } from "./validation.js";
 
 export { SHOPLINE_CSV_SPEC_VERSION, createShoplineCsv } from "./csv.js";
+export type {
+  CommerceConnector,
+  ConnectorErrorCode,
+  ConnectorFetch,
+} from "./connector.js";
+export {
+  ShoplineConnector,
+  ShoplineError,
+  type ShoplineConnectorOptions,
+} from "./shopline-connector.js";

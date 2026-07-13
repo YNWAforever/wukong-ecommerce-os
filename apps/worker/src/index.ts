@@ -39,3 +39,14 @@ export {
 } from "./listing-pipeline.js";
 
 export { startListingPipelineWorker, type ListingWorkerRuntime, type ListingWorkerRuntimeConfig } from "./runtime.js";
+export {
+  PublishDeliveryError,
+  publishApprovedProduct,
+  type PublishDependencies,
+  type PublishErrorCode,
+  type PublishJobRecord,
+  type PublishListingSnapshot,
+  type PublishProductInput,
+  type PublishRepositories,
+  type PublishResult,
+} from "./publish-product.js";

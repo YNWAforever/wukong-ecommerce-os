@@ -14,6 +14,7 @@ import {
   createSourceAssetRepository,
   type SourceAssetRepository,
 } from "./repositories/source-assets.js";
+import { createPublishJobRepository, type PublishJobRepository } from "./repositories/publish-jobs.js";
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
@@ -28,6 +29,7 @@ export type WorkspaceScope = {
 export type WorkspaceRepositories = {
   listings: ListingRepository;
   sourceAssets: SourceAssetRepository;
+  publishJobs: PublishJobRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
@@ -91,6 +93,7 @@ export function createDatabase(
       const repositories: WorkspaceRepositories = {
         listings: createListingRepository(transaction, workspaceId, scope),
         sourceAssets: createSourceAssetRepository(transaction, workspaceId, scope),
+        publishJobs: createPublishJobRepository(transaction, workspaceId, scope),
         pipelineRuns: createPipelineRunRepository(transaction, workspaceId, scope),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),

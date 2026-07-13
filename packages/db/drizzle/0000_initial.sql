@@ -218,6 +218,8 @@ CREATE TABLE IF NOT EXISTS publish_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   listing_id uuid NOT NULL,
+  version_id uuid,
+  payload_digest text,
   connection_id uuid NOT NULL,
   status text NOT NULL CHECK (status IN ('queued', 'running', 'published', 'failed')),
   idempotency_key text NOT NULL,
@@ -349,6 +351,16 @@ ALTER TABLE ai_runs
   ADD CONSTRAINT ai_runs_workspace_prompt_version_fkey
     FOREIGN KEY (workspace_id, prompt_version_id)
     REFERENCES prompt_versions (workspace_id, id);
+
+ALTER TABLE publish_jobs ADD COLUMN IF NOT EXISTS version_id uuid;
+ALTER TABLE publish_jobs ADD COLUMN IF NOT EXISTS payload_digest text;
+CREATE INDEX IF NOT EXISTS publish_jobs_workspace_version_idx ON publish_jobs (workspace_id, version_id);
+ALTER TABLE publish_jobs
+  DROP CONSTRAINT IF EXISTS publish_jobs_workspace_version_fkey,
+  ADD CONSTRAINT publish_jobs_workspace_version_fkey
+    FOREIGN KEY (workspace_id, version_id)
+    REFERENCES listing_versions (workspace_id, id)
+    ON DELETE RESTRICT;
 
 ALTER TABLE publish_jobs
   DROP CONSTRAINT IF EXISTS publish_jobs_listing_id_fkey,

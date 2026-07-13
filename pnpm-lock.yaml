@@ -75,6 +75,9 @@ importers:
       '@wukong/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wukong/shopline':
+        specifier: workspace:*
+        version: link:../../packages/shopline
       bullmq:
         specifier: ^5.80.1
         version: 5.80.1

@@ -323,6 +323,8 @@ export const publishJobs = pgTable("publish_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
   listingId: uuid("listing_id").notNull(),
+  versionId: uuid("version_id"),
+  payloadDigest: text("payload_digest"),
   connectionId: uuid("connection_id").notNull(),
   status: text("status").notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
@@ -337,6 +339,7 @@ export const publishJobs = pgTable("publish_jobs", {
   ),
   index("publish_jobs_workspace_status_idx").on(table.workspaceId, table.status),
   index("publish_jobs_workspace_listing_idx").on(table.workspaceId, table.listingId),
+  index("publish_jobs_workspace_version_idx").on(table.workspaceId, table.versionId),
   index("publish_jobs_workspace_connection_idx").on(
     table.workspaceId,
     table.connectionId,
@@ -346,6 +349,11 @@ export const publishJobs = pgTable("publish_jobs", {
     columns: [table.workspaceId, table.listingId],
     foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
   }).onDelete("cascade"),
+  foreignKey({
+    name: "publish_jobs_workspace_version_fkey",
+    columns: [table.workspaceId, table.versionId],
+    foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+  }).onDelete("restrict"),
   foreignKey({
     name: "publish_jobs_workspace_connection_fkey",
     columns: [table.workspaceId, table.connectionId],

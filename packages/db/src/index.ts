@@ -20,3 +20,4 @@ export type { AiRunRepository, AppendAiRunInput } from "./repositories/ai-runs.j
 export type { WorkspaceRepository } from "./repositories/workspaces.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";
+export type { PublishJob, PublishJobRepository, PublishJobStatus, EnsurePublishJobInput } from "./repositories/publish-jobs.js";

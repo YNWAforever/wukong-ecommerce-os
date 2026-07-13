@@ -432,6 +432,7 @@ describe("workspace isolation", () => {
       ["listing_versions", ["workspace_id", "listing_id"], "listing_drafts"],
       ["publish_jobs", ["workspace_id", "connection_id"], "shopline_connections"],
       ["publish_jobs", ["workspace_id", "listing_id"], "listing_drafts"],
+      ["publish_jobs", ["workspace_id", "version_id"], "listing_versions"],
       ["review_events", ["workspace_id", "listing_id"], "listing_drafts"],
       ["source_assets", ["workspace_id", "listing_id"], "listing_drafts"],
     ];
