@@ -40,7 +40,7 @@ export type PipelineRunRepository = {
     listingId: string;
     activeVersionSequence: number;
     step: PipelineStepName;
-    leaseToken: string;
+    leaseToken?: string;
     status: PipelineResult["status"];
     versionId: string | null;
   }): Promise<void>;
@@ -120,6 +120,43 @@ export function createPipelineRunRepository(
         ),
     );
 
+  const completedStepExists = (runId: unknown, step: PipelineStepName) =>
+    exists(
+      transaction
+        .select({ one: sql.raw("1") })
+        .from(listingPipelineSteps)
+        .where(
+          and(
+            eq(listingPipelineSteps.workspaceId, workspaceId),
+            eq(listingPipelineSteps.pipelineRunId, runId as never),
+            eq(listingPipelineSteps.step, step),
+            eq(listingPipelineSteps.state, "completed"),
+          ),
+        ),
+    );
+
+  const runningStepExists = (runId: unknown) =>
+    exists(
+      transaction
+        .select({ one: sql.raw("1") })
+        .from(listingPipelineSteps)
+        .where(
+          and(
+            eq(listingPipelineSteps.workspaceId, workspaceId),
+            eq(listingPipelineSteps.pipelineRunId, runId as never),
+            eq(listingPipelineSteps.state, "running"),
+          ),
+        ),
+    );
+
+  const stepCanComplete = (
+    runId: unknown,
+    step: PipelineStepName,
+    leaseToken: string | undefined,
+  ) =>
+    leaseToken
+      ? stepLeaseExists(runId, step, leaseToken)
+      : and(completedStepExists(runId, step), not(runningStepExists(runId)));
   return {
     async getCompleted(key) {
       scope.assertOpen();
@@ -327,7 +364,7 @@ export function createPipelineRunRepository(
               listingPipelineRuns.activeVersionSequence,
               input.activeVersionSequence,
             ),
-            stepLeaseExists(
+            stepCanComplete(
               listingPipelineRuns.id,
               input.step,
               input.leaseToken,

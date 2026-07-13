@@ -89,6 +89,32 @@ describe("listing pipeline run repository", () => {
     expect(snapshot.state).toMatchObject({ status: "failed", errorCode: "provider_timeout" });
     });
 
+  it("completes a run from a cached completed step without a lease token", async () => {
+    const result = await forWorkspace(database, "ws_pipeline_cached", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const input = {
+        idempotencyKey: "listing:ws_pipeline_cached:" + listing.id + ":0",
+        listingId: listing.id,
+        activeVersionSequence: 0,
+        step: "generated" as const,
+      };
+      const claim = await repos.pipelineRuns.claimStep(input);
+      await repos.pipelineRuns.recordStep({
+        ...input,
+        leaseToken: claim.leaseToken!,
+        output: { versionId: null },
+      });
+      await repos.pipelineRuns.complete({
+        ...input,
+        leaseToken: undefined,
+        status: "needs_info",
+        versionId: null,
+      });
+      return repos.pipelineRuns.getCompleted(input.idempotencyKey);
+    });
+    expect(result).toEqual({ status: "needs_info", versionId: null });
+  });
+
   it("does not let a stale worker release a reclaimed step owned by a newer worker", async () => {
     const initial = await forWorkspace(database, "ws_pipeline_lease", async (repos) => {
       const listing = await repos.listings.create({ target: "shopline" });

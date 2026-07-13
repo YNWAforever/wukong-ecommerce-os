@@ -6,6 +6,7 @@ import {
   fieldEvidence,
   listingDrafts,
   listingVersions,
+  listingPipelineSteps,
   sourceAssets,
 } from "./schema.js";
 
@@ -22,6 +23,10 @@ function foreignKeyMetadata(table: Parameters<typeof getTableConfig>[0]) {
 }
 
 describe("nullable tenant relationships", () => {
+  it("persists a non-null lease token for every pipeline step", () => {
+    expect(getTableColumns(listingPipelineSteps).leaseToken.notNull).toBe(true);
+  });
+
   it("allows a finalized source asset to exist before listing creation", () => {
     expect(getTableColumns(sourceAssets).listingId.notNull).toBe(false);
   });

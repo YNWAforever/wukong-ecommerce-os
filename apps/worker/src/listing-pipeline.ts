@@ -26,7 +26,7 @@ export type PipelineRepositories = {
     getCompleted(idempotencyKey: string): Promise<PipelineResult | null>;
     claimStep(input: { idempotencyKey: string; listingId: string; activeVersionSequence: number; step: PipelineStepName }): Promise<{ claimed: boolean; completed: boolean; output: unknown; leaseToken: string | null }>;
     recordStep(input: { idempotencyKey: string; listingId: string; activeVersionSequence: number; step: PipelineStepName; leaseToken: string; output?: unknown }): Promise<void>;
-    complete(input: { idempotencyKey: string; listingId: string; activeVersionSequence: number; step: PipelineStepName; leaseToken: string; status: PipelineResult["status"]; versionId: string | null }): Promise<void>;
+    complete(input: { idempotencyKey: string; listingId: string; activeVersionSequence: number; step: PipelineStepName; leaseToken?: string; status: PipelineResult["status"]; versionId: string | null }): Promise<void>;
     fail(input: { idempotencyKey: string; listingId: string; activeVersionSequence: number; step: PipelineStepName; errorCode: PipelineErrorCode; leaseToken?: string }): Promise<boolean>;
     releaseStep(input: { idempotencyKey: string; step: PipelineStepName; leaseToken: string }): Promise<void>;
   };
@@ -105,7 +105,6 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
     }
     let extraction: ExtractionResult;
     if (extractionClaim.completed && cachedExtraction) {
-      if (!extractionLeaseToken) throw new Error("completed extraction lease missing");
       extraction = cachedExtraction;
       completionStep = "extracted";
       completionLeaseToken = extractionLeaseToken;
@@ -132,7 +131,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
     }
 
     if (extraction.missingFields.length > 0) {
-      if (!completionStep || !completionLeaseToken) throw new Error("pipeline completion lease missing");
+      if (!completionStep) throw new Error("pipeline completion step missing");
       const result: PipelineResult = { status: "needs_info", versionId: null };
       await deps.withWorkspace(input.workspaceId, async (repos) => {
         await repos.listings.complete(input.draftId, { ...result, idempotencyKey }, context(input), repos.audit);
@@ -141,7 +140,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
           listingId: input.draftId,
           activeVersionSequence: input.activeVersionSequence,
           step: completionStep!,
-          leaseToken: completionLeaseToken!,
+          leaseToken: completionLeaseToken ?? undefined,
           status: result.status,
           versionId: result.versionId,
         });
@@ -164,7 +163,6 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
       claimedLeaseToken = generationLeaseToken;
     }
     if (generationClaim.completed && cachedGenerated) {
-      if (!generationLeaseToken) throw new Error("completed generation lease missing");
       completionStep = "generated";
       completionLeaseToken = generationLeaseToken;
       const result: PipelineResult = { status: "in_review", versionId: cachedGenerated.versionId };
@@ -175,7 +173,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
           listingId: input.draftId,
           activeVersionSequence: input.activeVersionSequence,
           step: completionStep!,
-          leaseToken: completionLeaseToken!,
+          leaseToken: completionLeaseToken ?? undefined,
           status: result.status,
           versionId: result.versionId,
         });
@@ -218,7 +216,7 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
         listingId: input.draftId,
         activeVersionSequence: input.activeVersionSequence,
         step: completionStep,
-        leaseToken: completionLeaseToken,
+        leaseToken: completionLeaseToken ?? undefined,
         status: completedResult.status,
         versionId: completedResult.versionId,
       });

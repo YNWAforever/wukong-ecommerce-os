@@ -36,6 +36,27 @@ describe("listing pipeline recovery contract", () => {
     expect(state.audits).not.toContain("listing.pipeline_failed");
   });
 
+  it("reuses completed cached steps when the repository omits a lease token", async () => {
+    const { deps, state } = makeHarness({
+      completeErrorOnce: new Error("simulated completion crash"),
+      nullLeaseTokenForCompleted: true,
+    });
+    const input = { workspaceId, draftId, activeVersionSequence: 0 };
+
+    await expect(runListingPipeline(input, deps, { attempt: 1, maxAttempts: 2 })).rejects.toThrow("simulated completion crash");
+    const counts = { ai: state.aiRuns.length, versions: state.versions.length, audits: state.audits.length };
+
+    await expect(runListingPipeline(input, deps, { attempt: 2, maxAttempts: 2 })).resolves.toEqual({
+      status: "in_review",
+      versionId: "version_1",
+    });
+    expect({ ai: state.aiRuns.length, versions: state.versions.length }).toEqual({
+      ai: counts.ai,
+      versions: counts.versions,
+    });
+    expect(state.audits.length).toBe(counts.audits + 1);
+  });
+
   it("returns null versionId for needs_info", async () => {
     const { deps } = makeHarness({ missingFields: ["priceHkd"] });
     await expect(runListingPipeline({ workspaceId, draftId, activeVersionSequence: 0 }, deps)).resolves.toEqual({ status: "needs_info", versionId: null });
