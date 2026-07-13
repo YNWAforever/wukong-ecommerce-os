@@ -1,6 +1,8 @@
 export {
   createDatabase,
+  createAuthDatabase,
   forWorkspace,
+  type AuthDatabase,
   type Database,
   type DatabaseOptions,
   type WorkspaceRepositories,

@@ -36,18 +36,24 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name"),
-  createdAt: timestamps.createdAt,
+  emailVerified: timestamp("email_verified", { withTimezone: true }),
+  image: text("image"),  createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 });
 
 export const accounts = pgTable("accounts", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  type: text("type").notNull(),
   provider: text("provider").notNull(),
   providerAccountId: text("provider_account_id").notNull(),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  refresh_token: text("refresh_token"),
+  access_token: text("access_token"),
+  expires_at: integer("expires_at"),
+  token_type: text("token_type"),
+  scope: text("scope"),
+  id_token: text("id_token"),
+  session_state: text("session_state"),
   createdAt: timestamps.createdAt,
 }, (table) => [
   uniqueIndex("accounts_provider_account_uq").on(table.provider, table.providerAccountId),
@@ -57,14 +63,23 @@ export const accounts = pgTable("accounts", {
 export const sessions = pgTable("sessions", {
   sessionToken: text("session_token").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  expires: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, (table) => [index("sessions_user_id_idx").on(table.userId)]);
 
 export const verificationTokens = pgTable("verification_tokens", {
   identifier: text("identifier").notNull(),
   token: text("token").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  expires: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, (table) => [primaryKey({ columns: [table.identifier, table.token] })]);
+
+export const authAuditEvents = pgTable("auth_audit_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull(),
+  userId: text("user_id"),
+  outcome: text("outcome").notNull(),
+  reason: text("reason"),
+  createdAt: timestamps.createdAt,
+}, (table) => [index("auth_audit_events_email_created_idx").on(table.email, table.createdAt)]);
 
 export const memberships = pgTable("memberships", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -75,6 +90,18 @@ export const memberships = pgTable("memberships", {
 }, (table) => [
   uniqueIndex("memberships_workspace_user_uq").on(table.workspaceId, table.userId),
   index("memberships_user_id_idx").on(table.userId),
+]);
+
+export const workspaceInvites = pgTable("workspace_invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  email: text("email").notNull(),
+  role: text("role").notNull(),
+  status: text("status").default("pending").notNull(),
+  createdAt: timestamps.createdAt,
+}, (table) => [
+  uniqueIndex("workspace_invites_workspace_email_uq").on(table.workspaceId, table.email),
+  index("workspace_invites_workspace_status_idx").on(table.workspaceId, table.status),
 ]);
 
 const listingVersionWorkspaceId = (): AnyPgColumn =>

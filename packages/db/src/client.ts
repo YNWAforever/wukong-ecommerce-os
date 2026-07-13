@@ -18,6 +18,7 @@ import { createPublishJobRepository, type PublishJobRepository } from "./reposit
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
+export type AuthDatabase = DrizzleClient;
 export type WorkspaceTransaction = Parameters<
   Parameters<DrizzleClient["transaction"]>[0]
 >[0];
@@ -135,6 +136,24 @@ export function createDatabase(
       await client.end();
     },
   };
+}
+
+/**
+ * Creates the unscoped database handle used only by Auth.js and provisioning.
+ * Tenant application queries must continue through `createDatabase().forWorkspace`.
+ */
+export function createAuthDatabase(url: string): AuthDatabase & { close(): Promise<void> } {
+  if (!url) throw new Error("database URL is required");
+  const client = postgres(url, {
+    connect_timeout: 10,
+    idle_timeout: 20,
+    max: 4,
+    max_lifetime: 60 * 30,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
+  const authDb = drizzle(client, { schema });
+  return Object.assign(authDb, { close: () => client.end() });
 }
 
 export async function forWorkspace<T>(
