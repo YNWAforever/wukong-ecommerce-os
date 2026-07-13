@@ -104,6 +104,7 @@ describe("publishApprovedProduct", () => {
     expect(harness.connector.createProduct).toHaveBeenCalledTimes(1);
     expect(harness.state.listing.status).toBe("published");
     expect(harness.state.jobs[0]).toMatchObject({ status: "published", remoteProductId: "remote_123", payloadDigest: result.payloadDigest });
+    expect(harness.state.jobs[0].connectionId).toBe(VALID_CONNECTION_ID);
     expect(JSON.stringify(harness.state.jobs[0])).not.toContain("Demo Estate Riesling");
     expect(harness.audits.map((entry) => entry.action)).toContain("listing.published");
   });

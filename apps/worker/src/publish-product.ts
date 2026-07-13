@@ -202,7 +202,6 @@ export async function publishApprovedProduct(
       throw new PublishDeliveryError("invalid_payload");
     }
     const payloadDigest = digestPayload(payload);
-    const connectionId = input.connectionId ?? "shopline-default";
     const job = await repositories.publishJobs.ensure({
       listingId: listing.id,
       versionId,
