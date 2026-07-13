@@ -3,6 +3,28 @@ import { PipelineTimeoutError, runListingPipeline } from "./listing-pipeline.js"
 import { draftId, listing, makeHarness, makeProvider, workspaceId } from "./pipeline-test-support.js";
 
 describe("listing pipeline recovery contract", () => {
+  it("leaves a processing listing retryable when source reads fail before a step claim", async () => {
+    const { deps, state } = makeHarness({ sourceError: new Error("source asset store unavailable") });
+    const input = { workspaceId, draftId, activeVersionSequence: 0 };
+
+    await expect(runListingPipeline(input, deps, { attempt: 1, maxAttempts: 3 })).rejects.toThrow("source asset store unavailable");
+
+    expect(state.status).toBe("processing");
+    expect(state.failure).toBeUndefined();
+    expect(state.audits).not.toContain("listing.pipeline_failed");
+  });
+
+  it("leaves a processing listing retryable when completion fails after generated step recording", async () => {
+    const { deps, state } = makeHarness({ completeError: new Error("listing completion audit unavailable") });
+    const input = { workspaceId, draftId, activeVersionSequence: 0 };
+
+    await expect(runListingPipeline(input, deps, { attempt: 1, maxAttempts: 3 })).rejects.toThrow("listing completion audit unavailable");
+
+    expect(state.status).toBe("processing");
+    expect(state.failure).toBeUndefined();
+    expect(state.steps.get("generated")).toEqual(expect.objectContaining({ state: "completed" }));
+    expect(state.audits).not.toContain("listing.pipeline_failed");
+  });
   it("returns null versionId for needs_info", async () => {
     const { deps } = makeHarness({ missingFields: ["priceHkd"] });
     await expect(runListingPipeline({ workspaceId, draftId, activeVersionSequence: 0 }, deps)).resolves.toEqual({ status: "needs_info", versionId: null });

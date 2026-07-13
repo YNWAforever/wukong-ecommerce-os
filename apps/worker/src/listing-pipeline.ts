@@ -111,8 +111,8 @@ export async function runListingPipeline(input: ListingPipelineInput, deps: Pipe
     return result;
   } catch (error) {
     await deps.withWorkspace(input.workspaceId, async (repos) => {
-      if (attempt < maxAttempts && claimedStep === activeStep) await repos.pipelineRuns.releaseStep({ idempotencyKey, step: activeStep });
-      else { const errorCode = classifyError(error); await repos.pipelineRuns.fail({ idempotencyKey, listingId: input.draftId, activeVersionSequence: input.activeVersionSequence, errorCode }); await repos.listings.fail(input.draftId, errorCode, context(input), repos.audit); }
+      if (attempt >= maxAttempts) { const errorCode = classifyError(error); await repos.pipelineRuns.fail({ idempotencyKey, listingId: input.draftId, activeVersionSequence: input.activeVersionSequence, errorCode }); await repos.listings.fail(input.draftId, errorCode, context(input), repos.audit); }
+      else if (claimedStep === activeStep) await repos.pipelineRuns.releaseStep({ idempotencyKey, step: activeStep });
     });
     throw error;
   }
