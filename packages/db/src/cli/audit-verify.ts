@@ -17,6 +17,7 @@ export type AuditVerificationResult = {
   missingActions: string[];
   aiRunTasks: string[];
   accessibleForeignRecordCount: number;
+  accessibleForeignTables: string[];
   passed: boolean;
 };
 
@@ -63,14 +64,32 @@ export async function verifyAudit(input: AuditVerifyInput): Promise<AuditVerific
         where workspace_id = ${input.workspaceId} and listing_id::text = ${input.draftId}
         order by created_at asc, id asc
       `;
-      const foreignRows = await transaction<{ count: number }[]>`
-        select (
-          (select count(*) from audit_events where workspace_id <> ${input.workspaceId} and entity_id = ${input.draftId}) +
-          (select count(*) from ai_runs where workspace_id <> ${input.workspaceId} and listing_id::text = ${input.draftId}) +
-          (select count(*) from listing_drafts where workspace_id <> ${input.workspaceId} and id::text = ${input.draftId}) +
-          (select count(*) from listing_versions where workspace_id <> ${input.workspaceId} and listing_id::text = ${input.draftId}) +
-          (select count(*) from publish_jobs where workspace_id <> ${input.workspaceId} and listing_id::text = ${input.draftId})
-        )::int as count
+      // Probe every tenant-scoped table, not only rows linked to this draft. RLS
+      // should make all rows with another workspace invisible to the runtime role.
+      // Running with an admin URL intentionally exposes any leaked foreign rows.
+      const foreignRows = await transaction<{ source: string; count: number }[]>`
+        select source, count::int
+        from (
+          select 'workspaces' as source, count(*)::bigint as count
+          from workspaces
+          where id <> ${input.workspaceId}
+          union all select 'memberships', count(*) from memberships where workspace_id <> ${input.workspaceId}
+          union all select 'workspace_invites', count(*) from workspace_invites where workspace_id <> ${input.workspaceId}
+          union all select 'listing_drafts', count(*) from listing_drafts where workspace_id <> ${input.workspaceId}
+          union all select 'listing_versions', count(*) from listing_versions where workspace_id <> ${input.workspaceId}
+          union all select 'source_assets', count(*) from source_assets where workspace_id <> ${input.workspaceId}
+          union all select 'field_evidence', count(*) from field_evidence where workspace_id <> ${input.workspaceId}
+          union all select 'compliance_flags', count(*) from compliance_flags where workspace_id <> ${input.workspaceId}
+          union all select 'prompt_versions', count(*) from prompt_versions where workspace_id <> ${input.workspaceId}
+          union all select 'ai_runs', count(*) from ai_runs where workspace_id <> ${input.workspaceId}
+          union all select 'shopline_connections', count(*) from shopline_connections where workspace_id <> ${input.workspaceId}
+          union all select 'publish_jobs', count(*) from publish_jobs where workspace_id <> ${input.workspaceId}
+          union all select 'review_events', count(*) from review_events where workspace_id <> ${input.workspaceId}
+          union all select 'audit_events', count(*) from audit_events where workspace_id <> ${input.workspaceId}
+          union all select 'listing_pipeline_runs', count(*) from listing_pipeline_runs where workspace_id <> ${input.workspaceId}
+          union all select 'listing_pipeline_steps', count(*) from listing_pipeline_steps where workspace_id <> ${input.workspaceId}
+        ) as counts
+        where count > 0
       `;
       const actions = auditRows.map((row) => row.action);
       const aiRunTasks = aiRows.map((row) => row.task);
@@ -78,7 +97,8 @@ export async function verifyAudit(input: AuditVerifyInput): Promise<AuditVerific
       for (const task of ["extract", "generate"] as const) {
         if (!aiRunTasks.includes(task)) missingActions.push(`ai_runs.${task}`);
       }
-      const accessibleForeignRecordCount = toCount(foreignRows[0] ?? {});
+      const accessibleForeignRecordCount = foreignRows.reduce((total, row) => total + toCount(row), 0);
+      const accessibleForeignTables = foreignRows.map((row) => row.source);
       return {
         workspaceId: input.workspaceId,
         draftId: input.draftId,
@@ -86,6 +106,7 @@ export async function verifyAudit(input: AuditVerifyInput): Promise<AuditVerific
         missingActions,
         aiRunTasks,
         accessibleForeignRecordCount,
+        accessibleForeignTables,
         passed: missingActions.length === 0 && accessibleForeignRecordCount === 0,
       };
     });
@@ -112,6 +133,7 @@ export async function main(args: readonly string[] = process.argv.slice(2)): Pro
     console.log(`missing action count: ${result.missingActions.length}`);
     if (result.missingActions.length) console.log(`missing: ${result.missingActions.join(", ")}`);
     console.log(`accessible foreign record count: ${result.accessibleForeignRecordCount}`);
+    if (result.accessibleForeignTables.length) console.log(`accessible foreign tables: ${result.accessibleForeignTables.join(", ")}`);
     return result.passed ? 0 : 1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "pnpm build && node dist/cli.js",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src",
     "test:integration": "vitest run src/queue.integration.test.ts",

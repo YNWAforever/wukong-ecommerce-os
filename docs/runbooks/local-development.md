@@ -37,12 +37,19 @@ In separate PowerShell windows (keep the dependency window running):
 pnpm.cmd --filter @wukong/web dev
 ```
 
-The worker runtime requires a database, Redis, object storage bucket, and an AI provider. For a local fake-AI run, inject a fake `ListingAIProvider` in the worker harness; the production runtime intentionally requires `OPENAI_API_KEY` and never silently falls back to fake output. A minimal local queue smoke check is:
+The worker CLI starts the queue consumer. The fake provider is explicit and deterministic for local synthetic fixtures; production keeps the fail-closed OpenAI requirement:
+
+```powershell
+$env:AI_PROVIDER = "fake"
+pnpm.cmd --filter @wukong/worker build
+pnpm.cmd --filter @wukong/worker start
+```
+
+Unset `AI_PROVIDER` and inject `OPENAI_API_KEY` only through the approved secret manager in production. The worker never silently falls back to fake output. A minimal local queue smoke check is:
 
 ```powershell
 pnpm.cmd --filter @wukong/worker test -- src/queue.integration.test.ts
 ```
-
 ## Verification commands
 
 ```powershell
