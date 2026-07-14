@@ -11,6 +11,7 @@ import {
 
 export type DeliverInput = {
   workspaceId: string;
+  actorId: string;
   draftId: string;
   method: "csv" | "shopline_api";
 };
@@ -29,12 +30,13 @@ export type DeliveryResult =
   | { kind: "approval_required" }
   | { kind: "blocking_flags"; issues: string[] }
   | { kind: "validation_error"; issues: string[] }
-  | { kind: "disconnected"; csvFallback: { method: "csv"; path: string } };
+  | { kind: "disconnected"; csvFallback: { method: "csv"; path: string } }
+  | { kind: "already_published"; remoteProductId: string | null };
 
 export type DeliveryDeps = {
   listings: { requireForPublish(draftId: string): Promise<DeliverySnapshot> };
   imageUrls(assetIds: readonly string[]): Promise<readonly string[]>;
-  audit: { write(event: { action: string; entityId: string; metadata?: Record<string, unknown> }): Promise<void> };
+  audit: { write(event: { workspaceId: string; actorId: string; action: string; entityId: string; metadata?: Record<string, unknown> }): Promise<void> };
   publisher: {
     enqueue(input: {
       workspaceId: string;
@@ -44,6 +46,7 @@ export type DeliveryDeps = {
     }): Promise<string>;
   };
   connection?: { id: string; verified: boolean } | null;
+  existingDelivery?: (idempotencyKey: string) => Promise<{ status: string; remoteProductId: string | null } | null>;
 };
 
 function digest(payload: ShoplineProductPayload): string {
@@ -62,7 +65,7 @@ export async function deliverListing(
   if (listing.target !== "shopline" || !listing.activeVersion || !approved(listing.status)) {
     return { kind: "approval_required" };
   }
-  const blocking = listing.flags.filter((flag) => flag.severity === "blocking" && flag.status === "open");
+  const blocking = listing.flags.filter((flag) => flag.severity === "blocking" && (flag.status === "open" || (flag.status === "resolved" && flag.resolutionReason.trim().length < 10)));
   if (blocking.length > 0) {
     return {
       kind: "blocking_flags",
@@ -86,11 +89,19 @@ export async function deliverListing(
   if (input.method === "csv") {
     const body = createShoplineCsv([validation.value]);
     await deps.audit.write({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
       action: "listing.csv_exported",
       entityId: input.draftId,
       metadata: { versionId: listing.activeVersion.id, specVersion: SHOPLINE_CSV_SPEC_VERSION },
     });
     return { kind: "csv", body, specVersion: SHOPLINE_CSV_SPEC_VERSION, versionId: listing.activeVersion.id };
+  }
+
+  if (listing.status === "published") {
+    const existing = deps.existingDelivery ? await deps.existingDelivery(`${input.workspaceId}:${listing.activeVersion.id}:shopline:create`) : null;
+    if (existing?.status === "published" && existing.remoteProductId) return { kind: "already_published", remoteProductId: existing.remoteProductId };
+    return { kind: "already_published", remoteProductId: null };
   }
 
   if (!deps.connection?.verified) {
@@ -106,6 +117,8 @@ export async function deliverListing(
     payloadDigest: digest(validation.value),
   });
   await deps.audit.write({
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
     action: "listing.publish_queued",
     entityId: input.draftId,
     metadata: { versionId: listing.activeVersion.id, jobId },

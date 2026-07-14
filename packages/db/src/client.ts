@@ -15,6 +15,7 @@ import {
   type SourceAssetRepository,
 } from "./repositories/source-assets.js";
 import { createPublishJobRepository, type PublishJobRepository } from "./repositories/publish-jobs.js";
+import { createShoplineConnectionRepository, type ShoplineConnectionRepository } from "./repositories/shopline-connections.js";
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
@@ -31,6 +32,7 @@ export type WorkspaceRepositories = {
   listings: ListingRepository;
   sourceAssets: SourceAssetRepository;
   publishJobs: PublishJobRepository;
+  shoplineConnections: ShoplineConnectionRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
@@ -95,6 +97,7 @@ export function createDatabase(
         listings: createListingRepository(transaction, workspaceId, scope),
         sourceAssets: createSourceAssetRepository(transaction, workspaceId, scope),
         publishJobs: createPublishJobRepository(transaction, workspaceId, scope),
+        shoplineConnections: createShoplineConnectionRepository(transaction, workspaceId, scope),
         pipelineRuns: createPipelineRunRepository(transaction, workspaceId, scope),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
