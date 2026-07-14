@@ -1,0 +1,17 @@
+SYNTHETIC PILOT FIXTURE — NOT CUSTOMER DATA
+
+Producer: Opak Cellar
+SKU: OPAK-DEMO-001
+Product type: wine
+Country: Germany
+Region: Mosel
+Vintage: 2024
+Grape: Riesling
+Volume: 750 ml
+ABV: 12.5%
+Retail price: HK$288
+
+Critic score: not provided
+Stock quantity: not provided
+
+This fixture is intentionally limited to facts a supplier sheet can support.
