@@ -34,7 +34,7 @@ jobs:
           --health-timeout 2s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://wukong:wukong@localhost:54329/wukong
+      DATABASE_URL: postgres://wukong_app:wukong-app-local@localhost:54329/wukong
       DATABASE_ADMIN_URL: postgres://wukong:wukong@localhost:54329/wukong
       TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@localhost:54329/wukong
       TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@localhost:54329/wukong

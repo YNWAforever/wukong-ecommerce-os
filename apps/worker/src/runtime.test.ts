@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Queue, Worker } from "bullmq";
 import type { AssetStore } from "@wukong/assets";
-import type { ListingAIProvider } from "@wukong/ai";
+import { FakeListingProvider, type ListingAIProvider } from "@wukong/ai";
 import type { Database } from "@wukong/db";
 import { startListingPipelineWorker } from "./runtime.js";
 
@@ -14,6 +14,22 @@ describe("startListingPipelineWorker", () => {
     await expect(startListingPipelineWorker({ databaseUrl: "postgres://test" })).rejects.toThrow(/REDIS_URL is required/);
   });
 
+  it("selects the explicit fake provider for local runs", async () => {
+    vi.stubEnv("AI_PROVIDER", "fake");
+    const runtime = await startListingPipelineWorker({
+      databaseUrl: "postgres://test",
+      redisUrl: "redis://test",
+      s3Bucket: "bucket",
+      databaseFactory: () => database,
+      assetStoreFactory: () => assetStore,
+      redisFactory: () => ({ quit: vi.fn(async () => "OK") } as never),
+      queueFactory: () => ({ close: vi.fn(async () => undefined) } as unknown as Queue),
+      workerFactory: () => ({ close: vi.fn(async () => undefined) } as unknown as Worker),
+    });
+    expect(runtime.dependencies.ai).toBeInstanceOf(FakeListingProvider);
+    await runtime.close();
+    vi.unstubAllEnvs();
+  });
   it("composes injectable database, asset, provider, Redis, queue, and worker seams without network calls", async () => {
     const closeWorker = vi.fn(async () => undefined);
     const closeQueue = vi.fn(async () => undefined);

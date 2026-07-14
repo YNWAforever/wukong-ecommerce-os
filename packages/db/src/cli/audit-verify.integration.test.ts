@@ -5,9 +5,10 @@ import { describe, expect, it } from "vitest";
 import { verifyAudit } from "./audit-verify.js";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ?? process.env.DATABASE_ADMIN_URL ?? "postgres://wukong:wukong@localhost:54329/wukong";
+const runtimeUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
-describe.skipIf(!adminUrl)("audit foreign-table probe", () => {
-  it("reports an accessible foreign tenant row instead of a draft-only false zero", async () => {
+describe.skipIf(!adminUrl || !runtimeUrl)("audit foreign-table probe", () => {
+  it("does not expose foreign tenant rows through the runtime role", async () => {
     const admin = postgres(adminUrl!, { max: 1, prepare: false });
     const workspaceId = `audit_probe_${randomUUID().slice(0, 8)}`;
     let draftId = "";
@@ -19,9 +20,9 @@ describe.skipIf(!adminUrl)("audit foreign-table probe", () => {
         await transaction`insert into source_assets (workspace_id, listing_id, storage_key, kind, metadata) values (${workspaceId}, ${draftId}, 'audit-probe/fixture.svg', 'image', '{}'::jsonb)`;
       });
 
-      const result = await verifyAudit({ workspaceId: "ws_opak", draftId, url: adminUrl! });
-      expect(result.accessibleForeignRecordCount).toBeGreaterThan(0);
-      expect(result.accessibleForeignTables).toContain("source_assets");
+      const result = await verifyAudit({ workspaceId: "ws_opak", draftId, url: runtimeUrl! });
+      expect(result.accessibleForeignRecordCount).toBe(0);
+      expect(result.accessibleForeignTables).toEqual([]);
       expect(result.passed).toBe(false);
     } finally {
       await admin`delete from workspaces where id = ${workspaceId}`;
