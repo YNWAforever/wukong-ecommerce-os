@@ -1,0 +1,25 @@
+{
+  "name": "wukong-ecommerce-os",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "node --test tests/ci-workflow.test.mjs && turbo run test",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.51.1",
+    "@types/node": "latest",
+    "prettier": "3.9.5",
+    "turbo": "2.10.4",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

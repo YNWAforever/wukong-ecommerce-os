@@ -1,0 +1,70 @@
+{
+  "specVersion": "opak-2026-07",
+  "limits": {
+    "titleMaxLength": 255
+  },
+  "canonicalListing": {
+    "sku": "OPAK-DEMO-001",
+    "producer": "Demo Estate",
+    "productType": "wine",
+    "country": "Germany",
+    "region": "Mosel",
+    "vintage": 2024,
+    "grapeVarieties": ["Riesling"],
+    "volumeMl": 750,
+    "abvPercent": 12.5,
+    "packQuantity": 1,
+    "priceHkd": 288,
+    "stockQuantity": null,
+    "criticScores": [],
+    "awards": [],
+    "title": {
+      "en": "Demo Estate Riesling 2024",
+      "zh-Hant": "Demo Estate 雷司令 2024"
+    },
+    "description": {
+      "en": "Dry Riesling from the Mosel.",
+      "zh-Hant": "摩澤爾乾身雷司令。"
+    },
+    "seo": {
+      "title": {
+        "en": "Demo Estate Riesling 2024",
+        "zh-Hant": "Demo Estate 雷司令 2024"
+      },
+      "description": {
+        "en": "Shop Demo Estate Riesling 2024 from Mosel.",
+        "zh-Hant": "選購來自摩澤爾的 Demo Estate 雷司令 2024。"
+      }
+    },
+    "tags": ["Riesling", "Mosel"],
+    "imageAssetIds": ["asset_1"]
+  },
+  "imageUrls": ["https://cdn.example.test/opak-demo-001.jpg"],
+  "expectedPayload": {
+    "product": {
+      "sku": "OPAK-DEMO-001",
+      "price": 288,
+      "unlimited_quantity": true,
+      "title_translations": {
+        "en": "Demo Estate Riesling 2024",
+        "zh-hant": "Demo Estate 雷司令 2024"
+      },
+      "description_translations": {
+        "en": "Dry Riesling from the Mosel.",
+        "zh-hant": "摩澤爾乾身雷司令。"
+      },
+      "seo_title_translations": {
+        "en": "Demo Estate Riesling 2024",
+        "zh-hant": "Demo Estate 雷司令 2024"
+      },
+      "seo_description_translations": {
+        "en": "Shop Demo Estate Riesling 2024 from Mosel.",
+        "zh-hant": "選購來自摩澤爾的 Demo Estate 雷司令 2024。"
+      },
+      "tags": ["Riesling", "Mosel"],
+      "images": ["https://cdn.example.test/opak-demo-001.jpg"],
+      "status": false
+    }
+  },
+  "expectedCsv": "SKU,English Title,Traditional Chinese Title,Price,Quantity,Unlimited Quantity,English Description,Traditional Chinese Description,SEO English Title,SEO Traditional Chinese Title,SEO English Description,SEO Traditional Chinese Description,Tags,Images,Status\r\nOPAK-DEMO-001,Demo Estate Riesling 2024,Demo Estate 雷司令 2024,288,,true,Dry Riesling from the Mosel.,摩澤爾乾身雷司令。,Demo Estate Riesling 2024,Demo Estate 雷司令 2024,Shop Demo Estate Riesling 2024 from Mosel.,選購來自摩澤爾的 Demo Estate 雷司令 2024。,Riesling;Mosel,https://cdn.example.test/opak-demo-001.jpg,false\r\n"
+}

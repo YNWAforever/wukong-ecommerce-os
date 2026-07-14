@@ -1,0 +1,28 @@
+{
+  "facts": {
+    "sku": "OPAK-DEMO-001",
+    "producer": "Opak Cellar",
+    "productType": "wine",
+    "country": "Germany",
+    "region": "Mosel",
+    "vintage": 2024,
+    "grapeVarieties": ["Riesling"],
+    "volumeMl": 750,
+    "abvPercent": 12.5,
+    "packQuantity": 1,
+    "priceHkd": 288,
+    "stockQuantity": null,
+    "criticScores": [],
+    "awards": []
+  },
+  "title": {
+    "en": "Opak Cellar Riesling 2024",
+    "zh-Hant": "Opak Cellar 雷司令 2024"
+  },
+  "description": {
+    "en": "A restrained Mosel Riesling from Opak Cellar.",
+    "zh-Hant": "Opak Cellar 摩澤爾雷司令，風格克制。"
+  },
+  "unsupported": ["stockQuantity", "criticScores", "awards"],
+  "synthetic": true
+}

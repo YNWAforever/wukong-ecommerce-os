@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" role="img" aria-labelledby="title desc">
+  <title id="title">Synthetic Opak Cellar bottle label</title>
+  <desc id="desc">Synthetic fixture label with producer, vintage, region, volume, and ABV only.</desc>
+  <rect width="800" height="500" fill="#f4efe5" />
+  <text x="400" y="145" text-anchor="middle" font-family="serif" font-size="40" fill="#18251f">Opak Cellar</text>
+  <text x="400" y="215" text-anchor="middle" font-family="serif" font-size="34" fill="#18251f">Riesling 2024</text>
+  <text x="400" y="280" text-anchor="middle" font-family="sans-serif" font-size="23" fill="#18251f">Mosel · Germany</text>
+  <text x="400" y="345" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#18251f">750 ml · 12.5% ABV</text>
+  <text x="400" y="430" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#63736a">SYNTHETIC PILOT FIXTURE — NOT CUSTOMER DATA</text>
+</svg>
