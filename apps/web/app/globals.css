@@ -154,6 +154,13 @@ button:disabled { cursor: not-allowed; }
 .success-note { margin: 15px 0 0; color: var(--success); font-size: 13px; font-weight: 650; }
 .success-note span { color: var(--muted); font-size: 11px; font-weight: 500; }
 
+.signin-shell { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: linear-gradient(145deg, #f6f4ef 0%, #eee8dc 100%); }
+.signin-card { width: min(100%, 520px); padding: clamp(30px, 6vw, 52px); background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
+.signin-brand { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 26px; color: white; background: var(--navy); border-radius: 12px; font-family: Georgia, serif; font-size: 28px; font-weight: 700; }
+.signin-card h1 { margin: 10px 0 14px; color: var(--navy); font-family: Georgia, "Times New Roman", serif; font-size: clamp(32px, 7vw, 44px); font-weight: 600; letter-spacing: -.025em; line-height: 1.12; }
+.signin-intro { margin: 0 0 28px; color: var(--ink-soft); font-size: 16px; }
+.signin-action { width: 100%; }
+.signin-note { margin: 20px 0 0; color: var(--muted); font-size: 12px; }
 @media (max-width: 800px) {
   .topbar { flex-wrap: wrap; gap: 10px 20px; }
   .topbar nav { order: 3; width: 100%; border-top: 1px solid var(--line); }
