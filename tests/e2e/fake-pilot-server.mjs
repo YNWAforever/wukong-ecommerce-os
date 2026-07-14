@@ -19,7 +19,7 @@ const state=document.querySelector('#state'), message=document.querySelector('#m
 document.querySelector('#create').onclick=()=>{document.querySelector('#intake').hidden=true;review.hidden=false;state.textContent='待補資料';message.textContent='AI 已完成提取；需要補充庫存資料。';};
 document.querySelector('#continue').onclick=()=>{state.textContent='待審核';fields.hidden=false;};
 document.querySelector('#save').onclick=()=>{message.textContent='已更新審核版本';};
-document.querySelector('#approve').onclick=()=>{approved=true;state.textContent='已批准';delivery.hidden=false;csv.disabled=false;publish.disabled=false;message.textContent='批准已記錄';};
+document.querySelector('#approve').onclick=async()=>{const r=await fetch('/api/listings/draft-1/approve',{method:'POST'});if(r.ok){approved=true;state.textContent='已批准';delivery.hidden=false;csv.disabled=false;publish.disabled=false;message.textContent='批准已記錄';}};
 document.querySelector('#csv').onclick=async()=>{const r=await fetch('/api/listings/draft-1/deliver',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({method:'csv'})}); if(r.ok) message.textContent='CSV 已建立';};
 document.querySelector('#publish').onclick=async()=>{const r=await fetch('/api/listings/draft-1/deliver',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({method:'shopline_api'})}); const body=await r.json(); if(r.ok) message.textContent=body.status==='queued'?'queued/mock remote_123':'已發佈';};
 </script></body></html>`;
@@ -34,6 +34,12 @@ const server = http.createServer(async (request, response) => {
     approved = false;
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(page());
+    return;
+  }
+  if (request.method === "POST" && request.url === "/api/listings/draft-1/approve") {
+    approved = true;
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ status: "approved" }));
     return;
   }
   if (request.method === "POST" && request.url === "/api/listings/draft-1/deliver") {

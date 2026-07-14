@@ -27,7 +27,12 @@ test("Opak operator completes intake, evidence review, approval, CSV, and mock d
   await page.getByRole("button", { name: "批准上架" }).click();
   await expect(page.getByText("已批准")).toBeVisible();
 
+  const csvResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/listings/draft-1/deliver") && response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "下載 SHOPLINE CSV" }).click();
+  const csvResponse = await csvResponsePromise;
+  expect(csvResponse.status()).toBe(200);
   await expect(page.getByText("CSV 已建立")).toBeVisible();
   await page.getByRole("button", { name: "發佈至 SHOPLINE 測試連接" }).click();
   await expect(page.getByText("queued/mock remote_123")).toBeVisible();
