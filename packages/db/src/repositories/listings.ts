@@ -4,18 +4,27 @@ import { canonicalListingSchema } from "@wukong/core";
 import type { AuditContext, AuditWriter, CanonicalListing, ComplianceFlag, FieldEvidence, ListingAction, ListingStatus } from "@wukong/core";
 import { transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
-import { complianceFlags, fieldEvidence, listingDrafts, listingVersions, workspaces } from "../schema.js";
+import { complianceFlags, fieldEvidence, listingDrafts, listingVersions, reviewEvents, workspaces } from "../schema.js";
 
 export type Listing = typeof listingDrafts.$inferSelect;
 
 export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
+export type ReviewSnapshot = {
+  listing: Listing;
+  activeVersion: { id: string; sequence: number; content: CanonicalListing } | null;
+  evidence: FieldEvidence[];
+  flags: ComplianceFlag[];
+};
 
 export type ListingRepository = {
   create(input: CreateListingInput): Promise<Listing>;
   getById(id: string): Promise<Listing | null>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
   requireForPublish(id: string): Promise<{ id: string; target: "shopline"; status: ListingStatus; activeVersion: { id: string; sequence: number; content: CanonicalListing } | null; flags: ComplianceFlag[] }>;
+  getReviewSnapshot(id: string): Promise<ReviewSnapshot | null>;
+  approve(id: string, versionId: string, context: AuditContext, audit: AuditWriter): Promise<void>;
+  editReview(id: string, baseVersionId: string, content: CanonicalListing, changedFields: string[], context: AuditContext, audit: AuditWriter): Promise<ListingVersion>;
   beginPublish(id: string, context: AuditContext, audit: AuditWriter): Promise<void>;
   markPublished(id: string, versionId: string, remoteProductId: string, payloadDigest: string, context: AuditContext, audit: AuditWriter): Promise<void>;
   markPublishFailed(id: string, versionId: string, errorCode: string, context: AuditContext, audit: AuditWriter): Promise<void>;
@@ -84,6 +93,45 @@ export function createListingRepository(
       return { id: listing.id, target: "shopline" as const, status: listing.status as ListingStatus, activeVersion: activeVersion && parsedContent?.success ? { id: activeVersion.id, sequence: activeVersion.sequence, content: parsedContent.data } : null, flags };
     },
 
+    async getReviewSnapshot(id) {
+      scope.assertOpen();
+      const listing = await this.getById(id);
+      if (!listing) return null;
+      const published = await this.requireForPublish(id);
+      const evidenceRows = published.activeVersion
+        ? await transaction.select({ sourceAssetId: fieldEvidence.sourceAssetId, fieldPath: fieldEvidence.fieldPath, evidence: fieldEvidence.evidence }).from(fieldEvidence).where(and(eq(fieldEvidence.workspaceId, workspaceId), eq(fieldEvidence.listingVersionId, published.activeVersion.id)))
+        : [];
+      const evidence: FieldEvidence[] = evidenceRows.flatMap((row) => {
+        const value = (row.evidence ?? {}) as Record<string, unknown>;
+        if (typeof value.excerpt !== "string" || typeof value.confidence !== "number") return [];
+        return [{ field: row.fieldPath, sourceAssetId: row.sourceAssetId ?? "note", page: typeof value.page === "number" ? value.page : null, excerpt: value.excerpt, confidence: value.confidence }];
+      });
+      return { listing, activeVersion: published.activeVersion, evidence, flags: published.flags };
+    },
+
+    async approve(id, versionId, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== versionId) throw new Error("active listing version changed");
+      if (listing.status === "approved") return;
+      if (listing.status === "reopened") await transitionListing(listing.status, "submit_review", context, audit);
+      const next = await transitionListing(listing.status === "reopened" ? "in_review" : listing.status, "approve", context, audit);
+      const updated = await transaction.update(listingDrafts).set({ status: next, activeVersionId: versionId, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status === "reopened" ? "in_review" : listing.status), eq(listingDrafts.activeVersionId, versionId))).returning({ id: listingDrafts.id });
+      if (updated.length !== 1) throw new Error("listing status changed while approving");
+    },
+
+    async editReview(id, baseVersionId, content, changedFields, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== baseVersionId) throw new Error("stale review version");
+      const version = await this.appendVersion(id, content, context, audit);
+      const nextStatus: ListingStatus = listing.status === "approved" || listing.status === "published" ? "reopened" : listing.status === "reopened" ? "reopened" : "in_review";
+      const updated = await transaction.update(listingDrafts).set({ activeVersionId: version.id, status: nextStatus, updatedAt: new Date() }).where(and(byId(id), eq(listingDrafts.status, listing.status), eq(listingDrafts.activeVersionId, baseVersionId))).returning({ id: listingDrafts.id });
+      if (updated.length !== 1) throw new Error("listing changed while editing review");
+      await transaction.insert(reviewEvents).values({ workspaceId, listingId: id, actorId: context.actorId, action: "listing.edited", metadata: { baseVersionId, versionId: version.id, changedFields: [...changedFields] } });
+      await audit.write({ ...context, action: "listing.edited", metadata: { baseVersionId, versionId: version.id, changedFields: [...changedFields] } });
+      return version;
+    },
     async beginPublish(id, context, audit) {
       scope.assertOpen();
       const listing = await this.requireById(id);

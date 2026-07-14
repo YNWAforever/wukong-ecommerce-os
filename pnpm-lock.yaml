@@ -32,9 +32,15 @@ importers:
       '@wukong/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@wukong/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@wukong/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wukong/shopline':
+        specifier: workspace:*
+        version: link:../../packages/shopline
       drizzle-orm:
         specifier: 0.44.7
         version: 0.44.7(postgres@3.4.9)
