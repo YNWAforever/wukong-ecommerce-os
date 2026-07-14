@@ -55,6 +55,8 @@ jobs:
       - name: Prepare database runtime role
         run: |
           PGPASSWORD=wukong psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END \$\$;"
+      - name: Build
+        run: pnpm build
       - name: Apply migrations
         run: pnpm --filter @wukong/db db:migrate
       - name: Lint
@@ -65,8 +67,6 @@ jobs:
         run: pnpm test
       - name: Integration tests
         run: pnpm test:integration
-      - name: Build
-        run: pnpm build
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright pilot (fake AI/mock SHOPLINE)

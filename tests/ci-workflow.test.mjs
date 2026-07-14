@@ -20,3 +20,15 @@ test("installs pnpm before setup-node enables the pnpm cache", () => {
     `pnpm setup must run before setup-node caching in ${repositoryRoot}`,
   );
 });
+
+test("builds workspace packages before running migrations", () => {
+  const build = workflow.indexOf("- name: Build");
+  const migrate = workflow.indexOf("- name: Apply migrations");
+
+  assert.notEqual(build, -1, "the workflow must build workspace packages");
+  assert.notEqual(migrate, -1, "the workflow must apply database migrations");
+  assert.ok(
+    build < migrate,
+    "workspace packages must exist before migration imports run",
+  );
+});
