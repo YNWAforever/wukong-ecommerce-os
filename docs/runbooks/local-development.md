@@ -8,7 +8,7 @@ From PowerShell at the repository root:
 
 ```powershell
 docker compose up -d postgres redis minio mailpit
-docker exec shopline-ai-listing-mvp-postgres-1 psql -U wukong -d postgres -v ON_ERROR_STOP=1 -c 'DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ''wukong_app'') THEN CREATE ROLE wukong_app LOGIN PASSWORD ''wukong-app-local'' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;'
+docker compose exec -T postgres psql -U wukong -d postgres -v ON_ERROR_STOP=1 -c 'DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ''wukong_app'') THEN CREATE ROLE wukong_app LOGIN PASSWORD ''wukong-app-local'' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;'
 $env:DATABASE_ADMIN_URL = "postgres://wukong:wukong@localhost:54329/wukong"
 $env:DATABASE_URL = "postgres://wukong_app:wukong-app-local@localhost:54329/wukong"
 $env:TEST_DATABASE_ADMIN_URL = $env:DATABASE_ADMIN_URL
