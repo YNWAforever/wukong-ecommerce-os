@@ -1,6 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -16,6 +13,7 @@ import {
 } from "./repositories/source-assets.js";
 import { createPublishJobRepository, type PublishJobRepository } from "./repositories/publish-jobs.js";
 import { createShoplineConnectionRepository, type ShoplineConnectionRepository } from "./repositories/shopline-connections.js";
+import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
@@ -123,13 +121,14 @@ export function createDatabase(
         prepare: false,
       });
       try {
-        const migrationPath = fileURLToPath(
-          new URL("../drizzle/0000_initial.sql", import.meta.url),
+        const migrations = await loadSqlMigrations(
+          new URL("../drizzle/", import.meta.url),
         );
-        const migration = await readFile(migrationPath, "utf8");
-        await admin.begin(async (transaction) => {
-          await transaction.unsafe(migration);
-        });
+        for (const migration of migrations) {
+          await admin.begin(async (transaction) => {
+            await transaction.unsafe(migration.sql);
+          });
+        }
       } finally {
         await admin.end();
       }

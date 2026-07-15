@@ -1,6 +1,8 @@
 import type { CanonicalListing } from "@wukong/core";
 import {
   type AnyPgColumn,
+  bigint,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -36,8 +38,70 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   name: text("name"),
-  emailVerified: timestamp("email_verified", { withTimezone: true }),
-  image: text("image"),  createdAt: timestamps.createdAt,
+  legacyEmailVerified: timestamp("email_verified", { withTimezone: true }),
+  emailVerified: boolean("auth_email_verified").default(false).notNull(),
+  image: text("image"),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+});
+
+export const authAccounts = pgTable("auth_accounts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  idToken: text("id_token"),
+  password: text("password"),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+}, (table) => [
+  uniqueIndex("auth_accounts_provider_account_uq").on(table.providerId, table.accountId),
+  index("auth_accounts_user_id_idx").on(table.userId),
+]);
+
+export const authSessions = pgTable("auth_sessions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  token: text("token").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+}, (table) => [
+  uniqueIndex("auth_sessions_token_uq").on(table.token),
+  index("auth_sessions_user_id_idx").on(table.userId),
+]);
+
+export const authVerifications = pgTable("auth_verifications", {
+  id: text("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+}, (table) => [
+  uniqueIndex("auth_verifications_identifier_value_uq").on(table.identifier, table.value),
+]);
+
+export const authRateLimits = pgTable("auth_rate_limits", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull(),
+  count: integer("count").notNull(),
+  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+}, (table) => [
+  uniqueIndex("auth_rate_limits_key_uq").on(table.key),
+]);
+
+export const passwordLoginGuards = pgTable("password_login_guards", {
+  email: text("email").primaryKey(),
+  failedAttempts: integer("failed_attempts").default(0).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   updatedAt: timestamps.updatedAt,
 });
 

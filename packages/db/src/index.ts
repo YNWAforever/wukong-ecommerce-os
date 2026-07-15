@@ -7,6 +7,7 @@ export {
   type DatabaseOptions,
   type WorkspaceRepositories,
 } from "./client.js";
+export { loadSqlMigrations, type SqlMigration } from "./migrations.js";
 export type {
   CreateListingInput,
   Listing,
