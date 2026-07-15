@@ -47,6 +47,20 @@ function responseCookies(response: Response): string[] {
   return cookie ? [cookie] : [];
 }
 
+function sessionCookieHeader(response: Response): string {
+  return responseCookies(response)
+    .map((cookie) => cookie.split(";", 1)[0]?.trim())
+    .filter((cookie): cookie is string => Boolean(cookie))
+    .join("; ");
+}
+
+function signOutRequest(cookie: string): Request {
+  return new Request(AUTH_ORIGIN + "/api/auth/sign-out", {
+    method: "POST",
+    headers: { cookie },
+  });
+}
+
 export function createAuthFlow({
   auth,
   access,
@@ -98,7 +112,7 @@ export function createAuthFlow({
       const email = normalizeEmail(input.email);
       const failure = { ok: false as const, cookies: [] as string[] };
       let user: { id: string; email: string } | null = null;
-      let authenticated = false;
+      let authenticatedResponse: Response | null = null;
       try {
         user = await access.findEligibleUser(email);
         if (!user || !await access.hasCredential(user.id)) {
@@ -123,25 +137,27 @@ export function createAuthFlow({
           }
           return failure;
         }
-        authenticated = true;
+        authenticatedResponse = response;
         await access.clearPasswordGuard(email);
         await audit({ email, userId: user.id, outcome: "success", reason: "password_login_accepted" });
         return { ok: true as const, cookies: responseCookies(response) };
       } catch {
-        if (user && authenticated) {
-          try {
-            await access.revokeUserSessions(user.id);
-          } catch {
-            // Do not leave a successful sign-in usable after guard cleanup failed.
+        if (user && authenticatedResponse) {
+          const revocations: Promise<unknown>[] = [
+            access.revokeUserSessions(user.id),
+          ];
+          const cookie = sessionCookieHeader(authenticatedResponse);
+          if (cookie) {
+            revocations.push(auth.handler(signOutRequest(cookie)));
           }
+          await Promise.allSettled(revocations);
+          await audit({
+            email,
+            userId: user.id,
+            outcome: "failure",
+            reason: "password_login_rejected",
+          });
           return failure;
-        }
-        if (user) {
-          try {
-            await access.recordPasswordFailure(email, now());
-          } catch {
-            // Keep authentication failures generic.
-          }
         }
         await audit({ email, userId: user?.id, outcome: "failure", reason: "password_login_rejected" });
         return failure;

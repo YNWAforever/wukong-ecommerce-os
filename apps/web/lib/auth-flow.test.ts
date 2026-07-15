@@ -151,4 +151,81 @@ describe("invite-aware authentication flow", () => {
     expect(access.recordPasswordFailure).not.toHaveBeenCalled();
     expect(access.revokeUserSessions).toHaveBeenCalledWith("user_1");
   });
+  it("uses the created session cookie to sign out when repository revocation fails", async () => {
+    const headers = new Headers();
+    headers.append("set-cookie", "better-auth.session_token=created-session; Path=/; HttpOnly");
+    const { flow, auth, access } = harness({ credential: true });
+    auth.handler
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers }))
+      .mockResolvedValueOnce(Response.json({ success: true }));
+    access.clearPasswordGuard.mockRejectedValue(new Error("guard unavailable"));
+    access.revokeUserSessions.mockRejectedValue(new Error("repository unavailable"));
+
+    await expect(flow.passwordSignIn({
+      email: "admin@example.com", password: "correct horse battery staple",
+    })).resolves.toEqual({ ok: false, cookies: [] });
+
+    const signOut = auth.handler.mock.calls[1]![0] as Request;
+    expect(new URL(signOut.url).pathname).toBe("/api/auth/sign-out");
+    expect(signOut.headers.get("cookie")).toBe("better-auth.session_token=created-session");
+    expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
+
+  it("still uses repository revocation when internal sign-out fails", async () => {
+    const headers = new Headers();
+    headers.append("set-cookie", "better-auth.session_token=created-session; Path=/; HttpOnly");
+    const { flow, auth, access } = harness({ credential: true });
+    auth.handler
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers }))
+      .mockRejectedValueOnce(new Error("sign-out unavailable"));
+    access.clearPasswordGuard.mockRejectedValue(new Error("guard unavailable"));
+
+    await expect(flow.passwordSignIn({
+      email: "admin@example.com", password: "correct horse battery staple",
+    })).resolves.toEqual({ ok: false, cookies: [] });
+
+    expect(access.revokeUserSessions).toHaveBeenCalledWith("user_1");
+    expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
+
+  it("keeps cleanup failure generic and audits without the session credential", async () => {
+    const headers = new Headers();
+    headers.append("set-cookie", "better-auth.session_token=created-session; Path=/; HttpOnly");
+    const { flow, auth, access } = harness({ credential: true });
+    auth.handler
+      .mockResolvedValueOnce(new Response(null, { status: 200, headers }))
+      .mockRejectedValueOnce(new Error("sign-out unavailable"));
+    access.clearPasswordGuard.mockRejectedValue(new Error("guard unavailable"));
+    access.revokeUserSessions.mockRejectedValue(new Error("repository unavailable"));
+
+    await expect(flow.passwordSignIn({
+      email: "admin@example.com", password: "correct horse battery staple",
+    })).resolves.toEqual({ ok: false, cookies: [] });
+
+    expect(access.writeAuthAudit).toHaveBeenCalledWith({
+      email: "admin@example.com",
+      userId: "user_1",
+      outcome: "failure",
+      reason: "password_login_rejected",
+    });
+    expect(JSON.stringify(access.writeAuthAudit.mock.calls)).not.toContain("created-session");
+  });
+
+  it("does not count a password failure when guard lookup throws", async () => {
+    const { flow, access } = harness({ credential: true });
+    access.getPasswordGuard.mockRejectedValue(new Error("guard unavailable"));
+    await expect(flow.passwordSignIn({
+      email: "admin@example.com", password: "correct horse battery staple",
+    })).resolves.toEqual({ ok: false, cookies: [] });
+    expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not count a password failure when Better Auth throws", async () => {
+    const { flow, auth, access } = harness({ credential: true });
+    auth.handler.mockRejectedValue(new Error("auth unavailable"));
+    await expect(flow.passwordSignIn({
+      email: "admin@example.com", password: "correct horse battery staple",
+    })).resolves.toEqual({ ok: false, cookies: [] });
+    expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
 });

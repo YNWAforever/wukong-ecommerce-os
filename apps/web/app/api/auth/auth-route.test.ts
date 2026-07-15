@@ -34,8 +34,20 @@ describe("Better Auth route safety", () => {
   it("blocks raw initiation endpoints while leaving reset completion on Better Auth", async () => {
     for (const path of [
       "/api/auth/sign-in/email",
+      "/api/auth/sign-in/email/",
+      "/api/auth/sign-in/email?callbackURL=%2Fdashboard",
+      "/api/auth/sign%2Din/email",
+      "/api/auth/sign%252Din/email",
       "/api/auth/sign-in/magic-link",
+      "/api/auth/sign-in/magic-link/",
+      "/api/auth/sign-in/%6dagic-link",
       "/api/auth/request-password-reset",
+      "/api/auth/request-password-reset/",
+      "/api/auth/%72equest-password-reset",
+      "/api/auth/%2572equest-password-reset",
+      "/api/auth/sign-in/%",
+      "/api/auth/sign-up/email",
+      "/api/auth/send-verification-email",
     ]) {
       const response = await POST(
         new Request("http://localhost" + path, { method: "POST" }),
