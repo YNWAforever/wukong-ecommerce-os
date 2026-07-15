@@ -195,3 +195,27 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+.auth-heading h1 { margin-bottom: 8px; }
+.auth-heading p { margin: 0 0 24px; color: var(--ink-soft); }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 24px; padding: 4px; background: var(--stone); border-radius: 10px; }
+.auth-tabs button { min-height: 44px; padding: 8px 12px; color: var(--ink-soft); background: transparent; border: 1px solid transparent; border-radius: 7px; font-weight: 700; }
+.auth-tabs button[aria-pressed="true"] { color: var(--navy); background: var(--surface); border-color: var(--line); box-shadow: 0 2px 8px rgb(24 36 50 / 6%); }
+.auth-form { display: grid; gap: 18px; }
+.auth-field { display: grid; gap: 7px; }
+.auth-field label { color: var(--navy); font-size: 14px; font-weight: 750; }
+.auth-field input { width: 100%; min-height: 44px; padding: 10px 12px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; }
+.auth-field input:focus-visible { border-color: var(--amber); }
+.auth-field small { color: var(--muted); font-size: 12px; }
+.auth-submit { width: 100%; min-height: 44px; }
+.auth-status { min-height: 24px; margin: -4px 0 0; color: var(--ink-soft); font-size: 13px; }
+.auth-status::before { content: "Status: "; font-weight: 700; }
+.auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.auth-links a { min-height: 44px; display: inline-flex; align-items: center; color: var(--amber-dark); font-size: 14px; font-weight: 700; text-underline-offset: 3px; }
+
+@media (max-width: 560px) {
+  .signin-shell { align-items: start; padding: 16px 12px; }
+  .signin-card { padding: 26px 20px; }
+  .auth-tabs, .auth-form { grid-template-columns: 1fr; }
+  .auth-links { align-items: stretch; flex-direction: column; }
+  .auth-links a { width: 100%; }
+}

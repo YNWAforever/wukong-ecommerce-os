@@ -3,12 +3,14 @@ import { fileURLToPath } from "node:url";
 
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const pagePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 
 describe("SignInPage", () => {
-  it("provides an invite-only email entry route with a safe callback", async () => {
+  it("renders password, magic-link, registration, and recovery access", async () => {
     expect(existsSync(pagePath)).toBe(true);
     if (!existsSync(pagePath)) return;
 
@@ -20,9 +22,13 @@ describe("SignInPage", () => {
     );
 
     expect(markup).toContain("Opak Cellar");
-    expect(markup).toContain("邀請");
-    expect(markup).toContain(
-      'href="/api/auth/signin?callbackUrl=%2Fdashboard"',
-    );
+    expect(markup).toContain("invitation");
+    expect(markup).toContain('type="email"');
+    expect(markup).toContain('type="password"');
+    expect(markup).toContain("Sign in with password");
+    expect(markup).toContain("Magic link");
+    expect(markup).toContain('href="/register"');
+    expect(markup).toContain('href="/forgot-password"');
+    expect(markup).not.toContain("/api/auth/signin");
   });
 });
