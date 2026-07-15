@@ -1,6 +1,12 @@
 import { AuthForm } from "../../components/auth-form";
 
-export default function RegisterPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function RegisterPage({ searchParams }: PageProps) {
+  const value = (await searchParams)?.callbackUrl;
+  const callbackUrl = Array.isArray(value) ? value[0] : value;
   return (
     <main className="signin-shell">
       <section className="signin-card" aria-label="Opak Cellar registration">
@@ -8,7 +14,7 @@ export default function RegisterPage() {
           W
         </div>
         <p className="eyebrow">Wukong / Opak Cellar</p>
-        <AuthForm mode="register" />
+        <AuthForm mode="register" callbackUrl={callbackUrl} />
       </section>
     </main>
   );

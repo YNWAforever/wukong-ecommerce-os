@@ -15,6 +15,7 @@ export type AuthFormMode =
 type AuthFormProps = {
   mode: AuthFormMode;
   callbackUrl?: string;
+  initialStatus?: string;
   token?: string;
 };
 
@@ -25,14 +26,39 @@ const PASSWORD_MIN = 12;
 const PASSWORD_MAX = 128;
 
 export function safeCallbackPath(value?: string): string {
-  if (
-    !value?.startsWith("/") ||
-    value.startsWith("//") ||
-    value.includes("\\")
-  ) {
+  if (!value?.startsWith("/") || value.startsWith("//")) {
     return "/dashboard";
   }
-  return value;
+
+  try {
+    let decoded = value;
+    for (let pass = 0; pass < 5; pass += 1) {
+      if (/[\p{White_Space}\p{Cc}\p{Cf}\\]/u.test(decoded)) {
+        return "/dashboard";
+      }
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+      if (pass === 4) return "/dashboard";
+    }
+
+    if (!decoded.startsWith("/") || decoded.startsWith("//")) {
+      return "/dashboard";
+    }
+    const base = new URL("https://callback.invalid/");
+    const parsed = new URL(decoded, base);
+    if (
+      parsed.origin !== base.origin ||
+      !parsed.pathname.startsWith("/") ||
+      parsed.pathname.startsWith("//")
+    ) {
+      return "/dashboard";
+    }
+    const canonical = new URL(value, base);
+    return canonical.pathname + canonical.search + canonical.hash;
+  } catch {
+    return "/dashboard";
+  }
 }
 
 function modeCopy(mode: AuthFormMode) {
@@ -88,15 +114,22 @@ function isCompletionMode(mode: AuthFormMode) {
   return mode === "set-password" || mode === "reset-password";
 }
 
-export function AuthForm({ mode, callbackUrl, token }: AuthFormProps) {
+export function AuthForm({
+  mode,
+  callbackUrl,
+  token,
+  initialStatus = "",
+}: AuthFormProps) {
   const router = useRouter();
   const [signinMode, setSigninMode] = useState<
     "password-signin" | "magic-link"
   >(mode === "magic-link" ? "magic-link" : "password-signin");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(initialStatus);
   const [isPending, startTransition] = useTransition();
   const activeMode =
     mode === "password-signin" || mode === "magic-link" ? signinMode : mode;
+  const isSigninMode =
+    activeMode === "password-signin" || activeMode === "magic-link";
   const copy = modeCopy(activeMode);
   const callback = safeCallbackPath(callbackUrl);
 
@@ -144,7 +177,10 @@ export function AuthForm({ mode, callbackUrl, token }: AuthFormProps) {
               { email, callbackURL: callback },
             ] as const;
           case "register":
-            return ["/api/auth/register", { email }] as const;
+            return [
+              "/api/auth/register",
+              { email, callbackURL: callback },
+            ] as const;
           case "forgot-password":
             return [
               "/api/auth/forgot-password",
@@ -175,11 +211,11 @@ export function AuthForm({ mode, callbackUrl, token }: AuthFormProps) {
           return;
         }
         if (activeMode === "set-password") {
-          router.push("/signin?registered=1");
+          router.push(completionHref("registered", callback));
           return;
         }
         if (activeMode === "reset-password") {
-          router.push("/signin?reset=1");
+          router.push(completionHref("reset", callback));
           return;
         }
         setStatus(EMAIL_SUCCESS);
@@ -283,16 +319,33 @@ export function AuthForm({ mode, callbackUrl, token }: AuthFormProps) {
         </p>
       </form>
       <nav className="auth-links" aria-label="Account help">
-        {activeMode === "password-signin" ? (
-          <Link href="/forgot-password">Forgot password?</Link>
+        {isSigninMode ? (
+          <Link
+            href={
+              "/forgot-password?callbackUrl=" + encodeURIComponent(callback)
+            }
+          >
+            Forgot password?
+          </Link>
         ) : null}
-        {activeMode === "password-signin" ? (
-          <Link href="/register">Register with an invitation</Link>
+        {isSigninMode ? (
+          <Link href={"/register?callbackUrl=" + encodeURIComponent(callback)}>
+            Register with an invitation
+          </Link>
         ) : null}
         {activeMode !== "password-signin" && activeMode !== "magic-link" ? (
-          <Link href="/signin">Back to sign in</Link>
+          <Link href={"/signin?callbackUrl=" + encodeURIComponent(callback)}>
+            Back to sign in
+          </Link>
         ) : null}
       </nav>
     </>
   );
+}
+
+function completionHref(
+  flag: "registered" | "reset",
+  callback: string,
+): string {
+  return `/signin?${flag}=1&callbackUrl=${encodeURIComponent(callback)}`;
 }

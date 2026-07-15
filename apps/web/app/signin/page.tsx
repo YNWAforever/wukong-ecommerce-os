@@ -9,6 +9,12 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
   const value = params.callbackUrl;
   const callbackUrl = Array.isArray(value) ? value[0] : value;
 
+  const initialStatus =
+    params.registered === "1"
+      ? "Your password is ready. Sign in to continue."
+      : params.reset === "1"
+        ? "Your password has been reset. Sign in to continue."
+        : "";
   return (
     <main className="signin-shell">
       <section className="signin-card" aria-label="Opak Cellar sign in">
@@ -16,7 +22,11 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           W
         </div>
         <p className="eyebrow">Wukong / Opak Cellar</p>
-        <AuthForm mode="password-signin" callbackUrl={callbackUrl} />
+        <AuthForm
+          mode="password-signin"
+          callbackUrl={callbackUrl}
+          initialStatus={initialStatus}
+        />
       </section>
     </main>
   );

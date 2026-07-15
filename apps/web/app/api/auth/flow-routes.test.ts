@@ -37,14 +37,20 @@ describe("invite-aware auth routes", () => {
     }
   });
 
-  it("sanitizes unsafe callbacks before calling magic-link and reset flows", async () => {
+  it("preserves safe callbacks and sanitizes unsafe callbacks before auth flows", async () => {
     const deps = flow();
+    await createRegisterHandler(deps)(
+      request("/api/auth/register", { email: "admin@example.com", callbackURL: "/listings?view=mine" }),
+    );
     await createMagicLinkHandler(deps)(
       request("/api/auth/magic-link", { email: "admin@example.com", callbackURL: "//evil.example" }),
     );
     await createForgotPasswordHandler(deps)(
       request("/api/auth/forgot-password", { email: "admin@example.com", callbackURL: "https://evil.example" }),
     );
+    expect(deps.requestEnrollment).toHaveBeenCalledWith({
+      email: "admin@example.com", callbackURL: "/listings?view=mine",
+    });
     expect(deps.requestMagicLink).toHaveBeenCalledWith({
       email: "admin@example.com", callbackURL: "/dashboard",
     });

@@ -4,8 +4,11 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 export default async function ResetPasswordPage({ searchParams }: PageProps) {
-  const value = (await searchParams)?.token;
-  const token = Array.isArray(value) ? value[0] : value;
+  const params = (await searchParams) ?? {};
+  const token = Array.isArray(params.token) ? params.token[0] : params.token;
+  const callbackUrl = Array.isArray(params.callbackUrl)
+    ? params.callbackUrl[0]
+    : params.callbackUrl;
   return (
     <main className="signin-shell">
       <section className="signin-card" aria-label="Opak Cellar password reset">
@@ -13,7 +16,11 @@ export default async function ResetPasswordPage({ searchParams }: PageProps) {
           W
         </div>
         <p className="eyebrow">Wukong / Opak Cellar</p>
-        <AuthForm mode="reset-password" token={token} />
+        <AuthForm
+          mode="reset-password"
+          token={token}
+          callbackUrl={callbackUrl}
+        />
       </section>
     </main>
   );

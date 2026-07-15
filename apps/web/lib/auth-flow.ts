@@ -19,17 +19,37 @@ function normalizeEmail(email: string): string {
 }
 
 export function safeCallbackPath(candidate?: string): string {
-  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+  if (!candidate?.startsWith("/") || candidate.startsWith("//")) {
     return "/dashboard";
   }
-  if (/[\u0000-\u001f\\]/.test(candidate)) return "/dashboard";
   try {
-    const parsed = new URL(candidate, AUTH_ORIGIN);
-    if (parsed.origin !== AUTH_ORIGIN) return "/dashboard";
-    return parsed.pathname + parsed.search + parsed.hash;
+    let decoded = candidate;
+    for (let pass = 0; pass < 5; pass += 1) {
+      if (/[\p{White_Space}\p{Cc}\p{Cf}\\]/u.test(decoded)) {
+        return "/dashboard";
+      }
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+      if (pass === 4) return "/dashboard";
+    }
+
+    if (!decoded.startsWith("/") || decoded.startsWith("//")) {
+      return "/dashboard";
+    }
+    const base = new URL(AUTH_ORIGIN + "/");
+    const decodedUrl = new URL(decoded, base);
+    if (decodedUrl.origin !== base.origin) return "/dashboard";
+    const canonical = new URL(candidate, base);
+    if (canonical.origin !== base.origin) return "/dashboard";
+    return canonical.pathname + canonical.search + canonical.hash;
   } catch {
     return "/dashboard";
   }
+}
+
+function completionRedirect(path: string, callbackURL?: string): string {
+  return `${path}?callbackUrl=${encodeURIComponent(safeCallbackPath(callbackURL))}`;
 }
 
 function authRequest(path: string, body: Record<string, unknown>): Request {
@@ -79,7 +99,7 @@ export function createAuthFlow({
   }
 
   return {
-    async requestEnrollment(input: { email: string }) {
+    async requestEnrollment(input: { email: string; callbackURL?: string }) {
       const email = normalizeEmail(input.email);
       try {
         const user = await access.findEligibleUser(email);
@@ -94,7 +114,7 @@ export function createAuthFlow({
         }
         const response = await auth.handler(authRequest("/api/auth/request-password-reset", {
           email,
-          redirectTo: "/register/set-password",
+          redirectTo: completionRedirect("/register/set-password", input.callbackURL),
         }));
         await audit({
           email,
@@ -198,7 +218,7 @@ export function createAuthFlow({
         }
         const response = await auth.handler(authRequest("/api/auth/request-password-reset", {
           email,
-          redirectTo: safeCallbackPath(input.callbackURL),
+          redirectTo: completionRedirect("/reset-password", input.callbackURL),
         }));
         await audit({
           email,

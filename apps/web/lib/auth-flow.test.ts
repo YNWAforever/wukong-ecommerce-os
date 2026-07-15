@@ -29,10 +29,13 @@ async function forwardedBody(auth: { handler: ReturnType<typeof vi.fn> }) {
 describe("invite-aware authentication flow", () => {
   it("requests enrollment only for an invited existing user without a credential", async () => {
     const { flow, auth, access } = harness();
-    await expect(flow.requestEnrollment({ email: " Admin@Example.com " })).resolves.toEqual({ accepted: true });
+    await expect(flow.requestEnrollment({
+      email: " Admin@Example.com ",
+      callbackURL: "/listings?view=mine",
+    })).resolves.toEqual({ accepted: true });
     expect(await forwardedBody(auth)).toEqual({
       path: "/api/auth/request-password-reset",
-      body: { email: "admin@example.com", redirectTo: "/register/set-password" },
+      body: { email: "admin@example.com", redirectTo: "/register/set-password?callbackUrl=%2Flistings%3Fview%3Dmine" },
     });
     expect(access.writeAuthAudit).toHaveBeenCalledWith({
       email: "admin@example.com", userId: "user_1", outcome: "success", reason: "password_enrollment_requested",
@@ -58,7 +61,7 @@ describe("invite-aware authentication flow", () => {
     })).resolves.toEqual({ accepted: true });
     expect((await forwardedBody(auth))).toEqual({
       path: "/api/auth/request-password-reset",
-      body: { email: "admin@example.com", redirectTo: "/register/set-password" },
+      body: { email: "admin@example.com", redirectTo: "/register/set-password?callbackUrl=%2Fdashboard" },
     });
   });
 
@@ -121,21 +124,21 @@ describe("invite-aware authentication flow", () => {
     const allowed = harness({ credential: true });
     const denied = harness({ credential: false });
     await expect(allowed.flow.requestPasswordReset({
-      email: "ADMIN@example.com", callbackURL: "/reset-password",
+      email: "ADMIN@example.com", callbackURL: "/listings?view=mine",
     })).resolves.toEqual({ accepted: true });
     await expect(denied.flow.requestPasswordReset({
-      email: "ADMIN@example.com", callbackURL: "/reset-password",
+      email: "ADMIN@example.com", callbackURL: "/listings?view=mine",
     })).resolves.toEqual({ accepted: true });
     expect((await forwardedBody(allowed.auth))).toEqual({
       path: "/api/auth/request-password-reset",
-      body: { email: "admin@example.com", redirectTo: "/reset-password" },
+      body: { email: "admin@example.com", redirectTo: "/reset-password?callbackUrl=%2Flistings%3Fview%3Dmine" },
     });
     expect(denied.auth.handler).not.toHaveBeenCalled();
   });
 
   it("uses a dashboard fallback for unsafe or malformed callback paths", () => {
     expect(safeCallbackPath("/listings?view=mine")).toBe("/listings?view=mine");
-    for (const value of ["https://evil.example", "//evil.example", "\\evil", "/safe\\evil", "%", undefined]) {
+    for (const value of ["https://evil.example", "//evil.example", "\\evil", "/safe\\evil", "/\u0085/evil", "/%C2%85/evil", "/\u200b/evil", "/%E2%80%8B/evil", "%", undefined]) {
       expect(safeCallbackPath(value)).toBe("/dashboard");
     }
   });

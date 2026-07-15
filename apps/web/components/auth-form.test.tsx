@@ -13,7 +13,7 @@ import { AuthForm, safeCallbackPath, type AuthFormMode } from "./auth-form";
 
 async function mount(
   mode: AuthFormMode,
-  props: { callbackUrl?: string; token?: string } = {},
+  props: { callbackUrl?: string; token?: string; initialStatus?: string } = {},
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -75,7 +75,14 @@ describe("AuthForm", () => {
       "/api/auth/magic-link",
       { email: "admin@example.com", callbackURL: "/listings" },
     ],
-    ["register", "/api/auth/register", { email: "admin@example.com" }],
+    [
+      "register",
+      "/api/auth/register",
+      {
+        email: "admin@example.com",
+        callbackURL: "/listings",
+      },
+    ],
     [
       "forgot-password",
       "/api/auth/forgot-password",
@@ -114,20 +121,48 @@ describe("AuthForm", () => {
     },
   );
 
-  it("allows only safe relative callback paths", () => {
-    expect(safeCallbackPath("/listings?filter=draft")).toBe(
-      "/listings?filter=draft",
-    );
-    expect(safeCallbackPath("https://evil.example/steal")).toBe("/dashboard");
-    expect(safeCallbackPath("//evil.example/steal")).toBe("/dashboard");
-    expect(safeCallbackPath("javascript:alert(1)")).toBe("/dashboard");
+  it.each([
+    [
+      "/listings?filter=draft&sort=recent",
+      "/listings?filter=draft&sort=recent",
+    ],
+    ["/\t/evil.example", "/dashboard"],
+    ["/\r/evil.example", "/dashboard"],
+    ["/\n/evil.example", "/dashboard"],
+    ["/\\evil.example", "/dashboard"],
+    ["//evil.example", "/dashboard"],
+    ["/%09/evil.example", "/dashboard"],
+    ["/%0d%0a/evil.example", "/dashboard"],
+    ["/%5c%5cevil.example", "/dashboard"],
+    ["/%2f%2fevil.example", "/dashboard"],
+    ["/%2509/evil.example", "/dashboard"],
+    ["/%252f%252fevil.example", "/dashboard"],
+    ["/%E0%A4%A", "/dashboard"],
+    ["/\u00a0/evil.example", "/dashboard"],
+    ["/%C2%A0/evil.example", "/dashboard"],
+    ["/\u0085/evil.example", "/dashboard"],
+    ["/%C2%85/evil.example", "/dashboard"],
+    ["/\u200b/evil.example", "/dashboard"],
+    ["/%E2%80%8B/evil.example", "/dashboard"],
+    ["https://evil.example/steal", "/dashboard"],
+    ["javascript:alert(1)", "/dashboard"],
+  ])("sanitizes callback %j to %s", (candidate, expected) => {
+    expect(safeCallbackPath(candidate)).toBe(expected);
   });
 
   it.each([
     ["password-signin", "/listings", "/listings"],
     ["password-signin", "//evil.example", "/dashboard"],
-    ["set-password", undefined, "/signin?registered=1"],
-    ["reset-password", undefined, "/signin?reset=1"],
+    [
+      "set-password",
+      "/listings?filter=draft",
+      "/signin?registered=1&callbackUrl=%2Flistings%3Ffilter%3Ddraft",
+    ],
+    [
+      "reset-password",
+      "/listings?filter=draft",
+      "/signin?reset=1&callbackUrl=%2Flistings%3Ffilter%3Ddraft",
+    ],
   ] as const)(
     "navigates after successful %s completion",
     async (mode, callbackUrl, destination) => {
@@ -152,6 +187,56 @@ describe("AuthForm", () => {
     fill(container, "email", "admin@example.com");
     await submit(container);
     expect(push).not.toHaveBeenCalled();
+  });
+  it("preserves the sanitized callback in sign-in account links and tabs", async () => {
+    const container = await mount("password-signin", {
+      callbackUrl: "/listings?filter=draft",
+    });
+    const hrefs = Array.from(container.querySelectorAll("a"), (link) =>
+      link.getAttribute("href"),
+    );
+    expect(hrefs).toContain(
+      "/forgot-password?callbackUrl=%2Flistings%3Ffilter%3Ddraft",
+    );
+    expect(hrefs).toContain(
+      "/register?callbackUrl=%2Flistings%3Ffilter%3Ddraft",
+    );
+
+    const magicLinkTab = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Magic link",
+    );
+    await act(async () => magicLinkTab?.click());
+    fill(container, "email", "admin@example.com");
+    await submit(container);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/magic-link",
+      expect.objectContaining({
+        body: JSON.stringify({
+          email: "admin@example.com",
+          callbackURL: "/listings?filter=draft",
+        }),
+      }),
+    );
+    expect(
+      container.querySelector(
+        'a[href="/register?callbackUrl=%2Flistings%3Ffilter%3Ddraft"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        'a[href="/forgot-password?callbackUrl=%2Flistings%3Ffilter%3Ddraft"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("renders an accessible generic initial completion status", async () => {
+    const container = await mount("password-signin", {
+      initialStatus: "Your password is ready. Sign in to continue.",
+    });
+    const status = container.querySelector('[aria-live="polite"]');
+    expect(status?.textContent).toBe(
+      "Your password is ready. Sign in to continue.",
+    );
   });
 
   it.each([
