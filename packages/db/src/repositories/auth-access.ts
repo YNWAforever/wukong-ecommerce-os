@@ -34,6 +34,7 @@ export type AuthAuditEvent = {
 export type AuthAccessRepository = {
   findEligibleUser(email: string): Promise<EligibleAuthUser | null>;
   hasCredential(userId: string): Promise<boolean>;
+  isEnrollmentComplete(userId: string): Promise<boolean>;
   getPasswordGuard(email: string, now: Date): Promise<PasswordGuard>;
   recordPasswordFailure(email: string, now: Date): Promise<PasswordGuard>;
   clearPasswordGuard(email: string): Promise<void>;
@@ -74,6 +75,23 @@ export function createAuthAccessRepository(db: AuthDatabase): AuthAccessReposito
         ))
         .limit(1);
       return Boolean(credential);
+    },
+
+    async isEnrollmentComplete(userId) {
+      const [completed] = await db
+        .select({ userId: users.id })
+        .from(users)
+        .innerJoin(
+          workspaceInvites,
+          sql.raw("lower(workspace_invites.email) = lower(users.email)"),
+        )
+        .where(and(
+          eq(users.id, userId),
+          eq(users.emailVerified, true),
+          eq(workspaceInvites.status, "accepted"),
+        ))
+        .limit(1);
+      return Boolean(completed);
     },
 
     async getPasswordGuard(candidateEmail, now) {

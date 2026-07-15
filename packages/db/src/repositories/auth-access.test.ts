@@ -63,6 +63,26 @@ describe("auth access repository", () => {
     await expect(repository.findEligibleUser(" Admin@Example.com ")).resolves.toEqual({ id: userId, email });
   });
 
+  it("reports enrollment complete only after verification and invite acceptance", async () => {
+    await db.insert(workspaceInvites).values({
+      workspaceId,
+      email,
+      role: "operator",
+      status: "pending",
+    });
+    await expect(repository.isEnrollmentComplete(userId)).resolves.toBe(false);
+    await db
+      .update(users)
+      .set({ emailVerified: true })
+      .where(eq(users.id, userId));
+    await expect(repository.isEnrollmentComplete(userId)).resolves.toBe(false);
+    await db
+      .update(workspaceInvites)
+      .set({ status: "accepted" })
+      .where(eq(workspaceInvites.email, email));
+    await expect(repository.isEnrollmentComplete(userId)).resolves.toBe(true);
+  });
+
   it("rejects users whose invite is not pending or accepted", async () => {
     await db.insert(workspaceInvites).values({ workspaceId, email, role: "operator", status: "revoked" });
     await expect(repository.findEligibleUser(email)).resolves.toBeNull();

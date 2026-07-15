@@ -8,8 +8,10 @@ import {
   authRateLimits,
   authSessions,
   authVerifications,
+  createAuthAccessRepository,
   createAuthDatabase,
   users,
+  type AuthAccessRepository,
   type AuthDatabase,
 } from "@wukong/db";
 
@@ -34,6 +36,7 @@ type AuthDependencies = {
   createAdapter: typeof drizzleAdapter;
   createMagicLink: typeof magicLink;
   sendEmail: typeof sendAuthEmail;
+  access?: AuthAccessRepository;
 };
 
 const defaultDependencies: AuthDependencies = {
@@ -84,6 +87,7 @@ export function buildAuthOptions(
     });
   };
 
+  const access = dependencies.access ?? createAuthAccessRepository(db);
   return {
     secret: env.secret,
     database: dependencies.createAdapter(db, {
@@ -116,6 +120,41 @@ export function buildAuthOptions(
       },
       sendResetPassword,
       resetPasswordTokenExpiresIn: 60 * 30,
+      onPasswordReset: async ({ user }) => {
+        const email = user.email.trim().toLowerCase();
+        if (!user.emailVerified) {
+          try {
+            await access.completeEnrollment(user.id, email);
+          } catch {
+            try {
+              await access.writeAuthAudit({
+                email,
+                userId: user.id,
+                outcome: "failure",
+                reason: "password_enrollment_rejected",
+              });
+            } catch {
+              // Never prevent Better Auth token and session cleanup.
+            }
+          }
+          return;
+        }
+        const [guard, sessions] = await Promise.allSettled([
+          Promise.resolve().then(() => access.clearPasswordGuard(email)),
+          Promise.resolve().then(() => access.revokeUserSessions(user.id)),
+        ]);
+        const completed = guard.status === "fulfilled" && sessions.status === "fulfilled";
+        try {
+          await access.writeAuthAudit({
+            email,
+            userId: user.id,
+            outcome: completed ? "success" : "failure",
+            reason: completed ? "password_reset_completed" : "password_reset_rejected",
+          });
+        } catch {
+          // Better Auth must continue its built-in session revocation.
+        }
+      },
       revokeSessionsOnPasswordReset: true,
     },
     rateLimit: {

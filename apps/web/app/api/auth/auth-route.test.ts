@@ -31,4 +31,24 @@ describe("Better Auth route safety", () => {
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("DATABASE_URL");
   });
+  it("blocks raw initiation endpoints while leaving reset completion on Better Auth", async () => {
+    for (const path of [
+      "/api/auth/sign-in/email",
+      "/api/auth/sign-in/magic-link",
+      "/api/auth/request-password-reset",
+    ]) {
+      const response = await POST(
+        new Request("http://localhost" + path, { method: "POST" }),
+      );
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({
+        code: "not_found",
+        message: "Unable to complete this request.",
+      });
+    }
+    const completion = await POST(
+      new Request("http://localhost/api/auth/reset-password", { method: "POST" }),
+    );
+    expect(completion.status).toBe(503);
+  });
 });

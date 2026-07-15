@@ -10,6 +10,11 @@ export const runtime = "nodejs";
 
 const betterAuthHandlers = toNextJsHandler(auth);
 
+const WRAPPED_AUTH_POST_PATHS = new Set([
+  "/api/auth/sign-in/email",
+  "/api/auth/sign-in/magic-link",
+  "/api/auth/request-password-reset",
+]);
 function unavailable(): Response {
   return Response.json(
     {
@@ -39,6 +44,15 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  if (WRAPPED_AUTH_POST_PATHS.has(new URL(request.url).pathname)) {
+    return Response.json(
+      {
+        code: "not_found",
+        message: "Unable to complete this request.",
+      },
+      { status: 404 },
+    );
+  }
   if (!isAuthConfigured()) return unavailable();
   try {
     return await betterAuthHandlers.POST(request);
