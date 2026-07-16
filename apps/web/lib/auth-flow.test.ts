@@ -138,7 +138,7 @@ describe("invite-aware authentication flow", () => {
 
   it("uses a dashboard fallback for unsafe or malformed callback paths", () => {
     expect(safeCallbackPath("/listings?view=mine")).toBe("/listings?view=mine");
-    for (const value of ["https://evil.example", "//evil.example", "\\evil", "/safe\\evil", "/\u0085/evil", "/%C2%85/evil", "/\u200b/evil", "/%E2%80%8B/evil", "%", undefined]) {
+    for (const value of ["https://evil.example", "//evil.example", "/..//evil.example", "/%2e%2e//evil.example", "/%252e%252e//evil.example", "\\evil", "/safe\\evil", "/\u0085/evil", "/%C2%85/evil", "/\u200b/evil", "/%E2%80%8B/evil", "%", undefined]) {
       expect(safeCallbackPath(value)).toBe("/dashboard");
     }
   });

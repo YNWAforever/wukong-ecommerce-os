@@ -39,9 +39,17 @@ export function safeCallbackPath(candidate?: string): string {
     }
     const base = new URL(AUTH_ORIGIN + "/");
     const decodedUrl = new URL(decoded, base);
-    if (decodedUrl.origin !== base.origin) return "/dashboard";
+    if (
+      decodedUrl.origin !== base.origin ||
+      decodedUrl.pathname.startsWith("//")
+    ) {
+      return "/dashboard";
+    }
     const canonical = new URL(candidate, base);
-    if (canonical.origin !== base.origin) return "/dashboard";
+    if (
+      canonical.origin !== base.origin ||
+      canonical.pathname.startsWith("//")
+    ) return "/dashboard";
     return canonical.pathname + canonical.search + canonical.hash;
   } catch {
     return "/dashboard";
