@@ -1,6 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const publicPaths = ["/signin", "/api/auth", "/_next", "/favicon.ico"];
+const publicPaths = [
+  "/signin",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/api/auth",
+  "/_next",
+  "/favicon.ico",
+];
 
 function isPublicPath(pathname: string): boolean {
   return publicPaths.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -13,16 +21,14 @@ export function middleware(request: NextRequest): NextResponse {
   }
 
   // This is only a fast UX redirect. Server components and API routes must still
-  // call auth()/sessionContext() because a cookie alone is not authorization.
+  // resolve a server session and membership because a cookie alone is not authorization.
   const hasSessionCookie = Boolean(
-    request.cookies.get("authjs.session-token") ??
-      request.cookies.get("__Secure-authjs.session-token") ??
-      request.cookies.get("next-auth.session-token") ??
-      request.cookies.get("__Secure-next-auth.session-token"),
+    request.cookies.get("better-auth.session_token") ??
+      request.cookies.get("__Secure-better-auth.session_token"),
   );
   if (hasSessionCookie) return NextResponse.next();
   const signIn = new URL("/signin", request.url);
-  signIn.searchParams.set("callbackUrl", pathname);
+  signIn.searchParams.set("callbackUrl", pathname + request.nextUrl.search);
   return NextResponse.redirect(signIn);
 }
 

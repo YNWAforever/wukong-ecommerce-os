@@ -5,16 +5,21 @@ import {
   createFinalizeAssetHandler,
 } from "./assets/finalize/route.js";
 
-const request = () =>
+const request = (cookie?: string) =>
   new Request("http://localhost/api/assets/finalize", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(cookie ? { cookie } : {}),
+    },
     body: JSON.stringify({}),
   });
 
 describe("intake route authorization binding", () => {
   it("returns 503 from the default fail-closed binding without reading secrets", async () => {
-    const response = await failClosedFinalize(request());
+    const response = await failClosedFinalize(
+      request("better-auth.session_token=present-but-invalid"),
+    );
 
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ code: "authentication_unavailable" });
@@ -27,7 +32,9 @@ describe("intake route authorization binding", () => {
       getDatabase: () => { throw new Error("must stay lazy"); },
     });
 
-    const response = await handler(request());
+    const response = await handler(
+      request("__Secure-better-auth.session_token=present-but-invalid"),
+    );
 
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ code: "unauthorized" });

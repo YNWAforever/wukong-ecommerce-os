@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { headers } from "next/headers";
 
 
 import {
@@ -54,7 +55,7 @@ export async function sessionContext(
 }
 
 /**
- * Production session context: Auth.js establishes identity, then a
+ * Production session context: Better Auth establishes identity, then a
  * security-definer database function resolves the first active membership.
  * No workspace or actor value is accepted from request JSON.
  */
@@ -72,7 +73,9 @@ export function createAuthSessionContextPort(
     }
     try {
       const { auth } = await import("../auth");
-      return (await auth()) as AuthSession;
+      return (await auth.api.getSession({
+        headers: await headers(),
+      })) as AuthSession;
     } catch (error) {
       if (error instanceof Error && error.name === "AuthConfigurationUnavailableError") {
         throw new SessionContextUnavailableError();
