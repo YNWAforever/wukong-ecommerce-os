@@ -27,18 +27,25 @@ describe("Opak pilot seed", () => {
       upsertPromptVersion: vi.fn(async () => undefined),
       upsertInvite: vi.fn(async () => undefined),
     };
-    const first = await seedOpak(store, "operator@opak.example");
-    const second = await seedOpak(store, "operator@opak.example");
+    const first = await seedOpak(store, "laichiwillyjp@gmail.com");
+    const second = await seedOpak(store, "laichiwillyjp@gmail.com");
     expect(first.promptVersion).toBe("1.0.0");
     expect(second).toEqual(first);
     expect(store.upsertWorkspace).toHaveBeenCalledTimes(2);
-    expect(store.upsertUser).toHaveBeenCalledWith({ id: "user_opak_operator", email: "operator@opak.example" });
+    expect(store.upsertUser).toHaveBeenCalledWith({ id: "user_opak_operator", email: "laichiwillyjp@gmail.com" });
     for (const call of vi.mocked(store.upsertUser).mock.calls) {
+      expect(Object.keys(call[0]).sort()).toEqual(["email", "id"]);
       expect(call[0]).not.toHaveProperty("password");
     }
     expect(store.upsertMembership).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: "ws_opak", userId: "user_opak_operator", role: "operator" }),
     );
+    expect(store.upsertInvite).toHaveBeenCalledWith({
+      workspaceId: "ws_opak",
+      email: "laichiwillyjp@gmail.com",
+      role: "operator",
+      status: "pending",
+    });
   });
 
   it("rejects malformed operator emails", async () => {

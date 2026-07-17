@@ -7,6 +7,7 @@ export {
   type DatabaseOptions,
   type WorkspaceRepositories,
 } from "./client.js";
+export { loadSqlMigrations, type SqlMigration } from "./migrations.js";
 export type {
   CreateListingInput,
   Listing,
@@ -24,3 +25,10 @@ export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";
 export type { PublishJob, PublishJobRepository, PublishJobStatus, EnsurePublishJobInput } from "./repositories/publish-jobs.js";
 export type { ShoplineConnection, ShoplineConnectionRepository } from "./repositories/shopline-connections.js";
+export {
+  createAuthAccessRepository,
+  type AuthAccessRepository,
+  type AuthAuditEvent,
+  type EligibleAuthUser,
+  type PasswordGuard,
+} from "./repositories/auth-access.js";

@@ -1,21 +1,42 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { join, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
-import { createAuditWriter, type WorkspaceAuditWriter } from "./repositories/audit.js";
-import { createListingRepository, type ListingRepository } from "./repositories/listings.js";
-import { createPipelineRunRepository, type PipelineRunRepository } from "./repositories/pipeline-runs.js";
-import { createAiRunRepository, type AiRunRepository } from "./repositories/ai-runs.js";
-import { createWorkspaceRepository, type WorkspaceRepository } from "./repositories/workspaces.js";
+import {
+  createAuditWriter,
+  type WorkspaceAuditWriter,
+} from "./repositories/audit.js";
+import {
+  createListingRepository,
+  type ListingRepository,
+} from "./repositories/listings.js";
+import {
+  createPipelineRunRepository,
+  type PipelineRunRepository,
+} from "./repositories/pipeline-runs.js";
+import {
+  createAiRunRepository,
+  type AiRunRepository,
+} from "./repositories/ai-runs.js";
+import {
+  createWorkspaceRepository,
+  type WorkspaceRepository,
+} from "./repositories/workspaces.js";
 import {
   createSourceAssetRepository,
   type SourceAssetRepository,
 } from "./repositories/source-assets.js";
-import { createPublishJobRepository, type PublishJobRepository } from "./repositories/publish-jobs.js";
-import { createShoplineConnectionRepository, type ShoplineConnectionRepository } from "./repositories/shopline-connections.js";
+import {
+  createPublishJobRepository,
+  type PublishJobRepository,
+} from "./repositories/publish-jobs.js";
+import {
+  createShoplineConnectionRepository,
+  type ShoplineConnectionRepository,
+} from "./repositories/shopline-connections.js";
+import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
@@ -95,10 +116,26 @@ export function createDatabase(
       };
       const repositories: WorkspaceRepositories = {
         listings: createListingRepository(transaction, workspaceId, scope),
-        sourceAssets: createSourceAssetRepository(transaction, workspaceId, scope),
-        publishJobs: createPublishJobRepository(transaction, workspaceId, scope),
-        shoplineConnections: createShoplineConnectionRepository(transaction, workspaceId, scope),
-        pipelineRuns: createPipelineRunRepository(transaction, workspaceId, scope),
+        sourceAssets: createSourceAssetRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        publishJobs: createPublishJobRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        shoplineConnections: createShoplineConnectionRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        pipelineRuns: createPipelineRunRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
         audit: createAuditWriter(transaction, workspaceId, scope),
@@ -123,13 +160,21 @@ export function createDatabase(
         prepare: false,
       });
       try {
-        const migrationPath = fileURLToPath(
-          new URL("../drizzle/0000_initial.sql", import.meta.url),
+        const defaultMigrationsDir = process
+          .cwd()
+          .endsWith(`${sep}packages${sep}db`)
+          ? join(process.cwd(), "drizzle")
+          : join(process.cwd(), "packages/db/drizzle");
+        const migrations = await loadSqlMigrations(
+          pathToFileURL(
+            `${process.env.DATABASE_MIGRATIONS_DIR ?? defaultMigrationsDir}${sep}`,
+          ),
         );
-        const migration = await readFile(migrationPath, "utf8");
-        await admin.begin(async (transaction) => {
-          await transaction.unsafe(migration);
-        });
+        for (const migration of migrations) {
+          await admin.begin(async (transaction) => {
+            await transaction.unsafe(migration.sql);
+          });
+        }
       } finally {
         await admin.end();
       }
@@ -145,7 +190,9 @@ export function createDatabase(
  * Creates the unscoped database handle used only by Auth.js and provisioning.
  * Tenant application queries must continue through `createDatabase().forWorkspace`.
  */
-export function createAuthDatabase(url: string): AuthDatabase & { close(): Promise<void> } {
+export function createAuthDatabase(
+  url: string,
+): AuthDatabase & { close(): Promise<void> } {
   if (!url) throw new Error("database URL is required");
   const client = postgres(url, {
     connect_timeout: 10,

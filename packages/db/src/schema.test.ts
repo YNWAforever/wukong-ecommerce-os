@@ -3,11 +3,17 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  authAccounts,
+  authRateLimits,
+  authSessions,
+  authVerifications,
   fieldEvidence,
   listingDrafts,
   listingVersions,
   listingPipelineSteps,
+  passwordLoginGuards,
   sourceAssets,
+  users,
 } from "./schema.js";
 
 function foreignKeyMetadata(table: Parameters<typeof getTableConfig>[0]) {
@@ -47,5 +53,48 @@ describe("nullable tenant relationships", () => {
       foreignTable: sourceAssets,
       onDelete: "restrict",
     });
+  });
+});
+
+describe("Better Auth schema", () => {
+  it("preserves the legacy verification timestamp and adds the boolean verification flag", () => {
+    const columns = getTableColumns(users);
+
+    expect(columns.legacyEmailVerified.name).toBe("email_verified");
+    expect(columns.emailVerified.name).toBe("auth_email_verified");
+    expect(columns.emailVerified.dataType).toBe("boolean");
+  });
+
+  it("defines the required account fields", () => {
+    expect(Object.keys(getTableColumns(authAccounts))).toEqual([
+      "id", "userId", "accountId", "providerId", "accessToken", "refreshToken",
+      "accessTokenExpiresAt", "refreshTokenExpiresAt", "scope", "idToken",
+      "password", "createdAt", "updatedAt",
+    ]);
+  });
+
+  it("defines the required session fields", () => {
+    expect(Object.keys(getTableColumns(authSessions))).toEqual([
+      "id", "userId", "token", "expiresAt", "ipAddress", "userAgent",
+      "createdAt", "updatedAt",
+    ]);
+  });
+
+  it("defines the required verification fields", () => {
+    expect(Object.keys(getTableColumns(authVerifications))).toEqual([
+      "id", "identifier", "value", "expiresAt", "createdAt", "updatedAt",
+    ]);
+  });
+
+  it("defines the required database rate-limit fields", () => {
+    expect(Object.keys(getTableColumns(authRateLimits))).toEqual([
+      "id", "key", "count", "lastRequest",
+    ]);
+  });
+
+  it("defines the application-owned password lockout fields", () => {
+    expect(Object.keys(getTableColumns(passwordLoginGuards))).toEqual([
+      "email", "failedAttempts", "lockedUntil", "updatedAt",
+    ]);
   });
 });
