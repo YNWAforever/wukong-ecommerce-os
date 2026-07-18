@@ -933,9 +933,12 @@ Expected: FAIL because `railway.json` does not exist.
       "packages/core/**",
       "packages/db/**",
       "packages/jobs/**",
+      "packages/shopline/**",
+      "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "tsconfig.base.json",
+      "turbo.json",
       "railway.json"
     ]
   },
