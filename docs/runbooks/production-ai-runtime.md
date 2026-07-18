@@ -22,7 +22,7 @@ If a provider displays a materially higher price, stop before creating the resou
 | Railway       | Private worker service     | `listing-worker`                         |
 | Vercel        | Production application     | `https://wukong-ecommerce-os.vercel.app` |
 
-Keep the R2 bucket private and scope its API token to Object Read & Write on this bucket only. Use the TLS `rediss://` Upstash endpoint. Deploy Railway from the repository root, in Singapore, with one replica and no public domain.
+Keep the R2 bucket private and scope its API token to Object Read & Write on this bucket only. Use the TLS `rediss://` Upstash endpoint. Before provisioning is accepted, confirm eviction is disabled (no eviction); BullMQ queue keys cannot be evicted under capacity pressure. Deploy Railway from the repository root, in Singapore, with one replica and no public domain.
 
 ## R2 CORS policy
 
@@ -106,8 +106,8 @@ Do not store `DATABASE_ADMIN_URL`, `AUTH_SECRET`, `AUTH_SMTP_URL`, Resend/auth-m
 
 1. Verify the branch and exact commit passed the repository gate. Record that commit for both Vercel and Railway.
 2. Recheck provider prices, resource privacy, the R2 bucket-scoped token, the TLS Redis endpoint, model access, and the variable allowlists. Do not print values.
-3. For preview, add the branch-scoped Vercel allowlist and Railway allowlist, deploy the same commit, add the selected preview origin to R2 CORS, and complete synthetic browser acceptance. Remove the origin when that preview is retired.
-4. After the accepted commit is merged and required checks are green, add the same allowlists to production. Keep the new Railway worker stopped until the controlled migration succeeds.
+3. For preview, confirm the Upstash database uses TLS and eviction is disabled (no eviction), add the branch-scoped Vercel allowlist and Railway allowlist, deploy the same commit, add the selected preview origin to R2 CORS, and complete synthetic browser acceptance. Remove the origin when that preview is retired.
+4. After the accepted commit is merged and required checks are green, recheck that production uses the same Upstash database with eviction disabled (no eviction), then add the same allowlists to production. Keep the new Railway worker stopped until the controlled migration succeeds.
 5. In the controlled release environment only, provide both Neon runtime and admin URLs, then run:
 
    ```powershell
@@ -126,20 +126,21 @@ Record the commit, Vercel deployment ID, Railway deployment ID, regions, non-sec
 
 Use the exact deployment IDs and a narrow time range for every check; do not rely on historical grouped logs.
 
-1. Confirm Vercel and Railway show the same accepted source commit. Railway must show configuration sourced from `railway.json`, one private replica, no generated domain, and no pre-deploy migration.
-2. In the Vercel deployment logs, find `listing.enqueue_accepted` for the synthetic listing. Record only its deployment ID, workspace ID, draft ID, job ID, and timestamp. `listing.enqueue_failed` is acceptable only during the deliberate outage-recovery exercise and must use `queue_unavailable`.
-3. In the Railway deployment logs, find the exact startup line `listing worker started`. Confirm there is no restart loop, missing-variable error, migration command, or public listener.
-4. Correlate job consumption using the Vercel job ID, the Railway deployment time window, and Neon transitions `received -> processing -> in_review` or `needs_info`. If the pipeline terminates, only the safe codes `provider_timeout`, `provider_failure`, or `pipeline_failure` may be retained; raw provider errors are forbidden.
-5. Confirm Neon contains the expected pipeline run, evidence, AI metadata, active version, and terminal listing state. Confirm one canonical BullMQ job ID exists and R2 objects remain under the expected workspace prefix.
-6. Scan the exact Vercel and Railway deployment logs for credential values, `rediss://`, signed R2 query parameters, raw prompts, uploaded content, and full model output. Any match blocks acceptance and requires credential revocation/rotation through the owning provider.
-7. Verify the browser upload preflight allows `PUT` with `Content-Type` from production and the selected preview origin only. Verify the bucket remains private.
-8. Complete the retry drill: with the deliberate Redis outage, creation remains HTTP 201 and `received` with `processing.state=retry_required`; after restoration, the retry returns HTTP 202, creates exactly one job, and reaches a reviewable state without re-uploading assets.
+1. For preview and again for production, inspect the Upstash database details and record non-secret evidence that eviction is disabled (no eviction). If eviction is enabled or the setting cannot be proven, stop acceptance; queue keys must not be discarded under capacity pressure.
+2. Confirm Vercel and Railway show the same accepted source commit. Railway must show configuration sourced from `railway.json`, one private replica, no generated domain, and no pre-deploy migration.
+3. In the Vercel deployment logs, find `listing.enqueue_accepted` for the synthetic listing. Record only its deployment ID, workspace ID, draft ID, job ID, and timestamp. `listing.enqueue_failed` is acceptable only during the deliberate outage-recovery exercise and must use `queue_unavailable`.
+4. In the Railway deployment logs, find the exact startup line `listing worker started`. Confirm there is no restart loop, missing-variable error, migration command, or public listener.
+5. Correlate job consumption using the Vercel job ID, the Railway deployment time window, and Neon transitions `received -> processing -> in_review` or `needs_info`. If the pipeline terminates, only the safe codes `provider_timeout`, `provider_failure`, or `pipeline_failure` may be retained; raw provider errors are forbidden.
+6. Confirm Neon contains the expected pipeline run, evidence, AI metadata, active version, and terminal listing state. Confirm one canonical BullMQ job ID exists and R2 objects remain under the expected workspace prefix.
+7. Scan the exact Vercel and Railway deployment logs for credential values, `rediss://`, signed R2 query parameters, raw prompts, uploaded content, and full model output. Any match blocks acceptance and requires credential revocation/rotation through the owning provider.
+8. Verify the browser upload preflight allows `PUT` with `Content-Type` from production and the selected preview origin only. Verify the bucket remains private.
+9. Complete the retry drill: with the deliberate Redis outage, creation remains HTTP 201 and `received` with `processing.state=retry_required`; after restoration, the retry returns HTTP 202, creates exactly one job, and reaches a reviewable state without re-uploading assets.
 
 ## Rollback
 
 1. Roll Vercel back to the last known-good deployment.
 2. Roll Railway back to the compatible worker deployment, or stop `listing-worker` if continued consumption is unsafe.
-3. Retain the Upstash Redis queue and all Neon records. Queued work can resume when a compatible worker returns, and Neon remains authoritative.
+3. Retain the Upstash Redis queue and all Neon records. Keep eviction disabled; if capacity pressure occurs, stop new publishers or scale to a larger fixed plan, and never enable eviction or delete queue keys. Queued work can resume when a compatible worker returns, and Neon remains authoritative.
 4. Never delete `wukong-opak-prod-assets` during incident response. Preserve R2 objects and their Neon metadata for recovery and audit.
 5. Do not reverse an additive migration until its compatibility and data-loss impact have been reviewed. A worker stop is safer than an improvised database rollback.
 6. Revoke only the affected provider credential when compromise is suspected; do not rotate unrelated secrets. Remove retired preview CORS origins.
