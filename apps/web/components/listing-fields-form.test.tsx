@@ -2,7 +2,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ListingFieldsForm, type ListingReviewModel } from "./listing-fields-form";
+import {
+  ListingFieldsForm,
+  type ListingReviewModel,
+} from "./listing-fields-form";
 
 const model: ListingReviewModel = {
   id: "listing-1",
@@ -15,7 +18,11 @@ const model: ListingReviewModel = {
       englishLabel: "Producer",
       value: "Opak Cellar",
       confidence: 0.96,
-      evidence: { excerpt: "Opak Cellar", source: "supplier-sheet.txt", page: null },
+      evidence: {
+        excerpt: "Opak Cellar",
+        source: "supplier-sheet.txt",
+        page: null,
+      },
     },
     {
       key: "stockQuantity",
@@ -28,10 +35,13 @@ const model: ListingReviewModel = {
   ],
   blockingFlags: [
     {
+      id: "description:health_claim:0",
       code: "health_claim",
+      field: "description",
       label: "健康功效聲稱",
       description: "移除未有來源支持的健康功效描述，或交由審核員記錄理由。",
       status: "open",
+      resolutionReason: null,
     },
   ],
 };
