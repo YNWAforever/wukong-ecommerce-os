@@ -13,6 +13,7 @@ describe("listing asset ID validation", () => {
     let databaseCalls = 0;
     const handler = createListingHandler({
       sessionContext,
+      publisher: { async enqueue() { return { id: "job_test" }; } },
       getAssetStore: () => {
         throw new Error("unused");
       },

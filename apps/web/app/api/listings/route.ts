@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
+import { listingPublisher } from "../../../lib/listing-queue-runtime";
 import {
   ApiError,
   jsonResponse,
@@ -24,7 +25,7 @@ const listingSchema = z
   })
   .strict();
 
-export function createListingHandler(deps: IntakeRouteDeps) {
+export function createListingHandler(deps: IntakeRouteDeps<true>) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
@@ -95,12 +96,52 @@ export function createListingHandler(deps: IntakeRouteDeps) {
           return created;
         });
 
+      let processing:
+        | { state: "queued"; jobId: string; errorCode: null }
+        | {
+            state: "retry_required";
+            jobId: null;
+            errorCode: "queue_unavailable";
+          };
+
+      try {
+        const job = await deps.publisher.enqueue({
+          workspaceId: context.workspaceId,
+          draftId: listing.id,
+          activeVersionSequence: 0,
+        });
+        processing = { state: "queued", jobId: job.id, errorCode: null };
+        console.info(
+          JSON.stringify({
+            event: "listing.enqueue_accepted",
+            workspaceId: context.workspaceId,
+            listingId: listing.id,
+            jobId: job.id,
+          }),
+        );
+      } catch {
+        processing = {
+          state: "retry_required",
+          jobId: null,
+          errorCode: "queue_unavailable",
+        };
+        console.error(
+          JSON.stringify({
+            event: "listing.enqueue_failed",
+            workspaceId: context.workspaceId,
+            listingId: listing.id,
+            errorCode: "queue_unavailable",
+          }),
+        );
+      }
+
       return jsonResponse(201, {
         listing: {
           id: listing.id,
           status: listing.status,
           target: listing.target,
         },
+        processing,
       });
     });
   };
@@ -160,4 +201,5 @@ export const POST = createListingHandler({
   sessionContext: authSessionContext,
   getAssetStore,
   getDatabase,
+  publisher: listingPublisher,
 });

@@ -10,6 +10,12 @@ const sessionContext = {
   },
 };
 
+const publisher = {
+  async enqueue() {
+    return { id: "job_test" };
+  },
+};
+
 function requestFor(url: string, body: Record<string, unknown>) {
   return new Request(`http://localhost${url}`, {
     method: "POST",
@@ -80,6 +86,7 @@ describe("POST /api/listings", () => {
     const calls: unknown[] = [];
     const handler = createListingHandler({
       sessionContext,
+      publisher,
       getAssetStore: () => {
         throw new Error("asset store must stay lazy");
       },
@@ -120,6 +127,7 @@ describe("POST /api/listings", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
       listing: { id: "listing_1", status: "received", target: "shopline" },
+      processing: { state: "queued", jobId: "job_test", errorCode: null },
     });
     expect(calls).toContainEqual({
       target: "shopline",
@@ -137,6 +145,7 @@ describe("POST /api/listings", () => {
   it("returns a generic 404 when any asset is outside the workspace", async () => {
     const handler = createListingHandler({
       sessionContext,
+      publisher,
       getAssetStore: () => {
         throw new Error("unused");
       },
