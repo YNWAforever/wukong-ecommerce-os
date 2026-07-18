@@ -126,7 +126,7 @@ The second response is not reported as total creation failure. The client redire
 
 ### Retry endpoint
 
-`POST /api/listings/{id}/process` is workspace-scoped and requires an editor or admin role. It repairs only the database-to-queue publication gap. It may enqueue only a listing that:
+`POST /api/listings/{id}/process` is workspace-scoped and requires the existing `operator` role or higher (`operator`, `reviewer`, `admin`, or `owner`). It repairs only the database-to-queue publication gap. It may enqueue only a listing that:
 
 - is `received`;
 - has finalized source assets;
