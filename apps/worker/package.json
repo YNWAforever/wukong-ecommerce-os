@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "pnpm build && node dist/cli.js",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src",
+    "test": "vitest run src --exclude src/**/*.integration.test.ts",
     "test:integration": "vitest run src/queue.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
