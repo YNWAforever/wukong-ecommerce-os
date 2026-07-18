@@ -15,7 +15,7 @@
     "audit:verify": "tsx src/cli/audit-verify.ts",
     "db:migrate": "tsx src/migrate.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --exclude src/**/*.integration.test.ts",
     "test:integration": "vitest run src/repositories/listings.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
