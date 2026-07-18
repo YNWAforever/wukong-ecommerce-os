@@ -48,14 +48,19 @@ describe("auth mailer", () => {
       text: "Open the link",
       html: "<p>Open the link</p>",
     });
-    expect(log).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledTimes(1);
+    const deliveryLog = String(log.mock.calls[0]?.[0]);
+    expect(deliveryLog).toContain("auth_email_accepted");
+    expect(deliveryLog).not.toContain("admin@example.com");
+    expect(deliveryLog).not.toContain("secret");
     expect(warn).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
   });
 
   it("fails closed when SMTP configuration is unavailable", async () => {
     const createTransport = vi.fn();
-    const send = createAuthEmailSender({ createTransport, env: {} });
+    const report = vi.fn();
+    const send = createAuthEmailSender({ createTransport, env: {}, report });
 
     await expect(
       send({
@@ -66,5 +71,53 @@ describe("auth mailer", () => {
       }),
     ).rejects.toThrow("Authentication email is not configured");
     expect(createTransport).not.toHaveBeenCalled();
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "rejected",
+        errorName: "AuthEmailConfigurationError",
+      }),
+    );
+  });
+
+  it("reports safe SMTP acceptance and rejection metadata without recipient or credentials", async () => {
+    const report = vi.fn();
+    const sendMail = vi
+      .fn()
+      .mockResolvedValueOnce({ messageId: "message-1" })
+      .mockRejectedValueOnce(
+        Object.assign(new Error("authentication failed with secret"), {
+          code: "EAUTH",
+          responseCode: 535,
+        }),
+      );
+    const send = createAuthEmailSender({
+      createTransport: () => ({ sendMail }),
+      env: {
+        AUTH_SMTP_URL: "smtps://resend:secret@smtp.resend.com:465",
+        AUTH_EMAIL_FROM: "Wukong Auth <auth@example.com>",
+      },
+      report,
+    });
+    const email = {
+      to: "admin@example.com",
+      subject: "Sign in",
+      text: "Open",
+      html: "<p>Open</p>",
+    };
+
+    await send(email);
+    await expect(send(email)).rejects.toThrow("authentication failed");
+
+    expect(report).toHaveBeenNthCalledWith(1, { outcome: "accepted" });
+    expect(report).toHaveBeenNthCalledWith(2, {
+      outcome: "rejected",
+      errorName: "Error",
+      code: "EAUTH",
+      responseCode: 535,
+    });
+    expect(JSON.stringify(report.mock.calls)).not.toContain(
+      "admin@example.com",
+    );
+    expect(JSON.stringify(report.mock.calls)).not.toContain("secret");
   });
 });
