@@ -1,6 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createListingDraft } from "./listing-intake-client.js";
+const push = vi.fn();
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, refresh }),
+}));
+
+import {
+  createListingDraft,
+  ListingIntakeClient,
+} from "./listing-intake-client.js";
+
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("live listing intake", () => {
   it("presigns, uploads, finalizes, and creates a listing with the finalized assets", async () => {
@@ -141,4 +157,104 @@ describe("live listing intake", () => {
     ).rejects.toThrow("Upload rejected");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+});
+
+const intakeRoots: Root[] = [];
+
+async function mountIntake() {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  intakeRoots.push(root);
+  await act(async () => {
+    root.render(createElement(ListingIntakeClient));
+  });
+  return { container, root };
+}
+
+function navigationFetcher(state: "queued" | "retry_required") {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(
+        {
+          key: "workspaces/ws_opak/assets/file-1",
+          uploadUrl: "https://storage.example/upload-1",
+        },
+        { status: 201 },
+      ),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    .mockResolvedValueOnce(
+      Response.json(
+        { assetId: "00000000-0000-4000-8000-000000000301" },
+        { status: 201 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      Response.json(
+        {
+          listing: { id: "00000000-0000-4000-8000-000000000101" },
+          processing: {
+            state,
+            jobId: state === "queued" ? "job_1" : null,
+            errorCode: state === "retry_required" ? "queue_unavailable" : null,
+          },
+        },
+        { status: 201 },
+      ),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+}
+
+describe("ListingIntakeClient navigation", () => {
+  beforeEach(() => {
+    push.mockReset();
+    refresh.mockReset();
+  });
+
+  afterEach(async () => {
+    for (const root of intakeRoots.splice(0)) {
+      await act(async () => root.unmount());
+    }
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["queued", "retry_required"] as const)(
+    "navigates the rendered form to the listing with %s processing state",
+    async (state) => {
+      const fetcher = navigationFetcher(state);
+      const { container } = await mountIntake();
+      const input =
+        container.querySelector<HTMLInputElement>('input[type="file"]');
+      const form = container.querySelector("form");
+      expect(input).not.toBeNull();
+      expect(form).not.toBeNull();
+      Object.defineProperty(input!, "files", {
+        configurable: true,
+        value: [new File(["bottle"], "bottle.png", { type: "image/png" })],
+      });
+
+      await act(async () => {
+        input!.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await act(async () => {
+        form!.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(fetcher).toHaveBeenCalledTimes(4);
+      expect(push).toHaveBeenCalledWith(
+        "/listings/00000000-0000-4000-8000-000000000101?processing=" + state,
+      );
+      expect(refresh).toHaveBeenCalledTimes(1);
+    },
+  );
 });

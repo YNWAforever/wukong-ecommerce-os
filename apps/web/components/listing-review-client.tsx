@@ -401,6 +401,7 @@ export function ListingReviewClient({
       if (!response.ok) throw await responseError(response);
       const next = (await response.json()) as ListingViewResponse;
       setSnapshot(next);
+      setError(null);
       if (
         next.status === "processing" ||
         next.status === "needs_info" ||
