@@ -4,8 +4,8 @@ import { z } from "zod";
 export const LISTING_QUEUE = "listing-pipeline";
 
 export const listingJobSchema = z.object({
-  workspaceId: z.string().trim().min(1),
-  draftId: z.string().trim().min(1),
+  workspaceId: z.string().trim().min(1).refine((value) => !value.includes(":"), { message: "workspaceId must not contain ':'" }),
+  draftId: z.string().trim().min(1).refine((value) => !value.includes(":"), { message: "draftId must not contain ':'" }),
   activeVersionSequence: z.number().int().nonnegative(),
 }).strict();
 

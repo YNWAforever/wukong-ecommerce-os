@@ -18,6 +18,13 @@ describe("listing queue payload", () => {
   ])("rejects malformed queue identity %#", (input) => {
     expect(() => listingJobSchema.parse(input)).toThrow();
   });
+
+  it.each([
+    { workspaceId: "ws:a", draftId: "draft_1", activeVersionSequence: 0 },
+    { workspaceId: "ws_opak", draftId: "draft:1", activeVersionSequence: 0 },
+  ])("rejects colon-bearing queue identity %#", (input) => {
+    expect(() => listingJobSchema.parse(input)).toThrow(/must not contain ':'/);
+  });
 });
 
 describe("enqueueListingPipeline", () => {
