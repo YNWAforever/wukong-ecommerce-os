@@ -16,6 +16,7 @@
     "@wukong/assets": "workspace:*",
     "@wukong/core": "workspace:*",
     "@wukong/db": "workspace:*",
+    "@wukong/jobs": "workspace:*",
     "@wukong/shopline": "workspace:*",
     "bullmq": "^5.80.1",
     "ioredis": "^5.10.1"

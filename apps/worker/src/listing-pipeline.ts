@@ -2,8 +2,9 @@ import type { AuditContext, AuditWriter, CanonicalListing, ComplianceFlag, Field
 import { scanCompliance } from "@wukong/core";
 import type { AIUsage, ExtractionAsset, ExtractionResult, ListingAIProvider } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
+import { listingPipelineJobId, type ListingJobInput } from "@wukong/jobs";
 
-export type ListingPipelineInput = { workspaceId: string; draftId: string; activeVersionSequence: number };
+export type ListingPipelineInput = ListingJobInput;
 export type PipelineResult = { status: "in_review" | "needs_info"; versionId: string | null };
 export type PipelineAttemptOptions = { attempt?: number; maxAttempts?: number };
 export type PipelineAsset = { id: string; mimeType: string; storageKey: string };
@@ -43,9 +44,6 @@ export type PipelineErrorCode = "provider_timeout" | "provider_failure" | "pipel
 export class PipelineTimeoutError extends Error { constructor(message = "listing provider timed out") { super(message); this.name = "PipelineTimeoutError"; } }
 const WORKER_ACTOR_ID = "worker:listing-pipeline";
 
-export function listingPipelineJobId(input: ListingPipelineInput): string {
-  return "listing:" + input.workspaceId + ":" + input.draftId + ":" + input.activeVersionSequence;
-}
 function context(input: ListingPipelineInput): AuditContext { return { workspaceId: input.workspaceId, actorId: WORKER_ACTOR_ID, entityId: input.draftId }; }
 function aiRunFrom(task: "extract" | "generate", usage: AIUsage, input: ListingPipelineInput) { return { task, draftId: input.draftId, idempotencyKey: listingPipelineJobId(input), outcome: "succeeded" as const, ...usage }; }
 function flattenLocalizedContent(listing: CanonicalListing): Record<string, string> { return { titleEn: listing.title.en, titleZhHant: listing.title["zh-Hant"], descriptionEn: listing.description.en, descriptionZhHant: listing.description["zh-Hant"], seoTitleEn: listing.seo.title.en, seoTitleZhHant: listing.seo.title["zh-Hant"], seoDescriptionEn: listing.seo.description.en, seoDescriptionZhHant: listing.seo.description["zh-Hant"] }; }

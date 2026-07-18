@@ -102,6 +102,9 @@ importers:
       '@wukong/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wukong/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@wukong/shopline':
         specifier: workspace:*
         version: link:../../packages/shopline
@@ -190,6 +193,28 @@ importers:
       tsx:
         specifier: ^4.20.6
         version: 4.23.0
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 4.1.10
+        version: 4.1.10(@types/node@26.1.1)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(tsx@4.23.0))
+
+  packages/jobs:
+    dependencies:
+      bullmq:
+        specifier: ^5.80.1
+        version: 5.80.1
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: latest
+        version: 26.1.1
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
       typescript:
         specifier: 7.0.2
         version: 7.0.2

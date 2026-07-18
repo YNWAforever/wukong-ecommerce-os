@@ -1,7 +1,10 @@
 import { Worker, type ConnectionOptions, type Processor, type WorkerOptions } from "bullmq";
+import {
+  LISTING_QUEUE,
+  type ListingQueuePayload,
+} from "@wukong/jobs";
 
 import { runListingPipeline, type PipelineDependencies } from "./listing-pipeline.js";
-import { LISTING_QUEUE, type ListingQueuePayload } from "./queue.js";
 
 export function createListingPipelineProcessor(
   dependencies: PipelineDependencies,
@@ -26,12 +29,12 @@ export {
   bullmqListingJobId,
   createListingQueue,
   enqueueListingPipeline,
+  listingPipelineJobId,
   type ListingQueuePayload,
   type ListingQueuePort,
-} from "./queue.js";
+} from "@wukong/jobs";
 export {
   PipelineTimeoutError,
-  listingPipelineJobId,
   runListingPipeline,
   type ListingPipelineInput,
   type PipelineDependencies,
