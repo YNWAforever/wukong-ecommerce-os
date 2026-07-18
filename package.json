@@ -10,7 +10,7 @@
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "node --test tests/ci-workflow.test.mjs && turbo run test",
+    "test": "node --test tests/ci-workflow.test.mjs tests/railway-config.test.mjs && turbo run test",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:e2e": "playwright test"
   },
