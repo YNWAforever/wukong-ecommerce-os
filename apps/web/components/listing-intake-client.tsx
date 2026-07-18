@@ -12,6 +12,11 @@ type IntakeDependencies = {
   digest?: (file: File) => Promise<string>;
 };
 
+export type CreateListingDraftResult = {
+  listingId: string;
+  processing: "queued" | "retry_required";
+};
+
 async function responseError(response: Response): Promise<Error> {
   const fallback = `Upload request failed (${response.status})`;
   try {
@@ -33,7 +38,7 @@ async function sha256(file: File): Promise<string> {
 export async function createListingDraft(
   payload: ListingIntakePayload,
   dependencies: IntakeDependencies = {},
-): Promise<{ listingId: string }> {
+): Promise<CreateListingDraftResult> {
   const fetcher = dependencies.fetcher ?? fetch;
   const digest = dependencies.digest ?? sha256;
   const sourceAssetIds: string[] = [];
@@ -82,8 +87,14 @@ export async function createListingDraft(
     body: JSON.stringify({ sourceAssetIds, note: payload.note }),
   });
   if (!listingResponse.ok) throw await responseError(listingResponse);
-  const result = (await listingResponse.json()) as { listing: { id: string } };
-  return { listingId: result.listing.id };
+  const result = (await listingResponse.json()) as {
+    listing: { id: string };
+    processing: { state: "queued" | "retry_required" };
+  };
+  return {
+    listingId: result.listing.id,
+    processing: result.processing.state,
+  };
 }
 
 export function ListingIntakeClient() {
@@ -93,7 +104,7 @@ export function ListingIntakeClient() {
       onCreate={async (payload) => {
         const result = await createListingDraft(payload);
         router.push(
-          `/dashboard?created=${encodeURIComponent(result.listingId)}`,
+          `/listings/${encodeURIComponent(result.listingId)}?processing=${result.processing}`,
         );
         router.refresh();
       }}

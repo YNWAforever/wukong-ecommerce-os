@@ -32,6 +32,11 @@ describe("live listing intake", () => {
               status: "received",
               target: "shopline",
             },
+            processing: {
+              state: "queued",
+              jobId: "job_1",
+              errorCode: null,
+            },
           },
           { status: 201 },
         ),
@@ -47,6 +52,7 @@ describe("live listing intake", () => {
 
     expect(result).toEqual({
       listingId: "00000000-0000-4000-8000-000000000101",
+      processing: "queued",
     });
     expect(fetcher).toHaveBeenNthCalledWith(
       1,
@@ -87,6 +93,30 @@ describe("live listing intake", () => {
         }),
       }),
     );
+  });
+
+  it("preserves a retry-required outcome without re-uploading assets", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json(
+        {
+          listing: { id: "00000000-0000-4000-8000-000000000101" },
+          processing: {
+            state: "retry_required",
+            jobId: null,
+            errorCode: "queue_unavailable",
+          },
+        },
+        { status: 201 },
+      ),
+    );
+
+    await expect(
+      createListingDraft({ files: [], note: "Opak pilot" }, { fetcher }),
+    ).resolves.toEqual({
+      listingId: "00000000-0000-4000-8000-000000000101",
+      processing: "retry_required",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("stops before listing creation when an upload boundary fails", async () => {

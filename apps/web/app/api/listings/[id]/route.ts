@@ -33,6 +33,7 @@ const roleRank: Record<string, number> = {
 function listingPermissions(role: string) {
   const rank = roleRank[role] ?? 0;
   return {
+    canProcess: rank >= 20,
     canEdit: rank >= 20,
     canResolveFlags: rank >= 20,
     canApprove: rank >= 30,

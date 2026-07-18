@@ -5,7 +5,7 @@ import { createListingViewHandler } from "./route.js";
 const listingId = "00000000-0000-4000-8000-000000000101";
 
 function handlerFor(
-  role: "viewer" | "operator" | "reviewer" | "admin",
+  role: "viewer" | "operator" | "reviewer" | "admin" | "owner",
   hasConnection = false,
 ) {
   return createListingViewHandler({
@@ -55,6 +55,7 @@ describe("GET /api/listings/[id]", () => {
     [
       "viewer",
       {
+        canProcess: false,
         canEdit: false,
         canResolveFlags: false,
         canApprove: false,
@@ -64,6 +65,7 @@ describe("GET /api/listings/[id]", () => {
     [
       "operator",
       {
+        canProcess: true,
         canEdit: true,
         canResolveFlags: true,
         canApprove: false,
@@ -73,6 +75,7 @@ describe("GET /api/listings/[id]", () => {
     [
       "reviewer",
       {
+        canProcess: true,
         canEdit: true,
         canResolveFlags: true,
         canApprove: true,
@@ -82,6 +85,17 @@ describe("GET /api/listings/[id]", () => {
     [
       "admin",
       {
+        canProcess: true,
+        canEdit: true,
+        canResolveFlags: true,
+        canApprove: true,
+        canDeliver: true,
+      },
+    ],
+    [
+      "owner",
+      {
+        canProcess: true,
         canEdit: true,
         canResolveFlags: true,
         canApprove: true,

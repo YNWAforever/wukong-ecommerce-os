@@ -13,6 +13,7 @@ import { ComplianceFlags } from "./compliance-flags";
 import { DeliveryPanel } from "./delivery-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { ListingFieldsForm } from "./listing-fields-form";
+import { ListingProcessingPanel } from "./listing-processing-panel";
 import type {
   BlockingFlag,
   DeliveryModel,
@@ -22,6 +23,7 @@ import type {
 } from "./listing-view-models";
 
 type ListingPermissions = {
+  canProcess: boolean;
   canEdit: boolean;
   canResolveFlags: boolean;
   canApprove: boolean;
@@ -55,10 +57,32 @@ type MappedListingView = {
   evidence: Array<Evidence & { field: string }>;
 };
 
+type ProcessingStatus = Extract<
+  ListingStatus,
+  "received" | "processing" | "needs_info" | "failed"
+>;
+
+const processingStatuses = new Set<ListingStatus>([
+  "received",
+  "processing",
+  "needs_info",
+  "failed",
+]);
+
+function isProcessingStatus(
+  status: ListingStatus | null,
+): status is ProcessingStatus {
+  return status !== null && processingStatuses.has(status);
+}
+
 export type ListingViewRenderState =
-  { kind: "error"; message: string } | { kind: "loading" } | { kind: "ready" };
+  | { kind: "error"; message: string }
+  | { kind: "loading" }
+  | { kind: "processing"; status: ProcessingStatus }
+  | { kind: "ready" };
 
 export function resolveListingViewState(input: {
+  snapshotStatus: ListingStatus | null;
   hasSnapshot: boolean;
   hasMappedView: boolean;
   loadError: string | null;
@@ -69,6 +93,13 @@ export function resolveListingViewState(input: {
   }
   if (input.mappingError) {
     return { kind: "error", message: input.mappingError };
+  }
+  if (
+    input.hasSnapshot &&
+    !input.hasMappedView &&
+    isProcessingStatus(input.snapshotStatus)
+  ) {
+    return { kind: "processing", status: input.snapshotStatus };
   }
   if (!input.hasSnapshot || !input.hasMappedView) {
     return { kind: "loading" };
@@ -348,8 +379,15 @@ async function responseError(response: Response): Promise<Error> {
   }
 }
 
-export function ListingReviewClient({ listingId }: { listingId: string }) {
+export function ListingReviewClient({
+  listingId,
+  initialProcessing,
+}: {
+  listingId: string;
+  initialProcessing?: "queued" | "retry_required";
+}) {
   const [snapshot, setSnapshot] = useState<ListingViewResponse | null>(null);
+  const [processingState, setProcessingState] = useState(initialProcessing);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -361,7 +399,16 @@ export function ListingReviewClient({ listingId }: { listingId: string }) {
         signal,
       });
       if (!response.ok) throw await responseError(response);
-      setSnapshot((await response.json()) as ListingViewResponse);
+      const next = (await response.json()) as ListingViewResponse;
+      setSnapshot(next);
+      if (
+        next.status === "processing" ||
+        next.status === "needs_info" ||
+        next.status === "in_review" ||
+        next.status === "failed"
+      ) {
+        setProcessingState(undefined);
+      }
     },
     [listingId],
   );
@@ -380,9 +427,25 @@ export function ListingReviewClient({ listingId }: { listingId: string }) {
     return () => controller.abort();
   }, [load]);
 
+  useEffect(() => {
+    if (snapshot?.status !== "received" && snapshot?.status !== "processing")
+      return;
+    const timer = window.setInterval(() => {
+      load().catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : "Unable to refresh listing.",
+        );
+      });
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [load, snapshot?.status]);
+
   let mapped: MappedListingView | null = null;
   let mappingError: string | null = null;
-  if (snapshot) {
+  if (
+    snapshot &&
+    !(snapshot.activeVersion === null && isProcessingStatus(snapshot.status))
+  ) {
     try {
       mapped = mapListingView(snapshot);
     } catch (cause) {
@@ -412,7 +475,19 @@ export function ListingReviewClient({ listingId }: { listingId: string }) {
     [],
   );
 
+  async function startProcessing() {
+    await run(async () => {
+      const response = await fetch(`/api/listings/${listingId}/process`, {
+        method: "POST",
+      });
+      if (!response.ok) throw await responseError(response);
+      setProcessingState("queued");
+      await load();
+    }, "已加入處理佇列 · Processing queued");
+  }
+
   const viewState = resolveListingViewState({
+    snapshotStatus: snapshot?.status ?? null,
     hasSnapshot: Boolean(snapshot),
     hasMappedView: Boolean(mapped),
     loadError: error,
@@ -425,6 +500,28 @@ export function ListingReviewClient({ listingId }: { listingId: string }) {
         <p className="inline-warning" role="alert">
           {viewState.message}
         </p>
+      </div>
+    );
+  if (viewState.kind === "processing" && snapshot)
+    return (
+      <div className="page-wrap review-page" aria-busy={busy}>
+        {error ? (
+          <p className="inline-warning" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="success-note" role="status">
+            {message}
+          </p>
+        ) : null}
+        <ListingProcessingPanel
+          status={viewState.status}
+          enqueueState={processingState}
+          canProcess={snapshot.permissions.canProcess}
+          onProcess={startProcessing}
+          busy={busy}
+        />
       </div>
     );
   if (viewState.kind === "loading" || !snapshot || !mapped)

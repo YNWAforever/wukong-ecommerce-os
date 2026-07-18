@@ -67,6 +67,7 @@ const response: ListingViewResponse = {
   delivery: null,
   queueStatus: null,
   permissions: {
+    canProcess: true,
     canEdit: true,
     canResolveFlags: true,
     canApprove: true,
@@ -141,9 +142,25 @@ describe("listing review client mapping", () => {
     );
   });
 
+  it.each(["received", "processing", "needs_info", "failed"] as const)(
+    "renders %s without an active AI version as processing state",
+    (status) => {
+      expect(
+        resolveListingViewState({
+          snapshotStatus: status,
+          hasSnapshot: true,
+          hasMappedView: false,
+          loadError: null,
+          mappingError: null,
+        }),
+      ).toEqual({ kind: "processing", status });
+    },
+  );
+
   it("shows the mapping error instead of an endless loading state", () => {
     expect(
       resolveListingViewState({
+        snapshotStatus: "in_review",
         hasSnapshot: true,
         hasMappedView: false,
         loadError: null,
