@@ -1,22 +1,19 @@
 import type { ConnectionOptions, Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
-import type { AssetStore } from "@wukong/assets";
-import { S3AssetStore as DefaultS3AssetStore } from "@wukong/assets";
+import { S3AssetStore as DefaultS3AssetStore, readS3RuntimeConfig, type AssetStore } from "@wukong/assets";
 import type { ListingAIProvider } from "@wukong/ai";
 import { FakeListingProvider, OpenAIListingProvider } from "@wukong/ai";
 import { createDatabase, type Database, type DatabaseOptions, type WorkspaceRepositories } from "@wukong/db";
 import { createListingPipelineWorker, createListingQueue, type ListingQueuePort } from "./index.js";
 import type { PipelineDependencies, PipelineRepositories } from "./listing-pipeline.js";
 
+type S3ClientConfig = Parameters<typeof DefaultS3AssetStore.fromConfig>[1];
+
 export type ListingWorkerRuntimeConfig = {
   databaseUrl?: string;
-  migrationUrl?: string;
   redisUrl?: string;
-  s3Bucket?: string;
-  s3Region?: string;
-  s3Endpoint?: string;
   databaseFactory?: (url: string, options: DatabaseOptions) => Database;
-  assetStoreFactory?: (bucket: string, config: { region?: string; endpoint?: string }) => AssetStore;
+  assetStoreFactory?: (bucket: string, client: S3ClientConfig) => AssetStore;
   providerFactory?: () => ListingAIProvider;
   redisFactory?: (url: string) => Redis;
   queueFactory?: (connection: ConnectionOptions) => Queue;
@@ -44,6 +41,7 @@ function createProvider(config: ListingWorkerRuntimeConfig): ListingAIProvider {
   required(undefined, "OPENAI_API_KEY");
   return new OpenAIListingProvider();
 }
+
 function mapRepositories(repositories: WorkspaceRepositories, assetStore: AssetStore, providerName: string): PipelineRepositories {
   return {
     listings: repositories.listings,
@@ -67,11 +65,12 @@ function mapRepositories(repositories: WorkspaceRepositories, assetStore: AssetS
 export async function startListingPipelineWorker(config: ListingWorkerRuntimeConfig = {}): Promise<ListingWorkerRuntime> {
   const databaseUrl = required(config.databaseUrl, "DATABASE_URL");
   const redisUrl = required(config.redisUrl, "REDIS_URL");
-  const bucket = required(config.s3Bucket, "S3_BUCKET");
-  const migrationUrl = config.migrationUrl ?? process.env.DATABASE_ADMIN_URL;
-  const database = (config.databaseFactory ?? ((url, options) => createDatabase(url, options)))(databaseUrl, { migrationUrl: migrationUrl });
-  if (migrationUrl) await database.migrate();
-  const assetStore = (config.assetStoreFactory ?? ((name, options) => DefaultS3AssetStore.fromConfig(name, { region: options.region, endpoint: options.endpoint })))(bucket, { region: config.s3Region ?? process.env.AWS_REGION, endpoint: config.s3Endpoint ?? process.env.S3_ENDPOINT });
+  const database = (config.databaseFactory ?? ((url, options) => createDatabase(url, options)))(databaseUrl, {});
+  const storage = readS3RuntimeConfig(process.env);
+  const assetStore = (config.assetStoreFactory ?? ((bucket, client) => DefaultS3AssetStore.fromConfig(bucket, client)))(
+    storage.bucket,
+    storage.client,
+  );
   const provider = createProvider(config);
   const providerName = process.env.AI_PROVIDER === "fake" ? "fake" : "openai";
   const redis = (config.redisFactory ?? ((url) => new Redis(url, { maxRetriesPerRequest: null })))(redisUrl);

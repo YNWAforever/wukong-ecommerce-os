@@ -1,4 +1,4 @@
-import { S3AssetStore, type AssetStore } from "@wukong/assets";
+import { readS3RuntimeConfig, S3AssetStore, type AssetStore } from "@wukong/assets";
 import { createDatabase, type Database } from "@wukong/db";
 
 let assetStore: AssetStore | undefined;
@@ -11,18 +11,8 @@ function requiredEnv(name: string): string {
 }
 
 export function getAssetStore(): AssetStore {
-  assetStore ??= S3AssetStore.fromConfig(requiredEnv("S3_BUCKET"), {
-    endpoint: process.env.S3_ENDPOINT,
-    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
-    region: process.env.S3_REGION ?? "auto",
-    credentials:
-      process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY
-        ? {
-            accessKeyId: process.env.S3_ACCESS_KEY_ID,
-            secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-          }
-        : undefined,
-  });
+  const config = readS3RuntimeConfig(process.env);
+  assetStore ??= S3AssetStore.fromConfig(config.bucket, config.client);
   return assetStore;
 }
 
