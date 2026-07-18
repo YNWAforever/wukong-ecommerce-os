@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import type { AuthDatabase } from "../client.js";
 import {
@@ -6,11 +6,8 @@ import {
   authAuditEvents,
   authSessions,
   passwordLoginGuards,
-  users,
-  workspaceInvites,
 } from "../schema.js";
 
-const ELIGIBLE_INVITE_STATUSES = ["pending", "accepted"] as const;
 const LOCKOUT_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
@@ -47,51 +44,42 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function createAuthAccessRepository(db: AuthDatabase): AuthAccessRepository {
+export function createAuthAccessRepository(
+  db: AuthDatabase,
+): AuthAccessRepository {
   return {
     async findEligibleUser(candidateEmail) {
       const email = normalizeEmail(candidateEmail);
-      const [user] = await db
-        .select({ id: users.id, email: users.email })
-        .from(users)
-        .innerJoin(workspaceInvites, sql`lower(${workspaceInvites.email}) = lower(${users.email})`)
-        .where(and(
-          sql`lower(${users.email}) = ${email}`,
-          inArray(workspaceInvites.status, ELIGIBLE_INVITE_STATUSES),
-        ))
-        .limit(1);
-      return user ? { id: user.id, email: normalizeEmail(user.email) } : null;
+      const [user] = await db.execute<{ userId: string; email: string }>(sql`
+        select user_id as "userId", email
+        from auth_get_eligible_user(${email})
+      `);
+      return user
+        ? { id: user.userId, email: normalizeEmail(user.email) }
+        : null;
     },
 
     async hasCredential(userId) {
       const [credential] = await db
         .select({ id: authAccounts.id })
         .from(authAccounts)
-        .where(and(
-          eq(authAccounts.userId, userId),
-          eq(authAccounts.providerId, "credential"),
-          isNotNull(authAccounts.password),
-          sql`${authAccounts.password} <> ''`,
-        ))
+        .where(
+          and(
+            eq(authAccounts.userId, userId),
+            eq(authAccounts.providerId, "credential"),
+            isNotNull(authAccounts.password),
+            sql`${authAccounts.password} <> ''`,
+          ),
+        )
         .limit(1);
       return Boolean(credential);
     },
 
     async isEnrollmentComplete(userId) {
-      const [completed] = await db
-        .select({ userId: users.id })
-        .from(users)
-        .innerJoin(
-          workspaceInvites,
-          sql.raw("lower(workspace_invites.email) = lower(users.email)"),
-        )
-        .where(and(
-          eq(users.id, userId),
-          eq(users.emailVerified, true),
-          eq(workspaceInvites.status, "accepted"),
-        ))
-        .limit(1);
-      return Boolean(completed);
+      const [result] = await db.execute<{ completed: boolean }>(sql`
+        select auth_is_enrollment_complete(${userId}) as completed
+      `);
+      return Boolean(result?.completed);
     },
 
     async getPasswordGuard(candidateEmail, now) {
@@ -151,7 +139,9 @@ export function createAuthAccessRepository(db: AuthDatabase): AuthAccessReposito
       if (!guard) throw new Error("password guard update failed");
       return {
         failedAttempts: guard.failedAttempts,
-        lockedUntil: guard.lockedUntil ? new Date(guard.lockedUntil as unknown as string) : null,
+        lockedUntil: guard.lockedUntil
+          ? new Date(guard.lockedUntil as unknown as string)
+          : null,
       };
     },
 
@@ -163,41 +153,10 @@ export function createAuthAccessRepository(db: AuthDatabase): AuthAccessReposito
 
     async completeEnrollment(userId, candidateEmail) {
       const email = normalizeEmail(candidateEmail);
-      await db.transaction(async (transaction) => {
-        const [eligible] = await transaction
-          .select({ userId: users.id })
-          .from(users)
-          .innerJoin(workspaceInvites, sql`lower(${workspaceInvites.email}) = lower(${users.email})`)
-          .where(and(
-            eq(users.id, userId),
-            sql`lower(${users.email}) = ${email}`,
-            inArray(workspaceInvites.status, ELIGIBLE_INVITE_STATUSES),
-          ))
-          .for("update")
-          .limit(1);
-        if (!eligible) throw new Error("eligible invite not found");
-
-        await transaction
-          .update(users)
-          .set({ emailVerified: true, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-        await transaction
-          .update(workspaceInvites)
-          .set({ status: "accepted" })
-          .where(and(
-            sql`lower(${workspaceInvites.email}) = ${email}`,
-            inArray(workspaceInvites.status, ELIGIBLE_INVITE_STATUSES),
-          ));
-        await transaction
-          .delete(passwordLoginGuards)
-          .where(eq(passwordLoginGuards.email, email));
-        await transaction.insert(authAuditEvents).values({
-          email,
-          userId,
-          outcome: "success",
-          reason: "password_enrollment_completed",
-        });
-      });
+      const [result] = await db.execute<{ completed: boolean }>(sql`
+        select auth_complete_enrollment(${userId}, ${email}) as completed
+      `);
+      if (!result?.completed) throw new Error("eligible invite not found");
     },
 
     async revokeUserSessions(userId) {
