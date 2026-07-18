@@ -21,6 +21,7 @@ describe("Better Auth configuration", () => {
     databaseUrl: "postgres://database.example/app",
     smtpUrl: "smtps://resend:secret@smtp.resend.com:465",
     from: "Wukong Auth <auth@example.com>",
+    baseUrl: "https://wukong-ecommerce-os.vercel.app",
   };
 
   it("uses the dedicated Drizzle models and database-backed sessions", () => {
@@ -47,6 +48,7 @@ describe("Better Auth configuration", () => {
       },
     );
     expect(options.database).toBe(adapter);
+    expect(options.baseURL).toBe("https://wukong-ecommerce-os.vercel.app");
     expect(options.user).toEqual({ modelName: "users" });
     expect(options.account).toEqual({ modelName: "authAccounts" });
     expect(options.session).toEqual({

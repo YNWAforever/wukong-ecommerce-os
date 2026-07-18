@@ -30,6 +30,7 @@ export type AuthEnvironment = {
   from: string;
   secret: string;
   databaseUrl: string;
+  baseUrl?: string;
 };
 
 type AuthDependencies = {
@@ -53,7 +54,16 @@ function requiredAuthEnv(): AuthEnvironment {
   if (!smtpUrl || !from || !secret || !databaseUrl) {
     throw new AuthConfigurationUnavailableError();
   }
-  return { smtpUrl, from, secret, databaseUrl };
+  const configuredBaseUrl =
+    process.env.BETTER_AUTH_URL ??
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env.VERCEL_URL;
+  const baseUrl = configuredBaseUrl
+    ? /^https?:\/\//i.test(configuredBaseUrl)
+      ? configuredBaseUrl
+      : `https://${configuredBaseUrl}`
+    : undefined;
+  return { smtpUrl, from, secret, databaseUrl, baseUrl };
 }
 
 export function buildAuthOptions(
@@ -90,6 +100,7 @@ export function buildAuthOptions(
   const access = dependencies.access ?? createAuthAccessRepository(db);
   return {
     secret: env.secret,
+    baseURL: env.baseUrl,
     database: dependencies.createAdapter(db, {
       provider: "pg",
       schema: {
