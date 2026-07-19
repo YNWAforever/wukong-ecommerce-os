@@ -21,6 +21,7 @@ $env:S3_ACCESS_KEY_ID = "wukong"
 $env:S3_SECRET_ACCESS_KEY = "wukong-secret"
 $env:S3_FORCE_PATH_STYLE = "true"
 pnpm.cmd install --frozen-lockfile
+pnpm.cmd --filter @wukong/db... build
 pnpm.cmd --filter @wukong/db db:migrate
 ```
 

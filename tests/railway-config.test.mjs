@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 function readText(relativePath) {
-  return readFileSync(new URL(relativePath, import.meta.url), "utf8");
+  return readFileSync(
+    new URL(relativePath, import.meta.url),
+    "utf8",
+  ).replaceAll("\r\n", "\n");
 }
 
 function markdownSection(markdown, heading) {
