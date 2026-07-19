@@ -17,12 +17,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "bullmq": "^5.80.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "latest",
-    "ioredis": "^5.10.1",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

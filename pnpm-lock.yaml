@@ -211,9 +211,6 @@ importers:
 
   packages/jobs:
     dependencies:
-      bullmq:
-        specifier: ^5.80.1
-        version: 5.80.1
       zod:
         specifier: 4.4.3
         version: 4.4.3
@@ -221,9 +218,6 @@ importers:
       '@types/node':
         specifier: latest
         version: 26.1.1
-      ioredis:
-        specifier: ^5.10.1
-        version: 5.10.1
       typescript:
         specifier: 7.0.2
         version: 7.0.2
