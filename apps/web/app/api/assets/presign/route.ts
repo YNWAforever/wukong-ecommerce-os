@@ -9,7 +9,10 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
-import { authSessionContext } from "../../../../lib/session-context";
+import {
+  authSessionContext,
+  requireWorkspaceRole,
+} from "../../../../lib/session-context";
 
 const presignAssetSchema = z
   .object({
@@ -23,6 +26,14 @@ export function createPresignAssetHandler(deps: IntakeRouteDeps) {
   return async function presignAsset(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
+      if (!requireWorkspaceRole("operator", context.role)) {
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
+      }
+
       const body = presignAssetSchema.parse(await request.json());
       try {
         const upload = await deps.getAssetStore().createUpload({

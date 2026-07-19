@@ -9,7 +9,10 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
-import { authSessionContext } from "../../../../lib/session-context";
+import {
+  authSessionContext,
+  requireWorkspaceRole,
+} from "../../../../lib/session-context";
 
 const finalizeAssetSchema = z
   .object({
@@ -24,6 +27,14 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
   return async function finalizeAsset(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
+      if (!requireWorkspaceRole("operator", context.role)) {
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
+      }
+
       const body = finalizeAssetSchema.parse(await request.json());
       try {
         assertAssetKey(context.workspaceId, body.key);

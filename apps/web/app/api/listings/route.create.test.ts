@@ -85,6 +85,44 @@ afterEach(() => {
 });
 
 describe("POST /api/listings creation handoff", () => {
+  it("rejects a viewer before loading assets or publishing", async () => {
+    const getByIds = vi.fn(async () => []);
+    const enqueue = vi.fn(async () => ({ id: "job_1" }));
+    const handler = createListingHandler({
+      sessionContext: {
+        async resolve() {
+          return {
+            workspaceId: "ws_opak",
+            actorId: "user_1",
+            role: "viewer",
+          } as const;
+        },
+      },
+      getAssetStore: () => {
+        throw new Error("unused");
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: { sourceAssets: { getByIds: typeof getByIds } }) => Promise<T>,
+          ) {
+            return work({ sourceAssets: { getByIds } });
+          },
+        }) as never,
+      publisher: { enqueue },
+    });
+
+    const response = await handler(requestForListing());
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      code: "insufficient_role",
+      message: "Operator access is required.",
+    });
+    expect(getByIds).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
   it("publishes listing identity after commit and returns the job ID", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const test = harness(vi.fn(async () => ({ id: "job_1" })));

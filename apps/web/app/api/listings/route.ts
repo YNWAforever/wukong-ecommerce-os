@@ -9,7 +9,10 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../lib/route-support";
-import { authSessionContext } from "../../../lib/session-context";
+import {
+  authSessionContext,
+  requireWorkspaceRole,
+} from "../../../lib/session-context";
 
 const listingSchema = z
   .object({
@@ -29,6 +32,14 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
+      if (!requireWorkspaceRole("operator", context.role)) {
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
+      }
+
       const body = listingSchema.parse(await request.json());
 
       const listing = await deps
