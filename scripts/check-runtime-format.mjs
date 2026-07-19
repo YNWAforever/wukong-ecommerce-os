@@ -17,6 +17,12 @@ const supportedExtensions = new Set([
 ]);
 const generatedFiles = new Set(["pnpm-lock.yaml"]);
 const semanticOnlyFiles = new Set([".env.example"]);
+const protectedUnrelatedFiles = new Set([
+  ".gitignore",
+  "apps/web/.gitignore",
+  "apps/web/auth.test.ts",
+  "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
+]);
 
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -58,6 +64,7 @@ const formatFiles = changedFiles.filter(
   (file) =>
     !generatedFiles.has(file) &&
     !semanticOnlyFiles.has(file) &&
+    !protectedUnrelatedFiles.has(file) &&
     supportedExtensions.has(path.posix.extname(file)),
 );
 
