@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createProcessListingHandler } from "./route.js";
+import { listingApplicationJobId } from "../../../../../lib/listing-queue-runtime.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const foreignListingId = "00000000-0000-4000-8000-000000000999";
@@ -29,6 +30,7 @@ function handlerFor(options: HandlerOptions = {}) {
     if (options.enqueueError) throw new Error("Redis unavailable");
     return { id: "job_1" };
   });
+  const pipelineRunKeys: string[] = [];
 
   const handler = createProcessListingHandler({
     sessionContext: {
@@ -68,7 +70,8 @@ function handlerFor(options: HandlerOptions = {}) {
             },
           },
           pipelineRuns: {
-            async getState() {
+            async getState(key: string) {
+              pipelineRunKeys.push(key);
               return options.pipelineState ?? null;
             },
           },
@@ -78,7 +81,7 @@ function handlerFor(options: HandlerOptions = {}) {
     publisher: { enqueue },
   });
 
-  return { handler, enqueue, listing };
+  return { handler, enqueue, listing, pipelineRunKeys };
 }
 
 function context(id = listingId) {
@@ -99,6 +102,24 @@ describe("POST /api/listings/[id]/process", () => {
       });
     },
   );
+
+  it("uses the publisher application ID to deduplicate a manual retry", async () => {
+    const { handler, enqueue, pipelineRunKeys } = handlerFor();
+
+    await handler(request, context());
+
+    const input = {
+      workspaceId: "ws_opak",
+      draftId: listingId,
+      activeVersionSequence: 0,
+    };
+    const applicationJobId = listingApplicationJobId(input);
+    expect(applicationJobId).toBe(
+      "listing:ws_opak:00000000-0000-4000-8000-000000000101:0",
+    );
+    expect(pipelineRunKeys).toEqual([applicationJobId]);
+    expect(enqueue).toHaveBeenCalledWith(input);
+  });
 
   it("rejects viewers", async () => {
     const { handler, enqueue } = handlerFor({ role: "viewer" });

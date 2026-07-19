@@ -19,7 +19,6 @@
     "@wukong/shopline": "workspace:*",
     "better-auth": "^1.5.5",
     "drizzle-orm": "0.44.7",
-    "ioredis": "^5.10.1",
     "next": "16.2.10",
     "nodemailer": "^9.0.3",
     "react": "19.2.7",

@@ -1,7 +1,7 @@
 import type { AssetStore } from "@wukong/assets";
 import type { Database } from "@wukong/db";
 
-import type { ListingPublisher } from "./listing-queue-runtime";
+import type { ListingPublisher } from "./listing-queue-runtime.js";
 import type { SessionContextPort } from "./session-context-port";
 
 type IntakeRouteBaseDeps = {

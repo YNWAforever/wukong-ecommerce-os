@@ -1,7 +1,8 @@
-import { listingPipelineJobId, type ListingJobInput } from "@wukong/jobs";
+import { type ListingJob } from "@wukong/jobs";
 
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
+  listingApplicationJobId,
   listingPublisher,
   type ListingPublisher,
 } from "../../../../../lib/listing-queue-runtime";
@@ -75,11 +76,12 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             );
           }
 
-          const key = listingPipelineJobId({
+          const input = {
             workspaceId: session.workspaceId,
             draftId: id,
             activeVersionSequence: revision.activeVersionSequence,
-          });
+          } satisfies ListingJob;
+          const key = listingApplicationJobId(input);
           if (await repositories.pipelineRuns.getState(key)) {
             throw new ApiError(
               409,
@@ -88,11 +90,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             );
           }
 
-          return {
-            workspaceId: session.workspaceId,
-            draftId: id,
-            activeVersionSequence: revision.activeVersionSequence,
-          } satisfies ListingJobInput;
+          return input;
         });
 
       try {

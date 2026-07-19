@@ -56,9 +56,6 @@ importers:
       drizzle-orm:
         specifier: 0.44.7
         version: 0.44.7(kysely@0.28.17)(postgres@3.4.9)
-      ioredis:
-        specifier: ^5.10.1
-        version: 5.10.1
       next:
         specifier: 16.2.10
         version: 16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
