@@ -63,7 +63,7 @@ const formatFiles = changedFiles.filter(
 
 const failures = [];
 for (const file of formatFiles) {
-  const source = readFileSync(file, "utf8");
+  const source = readFileSync(file, "utf8").replaceAll("\r\n", "\n");
   if (!(await check(source, { filepath: file }))) failures.push(file);
 }
 
