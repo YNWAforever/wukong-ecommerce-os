@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LISTING_INGRESS_PATH,
+  SHOPLINE_INGRESS_PATH,
   listingJobSchema,
   shoplinePublishJobSchema,
   signQueueRequest,
@@ -49,6 +50,26 @@ describe("Cloudflare queue protocol", () => {
         body: '{"draftId":"x"}',
       }),
     ).resolves.toBe(true);
+    await expect(
+      verifyQueueRequest({
+        secret: "a".repeat(32),
+        nowSeconds: 1_784_455_200,
+        timestamp: "1784455200",
+        signature,
+        path: SHOPLINE_INGRESS_PATH,
+        body: '{"draftId":"x"}',
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      verifyQueueRequest({
+        secret: "a".repeat(32),
+        nowSeconds: 1_784_455_200,
+        timestamp: "1784455200",
+        signature,
+        path: LISTING_INGRESS_PATH,
+        body: '{"draftId":"y"}',
+      }),
+    ).resolves.toBe(false);
     await expect(
       verifyQueueRequest({
         secret: "a".repeat(32),
