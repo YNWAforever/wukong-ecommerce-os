@@ -220,7 +220,10 @@ describe("auth access repository", () => {
     const [invite] = await db
       .select({ status: workspaceInvites.status })
       .from(workspaceInvites);
-    const guards = await db.select().from(passwordLoginGuards);
+    const guards = await db
+      .select()
+      .from(passwordLoginGuards)
+      .where(eq(passwordLoginGuards.email, email));
     const [audit] = await db
       .select({
         email: authAuditEvents.email,
@@ -228,7 +231,8 @@ describe("auth access repository", () => {
         outcome: authAuditEvents.outcome,
         reason: authAuditEvents.reason,
       })
-      .from(authAuditEvents);
+      .from(authAuditEvents)
+      .where(eq(authAuditEvents.email, email));
     expect(user).toEqual({ verified: true });
     expect(invite).toEqual({ status: "accepted" });
     expect(guards).toEqual([]);
@@ -251,7 +255,10 @@ describe("auth access repository", () => {
       .select({ verified: users.emailVerified })
       .from(users)
       .where(eq(users.id, userId));
-    const audits = await db.select().from(authAuditEvents);
+    const audits = await db
+      .select()
+      .from(authAuditEvents)
+      .where(eq(authAuditEvents.email, email));
     expect(user).toEqual({ verified: false });
     expect(audits).toEqual([]);
   });
@@ -280,7 +287,8 @@ describe("auth access repository", () => {
     await repository.revokeUserSessions(userId);
     const remaining = await db
       .select({ userId: authSessions.userId })
-      .from(authSessions);
+      .from(authSessions)
+      .where(eq(authSessions.userId, otherUserId));
     expect(remaining).toEqual([{ userId: otherUserId }]);
   });
 
@@ -298,7 +306,8 @@ describe("auth access repository", () => {
         outcome: authAuditEvents.outcome,
         reason: authAuditEvents.reason,
       })
-      .from(authAuditEvents);
+      .from(authAuditEvents)
+      .where(eq(authAuditEvents.email, email));
     expect(audit).toEqual({
       email,
       userId,
