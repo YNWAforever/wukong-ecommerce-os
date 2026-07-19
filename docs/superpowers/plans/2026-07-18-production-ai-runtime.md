@@ -77,6 +77,7 @@
 ### Task 1: Extract the Shared Listing Queue Contract
 
 **Files:**
+
 - Create: `packages/jobs/package.json`
 - Create: `packages/jobs/tsconfig.json`
 - Create: `packages/jobs/src/listing-queue.ts`
@@ -93,6 +94,7 @@
 - Modify: `pnpm-lock.yaml`
 
 **Interfaces:**
+
 - Consumes: BullMQ `Queue`, `ConnectionOptions`, and `JobsOptions`; Zod.
 - Produces: `listingJobSchema`, `ListingJobInput`, `ListingQueuePayload`, `ListingQueuePort`, `LISTING_QUEUE`, `listingPipelineJobId(input)`, `bullmqListingJobId(input)`, `createListingQueue(connection)`, and `enqueueListingPipeline(input, { queue })`.
 
@@ -178,11 +180,13 @@ import { z } from "zod";
 
 export const LISTING_QUEUE = "listing-pipeline";
 
-export const listingJobSchema = z.object({
-  workspaceId: z.string().trim().min(1),
-  draftId: z.string().trim().min(1),
-  activeVersionSequence: z.number().int().nonnegative(),
-}).strict();
+export const listingJobSchema = z
+  .object({
+    workspaceId: z.string().trim().min(1),
+    draftId: z.string().trim().min(1),
+    activeVersionSequence: z.number().int().nonnegative(),
+  })
+  .strict();
 
 export type ListingJobInput = z.infer<typeof listingJobSchema>;
 export type ListingQueuePayload = Readonly<ListingJobInput>;
@@ -244,10 +248,7 @@ export type ListingPipelineInput = ListingJobInput;
 In `apps/worker/src/index.ts`, import and re-export the shared protocol:
 
 ```ts
-import {
-  LISTING_QUEUE,
-  type ListingQueuePayload,
-} from "@wukong/jobs";
+import { LISTING_QUEUE, type ListingQueuePayload } from "@wukong/jobs";
 
 export {
   LISTING_QUEUE,
@@ -283,6 +284,7 @@ git commit -m "refactor: share listing queue protocol"
 ### Task 2: Unify R2 Runtime Configuration and Remove Worker Migrations
 
 **Files:**
+
 - Create: `packages/assets/src/s3-runtime-config.ts`
 - Create: `packages/assets/src/s3-runtime-config.test.ts`
 - Modify: `packages/assets/src/index.ts`
@@ -291,6 +293,7 @@ git commit -m "refactor: share listing queue protocol"
 - Modify: `apps/worker/src/runtime.test.ts`
 
 **Interfaces:**
+
 - Consumes: `NodeJS.ProcessEnv`-shaped records and AWS SDK `S3ClientConfig`.
 - Produces: `readS3RuntimeConfig(env): { bucket: string; client: S3ClientConfig }`.
 
@@ -326,13 +329,19 @@ it("returns one explicit R2 client configuration", () => {
   });
 });
 
-it.each(["S3_BUCKET", "S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"])(
-  "fails closed when %s is missing",
-  (name) => expect(() => readS3RuntimeConfig({ ...valid, [name]: "" })).toThrow(name),
+it.each([
+  "S3_BUCKET",
+  "S3_ENDPOINT",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+])("fails closed when %s is missing", (name) =>
+  expect(() => readS3RuntimeConfig({ ...valid, [name]: "" })).toThrow(name),
 );
 
 it("rejects a non-boolean path-style value", () => {
-  expect(() => readS3RuntimeConfig({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" })).toThrow("S3_FORCE_PATH_STYLE");
+  expect(() =>
+    readS3RuntimeConfig({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" }),
+  ).toThrow("S3_FORCE_PATH_STYLE");
 });
 ```
 
@@ -401,11 +410,10 @@ In `apps/worker/src/runtime.ts`, remove `migrationUrl` and the `database.migrate
 
 ```ts
 const storage = readS3RuntimeConfig(process.env);
-const assetStore = (config.assetStoreFactory ??
-  ((bucket, client) => DefaultS3AssetStore.fromConfig(bucket, client)))(
-  storage.bucket,
-  storage.client,
-);
+const assetStore = (
+  config.assetStoreFactory ??
+  ((bucket, client) => DefaultS3AssetStore.fromConfig(bucket, client))
+)(storage.bucket, storage.client);
 ```
 
 Keep explicit `databaseUrl`, `redisUrl`, and injected test factories. Do not read `DATABASE_ADMIN_URL` or `DATABASE_MIGRATION_URL` in worker startup.
@@ -444,6 +452,7 @@ git commit -m "fix: unify production asset runtime"
 ### Task 3: Publish a Listing Job After the Database Commit
 
 **Files:**
+
 - Create: `apps/web/lib/listing-queue-runtime.ts`
 - Create: `apps/web/lib/listing-queue-runtime.test.ts`
 - Create: `apps/web/app/api/listings/route.create.test.ts`
@@ -456,6 +465,7 @@ git commit -m "fix: unify production asset runtime"
 - Modify: `pnpm-lock.yaml`
 
 **Interfaces:**
+
 - Consumes: `ListingJobInput`, `createListingQueue`, `enqueueListingPipeline`, `REDIS_URL`, session context, and workspace repositories.
 - Produces: `ListingPublisher.enqueue(input): Promise<{ id: string }>` and creation JSON `{ listing, processing: { state, jobId, errorCode } }`.
 
@@ -465,15 +475,19 @@ git commit -m "fix: unify production asset runtime"
 
 ```ts
 it("fails closed without REDIS_URL", async () => {
-  await expect(createListingPublisher({ env: {} }).enqueue({
-    workspaceId: "ws_opak",
-    draftId: "draft_1",
-    activeVersionSequence: 0,
-  })).rejects.toThrow("REDIS_URL is required");
+  await expect(
+    createListingPublisher({ env: {} }).enqueue({
+      workspaceId: "ws_opak",
+      draftId: "draft_1",
+      activeVersionSequence: 0,
+    }),
+  ).rejects.toThrow("REDIS_URL is required");
 });
 
 it("passes only listing identity to the injected queue", async () => {
-  const add = vi.fn(async (_name, _data, options) => ({ id: String(options.jobId) }));
+  const add = vi.fn(async (_name, _data, options) => ({
+    id: String(options.jobId),
+  }));
   const publisher = createListingPublisher({
     env: { REDIS_URL: "rediss://default:secret@example.upstash.io:6379" },
     redisFactory: () => ({ quit: vi.fn() }) as never,
@@ -504,7 +518,6 @@ Expected: FAIL because the runtime and dependencies do not exist.
 Add `@wukong/jobs` and `ioredis` to web dependencies. Implement:
 
 ```ts
-
 import { Redis } from "ioredis";
 import {
   createListingQueue,
@@ -523,17 +536,23 @@ type Options = {
   queueFactory?: (connection: Redis) => ListingQueuePort;
 };
 
-export function createListingPublisher(options: Options = {}): ListingPublisher {
+export function createListingPublisher(
+  options: Options = {},
+): ListingPublisher {
   let queue: ListingQueuePort | undefined;
   return {
     async enqueue(input) {
       const url = (options.env ?? process.env).REDIS_URL?.trim();
       if (!url) throw new Error("REDIS_URL is required");
       if (!queue) {
-        const redis = (options.redisFactory ??
-          ((value) => new Redis(value, { maxRetriesPerRequest: null })))(url);
-        queue = (options.queueFactory ??
-          ((connection) => createListingQueue(connection as never)))(redis);
+        const redis = (
+          options.redisFactory ??
+          ((value) => new Redis(value, { maxRetriesPerRequest: null }))
+        )(url);
+        queue = (
+          options.queueFactory ??
+          ((connection) => createListingQueue(connection as never))
+        )(redis);
       }
       const job = await enqueueListingPipeline(input, { queue });
       if (!job.id) throw new Error("listing queue did not return a job id");
@@ -606,27 +625,34 @@ try {
     activeVersionSequence: 0,
   });
   processing = { state: "queued", jobId: job.id, errorCode: null };
-  console.info(JSON.stringify({
-    event: "listing.enqueue_accepted",
-    workspaceId: context.workspaceId,
-    listingId: listing.id,
-    jobId: job.id,
-  }));
+  console.info(
+    JSON.stringify({
+      event: "listing.enqueue_accepted",
+      workspaceId: context.workspaceId,
+      listingId: listing.id,
+      jobId: job.id,
+    }),
+  );
 } catch {
   processing = {
     state: "retry_required",
     jobId: null,
     errorCode: "queue_unavailable",
   };
-  console.error(JSON.stringify({
-    event: "listing.enqueue_failed",
-    workspaceId: context.workspaceId,
-    listingId: listing.id,
-    errorCode: "queue_unavailable",
-  }));
+  console.error(
+    JSON.stringify({
+      event: "listing.enqueue_failed",
+      workspaceId: context.workspaceId,
+      listingId: listing.id,
+      errorCode: "queue_unavailable",
+    }),
+  );
 }
 
-return jsonResponse(201, { listing: { id: listing.id, status: listing.status, target: listing.target }, processing });
+return jsonResponse(201, {
+  listing: { id: listing.id, status: listing.status, target: listing.target },
+  processing,
+});
 ```
 
 Wire the production route to `listingPublisher`. Update every existing `createListingHandler` harness to inject a fake publisher that returns `{ id: "job_test" }`.
@@ -647,6 +673,7 @@ git commit -m "feat: enqueue new listings for processing"
 ### Task 4: Add Safe Queue-Publication Retry and Processing UI
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/[id]/process/route.ts`
 - Create: `apps/web/app/api/listings/[id]/process/route.test.ts`
 - Create: `apps/web/components/listing-processing-panel.tsx`
@@ -659,6 +686,7 @@ git commit -m "feat: enqueue new listings for processing"
 - Modify: `apps/web/components/listing-review-client.test.ts`
 
 **Interfaces:**
+
 - Consumes: `requireWorkspaceRole("operator", role)`, `listings.requireById`, `sourceAssets.listForListing`, `pipelineRuns.getState`, and `ListingPublisher`.
 - Produces: process response `{ processing: { state: "queued"; jobId: string } }`, `permissions.canProcess`, and `ListingProcessingPanel`.
 
@@ -670,7 +698,10 @@ Use a tenant-scoped database harness and assert:
 it.each(["operator", "reviewer", "admin", "owner"] as const)(
   "allows %s to repair a received listing",
   async (role) => {
-    const response = await handlerFor({ role, status: "received", assets: 1 })(request, context);
+    const response = await handlerFor({ role, status: "received", assets: 1 })(
+      request,
+      context,
+    );
     expect(response.status).toBe(202);
     expect(await response.json()).toMatchObject({
       processing: { state: "queued", jobId: "job_1" },
@@ -679,24 +710,34 @@ it.each(["operator", "reviewer", "admin", "owner"] as const)(
 );
 
 it("rejects viewers", async () => {
-  expect((await handlerFor({ role: "viewer" })(request, context)).status).toBe(403);
+  expect((await handlerFor({ role: "viewer" })(request, context)).status).toBe(
+    403,
+  );
 });
 
 it.each(["processing", "needs_info", "in_review", "failed", "approved"])(
   "rejects non-received status %s",
-  async (status) => expect((await handlerFor({ status })(request, context)).status).toBe(409),
+  async (status) =>
+    expect((await handlerFor({ status })(request, context)).status).toBe(409),
 );
 
 it("rejects a received listing with no finalized assets", async () => {
-  expect((await handlerFor({ status: "received", assets: 0 })(request, context)).status).toBe(409);
+  expect(
+    (await handlerFor({ status: "received", assets: 0 })(request, context))
+      .status,
+  ).toBe(409);
 });
 
 it("rejects an existing pipeline run", async () => {
-  expect((await handlerFor({ pipelineState: "started" })(request, context)).status).toBe(409);
+  expect(
+    (await handlerFor({ pipelineState: "started" })(request, context)).status,
+  ).toBe(409);
 });
 
 it("returns 503 without changing the listing when Redis is unavailable", async () => {
-  expect((await handlerFor({ enqueueError: true })(request, context)).status).toBe(503);
+  expect(
+    (await handlerFor({ enqueueError: true })(request, context)).status,
+  ).toBe(503);
 });
 ```
 
@@ -722,33 +763,56 @@ if (!/^[0-9a-f-]{36}$/i.test(id)) {
   throw new ApiError(404, "listing_not_found", "Listing not found.");
 }
 
-const input = await deps.getDatabase().forWorkspace(session.workspaceId, async (repositories) => {
-  const listing = await repositories.listings.getById(id);
-  if (!listing) throw new ApiError(404, "listing_not_found", "Listing not found.");
-  if (listing.status !== "received") {
-    throw new ApiError(409, "listing_not_retryable", "Only a received listing can start processing.");
-  }
-  const revision = await repositories.listings.requireById(id);
-  const assets = await repositories.sourceAssets.listForListing(id);
-  if (assets.length === 0) {
-    throw new ApiError(409, "listing_has_no_assets", "The listing has no finalized source assets.");
-  }
-  const key = listingPipelineJobId({
-    workspaceId: session.workspaceId,
-    draftId: id,
-    activeVersionSequence: revision.activeVersionSequence,
+const input = await deps
+  .getDatabase()
+  .forWorkspace(session.workspaceId, async (repositories) => {
+    const listing = await repositories.listings.getById(id);
+    if (!listing)
+      throw new ApiError(404, "listing_not_found", "Listing not found.");
+    if (listing.status !== "received") {
+      throw new ApiError(
+        409,
+        "listing_not_retryable",
+        "Only a received listing can start processing.",
+      );
+    }
+    const revision = await repositories.listings.requireById(id);
+    const assets = await repositories.sourceAssets.listForListing(id);
+    if (assets.length === 0) {
+      throw new ApiError(
+        409,
+        "listing_has_no_assets",
+        "The listing has no finalized source assets.",
+      );
+    }
+    const key = listingPipelineJobId({
+      workspaceId: session.workspaceId,
+      draftId: id,
+      activeVersionSequence: revision.activeVersionSequence,
+    });
+    if (await repositories.pipelineRuns.getState(key)) {
+      throw new ApiError(
+        409,
+        "processing_already_started",
+        "Processing has already started.",
+      );
+    }
+    return {
+      workspaceId: session.workspaceId,
+      draftId: id,
+      activeVersionSequence: revision.activeVersionSequence,
+    };
   });
-  if (await repositories.pipelineRuns.getState(key)) {
-    throw new ApiError(409, "processing_already_started", "Processing has already started.");
-  }
-  return { workspaceId: session.workspaceId, draftId: id, activeVersionSequence: revision.activeVersionSequence };
-});
 
 try {
   const job = await deps.publisher.enqueue(input);
   return jsonResponse(202, { processing: { state: "queued", jobId: job.id } });
 } catch {
-  throw new ApiError(503, "queue_unavailable", "Processing could not be queued. Try again.");
+  throw new ApiError(
+    503,
+    "queue_unavailable",
+    "Processing could not be queued. Try again.",
+  );
 }
 ```
 
@@ -775,25 +839,50 @@ Add `canProcess` to `ListingPermissions` and update the existing role matrix: vi
 Assert exact behavior:
 
 ```tsx
-expect(renderToStaticMarkup(
-  <ListingProcessingPanel status="received" enqueueState="retry_required" canProcess onProcess={vi.fn()} busy={false} />,
-)).toContain("Start processing");
+expect(
+  renderToStaticMarkup(
+    <ListingProcessingPanel
+      status="received"
+      enqueueState="retry_required"
+      canProcess
+      onProcess={vi.fn()}
+      busy={false}
+    />,
+  ),
+).toContain("Start processing");
 
-expect(renderToStaticMarkup(
-  <ListingProcessingPanel status="received" enqueueState="queued" canProcess onProcess={vi.fn()} busy={false} />,
-)).not.toContain("Start processing");
+expect(
+  renderToStaticMarkup(
+    <ListingProcessingPanel
+      status="received"
+      enqueueState="queued"
+      canProcess
+      onProcess={vi.fn()}
+      busy={false}
+    />,
+  ),
+).not.toContain("Start processing");
 
-expect(renderToStaticMarkup(
-  <ListingProcessingPanel status="processing" canProcess onProcess={vi.fn()} busy={false} />,
-)).not.toContain("Start processing");
+expect(
+  renderToStaticMarkup(
+    <ListingProcessingPanel
+      status="processing"
+      canProcess
+      onProcess={vi.fn()}
+      busy={false}
+    />,
+  ),
+).not.toContain("Start processing");
 
-expect(resolveListingViewState({
-  snapshotStatus: "received",
-  hasSnapshot: true,
-  hasMappedView: false,
-  loadError: null,
-  mappingError: null,
-})).toEqual({ kind: "processing", status: "received" });
+expect(
+  resolveListingViewState({
+    snapshotStatus: "received",
+    hasSnapshot: true,
+    hasMappedView: false,
+    loadError: null,
+    mappingError: null,
+  }),
+).toEqual({ kind: "processing", status: "received" });
 ```
 
 Add equivalent tests for `processing`, `needs_info`, and `failed`. Only `received` with `enqueueState="retry_required"` or no known enqueue outcome has a retry/start button; `enqueueState="queued"` shows a waiting state without the button. Keep the existing mapping-error test for an invalid active version.
@@ -818,21 +907,29 @@ export type CreateListingDraftResult = {
 Read `result.processing.state`, return it, and navigate to:
 
 ```ts
-router.push(`/listings/${encodeURIComponent(result.listingId)}?processing=${result.processing}`);
+router.push(
+  `/listings/${encodeURIComponent(result.listingId)}?processing=${result.processing}`,
+);
 ```
 
 Change `apps/web/app/(app)/listings/[id]/page.tsx` to validate `searchParams.processing` against `queued` and `retry_required`, then pass `initialProcessing` to `ListingReviewClient`. Keep this value in component state, set it to `queued` after a successful process request, and clear it once the persisted status becomes `processing`, `needs_info`, `in_review`, or `failed`.
 
 ```tsx
-export default async function ListingReviewPage({ params, searchParams }: {
+export default async function ListingReviewPage({
+  params,
+  searchParams,
+}: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ processing?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
-  const initialProcessing = query.processing === "queued" || query.processing === "retry_required"
-    ? query.processing
-    : undefined;
-  return <ListingReviewClient listingId={id} initialProcessing={initialProcessing} />;
+  const initialProcessing =
+    query.processing === "queued" || query.processing === "retry_required"
+      ? query.processing
+      : undefined;
+  return (
+    <ListingReviewClient listingId={id} initialProcessing={initialProcessing} />
+  );
 }
 ```
 
@@ -848,10 +945,13 @@ In `ListingReviewClient`, do not call `mapListingView` when `activeVersion` is n
 
 ```tsx
 useEffect(() => {
-  if (snapshot?.status !== "received" && snapshot?.status !== "processing") return;
+  if (snapshot?.status !== "received" && snapshot?.status !== "processing")
+    return;
   const timer = window.setInterval(() => {
     load().catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : "Unable to refresh listing.");
+      setError(
+        cause instanceof Error ? cause.message : "Unable to refresh listing.",
+      );
     });
   }, 3_000);
   return () => window.clearInterval(timer);
@@ -874,6 +974,7 @@ git commit -m "feat: add listing processing recovery"
 ### Task 5: Add Railway Configuration and Production Runbook
 
 **Files:**
+
 - Create: `railway.json`
 - Create: `tests/railway-config.test.mjs`
 - Create: `docs/runbooks/production-ai-runtime.md`
@@ -883,6 +984,7 @@ git commit -m "feat: add listing processing recovery"
 - Modify: `docs/runbooks/production-readiness.md`
 
 **Interfaces:**
+
 - Consumes: root pnpm workspace, `@wukong/worker` compiled entrypoint, and environment variables in Global Constraints.
 - Produces: a private Railpack worker deployment with restart-on-failure and a reproducible operator runbook.
 
@@ -895,13 +997,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const config = JSON.parse(readFileSync(new URL("../railway.json", import.meta.url), "utf8"));
-const worker = JSON.parse(readFileSync(new URL("../apps/worker/package.json", import.meta.url), "utf8"));
+const config = JSON.parse(
+  readFileSync(new URL("../railway.json", import.meta.url), "utf8"),
+);
+const worker = JSON.parse(
+  readFileSync(new URL("../apps/worker/package.json", import.meta.url), "utf8"),
+);
 
 test("runs only the compiled private worker with bounded restart recovery", () => {
   assert.equal(config.build.builder, "RAILPACK");
-  assert.match(config.build.buildCommand, /pnpm --filter @wukong\/worker\.\.\. build/);
-  assert.equal(config.deploy.startCommand, "pnpm --filter @wukong/worker start:production");
+  assert.match(
+    config.build.buildCommand,
+    /pnpm --filter @wukong\/worker\.\.\. build/,
+  );
+  assert.equal(
+    config.deploy.startCommand,
+    "pnpm --filter @wukong/worker start:production",
+  );
   assert.equal(config.deploy.restartPolicyType, "ON_FAILURE");
   assert.equal(config.deploy.restartPolicyMaxRetries, 10);
   assert.equal(worker.scripts["start:production"], "node dist/cli.js");
@@ -1041,9 +1153,11 @@ git commit -m "ops: define production listing worker"
 ### Task 6: Run the Complete Local and CI Gate
 
 **Files:**
+
 - Modify only when a failure is caused by Tasks 1-5; preserve unrelated working-tree files.
 
 **Interfaces:**
+
 - Consumes: every deliverable from Tasks 1-5.
 - Produces: a clean, reproducible commit range ready for managed preview infrastructure.
 
@@ -1098,10 +1212,12 @@ Expected: the intended listing workflow, production runtime commits, and design/
 ### Task 7: Provision and Verify the Managed Preview Runtime
 
 **Files:**
+
 - No repository file contains credentials or provider-generated secrets.
 - Update: deployment handoff notes with non-secret resource IDs, regions, deployment IDs, spend, and verification timestamps.
 
 **Interfaces:**
+
 - Consumes: verified branch, approved provider accounts, Neon preview/runtime URL, and an OpenAI project key entered directly into Railway.
 - Produces: isolated R2, Redis, Vercel preview variables, Railway preview worker, and an end-to-end synthetic acceptance result.
 
@@ -1196,10 +1312,12 @@ Expected: preview runtime is healthy and no diagnostic output contains a secret 
 ### Task 8: Merge, Deploy Production, and Complete Non-Destructive Opak Acceptance
 
 **Files:**
+
 - No secret-bearing repository changes.
 - Update: deployment handoff notes with PR, merge commit, production deployment IDs, resource IDs, spend, timestamps, and unresolved provider/mailbox evidence.
 
 **Interfaces:**
+
 - Consumes: green preview, PR #8 branch, production Neon/auth/Resend settings, and the provisioned managed services.
 - Produces: production Vercel app, production Railway worker, verified Opak workflow through CSV, and a hard stop before the first real SHOPLINE write.
 

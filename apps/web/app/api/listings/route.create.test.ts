@@ -62,17 +62,18 @@ function harness(enqueue: Enqueue) {
     getAssetStore: () => {
       throw new Error("unused");
     },
-    getDatabase: () => ({
-      async forWorkspace<T>(
-        workspaceId: string,
-        work: (repos: typeof repositories) => Promise<T>,
-      ) {
-        expect(workspaceId).toBe("ws_opak");
-        const result = await work(repositories);
-        transactionCommitted = true;
-        return result;
-      },
-    }) as never,
+    getDatabase: () =>
+      ({
+        async forWorkspace<T>(
+          workspaceId: string,
+          work: (repos: typeof repositories) => Promise<T>,
+        ) {
+          expect(workspaceId).toBe("ws_opak");
+          const result = await work(repositories);
+          transactionCommitted = true;
+          return result;
+        },
+      }) as never,
     publisher: { enqueue: enqueueAfterCommit },
   });
 
@@ -103,7 +104,9 @@ describe("POST /api/listings creation handoff", () => {
   });
 
   it("returns the committed listing with a safe retry outcome when enqueue fails", async () => {
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     const enqueue = vi.fn<Enqueue>();
     enqueue.mockRejectedValueOnce(new Error("connect timeout"));
     const test = harness(enqueue);
@@ -122,6 +125,8 @@ describe("POST /api/listings creation handoff", () => {
     expect(test.mutations).toEqual(["create", "attach", "audit"]);
     expect(errorLog).toHaveBeenCalledOnce();
     expect(errorLog.mock.calls.flat().join(" ")).toContain("queue_unavailable");
-    expect(errorLog.mock.calls.flat().join(" ")).not.toContain("connect timeout");
+    expect(errorLog.mock.calls.flat().join(" ")).not.toContain(
+      "connect timeout",
+    );
   });
 });

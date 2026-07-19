@@ -3,11 +3,25 @@ import { z } from "zod";
 
 export const LISTING_QUEUE = "listing-pipeline";
 
-export const listingJobSchema = z.object({
-  workspaceId: z.string().trim().min(1).refine((value) => !value.includes(":"), { message: "workspaceId must not contain ':'" }),
-  draftId: z.string().trim().min(1).refine((value) => !value.includes(":"), { message: "draftId must not contain ':'" }),
-  activeVersionSequence: z.number().int().nonnegative(),
-}).strict();
+export const listingJobSchema = z
+  .object({
+    workspaceId: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => !value.includes(":"), {
+        message: "workspaceId must not contain ':'",
+      }),
+    draftId: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => !value.includes(":"), {
+        message: "draftId must not contain ':'",
+      }),
+    activeVersionSequence: z.number().int().nonnegative(),
+  })
+  .strict();
 
 export type ListingJobInput = z.infer<typeof listingJobSchema>;
 export type ListingQueuePayload = Readonly<ListingJobInput>;

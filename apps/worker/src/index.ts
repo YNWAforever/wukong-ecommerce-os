@@ -1,15 +1,28 @@
-import { Worker, type ConnectionOptions, type Processor, type WorkerOptions } from "bullmq";
 import {
-  LISTING_QUEUE,
-  type ListingQueuePayload,
-} from "@wukong/jobs";
+  Worker,
+  type ConnectionOptions,
+  type Processor,
+  type WorkerOptions,
+} from "bullmq";
+import { LISTING_QUEUE, type ListingQueuePayload } from "@wukong/jobs";
 
-import { runListingPipeline, type PipelineDependencies } from "./listing-pipeline.js";
+import {
+  runListingPipeline,
+  type PipelineDependencies,
+} from "./listing-pipeline.js";
 
 export function createListingPipelineProcessor(
   dependencies: PipelineDependencies,
-): Processor<ListingQueuePayload, Awaited<ReturnType<typeof runListingPipeline>>> {
-  return async (job) => runListingPipeline(job.data, dependencies, { attempt: job.attemptsMade + 1, maxAttempts: typeof job.opts.attempts === "number" ? job.opts.attempts : 3 });
+): Processor<
+  ListingQueuePayload,
+  Awaited<ReturnType<typeof runListingPipeline>>
+> {
+  return async (job) =>
+    runListingPipeline(job.data, dependencies, {
+      attempt: job.attemptsMade + 1,
+      maxAttempts:
+        typeof job.opts.attempts === "number" ? job.opts.attempts : 3,
+    });
 }
 
 export function createListingPipelineWorker(
@@ -41,7 +54,11 @@ export {
   type PipelineResult,
 } from "./listing-pipeline.js";
 
-export { startListingPipelineWorker, type ListingWorkerRuntime, type ListingWorkerRuntimeConfig } from "./runtime.js";
+export {
+  startListingPipelineWorker,
+  type ListingWorkerRuntime,
+  type ListingWorkerRuntimeConfig,
+} from "./runtime.js";
 export {
   PublishDeliveryError,
   publishApprovedProduct,

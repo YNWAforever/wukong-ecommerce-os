@@ -1,4 +1,8 @@
-import { readS3RuntimeConfig, S3AssetStore, type AssetStore } from "@wukong/assets";
+import {
+  readS3RuntimeConfig,
+  S3AssetStore,
+  type AssetStore,
+} from "@wukong/assets";
 import { createDatabase, type Database } from "@wukong/db";
 
 let assetStore: AssetStore | undefined;

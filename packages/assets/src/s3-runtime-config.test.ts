@@ -26,14 +26,18 @@ describe("readS3RuntimeConfig", () => {
     });
   });
 
-  it.each(["S3_BUCKET", "S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"])(
-    "fails closed when %s is missing",
-    (name) => expect(() => readS3RuntimeConfig({ ...valid, [name]: "" })).toThrow(name),
+  it.each([
+    "S3_BUCKET",
+    "S3_ENDPOINT",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+  ])("fails closed when %s is missing", (name) =>
+    expect(() => readS3RuntimeConfig({ ...valid, [name]: "" })).toThrow(name),
   );
 
   it("rejects a non-boolean path-style value", () => {
-    expect(() => readS3RuntimeConfig({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" })).toThrow(
-      "S3_FORCE_PATH_STYLE",
-    );
+    expect(() =>
+      readS3RuntimeConfig({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" }),
+    ).toThrow("S3_FORCE_PATH_STYLE");
   });
 });

@@ -4,7 +4,11 @@ import { createListingHandler } from "./listings/route.js";
 
 const sessionContext = {
   async resolve() {
-    return { workspaceId: "ws_opak", actorId: "user_1", role: "operator" } as const;
+    return {
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      role: "operator",
+    } as const;
   },
 };
 
@@ -25,7 +29,11 @@ function harness(kinds: string[]) {
   const repositories = {
     sourceAssets: {
       async getByIds() {
-        return kinds.map((kind, index) => ({ id: ids[index], kind, listingId: null }));
+        return kinds.map((kind, index) => ({
+          id: ids[index],
+          kind,
+          listingId: null,
+        }));
       },
       async attachToListing() {
         mutations.push("attach");
@@ -45,18 +53,23 @@ function harness(kinds: string[]) {
   };
   const handler = createListingHandler({
     sessionContext,
-    publisher: { async enqueue() { return { id: "job_test" }; } },
+    publisher: {
+      async enqueue() {
+        return { id: "job_test" };
+      },
+    },
     getAssetStore: () => {
       throw new Error("unused");
     },
-    getDatabase: () => ({
-      async forWorkspace<T>(
-        _workspaceId: string,
-        work: (repos: typeof repositories) => Promise<T>,
-      ) {
-        return work(repositories);
-      },
-    }) as never,
+    getDatabase: () =>
+      ({
+        async forWorkspace<T>(
+          _workspaceId: string,
+          work: (repos: typeof repositories) => Promise<T>,
+        ) {
+          return work(repositories);
+        },
+      }) as never,
   });
   return { handler, ids, mutations };
 }
@@ -68,7 +81,9 @@ describe("listing source composition", () => {
     const response = await test.handler(requestFor(test.ids));
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ code: "invalid_asset_composition" });
+    expect(await response.json()).toMatchObject({
+      code: "invalid_asset_composition",
+    });
     expect(test.mutations).toEqual([]);
   });
 
@@ -78,7 +93,9 @@ describe("listing source composition", () => {
     const response = await test.handler(requestFor(test.ids));
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ code: "invalid_asset_composition" });
+    expect(await response.json()).toMatchObject({
+      code: "invalid_asset_composition",
+    });
     expect(test.mutations).toEqual([]);
   });
 

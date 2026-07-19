@@ -4,7 +4,11 @@ import { createListingHandler } from "./listings/route.js";
 
 const sessionContext = {
   async resolve() {
-    return { workspaceId: "ws_opak", actorId: "user_1", role: "operator" } as const;
+    return {
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      role: "operator",
+    } as const;
   },
 };
 
@@ -13,7 +17,11 @@ describe("listing asset ID validation", () => {
     let databaseCalls = 0;
     const handler = createListingHandler({
       sessionContext,
-      publisher: { async enqueue() { return { id: "job_test" }; } },
+      publisher: {
+        async enqueue() {
+          return { id: "job_test" };
+        },
+      },
       getAssetStore: () => {
         throw new Error("unused");
       },

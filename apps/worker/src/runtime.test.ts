@@ -5,12 +5,34 @@ import { FakeListingProvider, type ListingAIProvider } from "@wukong/ai";
 import type { Database } from "@wukong/db";
 import { startListingPipelineWorker } from "./runtime.js";
 
-const provider: ListingAIProvider = { async extract() { throw new Error("not called"); }, async generate() { throw new Error("not called"); } };
-const assetStore: AssetStore = { async createUpload() { throw new Error("not called"); }, async createReadUrl() { return { url: "https://assets.test/read", expiresAt: new Date() }; }, async head() { return null; }, async exists() { return false; } };
+const provider: ListingAIProvider = {
+  async extract() {
+    throw new Error("not called");
+  },
+  async generate() {
+    throw new Error("not called");
+  },
+};
+const assetStore: AssetStore = {
+  async createUpload() {
+    throw new Error("not called");
+  },
+  async createReadUrl() {
+    return { url: "https://assets.test/read", expiresAt: new Date() };
+  },
+  async head() {
+    return null;
+  },
+  async exists() {
+    return false;
+  },
+};
 const database = {
   migrate: vi.fn(async () => undefined),
   close: vi.fn(async () => undefined),
-  forWorkspace: async () => { throw new Error("not called"); },
+  forWorkspace: async () => {
+    throw new Error("not called");
+  },
 } satisfies Database;
 
 function stubS3RuntimeEnv() {
@@ -33,7 +55,9 @@ describe("startListingPipelineWorker", () => {
   });
 
   it("fails closed before constructing providers when required runtime config is missing", async () => {
-    await expect(startListingPipelineWorker({ databaseUrl: "postgres://test" })).rejects.toThrow(/REDIS_URL is required/);
+    await expect(
+      startListingPipelineWorker({ databaseUrl: "postgres://test" }),
+    ).rejects.toThrow(/REDIS_URL is required/);
   });
 
   it("selects the explicit fake provider for local runs", async () => {
@@ -43,9 +67,11 @@ describe("startListingPipelineWorker", () => {
       redisUrl: "redis://test",
       databaseFactory: () => database,
       assetStoreFactory: () => assetStore,
-      redisFactory: () => ({ quit: vi.fn(async () => "OK") } as never),
-      queueFactory: () => ({ close: vi.fn(async () => undefined) } as unknown as Queue),
-      workerFactory: () => ({ close: vi.fn(async () => undefined) } as unknown as Worker),
+      redisFactory: () => ({ quit: vi.fn(async () => "OK") }) as never,
+      queueFactory: () =>
+        ({ close: vi.fn(async () => undefined) }) as unknown as Queue,
+      workerFactory: () =>
+        ({ close: vi.fn(async () => undefined) }) as unknown as Worker,
     });
     expect(runtime.dependencies.ai).toBeInstanceOf(FakeListingProvider);
     await runtime.close();
@@ -78,7 +104,10 @@ describe("startListingPipelineWorker", () => {
         endpoint: "https://account.r2.cloudflarestorage.com",
         region: "auto",
         forcePathStyle: false,
-        credentials: { accessKeyId: "access-key", secretAccessKey: "secret-key" },
+        credentials: {
+          accessKeyId: "access-key",
+          secretAccessKey: "secret-key",
+        },
       }),
     );
     await runtime.close();

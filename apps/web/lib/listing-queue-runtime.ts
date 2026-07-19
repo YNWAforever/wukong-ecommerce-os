@@ -16,7 +16,9 @@ type Options = {
   queueFactory?: (connection: Redis) => ListingQueuePort;
 };
 
-export function createListingPublisher(options: Options = {}): ListingPublisher {
+export function createListingPublisher(
+  options: Options = {},
+): ListingPublisher {
   let queue: ListingQueuePort | undefined;
 
   return {

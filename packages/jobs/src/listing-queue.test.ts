@@ -37,7 +37,11 @@ describe("enqueueListingPipeline", () => {
       },
     };
 
-    const input = { workspaceId: "ws_opak", draftId: "draft_1", activeVersionSequence: 4 };
+    const input = {
+      workspaceId: "ws_opak",
+      draftId: "draft_1",
+      activeVersionSequence: 4,
+    };
     const job = await enqueueListingPipeline(input, { queue });
 
     expect(job.id).toBe(bullmqListingJobId(input));
@@ -62,8 +66,16 @@ describe("enqueueListingPipeline", () => {
 
 describe("BullMQ job ID transport mapping", () => {
   it("preserves the exact canonical idempotency key while mapping it collision-free to BullMQ", () => {
-    const first = { workspaceId: "ws_opak", draftId: "draft_1", activeVersionSequence: 4 };
-    const second = { workspaceId: "ws_opak", draftId: "draft_2", activeVersionSequence: 4 };
+    const first = {
+      workspaceId: "ws_opak",
+      draftId: "draft_1",
+      activeVersionSequence: 4,
+    };
+    const second = {
+      workspaceId: "ws_opak",
+      draftId: "draft_2",
+      activeVersionSequence: 4,
+    };
     const canonical = listingPipelineJobId(first);
     const encoded = bullmqListingJobId(first);
 

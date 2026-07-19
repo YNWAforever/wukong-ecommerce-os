@@ -12,4 +12,4 @@ type IntakeRouteBaseDeps = {
 
 export type IntakeRouteDeps<WithPublisher extends boolean = false> =
   IntakeRouteBaseDeps &
-  (WithPublisher extends true ? { publisher: ListingPublisher } : {});
+    (WithPublisher extends true ? { publisher: ListingPublisher } : {});
