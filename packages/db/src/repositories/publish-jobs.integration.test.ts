@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -49,27 +51,76 @@ describe("publish job repository", () => {
     expect(snapshot).toMatchObject({ id: listingId, status: "approved", activeVersion: { id: versionId, sequence: 1, content: listingContent }, flags: [] });
   });
 
-  it("creates one idempotent job, persists digest and remote result, and hides it cross-tenant", async () => {
+  it("claims one queued delivery and requires its lease for publication", async () => {
     const key = `ws_publish_repo:${versionId}:shopline:create`;
     const digest = "a".repeat(64);
+    const now = new Date("2026-07-20T00:00:00.000Z");
     const result = await forWorkspace(database, "ws_publish_repo", async (repos) => {
       const first = await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: digest });
       const second = await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: digest });
-      await repos.publishJobs.markRunning(key);
-      await repos.publishJobs.markPublished(key, "remote_123", digest);
-      return { first, second, final: await repos.publishJobs.getByIdempotencyKey(key) };
+      expect(first.status).toBe("pending_enqueue");
+      await repos.publishJobs.markQueued(key);
+      const wrongVersion = await repos.publishJobs.claim({ key, expectedVersionId: randomUUID(), now, leaseMs: 60_000 });
+      const claimed = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now, leaseMs: 60_000 });
+      const duplicate = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now, leaseMs: 60_000 });
+      await expect(repos.publishJobs.markPublished(key, randomUUID(), "remote_123", digest)).rejects.toThrow(/lease/i);
+      await repos.publishJobs.markPublished(key, claimed.leaseToken!, "remote_123", digest);
+      return { first, second, wrongVersion, claimed, duplicate, final: await repos.publishJobs.getByIdempotencyKey(key) };
     });
     expect(result.first.id).toBe(result.second.id);
+    expect(result.wrongVersion).toEqual({ claimed: false, job: null, leaseToken: null });
+    expect(result.claimed.claimed).toBe(true);
+    expect(result.claimed.leaseToken).toBeTruthy();
+    expect(result.claimed.job).toMatchObject({ status: "running", attemptCount: 1 });
+    expect(result.duplicate).toEqual({ claimed: false, job: null, leaseToken: null });
     expect(result.final).toMatchObject({ status: "published", remoteProductId: "remote_123", payloadDigest: digest });
+    expect(result.final?.leaseToken).toBeNull();
+    expect(result.final?.leaseExpiresAt).toBeNull();
     await expect(forWorkspace(database, "ws_other_publish_repo", (repos) => repos.publishJobs.getByIdempotencyKey(key))).resolves.toBeNull();
   });
 
   it("rejects unsafe result updates and sanitizes terminal errors", async () => {
     const key = `ws_publish_repo:${versionId}:shopline:failed`;
     await forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: "b".repeat(64) }));
-    await expect(forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.markPublished(key, "remote", "not-a-digest"))).rejects.toThrow(/publish result is invalid/i);
-    await forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.markFailed(key, "token secret should not persist"));
+    const lease = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      await repos.publishJobs.markQueued(key);
+      return repos.publishJobs.claim({ key, expectedVersionId: versionId, now: new Date(), leaseMs: 60_000 });
+    });
+    await expect(forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.markPublished(key, lease.leaseToken!, "remote", "not-a-digest"))).rejects.toThrow(/publish result is invalid/i);
+    await forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.markFailed(key, lease.leaseToken!, "token secret should not persist"));
     await expect(forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.getByIdempotencyKey(key))).resolves.toMatchObject({ status: "failed", error: "remote_unavailable" });
+  });
+
+  it("reclaims an expired lease and rejects the stale worker terminal update", async () => {
+    const key = `ws_publish_repo:${versionId}:shopline:reclaim`;
+    const firstNow = new Date("2026-07-20T00:00:00.000Z");
+    const secondNow = new Date("2026-07-20T00:01:00.001Z");
+    const result = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: "d".repeat(64) });
+      await repos.publishJobs.markQueued(key);
+      const first = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now: firstNow, leaseMs: 60_000 });
+      const reclaimed = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now: secondNow, leaseMs: 60_000 });
+      await expect(repos.publishJobs.markFailed(key, first.leaseToken!, "remote_unavailable")).rejects.toThrow(/lease/i);
+      await repos.publishJobs.markFailed(key, reclaimed.leaseToken!, "rate_limited");
+      return { first, reclaimed, final: await repos.publishJobs.getByIdempotencyKey(key) };
+    });
+    expect(result.first.claimed).toBe(true);
+    expect(result.reclaimed.claimed).toBe(true);
+    expect(result.reclaimed.leaseToken).not.toBe(result.first.leaseToken);
+    expect(result.reclaimed.job?.attemptCount).toBe(2);
+    expect(result.final).toMatchObject({ status: "failed", error: "rate_limited", attemptCount: 2 });
+  });
+
+  it("does not let markQueued regress a fast consumer claim", async () => {
+    const key = `ws_publish_repo:${versionId}:shopline:fast-consumer`;
+    const result = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: "e".repeat(64) });
+      const claimed = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now: new Date(), leaseMs: 60_000 });
+      await repos.publishJobs.markQueued(key);
+      return { claimed, final: await repos.publishJobs.getByIdempotencyKey(key) };
+    });
+    expect(result.claimed.claimed).toBe(true);
+    expect(result.final).toMatchObject({ status: "running", attemptCount: 1 });
   });
 
   it("persists audited publishing and published transitions in one tenant scope", async () => {
@@ -78,7 +129,9 @@ describe("publish job repository", () => {
     const snapshot = await forWorkspace(database, "ws_publish_repo", async (repos) => {
       await repos.listings.beginPublish(listingId, context, repos.audit);
       await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: key, payloadDigest: digest });
-      await repos.publishJobs.markPublished(key, "remote_lifecycle", digest);
+      await repos.publishJobs.markQueued(key);
+      const claimed = await repos.publishJobs.claim({ key, expectedVersionId: versionId, now: new Date(), leaseMs: 60_000 });
+      await repos.publishJobs.markPublished(key, claimed.leaseToken!, "remote_lifecycle", digest);
       await repos.listings.markPublished(listingId, versionId, "remote_lifecycle", digest, context, repos.audit);
       return { listing: await repos.listings.getById(listingId), job: await repos.publishJobs.getByIdempotencyKey(key) };
     });
