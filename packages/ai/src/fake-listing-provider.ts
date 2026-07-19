@@ -50,7 +50,13 @@ function numberCapture(note: string, pattern: RegExp): number | null {
 }
 
 function noteEvidence(field: string, excerpt: string): FieldEvidence {
-  return { field, sourceAssetId: NOTE_SOURCE_ID, page: null, excerpt, confidence: 1 };
+  return {
+    field,
+    sourceAssetId: NOTE_SOURCE_ID,
+    page: null,
+    excerpt,
+    confidence: 1,
+  };
 }
 
 export class FakeListingProvider implements ListingAIProvider {
@@ -61,11 +67,22 @@ export class FakeListingProvider implements ListingAIProvider {
     const volumeMl = numberCapture(note, /\b(\d{2,5})\s*ml\b/i);
     const abvPercent = numberCapture(note, /\b(\d+(?:\.\d+)?)\s*%\s*ABV\b/i);
     const priceHkd = numberCapture(note, /\bHK\$\s*(\d+(?:\.\d+)?)\b/i);
-    const producer = capture(note, /(?:^|,\s*)([A-Za-z][A-Za-z ]+?)(?=\s+(?:Riesling|Cabernet|Chardonnay|Pinot|Sauvignon|Merlot|Shiraz)\b)/i);
+    const stockQuantity = numberCapture(note, /\bstock\s+(\d+)\b/i);
+    const producer = capture(
+      note,
+      /(?:^|,\s*)([A-Za-z][A-Za-z ]+?)(?=\s+(?:Riesling|Cabernet|Chardonnay|Pinot|Sauvignon|Merlot|Shiraz)\b)/i,
+    );
     const country = /\bGermany\b/i.test(note) ? "Germany" : null;
     const region = /\bMosel\b/i.test(note) ? "Mosel" : null;
-    const grapes = ["Riesling", "Cabernet Sauvignon", "Chardonnay", "Pinot Noir", "Sauvignon Blanc", "Merlot", "Shiraz"]
-      .filter((grape) => new RegExp(`\\b${grape}\\b`, "i").test(note));
+    const grapes = [
+      "Riesling",
+      "Cabernet Sauvignon",
+      "Chardonnay",
+      "Pinot Noir",
+      "Sauvignon Blanc",
+      "Merlot",
+      "Shiraz",
+    ].filter((grape) => new RegExp(`\\b${grape}\\b`, "i").test(note));
 
     const facts = listingFactsSchema.parse({
       sku,
@@ -87,7 +104,7 @@ export class FakeListingProvider implements ListingAIProvider {
       abvPercent,
       packQuantity: 1,
       priceHkd,
-      stockQuantity: null,
+      stockQuantity,
       criticScores: [],
       awards: [],
     });
@@ -104,9 +121,14 @@ export class FakeListingProvider implements ListingAIProvider {
       volumeMl: volumeMl === null ? undefined : `${volumeMl}ml`,
       abvPercent: abvPercent === null ? undefined : `${abvPercent}% ABV`,
       priceHkd: priceHkd === null ? undefined : `HK$${priceHkd}`,
+      stockQuantity:
+        stockQuantity === null ? undefined : `stock ${stockQuantity}`,
     };
     for (const [field, excerpt] of Object.entries(excerpts)) {
-      if (excerpt && note.toLocaleLowerCase().includes(excerpt.toLocaleLowerCase())) {
+      if (
+        excerpt &&
+        note.toLocaleLowerCase().includes(excerpt.toLocaleLowerCase())
+      ) {
         evidence.push(noteEvidence(field, excerpt));
       }
     }
@@ -138,18 +160,30 @@ export class FakeListingProvider implements ListingAIProvider {
     }
     const vintage = facts.vintage === null ? "" : ` ${facts.vintage}`;
     const title = `${facts.producer}${vintage}`;
-    const region = facts.region === null ? facts.country : `${facts.region}, ${facts.country}`;
+    const region =
+      facts.region === null
+        ? facts.country
+        : `${facts.region}, ${facts.country}`;
     const description = `${facts.producer} ${facts.productType} from ${region}.`;
     const listing = canonicalListingSchema.parse({
       ...facts,
       ...required,
       title: { en: title, "zh-Hant": title },
-      description: { en: description, "zh-Hant": `${facts.producer}，產自${region}。` },
+      description: {
+        en: description,
+        "zh-Hant": `${facts.producer}，產自${region}。`,
+      },
       seo: {
         title: { en: title, "zh-Hant": title },
-        description: { en: description, "zh-Hant": `${facts.producer}，產自${region}。` },
+        description: {
+          en: description,
+          "zh-Hant": `${facts.producer}，產自${region}。`,
+        },
       },
-      tags: [...facts.grapeVarieties, ...(facts.region === null ? [] : [facts.region])],
+      tags: [
+        ...facts.grapeVarieties,
+        ...(facts.region === null ? [] : [facts.region]),
+      ],
       imageAssetIds: input.imageAssetIds,
     });
     return { listing, usage: usage(GENERATION_PROMPT.version) };

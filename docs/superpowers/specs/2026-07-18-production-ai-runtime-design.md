@@ -38,14 +38,14 @@ This scope is one implementation unit: production infrastructure plus the single
 
 Use managed services with clear runtime ownership:
 
-| Concern | Service | Responsibility |
-| --- | --- | --- |
-| Web and API | Vercel | Authentication, presigned uploads, listing CRUD, review, approval, CSV, SHOPLINE delivery request, and queue publishing |
-| Relational state | Existing Neon Postgres | Tenant-scoped listings, assets, AI runs, evidence, flags, versions, review events, audit events, and publish records |
-| Source assets | Cloudflare R2 | Private images and PDFs addressed by workspace-prefixed keys |
-| Job transport | Upstash Redis | BullMQ queue state, retry state, and idempotent job identity |
-| AI processing | Railway | Long-running BullMQ consumer that reads R2, calls OpenAI, and commits results to Neon |
-| AI model | OpenAI Responses API | Structured extraction and bilingual listing generation through the existing provider |
+| Concern          | Service                | Responsibility                                                                                                          |
+| ---------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Web and API      | Vercel                 | Authentication, presigned uploads, listing CRUD, review, approval, CSV, SHOPLINE delivery request, and queue publishing |
+| Relational state | Existing Neon Postgres | Tenant-scoped listings, assets, AI runs, evidence, flags, versions, review events, audit events, and publish records    |
+| Source assets    | Cloudflare R2          | Private images and PDFs addressed by workspace-prefixed keys                                                            |
+| Job transport    | Upstash Redis          | BullMQ queue state, retry state, and idempotent job identity                                                            |
+| AI processing    | Railway                | Long-running BullMQ consumer that reads R2, calls OpenAI, and commits results to Neon                                   |
+| AI model         | OpenAI Responses API   | Structured extraction and bilingual listing generation through the existing provider                                    |
 
 This is preferred over running the worker in Vercel because the current BullMQ consumer is a persistent process. It is preferred over synchronous AI processing because uploads and model calls can outlive a web request and require retries. It is preferred over a custom queue because the repository already has tested BullMQ behavior and recovery semantics.
 
@@ -173,17 +173,17 @@ Railway does not receive Better Auth, Resend, or SHOPLINE merchant secrets.
 
 ## 8. Error Handling and Operator Experience
 
-| Failure | Persisted state | Operator behavior |
-| --- | --- | --- |
-| R2 presign/upload/finalize failure | No listing until at least one valid asset is finalized | Show the affected file error and retry only that file |
-| Redis unavailable after creation | `received` | Redirect to listing and show "processing not started" with retry |
-| Duplicate enqueue | Existing job retained | Treat as success and show processing state |
-| Worker restart | Claimed or queued run recovered | No operator action unless retries terminate |
-| OpenAI timeout/transient error | BullMQ retry, then `failed` if exhausted | Show a safe diagnostic state; preserve assets and notes for support recovery |
-| Required product fact missing | `needs_info` | Ask operator to add or correct the missing facts |
-| Blocking compliance flag | `in_review` with open flag | Disable approval until resolved |
-| SHOPLINE disconnected | Approved listing remains unchanged | Keep CSV available and explain connection requirement |
-| SHOPLINE write failure | Approved listing and publish record retained | Safe retry without creating an untracked duplicate |
+| Failure                            | Persisted state                                        | Operator behavior                                                            |
+| ---------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| R2 presign/upload/finalize failure | No listing until at least one valid asset is finalized | Show the affected file error and retry only that file                        |
+| Redis unavailable after creation   | `received`                                             | Redirect to listing and show "processing not started" with retry             |
+| Duplicate enqueue                  | Existing job retained                                  | Treat as success and show processing state                                   |
+| Worker restart                     | Claimed or queued run recovered                        | No operator action unless retries terminate                                  |
+| OpenAI timeout/transient error     | BullMQ retry, then `failed` if exhausted               | Show a safe diagnostic state; preserve assets and notes for support recovery |
+| Required product fact missing      | `needs_info`                                           | Ask operator to add or correct the missing facts                             |
+| Blocking compliance flag           | `in_review` with open flag                             | Disable approval until resolved                                              |
+| SHOPLINE disconnected              | Approved listing remains unchanged                     | Keep CSV available and explain connection requirement                        |
+| SHOPLINE write failure             | Approved listing and publish record retained           | Safe retry without creating an untracked duplicate                           |
 
 Server logs use structured events containing service, action, listing ID, workspace ID, job ID, attempt, duration, and safe error code. They exclude credentials, uploaded content, raw prompts, full model output, and signed URLs.
 

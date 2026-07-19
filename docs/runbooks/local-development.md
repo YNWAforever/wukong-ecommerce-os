@@ -16,8 +16,10 @@ $env:TEST_DATABASE_URL = $env:DATABASE_URL
 $env:REDIS_URL = "redis://localhost:6389"
 $env:S3_BUCKET = "wukong-local"
 $env:S3_ENDPOINT = "http://localhost:9010"
-$env:AWS_ACCESS_KEY_ID = "wukong"
-$env:AWS_SECRET_ACCESS_KEY = "wukong-secret"
+$env:S3_REGION = "us-east-1"
+$env:S3_ACCESS_KEY_ID = "wukong"
+$env:S3_SECRET_ACCESS_KEY = "wukong-secret"
+$env:S3_FORCE_PATH_STYLE = "true"
 pnpm.cmd install --frozen-lockfile
 pnpm.cmd --filter @wukong/db db:migrate
 ```
@@ -51,6 +53,7 @@ Unset `AI_PROVIDER` and inject `OPENAI_API_KEY` only through the approved secret
 ```powershell
 pnpm.cmd --filter @wukong/worker test -- src/queue.integration.test.ts
 ```
+
 ## Verification commands
 
 ```powershell
@@ -63,6 +66,8 @@ $env:PLAYWRIGHT_E2E = "1"
 pnpm.cmd exec playwright install chromium
 pnpm.cmd test:e2e
 ```
+
+The release Playwright journey uses the real Next.js production server, worker, PostgreSQL, Redis, MinIO, and Mailpit. It obtains a presigned PUT through the application, uploads synthetic PNG and PDF files from the browser, then verifies the stored object with S3 `HEAD` and a signed read URL before review and publishing continue.
 
 When browser binaries are unavailable, leave `PLAYWRIGHT_E2E` unset: the Playwright spec is skipped safely and CI can install Chromium explicitly. Audit a completed synthetic draft with:
 

@@ -11,6 +11,12 @@ const workflow = readFileSync(
 const turbo = JSON.parse(
   readFileSync(new URL("turbo.json", new URL("../", import.meta.url)), "utf8"),
 );
+const rootPackage = JSON.parse(
+  readFileSync(
+    new URL("package.json", new URL("../", import.meta.url)),
+    "utf8",
+  ),
+);
 const workerPackage = JSON.parse(
   readFileSync(
     new URL("apps/worker/package.json", new URL("../", import.meta.url)),
@@ -67,5 +73,35 @@ test("keeps service-backed suites in the integration gate", () => {
   assert.match(
     databasePackage.scripts.test,
     /--exclude .*integration\.test\.ts/,
+  );
+});
+
+test("pins the declared pnpm release toolchain", () => {
+  assert.match(
+    workflow,
+    /uses: pnpm\/action-setup@v6[\s\S]*?version: 11\.7\.0/,
+  );
+  assert.match(workflow, /node-version: 24/);
+});
+
+test("runs the real storage, mail, browser, and audit release gate", () => {
+  assert.match(workflow, /docker compose up -d minio mailpit/);
+  for (const variable of [
+    "S3_ENDPOINT",
+    "S3_REGION",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "S3_FORCE_PATH_STYLE",
+  ]) {
+    assert.match(workflow, new RegExp(`^\\s+${variable}:`, "m"));
+  }
+  assert.match(workflow, /PLAYWRIGHT_E2E: "1"/);
+  assert.match(workflow, /audit:verify --workspace ws_opak --draft/);
+});
+
+test("defines a reproducible runtime formatting gate", () => {
+  assert.equal(
+    rootPackage.scripts["format:runtime:check"],
+    "node scripts/check-runtime-format.mjs",
   );
 });

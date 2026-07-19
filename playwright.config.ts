@@ -9,7 +9,7 @@ const baseURL =
 export default defineConfig({
   testDir: "./tests",
   testMatch: /.*\.spec\.(ts|js|mjs)$/,
-  timeout: 30_000,
+  timeout: enabled ? 120_000 : 30_000,
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
@@ -26,11 +26,11 @@ export default defineConfig({
   webServer: !process.env.PLAYWRIGHT_BASE_URL
     ? {
         command: enabled
-          ? "node tests/e2e/fake-pilot-server.mjs"
+          ? "pnpm build --filter=@wukong/web && node tests/e2e/real-stack-server.mjs"
           : "pnpm --filter @wukong/web dev --hostname 127.0.0.1 --port 49218",
-        url: enabled ? `${baseURL}/health` : `${baseURL}/register`,
+        url: enabled ? `${baseURL}/signin` : `${baseURL}/register`,
         reuseExistingServer: !process.env.CI,
-        timeout: 30_000,
+        timeout: enabled ? 120_000 : 30_000,
         env: enabled
           ? {
               ...process.env,

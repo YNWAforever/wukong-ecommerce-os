@@ -45,9 +45,7 @@ export type ListingRepository = {
   getById(id: string): Promise<Listing | null>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
-  requireForPublish(
-    id: string,
-  ): Promise<{
+  requireForPublish(id: string): Promise<{
     id: string;
     target: "shopline";
     status: ListingStatus;
@@ -437,19 +435,17 @@ export function createListingRepository(
         .returning({ id: listingDrafts.id });
       if (updated.length !== 1)
         throw new Error("listing changed while editing review");
-      await transaction
-        .insert(reviewEvents)
-        .values({
-          workspaceId,
-          listingId: id,
-          actorId: context.actorId,
-          action: "listing.edited",
-          metadata: {
-            baseVersionId,
-            versionId: version.id,
-            changedFields: [...changedFields],
-          },
-        });
+      await transaction.insert(reviewEvents).values({
+        workspaceId,
+        listingId: id,
+        actorId: context.actorId,
+        action: "listing.edited",
+        metadata: {
+          baseVersionId,
+          versionId: version.id,
+          changedFields: [...changedFields],
+        },
+      });
       await audit.write({
         ...context,
         action: "listing.edited",
@@ -661,22 +657,20 @@ export function createListingRepository(
           ),
         );
       if (evidence.length === 0) return;
-      await transaction
-        .insert(fieldEvidence)
-        .values(
-          evidence.map((entry) => ({
-            workspaceId,
-            listingVersionId: versionId,
-            sourceAssetId:
-              entry.sourceAssetId === "note" ? null : entry.sourceAssetId,
-            fieldPath: entry.field,
-            evidence: {
-              page: entry.page,
-              excerpt: entry.excerpt,
-              confidence: entry.confidence,
-            },
-          })),
-        );
+      await transaction.insert(fieldEvidence).values(
+        evidence.map((entry) => ({
+          workspaceId,
+          listingVersionId: versionId,
+          sourceAssetId:
+            entry.sourceAssetId === "note" ? null : entry.sourceAssetId,
+          fieldPath: entry.field,
+          evidence: {
+            page: entry.page,
+            excerpt: entry.excerpt,
+            confidence: entry.confidence,
+          },
+        })),
+      );
     },
 
     async replaceFlags(versionId, flags) {
@@ -690,23 +684,21 @@ export function createListingRepository(
           ),
         );
       if (flags.length === 0) return;
-      await transaction
-        .insert(complianceFlags)
-        .values(
-          flags.map((flag) => ({
-            workspaceId,
-            listingVersionId: versionId,
-            code: flag.rule,
-            severity: flag.severity,
-            status: flag.status,
-            details: {
-              id: flag.id,
-              field: flag.field,
-              resolutionReason: flag.resolutionReason,
-            },
-            resolvedAt: flag.status === "resolved" ? new Date() : null,
-          })),
-        );
+      await transaction.insert(complianceFlags).values(
+        flags.map((flag) => ({
+          workspaceId,
+          listingVersionId: versionId,
+          code: flag.rule,
+          severity: flag.severity,
+          status: flag.status,
+          details: {
+            id: flag.id,
+            field: flag.field,
+            resolutionReason: flag.resolutionReason,
+          },
+          resolvedAt: flag.status === "resolved" ? new Date() : null,
+        })),
+      );
     },
 
     async complete(id, result, context, audit) {

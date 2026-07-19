@@ -41,17 +41,31 @@ jobs:
       REDIS_URL: redis://localhost:6389
       TEST_REDIS_URL: redis://localhost:6389
       S3_BUCKET: wukong-ci
+      S3_ENDPOINT: http://127.0.0.1:9010
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: wukong
+      S3_SECRET_ACCESS_KEY: wukong-secret
+      S3_FORCE_PATH_STYLE: "true"
       AI_PROVIDER: fake
       SHOPLINE_ADAPTER: mock
+      RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Start local object storage and mail sink
+        run: docker compose up -d minio mailpit
+      - name: Check runtime formatting
+        run: pnpm format:runtime:check
       - name: Prepare database runtime role
         run: |
           PGPASSWORD=wukong psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END \$\$;"
@@ -73,6 +87,11 @@ jobs:
         env:
           PLAYWRIGHT_E2E: "1"
         run: pnpm test:e2e
+      - name: Verify the completed Opak audit by draft
+        run: |
+          DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"
+          test -n "$DRAFT_ID"
+          pnpm --filter @wukong/db audit:verify --workspace ws_opak --draft "$DRAFT_ID"
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4

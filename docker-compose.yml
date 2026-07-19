@@ -1,4 +1,4 @@
-services:
+﻿services:
   postgres:
     image: postgres:17-alpine
     environment:
@@ -20,6 +20,7 @@ services:
     environment:
       MINIO_ROOT_USER: wukong
       MINIO_ROOT_PASSWORD: wukong-secret
+      MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:49217
     ports: ["9010:9000", "9011:9001"]
   mailpit:
     image: axllent/mailpit:latest

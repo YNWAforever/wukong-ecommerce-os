@@ -302,6 +302,7 @@ export function mapListingView(
       status,
       canReview: response.permissions.canDeliver,
       remoteProductUrl: null,
+      remoteProductId: response.delivery?.remoteProductId ?? null,
     },
     permissions: response.permissions,
     evidence: response.evidence.map((entry) => ({

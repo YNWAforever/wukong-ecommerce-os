@@ -154,13 +154,16 @@ export function buildAuthOptions(
           Promise.resolve().then(() => access.clearPasswordGuard(email)),
           Promise.resolve().then(() => access.revokeUserSessions(user.id)),
         ]);
-        const completed = guard.status === "fulfilled" && sessions.status === "fulfilled";
+        const completed =
+          guard.status === "fulfilled" && sessions.status === "fulfilled";
         try {
           await access.writeAuthAudit({
             email,
             userId: user.id,
             outcome: completed ? "success" : "failure",
-            reason: completed ? "password_reset_completed" : "password_reset_rejected",
+            reason: completed
+              ? "password_reset_completed"
+              : "password_reset_rejected",
           });
         } catch {
           // Better Auth must continue its built-in session revocation.

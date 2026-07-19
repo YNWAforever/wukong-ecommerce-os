@@ -90,6 +90,11 @@ export function DeliveryPanel({ model, onCsv, onPublish }: DeliveryPanelProps) {
           <span>Reviewer access required.</span>
         </p>
       ) : null}
+      {model.remoteProductId ? (
+        <p className="remote-link">
+          SHOPLINE product ID <code>{model.remoteProductId}</code>
+        </p>
+      ) : null}
       {model.remoteProductUrl ? (
         <p className="remote-link">
           <a href={model.remoteProductUrl} rel="noreferrer">

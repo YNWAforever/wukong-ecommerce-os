@@ -66,6 +66,7 @@ export type DeliveryModel = {
   status: ListingReviewModel["status"];
   canReview: boolean;
   remoteProductUrl: string | null;
+  remoteProductId: string | null;
 };
 
 export const queueGroups: ReadonlyArray<{

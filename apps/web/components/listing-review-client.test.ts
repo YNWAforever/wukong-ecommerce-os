@@ -122,6 +122,22 @@ describe("listing review client mapping", () => {
     });
   });
 
+  it("maps the stored remote SHOPLINE product id after publishing", () => {
+    const mapped = mapListingView({
+      ...response,
+      status: "published",
+      delivery: {
+        status: "published",
+        remoteProductId: "remote_opak_e2e_123",
+        error: null,
+      },
+    });
+
+    expect(mapped.delivery).toMatchObject({
+      status: "published",
+      remoteProductId: "remote_opak_e2e_123",
+    });
+  });
   it("applies edited scalar and localized fields without losing canonical metadata", () => {
     const { model } = mapListingView(response);
     const edited = model.fields.map((field) => {
