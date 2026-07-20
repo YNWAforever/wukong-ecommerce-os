@@ -71,6 +71,37 @@ describe("Cloudflare Worker ingress", () => {
     expect(bindings.SHOPLINE_QUEUE.send).not.toHaveBeenCalled();
   });
 
+  it("rejects a BOM-prefixed body signed only for the canonical bytes", async () => {
+    const bindings = env();
+    const canonicalBody = JSON.stringify(listing);
+    const signature = await signQueueRequest({
+      secret,
+      timestamp: nowSeconds,
+      path: LISTING_INGRESS_PATH,
+      body: canonicalBody,
+    });
+    const canonicalBytes = new TextEncoder().encode(canonicalBody);
+    const rawBody = new Uint8Array(3 + canonicalBytes.byteLength);
+    rawBody.set([0xef, 0xbb, 0xbf]);
+    rawBody.set(canonicalBytes, 3);
+    const request = new Request(`https://worker.test${LISTING_INGRESS_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-wukong-timestamp": String(nowSeconds),
+        "x-wukong-signature": signature,
+      },
+      body: rawBody,
+    });
+
+    const response = await handleIngress(request, bindings, undefined, {
+      nowSeconds: () => nowSeconds,
+    });
+
+    expect(response.status).toBe(401);
+    expect(bindings.LISTING_QUEUE.send).not.toHaveBeenCalled();
+  });
+
   it("routes strict SHOPLINE payloads to the isolated queue", async () => {
     const bindings = env();
     const response = await handleIngress(

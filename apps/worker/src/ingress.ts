@@ -47,7 +47,9 @@ async function readLimitedBody(request: Request): Promise<string | Response> {
     offset += chunk.byteLength;
   }
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+      bytes,
+    );
   } catch {
     return response(400);
   }
