@@ -59,6 +59,10 @@ export async function consumeListingMessage(
     }
     return { retryAfterSeconds: RETRY_AFTER_SECONDS };
   } finally {
-    await runtime.close();
+    try {
+      await runtime.close();
+    } catch {
+      // Cleanup must not override the already-classified queue outcome.
+    }
   }
 }

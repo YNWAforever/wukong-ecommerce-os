@@ -18,9 +18,11 @@ import { handleQueue } from "./queue-consumer.js";
 
 const valid = { workspaceId, draftId, activeVersionSequence: 0 };
 
-function runtimeHarness(error?: Error) {
+function runtimeHarness(error?: Error, closeError?: Error) {
   const { deps, state } = makeHarness({ extractError: error });
-  const close = vi.fn(async () => undefined);
+  const close = vi.fn(async () => {
+    if (closeError) throw closeError;
+  });
   runtimeMocks.createCloudflareRuntime.mockReturnValue({
     dependencies: deps,
     close,
@@ -67,6 +69,35 @@ describe("Cloudflare listing consumer", () => {
 
     expect(runtimeMocks.createCloudflareRuntime).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a terminal acknowledgement when runtime cleanup fails", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { state } = runtimeHarness(
+      new ProviderOutputError("AI evidence invalid secret-content-123"),
+      new Error("cleanup failed secret-content-123"),
+    );
+
+    await expect(consumeListingMessage(valid, {} as never)).resolves.toBe("ack");
+    expect(state.failure).toBe("provider_failure");
+    expect(logged).not.toHaveBeenCalled();
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-content-123");
+    logged.mockRestore();
+  });
+
+  it("keeps a transient retry outcome when runtime cleanup fails", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    runtimeHarness(
+      new ProviderApiError("AI provider unavailable secret-content-123"),
+      new Error("cleanup failed secret-content-123"),
+    );
+
+    await expect(consumeListingMessage(valid, {} as never)).resolves.toEqual({
+      retryAfterSeconds: 30,
+    });
+    expect(logged).not.toHaveBeenCalled();
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-content-123");
+    logged.mockRestore();
   });
 
   it("retries provider availability failures without persisting model content", async () => {
