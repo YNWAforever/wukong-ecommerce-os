@@ -1,0 +1,25 @@
+{
+  "environments": {
+    "preview": {
+      "worker": "wukong-runtime-preview",
+      "listingQueue": "wukong-listing-preview",
+      "listingDlq": "wukong-listing-dlq-preview",
+      "shoplineQueue": "wukong-shopline-preview",
+      "shoplineDlq": "wukong-shopline-dlq-preview"
+    },
+    "production": {
+      "worker": "wukong-runtime-production",
+      "listingQueue": "wukong-listing-production",
+      "listingDlq": "wukong-listing-dlq-production",
+      "shoplineQueue": "wukong-shopline-production",
+      "shoplineDlq": "wukong-shopline-dlq-production"
+    }
+  },
+  "consumer": {
+    "maxBatchSize": 1,
+    "maxBatchTimeout": 5,
+    "maxRetries": 3,
+    "retryDelay": 30,
+    "maxConcurrency": 1
+  }
+}

@@ -4,9 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "start": "pnpm build && node dist/cli.js",
-    "start:production": "node dist/cli.js",
+    "build": "wrangler deploy src/cloudflare.ts --dry-run --config ../../.wrangler/wrangler.generated.jsonc --outdir dist",
+    "types": "wrangler types --config ../../.wrangler/wrangler.generated.jsonc",
+    "dev:local": "wrangler dev src/cloudflare.ts --local --config ../../.wrangler/wrangler.generated.jsonc",
+    "deploy:preview": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='preview'; await import('../../scripts/render-cloudflare-config.mjs')\" && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
+    "deploy:production": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='production'; await import('../../scripts/render-cloudflare-config.mjs')\" && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src --exclude src/**/*.integration.test.ts",
     "test:integration": "vitest run src/queue.integration.test.ts",
@@ -18,13 +20,13 @@
     "@wukong/core": "workspace:*",
     "@wukong/db": "workspace:*",
     "@wukong/jobs": "workspace:*",
-    "@wukong/shopline": "workspace:*",
-    "bullmq": "^5.80.1",
-    "ioredis": "^5.10.1"
+    "@wukong/shopline": "workspace:*"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260718.1",
     "@types/node": "latest",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "wrangler": "4.112.0"
   }
 }

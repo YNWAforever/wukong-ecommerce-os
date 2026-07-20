@@ -15,9 +15,13 @@ import type {
   ListingAIProvider,
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
-import { listingPipelineJobId, type ListingJobInput } from "@wukong/jobs";
+import type { ListingJob } from "@wukong/jobs";
 
-export type ListingPipelineInput = ListingJobInput;
+export type ListingPipelineInput = ListingJob;
+
+function listingPipelineJobId(input: ListingPipelineInput): string {
+  return `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+}
 export type PipelineResult = {
   status: "in_review" | "needs_info";
   versionId: string | null;
