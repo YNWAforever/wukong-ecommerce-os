@@ -1,23 +1,23 @@
-import type { Database } from "@wukong/db";
-
-import { createWorkerDatabase } from "./cloudflare-runtime.js";
+import { consumeListingMessage as defaultConsumeListingMessage } from "./listing-consumer.js";
+import type { ListingConsumerOutcome } from "./listing-consumer.js";
 import type { WorkerEnv, WorkerQueueBatch } from "./worker-env.js";
 
-type QueueDependencies = {
-  createDatabase?: (env: WorkerEnv) => Database;
-  consume?: (
-    batch: WorkerQueueBatch,
-    env: WorkerEnv,
-    context: ExecutionContext | undefined,
-    database: Database,
-  ) => Promise<void>;
-};
+const LISTING_QUEUE_NAMES = new Set([
+  "wukong-listing-preview",
+  "wukong-listing-production",
+]);
+const SHOPLINE_QUEUE_NAMES = new Set([
+  "wukong-shopline-preview",
+  "wukong-shopline-production",
+]);
+const PLACEHOLDER_RETRY_SECONDS = 30;
 
-async function holdForConsumerImplementation(
-  batch: WorkerQueueBatch,
-): Promise<void> {
-  for (const message of batch.messages) message.retry();
-}
+type QueueDependencies = {
+  consumeListingMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<ListingConsumerOutcome>;
+};
 
 export async function handleQueue(
   batch: WorkerQueueBatch,
@@ -25,15 +25,25 @@ export async function handleQueue(
   context?: ExecutionContext,
   dependencies: QueueDependencies = {},
 ): Promise<void> {
-  const database = (dependencies.createDatabase ?? createWorkerDatabase)(env);
-  try {
-    await (dependencies.consume ?? holdForConsumerImplementation)(
-      batch,
-      env,
-      context,
-      database,
-    );
-  } finally {
-    await database.close();
+  void context;
+  const isListingQueue = LISTING_QUEUE_NAMES.has(batch.queue);
+  const isShoplineQueue = SHOPLINE_QUEUE_NAMES.has(batch.queue);
+  if (!isListingQueue && !isShoplineQueue) {
+    throw new Error("unknown queue name");
+  }
+
+  if (isShoplineQueue) {
+    for (const message of batch.messages) {
+      message.retry({ delaySeconds: PLACEHOLDER_RETRY_SECONDS });
+    }
+    return;
+  }
+
+  const consume =
+    dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
+  for (const message of batch.messages) {
+    const outcome = await consume(message.body, env);
+    if (outcome === "ack") message.ack();
+    else message.retry({ delaySeconds: outcome.retryAfterSeconds });
   }
 }

@@ -17,6 +17,13 @@ export {
   type PublishResult,
 } from "./publish-product.js";
 export { handleIngress } from "./ingress.js";
+export { consumeListingMessage } from "./listing-consumer.js";
+export type { ListingConsumerOutcome } from "./listing-consumer.js";
 export { handleQueue } from "./queue-consumer.js";
-export { createWorkerDatabase } from "./cloudflare-runtime.js";
+export {
+  createCloudflareRuntime,
+  createWorkerDatabase,
+  type CloudflareRuntime,
+  type CloudflareRuntimeConfig,
+} from "./cloudflare-runtime.js";
 export type { WorkerEnv, WorkerQueueBatch } from "./worker-env.js";

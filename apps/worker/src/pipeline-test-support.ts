@@ -3,7 +3,7 @@ import type { AuditContext, AuditWriter, CanonicalListing, FieldEvidence, Listin
 import type { PipelineDependencies, PipelineRepositories } from "./listing-pipeline.js";
 
 export const workspaceId = "ws_opak";
-export const draftId = "draft_1";
+export const draftId = "b9df5d9e-8214-4d76-9a8d-38f802d03d11";
 export const usage: AIUsage = { inputTokens: 12, outputTokens: 34, estimatedCostUsd: 0.012345, latencyMs: 321, model: "test-model", promptVersion: "test-v1" };
 export const facts: ListingFacts = { sku: "OPAK-001", producer: "Demo Estate", productType: "wine", country: "Germany", region: "Mosel", vintage: 2024, grapeVarieties: ["Riesling"], volumeMl: 750, abvPercent: 12.5, packQuantity: 1, priceHkd: 288, stockQuantity: 4, criticScores: [], awards: [] };
 export const evidence: FieldEvidence[] = [{ field: "priceHkd", sourceAssetId: "asset_1", page: null, excerpt: "HK$288", confidence: 1 }];

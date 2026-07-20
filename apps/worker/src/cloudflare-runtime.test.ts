@@ -4,8 +4,10 @@ const dbMocks = vi.hoisted(() => ({ createDatabase: vi.fn() }));
 
 vi.mock("@wukong/db", () => ({ createDatabase: dbMocks.createDatabase }));
 
-import { createWorkerDatabase } from "./cloudflare-runtime.js";
-import { handleQueue } from "./queue-consumer.js";
+import {
+  createCloudflareRuntime,
+  createWorkerDatabase,
+} from "./cloudflare-runtime.js";
 
 describe("Cloudflare runtime", () => {
   it("creates a five-connection database only from Hyperdrive", () => {
@@ -23,19 +25,19 @@ describe("Cloudflare runtime", () => {
     );
   });
 
-  it("closes the Hyperdrive database in finally for every queue batch", async () => {
-    const failure = new Error("consumer not installed");
-    const database = { close: vi.fn(async () => undefined) };
-    const consume = vi.fn(async () => {
-      throw failure;
+  it("closes the Hyperdrive database through the Cloudflare runtime", async () => {
+    const database = {
+      close: vi.fn(async () => undefined),
+      forWorkspace: vi.fn(),
+    };
+    const runtime = createCloudflareRuntime({ AI_PROVIDER: "fake" } as never, {
+      databaseFactory: () => database as never,
+      assetStoreFactory: () => ({}) as never,
+      providerFactory: () => ({}) as never,
     });
 
-    await expect(
-      handleQueue({ messages: [] } as never, {} as never, undefined, {
-        createDatabase: () => database as never,
-        consume,
-      }),
-    ).rejects.toBe(failure);
+    await runtime.close();
+
     expect(database.close).toHaveBeenCalledOnce();
   });
 });

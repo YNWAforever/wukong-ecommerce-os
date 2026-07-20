@@ -49,7 +49,7 @@ type ProviderResponse = {
 };
 
 export type ResponsesClientPort = {
-  responses: { parse(request: unknown): Promise<ProviderResponse> };
+  responses: { parse(request: unknown, options?: { signal?: AbortSignal }): Promise<ProviderResponse> };
 };
 
 export type ModelPricing = {
@@ -65,9 +65,12 @@ export type OpenAIListingProviderConfig = {
   pricing?: ModelPricing;
   now?: () => number;
   clientFactory?: () => ResponsesClientPort;
+  apiKey?: string;
+  timeoutMs?: number;
 };
 
 const DEFAULT_MODEL = "gpt-5.6-terra";
+const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_PRICING: ModelPricing = {
   inputUsdPerMillion: 2.5,
   outputUsdPerMillion: 15,
@@ -336,6 +339,7 @@ export class OpenAIListingProvider implements ListingAIProvider {
   private readonly pricing: ModelPricing;
   private readonly now: () => number;
   private readonly clientFactory: () => ResponsesClientPort;
+  private readonly timeoutMs: number;
 
   constructor(client?: ResponsesClientPort, config: OpenAIListingProviderConfig = {}) {
     this.client = client;
@@ -348,7 +352,11 @@ export class OpenAIListingProvider implements ListingAIProvider {
     this.model = configuredModel;
     this.pricing = config.pricing ?? DEFAULT_PRICING;
     this.now = config.now ?? Date.now;
-    this.clientFactory = config.clientFactory ?? (() => new OpenAI() as unknown as ResponsesClientPort);
+    this.clientFactory = config.clientFactory ?? (() => new OpenAI(config.apiKey === undefined ? undefined : { apiKey: config.apiKey }) as unknown as ResponsesClientPort);
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    if (!Number.isInteger(this.timeoutMs) || this.timeoutMs < 1_000 || this.timeoutMs > 600_000) {
+      throw new TypeError("timeoutMs must be an integer between 1000 and 600000");
+    }
     validatePricing(this.pricing);
   }
 
@@ -360,7 +368,7 @@ export class OpenAIListingProvider implements ListingAIProvider {
   private async parseWithOneRepair(request: Record<string, unknown>): Promise<ProviderResponse> {
     let response: ProviderResponse;
     try {
-      response = await this.getClient().responses.parse(request);
+      response = await this.getClient().responses.parse(request, { signal: AbortSignal.timeout(this.timeoutMs) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       throw new ProviderApiError(/timeout|timed out|abort|etimedout/i.test(message) ? "AI provider request timed out" : "AI provider request failed");
@@ -375,7 +383,7 @@ export class OpenAIListingProvider implements ListingAIProvider {
       ],
     };
     try {
-      response = await this.getClient().responses.parse(repairRequest);
+      response = await this.getClient().responses.parse(repairRequest, { signal: AbortSignal.timeout(this.timeoutMs) });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       throw new ProviderApiError(/timeout|timed out|abort|etimedout/i.test(message) ? "AI provider request timed out" : "AI provider request failed");

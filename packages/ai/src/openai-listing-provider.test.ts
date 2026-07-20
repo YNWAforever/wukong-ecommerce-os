@@ -98,7 +98,7 @@ describe("OpenAIListingProvider", () => {
       model: "gpt-5.6-terra",
       reasoning: { effort: "low" },
       text: { format: expect.any(Object) },
-    }));
+    }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     const request = parse.mock.calls[0]?.[0] as { input: Array<{ content: unknown }> };
     expect(JSON.stringify(request.input)).toContain('"type":"input_image"');
     expect(JSON.stringify(request.input)).toContain('"type":"input_file"');
@@ -119,12 +119,12 @@ describe("OpenAIListingProvider", () => {
     try {
       const fromEnv = fakeClient(extractionResponse());
       await new OpenAIListingProvider(fromEnv.client).extract({ assets: [], note: groundingNote });
-      expect(fromEnv.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-luna" }));
+      expect(fromEnv.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-luna" }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
 
       const explicit = fakeClient(extractionResponse());
       await new OpenAIListingProvider(explicit.client, { model: "gpt-5.6-terra" })
         .extract({ assets: [], note: groundingNote });
-      expect(explicit.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-terra" }));
+      expect(explicit.parse).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-terra" }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     } finally {
       if (previous === undefined) delete process.env.OPENAI_LISTING_MODEL;
       else process.env.OPENAI_LISTING_MODEL = previous;
@@ -133,6 +133,28 @@ describe("OpenAIListingProvider", () => {
 
   it.each(["", " unsafe model ", "../model", "model?secret=1"])("rejects unsafe model config %j", (model) => {
     expect(() => new OpenAIListingProvider(undefined, { model })).toThrow(/model/i);
+  });
+
+  it("uses the default bounded deadline for both initial and repair requests", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const { client, parse } = fakeClient(
+      { output_parsed: null, usage: {}, output: [] },
+      extractionResponse(),
+    );
+    await new OpenAIListingProvider(client).extract({ assets: [], note: groundingNote });
+    expect(timeout).toHaveBeenNthCalledWith(1, 120_000);
+    expect(timeout).toHaveBeenNthCalledWith(2, 120_000);
+    expect(parse.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(parse.mock.calls[1]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it("accepts inclusive provider timeout bounds and rejects unsafe deadlines", () => {
+    expect(() => new OpenAIListingProvider(undefined, { timeoutMs: 1_000 })).not.toThrow();
+    expect(() => new OpenAIListingProvider(undefined, { timeoutMs: 600_000 })).not.toThrow();
+    for (const timeoutMs of [999, 600_001, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new OpenAIListingProvider(undefined, { timeoutMs })).toThrow(/timeout/i);
+    }
   });
 
   it.each([42, true, null, ["gpt-5.6-terra"], { toString: () => "gpt-5.6-terra" }])("rejects non-string model config %j", (model) => {

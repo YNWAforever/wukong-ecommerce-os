@@ -11,6 +11,14 @@ export type WorkerEnv = {
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
   SHOPLINE_ADAPTER?: "disabled" | "mock";
+  AI_PROVIDER?: "openai" | "fake";
+  OPENAI_API_KEY?: string;
+  S3_BUCKET?: string;
+  S3_ENDPOINT?: string;
+  S3_REGION?: string;
+  S3_FORCE_PATH_STYLE?: "true" | "false";
+  S3_ACCESS_KEY_ID?: string;
+  S3_SECRET_ACCESS_KEY?: string;
 };
 
 export type WorkerQueueBatch = MessageBatch<QueueMessage>;

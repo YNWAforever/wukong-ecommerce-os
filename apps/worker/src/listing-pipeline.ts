@@ -8,8 +8,11 @@ import type {
   WorkspaceProfile,
 } from "@wukong/core";
 import { scanCompliance } from "@wukong/core";
-import type {
-  AIUsage,
+import {
+  ProviderApiError,
+  ProviderOutputError,
+  ProviderRefusalError,
+  type AIUsage,
   ExtractionAsset,
   ExtractionResult,
   ListingAIProvider,
@@ -26,7 +29,11 @@ export type PipelineResult = {
   status: "in_review" | "needs_info";
   versionId: string | null;
 };
-export type PipelineAttemptOptions = { attempt?: number; maxAttempts?: number };
+export type PipelineAttemptOptions = {
+  attempt?: number;
+  maxAttempts?: number;
+  isTerminalError?: (error: unknown) => boolean;
+};
 export type PipelineAsset = {
   id: string;
   mimeType: string;
@@ -191,8 +198,22 @@ function flattenLocalizedContent(
 function classifyError(error: unknown): PipelineErrorCode {
   if (error instanceof PipelineTimeoutError) return "provider_timeout";
   const message = error instanceof Error ? error.message : "";
-  if (/timeout|timed out|abort|etimedout/i.test(message))
+  if (
+    error instanceof ProviderApiError &&
+    /timeout|timed out|abort|etimedout/i.test(message)
+  ) {
     return "provider_timeout";
+  }
+  if (
+    error instanceof ProviderApiError ||
+    error instanceof ProviderOutputError ||
+    error instanceof ProviderRefusalError
+  ) {
+    return "provider_failure";
+  }
+  if (/timeout|timed out|abort|etimedout/i.test(message)) {
+    return "provider_timeout";
+  }
   if (/provider|openai|model/i.test(message)) return "provider_failure";
   return "pipeline_failure";
 }
@@ -470,7 +491,7 @@ export async function runListingPipeline(
     await deps.withWorkspace(input.workspaceId, async (repos) => {
       const leaseToken = claimedLeaseToken ?? completionLeaseToken ?? undefined;
       const leaseStep = claimedStep ?? completionStep ?? activeStep;
-      if (attempt >= maxAttempts) {
+      if (options.isTerminalError?.(error) === true || attempt >= maxAttempts) {
         const errorCode = classifyError(error);
         const failed = await repos.pipelineRuns.fail({
           idempotencyKey,
