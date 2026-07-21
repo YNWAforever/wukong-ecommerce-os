@@ -48,6 +48,7 @@ function makeHarness(
   const deps = {
     connector: makeConnector(),
     connectionId: connectorId ?? undefined,
+    resolveImageUrls: vi.fn(async () => []),
     async withWorkspace<T>(
       _workspace: string,
       work: (repositories: PublishRepositories) => Promise<T>,
@@ -215,6 +216,53 @@ describe("publishApprovedProduct", () => {
     );
   });
 
+  it("publishes ordered resolved image URLs through the connector", async () => {
+    const harness = makeHarness();
+    if (!harness.state.listing.activeVersion)
+      throw new Error("missing version");
+    harness.state.listing.activeVersion.content = {
+      ...canonicalListing,
+      imageAssetIds: ["asset_b", "asset_a"],
+    };
+    const resolveImageUrls = vi.fn(async () => [
+      "https://signed.example/asset-b",
+      "https://signed.example/asset-a",
+    ]);
+
+    await publishApprovedProduct(
+      { workspaceId, draftId },
+      { ...harness, resolveImageUrls },
+    );
+
+    expect(resolveImageUrls).toHaveBeenCalledWith(workspaceId, draftId, [
+      "asset_b",
+      "asset_a",
+    ]);
+    expect(harness.connector.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        product: expect.objectContaining({
+          images: [
+            "https://signed.example/asset-b",
+            "https://signed.example/asset-a",
+          ],
+        }),
+      }),
+      `${workspaceId}:${versionId}:shopline:create`,
+    );
+  });
+
+  it("fails closed when image resolution is unavailable", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      publishApprovedProduct({ workspaceId, draftId }, {
+        ...harness,
+        resolveImageUrls: undefined,
+      } as never),
+    ).rejects.toThrow();
+
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
   it("keeps the payload digest stable when signed image URLs rotate", async () => {
     const first = makeHarness();
     const second = makeHarness();

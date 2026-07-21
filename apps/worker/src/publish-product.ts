@@ -97,7 +97,7 @@ export type PublishDependencies = {
     workspaceId: string,
     work: (repositories: PublishRepositories) => Promise<T>,
   ): Promise<T>;
-  resolveImageUrls?: (
+  resolveImageUrls: (
     workspaceId: string,
     draftId: string,
     imageAssetIds: readonly string[],
@@ -232,13 +232,11 @@ export async function publishApprovedProduct(
       }
       if (existing?.status === "published")
         return { result: existingResult(existing) };
-      const imageUrls = dependencies.resolveImageUrls
-        ? await dependencies.resolveImageUrls(
-            input.workspaceId,
-            input.draftId,
-            listing.activeVersion.content.imageAssetIds,
-          )
-        : [];
+      const imageUrls = await dependencies.resolveImageUrls(
+        input.workspaceId,
+        input.draftId,
+        listing.activeVersion.content.imageAssetIds,
+      );
       let payload: ShoplineProductPayload;
       try {
         payload = projectToShopline(listing.activeVersion.content, imageUrls);

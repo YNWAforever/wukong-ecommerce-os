@@ -253,4 +253,82 @@ describe("delivery audit and queue context", () => {
       payloadDigest: (firstJobs[0] as { payloadDigest: string }).payloadDigest,
     });
   });
+
+  it("returns an existing published outcome without resolving unused images", async () => {
+    const harness = deps([], []);
+    const imageUrls = vi.fn(async () => {
+      throw new Error("images must not resolve");
+    });
+    harness.imageUrls = imageUrls;
+    harness.listings.requireForPublish = async () => ({
+      id: "listing_1",
+      target: "shopline" as const,
+      status: "published" as const,
+      activeVersion: {
+        id: "version_1",
+        sequence: 1,
+        content: { ...content, imageAssetIds: ["asset_a"] },
+      },
+      flags: [],
+    });
+    harness.existingDelivery = async () => ({
+      status: "published",
+      remoteProductId: "remote_existing",
+    });
+
+    await expect(
+      deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "shopline_api",
+        },
+        harness,
+      ),
+    ).resolves.toEqual({
+      kind: "already_published",
+      remoteProductId: "remote_existing",
+    });
+    expect(imageUrls).not.toHaveBeenCalled();
+  });
+
+  it("returns disconnected without resolving unused images", async () => {
+    const harness = deps([], []);
+    const imageUrls = vi.fn(async () => {
+      throw new Error("images must not resolve");
+    });
+    harness.imageUrls = imageUrls;
+    harness.connection = null;
+    harness.listings.requireForPublish = async () => ({
+      id: "listing_1",
+      target: "shopline" as const,
+      status: "approved" as const,
+      activeVersion: {
+        id: "version_1",
+        sequence: 1,
+        content: { ...content, imageAssetIds: ["asset_a"] },
+      },
+      flags: [],
+    });
+
+    await expect(
+      deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "shopline_api",
+        },
+        harness,
+      ),
+    ).resolves.toEqual({
+      kind: "disconnected",
+      csvFallback: {
+        method: "csv",
+        path: "/api/listings/listing_1/deliver",
+      },
+    });
+    expect(imageUrls).not.toHaveBeenCalled();
+  });
 });

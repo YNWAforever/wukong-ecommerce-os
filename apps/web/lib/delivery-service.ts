@@ -107,6 +107,29 @@ export async function deliverListing(
     };
   }
 
+  if (input.method === "shopline_api" && listing.status === "published") {
+    const existing = deps.existingDelivery
+      ? await deps.existingDelivery(
+          `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
+        )
+      : null;
+    if (existing?.status === "published" && existing.remoteProductId)
+      return {
+        kind: "already_published",
+        remoteProductId: existing.remoteProductId,
+      };
+    return { kind: "already_published", remoteProductId: null };
+  }
+
+  if (input.method === "shopline_api" && !deps.connection?.verified) {
+    return {
+      kind: "disconnected",
+      csvFallback: {
+        method: "csv",
+        path: `/api/listings/${input.draftId}/deliver`,
+      },
+    };
+  }
   let payload: ShoplineProductPayload;
   try {
     payload = projectToShopline(
@@ -151,29 +174,6 @@ export async function deliverListing(
     };
   }
 
-  if (listing.status === "published") {
-    const existing = deps.existingDelivery
-      ? await deps.existingDelivery(
-          `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
-        )
-      : null;
-    if (existing?.status === "published" && existing.remoteProductId)
-      return {
-        kind: "already_published",
-        remoteProductId: existing.remoteProductId,
-      };
-    return { kind: "already_published", remoteProductId: null };
-  }
-
-  if (!deps.connection?.verified) {
-    return {
-      kind: "disconnected",
-      csvFallback: {
-        method: "csv",
-        path: `/api/listings/${input.draftId}/deliver`,
-      },
-    };
-  }
   const jobId = await deps.publisher.enqueue({
     workspaceId: input.workspaceId,
     draftId: input.draftId,
