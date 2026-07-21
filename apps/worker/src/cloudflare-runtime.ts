@@ -18,11 +18,17 @@ import type {
   PipelineDependencies,
   PipelineRepositories,
 } from "./listing-pipeline.js";
+import { resolveListingImageUrls } from "./image-resolver.js";
 import type { WorkerEnv } from "./worker-env.js";
 
 export type CloudflareRuntime = {
   database: Database;
   dependencies: PipelineDependencies;
+  resolveImageUrls(
+    workspaceId: string,
+    draftId: string,
+    imageAssetIds: readonly string[],
+  ): Promise<readonly string[]>;
   close(): Promise<void>;
 };
 
@@ -141,6 +147,16 @@ export function createCloudflareRuntime(
   return {
     database,
     dependencies,
+    resolveImageUrls: (workspaceId, draftId, imageAssetIds) =>
+      database.forWorkspace(workspaceId, async (repositories) =>
+        resolveListingImageUrls({
+          workspaceId,
+          draftId,
+          imageAssetIds,
+          sourceAssets: repositories.sourceAssets,
+          assetStore,
+        }),
+      ),
     close: () => database.close(),
   };
 }

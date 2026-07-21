@@ -40,4 +40,51 @@ describe("Cloudflare runtime", () => {
 
     expect(database.close).toHaveBeenCalledOnce();
   });
+
+  it("resolves owned draft images inside the workspace database boundary", async () => {
+    const sourceAssets = {
+      getByIds: vi.fn(async () => [
+        {
+          id: "asset_a",
+          workspaceId: "ws_opak",
+          listingId: "draft_1",
+          kind: "image/png",
+          storageKey: "ws/ws_opak/sources/asset-a/a.png",
+        },
+      ]),
+    };
+    const repositories = { sourceAssets };
+    const database = {
+      close: vi.fn(async () => undefined),
+      forWorkspace: vi.fn(
+        async (
+          _workspaceId: string,
+          work: (value: typeof repositories) => Promise<unknown>,
+        ) => work(repositories),
+      ),
+    };
+    const createReadUrl = vi.fn(async () => ({
+      url: "https://signed.example/asset-a",
+      expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+    }));
+    const runtime = createCloudflareRuntime({ AI_PROVIDER: "fake" } as never, {
+      databaseFactory: () => database as never,
+      assetStoreFactory: () => ({ createReadUrl }) as never,
+      providerFactory: () => ({}) as never,
+    });
+
+    await expect(
+      runtime.resolveImageUrls("ws_opak", "draft_1", ["asset_a"]),
+    ).resolves.toEqual(["https://signed.example/asset-a"]);
+
+    expect(database.forWorkspace).toHaveBeenCalledWith(
+      "ws_opak",
+      expect.any(Function),
+    );
+    expect(sourceAssets.getByIds).toHaveBeenCalledWith(["asset_a"]);
+    expect(createReadUrl).toHaveBeenCalledWith(
+      "ws_opak",
+      "ws/ws_opak/sources/asset-a/a.png",
+    );
+  });
 });
