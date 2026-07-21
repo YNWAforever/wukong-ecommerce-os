@@ -27,3 +27,8 @@ export {
   type CloudflareRuntimeConfig,
 } from "./cloudflare-runtime.js";
 export type { WorkerEnv, WorkerQueueBatch } from "./worker-env.js";
+export {
+  createShoplineConnectorFactory,
+  type EncryptedShoplineConnection,
+  type ShoplineConnectorFactory,
+} from "./shopline-runtime.js";

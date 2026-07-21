@@ -32,3 +32,12 @@ export {
   type EligibleAuthUser,
   type PasswordGuard,
 } from "./repositories/auth-access.js";
+export {
+  createShoplineConnectionSeedStore,
+  runShoplineConnectionSeed,
+  seedShoplineConnection,
+  type ShoplineConnectionSeedInput,
+  type ShoplineConnectionSeedResult,
+  type ShoplineConnectionSeedRuntime,
+  type ShoplineConnectionSeedStore,
+} from "./seed-shopline-connection.js";

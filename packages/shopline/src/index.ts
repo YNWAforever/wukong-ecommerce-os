@@ -30,3 +30,8 @@ export {
   ShoplineError,
   type ShoplineConnectorOptions,
 } from "./shopline-connector.js";
+export {
+  assertShoplineEncryptionKey,
+  decryptShoplineToken,
+  encryptShoplineToken,
+} from "./token-vault.js";

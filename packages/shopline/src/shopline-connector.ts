@@ -57,14 +57,16 @@ function strictString(value: unknown): value is string {
 }
 
 export class ShoplineConnector implements CommerceConnector {
+  readonly #token: string;
   private readonly baseUrl: string;
   private readonly requestFetch: ConnectorFetch;
 
   constructor(
-    private readonly token: string,
+    token: string,
     options: ShoplineConnectorOptions = {},
   ) {
     if (!token.trim()) throw new Error("SHOPLINE token is required");
+    this.#token = token;
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? "https://open.shopline.io/v1");
     this.requestFetch = options.fetch ?? fetch;
   }
@@ -76,7 +78,7 @@ export class ShoplineConnector implements CommerceConnector {
         ...init,
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+          authorization: `Bearer ${this.#token}`,
           ...init.headers,
         },
       });
@@ -101,7 +103,7 @@ export class ShoplineConnector implements CommerceConnector {
         ...init,
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+          authorization: `Bearer ${this.#token}`,
           ...init.headers,
         },
       });
@@ -166,7 +168,7 @@ export class ShoplineConnector implements CommerceConnector {
         method: "GET",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+          authorization: `Bearer ${this.#token}`,
         },
       });
     } catch {

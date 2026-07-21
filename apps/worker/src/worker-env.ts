@@ -10,7 +10,9 @@ export type WorkerEnv = {
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
-  SHOPLINE_ADAPTER?: "disabled" | "mock";
+  SHOPLINE_ADAPTER?: "disabled" | "mock" | "real";
+  SHOPLINE_PUBLISH_ENABLED?: "true" | "false";
+  SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
   AI_PROVIDER?: "openai" | "fake";
   OPENAI_API_KEY?: string;
   S3_BUCKET?: string;

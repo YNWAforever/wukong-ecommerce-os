@@ -183,6 +183,9 @@ importers:
       '@wukong/core':
         specifier: workspace:*
         version: link:../core
+      '@wukong/shopline':
+        specifier: workspace:*
+        version: link:../shopline
       drizzle-orm:
         specifier: ^0.44.7
         version: 0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.29.3)(postgres@3.4.9)

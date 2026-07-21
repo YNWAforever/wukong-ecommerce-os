@@ -164,7 +164,10 @@ export function createCloudflareRuntime(
 export function workerHealth(env: WorkerEnv) {
   return {
     buildSha: env.BUILD_SHA?.trim() || "unknown",
-    adapterMode: env.SHOPLINE_ADAPTER === "mock" ? "mock" : "disabled",
+    adapterMode:
+      env.SHOPLINE_ADAPTER === "mock" || env.SHOPLINE_ADAPTER === "real"
+        ? env.SHOPLINE_ADAPTER
+        : "disabled",
     bindings: {
       hyperdrive: Boolean(env.HYPERDRIVE?.connectionString),
       listingQueue: typeof env.LISTING_QUEUE?.send === "function",
