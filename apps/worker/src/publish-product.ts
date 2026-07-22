@@ -17,7 +17,10 @@ import {
 export type PublishProductInput = {
   workspaceId: string;
   draftId: string;
+  expectedVersionId: string;
+  leaseToken: string;
   connectionId?: string;
+  persistRetryableFailure?: boolean;
 };
 
 export type PublishListingSnapshot = {
@@ -32,7 +35,8 @@ export type PublishListingSnapshot = {
   flags: ComplianceFlag[];
 };
 
-export type PublishJobStatus = "queued" | "running" | "published" | "failed";
+export type PublishJobStatus =
+  "pending_enqueue" | "queued" | "running" | "published" | "failed";
 
 export type PublishJobRecord = {
   id: string;
@@ -44,6 +48,7 @@ export type PublishJobRecord = {
   payloadDigest: string | null;
   remoteProductId: string | null;
   error: string | null;
+  leaseToken?: string | null;
 };
 
 export type PublishRepositories = {
@@ -72,20 +77,17 @@ export type PublishRepositories = {
   };
   publishJobs: {
     getByIdempotencyKey(key: string): Promise<PublishJobRecord | null>;
-    ensure(input: {
-      listingId: string;
-      versionId: string;
-      connectionId: string;
-      idempotencyKey: string;
-      payloadDigest: string;
-    }): Promise<PublishJobRecord>;
-    markRunning(key: string): Promise<void>;
     markPublished(
       key: string,
+      leaseToken: string,
       remoteProductId: string,
       payloadDigest: string,
     ): Promise<void>;
-    markFailed(key: string, errorCode: PublishErrorCode): Promise<void>;
+    markFailed(
+      key: string,
+      leaseToken: string,
+      errorCode: PublishErrorCode,
+    ): Promise<void>;
   };
   audit: AuditWriter;
 };
@@ -201,26 +203,39 @@ export async function publishApprovedProduct(
   ) {
     throw new PublishDeliveryError("invalid_connection");
   }
+  if (!input.expectedVersionId.trim() || !input.leaseToken.trim()) {
+    throw new Error(
+      "An expected version and active publish lease are required",
+    );
+  }
+
+  const idempotencyKey = `${input.workspaceId}:${input.expectedVersionId}:shopline:create`;
   const prepared = await dependencies.withWorkspace(
     input.workspaceId,
     async (repositories) => {
       const listing = await repositories.listings.requireForPublish(
         input.draftId,
       );
-      if (listing.target !== "shopline" || !listing.activeVersion) {
-        throw new PublishDeliveryError("not_approved");
+      if (
+        listing.target !== "shopline" ||
+        !listing.activeVersion ||
+        listing.activeVersion.id !== input.expectedVersionId
+      ) {
+        const error = new PublishDeliveryError("not_approved");
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        throw error;
       }
 
-      const versionId = listing.activeVersion.id;
-      const idempotencyKey = `${input.workspaceId}:${versionId}:shopline:create`;
       const existing =
         await repositories.publishJobs.getByIdempotencyKey(idempotencyKey);
-      if (listing.flags.some(isUnresolvedBlockingFlag)) {
-        throw new PublishDeliveryError("blocking_flags");
-      }
       if (listing.status === "published") {
-        if (existing?.status === "published")
+        if (existing?.status === "published") {
           return { result: existingResult(existing) };
+        }
         throw new Error("published listing is missing its delivery record");
       }
       if (
@@ -228,10 +243,30 @@ export async function publishApprovedProduct(
         listing.status !== "publishing" &&
         listing.status !== "publish_failed"
       ) {
-        throw new Error("Only the active approved version can be delivered");
+        const error = new PublishDeliveryError("not_approved");
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        throw error;
       }
-      if (existing?.status === "published")
+      if (existing?.status === "published") {
         return { result: existingResult(existing) };
+      }
+      if (!existing || existing.versionId !== input.expectedVersionId) {
+        throw new Error("claimed publish job is unavailable");
+      }
+      if (listing.flags.some(isUnresolvedBlockingFlag)) {
+        const error = new PublishDeliveryError("blocking_flags");
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        throw error;
+      }
+
       const imageUrls = await dependencies.resolveImageUrls(
         input.workspaceId,
         input.draftId,
@@ -241,18 +276,15 @@ export async function publishApprovedProduct(
       try {
         payload = projectToShopline(listing.activeVersion.content, imageUrls);
       } catch {
-        throw new PublishDeliveryError("invalid_payload");
+        const error = new PublishDeliveryError("invalid_payload");
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        throw error;
       }
       const payloadDigest = digestPayload(listing.activeVersion.content);
-      const job = await repositories.publishJobs.ensure({
-        listingId: listing.id,
-        versionId,
-        connectionId,
-        idempotencyKey,
-        payloadDigest,
-      });
-      if (job.status === "published") return { result: existingResult(job) };
-
       const auditContext = context(input);
       if (
         listing.status === "approved" ||
@@ -264,23 +296,29 @@ export async function publishApprovedProduct(
           repositories.audit,
         );
       }
-      await repositories.publishJobs.markRunning(idempotencyKey);
       return {
         listing,
-        job,
+        job: existing,
         payload,
         payloadDigest,
-        idempotencyKey,
-        versionId,
+        versionId: input.expectedVersionId,
+        markListingOnFailure: true,
       };
     },
   );
 
-  if ("result" in prepared && prepared.result !== undefined)
+  if ("result" in prepared && prepared.result !== undefined) {
     return prepared.result;
+  }
 
-  const { listing, job, payload, payloadDigest, idempotencyKey, versionId } =
-    prepared;
+  const {
+    listing,
+    job,
+    payload,
+    payloadDigest,
+    versionId,
+    markListingOnFailure,
+  } = prepared;
   const auditContext = context(input);
 
   const complete = async (remoteProductId: string): Promise<PublishResult> => {
@@ -289,6 +327,7 @@ export async function publishApprovedProduct(
       async (repositories) => {
         await repositories.publishJobs.markPublished(
           idempotencyKey,
+          input.leaseToken,
           remoteProductId,
           payloadDigest,
         );
@@ -314,14 +353,20 @@ export async function publishApprovedProduct(
     await dependencies.withWorkspace(
       input.workspaceId,
       async (repositories) => {
-        await repositories.publishJobs.markFailed(idempotencyKey, error.code);
-        await repositories.listings.markPublishFailed(
-          listing.id,
-          versionId,
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
           error.code,
-          auditContext,
-          repositories.audit,
         );
+        if (markListingOnFailure) {
+          await repositories.listings.markPublishFailed(
+            listing.id,
+            versionId,
+            error.code,
+            auditContext,
+            repositories.audit,
+          );
+        }
       },
     );
     throw error;
@@ -335,7 +380,14 @@ export async function publishApprovedProduct(
       if (status.exists) return complete(job.remoteProductId);
     } catch (error) {
       const normalized = normalizeConnectorError(error);
-      if (normalized.code !== "remote_unavailable") return fail(normalized);
+      if (
+        normalized.code !== "remote_unavailable" &&
+        normalized.code !== "rate_limited"
+      ) {
+        return fail(normalized);
+      }
+      if (input.persistRetryableFailure) return fail(normalized);
+      throw normalized;
     }
   }
 
@@ -349,7 +401,7 @@ export async function publishApprovedProduct(
       return complete(created.remoteProductId);
     } catch (error) {
       createError = normalizeConnectorError(error);
-      if (createError.code !== "remote_unavailable") return fail(createError);
+      if (createError.code !== "remote_unavailable") break;
       if (attempt === 0 && job.remoteProductId) {
         try {
           const status = await dependencies.connector.getProductStatus(
@@ -362,5 +414,15 @@ export async function publishApprovedProduct(
       }
     }
   }
-  return fail(createError ?? new PublishDeliveryError("remote_unavailable"));
+
+  const finalError =
+    createError ?? new PublishDeliveryError("remote_unavailable");
+  if (
+    (finalError.code === "remote_unavailable" ||
+      finalError.code === "rate_limited") &&
+    !input.persistRetryableFailure
+  ) {
+    throw finalError;
+  }
+  return fail(finalError);
 }

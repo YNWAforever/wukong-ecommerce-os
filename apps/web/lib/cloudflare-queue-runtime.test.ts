@@ -1,4 +1,8 @@
-import { LISTING_INGRESS_PATH, signQueueRequest } from "@wukong/jobs";
+import {
+  LISTING_INGRESS_PATH,
+  SHOPLINE_INGRESS_PATH,
+  signQueueRequest,
+} from "@wukong/jobs";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -50,6 +54,37 @@ describe("Cloudflare queue ingress runtime", () => {
     expect(JSON.stringify(init)).not.toContain(secret);
   });
 
+  it("posts the strict ID-only SHOPLINE publish payload", async () => {
+    const fetch = vi.fn(
+      async (_request: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(null, { status: 202 }),
+    );
+    const client = createCloudflareIngressClient({
+      env: {
+        QUEUE_INGRESS_URL: "https://queue.example",
+        QUEUE_INGRESS_SECRET: "s".repeat(32),
+      },
+      fetch,
+    });
+    const shoplinePayload = {
+      workspaceId: "ws_opak",
+      draftId: "00000000-0000-4000-8000-000000000001",
+      versionId: "00000000-0000-4000-8000-000000000002",
+      connectionId: "00000000-0000-4000-8000-000000000003",
+    };
+
+    await client.enqueue(SHOPLINE_INGRESS_PATH, shoplinePayload);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0]![1]?.body).toBe(JSON.stringify(shoplinePayload));
+    await expect(
+      client.enqueue(SHOPLINE_INGRESS_PATH, {
+        ...shoplinePayload,
+        payloadDigest: "must-not-cross-ingress",
+      }),
+    ).rejects.toEqual(new QueueIngressError("queue_unavailable"));
+  });
+
   it("fails safely when ingress configuration is missing", async () => {
     await expect(
       createCloudflareIngressClient({ env: {} }).enqueue(
@@ -65,8 +100,8 @@ describe("Cloudflare queue ingress runtime", () => {
         QUEUE_INGRESS_URL: "https://queue.example",
         QUEUE_INGRESS_SECRET: "s".repeat(32),
       },
-      fetch: vi.fn(async () =>
-        new Response("internal secret response", { status: 500 }),
+      fetch: vi.fn(
+        async () => new Response("internal secret response", { status: 500 }),
       ),
     });
 

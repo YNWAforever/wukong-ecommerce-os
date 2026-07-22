@@ -14,7 +14,18 @@ import {
 
 const versionId = "version_approved";
 const VALID_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
+const LEASE_TOKEN = "lease_token_1";
 const draftId = "draft_1";
+
+function publishInput(overrides: Record<string, unknown> = {}) {
+  return {
+    workspaceId,
+    draftId,
+    expectedVersionId: versionId,
+    leaseToken: LEASE_TOKEN,
+    ...overrides,
+  };
+}
 
 function makeConnector(
   overrides: Partial<CommerceConnector> = {},
@@ -43,7 +54,33 @@ function makeHarness(
     activeVersion: { id: versionId, sequence: 2, content: canonicalListing },
     flags,
   };
-  const state = { listing, jobs: [...jobs] };
+  const initialJobs =
+    jobs.length > 0
+      ? jobs
+      : [
+          {
+            id: "job_1",
+            listingId: draftId,
+            versionId,
+            connectionId: VALID_CONNECTION_ID,
+            idempotencyKey: `${workspaceId}:${versionId}:shopline:create`,
+            status: "running",
+            remoteProductId: null,
+            payloadDigest: null,
+            error: null,
+            leaseToken: LEASE_TOKEN,
+          },
+        ];
+  const state = {
+    listing,
+    jobs: initialJobs.map((job) => ({
+      listingId: draftId,
+      versionId,
+      connectionId: VALID_CONNECTION_ID,
+      leaseToken: LEASE_TOKEN,
+      ...job,
+    })),
+  };
   const repos = makeRepos(state, audits);
   const deps = {
     connector: makeConnector(),
@@ -103,37 +140,28 @@ function makeRepos(
       async getByIdempotencyKey(key) {
         return input.jobs.find((job) => job.idempotencyKey === key) ?? null;
       },
-      async ensure(inputJob) {
-        const existing = input.jobs.find(
-          (job) => job.idempotencyKey === inputJob.idempotencyKey,
-        );
-        if (existing) return existing;
-        const created = {
-          id: `job_${input.jobs.length + 1}`,
-          ...inputJob,
-          status: "queued",
-          remoteProductId: null,
-          error: null,
-        };
-        input.jobs.push(created);
-        return created;
-      },
-      async markRunning(key) {
+      async markPublished(key, leaseToken, remoteProductId, payloadDigest) {
         const job = input.jobs.find((entry) => entry.idempotencyKey === key);
-        if (job) job.status = "running";
+        if (!job || job.status !== "running" || job.leaseToken !== leaseToken) {
+          throw new Error("publish job lease is not active");
+        }
+        Object.assign(job, {
+          status: "published",
+          remoteProductId,
+          payloadDigest,
+          leaseToken: null,
+        });
       },
-      async markPublished(key, remoteProductId, payloadDigest) {
+      async markFailed(key, leaseToken, errorCode) {
         const job = input.jobs.find((entry) => entry.idempotencyKey === key);
-        if (job)
-          Object.assign(job, {
-            status: "published",
-            remoteProductId,
-            payloadDigest,
-          });
-      },
-      async markFailed(key, errorCode) {
-        const job = input.jobs.find((entry) => entry.idempotencyKey === key);
-        if (job) Object.assign(job, { status: "failed", error: errorCode });
+        if (!job || job.status !== "running" || job.leaseToken !== leaseToken) {
+          throw new Error("publish job lease is not active");
+        }
+        Object.assign(job, {
+          status: "failed",
+          error: errorCode,
+          leaseToken: null,
+        });
       },
     },
     audit: {
@@ -145,10 +173,58 @@ function makeRepos(
 }
 
 describe("publishApprovedProduct", () => {
+  it("rejects an active-version mismatch before connector work", async () => {
+    const harness = makeHarness();
+    const staleVersionId = "version_stale";
+    harness.state.jobs[0].versionId = staleVersionId;
+    harness.state.jobs[0].idempotencyKey = `${workspaceId}:${staleVersionId}:shopline:create`;
+
+    await expect(
+      publishApprovedProduct(
+        {
+          workspaceId,
+          draftId,
+          expectedVersionId: staleVersionId,
+          leaseToken: LEASE_TOKEN,
+        } as never,
+        harness,
+      ),
+    ).rejects.toMatchObject({ code: "not_approved" });
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("supplies the active lease token to terminal credential persistence", async () => {
+    const connector = makeConnector({
+      createProduct: vi.fn(async () => {
+        throw new PublishDeliveryError("invalid_credentials_or_permission");
+      }),
+    });
+    const harness = makeHarness();
+    harness.connector = connector;
+    const markFailed = vi.spyOn(harness.repos.publishJobs, "markFailed");
+
+    await expect(
+      publishApprovedProduct(
+        {
+          workspaceId,
+          draftId,
+          expectedVersionId: versionId,
+          leaseToken: LEASE_TOKEN,
+        } as never,
+        harness,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_credentials_or_permission" });
+    expect(markFailed).toHaveBeenCalledWith(
+      `${workspaceId}:${versionId}:shopline:create`,
+      LEASE_TOKEN,
+      "invalid_credentials_or_permission",
+    );
+  });
+
   it("rejects delivery before approval without calling SHOPLINE", async () => {
     const harness = makeHarness("in_review");
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, harness),
+      publishApprovedProduct(publishInput(), harness),
     ).rejects.toThrow("Only the active approved version can be delivered");
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });
@@ -165,17 +241,14 @@ describe("publishApprovedProduct", () => {
       },
     ]);
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, harness),
+      publishApprovedProduct(publishInput(), harness),
     ).rejects.toThrow(/blocking compliance flags/i);
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });
 
   it("publishes an approved active version and stores only digest and remote id", async () => {
     const harness = makeHarness();
-    const result = await publishApprovedProduct(
-      { workspaceId, draftId },
-      harness,
-    );
+    const result = await publishApprovedProduct(publishInput(), harness);
     expect(result).toMatchObject({
       status: "published",
       remoteProductId: "remote_123",
@@ -204,10 +277,10 @@ describe("publishApprovedProduct", () => {
       "https://signed.example/asset-1",
     ]);
 
-    await publishApprovedProduct(
-      { workspaceId, draftId },
-      { ...harness, resolveImageUrls },
-    );
+    await publishApprovedProduct(publishInput(), {
+      ...harness,
+      resolveImageUrls,
+    });
 
     expect(resolveImageUrls).toHaveBeenCalledWith(
       workspaceId,
@@ -229,10 +302,10 @@ describe("publishApprovedProduct", () => {
       "https://signed.example/asset-a",
     ]);
 
-    await publishApprovedProduct(
-      { workspaceId, draftId },
-      { ...harness, resolveImageUrls },
-    );
+    await publishApprovedProduct(publishInput(), {
+      ...harness,
+      resolveImageUrls,
+    });
 
     expect(resolveImageUrls).toHaveBeenCalledWith(workspaceId, draftId, [
       "asset_b",
@@ -255,7 +328,7 @@ describe("publishApprovedProduct", () => {
     const harness = makeHarness();
 
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, {
+      publishApprovedProduct(publishInput(), {
         ...harness,
         resolveImageUrls: undefined,
       } as never),
@@ -267,20 +340,14 @@ describe("publishApprovedProduct", () => {
     const first = makeHarness();
     const second = makeHarness();
 
-    const firstResult = await publishApprovedProduct(
-      { workspaceId, draftId },
-      {
-        ...first,
-        resolveImageUrls: async () => ["https://signed.example/first"],
-      },
-    );
-    const secondResult = await publishApprovedProduct(
-      { workspaceId, draftId },
-      {
-        ...second,
-        resolveImageUrls: async () => ["https://signed.example/second"],
-      },
-    );
+    const firstResult = await publishApprovedProduct(publishInput(), {
+      ...first,
+      resolveImageUrls: async () => ["https://signed.example/first"],
+    });
+    const secondResult = await publishApprovedProduct(publishInput(), {
+      ...second,
+      resolveImageUrls: async () => ["https://signed.example/second"],
+    });
 
     expect(firstResult.payloadDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(secondResult.payloadDigest).toBe(firstResult.payloadDigest);
@@ -301,10 +368,7 @@ describe("publishApprovedProduct", () => {
         },
       ],
     );
-    const result = await publishApprovedProduct(
-      { workspaceId, draftId },
-      harness,
-    );
+    const result = await publishApprovedProduct(publishInput(), harness);
     expect(result).toMatchObject({
       status: "published",
       remoteProductId: "remote_existing",
@@ -336,10 +400,7 @@ describe("publishApprovedProduct", () => {
       ],
     );
     harness.connector = connector;
-    const result = await publishApprovedProduct(
-      { workspaceId, draftId },
-      harness,
-    );
+    const result = await publishApprovedProduct(publishInput(), harness);
     expect(result.remoteProductId).toBe("remote_existing");
     expect(connector.getProductStatus).toHaveBeenCalledWith("remote_existing");
     expect(connector.createProduct).toHaveBeenCalledTimes(0);
@@ -357,7 +418,7 @@ describe("publishApprovedProduct", () => {
     const harness = makeHarness();
     harness.connector = connector;
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, harness),
+      publishApprovedProduct(publishInput(), harness),
     ).rejects.toMatchObject({ code: "invalid_credentials_or_permission" });
     expect(harness.state.listing.status).toBe("publish_failed");
     expect(harness.state.jobs[0]).toMatchObject({
@@ -367,7 +428,7 @@ describe("publishApprovedProduct", () => {
     expect(JSON.stringify(harness.state.jobs[0])).not.toContain("token leaked");
   });
 
-  it("retries a prior publish_failed delivery with the same idempotency key", async () => {
+  it("publishes a reclaimed delivery with the same idempotency key", async () => {
     const key = `${workspaceId}:${versionId}:shopline:create`;
     const harness = makeHarness(
       "publish_failed",
@@ -376,17 +437,14 @@ describe("publishApprovedProduct", () => {
         {
           id: "job_retry",
           idempotencyKey: key,
-          status: "failed",
+          status: "running",
           remoteProductId: null,
           payloadDigest: null,
           error: "remote_unavailable",
         },
       ],
     );
-    const result = await publishApprovedProduct(
-      { workspaceId, draftId },
-      harness,
-    );
+    const result = await publishApprovedProduct(publishInput(), harness);
     expect(result.remoteProductId).toBe("remote_123");
     expect(harness.connector.createProduct).toHaveBeenCalledTimes(1);
     expect(harness.state.listing.status).toBe("published");
@@ -394,19 +452,19 @@ describe("publishApprovedProduct", () => {
   it("rejects missing or invalid connector identity before tenant mutation or HTTP", async () => {
     const missing = makeHarness("approved", [], [], null);
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, missing),
+      publishApprovedProduct(publishInput(), missing),
     ).rejects.toMatchObject({ code: "invalid_connection" });
-    expect(missing.state.jobs).toHaveLength(0);
+    expect(missing.state.jobs[0]).toMatchObject({ status: "running" });
     expect(missing.connector.createProduct).not.toHaveBeenCalled();
 
     const invalid = makeHarness("approved");
     await expect(
       publishApprovedProduct(
-        { workspaceId, draftId, connectionId: "shopline-default" },
+        publishInput({ connectionId: "shopline-default" }),
         invalid,
       ),
     ).rejects.toMatchObject({ code: "invalid_connection" });
-    expect(invalid.state.jobs).toHaveLength(0);
+    expect(invalid.state.jobs[0]).toMatchObject({ status: "running" });
     expect(invalid.connector.createProduct).not.toHaveBeenCalled();
   });
 
@@ -419,7 +477,7 @@ describe("publishApprovedProduct", () => {
         {
           id: "job_reopened",
           idempotencyKey: key,
-          status: "published",
+          status: "running",
           remoteProductId: "remote_old",
           payloadDigest: "e".repeat(64),
           error: null,
@@ -427,7 +485,7 @@ describe("publishApprovedProduct", () => {
       ],
     );
     await expect(
-      publishApprovedProduct({ workspaceId, draftId }, harness),
+      publishApprovedProduct(publishInput(), harness),
     ).rejects.toThrow("Only the active approved version can be delivered");
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });

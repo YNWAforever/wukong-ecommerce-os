@@ -1,6 +1,8 @@
 import {
   LISTING_INGRESS_PATH,
+  SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  shoplinePublishJobSchema,
   signQueueRequest,
 } from "@wukong/jobs";
 
@@ -34,11 +36,16 @@ export function createCloudflareIngressClient(
         const env = options.env ?? process.env;
         const ingressUrl = env.QUEUE_INGRESS_URL?.trim();
         const secret = env.QUEUE_INGRESS_SECRET?.trim();
-        if (!ingressUrl || !secret || path !== LISTING_INGRESS_PATH) {
-          throw queueUnavailable();
-        }
+        if (!ingressUrl || !secret) throw queueUnavailable();
+        const schema =
+          path === LISTING_INGRESS_PATH
+            ? listingJobSchema
+            : path === SHOPLINE_INGRESS_PATH
+              ? shoplinePublishJobSchema
+              : null;
+        if (!schema) throw queueUnavailable();
 
-        const body = JSON.stringify(listingJobSchema.parse(payload));
+        const body = JSON.stringify(schema.parse(payload));
         const timestamp = Math.floor((options.now ?? Date.now)() / 1_000);
         const signature = await signQueueRequest({
           secret,

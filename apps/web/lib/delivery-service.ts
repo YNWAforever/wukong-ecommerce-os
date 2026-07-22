@@ -35,6 +35,7 @@ export type DeliverySnapshot = {
 export type DeliveryResult =
   | { kind: "csv"; body: string; specVersion: string; versionId: string }
   | { kind: "queued"; jobId: string; versionId: string }
+  | { kind: "retry_required"; jobId: string; versionId: string }
   | { kind: "approval_required" }
   | { kind: "blocking_flags"; issues: string[] }
   | { kind: "validation_error"; issues: string[] }
@@ -79,6 +80,178 @@ function digest(content: CanonicalListing): string {
 
 function approved(status: ListingStatus): boolean {
   return status === "approved" || status === "published";
+}
+
+export type ShoplinePublishRequest = {
+  kind: "publish_request";
+  jobId: string;
+  versionId: string;
+  connectionId: string;
+  workspaceId: string;
+  actorId: string;
+  draftId: string;
+  idempotencyKey: string;
+};
+
+export type ShoplinePreparationResult =
+  | ShoplinePublishRequest
+  | Extract<
+      DeliveryResult,
+      {
+        kind:
+          | "approval_required"
+          | "blocking_flags"
+          | "validation_error"
+          | "disconnected"
+          | "already_published";
+      }
+    >;
+
+export type ShoplineDeliveryDeps = Omit<DeliveryDeps, "publisher"> & {
+  publishJobs: {
+    ensure(input: {
+      listingId: string;
+      versionId: string;
+      connectionId: string;
+      idempotencyKey: string;
+      payloadDigest: string;
+    }): Promise<{ id: string; status: string }>;
+    markQueued(key: string): Promise<boolean>;
+  };
+};
+
+export async function prepareShoplineDelivery(
+  input: DeliverInput,
+  deps: ShoplineDeliveryDeps,
+): Promise<ShoplinePreparationResult> {
+  const listing = await deps.listings.requireForPublish(input.draftId);
+  if (
+    input.method !== "shopline_api" ||
+    listing.target !== "shopline" ||
+    !listing.activeVersion ||
+    !approved(listing.status)
+  ) {
+    return { kind: "approval_required" };
+  }
+  const blocking = listing.flags.filter(
+    (flag) =>
+      flag.severity === "blocking" &&
+      (flag.status === "open" ||
+        (flag.status === "resolved" &&
+          flag.resolutionReason.trim().length < 10)),
+  );
+  if (blocking.length > 0) {
+    return {
+      kind: "blocking_flags",
+      issues: blocking.map((flag) => `${flag.field}: ${flag.rule}`),
+    };
+  }
+  if (listing.status === "published") {
+    const existing = deps.existingDelivery
+      ? await deps.existingDelivery(
+          `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
+        )
+      : null;
+    return {
+      kind: "already_published",
+      remoteProductId:
+        existing?.status === "published" ? existing.remoteProductId : null,
+    };
+  }
+  if (!deps.connection?.verified) {
+    return {
+      kind: "disconnected",
+      csvFallback: {
+        method: "csv",
+        path: `/api/listings/${input.draftId}/deliver`,
+      },
+    };
+  }
+
+  let payload: ShoplineProductPayload;
+  try {
+    payload = projectToShopline(
+      listing.activeVersion.content,
+      await deps.imageUrls(
+        input.workspaceId,
+        input.draftId,
+        listing.activeVersion.content.imageAssetIds,
+      ),
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "SHOPLINE payload is invalid";
+    return { kind: "validation_error", issues: [message] };
+  }
+  const validation = validateShoplineProduct(payload);
+  if (!validation.valid) {
+    return {
+      kind: "validation_error",
+      issues: validation.issues.map(
+        (issue) => `${issue.path}: ${issue.message}`,
+      ),
+    };
+  }
+
+  const versionId = listing.activeVersion.id;
+  const idempotencyKey = `${input.workspaceId}:${versionId}:shopline:create`;
+  const job = await deps.publishJobs.ensure({
+    listingId: listing.id,
+    versionId,
+    connectionId: deps.connection.id,
+    idempotencyKey,
+    payloadDigest: digest(listing.activeVersion.content),
+  });
+  await deps.audit.write({
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
+    action: "listing.publish_requested",
+    entityId: input.draftId,
+    metadata: { versionId, jobId: job.id },
+  });
+  return {
+    kind: "publish_request",
+    jobId: job.id,
+    versionId,
+    connectionId: deps.connection.id,
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
+    draftId: input.draftId,
+    idempotencyKey,
+  };
+}
+
+export type ConfirmShoplineDeliveryDeps = {
+  audit: DeliveryDeps["audit"];
+  publishJobs: {
+    markQueued(key: string): Promise<boolean>;
+  };
+};
+
+export async function confirmShoplineQueued(
+  prepared: ShoplinePublishRequest,
+  deps: ConfirmShoplineDeliveryDeps,
+): Promise<Extract<DeliveryResult, { kind: "queued" }>> {
+  const transitioned = await deps.publishJobs.markQueued(
+    prepared.idempotencyKey,
+  );
+  if (transitioned) {
+    await deps.audit.write({
+      workspaceId: prepared.workspaceId,
+      actorId: prepared.actorId,
+      action: "listing.publish_queued",
+      entityId: prepared.draftId,
+      metadata: {
+        versionId: prepared.versionId,
+        jobId: prepared.jobId,
+      },
+    });
+  }
+  return {
+    kind: "queued",
+    jobId: prepared.jobId,
+    versionId: prepared.versionId,
+  };
 }
 
 export async function deliverListing(

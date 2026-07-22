@@ -1,5 +1,10 @@
 import { consumeListingMessage as defaultConsumeListingMessage } from "./listing-consumer.js";
 import type { ListingConsumerOutcome } from "./listing-consumer.js";
+import {
+  consumeShoplineMessage as defaultConsumeShoplineMessage,
+  SHOPLINE_MAX_ATTEMPTS,
+  type ShoplineConsumerOutcome,
+} from "./shopline-consumer.js";
 import type { WorkerEnv, WorkerQueueBatch } from "./worker-env.js";
 
 const LISTING_QUEUE_NAMES = new Set([
@@ -10,13 +15,22 @@ const SHOPLINE_QUEUE_NAMES = new Set([
   "wukong-shopline-preview",
   "wukong-shopline-production",
 ]);
-const PLACEHOLDER_RETRY_SECONDS = 30;
+
+type ShoplineAttempt = {
+  attempt: number;
+  maxAttempts: number;
+};
 
 type QueueDependencies = {
   consumeListingMessage?: (
     payload: unknown,
     env: WorkerEnv,
   ) => Promise<ListingConsumerOutcome>;
+  consumeShoplineMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+    attempt: ShoplineAttempt,
+  ) => Promise<ShoplineConsumerOutcome>;
 };
 
 export async function handleQueue(
@@ -33,8 +47,15 @@ export async function handleQueue(
   }
 
   if (isShoplineQueue) {
+    const consume =
+      dependencies.consumeShoplineMessage ?? defaultConsumeShoplineMessage;
     for (const message of batch.messages) {
-      message.retry({ delaySeconds: PLACEHOLDER_RETRY_SECONDS });
+      const outcome = await consume(message.body, env, {
+        attempt: message.attempts,
+        maxAttempts: SHOPLINE_MAX_ATTEMPTS,
+      });
+      if (outcome === "ack") message.ack();
+      else message.retry({ delaySeconds: outcome.retryAfterSeconds });
     }
     return;
   }

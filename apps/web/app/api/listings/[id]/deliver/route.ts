@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { resolveListingImageUrls } from "@wukong/assets";
+import { SHOPLINE_INGRESS_PATH } from "@wukong/jobs";
 
+import {
+  createCloudflareIngressClient,
+  type CloudflareIngressClient,
+} from "../../../../../lib/cloudflare-queue-runtime";
 import { getAssetStore, getDatabase } from "../../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -10,7 +15,9 @@ import {
 } from "../../../../../lib/route-support";
 import { authSessionContext } from "../../../../../lib/session-context";
 import {
+  confirmShoplineQueued,
   deliverListing,
+  prepareShoplineDelivery,
   type DeliveryResult,
   type DeliverInput,
 } from "../../../../../lib/delivery-service";
@@ -47,6 +54,13 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
     case "queued":
       return jsonResponse(202, {
         status: "queued",
+        jobId: result.jobId,
+        versionId: result.versionId,
+      });
+    case "retry_required":
+      return jsonResponse(503, {
+        code: "retry_required",
+        message: "Queue ingress is temporarily unavailable; retry delivery.",
         jobId: result.jobId,
         versionId: result.versionId,
       });
@@ -121,43 +135,99 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
   };
 }
 
-export function defaultDelivery(): DeliveryPort {
+type DefaultDeliveryOptions = {
+  ingressClient?: CloudflareIngressClient;
+};
+
+export function defaultDelivery(
+  options: DefaultDeliveryOptions = {},
+): DeliveryPort {
+  const ingressClient =
+    options.ingressClient ?? createCloudflareIngressClient();
   return {
     async deliver(input) {
       const database = getDatabase();
       const assetStore = getAssetStore();
-      return database.forWorkspace(input.workspaceId, async (repositories) => {
-        const connection = await repositories.shoplineConnections.getDefault();
-        return deliverListing(input, {
-          listings: repositories.listings,
-          imageUrls: (workspaceId, draftId, imageAssetIds) =>
-            resolveListingImageUrls({
-              workspaceId,
-              draftId,
-              imageAssetIds,
-              sourceAssets: repositories.sourceAssets,
-              assetStore,
-            }),
-          audit: repositories.audit,
-          publisher: {
-            async enqueue(job) {
-              if (!connection)
-                throw new Error("SHOPLINE connection is not configured");
-              const queued = await repositories.publishJobs.ensure({
-                listingId: job.draftId,
-                versionId: job.versionId,
-                connectionId: connection.id,
-                idempotencyKey: `${job.workspaceId}:${job.versionId}:shopline:create`,
-                payloadDigest: job.payloadDigest,
-              });
-              return queued.id;
-            },
+      if (input.method === "csv") {
+        return database.forWorkspace(
+          input.workspaceId,
+          async (repositories) => {
+            const connection =
+              await repositories.shoplineConnections.getDefault();
+            return deliverListing(input, {
+              listings: repositories.listings,
+              imageUrls: (workspaceId, draftId, imageAssetIds) =>
+                resolveListingImageUrls({
+                  workspaceId,
+                  draftId,
+                  imageAssetIds,
+                  sourceAssets: repositories.sourceAssets,
+                  assetStore,
+                }),
+              audit: repositories.audit,
+              publisher: {
+                async enqueue() {
+                  throw new Error("SHOPLINE API must use two-phase enqueue");
+                },
+              },
+              connection: connection
+                ? { id: connection.id, verified: true }
+                : null,
+              existingDelivery: (key) =>
+                repositories.publishJobs.getByIdempotencyKey(key),
+            });
           },
-          connection: connection ? { id: connection.id, verified: true } : null,
-          existingDelivery: (key) =>
-            repositories.publishJobs.getByIdempotencyKey(key),
+        );
+      }
+
+      const prepared = await database.forWorkspace(
+        input.workspaceId,
+        async (repositories) => {
+          const connection =
+            await repositories.shoplineConnections.getDefault();
+          return prepareShoplineDelivery(input, {
+            listings: repositories.listings,
+            imageUrls: (workspaceId, draftId, imageAssetIds) =>
+              resolveListingImageUrls({
+                workspaceId,
+                draftId,
+                imageAssetIds,
+                sourceAssets: repositories.sourceAssets,
+                assetStore,
+              }),
+            audit: repositories.audit,
+            publishJobs: repositories.publishJobs,
+            connection: connection
+              ? { id: connection.id, verified: true }
+              : null,
+            existingDelivery: (key) =>
+              repositories.publishJobs.getByIdempotencyKey(key),
+          });
+        },
+      );
+      if (prepared.kind !== "publish_request") return prepared;
+
+      try {
+        await ingressClient.enqueue(SHOPLINE_INGRESS_PATH, {
+          workspaceId: input.workspaceId,
+          draftId: input.draftId,
+          versionId: prepared.versionId,
+          connectionId: prepared.connectionId,
         });
-      });
+      } catch {
+        return {
+          kind: "retry_required",
+          jobId: prepared.jobId,
+          versionId: prepared.versionId,
+        };
+      }
+
+      return database.forWorkspace(input.workspaceId, (repositories) =>
+        confirmShoplineQueued(prepared, {
+          publishJobs: repositories.publishJobs,
+          audit: repositories.audit,
+        }),
+      );
     },
   };
 }

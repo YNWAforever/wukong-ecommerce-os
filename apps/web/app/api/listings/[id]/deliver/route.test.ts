@@ -16,6 +16,30 @@ const context = {
   actorId: "reviewer_1",
   role: "reviewer" as const,
 };
+const deliveryContent = {
+  sku: "OPAK-001",
+  producer: "Opak",
+  productType: "wine" as const,
+  country: "Germany",
+  region: "Mosel",
+  vintage: 2024,
+  grapeVarieties: ["Riesling"],
+  volumeMl: 750,
+  abvPercent: 12.5,
+  packQuantity: 1,
+  priceHkd: 288,
+  stockQuantity: null,
+  criticScores: [],
+  awards: [],
+  title: { en: "Opak Riesling", "zh-Hant": "Opak Riesling" },
+  description: { en: "Dry wine", "zh-Hant": "Dry wine" },
+  seo: {
+    title: { en: "Opak Riesling", "zh-Hant": "Opak Riesling" },
+    description: { en: "Dry wine", "zh-Hant": "Dry wine" },
+  },
+  tags: ["wine"],
+  imageAssetIds: [],
+};
 
 function routeContext() {
   return { params: Promise.resolve({ id: listingId }) };
@@ -57,6 +81,81 @@ function makeHandler(
     },
   });
   return { handler, calls };
+}
+
+function makeDefaultRuntime() {
+  const audits: any[] = [];
+  const order: string[] = [];
+  const job = {
+    id: "job_database_1",
+    status: "pending_enqueue",
+  };
+  const repositories = {
+    listings: {
+      async requireForPublish() {
+        return {
+          id: listingId,
+          target: "shopline" as const,
+          status: "approved" as const,
+          activeVersion: {
+            id: versionId,
+            sequence: 1,
+            content: deliveryContent,
+          },
+          flags: [],
+        };
+      },
+    },
+    sourceAssets: {
+      async getByIds() {
+        return [];
+      },
+    },
+    shoplineConnections: {
+      async getDefault() {
+        return {
+          id: "00000000-0000-4000-8000-000000000301",
+          encryptedAccessToken: "ciphertext",
+        };
+      },
+    },
+    audit: {
+      async write(event: any) {
+        audits.push(event);
+        order.push(event.action);
+      },
+    },
+    publishJobs: {
+      async ensure() {
+        order.push("ensure");
+        return job;
+      },
+      async getByIdempotencyKey() {
+        return null;
+      },
+      async markQueued() {
+        order.push("markQueued");
+        if (job.status !== "pending_enqueue") return false;
+        job.status = "queued";
+        return true;
+      },
+    },
+  };
+  const database = {
+    forWorkspace: vi.fn(
+      async (
+        _workspaceId: string,
+        work: (value: typeof repositories) => Promise<unknown>,
+      ) => work(repositories),
+    ),
+  };
+  runtimeMocks.getDatabase.mockReturnValue(database);
+  runtimeMocks.getAssetStore.mockReturnValue({
+    async createReadUrl() {
+      throw new Error("no image URLs expected");
+    },
+  });
+  return { audits, order, job, database };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -125,6 +224,141 @@ describe("POST /api/listings/[id]/deliver", () => {
     expect(await response.json()).toMatchObject({
       status: "queued",
       jobId: "job_1",
+    });
+  });
+
+  it("returns retry required when queue ingress fails after the pending commit", async () => {
+    const runtime = makeDefaultRuntime();
+    const ingressClient = {
+      async enqueue() {
+        runtime.order.push("ingress");
+        throw new Error("queue unavailable");
+      },
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(result).toEqual({
+      kind: "retry_required",
+      jobId: "job_database_1",
+      versionId,
+    });
+    expect(runtime.job.status).toBe("pending_enqueue");
+    expect(runtime.audits.map((event) => event.action)).toEqual([
+      "listing.publish_requested",
+    ]);
+    expect(runtime.order).toEqual([
+      "ensure",
+      "listing.publish_requested",
+      "ingress",
+    ]);
+  });
+
+  it("sends only tenant IDs then confirms the database job after 202", async () => {
+    const runtime = makeDefaultRuntime();
+    const ingressClient = {
+      enqueue: vi.fn(async () => {
+        runtime.order.push("ingress");
+        return { accepted: true as const };
+      }),
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(ingressClient.enqueue).toHaveBeenCalledWith(
+      "/ingress/shopline-publish",
+      {
+        workspaceId: "ws_opak",
+        draftId: listingId,
+        versionId,
+        connectionId: "00000000-0000-4000-8000-000000000301",
+      },
+    );
+    expect(result).toEqual({
+      kind: "queued",
+      jobId: "job_database_1",
+      versionId,
+    });
+    expect(runtime.job.status).toBe("queued");
+    expect(runtime.audits.map((event) => event.action)).toEqual([
+      "listing.publish_requested",
+      "listing.publish_queued",
+    ]);
+    expect(runtime.order).toEqual([
+      "ensure",
+      "listing.publish_requested",
+      "ingress",
+      "markQueued",
+      "listing.publish_queued",
+    ]);
+  });
+
+  it("does not regress a fast consumer running state after ingress acceptance", async () => {
+    const runtime = makeDefaultRuntime();
+    const ingressClient = {
+      async enqueue() {
+        runtime.order.push("ingress");
+        runtime.job.status = "running";
+        return { accepted: true as const };
+      },
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(result).toMatchObject({
+      kind: "queued",
+      jobId: "job_database_1",
+    });
+    expect(runtime.job.status).toBe("running");
+    expect(runtime.audits.map((event) => event.action)).toEqual([
+      "listing.publish_requested",
+    ]);
+  });
+
+  it("maps retry required to a retryable API response", async () => {
+    const handler = createDeliverListingHandler({
+      sessionContext: {
+        async resolve() {
+          return context;
+        },
+      },
+      delivery: {
+        async deliver() {
+          return {
+            kind: "retry_required",
+            jobId: "job_database_1",
+            versionId,
+          } as never;
+        },
+      },
+    });
+    const response = await handler(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ method: "shopline_api" }),
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "retry_required",
+      jobId: "job_database_1",
     });
   });
 

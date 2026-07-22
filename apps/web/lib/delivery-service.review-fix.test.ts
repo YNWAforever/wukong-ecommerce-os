@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { deliverListing } from "./delivery-service.js";
+import {
+  confirmShoplineQueued,
+  deliverListing,
+  prepareShoplineDelivery,
+} from "./delivery-service.js";
 
 const content = {
   sku: "OPAK-001",
@@ -57,6 +61,117 @@ function deps(audits: unknown[], jobs: unknown[]): any {
 }
 
 describe("delivery audit and queue context", () => {
+  it("persists pending enqueue and publish requested before queue ingress", async () => {
+    const audits: any[] = [];
+    const jobs: any[] = [];
+    const harness = deps(audits, jobs);
+    harness.publishJobs = {
+      async ensure(input: any) {
+        const job = { id: "job_db_1", status: "pending_enqueue", ...input };
+        jobs.push(job);
+        return job;
+      },
+      async markQueued() {
+        throw new Error("confirmation must happen after ingress");
+      },
+    };
+
+    await expect(
+      prepareShoplineDelivery(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "shopline_api",
+        },
+        harness,
+      ),
+    ).resolves.toEqual({
+      kind: "publish_request",
+      jobId: "job_db_1",
+      versionId: "version_1",
+      connectionId: "00000000-0000-4000-8000-000000000301",
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: "listing_1",
+      idempotencyKey: "ws_opak:version_1:shopline:create",
+    });
+    expect(jobs[0]).toMatchObject({ status: "pending_enqueue" });
+    expect(audits.map((event) => event.action)).toEqual([
+      "listing.publish_requested",
+    ]);
+  });
+
+  it("confirms a queued delivery only after ingress acceptance", async () => {
+    const audits: any[] = [];
+    const statuses = ["pending_enqueue"];
+    const prepared = {
+      kind: "publish_request" as const,
+      jobId: "job_db_1",
+      versionId: "version_1",
+      connectionId: "00000000-0000-4000-8000-000000000301",
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: "listing_1",
+      idempotencyKey: "ws_opak:version_1:shopline:create",
+    };
+
+    await expect(
+      confirmShoplineQueued(prepared, {
+        audit: {
+          async write(event: any) {
+            audits.push(event);
+          },
+        },
+        publishJobs: {
+          async markQueued() {
+            statuses.push("queued");
+            return true;
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      kind: "queued",
+      jobId: "job_db_1",
+      versionId: "version_1",
+    });
+    expect(statuses).toEqual(["pending_enqueue", "queued"]);
+    expect(audits.map((event) => event.action)).toEqual([
+      "listing.publish_queued",
+    ]);
+  });
+
+  it("does not regress or re-audit a fast consumer state during confirmation", async () => {
+    const audits: any[] = [];
+    const status = { value: "running" };
+    await confirmShoplineQueued(
+      {
+        kind: "publish_request",
+        jobId: "job_db_1",
+        versionId: "version_1",
+        connectionId: "00000000-0000-4000-8000-000000000301",
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        idempotencyKey: "ws_opak:version_1:shopline:create",
+      },
+      {
+        audit: {
+          async write(event: any) {
+            audits.push(event);
+          },
+        },
+        publishJobs: {
+          async markQueued() {
+            return false;
+          },
+        },
+      },
+    );
+    expect(status.value).toBe("running");
+    expect(audits).toEqual([]);
+  });
+
   it("includes actor and workspace in CSV audit", async () => {
     const audits: unknown[] = [];
     const result = await deliverListing(
