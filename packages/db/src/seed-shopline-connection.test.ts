@@ -157,4 +157,39 @@ describe("controlled SHOPLINE connection seed", () => {
     expect(output.write).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("sanitizes synchronous database construction failures", async () => {
+    const databaseUrl =
+      "postgres://seed-user:seed-password@db.example/review-marker";
+    const output = { write: vi.fn() };
+    const storeFactory = vi.fn();
+    let message = "";
+
+    try {
+      await runShoplineConnectionSeed({
+        argv: [],
+        env: {
+          DATABASE_ADMIN_URL: databaseUrl,
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: base64Key,
+        },
+        stdin: Readable.from([token + "\n"]),
+        stdout: output,
+        databaseFactory: () => {
+          throw new Error(databaseUrl);
+        },
+        storeFactory,
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect({
+      safe: message === "SHOPLINE connection seed failed",
+      leaks: [databaseUrl, "seed-user", "seed-password", "review-marker"].some(
+        (value) => message.includes(value),
+      ),
+    }).toEqual({ safe: true, leaks: false });
+    expect(output.write).not.toHaveBeenCalled();
+    expect(storeFactory).not.toHaveBeenCalled();
+  });
 });

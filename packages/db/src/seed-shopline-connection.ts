@@ -118,10 +118,11 @@ export async function runShoplineConnectionSeed(
   const base64Key = env.SHOPLINE_TOKEN_ENCRYPTION_KEY ?? "";
   const databaseUrl = env.DATABASE_ADMIN_URL ?? env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  const database = (runtime.databaseFactory ?? createAuthDatabase)(databaseUrl);
+  let database: SeedDatabase | undefined;
   let result: ShoplineConnectionSeedResult | undefined;
   let failure: Error | undefined;
   try {
+    database = (runtime.databaseFactory ?? createAuthDatabase)(databaseUrl);
     result = await seedShoplineConnection(
       (runtime.storeFactory ?? createShoplineConnectionSeedStore)(database),
       {
@@ -139,7 +140,7 @@ export async function runShoplineConnectionSeed(
         : new Error("SHOPLINE connection seed failed");
   } finally {
     try {
-      await database.close();
+      if (database) await database.close();
     } catch {
       failure ??= new Error("SHOPLINE connection seed failed");
     }
