@@ -1,14 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CommerceConnector } from "@wukong/shopline";
+import {
+  SHOPLINE_REQUEST_TIMEOUT_MS,
+  type CommerceConnector,
+} from "@wukong/shopline";
 import {
   listing as canonicalListing,
   workspaceId,
 } from "./pipeline-test-support.js";
-import { PublishDeliveryError } from "./publish-product.js";
+import {
+  PublishDeliveryError,
+  SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT,
+} from "./publish-product.js";
 import {
   consumeShoplineMessage,
+  SHOPLINE_LEASE_MARGIN_MS,
+  SHOPLINE_LEASE_MS,
   SHOPLINE_MAX_ATTEMPTS,
+  SHOPLINE_QUEUE_WALL_MS,
 } from "./shopline-consumer.js";
 import { handleQueue } from "./queue-consumer.js";
 
@@ -358,6 +367,53 @@ describe("consumeShoplineMessage", () => {
       leaseToken: null,
     });
     expect(harness.listing.status).toBe("publish_failed");
+  });
+
+  it("keeps the lease beyond the bounded call budget and reclaims at expiry", async () => {
+    expect(SHOPLINE_LEASE_MS).toBeGreaterThan(
+      SHOPLINE_REQUEST_TIMEOUT_MS * SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT +
+        SHOPLINE_LEASE_MARGIN_MS,
+    );
+    expect(SHOPLINE_LEASE_MS).toBeLessThan(SHOPLINE_QUEUE_WALL_MS);
+
+    const harness = makeHarness({
+      createError: new DOMException("request timed out", "AbortError"),
+    });
+    const {
+      leaseMs: _leaseMs,
+      now: _now,
+      ...defaultLeaseDependencies
+    } = harness.dependencies;
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...defaultLeaseDependencies,
+        now: () => now,
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+
+    const firstLeaseExpiry = harness.job.leaseExpiresAt as Date;
+    expect(firstLeaseExpiry.getTime() - now.getTime()).toBe(SHOPLINE_LEASE_MS);
+    expect(harness.job.attemptCount).toBe(1);
+    expect(harness.connector.createProduct).toHaveBeenCalledTimes(2);
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...defaultLeaseDependencies,
+        now: () => new Date(firstLeaseExpiry.getTime() - 1),
+      }),
+    ).resolves.toBe("ack");
+    expect(harness.job.attemptCount).toBe(1);
+    expect(harness.connector.createProduct).toHaveBeenCalledTimes(2);
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...defaultLeaseDependencies,
+        now: () => firstLeaseExpiry,
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+    expect(harness.job.attemptCount).toBe(2);
+    expect(harness.connector.createProduct).toHaveBeenCalledTimes(4);
   });
 
   it("reclaims an expired lease and rejects its stale terminal token", async () => {

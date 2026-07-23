@@ -8,6 +8,7 @@ import {
 import {
   PublishDeliveryError,
   publishApprovedProduct,
+  SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT,
   type PublishListingSnapshot,
   type PublishRepositories,
 } from "./publish-product.js";
@@ -96,6 +97,34 @@ function makeHarness(
   return { ...deps, repos, state, audits };
 }
 
+function makeTransactionAwareHarness(
+  status: PublishListingSnapshot["status"] = "approved",
+  flags: PublishListingSnapshot["flags"] = [],
+) {
+  const harness = makeHarness(status, flags);
+  harness.withWorkspace = async function <T>(
+    _workspace: string,
+    work: (repositories: PublishRepositories) => Promise<T>,
+  ): Promise<T> {
+    const transactionState = structuredClone(harness.state);
+    const transactionAudits = structuredClone(harness.audits);
+    const transactionRepositories = makeRepos(
+      transactionState,
+      transactionAudits,
+    );
+    const result = await work(transactionRepositories);
+    Object.assign(harness.state.listing, transactionState.listing);
+    harness.state.jobs.splice(
+      0,
+      harness.state.jobs.length,
+      ...transactionState.jobs,
+    );
+    harness.audits.splice(0, harness.audits.length, ...transactionAudits);
+    return result;
+  };
+  return harness;
+}
+
 function makeRepos(
   input: { listing: PublishListingSnapshot; jobs: Array<any> },
   audits: Array<{ action: string; metadata: Record<string, unknown> }>,
@@ -173,6 +202,68 @@ function makeRepos(
 }
 
 describe("publishApprovedProduct", () => {
+  it("commits every pre-connector terminal write before its error escapes", async () => {
+    const staleVersion = makeTransactionAwareHarness();
+    staleVersion.state.jobs[0].versionId = "version_stale";
+    staleVersion.state.jobs[0].idempotencyKey =
+      workspaceId + ":version_stale:shopline:create";
+
+    const invalidState = makeTransactionAwareHarness("in_review");
+    const blockingFlags = makeTransactionAwareHarness("approved", [
+      {
+        id: "flag_1",
+        field: "description",
+        rule: "health_claim",
+        severity: "blocking",
+        status: "open",
+        resolutionReason: null,
+      },
+    ]);
+    const invalidPayload = makeTransactionAwareHarness();
+    if (!invalidPayload.state.listing.activeVersion) {
+      throw new Error("missing active version");
+    }
+    invalidPayload.state.listing.activeVersion.content = {
+      ...canonicalListing,
+      sku: "",
+    };
+
+    const scenarios = [
+      {
+        harness: staleVersion,
+        input: publishInput({ expectedVersionId: "version_stale" }),
+        code: "not_approved",
+      },
+      {
+        harness: invalidState,
+        input: publishInput(),
+        code: "not_approved",
+      },
+      {
+        harness: blockingFlags,
+        input: publishInput(),
+        code: "blocking_flags",
+      },
+      {
+        harness: invalidPayload,
+        input: publishInput(),
+        code: "invalid_payload",
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      await expect(
+        publishApprovedProduct(scenario.input, scenario.harness),
+      ).rejects.toMatchObject({ code: scenario.code });
+      expect(scenario.harness.state.jobs[0]).toMatchObject({
+        status: "failed",
+        error: scenario.code,
+        leaseToken: null,
+      });
+      expect(scenario.harness.connector.createProduct).not.toHaveBeenCalled();
+    }
+  });
+
   it("rejects an active-version mismatch before connector work", async () => {
     const harness = makeHarness();
     const staleVersionId = "version_stale";
@@ -375,6 +466,43 @@ describe("publishApprovedProduct", () => {
       payloadDigest: "d".repeat(64),
     });
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("bounds the worst ambiguous remote sequence to the exported maximum", async () => {
+    const calls: string[] = [];
+    const connector = makeConnector({
+      createProduct: vi.fn(async () => {
+        calls.push("create");
+        throw new PublishDeliveryError("remote_unavailable");
+      }),
+      getProductStatus: vi.fn(async () => {
+        calls.push("status");
+        if (calls.length === 1) return { exists: false, status: null };
+        throw new PublishDeliveryError("remote_unavailable");
+      }),
+    });
+    const key = workspaceId + ":" + versionId + ":shopline:create";
+    const harness = makeHarness(
+      "publishing",
+      [],
+      [
+        {
+          id: "job_1",
+          idempotencyKey: key,
+          status: "running",
+          remoteProductId: "remote_ambiguous",
+          payloadDigest: null,
+          error: null,
+        },
+      ],
+    );
+    harness.connector = connector;
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({ code: "remote_unavailable" });
+    expect(calls).toEqual(["status", "create", "status", "create"]);
+    expect(calls).toHaveLength(SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT);
   });
 
   it("reconciles an ambiguous write with remote status before retrying", async () => {

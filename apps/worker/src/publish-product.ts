@@ -131,6 +131,8 @@ export class PublishDeliveryError extends Error {
   }
 }
 
+export const SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT = 4;
+
 const PUBLISH_ACTOR_ID = "worker:shopline-publish";
 
 function context(input: PublishProductInput): AuditContext {
@@ -227,7 +229,7 @@ export async function publishApprovedProduct(
           input.leaseToken,
           error.code,
         );
-        throw error;
+        return { terminalError: error };
       }
 
       const existing =
@@ -249,7 +251,7 @@ export async function publishApprovedProduct(
           input.leaseToken,
           error.code,
         );
-        throw error;
+        return { terminalError: error };
       }
       if (existing?.status === "published") {
         return { result: existingResult(existing) };
@@ -264,7 +266,7 @@ export async function publishApprovedProduct(
           input.leaseToken,
           error.code,
         );
-        throw error;
+        return { terminalError: error };
       }
 
       const imageUrls = await dependencies.resolveImageUrls(
@@ -282,7 +284,7 @@ export async function publishApprovedProduct(
           input.leaseToken,
           error.code,
         );
-        throw error;
+        return { terminalError: error };
       }
       const payloadDigest = digestPayload(listing.activeVersion.content);
       const auditContext = context(input);
@@ -307,6 +309,9 @@ export async function publishApprovedProduct(
     },
   );
 
+  if ("terminalError" in prepared) {
+    throw prepared.terminalError;
+  }
   if ("result" in prepared && prepared.result !== undefined) {
     return prepared.result;
   }

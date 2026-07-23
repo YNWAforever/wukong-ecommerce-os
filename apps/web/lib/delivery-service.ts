@@ -103,7 +103,9 @@ export type ShoplinePreparationResult =
           | "blocking_flags"
           | "validation_error"
           | "disconnected"
-          | "already_published";
+          | "already_published"
+          | "queued"
+          | "retry_required";
       }
     >;
 
@@ -115,7 +117,7 @@ export type ShoplineDeliveryDeps = Omit<DeliveryDeps, "publisher"> & {
       connectionId: string;
       idempotencyKey: string;
       payloadDigest: string;
-    }): Promise<{ id: string; status: string }>;
+    }): Promise<{ id: string; status: string; connectionId: string }>;
     markQueued(key: string): Promise<boolean>;
   };
 };
@@ -202,6 +204,12 @@ export async function prepareShoplineDelivery(
     idempotencyKey,
     payloadDigest: digest(listing.activeVersion.content),
   });
+  if (job.status === "queued" || job.status === "running") {
+    return { kind: "queued", jobId: job.id, versionId };
+  }
+  if (job.status !== "pending_enqueue") {
+    return { kind: "retry_required", jobId: job.id, versionId };
+  }
   await deps.audit.write({
     workspaceId: input.workspaceId,
     actorId: input.actorId,
@@ -213,7 +221,7 @@ export async function prepareShoplineDelivery(
     kind: "publish_request",
     jobId: job.id,
     versionId,
-    connectionId: deps.connection.id,
+    connectionId: job.connectionId,
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     draftId: input.draftId,
@@ -225,17 +233,35 @@ export type ConfirmShoplineDeliveryDeps = {
   audit: DeliveryDeps["audit"];
   publishJobs: {
     markQueued(key: string): Promise<boolean>;
+    getByIdempotencyKey?(
+      key: string,
+    ): Promise<{ id: string; status: string } | null>;
   };
 };
 
 export async function confirmShoplineQueued(
   prepared: ShoplinePublishRequest,
   deps: ConfirmShoplineDeliveryDeps,
-): Promise<Extract<DeliveryResult, { kind: "queued" }>> {
+): Promise<Extract<DeliveryResult, { kind: "queued" | "retry_required" }>> {
   const transitioned = await deps.publishJobs.markQueued(
     prepared.idempotencyKey,
   );
-  if (transitioned) {
+  if (!transitioned) {
+    const job = await deps.publishJobs.getByIdempotencyKey?.(
+      prepared.idempotencyKey,
+    );
+    if (
+      !job ||
+      job.id !== prepared.jobId ||
+      !["queued", "running", "published"].includes(job.status)
+    ) {
+      return {
+        kind: "retry_required",
+        jobId: prepared.jobId,
+        versionId: prepared.versionId,
+      };
+    }
+  } else {
     await deps.audit.write({
       workspaceId: prepared.workspaceId,
       actorId: prepared.actorId,

@@ -102,6 +102,112 @@ describe("delivery audit and queue context", () => {
     ]);
   });
 
+  it("uses the persisted pending job connection when the default rotates", async () => {
+    const audits: any[] = [];
+    const harness = deps(audits, []);
+    const persistedConnectionId = "00000000-0000-4000-8000-000000000302";
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return {
+          ...input,
+          id: "job_db_1",
+          status: "pending_enqueue",
+          connectionId: persistedConnectionId,
+        };
+      },
+      async markQueued() {
+        throw new Error("confirmation must happen after ingress");
+      },
+    };
+
+    await expect(
+      prepareShoplineDelivery(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "shopline_api",
+        },
+        harness,
+      ),
+    ).resolves.toMatchObject({
+      kind: "publish_request",
+      jobId: "job_db_1",
+      connectionId: persistedConnectionId,
+    });
+  });
+
+  it("returns retry required for a reused failed job before ingress", async () => {
+    const audits: any[] = [];
+    const harness = deps(audits, []);
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return {
+          ...input,
+          id: "job_db_1",
+          status: "failed",
+        };
+      },
+      async markQueued() {
+        return false;
+      },
+    };
+
+    await expect(
+      prepareShoplineDelivery(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "shopline_api",
+        },
+        harness,
+      ),
+    ).resolves.toEqual({
+      kind: "retry_required",
+      jobId: "job_db_1",
+      versionId: "version_1",
+    });
+    expect(audits).toEqual([]);
+  });
+
+  it("returns retry required when a reused job fails before confirmation", async () => {
+    const audits: any[] = [];
+    const prepared = {
+      kind: "publish_request" as const,
+      jobId: "job_db_1",
+      versionId: "version_1",
+      connectionId: "00000000-0000-4000-8000-000000000301",
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: "listing_1",
+      idempotencyKey: "ws_opak:version_1:shopline:create",
+    };
+
+    await expect(
+      confirmShoplineQueued(prepared, {
+        audit: {
+          async write(event: any) {
+            audits.push(event);
+          },
+        },
+        publishJobs: {
+          async markQueued() {
+            return false;
+          },
+          async getByIdempotencyKey() {
+            return { id: "job_db_1", status: "failed" };
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      kind: "retry_required",
+      jobId: "job_db_1",
+      versionId: "version_1",
+    });
+    expect(audits).toEqual([]);
+  });
+
   it("confirms a queued delivery only after ingress acceptance", async () => {
     const audits: any[] = [];
     const statuses = ["pending_enqueue"];

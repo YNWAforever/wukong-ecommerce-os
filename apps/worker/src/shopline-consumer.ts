@@ -1,12 +1,16 @@
 import type { AuditWriter } from "@wukong/core";
 import type { WorkspaceRepositories } from "@wukong/db";
 import { shoplinePublishJobSchema } from "@wukong/jobs";
-import type { CommerceConnector } from "@wukong/shopline";
+import {
+  SHOPLINE_REQUEST_TIMEOUT_MS,
+  type CommerceConnector,
+} from "@wukong/shopline";
 
 import { createCloudflareRuntime } from "./cloudflare-runtime.js";
 import {
   PublishDeliveryError,
   publishApprovedProduct,
+  SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT,
   type PublishRepositories,
 } from "./publish-product.js";
 import {
@@ -18,8 +22,19 @@ import type { WorkerEnv } from "./worker-env.js";
 export type ShoplineConsumerOutcome = "ack" | { retryAfterSeconds: number };
 
 export const SHOPLINE_MAX_ATTEMPTS = 4;
+export const SHOPLINE_LEASE_MARGIN_MS = 60_000;
+export const SHOPLINE_QUEUE_WALL_MS = 15 * 60_000;
+export const SHOPLINE_LEASE_MS = 300_000;
 const RETRY_AFTER_SECONDS = 30;
-const LEASE_MS = 30_000;
+
+if (
+  SHOPLINE_LEASE_MS <=
+    SHOPLINE_REQUEST_TIMEOUT_MS * SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT +
+      SHOPLINE_LEASE_MARGIN_MS ||
+  SHOPLINE_LEASE_MS >= SHOPLINE_QUEUE_WALL_MS
+) {
+  throw new Error("SHOPLINE publish lease budget is unsafe");
+}
 
 type ShoplineRuntime = {
   database: {
@@ -112,7 +127,7 @@ export async function consumeShoplineMessage(
           key: idempotencyKey,
           expectedVersionId: parsed.data.versionId,
           now: (dependencies.now ?? (() => new Date()))(),
-          leaseMs: dependencies.leaseMs ?? LEASE_MS,
+          leaseMs: dependencies.leaseMs ?? SHOPLINE_LEASE_MS,
         });
         if (!claim.claimed || !claim.leaseToken) {
           return {

@@ -89,6 +89,7 @@ function makeDefaultRuntime() {
   const job = {
     id: "job_database_1",
     status: "pending_enqueue",
+    connectionId: "00000000-0000-4000-8000-000000000301",
   };
   const repositories = {
     listings: {
@@ -131,7 +132,7 @@ function makeDefaultRuntime() {
         return job;
       },
       async getByIdempotencyKey() {
-        return null;
+        return job;
       },
       async markQueued() {
         order.push("markQueued");

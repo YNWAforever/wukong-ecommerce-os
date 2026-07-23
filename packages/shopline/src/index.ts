@@ -1,6 +1,4 @@
-export {
-  projectToShopline,
-} from "./projection.js";
+export { projectToShopline } from "./projection.js";
 export type {
   ShoplineProduct,
   ShoplineProductPayload,
@@ -28,6 +26,7 @@ export type {
 export {
   ShoplineConnector,
   ShoplineError,
+  SHOPLINE_REQUEST_TIMEOUT_MS,
   type ShoplineConnectorOptions,
 } from "./shopline-connector.js";
 export {
