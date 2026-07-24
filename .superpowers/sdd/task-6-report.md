@@ -162,3 +162,24 @@ A later freshly recreated checkout initially lacked workspace `dist` outputs bec
 ### Self-review
 
 Reviewed the complete Task 11 diff for protected-file scope, CI order, secret boundaries, exact Cloudflare names, preview/production isolation, ingress rotation, Queue/DLQ metrics and replay, Hyperdrive caching/connection limits, controlled migration/seed, first-real-write stop, and non-destructive rollback. The MinIO TLS startup issue was the only Important finding and was fixed with a focused RED/GREEN test. No Critical or Important Task 11 issue remains in self-review.
+
+## Task 11 review-fix release gate
+
+Review fixes were committed as `d9f94c7` (`fix: harden Cloudflare release preflight`) and `aa11d6b` (`test: restore preview config after validation`). The final code candidate was `aa11d6b62be18da017d85a85eefc8826292775c8` in the detached checkout `C:\tmp\wukong-task11-final-aa11d6b`.
+
+RED evidence: the consolidated Node configuration suite had 8 expected failures, and the focused real-stack boundary test had 1 expected failure. They covered missing safe Worker variables and Wrangler types, missing exact secret preflight, reused R2 credentials, unstable Compose ownership, absent required-secret metadata, unsafe renderer overrides, and the Hyperdrive local connection leaking into the Next child. A later focused assertion proved the configuration tests left downstream CI on `wukong-runtime-production`.
+
+GREEN and release evidence:
+
+- Configuration/runbook suite: 23/23 passed. Preview and production SHOPLINE values are renderer-locked; required secrets and remote secret names are exact; downstream CI ends on preview.
+- Wrangler types: passed without environment-selection warnings and generated exact variable plus five secret bindings.
+- Frozen install, hash-pinned format gate, and forbidden-runtime scan passed. The format gate checked 132 files with exactly 12 pinned waivers; the forbidden scan checked 9 manifests and 111 runtime sources with all three violation counts at zero.
+- Stable Compose ownership replaced the prior worktree-named Wukong containers with `wukong-ecommerce-local`; unrelated Docker projects were inspected but not changed.
+- Dependency-inclusive database build and controlled migration passed.
+- Lint: 14/14 tasks. Typecheck: 14/14 tasks. Unit/config: all workspace suites passed. Integration: 6 files and 48 tests passed. Production build: 8/8 tasks passed.
+- A direct cache-bypassed Worker dry-run proved preview Queue and Hyperdrive bindings, `AI_PROVIDER=fake`, `SHOPLINE_ADAPTER=mock`, and `SHOPLINE_PUBLISH_ENABLED=false`. A direct Next production build passed.
+- The first browser attempt used an incorrect shell override, `S3_ENDPOINT=http://127.0.0.1:9010`. Trace evidence showed the expected pre-approval `409 approval_required`, followed after approval by `422 validation_error` because SHOPLINE rejects non-HTTPS image URLs. No code change was needed. Removing the override restored the harness's `https://localhost:9012` TLS boundary.
+- Final no-copy Playwright: 4 passed, 2 documented platform/optional skips, 0 failed.
+- Accepted draft: `64e47064-94e9-42bb-98ed-95fd53c9ef87`.
+- Exact-draft audit: missing action count `0`; accessible foreign-record count `0`.
+- Candidate services and disposable Task 11 worktrees were removed. The stable Wukong services were recreated from the feature worktree. No Cloudflare, Vercel, Neon production, or SHOPLINE external mutation occurred.
