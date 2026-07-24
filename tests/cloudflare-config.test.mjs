@@ -213,3 +213,12 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
     "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs && turbo run test",
   );
 });
+
+test("restores preview configuration for downstream CI gates", () => {
+  const result = render();
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.equal(config.name, expected.preview.worker);
+  assert.equal(config.vars.SHOPLINE_ADAPTER, "mock");
+  assert.equal(config.vars.SHOPLINE_PUBLISH_ENABLED, "false");
+});
