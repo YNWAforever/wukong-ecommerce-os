@@ -183,3 +183,21 @@ GREEN and release evidence:
 - Accepted draft: `64e47064-94e9-42bb-98ed-95fd53c9ef87`.
 - Exact-draft audit: missing action count `0`; accessible foreign-record count `0`.
 - Candidate services and disposable Task 11 worktrees were removed. The stable Wukong services were recreated from the feature worktree. No Cloudflare, Vercel, Neon production, or SHOPLINE external mutation occurred.
+
+## Task 11 final plaintext replacement and R2 endpoint review
+
+The final focused review fix was committed as `514ec22e592179e9bf854b18956aa1e5d448a90b` (`fix: replace stale Cloudflare plaintext vars`). Generated Wrangler configuration now omits `keep_vars`, so deployment replaces the exact nine approved plaintext variables and removes arbitrary stale dashboard plaintext variables. The five encrypted secrets remain independent and fail closed through the exact-name secret preflight.
+
+`S3_ENDPOINT` now accepts only the standard Cloudflare R2 S3 API root `https://<32-hex-account-id>.r2.cloudflarestorage.com` with an optional root slash. Generic HTTPS hosts, credentials, ports, non-root paths, queries, and fragments are rejected. Validation uses the complete raw string because URL normalization hides an explicit default `:443` port. No jurisdiction variant was added because none exists in the approved design.
+
+RED/GREEN evidence:
+
+- First focused RED: 5 passed and 2 expected failures; `keep_vars: true` remained and unsafe endpoints were accepted.
+- Renderer GREEN: 7/7 passed after omitting `keep_vars` and enforcing the R2 root.
+- CI/runbook RED: 15 passed and 2 expected failures; CI used a generic `ci` host and the runbook omitted the stale-plaintext replacement contract.
+- Final combined configuration/runbook suite: 24/24 passed.
+- Production and preview renders each proved exactly nine plaintext variables, no `keep_vars`, locked SHOPLINE values, and exact five-secret metadata. Wrangler types completed without environment-selection warnings, and the Worker dry-run showed the exact preview Queue, Hyperdrive, and variable bindings.
+- The exact detached candidate passed the 132-file format gate with 12 exact waivers, the forbidden-runtime scan with all three counts at zero, the 24/24 focused suite, dependency-inclusive Worker build/dry-run, then Worker lint and typecheck after required workspace dependency outputs existed.
+- The first detached lint/typecheck invocation reproduced the documented clean-checkout dependency-order condition because `@wukong/core` and other workspace outputs had not yet been built. The dependency-inclusive build resolved it; the post-build lint and typecheck both passed.
+- Full E2E was not rerun because this change affects only generated deployment configuration, validation tests, CI safe input, and operator documentation; no Worker source or local runtime harness behavior changed.
+- The disposable `C:\tmp\wukong-task11-final-514ec22` worktree registration and residual directory were removed. No deployment or external mutation occurred.
