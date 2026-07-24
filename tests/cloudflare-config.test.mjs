@@ -46,7 +46,8 @@ const safeRendererInputs = {
   AI_PROVIDER: "fake",
   OPENAI_LISTING_MODEL: "gpt-5-mini",
   S3_BUCKET: "wukong-opak-preview-assets",
-  S3_ENDPOINT: "https://preview.r2.cloudflarestorage.com",
+  S3_ENDPOINT:
+    "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
   S3_REGION: "auto",
   S3_FORCE_PATH_STYLE: "false",
 };
@@ -91,7 +92,6 @@ test("renders deterministic non-secret Wrangler config", () => {
     main: "apps/worker/src/cloudflare.ts",
     compatibility_date: "2026-07-19",
     compatibility_flags: ["nodejs_compat"],
-    keep_vars: true,
     limits: { cpu_ms: 240000 },
     observability: { enabled: true },
     secrets: { required: requiredSecrets },
@@ -102,7 +102,8 @@ test("renders deterministic non-secret Wrangler config", () => {
       SHOPLINE_ADAPTER: "mock",
       SHOPLINE_PUBLISH_ENABLED: "false",
       S3_BUCKET: "wukong-opak-preview-assets",
-      S3_ENDPOINT: "https://preview.r2.cloudflarestorage.com",
+      S3_ENDPOINT:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
       S3_REGION: "auto",
       S3_FORCE_PATH_STYLE: "false",
     },
@@ -139,6 +140,18 @@ test("renders deterministic non-secret Wrangler config", () => {
     rendered,
     /must-never-be-rendered|connectionString|database_url/i,
   );
+  assert.equal(config.keep_vars, undefined);
+  assert.deepEqual(Object.keys(config.vars).sort(), [
+    "AI_PROVIDER",
+    "BUILD_SHA",
+    "OPENAI_LISTING_MODEL",
+    "S3_BUCKET",
+    "S3_ENDPOINT",
+    "S3_FORCE_PATH_STYLE",
+    "S3_REGION",
+    "SHOPLINE_ADAPTER",
+    "SHOPLINE_PUBLISH_ENABLED",
+  ]);
 });
 
 test("production always renders SHOPLINE disabled and publishing false", () => {
@@ -147,7 +160,8 @@ test("production always renders SHOPLINE disabled and publishing false", () => {
     CLOUDFLARE_HYPERDRIVE_ID: "hyperdrive-production-id",
     AI_PROVIDER: "openai",
     S3_BUCKET: "wukong-opak-prod-assets",
-    S3_ENDPOINT: "https://production.r2.cloudflarestorage.com",
+    S3_ENDPOINT:
+      "https://fedcba9876543210fedcba9876543210.r2.cloudflarestorage.com",
     SHOPLINE_ADAPTER: "real",
     SHOPLINE_PUBLISH_ENABLED: "true",
   });
@@ -168,6 +182,23 @@ test("requires every safe renderer input and rejects unsafe values", () => {
     { CLOUDFLARE_ENV: "staging" },
     { AI_PROVIDER: "unknown" },
     { S3_FORCE_PATH_STYLE: "yes" },
+    { S3_ENDPOINT: "https://example.com" },
+    {
+      S3_ENDPOINT:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/path",
+    },
+    {
+      S3_ENDPOINT:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com?query=1",
+    },
+    {
+      S3_ENDPOINT:
+        "https://user:password@0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
+    },
+    {
+      S3_ENDPOINT:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com:443",
+    },
   ]) {
     assert.notEqual(render(overrides).status, 0);
   }

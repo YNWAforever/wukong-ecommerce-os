@@ -37,7 +37,7 @@ corepack pnpm --filter @wukong/worker exec wrangler hyperdrive create <exact-hyp
 
 Run the Queue command once for each exact Queue and DLQ in the table. The Hyperdrive command must use the environment's runtime Neon role, never the admin URL. Capture its non-secret configuration ID as `CLOUDFLARE_HYPERDRIVE_ID`.
 
-Set every explicit non-secret renderer input. `S3_BUCKET` must be the exact bucket from the table; managed R2 uses region `auto`, HTTPS, and no path-style addressing. Preview may use `AI_PROVIDER=fake`; production uses `AI_PROVIDER=openai`. The renderer always forces preview to `SHOPLINE_ADAPTER=mock`, production to `SHOPLINE_ADAPTER=disabled`, and both to `SHOPLINE_PUBLISH_ENABLED=false`; caller-supplied SHOPLINE values cannot override that lock.
+Set every explicit non-secret renderer input. `S3_BUCKET` must be the exact bucket from the table. `S3_ENDPOINT` must be the standard Cloudflare R2 S3 API root `https://<32-hex-account-id>.r2.cloudflarestorage.com`; credentials, ports, non-root paths, queries, and fragments are rejected. Managed R2 uses region `auto` and no path-style addressing. Preview may use `AI_PROVIDER=fake`; production uses `AI_PROVIDER=openai`. The renderer always forces preview to `SHOPLINE_ADAPTER=mock`, production to `SHOPLINE_ADAPTER=disabled`, and both to `SHOPLINE_PUBLISH_ENABLED=false`; caller-supplied SHOPLINE values cannot override that lock.
 
 ```powershell
 $env:CLOUDFLARE_ENV = "<preview-or-production>"
@@ -46,7 +46,7 @@ $env:BUILD_SHA = "<accepted-commit-sha>"
 $env:AI_PROVIDER = "<fake-or-openai>"
 $env:OPENAI_LISTING_MODEL = "<approved-model>"
 $env:S3_BUCKET = "<exact-environment-bucket>"
-$env:S3_ENDPOINT = "https://<account-id>.r2.cloudflarestorage.com"
+$env:S3_ENDPOINT = "https://<32-hex-account-id>.r2.cloudflarestorage.com"
 $env:S3_REGION = "auto"
 $env:S3_FORCE_PATH_STYLE = "false"
 node scripts/render-cloudflare-config.mjs
@@ -68,7 +68,7 @@ node scripts/verify-cloudflare-secrets.mjs $deploymentEnvironment
 corepack pnpm --filter @wukong/worker deploy:<preview-or-production>
 ```
 
-The checked-in metadata and generated Wrangler `secrets.required` list exactly those five names and no values. The verifier compares only names from `wrangler secret list --format json`; if any required name is missing or any unexpected secret name exists, abort the deployment. It never reads or prints values. The deploy script repeats this fail-closed verifier immediately before `wrangler deploy`.
+The generated configuration omits Wrangler `keep_vars`. Each deployment replaces all approved plaintext variables and deletes arbitrary stale dashboard plaintext variables that are not rendered. The exact-name secret preflight protects the five encrypted secrets independently: checked-in metadata and generated Wrangler `secrets.required` list exactly those five names and no values. The verifier compares only names from `wrangler secret list --format json`; if any required name is missing or any unexpected secret name exists, abort the deployment. It never reads or prints values. The deploy script repeats this fail-closed verifier immediately before `wrangler deploy`.
 
 Hyperdrive caching is disabled because tenant RLS, leases, and read-after-write state require fresh reads. The Worker database client has a maximum of five database connections and closes after every Queue batch. The Worker must never run migrations at startup.
 

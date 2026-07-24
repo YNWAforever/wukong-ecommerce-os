@@ -338,6 +338,10 @@ test("renders every safe Worker variable and generates Wrangler types in CI", ()
       variable,
     );
   }
+  assert.match(
+    workflow,
+    /S3_ENDPOINT: https:\/\/[0-9a-f]{32}\.r2\.cloudflarestorage\.com/,
+  );
   assert.doesNotMatch(
     workflow,
     /Render and validate Cloudflare configuration[\s\S]*?SHOPLINE_ADAPTER:\s*(?:real|disabled)/,
@@ -387,6 +391,17 @@ test("fails closed on the exact Worker secret contract before deploy", () => {
       `${script} must verify before deploy`,
     );
   }
+});
+
+test("documents replacement of stale plaintext vars and exact secret protection", () => {
+  assert.match(
+    productionRunbook,
+    /deployment replaces[\s\S]*plaintext variables[\s\S]*deletes[\s\S]*stale/i,
+  );
+  assert.match(
+    productionRunbook,
+    /exact-name secret preflight[\s\S]*protects[\s\S]*five encrypted secrets/i,
+  );
 });
 
 test("documents distinct least-privilege R2 credentials per environment", () => {

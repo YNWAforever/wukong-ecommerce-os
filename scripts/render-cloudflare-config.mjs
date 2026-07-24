@@ -44,15 +44,10 @@ if (s3Bucket !== selected.r2Bucket) {
   throw new Error("S3_BUCKET does not match the selected environment");
 }
 const s3Endpoint = requiredInput("S3_ENDPOINT");
-const endpoint = new URL(s3Endpoint);
 if (
-  endpoint.protocol !== "https:" ||
-  endpoint.username ||
-  endpoint.password ||
-  endpoint.search ||
-  endpoint.hash
+  !/^https:\/\/[0-9a-f]{32}\.r2\.cloudflarestorage\.com\/?$/.test(s3Endpoint)
 ) {
-  throw new Error("S3_ENDPOINT must be a credential-free HTTPS URL");
+  throw new Error("S3_ENDPOINT must be a Cloudflare R2 S3 API root");
 }
 const s3Region = requiredInput("S3_REGION");
 if (s3Region !== "auto") throw new Error("S3_REGION must be auto");
@@ -77,7 +72,6 @@ const wrangler = {
   main: "apps/worker/src/cloudflare.ts",
   compatibility_date: "2026-07-19",
   compatibility_flags: ["nodejs_compat"],
-  keep_vars: true,
   limits: { cpu_ms: 240000 },
   observability: { enabled: true },
   secrets: { required: source.requiredSecrets },
