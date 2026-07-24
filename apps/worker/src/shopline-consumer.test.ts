@@ -31,7 +31,8 @@ const now = new Date("2026-07-22T00:00:00.000Z");
 function makeHarness(
   options: {
     createError?: unknown;
-    status?: "pending_enqueue" | "queued" | "running";
+    status?: "pending_enqueue" | "queued" | "running" | "failed";
+    error?: string | null;
     leaseToken?: string | null;
     leaseExpiresAt?: Date | null;
     attemptCount?: number;
@@ -54,7 +55,7 @@ function makeHarness(
     idempotencyKey: key,
     payloadDigest: null,
     remoteProductId: null,
-    error: null,
+    error: options.error ?? null,
     leaseToken: options.leaseToken ?? null,
     leaseExpiresAt: options.leaseExpiresAt ?? null,
     attemptCount: options.attemptCount ?? 0,
@@ -132,6 +133,9 @@ function makeHarness(
         const reclaimable =
           job.status === "pending_enqueue" ||
           job.status === "queued" ||
+          (job.status === "failed" &&
+            (job.error === "remote_unavailable" ||
+              job.error === "rate_limited")) ||
           (job.status === "running" &&
             job.leaseExpiresAt instanceof Date &&
             job.leaseExpiresAt.getTime() <= input.now.getTime());
@@ -332,7 +336,7 @@ describe("consumeShoplineMessage", () => {
     expect(harness.listing.status).toBe("publish_failed");
   });
 
-  it("retries a transient timeout without prematurely clearing the lease", async () => {
+  it("persists a transient timeout and reclaims it on the 30 second redelivery", async () => {
     const harness = makeHarness({
       createError: new DOMException("request timed out", "AbortError"),
     });
@@ -342,11 +346,31 @@ describe("consumeShoplineMessage", () => {
     ).resolves.toEqual({ retryAfterSeconds: 30 });
 
     expect(harness.job).toMatchObject({
-      status: "running",
-      error: null,
+      status: "failed",
+      error: "remote_unavailable",
       attemptCount: 1,
+      leaseToken: null,
+      leaseExpiresAt: null,
     });
-    expect(harness.listing.status).toBe("publishing");
+    expect(harness.listing.status).toBe("publish_failed");
+
+    vi.mocked(harness.connector.createProduct).mockResolvedValue({
+      remoteProductId: "remote_retry",
+    });
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...harness.dependencies,
+        now: () => new Date(now.getTime() + 30_000),
+        attempt: 2,
+      }),
+    ).resolves.toBe("ack");
+    expect(harness.job).toMatchObject({
+      status: "published",
+      remoteProductId: "remote_retry",
+      attemptCount: 2,
+      leaseToken: null,
+    });
+    expect(harness.listing.status).toBe("published");
   });
 
   it("persists retryable failure on the final Cloudflare attempt for DLQ", async () => {
@@ -367,53 +391,49 @@ describe("consumeShoplineMessage", () => {
       leaseToken: null,
     });
     expect(harness.listing.status).toBe("publish_failed");
+
+    vi.mocked(harness.connector.createProduct).mockResolvedValue({
+      remoteProductId: "remote_dlq_replay",
+    });
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...harness.dependencies,
+        attempt: 1,
+        now: () => new Date(now.getTime() + 60_000),
+      }),
+    ).resolves.toBe("ack");
+    expect(harness.job).toMatchObject({
+      status: "published",
+      remoteProductId: "remote_dlq_replay",
+      attemptCount: 2,
+      leaseToken: null,
+    });
   });
 
-  it("keeps the lease beyond the bounded call budget and reclaims at expiry", async () => {
+  it("keeps the in-flight lease beyond the bounded call budget", () => {
     expect(SHOPLINE_LEASE_MS).toBeGreaterThan(
       SHOPLINE_REQUEST_TIMEOUT_MS * SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT +
         SHOPLINE_LEASE_MARGIN_MS,
     );
     expect(SHOPLINE_LEASE_MS).toBeLessThan(SHOPLINE_QUEUE_WALL_MS);
+  });
 
+  it("does not reclaim a terminal failed job", async () => {
     const harness = makeHarness({
-      createError: new DOMException("request timed out", "AbortError"),
+      status: "failed",
+      error: "invalid_credentials_or_permission",
+      attemptCount: 1,
     });
-    const {
-      leaseMs: _leaseMs,
-      now: _now,
-      ...defaultLeaseDependencies
-    } = harness.dependencies;
-
     await expect(
-      consumeShoplineMessage(payload, {} as never, {
-        ...defaultLeaseDependencies,
-        now: () => now,
-      }),
-    ).resolves.toEqual({ retryAfterSeconds: 30 });
-
-    const firstLeaseExpiry = harness.job.leaseExpiresAt as Date;
-    expect(firstLeaseExpiry.getTime() - now.getTime()).toBe(SHOPLINE_LEASE_MS);
-    expect(harness.job.attemptCount).toBe(1);
-    expect(harness.connector.createProduct).toHaveBeenCalledTimes(2);
-
-    await expect(
-      consumeShoplineMessage(payload, {} as never, {
-        ...defaultLeaseDependencies,
-        now: () => new Date(firstLeaseExpiry.getTime() - 1),
-      }),
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
     ).resolves.toBe("ack");
-    expect(harness.job.attemptCount).toBe(1);
-    expect(harness.connector.createProduct).toHaveBeenCalledTimes(2);
-
-    await expect(
-      consumeShoplineMessage(payload, {} as never, {
-        ...defaultLeaseDependencies,
-        now: () => firstLeaseExpiry,
-      }),
-    ).resolves.toEqual({ retryAfterSeconds: 30 });
-    expect(harness.job.attemptCount).toBe(2);
-    expect(harness.connector.createProduct).toHaveBeenCalledTimes(4);
+    expect(harness.job).toMatchObject({
+      status: "failed",
+      error: "invalid_credentials_or_permission",
+      attemptCount: 1,
+    });
+    expect(harness.dependencies.connectorFactory).not.toHaveBeenCalled();
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });
 
   it("reclaims an expired lease and rejects its stale terminal token", async () => {

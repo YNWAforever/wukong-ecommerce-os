@@ -108,9 +108,6 @@ export async function consumeShoplineMessage(
   const parsed = shoplinePublishJobSchema.safeParse(payload);
   if (!parsed.success) return "ack";
 
-  const attempt = dependencies.attempt ?? 1;
-  const maxAttempts = dependencies.maxAttempts ?? SHOPLINE_MAX_ATTEMPTS;
-  const finalAttempt = attempt >= maxAttempts;
   let runtime: ShoplineRuntime;
   try {
     runtime = (dependencies.createRuntime ?? createCloudflareRuntime)(env);
@@ -178,7 +175,7 @@ export async function consumeShoplineMessage(
         expectedVersionId: parsed.data.versionId,
         connectionId: parsed.data.connectionId,
         leaseToken: claimed.claim.leaseToken,
-        persistRetryableFailure: finalAttempt,
+        persistRetryableFailure: true,
       },
       {
         connector,

@@ -5,6 +5,18 @@ import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { publishJobs } from "../schema.js";
 
+const RETRYABLE_PUBLISH_JOB_ERRORS = [
+  "remote_unavailable",
+  "rate_limited",
+] as const;
+
+export function isRetryablePublishJobError(errorCode: string | null): boolean {
+  return (
+    errorCode !== null &&
+    RETRYABLE_PUBLISH_JOB_ERRORS.some((candidate) => candidate === errorCode)
+  );
+}
+
 export type PublishJobStatus =
   "pending_enqueue" | "queued" | "running" | "published" | "failed";
 
@@ -169,6 +181,10 @@ export function createPublishJobRepository(
             eq(publishJobs.versionId, input.expectedVersionId),
             or(
               inArray(publishJobs.status, ["pending_enqueue", "queued"]),
+              and(
+                eq(publishJobs.status, "failed"),
+                inArray(publishJobs.error, [...RETRYABLE_PUBLISH_JOB_ERRORS]),
+              ),
               and(
                 eq(publishJobs.status, "running"),
                 lte(publishJobs.leaseExpiresAt, input.now),

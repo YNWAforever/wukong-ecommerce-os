@@ -91,6 +91,27 @@ describe("publish job repository", () => {
     await expect(forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.getByIdempotencyKey(key))).resolves.toMatchObject({ status: "failed", error: "remote_unavailable" });
   });
 
+  it("reclaims retryable failed jobs but rejects terminal failed jobs", async () => {
+    const retryKey = `ws_publish_repo:${versionId}:shopline:retryable-failed`;
+    const terminalKey = `ws_publish_repo:${versionId}:shopline:terminal-failed`;
+    const now = new Date("2026-07-20T00:05:00.000Z");
+    const result = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: retryKey, payloadDigest: "f".repeat(64) });
+      await repos.publishJobs.markQueued(retryKey);
+      const retryLease = await repos.publishJobs.claim({ key: retryKey, expectedVersionId: versionId, now, leaseMs: 60_000 });
+      await repos.publishJobs.markFailed(retryKey, retryLease.leaseToken!, "remote_unavailable");
+      const retried = await repos.publishJobs.claim({ key: retryKey, expectedVersionId: versionId, now: new Date(now.getTime() + 30_000), leaseMs: 60_000 });
+      await repos.publishJobs.ensure({ listingId, versionId, connectionId, idempotencyKey: terminalKey, payloadDigest: "0".repeat(64) });
+      await repos.publishJobs.markQueued(terminalKey);
+      const terminalLease = await repos.publishJobs.claim({ key: terminalKey, expectedVersionId: versionId, now, leaseMs: 60_000 });
+      await repos.publishJobs.markFailed(terminalKey, terminalLease.leaseToken!, "invalid_credentials_or_permission");
+      const rejected = await repos.publishJobs.claim({ key: terminalKey, expectedVersionId: versionId, now: new Date(now.getTime() + 30_000), leaseMs: 60_000 });
+      return { retried, rejected };
+    });
+    expect(result.retried.claimed).toBe(true);
+    expect(result.retried.job).toMatchObject({ status: "running", attemptCount: 2, error: null });
+    expect(result.rejected).toEqual({ claimed: false, job: null, leaseToken: null });
+  });
   it("reclaims an expired lease and rejects the stale worker terminal update", async () => {
     const key = `ws_publish_repo:${versionId}:shopline:reclaim`;
     const firstNow = new Date("2026-07-20T00:00:00.000Z");
