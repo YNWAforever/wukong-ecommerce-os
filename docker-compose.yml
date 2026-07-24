@@ -1,4 +1,26 @@
-﻿services:
+configs:
+  minio-tls-caddy:
+    content: |
+      {
+        admin off
+      }
+      https://localhost:9012 {
+        tls internal
+        @signed_get_head {
+          method HEAD
+          query x-id=GetObject
+        }
+        handle @signed_get_head {
+          reverse_proxy http://minio:9000 {
+            method GET
+          }
+        }
+        handle {
+          reverse_proxy http://minio:9000
+        }
+      }
+
+services:
   postgres:
     image: postgres:17-alpine
     environment:
@@ -11,9 +33,6 @@
       interval: 2s
       timeout: 2s
       retries: 20
-  redis:
-    image: redis:8-alpine
-    ports: ["6389:6379"]
   minio:
     image: minio/minio:latest
     command: server /data --console-address :9001
@@ -22,6 +41,15 @@
       MINIO_ROOT_PASSWORD: wukong-secret
       MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:49217
     ports: ["9010:9000", "9011:9001"]
+  minio-tls:
+    image: caddy:2-alpine
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+    configs:
+      - source: minio-tls-caddy
+        target: /etc/caddy/Caddyfile
+    depends_on: [minio]
+    ports: ["9012:9012"]
+    volumes: ["./.wrangler/caddy-data:/data"]
   mailpit:
     image: axllent/mailpit:latest
     ports: ["1026:1025", "8026:8025"]

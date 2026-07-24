@@ -21,6 +21,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    ignoreHTTPSErrors: enabled,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: !process.env.PLAYWRIGHT_BASE_URL
@@ -35,6 +36,7 @@ export default defineConfig({
           ? {
               ...process.env,
               PORT: "49217",
+              WUKONG_REAL_STACK_SERVER: "1",
               AI_PROVIDER: "fake",
               SHOPLINE_ADAPTER: "mock",
             }

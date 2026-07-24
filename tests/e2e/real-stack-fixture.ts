@@ -7,13 +7,12 @@ import {
 } from "@aws-sdk/client-s3";
 import { expect, type Page } from "@playwright/test";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import postgres from "postgres";
 
 import { S3AssetStore } from "../../packages/assets/src/s3-asset-store.js";
-import { createDatabase } from "../../packages/db/src/client.js";
 import { verifyAudit } from "../../packages/db/src/cli/audit-verify.js";
-import { publishApprovedProduct } from "../../apps/worker/src/publish-product.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -266,42 +265,12 @@ export async function verifyUploadedAsset(draftId: string) {
   expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
 }
 
-export async function completeMockShoplinePublish(draftId: string) {
-  const database = createDatabase(RUNTIME_URL, {});
-  try {
-    return await publishApprovedProduct(
-      {
-        workspaceId: OPAK_WORKSPACE_ID,
-        draftId,
-        connectionId: OPAK_CONNECTION_ID,
-      },
-      {
-        connectionId: OPAK_CONNECTION_ID,
-        connector: {
-          async verifyConnection() {
-            return { merchantId: "mock-opak-merchant" };
-          },
-          async createProduct() {
-            return { remoteProductId: "remote_opak_e2e_123" };
-          },
-          async updateProduct() {},
-          async getProductStatus() {
-            return { exists: true, status: true };
-          },
-        },
-        withWorkspace: (workspaceId, work) =>
-          database.forWorkspace(workspaceId, async (repositories) =>
-            work({
-              listings: repositories.listings,
-              publishJobs: repositories.publishJobs,
-              audit: repositories.audit,
-            }),
-          ),
-      },
-    );
-  } finally {
-    await database.close();
-  }
+export function expectedMockShoplineRemoteId(versionId: string): string {
+  const idempotencyKey = `${OPAK_WORKSPACE_ID}:${versionId}:shopline:create`;
+  return `mock_${createHash("sha256")
+    .update(idempotencyKey)
+    .digest("hex")
+    .slice(0, 16)}`;
 }
 
 export async function verifyCompletedAudit(draftId: string) {

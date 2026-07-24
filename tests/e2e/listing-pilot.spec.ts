@@ -2,13 +2,36 @@ import { expect, test } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import {
-  completeMockShoplinePublish,
   enrollAndSignInOpakAdmin,
+  expectedMockShoplineRemoteId,
   prepareRealStackFixture,
   verifyCompletedAudit,
   verifyUploadedAsset,
 } from "./real-stack-fixture.js";
 
+function parseCsvRow(row: string): string[] {
+  const fields: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index]!;
+    if (char === '"') {
+      if (quoted && row[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      fields.push(field);
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  fields.push(field);
+  return fields;
+}
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
@@ -92,6 +115,13 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   const csv = await readFile(downloadPath!, "utf8");
   expect(csv).toContain("OPAK-DEMO-001,Opak Cellar Riesling 2024 — reviewed");
 
+  const csvRows = csv.trimEnd().split("\r\n");
+  const csvImageUrl = parseCsvRow(csvRows[1]!)[13];
+  expect(csvImageUrl).toMatch(/^https?:\/\//);
+  const imageHead = await page.request.head(csvImageUrl!);
+  expect(imageHead.ok()).toBe(true);
+  expect(Number(imageHead.headers()["content-length"])).toBeGreaterThan(0);
+
   const queuedResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/api/listings/${draftId}/deliver`) &&
@@ -102,15 +132,35 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   expect((await queuedResponse).status()).toBe(202);
   await expect(page.getByText(/Publish queued/)).toBeVisible();
 
-  const published = await completeMockShoplinePublish(draftId!);
-  expect(published).toMatchObject({
-    status: "published",
-    remoteProductId: "remote_opak_e2e_123",
-  });
+  let expectedRemoteProductId = "";
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/listings/${draftId}`);
+        if (!response.ok()) return false;
+        const listing = (await response.json()) as {
+          activeVersion?: { id?: string };
+          delivery?: { status?: string; remoteProductId?: string | null };
+        };
+        const versionId = listing.activeVersion?.id;
+        if (!versionId) return false;
+        expectedRemoteProductId = expectedMockShoplineRemoteId(versionId);
+        return (
+          listing.delivery?.status === "published" &&
+          listing.delivery.remoteProductId === expectedRemoteProductId
+        );
+      },
+      {
+        message: "SHOPLINE Queue consumer did not publish the listing",
+        timeout: 60_000,
+      },
+    )
+    .toBe(true);
+  expect(expectedRemoteProductId).toMatch(/^mock_[a-f0-9]{16}$/);
+
   await page.reload();
   await expect(page.locator(".review-status")).toContainText("published");
-  await expect(page.getByText("remote_opak_e2e_123")).toBeVisible();
-
+  await expect(page.getByText(expectedRemoteProductId)).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await writeFile("test-results/real-stack-draft-id.txt", draftId!, "utf8");
 
