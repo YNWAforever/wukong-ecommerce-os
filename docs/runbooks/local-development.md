@@ -4,9 +4,11 @@ This runbook uses only synthetic data. Never put a SHOPLINE token, OpenAI key, S
 
 ## Start local dependencies
 
-From PowerShell at the repository root:
+From PowerShell at the repository root, use the stable `wukong-ecommerce-local` Compose project declared in `docker-compose.yml`. Every worktree therefore owns the same local service set instead of leaving competing containers on the fixed ports. Inspect the shared Compose project, stop only that named project, then recreate its services from the current checkout:
 
 ```powershell
+docker compose ps
+docker compose down --remove-orphans
 docker compose up -d --force-recreate postgres minio minio-tls mailpit
 docker compose exec -T postgres psql -U wukong -d postgres -v ON_ERROR_STOP=1 -c 'DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ''wukong_app'') THEN CREATE ROLE wukong_app LOGIN PASSWORD ''wukong-app-local'' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;'
 $env:DATABASE_ADMIN_URL = "postgres://wukong:wukong@localhost:54329/wukong"
@@ -24,7 +26,7 @@ corepack pnpm --filter @wukong/db... build
 corepack pnpm --filter @wukong/db db:migrate
 ```
 
-The migration is safe to run repeatedly. For the synthetic Opak workspace, use a deliberately non-routable operator address and seed twice to verify idempotency:
+`--force-recreate` replaces the shared project containers from the current worktree, including the MinIO TLS container and its local CA. Before `down`, stop if `docker compose ps` shows an unexpected image or service; do not remove unrelated Docker projects. The migration is safe to run repeatedly. For the synthetic Opak workspace, use a deliberately non-routable operator address and seed twice to verify idempotency:
 
 ```powershell
 $env:OPAK_OPERATOR_EMAIL = "operator@example.invalid"

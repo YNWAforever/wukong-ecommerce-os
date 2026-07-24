@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "wrangler deploy src/cloudflare.ts --dry-run --config ../../.wrangler/wrangler.generated.jsonc --outdir dist",
-    "types": "wrangler types --config ../../.wrangler/wrangler.generated.jsonc",
+    "types": "wrangler types ../../.wrangler/worker-configuration.d.ts --config ../../.wrangler/wrangler.generated.jsonc",
     "dev:local": "wrangler dev src/cloudflare.ts --local --config ../../.wrangler/wrangler.generated.jsonc",
-    "deploy:preview": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='preview'; await import('../../scripts/render-cloudflare-config.mjs')\" && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
-    "deploy:production": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='production'; await import('../../scripts/render-cloudflare-config.mjs')\" && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
+    "deploy:preview": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='preview'; await import('../../scripts/render-cloudflare-config.mjs')\" && node ../../scripts/verify-cloudflare-secrets.mjs preview && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
+    "deploy:production": "node --input-type=module -e \"process.env.CLOUDFLARE_ENV='production'; await import('../../scripts/render-cloudflare-config.mjs')\" && node ../../scripts/verify-cloudflare-secrets.mjs production && wrangler deploy src/cloudflare.ts --config ../../.wrangler/wrangler.generated.jsonc",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run src --exclude src/**/*.integration.test.ts",
     "test:integration": "vitest run src/queue.integration.test.ts",

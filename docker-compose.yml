@@ -1,3 +1,5 @@
+name: wukong-ecommerce-local
+
 configs:
   minio-tls-caddy:
     content: |

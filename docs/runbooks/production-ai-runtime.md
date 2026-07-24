@@ -27,7 +27,7 @@ Preview and production use different Workers, Queues, DLQs, Hyperdrive configura
 
 ## Provisioning
 
-After approval, create all four Queues and both DLQs for the selected environment before deploying its Worker. The checked-in generated Wrangler configuration attaches the consumer policies: batch size `1`, maximum retries `3`, retry delay `30`, concurrency `1`, and the matching DLQ.
+After approval, create exactly two primary Queues and their two matching DLQs for the selected environment before deploying its Worker. The checked-in generated Wrangler configuration attaches the consumer policies: batch size `1`, maximum retries `3`, retry delay `30`, concurrency `1`, and the matching DLQ.
 
 ```powershell
 corepack pnpm --filter @wukong/worker exec wrangler queues create <exact-queue-name>
@@ -35,18 +35,49 @@ corepack pnpm --filter @wukong/worker exec wrangler r2 bucket create <exact-r2-b
 corepack pnpm --filter @wukong/worker exec wrangler hyperdrive create <exact-hyperdrive-name> --connection-string="$env:CONTROLLED_NEON_RUNTIME_URL" --caching-disabled
 ```
 
-Run the Queue command once for each exact Queue and DLQ in the table. The Hyperdrive command must use the environment's runtime Neon role, never the admin URL. Capture its non-secret configuration ID as `CLOUDFLARE_HYPERDRIVE_ID`, render `.wrangler/wrangler.generated.jsonc`, inspect the exact bindings, then deploy the selected environment:
+Run the Queue command once for each exact Queue and DLQ in the table. The Hyperdrive command must use the environment's runtime Neon role, never the admin URL. Capture its non-secret configuration ID as `CLOUDFLARE_HYPERDRIVE_ID`.
+
+Set every explicit non-secret renderer input. `S3_BUCKET` must be the exact bucket from the table; managed R2 uses region `auto`, HTTPS, and no path-style addressing. Preview may use `AI_PROVIDER=fake`; production uses `AI_PROVIDER=openai`. The renderer always forces preview to `SHOPLINE_ADAPTER=mock`, production to `SHOPLINE_ADAPTER=disabled`, and both to `SHOPLINE_PUBLISH_ENABLED=false`; caller-supplied SHOPLINE values cannot override that lock.
 
 ```powershell
 $env:CLOUDFLARE_ENV = "<preview-or-production>"
 $env:CLOUDFLARE_HYPERDRIVE_ID = "<configuration-id>"
+$env:BUILD_SHA = "<accepted-commit-sha>"
+$env:AI_PROVIDER = "<fake-or-openai>"
+$env:OPENAI_LISTING_MODEL = "<approved-model>"
+$env:S3_BUCKET = "<exact-environment-bucket>"
+$env:S3_ENDPOINT = "https://<account-id>.r2.cloudflarestorage.com"
+$env:S3_REGION = "auto"
+$env:S3_FORCE_PATH_STYLE = "false"
 node scripts/render-cloudflare-config.mjs
+$deploymentEnvironment = $env:CLOUDFLARE_ENV
+Remove-Item Env:CLOUDFLARE_ENV
+corepack pnpm --filter @wukong/worker types
+```
+
+Install each required Worker secret interactively. These commands read the value from the Wrangler prompt; never put a value on the command line and never capture prompt input or secret values in logs:
+
+```powershell
+corepack pnpm --filter @wukong/worker exec wrangler secret put QUEUE_INGRESS_SECRET --name <exact-worker-name>
+corepack pnpm --filter @wukong/worker exec wrangler secret put OPENAI_API_KEY --name <exact-worker-name>
+corepack pnpm --filter @wukong/worker exec wrangler secret put SHOPLINE_TOKEN_ENCRYPTION_KEY --name <exact-worker-name>
+corepack pnpm --filter @wukong/worker exec wrangler secret put S3_ACCESS_KEY_ID --name <exact-worker-name>
+corepack pnpm --filter @wukong/worker exec wrangler secret put S3_SECRET_ACCESS_KEY --name <exact-worker-name>
+corepack pnpm --filter @wukong/worker exec wrangler secret list --name <exact-worker-name> --format json
+node scripts/verify-cloudflare-secrets.mjs $deploymentEnvironment
 corepack pnpm --filter @wukong/worker deploy:<preview-or-production>
 ```
 
+The checked-in metadata and generated Wrangler `secrets.required` list exactly those five names and no values. The verifier compares only names from `wrangler secret list --format json`; if any required name is missing or any unexpected secret name exists, abort the deployment. It never reads or prints values. The deploy script repeats this fail-closed verifier immediately before `wrangler deploy`.
+
 Hyperdrive caching is disabled because tenant RLS, leases, and read-after-write state require fresh reads. The Worker database client has a maximum of five database connections and closes after every Queue batch. The Worker must never run migrations at startup.
 
-Create an R2 Object Read & Write credential restricted to the one environment bucket. Apply CORS only for that environment's Vercel origin plus the required `PUT` and `HEAD` methods and `Content-Type` header. Keep the bucket private.
+Create two distinct bucket-scoped R2 credentials per environment and record only their names and scopes:
+
+1. Vercel web upload/finalize credential: Object Read & Write for that environment's one private bucket. Store its `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` only in the matching Vercel environment scope.
+2. Worker signed-read credential: Object Read-only for that same one bucket. Store its different `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` only as secrets on the matching Worker.
+
+The credential values must never be reused or shared between Vercel and the Worker, and preview credentials must differ from production credentials. Using the same environment variable names in separate platform scopes is intentional; the underlying access keys remain distinct. Apply CORS only for the Vercel origin, required `PUT` and `HEAD` methods, and `Content-Type` header. Worker read-only S3 access is server-side and requires no CORS permission. Keep every bucket private and forbid wildcard CORS.
 
 ## Configuration boundaries
 

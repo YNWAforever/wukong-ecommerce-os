@@ -19,6 +19,8 @@ const localCaPath = resolve(
   root,
   ".wrangler/caddy-data/caddy/pki/authorities/local/root.crt",
 );
+const localHyperdriveEnvironmentVariable =
+  "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE";
 const runtimeEnv = {
   ...process.env,
   DATABASE_URL: runtimeUrl,
@@ -33,7 +35,7 @@ const runtimeEnv = {
   SHOPLINE_ADAPTER: "mock",
   QUEUE_INGRESS_URL: workerUrl,
   QUEUE_INGRESS_SECRET: ingressSecret,
-  CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: runtimeUrl,
+
   AUTH_SECRET:
     process.env.AUTH_SECRET ??
     "local-real-stack-auth-secret-at-least-thirty-two-characters",
@@ -41,6 +43,12 @@ const runtimeEnv = {
   AUTH_EMAIL_FROM:
     process.env.AUTH_EMAIL_FROM ?? "Wukong Auth <auth@local.invalid>",
   BETTER_AUTH_URL: baseUrl,
+};
+
+delete runtimeEnv[localHyperdriveEnvironmentVariable];
+const workerEnv = {
+  ...runtimeEnv,
+  [localHyperdriveEnvironmentVariable]: runtimeUrl,
 };
 
 const localWrangler = {
@@ -298,7 +306,7 @@ function recordLogs(label, safe) {
   logs.set(label, lines.join("\n"));
 }
 
-function start(label, args) {
+function start(label, args, environment = runtimeEnv) {
   const command =
     process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
   const commandArgs =
@@ -307,7 +315,7 @@ function start(label, args) {
       : args;
   const child = spawnProcessGroup(command, commandArgs, {
     cwd: root,
-    env: runtimeEnv,
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -442,22 +450,26 @@ async function runServer() {
     await waitForTlsPort("localhost", 9012);
     await access(localCaPath);
 
-    start("wrangler", [
-      "--filter",
-      "@wukong/worker",
-      "exec",
+    start(
       "wrangler",
-      "dev",
-      "--config",
-      wranglerConfigFromWorker,
-      "--ip",
-      "127.0.0.1",
-      "--port",
-      workerPort,
-      "--local",
-      "--persist-to",
-      "../../.wrangler/state/e2e",
-    ]);
+      [
+        "--filter",
+        "@wukong/worker",
+        "exec",
+        "wrangler",
+        "dev",
+        "--config",
+        wranglerConfigFromWorker,
+        "--ip",
+        "127.0.0.1",
+        "--port",
+        workerPort,
+        "--local",
+        "--persist-to",
+        "../../.wrangler/state/e2e",
+      ],
+      workerEnv,
+    );
     await waitFor(`${workerUrl}/health`, "Wrangler");
 
     start("web", [

@@ -62,8 +62,17 @@ jobs:
         env:
           CLOUDFLARE_ENV: preview
           CLOUDFLARE_HYPERDRIVE_ID: 00000000000000000000000000000000
+          BUILD_SHA: ${{ github.sha }}
+          AI_PROVIDER: fake
+          OPENAI_LISTING_MODEL: gpt-5-mini
+          S3_BUCKET: wukong-opak-preview-assets
+          S3_ENDPOINT: https://ci.r2.cloudflarestorage.com
+          S3_REGION: auto
+          S3_FORCE_PATH_STYLE: "false"
         run: |
           node scripts/render-cloudflare-config.mjs
+          unset CLOUDFLARE_ENV
+          pnpm --filter @wukong/worker types
           node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs
       - name: Prepare database runtime role
         run: |

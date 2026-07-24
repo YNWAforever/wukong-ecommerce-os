@@ -51,6 +51,15 @@ test("release harness crosses the Wrangler Worker and Queue boundary", async () 
     /process\.env\.WUKONG_REAL_STACK_SERVER === "1"/,
   );
   expect(playwrightSource).toMatch(/WUKONG_REAL_STACK_SERVER: "1"/);
+  expect(
+    serverSource.match(
+      /CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE/g,
+    ) ?? [],
+  ).toHaveLength(1);
+  expect(serverSource).toMatch(
+    /delete runtimeEnv\[localHyperdriveEnvironmentVariable\][\s\S]*?const workerEnv = \{[\s\S]*?\.\.\.runtimeEnv,[\s\S]*?\[localHyperdriveEnvironmentVariable\]: runtimeUrl/,
+  );
+  expect(serverSource).toMatch(/start\(\s*"wrangler",[\s\S]*?workerEnv,\s*\);/);
   expect(serverSource).not.toMatch(
     /child\.once\("exit"[\s\S]+?children\.delete\(child\);\s*if \(!stopping\)/,
   );

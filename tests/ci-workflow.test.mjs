@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -59,6 +59,17 @@ const readinessRunbook = readFileSync(
   ),
   "utf8",
 );
+const composeSource = readFileSync(
+  new URL("docker-compose.yml", new URL("../", import.meta.url)),
+  "utf8",
+);
+const secretVerifierUrl = new URL(
+  "scripts/verify-cloudflare-secrets.mjs",
+  new URL("../", import.meta.url),
+);
+const secretVerifierSource = existsSync(secretVerifierUrl)
+  ? readFileSync(secretVerifierUrl, "utf8")
+  : "";
 
 test("installs pnpm before setup-node enables the pnpm cache", () => {
   const pnpmSetup = workflow.indexOf("uses: pnpm/action-setup@v6");
@@ -307,4 +318,100 @@ test("keeps local development and readiness Cloudflare-only", () => {
   assert.doesNotMatch(readinessRunbook, /Upstash|BullMQ|Railway|REDIS_URL/i);
   assert.match(readinessRunbook, /Cloudflare Queues/i);
   assert.match(readinessRunbook, /separate (?:final )?confirmation/i);
+});
+
+test("renders every safe Worker variable and generates Wrangler types in CI", () => {
+  for (const variable of [
+    "BUILD_SHA",
+    "AI_PROVIDER",
+    "OPENAI_LISTING_MODEL",
+    "S3_BUCKET",
+    "S3_ENDPOINT",
+    "S3_REGION",
+    "S3_FORCE_PATH_STYLE",
+  ]) {
+    assert.match(
+      workflow,
+      new RegExp(
+        `Render and validate Cloudflare configuration[\\s\\S]*?${variable}:`,
+      ),
+      variable,
+    );
+  }
+  assert.doesNotMatch(
+    workflow,
+    /Render and validate Cloudflare configuration[\s\S]*?SHOPLINE_ADAPTER:\s*(?:real|disabled)/,
+  );
+  assert.doesNotMatch(
+    workflow,
+    /Render and validate Cloudflare configuration[\s\S]*?SHOPLINE_PUBLISH_ENABLED:\s*true/,
+  );
+  const render = workflow.indexOf("node scripts/render-cloudflare-config.mjs");
+  const unsetEnvironment = workflow.indexOf("unset CLOUDFLARE_ENV");
+  const types = workflow.indexOf("pnpm --filter @wukong/worker types");
+  assert.ok(
+    render >= 0 && unsetEnvironment > render && types > unsetEnvironment,
+    "Wrangler types must run after render without CLOUDFLARE_ENV",
+  );
+});
+
+test("fails closed on the exact Worker secret contract before deploy", () => {
+  const expectedSecrets = [
+    "QUEUE_INGRESS_SECRET",
+    "OPENAI_API_KEY",
+    "SHOPLINE_TOKEN_ENCRYPTION_KEY",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+  ];
+  for (const secret of expectedSecrets) {
+    assert.match(
+      productionRunbook,
+      new RegExp(`wrangler secret put ${secret}`),
+    );
+  }
+  assert.match(productionRunbook, /wrangler secret list[\s\S]*--format json/);
+  assert.match(
+    productionRunbook,
+    /missing[\s\S]*unexpected secret name[\s\S]*abort/i,
+  );
+  assert.match(secretVerifierSource, /secret["',\s]+list/);
+  assert.match(secretVerifierSource, /--format["',\s]+json/);
+  assert.match(secretVerifierSource, /missing/i);
+  assert.match(secretVerifierSource, /unexpected/i);
+  for (const script of ["deploy:preview", "deploy:production"]) {
+    const command = workerPackage.scripts[script];
+    const verify = command.indexOf("verify-cloudflare-secrets.mjs");
+    const deploy = command.indexOf("wrangler deploy");
+    assert.ok(
+      verify >= 0 && deploy > verify,
+      `${script} must verify before deploy`,
+    );
+  }
+});
+
+test("documents distinct least-privilege R2 credentials per environment", () => {
+  assert.match(
+    productionRunbook,
+    /two distinct[^\n]*R2 credentials[^\n]*per environment/i,
+  );
+  assert.match(productionRunbook, /Vercel[\s\S]*Object Read & Write/);
+  assert.match(productionRunbook, /Worker[\s\S]*Object Read(?: |-)?only/i);
+  assert.match(
+    productionRunbook,
+    /credential[^\n]*(?:must not|never)[^\n]*(?:reuse|shared)/i,
+  );
+  assert.match(productionRunbook, /CORS[^\n]*Vercel/i);
+  assert.match(productionRunbook, /Worker[^\n]*read-only[^\n]*CORS/i);
+});
+
+test("uses one stable Compose project across worktrees", () => {
+  assert.match(composeSource, /^name: wukong-ecommerce-local$/m);
+  const inspect = localRunbook.indexOf("docker compose ps");
+  const down = localRunbook.indexOf("docker compose down --remove-orphans");
+  const up = localRunbook.indexOf(
+    "docker compose up -d --force-recreate postgres minio minio-tls mailpit",
+  );
+  assert.ok(inspect >= 0 && down > inspect && up > down);
+  assert.match(localRunbook, /shared Compose project[\s\S]*worktree/i);
+  assert.match(localRunbook, /--force-recreate[\s\S]*replace/i);
 });

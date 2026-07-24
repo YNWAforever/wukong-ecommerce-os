@@ -4,7 +4,7 @@
 
 DONE. Listing jobs now run through the existing tenant-scoped domain pipeline from the Cloudflare Queue consumer, terminal and transient outcomes are separated safely, and both initial and repair OpenAI calls have bounded abort signals.
 
-Commit: `98efe95` (eat: consume AI jobs with Cloudflare Queues).
+Commit: `98efe95` (feat: consume AI jobs with Cloudflare Queues).
 
 ## RED evidence
 
@@ -95,7 +95,7 @@ GREEN and final verification:
 
 Review-fix files: `apps/worker/src/listing-consumer.ts` and `apps/worker/src/listing-consumer.test.ts` only. The report remains an unstaged handoff artifact.
 
-Review-fix commit: `bf2600e` (ix: preserve queue outcomes when cleanup fails).
+Review-fix commit: `bf2600e` (fix: preserve queue outcomes when cleanup fails).
 
 ## Task 11 reproducible Cloudflare release gate
 
