@@ -1,104 +1,164 @@
-# Task 6 Report: Clean-Checkout Release Gate
+# Task 6 report — Cloudflare Queue AI consumption and provider deadline
 
-**Date:** 2026-07-19 (Asia/Hong_Kong)
-**Branch:** `codex/production-listing-workflow`
-**Verified head:** `55df0d3 test: isolate auth repository integration data`
-**Merge base:** `cac7400646b5f09dee852eef9d412d2a873afb7b`
-**Clean runtime:** Node `v24.18.0`; Corepack pnpm `11.7.0`
+## Status
 
-## Outcome
+DONE. Listing jobs now run through the existing tenant-scoped domain pipeline from the Cloudflare Queue consumer, terminal and transient outcomes are separated safely, and both initial and repair OpenAI calls have bounded abort signals.
 
-Task 6 is **release-ready for managed preview**. A detached checkout at the verified head passed frozen dependency installation, runtime formatting, database build and migration, lint, typecheck, unit tests, service-backed integration tests, production build, browser-driven real-stack acceptance, exact-draft audit verification, and tenant-isolation verification.
+Commit: `98efe95` (eat: consume AI jobs with Cloudflare Queues).
 
-The acceptance boundary used the production-built Next.js server, the real worker, Postgres, Redis, MinIO, and Mailpit. Only the external AI and SHOPLINE adapters were fake/mock, as intended for the release gate.
+## RED evidence
 
-## Protected working-tree state
+1. `corepack pnpm --filter @wukong/worker exec vitest run src/listing-consumer.test.ts`
+   - Exit 1; suite failed before collection because `listing-consumer.ts` did not exist.
+2. `corepack pnpm --filter @wukong/ai exec vitest run src/openai-listing-provider.test.ts`
+   - Exit 1; 39 tests ran, 35 passed and 4 failed.
+   - Expected failures: Responses `parse` had no request-options signal, `AbortSignal.timeout` was never called, and invalid timeout configuration was accepted.
+3. Runtime-initialization review regression: focused Worker test exited 1 with 1 failed and 7 passed because `createCloudflareRuntime` failure rejected instead of returning a retry outcome.
 
-The implementation worktree still contains exactly the four pre-existing user changes below. They remained unstaged and were not included in any Task 6 commit:
+## GREEN evidence
 
-```text
- M .gitignore
- M apps/web/.gitignore
- M apps/web/auth.test.ts
- M docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md
-```
+1. Focused Worker consumer: 1 file, 8 tests passed.
+2. Focused AI provider: 1 file, 39 tests passed.
+3. Complete `@wukong/ai` suite: 3 files, 48 tests passed.
+4. Complete `@wukong/worker` suite: 6 files, 39 tests passed.
+5. `@wukong/ai` typecheck: exit 0.
+6. `@wukong/worker` typecheck: exit 0.
+7. `@wukong/ai` build: exit 0.
+8. Final `@wukong/worker` Wrangler dry-run build: exit 0; 2131.51 KiB, gzip 375.51 KiB; expected listing Queue, SHOPLINE Queue, and Hyperdrive bindings only.
+9. `git diff --check`: exit 0.
 
-## Reproducible clean-checkout evidence
+## Outcome classification
 
-- Detached checkout: `C:\tmp\wukong-task6-clean-45d33fa`, advanced to `55df0d3`.
-- `corepack pnpm install --frozen-lockfile`: passed with pnpm `11.7.0`.
-- Final clean status after generated Playwright artifacts were removed: empty.
-- `corepack pnpm format:runtime:check`: passed; merge base `cac7400`; 82 release-scope files checked.
-- `.env.example`: validated semantically by `tests/railway-config.test.mjs`.
-- Dependency-inclusive database build and `@wukong/db db:migrate`: passed.
+- Strict queue payload parsing occurs before runtime or database construction; malformed payloads acknowledge without database access.
+- Success and terminal provider output/evidence/refusal/unsupported-asset errors acknowledge. Terminal provider errors force the existing pipeline to persist only a sanitized error code and audit action.
+- Provider API availability, explicit abort/timeouts, runtime initialization failures, and other transient pipeline failures return `{ retryAfterSeconds: 30 }` without logging errors or model content.
+- Listing Queue messages ack success/terminal results and call `retry({ delaySeconds: 30 })` for transient results.
+- SHOPLINE Queue messages retain the Task 5 retry placeholder; real SHOPLINE consumption remains disabled for Task 7.
+- Unknown Queue names throw before any acknowledgement or retry call.
 
-## Static and unit gate
+## Runtime and tenant isolation
 
-- `corepack pnpm lint`: 14/14 Turbo tasks passed.
-- `corepack pnpm typecheck`: 14/14 Turbo tasks passed.
-- `corepack pnpm test`: passed across all workspace packages.
-- Node release/config tests: 10/10 passed.
-- Web unit tests: 33 files, 193 tests passed.
-- No unit-test failures.
+- `createCloudflareRuntime` restores the existing provider, S3 signed-read, repository, and AI usage adapters on top of the Task 5 Hyperdrive database.
+- Every repository operation remains inside `database.forWorkspace(workspaceId, ...)`.
+- Runtime configuration is validated before opening the database where possible, and the consumer closes the database in `finally`.
+- The OpenAI secret is passed directly to the lazy provider client and is never logged or placed in a queue payload.
 
-## Service-backed integration gate
+## Provider deadline
 
-- `corepack pnpm test:integration`: 7/7 files and 46/46 tests passed.
-- The gate covers Postgres repositories and Redis queue behavior.
-- A prior failure was traced to integration assertions reading unrelated global auth rows left by the real browser story.
-- Commit `55df0d3` scopes those assertions to their test email/user IDs.
-- Focused verification after the fix: 14/14 auth-access integration tests passed.
-- Full integration verification after the fix: 46/46 passed.
+- `timeoutMs` defaults to 120000 ms.
+- Values must be integers from 1000 through 600000 inclusive; both bounds are covered.
+- Both the initial and single repair `responses.parse` requests receive fresh `AbortSignal.timeout(timeoutMs)` signals.
+- The maximum explicit per-request deadline remains below the Cloudflare Queue 15-minute wall.
 
-## Production build
+## Files
 
-- `corepack pnpm build`: 8/8 workspace build tasks passed.
-- Next.js production compilation, TypeScript, page-data collection, and static generation passed.
-- Worker and package artifacts compiled successfully.
-- Non-blocking baseline warnings remain for the Next.js middleware-to-proxy convention and Turbo's undeclared web output cache metadata.
+Created:
 
-## Real Opak acceptance
+- `apps/worker/src/listing-consumer.ts`
+- `apps/worker/src/listing-consumer.test.ts`
 
-Command:
+Modified:
 
-```powershell
-$env:PLAYWRIGHT_E2E = '1'
-corepack pnpm exec playwright test --project=chromium --workers=1 --reporter=line
-```
+- `apps/worker/src/cloudflare-runtime.ts`
+- `apps/worker/src/cloudflare-runtime.test.ts`
+- `apps/worker/src/index.ts`
+- `apps/worker/src/listing-pipeline.ts`
+- `apps/worker/src/pipeline-test-support.ts`
+- `apps/worker/src/queue-consumer.ts`
+- `apps/worker/src/worker-env.ts`
+- `packages/ai/src/openai-listing-provider.ts`
+- `packages/ai/src/openai-listing-provider.test.ts`
 
-Result:
+## Self-review and concerns
 
-- 2 passed, 1 intentionally skipped, 0 failed.
-- Passed the real application-boundary check.
-- Passed the Opak admin journey through asset upload, listing intake, AI generation, review/edit, approval, CSV export, publish queue, mock SHOPLINE publish, and visible remote product ID.
-- The separate invited-admin story remains intentionally skipped by its existing condition.
+- Reviewed the complete scoped diff, Queue acknowledgement order, typed error classification, lifecycle ownership, tenant scoping, and secret/model-content surfaces.
+- Narrow security scan found no logging calls, signed URLs, credentials, or prompt/model content in the Queue consumption path; the only prompt match is the existing safe `promptVersion` telemetry field.
+- The managed Windows ACL helper prevented `apply_patch`, so edits used the brief-authorized guarded exact-once replacement fallback. Formatter-only noise was removed before final verification.
+- Protected paths and `.wrangler` output remain unstaged and untouched by Task 6.
+- No blocking concerns. Queue names intentionally match the two checked-in preview/production configurations; an unrecognized deployment Queue fails closed before ack/retry.
 
-Exact accepted draft:
+## Review fix — cleanup outcome preservation
 
-```text
-dc6b002e-661a-4cee-bd2e-536c35296fc2
-```
+Review identified that a rejected `runtime.close()` in `finally` replaced the consumer's already-classified acknowledgement or retry return value, preventing `handleQueue` from applying the intended per-message action.
 
-Audit/RLS verification:
+RED: `corepack pnpm --filter @wukong/worker exec vitest run src/listing-consumer.test.ts` exited 1 with 2 failed and 8 passed. Both terminal-ack and transient-retry regressions rejected with the injected cleanup failure instead of resolving their classified outcomes.
 
-```text
-workspace: ws_opak
-missing action count: 0
-accessible foreign record count: 0
-```
+Fix: runtime cleanup remains awaited but its rejection is contained locally with no logging or telemetry. This preserves the classified queue contract and does not expose cleanup messages, model content, secrets, signed URLs, or credentials.
 
-Observed audit sequence:
+GREEN and final verification:
 
-```text
-listing.created -> listing.transition -> listing.submitted_for_review ->
-listing.transition -> listing.version_appended -> listing.edited ->
-listing.version_appended -> listing.approved -> listing.transition ->
-listing.csv_exported -> listing.publish_queued -> listing.transition ->
-listing.published -> listing.transition
-```
+- Focused listing consumer: 1 file, 10 tests passed.
+- Complete Worker suite: 6 files, 41 tests passed.
+- Worker typecheck: exit 0.
+- Wrangler dry-run build: exit 0; 2131.54 KiB, gzip 375.52 KiB; expected listing Queue, SHOPLINE Queue, and Hyperdrive bindings only.
+- Regression assertions verify the sensitive marker is not logged for either outcome.
 
-## Release decision
+Review-fix files: `apps/worker/src/listing-consumer.ts` and `apps/worker/src/listing-consumer.test.ts` only. The report remains an unstaged handoff artifact.
 
-**RELEASE-READY FOR MANAGED PREVIEW.**
+Review-fix commit: `bf2600e` (ix: preserve queue outcomes when cleanup fails).
 
-The local and clean-checkout release gates are reproducible and green at `55df0d3`. Task 7 may now provision/configure the approved managed preview services and run the same acceptance story against the deployed preview. Production migration, Opak production seed, and production acceptance remain Task 8 and must only be marked complete after live deployment verification.
+## Task 11 reproducible Cloudflare release gate
+
+### Candidate and runtime
+
+- Verified runtime candidate: `c858ce837cf569e3a41707ee42377c1c320d14d3` (`ops: define Cloudflare production runtime`).
+- Detached checkout: `C:\tmp\wukong-task11-clean-ae1f4be`.
+- Node: `v24.18.0`.
+- Corepack pnpm: `11.7.0`.
+- Frozen install: passed; lockfile supply-chain policy passed and 192 packages installed from the pinned lock.
+- Final detached status after stopping candidate services and removing generated `.wrangler`/`test-results`: empty.
+- No Cloudflare, Vercel, Neon production, or SHOPLINE mutation occurred. All services and data were local; SHOPLINE remained mock/disabled.
+
+### CI and configuration RED/GREEN
+
+Initial Node configuration run: 15 tests total, 10 passed and 5 failed for the intended missing behavior: Redis was still in CI, Wrangler render/validation was absent, the forbidden-runtime scan was absent, and local/production/readiness runbooks still described the legacy runtime.
+
+Final Node configuration run: 16/16 passed. The candidate pins Node 24 and pnpm 11.7, starts Postgres plus candidate-owned MinIO/MinIO-TLS/Mailpit, renders preview Wrangler configuration with the non-secret all-zero fake Hyperdrive ID, runs full Playwright, and keeps the local Hyperdrive connection string scoped to the Playwright step.
+
+Forbidden-runtime proof checked 9 package manifests and 111 non-test runtime source files: forbidden dependencies `0`, forbidden imports `0`, forbidden runtime files/services `0`. Railway config/tests are absent; no Redis service or variable remains.
+
+### Hash-pinned formatting debt
+
+The first detached format gate failed on the report plus 12 pre-Task11 code files. Formatting those 12 in the disposable checkout produced only mechanical Prettier drift (1,453 insertions and 580 deletions), but those files were outside Task 11 scope. The report was formatted normally. The exact 12 inherited files are temporarily waived only when their canonical-LF SHA-256 matches:
+
+| File                                                            | Expected SHA-256                                                   |
+| --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `apps/web/app/api/assets/finalize/route.test.ts`                | `3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b` |
+| `apps/web/app/api/assets/finalize/route.ts`                     | `5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2` |
+| `apps/web/app/api/assets/presign/route.ts`                      | `7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea` |
+| `apps/web/app/api/listings/route.create.test.ts`                | `175f467561747ea218d165278e1e57eb4023b50761f81898b3a0f4dc0461cbc0` |
+| `apps/web/lib/listing-queue-runtime.ts`                         | `0140cf7c13dbc3dddd78e32fec238ff548e31b4a25b94558fd6d61c5f967ad68` |
+| `apps/worker/src/listing-consumer.test.ts`                      | `e1b487bd64cfe877d416cdd270e731b42ad2a3dba17b2c52a89161c10e7d1035` |
+| `apps/worker/src/pipeline-test-support.ts`                      | `f02b9b9d618c3d9d74ab50acc393d832f3f4ed1614f5c250568a91f36662b90b` |
+| `packages/db/src/index.ts`                                      | `314a726462f7407f4a608104634e1a3e6945a63a0bb9ac18c85077d2f6a1dc2d` |
+| `packages/db/src/publish-jobs-schema.test.ts`                   | `8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8` |
+| `packages/db/src/repositories/publish-jobs.integration.test.ts` | `60f109af4c944409f7cfe348c697299a3f34a83a008b1c3478581d43f6e36c7c` |
+| `packages/db/src/schema.ts`                                     | `21c8b510142bf891215df98175e1a168df6016a6a325b7a3b7a45457599034ee` |
+| `packages/jobs/src/cloudflare-queue.ts`                         | `1f17ed387564268afbdf82c4354a04d7e27b0525d0d2a5dfc613c925796f1b43` |
+
+Automated tests prove the exact baseline passes, each changed source/hash fails, and a new unformatted file fails. Final format proof evaluated 131 changed release files and printed exactly 12 matching waivers. No glob, directory, extension, or dynamic baseline exemption exists.
+
+### Complete clean-checkout gate
+
+- Dependency-inclusive database build: passed for core, SHOPLINE, and DB packages.
+- Controlled local Postgres migration: passed.
+- Lint: 14/14 Turbo tasks passed.
+- Typecheck: 14/14 Turbo tasks passed.
+- Unit/config: 484 tests passed, 0 failed.
+- Service-backed integration: 6 files and 48 tests passed.
+- Production build: 8/8 workspace builds passed. Worker dry-run exposed only the two preview Queue bindings and preview Hyperdrive binding. Next built 16 static/dynamic routes.
+- Browser acceptance: 4 passed, 2 documented platform/optional skips, 0 failed. It crossed production-built Next, signed Worker ingress, Wrangler local Queues, Hyperdrive-to-local-Postgres, MinIO TLS, Mailpit, fake AI, and mock SHOPLINE.
+- Accepted no-copy draft: `7cb0e38d-cbda-4d1a-9bf3-bb32989b0770`.
+- Audit sequence: `listing.created -> listing.transition -> listing.transition -> listing.submitted_for_review -> listing.version_appended -> listing.edited -> listing.version_appended -> listing.approved -> listing.transition -> listing.csv_exported -> listing.publish_requested -> listing.publish_queued -> listing.transition -> listing.transition -> listing.published`.
+- Missing action count: `0`.
+- Accessible foreign record count: `0`.
+
+### Reproducibility diagnostics
+
+The first browser attempt failed before tests because an already-running MinIO TLS container belonged to another worktree and its Caddy CA was not present in the detached checkout. CI/local startup now force-recreates MinIO and `minio-tls` from the candidate checkout. A no-copy rerun proved the candidate generated its own 631-byte CA and passed the full browser story.
+
+A later freshly recreated checkout initially lacked workspace `dist` outputs because the verification sequence had not yet run its required build. After running the production build, Wrangler resolved all workspace packages. The shared Windows Turbo cache then replayed the known baseline `@wukong/web#build` cache entry without restoring `.next` because web outputs are not declared in `turbo.json`; a direct `next build` recreated the candidate output and the exact Playwright command passed. CI uses a fresh runner and executes its production build before Playwright. The missing web-output cache declaration remains a non-blocking baseline warning for a separately scoped change.
+
+### Self-review
+
+Reviewed the complete Task 11 diff for protected-file scope, CI order, secret boundaries, exact Cloudflare names, preview/production isolation, ingress rotation, Queue/DLQ metrics and replay, Hyperdrive caching/connection limits, controlled migration/seed, first-real-write stop, and non-destructive rollback. The MinIO TLS startup issue was the only Important finding and was fixed with a focused RED/GREEN test. No Critical or Important Task 11 issue remains in self-review.

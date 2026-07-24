@@ -1,33 +1,37 @@
 # Production readiness and ownership
 
-This checklist is a gate, not a provisioning script. Every blank owner, secret, or rollback decision blocks production enablement.
+This checklist is a gate, not permission to provision or deploy. Every blank owner, secret, monitoring, or rollback decision blocks production enablement.
 
 ## Services and secrets
 
-- [ ] Neon pooled `DATABASE_URL` is used by web/worker; direct `DATABASE_ADMIN_URL` is restricted to migrations and migrations run from a controlled job.
-- [ ] Redis URL and queue retention/alert owner are recorded.
-- [ ] Object storage bucket, region, endpoint, private read URL policy, lifecycle, and backup owner are recorded.
-- [ ] SMTP host/port/from address and mail delivery owner are recorded; magic-link tokens never enter logs.
-- [ ] `AUTH_SECRET`, encryption key for connector tokens, OpenAI API key, SHOPLINE credentials, and Sentry endpoint are held by the approved secret manager. Record rotation owner and cadence, not secret values.
-- [ ] Database backups, restore drill date, audit retention, deletion request process, and incident contact are approved.
+- [ ] Neon runtime and admin roles are separate. `DATABASE_ADMIN_URL` exists only in the controlled migration job; the web and Worker never receive it.
+- [ ] The exact preview and production Cloudflare Workers, Queues, DLQs, cache-disabled Hyperdrive configurations, private R2 buckets, and owners match [`production-ai-runtime.md`](./production-ai-runtime.md).
+- [ ] Queue retention, DLQ replay, backlog alert, oldest-message-age alert, Worker error alert, and Hyperdrive error alert owners are recorded.
+- [ ] R2 public access is disabled; bucket-scoped object credentials, CORS origins, lifecycle, backup, and restore owners are recorded.
+- [ ] `QUEUE_INGRESS_SECRET`, `AUTH_SECRET`, connector-token encryption key, OpenAI key, SHOPLINE credentials, and mail credentials are held by the approved secret managers. Rotation owners and cadence are recorded without values.
+- [ ] Database backups, restore drill date, audit retention, deletion-request process, and incident contact are approved.
 
 ## Release gate
 
-- [ ] CI passes frozen pnpm install, migrations, lint, typecheck, unit/integration tests, build, and Playwright with fake AI/mock SHOPLINE only.
-- [ ] A synthetic Opak run passes `audit:verify`; the cross-tenant probe reports zero accessible foreign records.
-- [ ] The production SHOPLINE API version and scopes are recorded. Merchant enablement and Developer Center app ownership are separate approvals.
-- [ ] A hidden test product has explicit owner approval before the first write. CSV fallback and rollback/deletion instructions are tested.
+- [ ] CI pins Node 24 and pnpm 11.7, performs a frozen install, proves the forbidden legacy runtime surface is absent, renders and validates Wrangler configuration, builds database dependencies, migrates Postgres, and runs lint, typecheck, unit, integration, build, and full Playwright.
+- [ ] Playwright uses production-built Next plus `wrangler dev`, local Cloudflare Queue simulation, local Hyperdrive-to-Postgres, MinIO, and Mailpit with fake AI/mock SHOPLINE only.
+- [ ] The exact synthetic Opak draft passes `audit:verify` with missing action count `0` and accessible foreign-record count `0`.
+- [ ] Preview and production resource IDs, deployed commit, Vercel deployment ID, Worker deployment ID, Queue/DLQ metrics, Hyperdrive name, and private R2 evidence are recorded without connection strings or credentials.
+- [ ] Deployment-specific logs contain no credentials, signatures, database URLs, signed object query strings, prompts, model output, or customer content.
 - [ ] No customer file, production credential, or unreviewed AI claim appears in Git history or fixtures.
 
-## Production AI runtime gate
+## SHOPLINE production gate
 
-Follow [`production-ai-runtime.md`](./production-ai-runtime.md) for the exact provider ownership, resource names, CORS policy, deployment order, verification, and rollback procedure.
+- [ ] Preview remains `SHOPLINE_ADAPTER=mock`.
+- [ ] Production acceptance remains `SHOPLINE_ADAPTER=disabled` and `SHOPLINE_PUBLISH_ENABLED=false`.
+- [ ] The production SHOPLINE API version, scopes, merchant approval, Developer Center ownership, hidden test-product owner, CSV fallback, and rollback/delete procedure are recorded.
+- [ ] A separate final confirmation is obtained immediately before enabling the first real SHOPLINE write.
+- [ ] The first real write is limited to one approved hidden product and is reconciled to one Neon publish ledger and one safe remote product ID.
 
-- [ ] Current Upstash, Railway, and R2 prices are rechecked before provisioning; any material increase has explicit approval.
-- [ ] Vercel has only the AI-runtime additions allowlist, while Railway has only its worker allowlist and no auth-mail, admin-database, or SHOPLINE secret.
-- [ ] The controlled release environment alone holds `DATABASE_ADMIN_URL`; the additive migration succeeds once before the new Railway worker starts.
-- [ ] Vercel and Railway deploy the same accepted commit. The private portless worker has no public domain, healthcheck path, or startup migration.
-- [ ] Deployment-specific Vercel/Railway logs, Neon state, one BullMQ job, and private R2 objects prove the synthetic workflow without exposing secrets or source content.
-- [ ] Rollback owners can independently roll back Vercel and roll back or stop Railway while retaining Redis, Neon records, and the R2 bucket.
+## Rollback
 
-After the gate is signed, deploy through the existing release pipeline. Do not create a database, bucket, Redis instance, SMTP account, or secret from this checklist.
+- [ ] Operators can disable SHOPLINE, pause both Cloudflare Queues, and independently roll back the Worker and Vercel.
+- [ ] Rollback retains primary Queues, DLQs, private R2 objects, and Neon ledgers/audits; no purge or destructive migration reversal is part of the incident procedure.
+- [ ] DLQ replay is one reviewed IDs-only message at a time, acknowledges only after the primary Queue accepts it, and records the root cause plus ledger result.
+
+After the gate is signed, deploy through the approved release pipeline. Resource provisioning, production secret changes, and the first real SHOPLINE write each require their own authorization.
