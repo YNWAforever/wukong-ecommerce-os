@@ -116,6 +116,7 @@ export async function consumeShoplineMessage(
   }
 
   const idempotencyKey = `${parsed.data.workspaceId}:${parsed.data.versionId}:shopline:create`;
+  const claimNow = (dependencies.now ?? (() => new Date()))();
   try {
     const claimed = await runtime.database.forWorkspace(
       parsed.data.workspaceId,
@@ -123,14 +124,24 @@ export async function consumeShoplineMessage(
         const claim = await repositories.publishJobs.claim({
           key: idempotencyKey,
           expectedVersionId: parsed.data.versionId,
-          now: (dependencies.now ?? (() => new Date()))(),
+          now: claimNow,
           leaseMs: dependencies.leaseMs ?? SHOPLINE_LEASE_MS,
         });
         if (!claim.claimed || !claim.leaseToken) {
+          const authoritative =
+            await repositories.publishJobs.getByIdempotencyKey(idempotencyKey);
+          const busyLeaseExpiresAt =
+            authoritative?.versionId === parsed.data.versionId &&
+            authoritative.status === "running" &&
+            authoritative.leaseExpiresAt instanceof Date &&
+            authoritative.leaseExpiresAt.getTime() > claimNow.getTime()
+              ? authoritative.leaseExpiresAt
+              : null;
           return {
             claim,
             connection: null,
             terminalConnectionFailure: false,
+            busyLeaseExpiresAt,
           };
         }
         if (claim.job?.connectionId !== parsed.data.connectionId) {
@@ -143,6 +154,7 @@ export async function consumeShoplineMessage(
             claim,
             connection: null,
             terminalConnectionFailure: true,
+            busyLeaseExpiresAt: null,
           };
         }
         const connection = await repositories.shoplineConnections.getById(
@@ -152,10 +164,24 @@ export async function consumeShoplineMessage(
           claim,
           connection,
           terminalConnectionFailure: false,
+          busyLeaseExpiresAt: null,
         };
       },
     );
-    if (!claimed.claim.claimed || !claimed.claim.leaseToken) return "ack";
+    if (!claimed.claim.claimed || !claimed.claim.leaseToken) {
+      if (claimed.busyLeaseExpiresAt) {
+        return {
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil(
+              (claimed.busyLeaseExpiresAt.getTime() - claimNow.getTime()) /
+                1_000,
+            ),
+          ),
+        };
+      }
+      return "ack";
+    }
     if (claimed.terminalConnectionFailure) return "ack";
 
     let connector: CommerceConnector | null = null;

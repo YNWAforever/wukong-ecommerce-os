@@ -31,7 +31,10 @@ const now = new Date("2026-07-22T00:00:00.000Z");
 function makeHarness(
   options: {
     createError?: unknown;
-    status?: "pending_enqueue" | "queued" | "running" | "failed";
+    resolveImageError?: unknown;
+    missingJob?: boolean;
+    jobVersionId?: string;
+    status?: "pending_enqueue" | "queued" | "running" | "published" | "failed";
     error?: string | null;
     leaseToken?: string | null;
     leaseExpiresAt?: Date | null;
@@ -49,7 +52,7 @@ function makeHarness(
   const job: any = {
     id: "job_1",
     listingId: draftId,
-    versionId,
+    versionId: options.jobVersionId ?? versionId,
     connectionId,
     status: options.status ?? "pending_enqueue",
     idempotencyKey: key,
@@ -122,7 +125,7 @@ function makeHarness(
     },
     publishJobs: {
       async getByIdempotencyKey(inputKey: string) {
-        return inputKey === key ? job : null;
+        return inputKey === key && !options.missingJob ? job : null;
       },
       async claim(input: {
         key: string;
@@ -130,6 +133,8 @@ function makeHarness(
         now: Date;
         leaseMs: number;
       }) {
+        if (options.missingJob)
+          return { claimed: false, job: null, leaseToken: null };
         const reclaimable =
           job.status === "pending_enqueue" ||
           job.status === "queued" ||
@@ -214,9 +219,10 @@ function makeHarness(
         return work(repositories);
       },
     },
-    async resolveImageUrls() {
+    resolveImageUrls: vi.fn(async () => {
+      if (options.resolveImageError) throw options.resolveImageError;
       return [];
-    },
+    }),
     close: vi.fn(async () => undefined),
   };
   const dependencies = {
@@ -239,7 +245,7 @@ function makeHarness(
 }
 
 describe("consumeShoplineMessage", () => {
-  it("claims concurrent duplicates once and creates one remote product", async () => {
+  it("claims concurrent duplicates once and reschedules the active duplicate", async () => {
     const harness = makeHarness();
 
     const outcomes = await Promise.all([
@@ -247,7 +253,7 @@ describe("consumeShoplineMessage", () => {
       consumeShoplineMessage(payload, {} as never, harness.dependencies),
     ]);
 
-    expect(outcomes).toEqual(["ack", "ack"]);
+    expect(outcomes).toEqual(["ack", { retryAfterSeconds: 30 }]);
     expect(harness.connector.createProduct).toHaveBeenCalledTimes(1);
     expect(harness.job).toMatchObject({
       status: "published",
@@ -418,6 +424,78 @@ describe("consumeShoplineMessage", () => {
     expect(SHOPLINE_LEASE_MS).toBeLessThan(SHOPLINE_QUEUE_WALL_MS);
   });
 
+  it("reschedules an active same-version lease until it can be reclaimed", async () => {
+    const leaseExpiresAt = new Date(now.getTime() + 270_000);
+    const harness = makeHarness({
+      status: "running",
+      leaseToken: "lease_active",
+      leaseExpiresAt,
+      attemptCount: 1,
+    });
+    await expect(
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
+    ).resolves.toEqual({ retryAfterSeconds: 270 });
+    expect(harness.job.attemptCount).toBe(1);
+    expect(harness.dependencies.connectorFactory).not.toHaveBeenCalled();
+  });
+
+  it("survives a post-claim failure through redelivery and lease-expiry reclaim", async () => {
+    const harness = makeHarness({
+      resolveImageError: new Error("image store unavailable"),
+    });
+    const { leaseMs: _leaseMs, ...productionDependencies } =
+      harness.dependencies;
+    await expect(
+      consumeShoplineMessage(payload, {} as never, productionDependencies),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+    expect(harness.job).toMatchObject({ status: "running", attemptCount: 1 });
+    const leaseExpiresAt = harness.job.leaseExpiresAt as Date;
+    expect(leaseExpiresAt.getTime() - now.getTime()).toBe(SHOPLINE_LEASE_MS);
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...productionDependencies,
+        attempt: 2,
+        now: () => new Date(now.getTime() + 30_000),
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 270 });
+    expect(harness.job.attemptCount).toBe(1);
+
+    vi.mocked(harness.runtime.resolveImageUrls).mockResolvedValue([]);
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...productionDependencies,
+        attempt: 3,
+        now: () => leaseExpiresAt,
+      }),
+    ).resolves.toBe("ack");
+    expect(harness.job).toMatchObject({
+      status: "published",
+      attemptCount: 2,
+      remoteProductId: "remote_123",
+      leaseToken: null,
+    });
+  });
+
+  it.each([
+    { name: "published", options: { status: "published" as const } },
+    {
+      name: "wrong-version running",
+      options: {
+        status: "running" as const,
+        jobVersionId: "00000000-0000-4000-8000-000000000299",
+        leaseToken: "lease_other",
+        leaseExpiresAt: new Date(now.getTime() + 270_000),
+      },
+    },
+    { name: "missing", options: { missingJob: true } },
+  ])("acks an authoritative $name unclaimable job", async ({ options }) => {
+    const harness = makeHarness(options);
+    await expect(
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
+    ).resolves.toBe("ack");
+    expect(harness.dependencies.connectorFactory).not.toHaveBeenCalled();
+  });
   it("does not reclaim a terminal failed job", async () => {
     const harness = makeHarness({
       status: "failed",
@@ -538,6 +616,34 @@ describe("SHOPLINE queue outcomes", () => {
     expect(finalAttempt.ack).not.toHaveBeenCalled();
   });
 
+  it("retries an active lease outcome instead of acknowledging it", async () => {
+    const harness = makeHarness({
+      status: "running",
+      leaseToken: "lease_busy",
+      leaseExpiresAt: new Date(now.getTime() + 270_000),
+      attemptCount: 1,
+    });
+    const message = {
+      body: payload,
+      attempts: 2,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    await handleQueue(
+      { queue: "wukong-shopline-preview", messages: [message] } as never,
+      {} as never,
+      undefined,
+      {
+        consumeShoplineMessage: (body, env, attempt) =>
+          consumeShoplineMessage(body, env, {
+            ...harness.dependencies,
+            ...attempt,
+          }),
+      },
+    );
+    expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 270 });
+    expect(message.ack).not.toHaveBeenCalled();
+  });
   it("fails closed for an unknown queue before ack or retry", async () => {
     const message = {
       body: payload,
