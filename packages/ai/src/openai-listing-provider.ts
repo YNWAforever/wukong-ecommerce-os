@@ -81,7 +81,9 @@ export type OpenAIListingProviderConfig = {
 };
 
 const DEFAULT_MODEL = "gpt-5.6-terra";
-const DEFAULT_TIMEOUT_MS = 120_000;
+/** Worst-case wall time of a single listing provider call, before retries. */
+export const LISTING_PROVIDER_REQUEST_TIMEOUT_MS = 120_000;
+const DEFAULT_TIMEOUT_MS = LISTING_PROVIDER_REQUEST_TIMEOUT_MS;
 const DEFAULT_PRICING: ModelPricing = {
   inputUsdPerMillion: 2.5,
   outputUsdPerMillion: 15,

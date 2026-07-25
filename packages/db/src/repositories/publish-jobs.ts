@@ -61,6 +61,18 @@ export type PublishJobRepository = {
   ensure(input: EnsurePublishJobInput): Promise<PublishJob>;
   markQueued(key: string): Promise<boolean>;
   claim(input: ClaimPublishJobInput): Promise<ClaimPublishJobResult>;
+  /**
+   * Records the remote product id the instant the connector returns it, while
+   * the job stays `running` and keeps its lease. Without this the id only lands
+   * as part of `markPublished`, so a crash or failed commit between the remote
+   * create and that write leaves a live product with no local record and no
+   * input for the reconciliation read on the next delivery.
+   */
+  recordRemoteProduct(
+    key: string,
+    leaseToken: string,
+    remoteProductId: string,
+  ): Promise<void>;
   markPublished(
     key: string,
     leaseToken: string,
@@ -197,6 +209,25 @@ export function createPublishJobRepository(
       const job = toPublishJob(row);
       if (!job) return { claimed: false, job: null, leaseToken: null };
       return { claimed: true, job, leaseToken };
+    },
+
+    async recordRemoteProduct(key, leaseToken, remoteProductId) {
+      scope.assertOpen();
+      if (!remoteProductId.trim()) {
+        throw new Error("publish result is invalid");
+      }
+      const updated = await transaction
+        .update(publishJobs)
+        .set({ remoteProductId, updatedAt: new Date() })
+        .where(
+          and(
+            byKey(key),
+            eq(publishJobs.status, "running"),
+            eq(publishJobs.leaseToken, leaseToken),
+          ),
+        )
+        .returning({ id: publishJobs.id });
+      if (!updated.length) throw new Error("publish job lease is not active");
     },
 
     async markPublished(key, leaseToken, remoteProductId, payloadDigest) {

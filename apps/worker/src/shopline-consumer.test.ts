@@ -161,6 +161,17 @@ function makeHarness(
           leaseToken: job.leaseToken,
         };
       },
+      async recordRemoteProduct(
+        inputKey: string,
+        leaseToken: string,
+        remoteProductId: string,
+      ) {
+        if (inputKey !== key) throw new Error("wrong publish key");
+        activeLease(leaseToken);
+        // Mirrors the repository: the job stays `running` and keeps its lease,
+        // so only the remote id lands.
+        Object.assign(job, { remoteProductId });
+      },
       async markPublished(
         inputKey: string,
         leaseToken: string,
