@@ -61,6 +61,17 @@ jobs:
         run: |
           mkdir -p .wrangler/caddy-data/caddy/pki/authorities/local
           docker compose up -d --force-recreate minio minio-tls mailpit
+          # Caddy generates its local CA on first start, as root inside the
+          # container, so the runner cannot read it and NODE_EXTRA_CA_CERTS is
+          # silently ignored -- which surfaces later as "unable to get local
+          # issuer certificate" against the HTTPS object-storage proxy. Wait for
+          # the CA to appear, then make the tree readable.
+          for _ in $(seq 1 60); do
+            [ -f .wrangler/caddy-data/caddy/pki/authorities/local/root.crt ] && break
+            sleep 1
+          done
+          test -f .wrangler/caddy-data/caddy/pki/authorities/local/root.crt
+          sudo chmod -R a+rX .wrangler/caddy-data
       - name: Check runtime formatting
         run: pnpm format:runtime:check
       - name: Prove legacy runtimes are absent
