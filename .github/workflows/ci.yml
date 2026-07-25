@@ -115,14 +115,11 @@ jobs:
         env:
           PLAYWRIGHT_E2E: "1"
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
-          # Signed object URLs reach SHOPLINE, and validateShoplineProduct
-          # rejects any image URL that is not HTTPS. The job-level S3_ENDPOINT
-          # points at plain-HTTP MinIO, which the real-stack fixture inherits in
-          # place of its own https://localhost:9012 default, so delivery failed
-          # validation and the CSV export never produced a download. The host
-          # must stay `localhost`: the Caddy proxy's internal certificate is
-          # issued for that name, not for 127.0.0.1.
-          S3_ENDPOINT: https://localhost:9012
+          # S3_ENDPOINT is deliberately NOT overridden here. The runtime pins
+          # itself to the TLS proxy in tests/e2e/real-stack-server.mjs, while the
+          # Playwright process keeps using the job-level plain-HTTP MinIO
+          # endpoint -- it has no CA loaded and does not need one. Setting it at
+          # this level forces both onto HTTPS and breaks the test harness.
         run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
       - name: Verify the completed Opak audit by draft
         run: |

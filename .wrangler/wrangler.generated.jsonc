@@ -1,0 +1,72 @@
+{
+  "name": "wukong-runtime-preview",
+  "main": "apps/worker/src/cloudflare.ts",
+  "compatibility_date": "2026-07-19",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "limits": {
+    "cpu_ms": 240000
+  },
+  "observability": {
+    "enabled": true
+  },
+  "secrets": {
+    "required": [
+      "QUEUE_INGRESS_SECRET",
+      "OPENAI_API_KEY",
+      "SHOPLINE_TOKEN_ENCRYPTION_KEY",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY"
+    ]
+  },
+  "vars": {
+    "BUILD_SHA": "0123456789abcdef0123456789abcdef01234567",
+    "AI_PROVIDER": "fake",
+    "OPENAI_LISTING_MODEL": "gpt-5-mini",
+    "SHOPLINE_ADAPTER": "mock",
+    "SHOPLINE_PUBLISH_ENABLED": "false",
+    "S3_BUCKET": "wukong-opak-preview-assets",
+    "S3_ENDPOINT": "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
+    "S3_REGION": "auto",
+    "S3_FORCE_PATH_STYLE": "false"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "hyperdrive-preview-id"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "LISTING_QUEUE",
+        "queue": "wukong-listing-preview"
+      },
+      {
+        "binding": "SHOPLINE_QUEUE",
+        "queue": "wukong-shopline-preview"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "wukong-listing-preview",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "max_concurrency": 1,
+        "dead_letter_queue": "wukong-listing-dlq-preview"
+      },
+      {
+        "queue": "wukong-shopline-preview",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "retry_delay": 30,
+        "max_concurrency": 1,
+        "dead_letter_queue": "wukong-shopline-dlq-preview"
+      }
+    ]
+  }
+}
