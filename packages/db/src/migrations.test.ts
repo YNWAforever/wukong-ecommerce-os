@@ -34,3 +34,20 @@ it("adds RLS-safe Better Auth enrollment functions for the runtime role", async 
   expect(migration?.sql).toContain("GRANT EXECUTE");
   expect(migration?.sql).toContain("TO wukong_app");
 });
+
+it("adds durable publish-job lease columns and the tenant lease index", async () => {
+  const migrations = await loadSqlMigrations(
+    new URL("../drizzle/", import.meta.url),
+  );
+  const migration = migrations.find(
+    ({ name }) => name === "0003_publish_job_leases.sql",
+  );
+
+  expect(migration).toBeDefined();
+  expect(migration?.sql).toContain("lease_token uuid");
+  expect(migration?.sql).toContain("lease_expires_at timestamptz");
+  expect(migration?.sql).toContain("attempt_count integer not null default 0");
+  expect(migration?.sql).toContain("publish_jobs_workspace_lease_idx");
+  expect(migration?.sql).toContain("workspace_id, status, lease_expires_at");
+  expect(migration?.sql).toContain("pending_enqueue");
+});

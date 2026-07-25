@@ -6,7 +6,9 @@ describe("FakeListingProvider", () => {
   it("extracts only explicit note facts and returns missing protected facts", async () => {
     const provider = new FakeListingProvider();
     const result = await provider.extract({
-      assets: [{ id: "asset_1", mimeType: "image/png", readUrl: "memory://label" }],
+      assets: [
+        { id: "asset_1", mimeType: "image/png", readUrl: "memory://label" },
+      ],
       note: "Demo Estate Riesling 2024, Germany, Mosel, 750ml, 12.5% ABV",
     });
 
@@ -22,32 +24,74 @@ describe("FakeListingProvider", () => {
       criticScores: [],
       awards: [],
     });
-    expect(result.missingFields).toEqual(expect.arrayContaining(["priceHkd", "stockQuantity"]));
-    expect(result.evidence.every((item) => item.sourceAssetId === "note")).toBe(true);
-    expect(result.evidence.every((item) => result.facts[item.field as keyof typeof result.facts] !== null)).toBe(true);
-    expect(result.usage).toMatchObject({ model: "fake-listing-provider", estimatedCostUsd: 0 });
+    expect(result.missingFields).toEqual(
+      expect.arrayContaining(["priceHkd", "stockQuantity"]),
+    );
+    expect(result.evidence.every((item) => item.sourceAssetId === "note")).toBe(
+      true,
+    );
+    expect(
+      result.evidence.every(
+        (item) =>
+          result.facts[item.field as keyof typeof result.facts] !== null,
+      ),
+    ).toBe(true);
+    expect(result.usage).toMatchObject({
+      model: "fake-listing-provider",
+      estimatedCostUsd: 0,
+    });
   });
 
+  it("extracts an explicit stock quantity with verbatim evidence", async () => {
+    const result = await new FakeListingProvider().extract({
+      assets: [],
+      note: "Demo Estate Riesling, stock 12",
+    });
+
+    expect(result.facts.stockQuantity).toBe(12);
+    expect(result.missingFields).not.toContain("stockQuantity");
+    expect(result.evidence).toContainEqual(
+      expect.objectContaining({ field: "stockQuantity", excerpt: "stock 12" }),
+    );
+  });
   it("sets product type only when the note says it explicitly", async () => {
     const provider = new FakeListingProvider();
-    const grapeOnly = await provider.extract({ assets: [], note: "Demo Estate Riesling 2024" });
+    const grapeOnly = await provider.extract({
+      assets: [],
+      note: "Demo Estate Riesling 2024",
+    });
     expect(grapeOnly.facts.productType).toBeNull();
 
-    const explicit = await provider.extract({ assets: [], note: "Demo Estate Riesling 2024, wine" });
+    const explicit = await provider.extract({
+      assets: [],
+      note: "Demo Estate Riesling 2024, wine",
+    });
     expect(explicit.facts.productType).toBe("wine");
-    expect(explicit.evidence.find((item) => item.field === "productType")?.excerpt).toBe("wine");
+    expect(
+      explicit.evidence.find((item) => item.field === "productType")?.excerpt,
+    ).toBe("wine");
   });
 
   it.each([
     "Demo Estate Riesling, Chardonnay 2024, wine, Germany, Mosel, 750ml, 12.5% ABV",
     "Demo Estate Riesling and Chardonnay 2024, wine, Germany, Mosel, 750ml, 12.5% ABV",
   ])("uses only verbatim evidence for each grape in %s", async (note) => {
-    const result = await new FakeListingProvider().extract({ assets: [], note });
-    const grapeEvidence = result.evidence.filter((item) => item.field === "grapeVarieties");
+    const result = await new FakeListingProvider().extract({
+      assets: [],
+      note,
+    });
+    const grapeEvidence = result.evidence.filter(
+      (item) => item.field === "grapeVarieties",
+    );
 
     expect(result.facts.grapeVarieties).toEqual(["Riesling", "Chardonnay"]);
-    expect(grapeEvidence.map((item) => item.excerpt)).toEqual(["Riesling", "Chardonnay"]);
-    expect(grapeEvidence.every((item) => note.includes(item.excerpt))).toBe(true);
+    expect(grapeEvidence.map((item) => item.excerpt)).toEqual([
+      "Riesling",
+      "Chardonnay",
+    ]);
+    expect(grapeEvidence.every((item) => note.includes(item.excerpt))).toBe(
+      true,
+    );
   });
 
   it("generates deterministic bilingual copy from supplied facts without reading environment", async () => {
@@ -68,7 +112,14 @@ describe("FakeListingProvider", () => {
           locales: ["en", "zh-Hant"],
           tone: "clear and restrained",
           claimPolicy: ["No invented claims"],
-          requiredFields: ["sku", "producer", "country", "volumeMl", "abvPercent", "priceHkd"],
+          requiredFields: [
+            "sku",
+            "producer",
+            "country",
+            "volumeMl",
+            "abvPercent",
+            "priceHkd",
+          ],
         },
         imageAssetIds: ["asset_1"],
       });

@@ -11,6 +11,7 @@ describe("DeliveryPanel", () => {
       status: "approved",
       canReview: true,
       remoteProductUrl: null,
+      remoteProductId: null,
     };
     const markup = renderToStaticMarkup(<DeliveryPanel model={model} />);
 
@@ -21,12 +22,27 @@ describe("DeliveryPanel", () => {
     expect(markup).not.toContain("remote.example");
   });
 
+  it("shows the stored SHOPLINE product id after publishing", () => {
+    const model = {
+      connection: "connected",
+      status: "published",
+      canReview: true,
+      remoteProductUrl: null,
+      remoteProductId: "remote_opak_e2e_123",
+    } satisfies DeliveryModel;
+
+    const markup = renderToStaticMarkup(<DeliveryPanel model={model} />);
+
+    expect(markup).toContain("SHOPLINE product ID");
+    expect(markup).toContain("remote_opak_e2e_123");
+  });
   it("enables API and CSV delivery only for an approved connected listing", () => {
     const model: DeliveryModel = {
       connection: "connected",
       status: "approved",
       canReview: true,
       remoteProductUrl: null,
+      remoteProductId: null,
     };
     const markup = renderToStaticMarkup(<DeliveryPanel model={model} />);
 

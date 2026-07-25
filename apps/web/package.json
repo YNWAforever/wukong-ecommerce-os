@@ -15,6 +15,7 @@
     "@wukong/assets": "workspace:*",
     "@wukong/core": "workspace:*",
     "@wukong/db": "workspace:*",
+    "@wukong/jobs": "workspace:*",
     "@wukong/shopline": "workspace:*",
     "better-auth": "^1.5.5",
     "drizzle-orm": "0.44.7",

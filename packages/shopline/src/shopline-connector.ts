@@ -5,9 +5,12 @@ import type {
 } from "./connector.js";
 import type { ShoplineProductPayload } from "./projection.js";
 
+export const SHOPLINE_REQUEST_TIMEOUT_MS = 45_000;
+
 export type ShoplineConnectorOptions = {
   baseUrl?: string;
   fetch?: ConnectorFetch;
+  requestTimeoutMs?: number;
 };
 
 export class ShoplineError extends Error {
@@ -23,7 +26,8 @@ export class ShoplineError extends Error {
 }
 
 function errorCode(status: number): ConnectorErrorCode {
-  if (status === 401 || status === 403) return "invalid_credentials_or_permission";
+  if (status === 401 || status === 403)
+    return "invalid_credentials_or_permission";
   if (status === 422) return "validation_failed";
   if (status === 429) return "rate_limited";
   return "remote_unavailable";
@@ -57,26 +61,41 @@ function strictString(value: unknown): value is string {
 }
 
 export class ShoplineConnector implements CommerceConnector {
+  readonly #token: string;
   private readonly baseUrl: string;
   private readonly requestFetch: ConnectorFetch;
+  private readonly requestTimeoutMs: number;
 
-  constructor(
-    private readonly token: string,
-    options: ShoplineConnectorOptions = {},
-  ) {
+  constructor(token: string, options: ShoplineConnectorOptions = {}) {
     if (!token.trim()) throw new Error("SHOPLINE token is required");
-    this.baseUrl = normalizeBaseUrl(options.baseUrl ?? "https://open.shopline.io/v1");
+    this.#token = token;
+    this.baseUrl = normalizeBaseUrl(
+      options.baseUrl ?? "https://open.shopline.io/v1",
+    );
     this.requestFetch = options.fetch ?? fetch;
+    this.requestTimeoutMs =
+      options.requestTimeoutMs ?? SHOPLINE_REQUEST_TIMEOUT_MS;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new Error("SHOPLINE request timeout must be positive");
+    }
   }
 
-  private async requestJson(path: string, init: RequestInit = {}): Promise<unknown> {
+  private requestSignal(): AbortSignal {
+    return AbortSignal.timeout(this.requestTimeoutMs);
+  }
+
+  private async requestJson(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<unknown> {
     let response: Response;
     try {
       response = await this.requestFetch(`${this.baseUrl}${path}`, {
         ...init,
+        signal: this.requestSignal(),
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+          authorization: `Bearer ${this.#token}`,
           ...init.headers,
         },
       });
@@ -95,17 +114,22 @@ export class ShoplineConnector implements CommerceConnector {
     }
   }
 
-  private async requestNoContent(path: string, init: RequestInit = {}): Promise<void> {
+  private async requestNoContent(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<void> {
     try {
       const response = await this.requestFetch(`${this.baseUrl}${path}`, {
         ...init,
+        signal: this.requestSignal(),
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+          authorization: `Bearer ${this.#token}`,
           ...init.headers,
         },
       });
-      if (!response.ok) throw new ShoplineError(errorCode(response.status), response.status);
+      if (!response.ok)
+        throw new ShoplineError(errorCode(response.status), response.status);
     } catch (error) {
       if (error instanceof ShoplineError) throw error;
       throw new ShoplineError("remote_unavailable");
@@ -135,7 +159,8 @@ export class ShoplineConnector implements CommerceConnector {
       body: JSON.stringify(payload),
     });
     const id =
-      typeof body === "object" && body !== null &&
+      typeof body === "object" &&
+      body !== null &&
       typeof (body as { product?: unknown }).product === "object" &&
       (body as { product: { _id?: unknown } }).product !== null
         ? (body as { product: { _id?: unknown } }).product._id
@@ -149,11 +174,14 @@ export class ShoplineConnector implements CommerceConnector {
     payload: ShoplineProductPayload,
     idempotencyKey: string,
   ): Promise<void> {
-    await this.requestNoContent(`/products/${safeRemoteProductId(remoteProductId)}`, {
-      method: "PUT",
-      headers: { "idempotency-key": idempotencyKey },
-      body: JSON.stringify(payload),
-    });
+    await this.requestNoContent(
+      `/products/${safeRemoteProductId(remoteProductId)}`,
+      {
+        method: "PUT",
+        headers: { "idempotency-key": idempotencyKey },
+        body: JSON.stringify(payload),
+      },
+    );
   }
 
   async getProductStatus(
@@ -162,25 +190,40 @@ export class ShoplineConnector implements CommerceConnector {
     const encodedId = safeRemoteProductId(remoteProductId);
     let response: Response;
     try {
-      response = await this.requestFetch(`${this.baseUrl}/products/${encodedId}`, {
-        method: "GET",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.token}`,
+      response = await this.requestFetch(
+        `${this.baseUrl}/products/${encodedId}`,
+        {
+          method: "GET",
+          signal: this.requestSignal(),
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${this.#token}`,
+          },
         },
-      });
+      );
     } catch {
       throw new ShoplineError("remote_unavailable");
     }
     if (response.status === 404) return { exists: false, status: null };
-    if (!response.ok) throw new ShoplineError(errorCode(response.status), response.status);
+    if (!response.ok)
+      throw new ShoplineError(errorCode(response.status), response.status);
     try {
       const body = await response.json();
-      if (typeof body !== "object" || body === null || typeof (body as { product?: unknown }).product !== "object" || (body as { product: unknown }).product === null) {
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        typeof (body as { product?: unknown }).product !== "object" ||
+        (body as { product: unknown }).product === null
+      ) {
         throw new Error("shape");
       }
-      const product = (body as { product: { _id?: unknown; status?: unknown } }).product;
-      if (!strictString(product._id) || product._id !== remoteProductId || (product.status !== true && product.status !== false)) {
+      const product = (body as { product: { _id?: unknown; status?: unknown } })
+        .product;
+      if (
+        !strictString(product._id) ||
+        product._id !== remoteProductId ||
+        (product.status !== true && product.status !== false)
+      ) {
         throw new Error("shape");
       }
       return { exists: true, status: product.status };
@@ -190,4 +233,8 @@ export class ShoplineConnector implements CommerceConnector {
   }
 }
 
-export type { CommerceConnector, ConnectorErrorCode, ConnectorFetch } from "./connector.js";
+export type {
+  CommerceConnector,
+  ConnectorErrorCode,
+  ConnectorFetch,
+} from "./connector.js";

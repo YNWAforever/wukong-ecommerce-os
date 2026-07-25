@@ -6,7 +6,17 @@ import { createListingHandler } from "./listings/route.js";
 
 const sessionContext = {
   async resolve() {
-    return { workspaceId: "ws_opak", actorId: "user_1", role: "operator" } as const;
+    return {
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      role: "operator",
+    } as const;
+  },
+};
+
+const publisher = {
+  async enqueue() {
+    return { id: "job_test" };
   },
 };
 
@@ -80,6 +90,7 @@ describe("POST /api/listings", () => {
     const calls: unknown[] = [];
     const handler = createListingHandler({
       sessionContext,
+      publisher,
       getAssetStore: () => {
         throw new Error("asset store must stay lazy");
       },
@@ -88,8 +99,16 @@ describe("POST /api/listings", () => {
           sourceAssets: {
             async getByIds() {
               return [
-                { id: "00000000-0000-4000-8000-000000000001", kind: "image/png", listingId: null },
-                { id: "00000000-0000-4000-8000-000000000002", kind: "application/pdf", listingId: null },
+                {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  kind: "image/png",
+                  listingId: null,
+                },
+                {
+                  id: "00000000-0000-4000-8000-000000000002",
+                  kind: "application/pdf",
+                  listingId: null,
+                },
               ];
             },
             async attachToListing(listingId: string, assetIds: string[]) {
@@ -99,7 +118,11 @@ describe("POST /api/listings", () => {
           listings: {
             async create(input: unknown) {
               calls.push(input);
-              return { id: "listing_1", status: "received", target: "shopline" };
+              return {
+                id: "listing_1",
+                status: "received",
+                target: "shopline",
+              };
             },
           },
           audit: {
@@ -112,7 +135,10 @@ describe("POST /api/listings", () => {
 
     const response = await handler(
       requestFor("/api/listings", {
-        sourceAssetIds: ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"],
+        sourceAssetIds: [
+          "00000000-0000-4000-8000-000000000001",
+          "00000000-0000-4000-8000-000000000002",
+        ],
         note: "Supplier sheet attached",
       }),
     );
@@ -120,6 +146,7 @@ describe("POST /api/listings", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
       listing: { id: "listing_1", status: "received", target: "shopline" },
+      processing: { state: "queued", jobId: "job_test", errorCode: null },
     });
     expect(calls).toContainEqual({
       target: "shopline",
@@ -137,17 +164,31 @@ describe("POST /api/listings", () => {
   it("returns a generic 404 when any asset is outside the workspace", async () => {
     const handler = createListingHandler({
       sessionContext,
+      publisher,
       getAssetStore: () => {
         throw new Error("unused");
       },
       getDatabase: () =>
         fakeDatabase({
-          sourceAssets: { async getByIds() { return [{ id: "00000000-0000-4000-8000-000000000001", kind: "image/png", listingId: null }]; } },
+          sourceAssets: {
+            async getByIds() {
+              return [
+                {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  kind: "image/png",
+                  listingId: null,
+                },
+              ];
+            },
+          },
         }) as never,
     });
     const response = await handler(
       requestFor("/api/listings", {
-        sourceAssetIds: ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000003"],
+        sourceAssetIds: [
+          "00000000-0000-4000-8000-000000000001",
+          "00000000-0000-4000-8000-000000000003",
+        ],
         note: "",
       }),
     );

@@ -1,73 +1,76 @@
 # Local development
 
-This runbook uses only synthetic data and the local Docker services. Do not put a SHOPLINE token, OpenAI key, SMTP credential, or customer document in the repository.
+This runbook uses only synthetic data. Never put a SHOPLINE token, OpenAI key, SMTP credential, or customer document in the repository.
 
-## Start the dependencies
+## Start local dependencies
 
-From PowerShell at the repository root:
+From PowerShell at the repository root, use the stable `wukong-ecommerce-local` Compose project declared in `docker-compose.yml`. Every worktree therefore owns the same local service set instead of leaving competing containers on the fixed ports. Inspect the shared Compose project, stop only that named project, then recreate its services from the current checkout:
 
 ```powershell
-docker compose up -d postgres redis minio mailpit
+docker compose ps
+docker compose down --remove-orphans
+docker compose up -d --force-recreate postgres minio minio-tls mailpit
 docker compose exec -T postgres psql -U wukong -d postgres -v ON_ERROR_STOP=1 -c 'DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = ''wukong_app'') THEN CREATE ROLE wukong_app LOGIN PASSWORD ''wukong-app-local'' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $$;'
 $env:DATABASE_ADMIN_URL = "postgres://wukong:wukong@localhost:54329/wukong"
 $env:DATABASE_URL = "postgres://wukong_app:wukong-app-local@localhost:54329/wukong"
 $env:TEST_DATABASE_ADMIN_URL = $env:DATABASE_ADMIN_URL
 $env:TEST_DATABASE_URL = $env:DATABASE_URL
-$env:REDIS_URL = "redis://localhost:6389"
 $env:S3_BUCKET = "wukong-local"
 $env:S3_ENDPOINT = "http://localhost:9010"
-$env:AWS_ACCESS_KEY_ID = "wukong"
-$env:AWS_SECRET_ACCESS_KEY = "wukong-secret"
-pnpm.cmd install --frozen-lockfile
-pnpm.cmd --filter @wukong/db db:migrate
+$env:S3_REGION = "us-east-1"
+$env:S3_ACCESS_KEY_ID = "wukong"
+$env:S3_SECRET_ACCESS_KEY = "wukong-secret"
+$env:S3_FORCE_PATH_STYLE = "true"
+corepack pnpm install --frozen-lockfile
+corepack pnpm --filter @wukong/db... build
+corepack pnpm --filter @wukong/db db:migrate
 ```
 
-The migration is safe to run repeatedly. For the synthetic Opak workspace, set an intentionally non-routable operator address and seed twice to check idempotency:
+`--force-recreate` replaces the shared project containers from the current worktree, including the MinIO TLS container and its local CA. Before `down`, stop if `docker compose ps` shows an unexpected image or service; do not remove unrelated Docker projects. The migration is safe to run repeatedly. For the synthetic Opak workspace, use a deliberately non-routable operator address and seed twice to verify idempotency:
 
 ```powershell
 $env:OPAK_OPERATOR_EMAIL = "operator@example.invalid"
-pnpm.cmd --filter @wukong/db exec tsx src/seed-opak.ts
-pnpm.cmd --filter @wukong/db exec tsx src/seed-opak.ts
+corepack pnpm --filter @wukong/db exec tsx src/seed-opak.ts
+corepack pnpm --filter @wukong/db exec tsx src/seed-opak.ts
 ```
 
-## Run the app and worker
+## Run the web app and Wrangler
 
-In separate PowerShell windows (keep the dependency window running):
+Normal application development can run the web app independently:
 
 ```powershell
-pnpm.cmd --filter @wukong/web dev
+corepack pnpm --filter @wukong/web dev
 ```
 
-The worker CLI starts the queue consumer. The fake provider is explicit and deterministic for local synthetic fixtures; production keeps the fail-closed OpenAI requirement:
+For the complete Queue boundary, use the Playwright real-stack fixture. It starts a production-built Next server and `wrangler dev` on loopback, renders non-production Queue names, and sets `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` only for the local Wrangler process. Wrangler supplies the local Queue simulation; external AI and SHOPLINE adapters remain fake/mock.
 
 ```powershell
-$env:AI_PROVIDER = "fake"
-pnpm.cmd --filter @wukong/worker build
-pnpm.cmd --filter @wukong/worker start
+$env:PLAYWRIGHT_E2E = "1"
+corepack pnpm exec playwright test --project=chromium --workers=1 --reporter=line
 ```
 
-Unset `AI_PROVIDER` and inject `OPENAI_API_KEY` only through the approved secret manager in production. The worker never silently falls back to fake output. A minimal local queue smoke check is:
+The fixture uses Postgres, MinIO, and Mailpit. It never calls a pipeline or SHOPLINE publishing helper from the test process. It uploads synthetic assets, sends signed requests through the ordinary Worker ingress, waits for Queue consumers, validates a signed object URL, and writes the accepted draft ID to `test-results/real-stack-draft-id.txt`.
 
-```powershell
-pnpm.cmd --filter @wukong/worker test -- src/queue.integration.test.ts
-```
 ## Verification commands
 
 ```powershell
-pnpm.cmd lint
-pnpm.cmd typecheck
-pnpm.cmd test
-pnpm.cmd test:integration
-pnpm.cmd build
+corepack pnpm format:runtime:check
+corepack pnpm runtime:forbidden:check
+corepack pnpm --filter @wukong/db... build
+corepack pnpm --filter @wukong/db db:migrate
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm test
+corepack pnpm test:integration
+corepack pnpm build
 $env:PLAYWRIGHT_E2E = "1"
-pnpm.cmd exec playwright install chromium
-pnpm.cmd test:e2e
+corepack pnpm exec playwright test --project=chromium --workers=1 --reporter=line
 ```
 
-When browser binaries are unavailable, leave `PLAYWRIGHT_E2E` unset: the Playwright spec is skipped safely and CI can install Chromium explicitly. Audit a completed synthetic draft with:
+Audit the exact completed synthetic draft:
 
 ```powershell
-pnpm.cmd --filter @wukong/db audit:verify --workspace ws_opak --draft <draft-uuid>
+corepack pnpm --filter @wukong/db audit:verify --workspace ws_opak --draft <draft-uuid>
 ```
 
-The command reports the chronological actions, missing action count, and accessible foreign-record count; it exits non-zero if either count is non-zero.
+The verifier must report missing action count `0` and accessible foreign-record count `0`.

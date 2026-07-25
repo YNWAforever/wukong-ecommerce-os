@@ -1,0 +1,34 @@
+{
+  "environments": {
+    "preview": {
+      "worker": "wukong-runtime-preview",
+      "listingQueue": "wukong-listing-preview",
+      "listingDlq": "wukong-listing-dlq-preview",
+      "shoplineQueue": "wukong-shopline-preview",
+      "shoplineDlq": "wukong-shopline-dlq-preview",
+      "r2Bucket": "wukong-opak-preview-assets"
+    },
+    "production": {
+      "worker": "wukong-runtime-production",
+      "listingQueue": "wukong-listing-production",
+      "listingDlq": "wukong-listing-dlq-production",
+      "shoplineQueue": "wukong-shopline-production",
+      "shoplineDlq": "wukong-shopline-dlq-production",
+      "r2Bucket": "wukong-opak-prod-assets"
+    }
+  },
+  "requiredSecrets": [
+    "QUEUE_INGRESS_SECRET",
+    "OPENAI_API_KEY",
+    "SHOPLINE_TOKEN_ENCRYPTION_KEY",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY"
+  ],
+  "consumer": {
+    "maxBatchSize": 1,
+    "maxBatchTimeout": 5,
+    "maxRetries": 3,
+    "retryDelay": 30,
+    "maxConcurrency": 1
+  }
+}

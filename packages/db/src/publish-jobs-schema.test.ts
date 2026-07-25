@@ -28,4 +28,11 @@ describe("publish job schema", () => {
       onDelete: "restrict",
     });
   });
+
+  it("stores durable lease ownership and attempt metadata", () => {
+    const columns = getTableColumns(publishJobs);
+    expect(columns.leaseToken.dataType).toBe("string");
+    expect(columns.leaseExpiresAt.dataType).toBe("date");
+    expect(columns.attemptCount.notNull).toBe(true);
+  });
 });

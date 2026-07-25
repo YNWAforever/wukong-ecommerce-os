@@ -421,6 +421,9 @@ export const publishJobs = pgTable("publish_jobs", {
   idempotencyKey: text("idempotency_key").notNull(),
   remoteProductId: text("remote_product_id"),
   error: text("error"),
+  leaseToken: uuid("lease_token"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").default(0).notNull(),
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 }, (table) => [
@@ -429,6 +432,11 @@ export const publishJobs = pgTable("publish_jobs", {
     table.idempotencyKey,
   ),
   index("publish_jobs_workspace_status_idx").on(table.workspaceId, table.status),
+  index("publish_jobs_workspace_lease_idx").on(
+    table.workspaceId,
+    table.status,
+    table.leaseExpiresAt,
+  ),
   index("publish_jobs_workspace_listing_idx").on(table.workspaceId, table.listingId),
   index("publish_jobs_workspace_version_idx").on(table.workspaceId, table.versionId),
   index("publish_jobs_workspace_connection_idx").on(

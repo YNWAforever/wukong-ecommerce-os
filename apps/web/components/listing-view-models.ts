@@ -1,4 +1,14 @@
-export type QueueStatus = "needs_info" | "in_review" | "approved" | "published" | "failed";
+import { queueLabels } from "./queue-labels";
+
+export type QueueStatus =
+  | "received"
+  | "processing"
+  | "needs_info"
+  | "in_review"
+  | "approved"
+  | "publishing"
+  | "published"
+  | "failed";
 
 export type QueueItem = {
   id: string;
@@ -26,16 +36,26 @@ export type ListingField = {
 };
 
 export type BlockingFlag = {
+  id: string;
   code: string;
+  field: string;
   label: string;
   description: string;
   status: "open" | "resolved";
+  resolutionReason: string | null;
 };
 
 export type ListingReviewModel = {
   id: string;
   versionId: string;
-  status: "received" | "processing" | "needs_info" | "in_review" | "approved" | "published" | "failed";
+  status:
+    | "received"
+    | "processing"
+    | "needs_info"
+    | "in_review"
+    | "approved"
+    | "published"
+    | "failed";
   title?: string;
   fields: ListingField[];
   blockingFlags: BlockingFlag[];
@@ -46,13 +66,33 @@ export type DeliveryModel = {
   status: ListingReviewModel["status"];
   canReview: boolean;
   remoteProductUrl: string | null;
+  remoteProductId: string | null;
 };
 
-export const queueGroups: ReadonlyArray<{ status: QueueStatus; label: string; englishLabel: string }> = [
-  { status: "needs_info", label: "需要資料", englishLabel: "Needs information" },
+export const queueGroups: ReadonlyArray<{
+  status: QueueStatus;
+  label: string;
+  englishLabel: string;
+}> = [
+  { status: "received", label: queueLabels.received, englishLabel: "Received" },
+  {
+    status: "processing",
+    label: queueLabels.processing,
+    englishLabel: "Processing",
+  },
+  {
+    status: "needs_info",
+    label: "需要資料",
+    englishLabel: "Needs information",
+  },
   { status: "in_review", label: "待審核", englishLabel: "In review" },
   { status: "approved", label: "已批准", englishLabel: "Approved" },
   { status: "published", label: "已上架", englishLabel: "Published" },
+  {
+    status: "publishing",
+    label: queueLabels.publishing,
+    englishLabel: "Publishing",
+  },
   { status: "failed", label: "失敗", englishLabel: "Failed" },
 ];
 
@@ -111,7 +151,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Producer",
       value: "Weingut Opak",
       confidence: 0.96,
-      evidence: { excerpt: "Producer: Weingut Opak", source: "supplier-sheet.txt", page: null },
+      evidence: {
+        excerpt: "Producer: Weingut Opak",
+        source: "supplier-sheet.txt",
+        page: null,
+      },
     },
     {
       key: "productType",
@@ -119,7 +163,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Product type",
       value: "wine",
       confidence: 0.99,
-      evidence: { excerpt: "White wine · Riesling", source: "bottle-label.svg", page: null },
+      evidence: {
+        excerpt: "White wine · Riesling",
+        source: "bottle-label.svg",
+        page: null,
+      },
     },
     {
       key: "country",
@@ -127,7 +175,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Country / region",
       value: "德國 · 摩澤爾",
       confidence: 0.94,
-      evidence: { excerpt: "Germany · Mosel", source: "supplier-sheet.txt", page: 1 },
+      evidence: {
+        excerpt: "Germany · Mosel",
+        source: "supplier-sheet.txt",
+        page: 1,
+      },
     },
     {
       key: "vintage",
@@ -135,7 +187,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Vintage",
       value: 2024,
       confidence: 0.98,
-      evidence: { excerpt: "Vintage: 2024", source: "bottle-label.svg", page: null },
+      evidence: {
+        excerpt: "Vintage: 2024",
+        source: "bottle-label.svg",
+        page: null,
+      },
       kind: "number",
     },
     {
@@ -153,7 +209,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "ABV (%)",
       value: 12.5,
       confidence: 0.98,
-      evidence: { excerpt: "Alcohol: 12.5% vol", source: "supplier-sheet.txt", page: 1 },
+      evidence: {
+        excerpt: "Alcohol: 12.5% vol",
+        source: "supplier-sheet.txt",
+        page: 1,
+      },
       kind: "number",
     },
     {
@@ -162,7 +222,11 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Price (HKD)",
       value: 288,
       confidence: 0.99,
-      evidence: { excerpt: "Retail price: HK$288", source: "supplier-sheet.txt", page: 1 },
+      evidence: {
+        excerpt: "Retail price: HK$288",
+        source: "supplier-sheet.txt",
+        page: 1,
+      },
       kind: "number",
     },
     {
@@ -180,16 +244,23 @@ export const fallbackReviewModel: ListingReviewModel = {
       englishLabel: "Description",
       value: "以清晰、克制的方式描述酒款風格與來源。",
       confidence: 0.88,
-      evidence: { excerpt: "Dry Riesling from the Mosel valley.", source: "supplier-sheet.txt", page: 1 },
+      evidence: {
+        excerpt: "Dry Riesling from the Mosel valley.",
+        source: "supplier-sheet.txt",
+        page: 1,
+      },
       kind: "textarea",
     },
   ],
   blockingFlags: [
     {
+      id: "description:health_claim:0",
       code: "health_claim",
+      field: "description",
       label: "健康功效聲稱",
       description: "移除未有來源支持的健康功效描述，或由審核員記錄處理理由。",
       status: "open",
+      resolutionReason: null,
     },
   ],
 };

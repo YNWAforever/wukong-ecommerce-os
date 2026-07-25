@@ -1,5 +1,5 @@
 import { MemoryAssetStore } from "@wukong/assets";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFinalizeAssetHandler } from "./route.js";
 
@@ -29,6 +29,43 @@ function fakeDatabase(repositories: Record<string, unknown>) {
 }
 
 describe("POST /api/assets/finalize", () => {
+  it("rejects a viewer before inspecting or persisting an upload", async () => {
+    const head = vi.fn();
+    const getDatabase = vi.fn(() => {
+      throw new Error("unused");
+    });
+    const handler = createFinalizeAssetHandler({
+      sessionContext: {
+        async resolve() {
+          return {
+            workspaceId: "ws_opak",
+            actorId: "user_1",
+            role: "viewer",
+          } as const;
+        },
+      },
+      getAssetStore: () => ({ head }) as never,
+      getDatabase,
+    });
+
+    const response = await handler(
+      requestFor({
+        key: "ws/ws_opak/sources/a/supplier.pdf",
+        mimeType: "application/pdf",
+        size: 1200,
+        sha256: "a".repeat(64),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      code: "insufficient_role",
+      message: "Operator access is required.",
+    });
+    expect(head).not.toHaveBeenCalled();
+    expect(getDatabase).not.toHaveBeenCalled();
+  });
+
   it("rejects a storage key from another workspace without touching storage", async () => {
     let headCalls = 0;
     const store = new MemoryAssetStore();

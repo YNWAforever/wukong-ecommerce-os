@@ -34,11 +34,13 @@ export type S3AssetStoreOptions = {
 };
 
 const TEN_MINUTES_SECONDS = ASSET_UPLOAD_TTL_MS / 1000;
+type SignedUrlClient = Parameters<typeof getSignedUrl>[0];
+type SignedUrlCommand = Parameters<typeof getSignedUrl>[1];
 
 const defaultPresigner: S3Presigner = (transport, command, options) =>
   getSignedUrl(
-    transport as S3Client,
-    command as unknown as PutObjectCommand | GetObjectCommand,
+    transport as unknown as SignedUrlClient,
+    command as unknown as SignedUrlCommand,
     options,
   );
 
@@ -59,7 +61,10 @@ export class S3AssetStore implements AssetStore {
   }
 
   static fromConfig(bucket: string, config: S3ClientConfig = {}): S3AssetStore {
-    return new S3AssetStore({ bucket, transport: new S3Client(config) as S3Transport });
+    return new S3AssetStore({
+      bucket,
+      transport: new S3Client(config) as S3Transport,
+    });
   }
 
   async createUpload(input: CreateUploadInput) {
@@ -99,17 +104,26 @@ export class S3AssetStore implements AssetStore {
     assertAssetKey(workspaceId, key);
     try {
       const response = (await this.#transport.send(
-        new HeadObjectCommand({ Bucket: this.#bucket, Key: key }) as unknown as S3Command,
+        new HeadObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+        }) as unknown as S3Command,
       )) as { ContentLength?: number; ContentType?: string };
-      if (response.ContentLength === undefined || response.ContentType === undefined) {
+      if (
+        response.ContentLength === undefined ||
+        response.ContentType === undefined
+      ) {
         throw new Error("Object metadata is incomplete");
       }
       return { size: response.ContentLength, mimeType: response.ContentType };
     } catch (error) {
       if (
         error instanceof NotFound ||
-        (typeof error === "object" && error !== null && "$metadata" in error &&
-          (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404)
+        (typeof error === "object" &&
+          error !== null &&
+          "$metadata" in error &&
+          (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+            ?.httpStatusCode === 404)
       ) {
         return null;
       }
