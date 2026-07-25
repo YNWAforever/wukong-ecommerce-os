@@ -53,7 +53,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Start local object storage and mail sink
-        run: docker compose up -d --force-recreate minio minio-tls mailpit
+        # Create the bind-mount targets first. The Docker daemon runs as root, so
+        # any path under ./.wrangler it has to create itself becomes root-owned.
+        # That made the later Cloudflare render step fail with EACCES writing
+        # wrangler.generated.jsonc, and would equally have blocked Playwright
+        # from reading the Caddy CA that NODE_EXTRA_CA_CERTS points at.
+        run: |
+          mkdir -p .wrangler/caddy-data/caddy/pki/authorities/local
+          docker compose up -d --force-recreate minio minio-tls mailpit
+          # Caddy generates its local CA on first start, as root inside the
+          # container, so the runner cannot read it and NODE_EXTRA_CA_CERTS is
+          # silently ignored -- which surfaces later as "unable to get local
+          # issuer certificate" against the HTTPS object-storage proxy. Wait for
+          # the CA to appear, then make the tree readable.
+          for _ in $(seq 1 60); do
+            [ -f .wrangler/caddy-data/caddy/pki/authorities/local/root.crt ] && break
+            sleep 1
+          done
+          test -f .wrangler/caddy-data/caddy/pki/authorities/local/root.crt
+          sudo chmod -R a+rX .wrangler/caddy-data
       - name: Check runtime formatting
         run: pnpm format:runtime:check
       - name: Prove legacy runtimes are absent
@@ -97,6 +115,14 @@ jobs:
         env:
           PLAYWRIGHT_E2E: "1"
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
+          # Signed object URLs reach SHOPLINE, and validateShoplineProduct
+          # rejects any image URL that is not HTTPS. The job-level S3_ENDPOINT
+          # points at plain-HTTP MinIO, which the real-stack fixture inherits in
+          # place of its own https://localhost:9012 default, so delivery failed
+          # validation and the CSV export never produced a download. The host
+          # must stay `localhost`: the Caddy proxy's internal certificate is
+          # issued for that name, not for 127.0.0.1.
+          S3_ENDPOINT: https://localhost:9012
         run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
       - name: Verify the completed Opak audit by draft
         run: |
