@@ -172,6 +172,22 @@ async function mountIntake() {
   return { container, root };
 }
 
+/** Flushes React work until `condition` holds, instead of a fixed tick count. */
+async function settleUntil(
+  condition: () => boolean,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the intake flow to settle");
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
+}
+
 function navigationFetcher(state: "queued" | "retry_required") {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -244,11 +260,13 @@ describe("ListingIntakeClient navigation", () => {
         form!.dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
       });
+      // Submit chains presign -> upload -> finalize -> create, so the number of
+      // microtask turns it needs is not fixed. Counting a set number of flushes
+      // made this assertion fail whenever the suite ran under parallel load.
+      await settleUntil(
+        () => fetcher.mock.calls.length >= 4 && push.mock.calls.length >= 1,
+      );
 
       expect(fetcher).toHaveBeenCalledTimes(4);
       expect(push).toHaveBeenCalledWith(
