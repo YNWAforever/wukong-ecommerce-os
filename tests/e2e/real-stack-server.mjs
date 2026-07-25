@@ -26,7 +26,14 @@ const runtimeEnv = {
   DATABASE_URL: runtimeUrl,
   NODE_EXTRA_CA_CERTS: localCaPath,
   S3_BUCKET: process.env.S3_BUCKET ?? "wukong-local",
-  S3_ENDPOINT: process.env.S3_ENDPOINT ?? "https://localhost:9012",
+  // Pinned to the TLS proxy on purpose, and deliberately not inherited from
+  // S3_ENDPOINT. The runtime hands signed object URLs to SHOPLINE, and
+  // validateShoplineProduct rejects any image URL that is not HTTPS, so the
+  // runtime must sign against Caddy rather than plain-HTTP MinIO. The test
+  // harness in real-stack-fixture.ts keeps talking to MinIO directly over HTTP
+  // and has no CA loaded, so the two endpoints must stay independent. Inheriting
+  // S3_ENDPOINT here silently coupled them and broke whichever side lost.
+  S3_ENDPOINT: process.env.E2E_RUNTIME_S3_ENDPOINT ?? "https://localhost:9012",
   S3_REGION: process.env.S3_REGION ?? "us-east-1",
   S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID ?? "wukong",
   S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY ?? "wukong-secret",
