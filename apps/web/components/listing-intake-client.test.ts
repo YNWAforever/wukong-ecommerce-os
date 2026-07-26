@@ -157,6 +157,66 @@ describe("live listing intake", () => {
     ).rejects.toThrow("Upload rejected");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("names object storage when the browser refuses the cross-origin upload", async () => {
+    const file = new File(["bottle"], "bottle.png", { type: "image/png" });
+    // What a blocked CORS preflight actually produces.
+    const blocked = new TypeError("Failed to fetch");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { key: "key-1", uploadUrl: "https://storage.example/upload-1" },
+          { status: 201 },
+        ),
+      )
+      .mockRejectedValueOnce(blocked);
+
+    const outcome = await createListingDraft(
+      { files: [file], note: "" },
+      { fetcher, digest: async () => "a".repeat(64) },
+    ).catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(Error);
+    const failure = outcome as Error;
+    expect(failure.message).toContain("object storage");
+    expect(failure.message).not.toBe("Failed to fetch");
+    expect(failure.cause).toBe(blocked);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [0, "prepare the upload"],
+    [2, "record the uploaded file"],
+    [3, "create the draft"],
+  ])(
+    "attributes an unreachable request at call %i to its own step",
+    async (failingCall, expected) => {
+      const file = new File(["bottle"], "bottle.png", { type: "image/png" });
+      const responses = [
+        Response.json(
+          { key: "key-1", uploadUrl: "https://storage.example/upload-1" },
+          { status: 201 },
+        ),
+        new Response(null, { status: 200 }),
+        Response.json({ assetId: "asset-1" }, { status: 201 }),
+      ];
+      let call = -1;
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
+        call += 1;
+        if (call === failingCall) throw new TypeError("Failed to fetch");
+        return responses[call] ?? new Response(null, { status: 200 });
+      });
+
+      const outcome = await createListingDraft(
+        { files: [file], note: "" },
+        { fetcher, digest: async () => "a".repeat(64) },
+      ).catch((error: unknown) => error);
+
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toContain(expected);
+    },
+  );
 });
 
 const intakeRoots: Root[] = [];
