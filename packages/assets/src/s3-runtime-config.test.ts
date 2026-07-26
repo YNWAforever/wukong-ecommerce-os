@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { readS3RuntimeConfig } from "./s3-runtime-config.js";
+import {
+  readS3RuntimeConfig,
+  RuntimeConfigurationError,
+} from "./s3-runtime-config.js";
 
 const valid = {
   S3_BUCKET: "wukong-opak-prod-assets",
@@ -39,5 +42,36 @@ describe("readS3RuntimeConfig", () => {
     expect(() =>
       readS3RuntimeConfig({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" }),
     ).toThrow("S3_FORCE_PATH_STYLE");
+  });
+
+  it.each([
+    "S3_BUCKET",
+    "S3_ENDPOINT",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+    "S3_FORCE_PATH_STYLE",
+  ])("names %s on a typed error a route can report", (name) => {
+    const broken =
+      name === "S3_FORCE_PATH_STYLE"
+        ? { ...valid, S3_FORCE_PATH_STYLE: "sometimes" }
+        : { ...valid, [name]: "" };
+    try {
+      readS3RuntimeConfig(broken);
+      expect.unreachable("expected a runtime configuration error");
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeConfigurationError);
+      expect((error as RuntimeConfigurationError).variable).toBe(name);
+      expect((error as Error).name).toBe("RuntimeConfigurationError");
+    }
+  });
+
+  it("never carries a configured value on the error", () => {
+    try {
+      readS3RuntimeConfig({ ...valid, S3_BUCKET: "" });
+      expect.unreachable("expected a runtime configuration error");
+    } catch (error) {
+      expect((error as Error).message).not.toContain("secret-key");
+      expect((error as Error).message).not.toContain("access-key");
+    }
   });
 });
