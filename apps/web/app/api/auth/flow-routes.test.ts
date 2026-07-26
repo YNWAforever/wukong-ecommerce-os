@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { AuthConfigurationUnavailableError } from "../../../auth";
+import { withRuntimeAuthFlow } from "../../../lib/auth-route";
 import { createForgotPasswordHandler } from "./forgot-password/route";
 import { createMagicLinkHandler } from "./magic-link/route";
 import { createPasswordHandler } from "./password/route";
@@ -81,5 +83,39 @@ describe("invite-aware auth routes", () => {
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ ok: false, message: "Unable to complete this request." });
+  });
+});
+
+describe("runtime auth flow construction", () => {
+  it("answers 503 instead of throwing when the auth environment is missing", async () => {
+    const handle = vi.fn();
+    const response = await withRuntimeAuthFlow(handle, () => {
+      throw new AuthConfigurationUnavailableError();
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      ok: false, message: "Authentication is not configured.",
+    });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it("rethrows an unrelated construction failure rather than masking it as config", async () => {
+    await expect(
+      withRuntimeAuthFlow(vi.fn(), () => {
+        throw new Error("connection pool exhausted");
+      }),
+    ).rejects.toThrow("connection pool exhausted");
+  });
+
+  it("runs the handler with the constructed flow", async () => {
+    const deps = flow();
+    const response = await withRuntimeAuthFlow(
+      (constructed) => createMagicLinkHandler(constructed)(
+        request("/api/auth/magic-link", { email: "admin@example.com" }),
+      ),
+      () => deps as never,
+    );
+    expect(response.status).toBe(200);
+    expect(deps.requestMagicLink).toHaveBeenCalled();
   });
 });

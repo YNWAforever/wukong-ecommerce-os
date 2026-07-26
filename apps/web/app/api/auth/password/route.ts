@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-import {
-  createRuntimeAuthFlow,
-  safeCallbackPath,
-  type AuthFlow,
-} from "../../../../lib/auth-flow";
+import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
+import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
 const schema = z.object({
   email: z.email(),
@@ -43,4 +40,4 @@ export function createPasswordHandler(flow: Pick<AuthFlow, "passwordSignIn">) {
 }
 
 export const POST = (request: Request) =>
-  createPasswordHandler(createRuntimeAuthFlow())(request);
+  withRuntimeAuthFlow((flow) => createPasswordHandler(flow)(request));

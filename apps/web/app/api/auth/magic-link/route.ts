@@ -1,10 +1,7 @@
 import { z } from "zod";
 
-import {
-  createRuntimeAuthFlow,
-  safeCallbackPath,
-  type AuthFlow,
-} from "../../../../lib/auth-flow";
+import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
+import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
 const schema = z.object({
   email: z.email(),
@@ -33,4 +30,4 @@ export function createMagicLinkHandler(flow: Pick<AuthFlow, "requestMagicLink">)
 }
 
 export const POST = (request: Request) =>
-  createMagicLinkHandler(createRuntimeAuthFlow())(request);
+  withRuntimeAuthFlow((flow) => createMagicLinkHandler(flow)(request));

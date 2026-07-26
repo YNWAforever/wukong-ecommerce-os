@@ -18,7 +18,8 @@ function harness(options: { eligible?: boolean; credential?: boolean; enrollment
     writeAuthAudit: vi.fn().mockResolvedValue(undefined),
   };
   const auth = { handler: vi.fn().mockResolvedValue(options.authResponse ?? Response.json({ ok: true })) };
-  return { access, auth, flow: createAuthFlow({ auth, access, now: () => NOW }) };
+  const observe = vi.fn();
+  return { access, auth, observe, flow: createAuthFlow({ auth, access, now: () => NOW, observe }) };
 }
 
 async function forwardedBody(auth: { handler: ReturnType<typeof vi.fn> }) {
@@ -230,5 +231,69 @@ describe("invite-aware authentication flow", () => {
       email: "admin@example.com", password: "correct horse battery staple",
     })).resolves.toEqual({ ok: false, cookies: [] });
     expect(access.recordPasswordFailure).not.toHaveBeenCalled();
+  });
+});
+
+describe("authentication flow observability", () => {
+  it("reports why an ineligible magic link stopped, without leaking the address", async () => {
+    const { flow, auth, observe } = harness({ eligible: false });
+    await expect(flow.requestMagicLink({ email: "stranger@example.com" }))
+      .resolves.toEqual({ accepted: true });
+    expect(auth.handler).not.toHaveBeenCalled();
+    expect(observe).toHaveBeenCalledWith({
+      outcome: "failure",
+      reason: "magic_link_rejected",
+    });
+    for (const [observation] of observe.mock.calls) {
+      expect(JSON.stringify(observation)).not.toContain("stranger@example.com");
+    }
+  });
+
+  it("separates an accepted magic link from a rejected one", async () => {
+    const { flow, observe } = harness();
+    await flow.requestMagicLink({ email: "admin@example.com" });
+    expect(observe).toHaveBeenCalledWith({
+      outcome: "success",
+      reason: "magic_link_accepted",
+    });
+  });
+
+  it("emits a single-line structured log by default, with no observer injected", async () => {
+    const access = harness({ eligible: false }).access;
+    const auth = { handler: vi.fn() };
+    const flow = createAuthFlow({ auth, access, now: () => NOW });
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      await flow.requestMagicLink({ email: "stranger@example.com" });
+      const lines = info.mock.calls.map(([line]) => String(line));
+      expect(lines).toContain(
+        JSON.stringify({
+          event: "auth_flow",
+          outcome: "failure",
+          reason: "magic_link_rejected",
+        }),
+      );
+      for (const line of lines) {
+        expect(line).not.toContain("stranger@example.com");
+        expect(line.includes("\n")).toBe(false);
+      }
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("still reports the reason when the audit store is unavailable", async () => {
+    const { flow, access, observe } = harness({ eligible: false });
+    access.writeAuthAudit.mockRejectedValue(new Error("audit store down"));
+    await expect(flow.requestMagicLink({ email: "stranger@example.com" }))
+      .resolves.toEqual({ accepted: true });
+    expect(observe).toHaveBeenCalledWith({
+      outcome: "failure",
+      reason: "magic_link_rejected",
+    });
+    expect(observe).toHaveBeenCalledWith({
+      outcome: "failure",
+      reason: "auth_audit_write_failed",
+    });
   });
 });

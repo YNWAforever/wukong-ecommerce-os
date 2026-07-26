@@ -14,6 +14,27 @@ export type AuthFlow = ReturnType<typeof createAuthFlow>;
 const ACCEPTED = { accepted: true } as const;
 const AUTH_ORIGIN = "http://localhost";
 
+type AuthAuditEvent = Parameters<AuthAccessRepository["writeAuthAudit"]>[0];
+
+export type AuthFlowObservation = {
+  outcome: AuthAuditEvent["outcome"];
+  reason: string;
+};
+
+export type AuthFlowObserver = (observation: AuthFlowObservation) => void;
+
+// Every flow below answers the caller identically on purpose, so the reason a
+// request stopped exists only here. Without this line an operator cannot tell
+// "address is not invited" from "mail server refused" from "audit store down"
+// -- all three are the same generic success on the wire.
+//
+// Deliberately carries no address, user id, token, or URL: the audit table
+// already holds the identifying record, and runtime logs must stay free of
+// customer content.
+function reportAuthFlow(observation: AuthFlowObservation): void {
+  console.info(JSON.stringify({ event: "auth_flow", ...observation }));
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -93,15 +114,21 @@ export function createAuthFlow({
   auth,
   access,
   now,
+  observe = reportAuthFlow,
 }: {
   auth: AuthHandler;
   access: AuthAccessRepository;
   now: () => Date;
+  observe?: AuthFlowObserver;
 }) {
-  async function audit(event: Parameters<AuthAccessRepository["writeAuthAudit"]>[0]) {
+  async function audit(event: AuthAuditEvent) {
+    // Observed before the write, so the reason still reaches the logs when the
+    // audit store itself is the thing that is broken.
+    observe({ outcome: event.outcome, reason: event.reason ?? "unspecified" });
     try {
       await access.writeAuthAudit(event);
     } catch {
+      observe({ outcome: "failure", reason: "auth_audit_write_failed" });
       // Authentication stays generic even when audit persistence is unavailable.
     }
   }
