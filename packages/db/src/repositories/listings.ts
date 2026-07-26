@@ -411,13 +411,23 @@ export function createListingRepository(
       const listing = await this.requireById(id);
       if (listing.activeVersionId !== baseVersionId)
         throw new Error("stale review version");
+      // Exhaustive by design. This used to be a ternary that defaulted every
+      // unlisted status to "in_review", which let an edit land while the
+      // listing was `publishing` -- an edge the workflow state machine forbids,
+      // and one that orphans an in-flight SHOPLINE delivery because the
+      // optimistic guard below binds to the status we just read.
+      const nextStatusByStatus = {
+        in_review: "in_review",
+        needs_info: "in_review",
+        reopened: "reopened",
+        approved: "reopened",
+        published: "reopened",
+        publish_failed: "reopened",
+      } as const satisfies Partial<Record<ListingStatus, ListingStatus>>;
+      const nextStatus: ListingStatus | undefined =
+        nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
+      if (!nextStatus) throw new Error(`listing is ${listing.status}`);
       const version = await this.appendVersion(id, content, context, audit);
-      const nextStatus: ListingStatus =
-        listing.status === "approved" || listing.status === "published"
-          ? "reopened"
-          : listing.status === "reopened"
-            ? "reopened"
-            : "in_review";
       const updated = await transaction
         .update(listingDrafts)
         .set({

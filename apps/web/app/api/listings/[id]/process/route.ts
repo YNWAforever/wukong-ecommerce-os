@@ -58,11 +58,21 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
           if (!listing) {
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           }
-          if (listing.status !== "received") {
+          // The workflow state machine allows processing to start from exactly
+          // these: received/needs_info via start_processing, failed via retry.
+          // Without `failed` an operator had no way to re-drive a listing the
+          // pipeline gave up on, so it sat unreachable until an engineer
+          // replayed the dead-letter queue by hand.
+          const retryableStatuses = new Set([
+            "received",
+            "needs_info",
+            "failed",
+          ]);
+          if (!retryableStatuses.has(listing.status)) {
             throw new ApiError(
               409,
               "listing_not_retryable",
-              "Only a received listing can start processing.",
+              "This listing cannot start processing in its current state.",
             );
           }
 
@@ -82,13 +92,17 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             activeVersionSequence: revision.activeVersionSequence,
           } satisfies ListingJob;
           const key = listingApplicationJobId(input);
-          if (await repositories.pipelineRuns.getState(key)) {
+          const runState = await repositories.pipelineRuns.getState(key);
+          if (runState && runState.status !== "failed") {
+            // `started` means a delivery is still working on it; `succeeded`
+            // means it is already done. Only a failed run may be re-driven.
             throw new ApiError(
               409,
               "processing_already_started",
               "Processing has already started.",
             );
           }
+          if (runState) await repositories.pipelineRuns.reopenFailed(key);
 
           return input;
         });

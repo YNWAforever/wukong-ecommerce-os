@@ -2,7 +2,10 @@ import { and, eq, exists, lt, not, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { listingPipelineRuns, listingPipelineSteps } from "../schema.js";
 
-export type PipelineResult = { status: "in_review" | "needs_info"; versionId: string | null };
+export type PipelineResult = {
+  status: "in_review" | "needs_info";
+  versionId: string | null;
+};
 export type PipelineStepName = "started" | "extracted" | "generated";
 export type PipelineRunState = {
   idempotencyKey: string;
@@ -10,13 +13,29 @@ export type PipelineRunState = {
   resultStatus: PipelineResult["status"] | null;
   versionId: string | null;
   errorCode: string | null;
-  steps: ReadonlyMap<PipelineStepName, { state: "running" | "completed"; output: unknown }>;
+  steps: ReadonlyMap<
+    PipelineStepName,
+    { state: "running" | "completed"; output: unknown }
+  >;
 };
+/**
+ * How long a claimed step is treated as live before another delivery may steal
+ * it. Must outlive the worst-case provider call, or a redelivery reclaims a
+ * step that is still running and the extraction is paid for twice.
+ */
+export const PIPELINE_STEP_LEASE_MS = 300_000;
+
 export type StepClaim = {
   claimed: boolean;
   completed: boolean;
   output: unknown;
   leaseToken: string | null;
+  /**
+   * When the blocking lease goes stale, set only when another holder owns the
+   * step. Callers schedule their retry from this instead of a flat delay --
+   * a redelivery before this instant can only fail the same way.
+   */
+  leaseExpiresAt: Date | null;
 };
 export type PipelineRunRepository = {
   getCompleted(key: string): Promise<PipelineResult | null>;
@@ -57,6 +76,14 @@ export type PipelineRunRepository = {
     step: PipelineStepName;
     leaseToken: string;
   }): Promise<void>;
+  /**
+   * Returns a failed run to `started` so an operator can re-drive it, and drops
+   * any step still marked `running`. A failed run has no live worker by
+   * definition -- those rows are orphaned leases, and leaving them would block
+   * the retry until they went stale. Completed steps are kept so the retry does
+   * not pay for extraction again. No-op unless the run is currently failed.
+   */
+  reopenFailed(idempotencyKey: string): Promise<boolean>;
 };
 
 export function createPipelineRunRepository(
@@ -100,12 +127,18 @@ export function createPipelineRunRepository(
       run.listingId !== input.listingId ||
       run.activeVersionSequence !== input.activeVersionSequence
     ) {
-      throw new Error("pipeline recovery run does not match queued listing revision");
+      throw new Error(
+        "pipeline recovery run does not match queued listing revision",
+      );
     }
     return run;
   };
 
-  const stepLeaseExists = (runId: unknown, step: PipelineStepName, leaseToken: string) =>
+  const stepLeaseExists = (
+    runId: unknown,
+    step: PipelineStepName,
+    leaseToken: string,
+  ) =>
     exists(
       transaction
         .select({ one: sql.raw("1") })
@@ -166,14 +199,9 @@ export function createPipelineRunRepository(
           versionId: listingPipelineRuns.versionId,
         })
         .from(listingPipelineRuns)
-        .where(
-          and(runWhere(key), eq(listingPipelineRuns.status, "succeeded")),
-        )
+        .where(and(runWhere(key), eq(listingPipelineRuns.status, "succeeded")))
         .limit(1);
-      if (
-        !run?.status ||
-        !["in_review", "needs_info"].includes(run.status)
-      ) {
+      if (!run?.status || !["in_review", "needs_info"].includes(run.status)) {
         return null;
       }
       return {
@@ -243,7 +271,13 @@ export function createPipelineRunRepository(
       scope.assertOpen();
       const run = await ensureRun(input);
       if (run.status === "succeeded") {
-        return { claimed: false, completed: true, output: null, leaseToken: null };
+        return {
+          claimed: false,
+          completed: true,
+          output: null,
+          leaseToken: null,
+          leaseExpiresAt: null,
+        };
       }
 
       const inserted = await transaction
@@ -267,6 +301,7 @@ export function createPipelineRunRepository(
           completed: false,
           output: null,
           leaseToken: inserted[0]!.leaseToken,
+          leaseExpiresAt: null,
         };
       }
 
@@ -294,10 +329,11 @@ export function createPipelineRunRepository(
           completed: true,
           output: existing.output,
           leaseToken: null,
+          leaseExpiresAt: null,
         };
       }
 
-      const staleBefore = new Date(Date.now() - 300_000);
+      const staleBefore = new Date(Date.now() - PIPELINE_STEP_LEASE_MS);
       const reclaimed = await transaction
         .update(listingPipelineSteps)
         .set({
@@ -319,8 +355,17 @@ export function createPipelineRunRepository(
             completed: false,
             output: null,
             leaseToken: reclaimed[0]!.leaseToken,
+            leaseExpiresAt: null,
           }
-        : { claimed: false, completed: false, output: null, leaseToken: null };
+        : {
+            claimed: false,
+            completed: false,
+            output: null,
+            leaseToken: null,
+            leaseExpiresAt: new Date(
+              existing.updatedAt.getTime() + PIPELINE_STEP_LEASE_MS,
+            ),
+          };
     },
 
     async recordStep(input) {
@@ -416,6 +461,41 @@ export function createPipelineRunRepository(
             ),
             eq(listingPipelineRuns.status, "started"),
             leaseGuard,
+          ),
+        )
+        .returning({ id: listingPipelineRuns.id });
+      return updated.length > 0;
+    },
+
+    async reopenFailed(idempotencyKey) {
+      scope.assertOpen();
+      const [run] = await transaction
+        .select({ id: listingPipelineRuns.id })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            runWhere(idempotencyKey),
+            eq(listingPipelineRuns.status, "failed"),
+          ),
+        )
+        .limit(1);
+      if (!run) return false;
+      await transaction
+        .delete(listingPipelineSteps)
+        .where(
+          and(
+            eq(listingPipelineSteps.workspaceId, workspaceId),
+            eq(listingPipelineSteps.pipelineRunId, run.id),
+            eq(listingPipelineSteps.state, "running"),
+          ),
+        );
+      const updated = await transaction
+        .update(listingPipelineRuns)
+        .set({ status: "started", errorCode: null, updatedAt: new Date() })
+        .where(
+          and(
+            runWhere(idempotencyKey),
+            eq(listingPipelineRuns.status, "failed"),
           ),
         )
         .returning({ id: listingPipelineRuns.id });

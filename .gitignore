@@ -3,6 +3,7 @@ worktrees/
 .superpowers/
 node_modules/
 .turbo/
+.wrangler/
 dist/
 coverage/
 .env

@@ -11,6 +11,7 @@ export { NOTE_SOURCE_ID } from "./contracts.js";
 export { FakeListingProvider } from "./fake-listing-provider.js";
 export {
   ListingProviderError,
+  LISTING_PROVIDER_REQUEST_TIMEOUT_MS,
   OpenAIListingProvider,
   ProviderApiError,
   ProviderOutputError,
