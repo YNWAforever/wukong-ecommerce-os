@@ -16,25 +16,15 @@ type Options = {
   fetch?: typeof globalThis.fetch;
 };
 
-export type QueueIngressReason =
-  | "not_configured"
-  | "unsupported_path"
-  | "invalid_payload"
-  | "rejected"
-  | "unreachable";
-
-// The message stays "queue_unavailable" so nothing about the ingress reaches a
-// caller. The reason exists for the operator: without it, an unset variable, a
-// refused signature and an unreachable Worker are the same single word.
 export class QueueIngressError extends Error {
-  constructor(readonly reason: QueueIngressReason) {
-    super("queue_unavailable");
+  constructor(message: "queue_unavailable") {
+    super(message);
     this.name = "QueueIngressError";
   }
 }
 
-function queueUnavailable(reason: QueueIngressReason): QueueIngressError {
-  return new QueueIngressError(reason);
+function queueUnavailable(): QueueIngressError {
+  return new QueueIngressError("queue_unavailable");
 }
 
 export function createCloudflareIngressClient(
@@ -46,24 +36,16 @@ export function createCloudflareIngressClient(
         const env = options.env ?? process.env;
         const ingressUrl = env.QUEUE_INGRESS_URL?.trim();
         const secret = env.QUEUE_INGRESS_SECRET?.trim();
-        if (!ingressUrl || !secret) throw queueUnavailable("not_configured");
+        if (!ingressUrl || !secret) throw queueUnavailable();
         const schema =
           path === LISTING_INGRESS_PATH
             ? listingJobSchema
             : path === SHOPLINE_INGRESS_PATH
               ? shoplinePublishJobSchema
               : null;
-        if (!schema) throw queueUnavailable("unsupported_path");
+        if (!schema) throw queueUnavailable();
 
-        let body: string;
-        try {
-          body = JSON.stringify(schema.parse(payload));
-        } catch {
-          // Separated from the transport below. Reporting a rejected payload
-          // as unreachable would send an operator to inspect the network.
-          throw queueUnavailable("invalid_payload");
-        }
-
+        const body = JSON.stringify(schema.parse(payload));
         const timestamp = Math.floor((options.now ?? Date.now)() / 1_000);
         const signature = await signQueueRequest({
           secret,
@@ -71,31 +53,25 @@ export function createCloudflareIngressClient(
           path,
           body,
         });
-
-        let response: Response;
-        try {
-          response = await (options.fetch ?? globalThis.fetch)(
-            new URL(path, ingressUrl),
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-wukong-timestamp": String(timestamp),
-                "x-wukong-signature": signature,
-              },
-              body,
-              signal: AbortSignal.timeout(5_000),
+        const response = await (options.fetch ?? globalThis.fetch)(
+          new URL(path, ingressUrl),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-wukong-timestamp": String(timestamp),
+              "x-wukong-signature": signature,
             },
-          );
-        } catch {
-          throw queueUnavailable("unreachable");
-        }
-        if (response.status !== 202) throw queueUnavailable("rejected");
+            body,
+            signal: AbortSignal.timeout(5_000),
+          },
+        );
+        if (response.status !== 202) throw queueUnavailable();
 
         return { accepted: true };
       } catch (error) {
         if (error instanceof QueueIngressError) throw error;
-        throw queueUnavailable("unreachable");
+        throw queueUnavailable();
       }
     },
   };

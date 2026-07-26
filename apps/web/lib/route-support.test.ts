@@ -80,28 +80,6 @@ describe("withRouteErrors", () => {
     expect(lines).toEqual([]);
   });
 
-  it("reports an unavailable queue as 503 and names which failure it was", async () => {
-    const error = new Error("queue_unavailable");
-    error.name = "QueueIngressError";
-    const { response, lines } = await captureErrorLogs(() => {
-      throw Object.assign(error, { reason: "not_configured" });
-    });
-
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({
-      code: "queue_unavailable",
-      message: "The processing queue is unavailable.",
-    });
-    expect(lines).toContain(
-      JSON.stringify({
-        event: "route_error",
-        outcome: "failure",
-        reason: "queue_unavailable",
-        queueReason: "not_configured",
-      }),
-    );
-  });
-
   it("does not mistake an ordinary error for missing configuration", async () => {
     const impostor = new Error("nope");
     impostor.name = "RuntimeConfigurationError";
