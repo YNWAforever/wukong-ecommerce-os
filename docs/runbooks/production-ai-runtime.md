@@ -139,6 +139,14 @@ corepack pnpm --filter @wukong/db seed:shopline-connection
 
 The controlled command runs `packages/db/src/seed-shopline-connection.ts`. The SHOPLINE seed reads one token line from stdin and prints only safe IDs/domain fields. Never pass the token as an argument or environment variable. Confirm the Opak seed is idempotent and record only safe output.
 
+### Admin access is invite-only and single-operator
+
+`auth_get_eligible_user` returns a user only when both a `users` row and a `workspace_invites` row with status `pending` or `accepted` exist for the address. This seed is the only thing that creates that pair; there is no runtime path to request access, despite what the `/register` heading suggests.
+
+The seed is idempotent for the same address, but re-running it with a different `OPAK_OPERATOR_EMAIL` **renames the existing operator rather than adding one**. `upsertUser` conflicts on the fixed `OPAK_OPERATOR_ID` and overwrites the email, and `users.email` is `UNIQUE`. The previous address then fails the eligibility check, its `workspace_invites` row is left behind, and the existing credential and verified state stay attached to the renamed user. Treat a change of operator address as a replacement, not an addition.
+
+Every rejection along these flows is deliberately generic, so an address that was never seeded is indistinguishable on the wire from one that succeeded. When sign-in appears to do nothing, read `auth_audit_events` before suspecting mail or configuration: `magic_link_rejected` and `password_enrollment_rejected` mean the address is not eligible, and the flow stopped before mail was ever attempted.
+
 ## Preview and production sequence
 
 1. Require a clean-checkout gate for the exact commit.
