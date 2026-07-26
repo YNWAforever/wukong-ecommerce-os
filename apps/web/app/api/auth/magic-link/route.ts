@@ -3,12 +3,16 @@ import { z } from "zod";
 import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
 import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
-const schema = z.object({
-  email: z.email(),
-  callbackURL: z.string().max(2048).optional(),
-}).strict();
+const schema = z
+  .object({
+    email: z.email(),
+    callbackURL: z.string().max(2048).optional(),
+  })
+  .strict();
 
-export function createMagicLinkHandler(flow: Pick<AuthFlow, "requestMagicLink">) {
+export function createMagicLinkHandler(
+  flow: Pick<AuthFlow, "requestMagicLink">,
+) {
   return async function magicLink(request: Request): Promise<Response> {
     try {
       const input = schema.parse(await request.json());

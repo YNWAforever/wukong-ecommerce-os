@@ -28,61 +28,107 @@ describe("invite-aware auth routes", () => {
   it("returns one generic validation result without secret or account fields", async () => {
     const deps = flow();
     const handlers = [
-      [createRegisterHandler(deps), "/api/auth/register", { email: "admin@example.com", password: "must-not-be-accepted" }],
-      [createMagicLinkHandler(deps), "/api/auth/magic-link", { email: "admin@example.com", callbackURL: "/dashboard", token: "raw-token" }],
-      [createForgotPasswordHandler(deps), "/api/auth/forgot-password", { email: "admin@example.com", hash: "secret-hash" }],
+      [
+        createRegisterHandler(deps),
+        "/api/auth/register",
+        { email: "admin@example.com", password: "must-not-be-accepted" },
+      ],
+      [
+        createMagicLinkHandler(deps),
+        "/api/auth/magic-link",
+        {
+          email: "admin@example.com",
+          callbackURL: "/dashboard",
+          token: "raw-token",
+        },
+      ],
+      [
+        createForgotPasswordHandler(deps),
+        "/api/auth/forgot-password",
+        { email: "admin@example.com", hash: "secret-hash" },
+      ],
     ] as const;
     for (const [handler, path, body] of handlers) {
       const response = await handler(request(path, body));
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ ok: false, message: "Unable to complete this request." });
+      expect(await response.json()).toEqual({
+        ok: false,
+        message: "Unable to complete this request.",
+      });
     }
   });
 
   it("preserves safe callbacks and sanitizes unsafe callbacks before auth flows", async () => {
     const deps = flow();
     await createRegisterHandler(deps)(
-      request("/api/auth/register", { email: "admin@example.com", callbackURL: "/listings?view=mine" }),
+      request("/api/auth/register", {
+        email: "admin@example.com",
+        callbackURL: "/listings?view=mine",
+      }),
     );
     await createMagicLinkHandler(deps)(
-      request("/api/auth/magic-link", { email: "admin@example.com", callbackURL: "//evil.example" }),
+      request("/api/auth/magic-link", {
+        email: "admin@example.com",
+        callbackURL: "//evil.example",
+      }),
     );
     await createForgotPasswordHandler(deps)(
-      request("/api/auth/forgot-password", { email: "admin@example.com", callbackURL: "https://evil.example" }),
+      request("/api/auth/forgot-password", {
+        email: "admin@example.com",
+        callbackURL: "https://evil.example",
+      }),
     );
     expect(deps.requestEnrollment).toHaveBeenCalledWith({
-      email: "admin@example.com", callbackURL: "/listings?view=mine",
+      email: "admin@example.com",
+      callbackURL: "/listings?view=mine",
     });
     expect(deps.requestMagicLink).toHaveBeenCalledWith({
-      email: "admin@example.com", callbackURL: "/dashboard",
+      email: "admin@example.com",
+      callbackURL: "/dashboard",
     });
     expect(deps.requestPasswordReset).toHaveBeenCalledWith({
-      email: "admin@example.com", callbackURL: "/dashboard",
+      email: "admin@example.com",
+      callbackURL: "/dashboard",
     });
   });
 
   it("forwards all successful password cookies", async () => {
     const deps = flow();
     deps.passwordSignIn.mockResolvedValue({
-      ok: true, cookies: ["session=one; Path=/", "csrf=two; Path=/"],
+      ok: true,
+      cookies: ["session=one; Path=/", "csrf=two; Path=/"],
     });
     const response = await createPasswordHandler(deps)(
       request("/api/auth/password", {
-        email: "admin@example.com", password: "correct horse battery staple", callbackURL: "/dashboard",
+        email: "admin@example.com",
+        password: "correct horse battery staple",
+        callbackURL: "/dashboard",
       }),
     );
     expect(response.status).toBe(200);
-    expect(response.headers.getSetCookie()).toEqual(["session=one; Path=/", "csrf=two; Path=/"]);
-    expect(await response.json()).toEqual({ ok: true, message: "Authentication completed." });
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=one; Path=/",
+      "csrf=two; Path=/",
+    ]);
+    expect(await response.json()).toEqual({
+      ok: true,
+      message: "Authentication completed.",
+    });
   });
 
   it("maps password-policy failures to one public response", async () => {
     const deps = flow();
     const response = await createPasswordHandler(deps)(
-      request("/api/auth/password", { email: "admin@example.com", password: "short" }),
+      request("/api/auth/password", {
+        email: "admin@example.com",
+        password: "short",
+      }),
     );
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ ok: false, message: "Unable to complete this request." });
+    expect(await response.json()).toEqual({
+      ok: false,
+      message: "Unable to complete this request.",
+    });
   });
 });
 
@@ -94,7 +140,8 @@ describe("runtime auth flow construction", () => {
     });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
-      ok: false, message: "Authentication is not configured.",
+      ok: false,
+      message: "Authentication is not configured.",
     });
     expect(handle).not.toHaveBeenCalled();
   });
@@ -110,9 +157,10 @@ describe("runtime auth flow construction", () => {
   it("runs the handler with the constructed flow", async () => {
     const deps = flow();
     const response = await withRuntimeAuthFlow(
-      (constructed) => createMagicLinkHandler(constructed)(
-        request("/api/auth/magic-link", { email: "admin@example.com" }),
-      ),
+      (constructed) =>
+        createMagicLinkHandler(constructed)(
+          request("/api/auth/magic-link", { email: "admin@example.com" }),
+        ),
       () => deps as never,
     );
     expect(response.status).toBe(200);

@@ -3,11 +3,13 @@ import { z } from "zod";
 import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
 import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
-const schema = z.object({
-  email: z.email(),
-  password: z.string().min(12).max(128),
-  callbackURL: z.string().max(2048).optional(),
-}).strict();
+const schema = z
+  .object({
+    email: z.email(),
+    password: z.string().min(12).max(128),
+    callbackURL: z.string().max(2048).optional(),
+  })
+  .strict();
 
 export function createPasswordHandler(flow: Pick<AuthFlow, "passwordSignIn">) {
   return async function password(request: Request): Promise<Response> {

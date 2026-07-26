@@ -3,10 +3,12 @@ import { z } from "zod";
 import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
 import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
-const schema = z.object({
-  email: z.email(),
-  callbackURL: z.string().max(2048).optional(),
-}).strict();
+const schema = z
+  .object({
+    email: z.email(),
+    callbackURL: z.string().max(2048).optional(),
+  })
+  .strict();
 
 export function createForgotPasswordHandler(
   flow: Pick<AuthFlow, "requestPasswordReset">,
