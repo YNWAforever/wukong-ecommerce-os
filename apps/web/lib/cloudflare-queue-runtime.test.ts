@@ -82,7 +82,7 @@ describe("Cloudflare queue ingress runtime", () => {
         ...shoplinePayload,
         payloadDigest: "must-not-cross-ingress",
       }),
-    ).rejects.toEqual(new QueueIngressError("queue_unavailable"));
+    ).rejects.toEqual(new QueueIngressError("invalid_payload"));
   });
 
   it("fails safely when ingress configuration is missing", async () => {
@@ -91,7 +91,7 @@ describe("Cloudflare queue ingress runtime", () => {
         LISTING_INGRESS_PATH,
         payload,
       ),
-    ).rejects.toEqual(new QueueIngressError("queue_unavailable"));
+    ).rejects.toEqual(new QueueIngressError("not_configured"));
   });
 
   it("fails safely when ingress does not accept the request", async () => {
@@ -106,7 +106,7 @@ describe("Cloudflare queue ingress runtime", () => {
     });
 
     await expect(client.enqueue(LISTING_INGRESS_PATH, payload)).rejects.toEqual(
-      new QueueIngressError("queue_unavailable"),
+      new QueueIngressError("rejected"),
     );
   });
 
@@ -125,7 +125,7 @@ describe("Cloudflare queue ingress runtime", () => {
     });
 
     await expect(client.enqueue(LISTING_INGRESS_PATH, payload)).rejects.toEqual(
-      new QueueIngressError("queue_unavailable"),
+      new QueueIngressError("unreachable"),
     );
     expect(timeout).toHaveBeenCalledWith(5_000);
   });

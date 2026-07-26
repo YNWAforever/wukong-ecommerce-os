@@ -252,10 +252,6 @@ test("keeps the formatting-debt waiver exact, hash-pinned, and fail-closed", () 
       "175f467561747ea218d165278e1e57eb4023b50761f81898b3a0f4dc0461cbc0",
     ],
     [
-      "apps/web/lib/listing-queue-runtime.ts",
-      "0140cf7c13dbc3dddd78e32fec238ff548e31b4a25b94558fd6d61c5f967ad68",
-    ],
-    [
       "apps/worker/src/listing-consumer.test.ts",
       "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
     ],
