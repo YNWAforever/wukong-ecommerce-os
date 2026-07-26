@@ -23,6 +23,16 @@ function asRuntimeConfigurationError(
     : null;
 }
 
+type QueueIngressFailure = Error & { reason: string };
+
+function asQueueIngressError(error: unknown): QueueIngressFailure | null {
+  if (!(error instanceof Error) || error.name !== "QueueIngressError") {
+    return null;
+  }
+  const { reason } = error as { reason?: unknown };
+  return typeof reason === "string" ? (error as QueueIngressFailure) : null;
+}
+
 function report(reason: string, detail: Record<string, string>): void {
   console.error(
     JSON.stringify({
@@ -107,6 +117,15 @@ export async function withRouteErrors(
       return jsonResponse(503, {
         code: "runtime_unavailable",
         message: "This feature is not configured.",
+      });
+    }
+
+    const queueFailure = asQueueIngressError(error);
+    if (queueFailure) {
+      report("queue_unavailable", { queueReason: queueFailure.reason });
+      return jsonResponse(503, {
+        code: "queue_unavailable",
+        message: "The processing queue is unavailable.",
       });
     }
 

@@ -1,7 +1,4 @@
-import {
-  LISTING_INGRESS_PATH,
-  type ListingJob,
-} from "@wukong/jobs";
+import { LISTING_INGRESS_PATH, type ListingJob } from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -26,14 +23,19 @@ export function createListingPublisher(
   options: Options = {},
 ): ListingPublisher {
   const ingressClient =
-    options.ingressClient ?? createCloudflareIngressClient({ env: options.env });
+    options.ingressClient ??
+    createCloudflareIngressClient({ env: options.env });
 
   return {
     async enqueue(input) {
       try {
         await ingressClient.enqueue(LISTING_INGRESS_PATH, input);
-      } catch {
-        throw new QueueIngressError("queue_unavailable");
+      } catch (error) {
+        // Keep the reason the client already determined. Replacing it here
+        // flattened every ingress failure into one indistinguishable word.
+        throw error instanceof QueueIngressError
+          ? error
+          : new QueueIngressError("unreachable");
       }
 
       return {
