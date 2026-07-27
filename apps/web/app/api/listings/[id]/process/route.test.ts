@@ -18,7 +18,16 @@ type HandlerOptions = {
   assets?: number;
   pipelineState?: "started" | "succeeded" | "failed" | null;
   enqueueError?: boolean;
+  unexpectedError?: boolean;
 };
+
+// What createListingPublisher actually throws: every ingress failure leaves it
+// as a QueueIngressError carrying the reason.
+function queueIngressError(reason: string): Error {
+  const error = new Error("queue_unavailable");
+  error.name = "QueueIngressError";
+  return Object.assign(error, { reason });
+}
 
 function handlerFor(options: HandlerOptions = {}) {
   const listing = {
@@ -27,7 +36,8 @@ function handlerFor(options: HandlerOptions = {}) {
     activeVersionSequence: 0,
   };
   const enqueue = vi.fn(async () => {
-    if (options.enqueueError) throw new Error("Redis unavailable");
+    if (options.unexpectedError) throw new TypeError("publisher exploded");
+    if (options.enqueueError) throw queueIngressError("not_configured");
     return { id: "job_1" };
   });
   const pipelineRunKeys: string[] = [];
@@ -207,11 +217,47 @@ describe("POST /api/listings/[id]/process", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 503 without changing the listing when Redis is unavailable", async () => {
+  it("returns 503 without changing the listing when the queue is unavailable", async () => {
     const { handler, listing } = handlerFor({ enqueueError: true });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handler(request, context());
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        code: "queue_unavailable",
+        message: "The processing queue is unavailable.",
+      });
+      // The reason has to survive the route. Rethrowing a generic ApiError here
+      // discarded it, so the log could not distinguish an unset variable from
+      // an unreachable Worker.
+      expect(logged.mock.calls.map(([line]) => String(line))).toContain(
+        JSON.stringify({
+          event: "route_error",
+          outcome: "failure",
+          reason: "queue_unavailable",
+          queueReason: "not_configured",
+        }),
+      );
+      expect(listing.status).toBe("received");
+    } finally {
+      logged.mockRestore();
+    }
+  });
 
-    expect((await handler(request, context())).status).toBe(503);
-    expect(listing.status).toBe("received");
+  it("does not label an unrelated fault a queue problem", async () => {
+    const { handler, listing } = handlerFor({ unexpectedError: true });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handler(request, context());
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({
+        code: "internal_error",
+        message: "The request could not be completed.",
+      });
+      expect(listing.status).toBe("received");
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("returns 404 for a foreign listing without enqueueing", async () => {
