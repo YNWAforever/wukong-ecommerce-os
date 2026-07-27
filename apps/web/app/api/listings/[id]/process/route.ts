@@ -107,18 +107,14 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
           return input;
         });
 
-      try {
-        const job = await deps.publisher.enqueue(input);
-        return jsonResponse(202, {
-          processing: { state: "queued", jobId: job.id },
-        });
-      } catch {
-        throw new ApiError(
-          503,
-          "queue_unavailable",
-          "Processing could not be queued. Try again.",
-        );
-      }
+      // Deliberately uncaught. withRouteErrors already answers a queue failure
+      // with 503 queue_unavailable and logs which failure it was. Catching it
+      // here to rethrow a generic ApiError discarded that reason, and labelled
+      // any unrelated fault a queue problem as well.
+      const job = await deps.publisher.enqueue(input);
+      return jsonResponse(202, {
+        processing: { state: "queued", jobId: job.id },
+      });
     });
   };
 }

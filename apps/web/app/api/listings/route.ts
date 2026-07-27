@@ -6,6 +6,7 @@ import { listingPublisher } from "../../../lib/listing-queue-runtime";
 import {
   ApiError,
   jsonResponse,
+  queueIngressReason,
   requireSessionContext,
   withRouteErrors,
 } from "../../../lib/route-support";
@@ -130,18 +131,23 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
             jobId: job.id,
           }),
         );
-      } catch {
+      } catch (error) {
         processing = {
           state: "retry_required",
           jobId: null,
           errorCode: "queue_unavailable",
         };
+        // The draft is deliberately kept and the request still succeeds, so
+        // this log is the only record of why the queue could not take it.
+        // Without the reason, an unset variable and an unreachable Worker are
+        // the same line.
         console.error(
           JSON.stringify({
             event: "listing.enqueue_failed",
             workspaceId: context.workspaceId,
             listingId: listing.id,
             errorCode: "queue_unavailable",
+            queueReason: queueIngressReason(error) ?? "unknown",
           }),
         );
       }

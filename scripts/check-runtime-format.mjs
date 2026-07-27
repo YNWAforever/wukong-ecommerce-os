@@ -39,10 +39,6 @@ const knownFormatDebt = new Map([
     "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
   ],
   [
-    "apps/web/app/api/listings/route.create.test.ts",
-    "175f467561747ea218d165278e1e57eb4023b50761f81898b3a0f4dc0461cbc0",
-  ],
-  [
     "apps/worker/src/listing-consumer.test.ts",
     "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
   ],

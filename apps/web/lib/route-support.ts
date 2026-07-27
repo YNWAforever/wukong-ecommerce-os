@@ -33,6 +33,13 @@ function asQueueIngressError(error: unknown): QueueIngressFailure | null {
   return typeof reason === "string" ? (error as QueueIngressFailure) : null;
 }
 
+// For the enqueue sites that deliberately do not fail the request. They still
+// have to say why the queue was unavailable, and detection belongs in one
+// place rather than being re-implemented per route.
+export function queueIngressReason(error: unknown): string | null {
+  return asQueueIngressError(error)?.reason ?? null;
+}
+
 function report(reason: string, detail: Record<string, string>): void {
   console.error(
     JSON.stringify({
