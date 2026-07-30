@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { S3AssetStore, type S3Presigner, type S3Transport } from "./s3-asset-store.js";
+import { ASSET_EXPORT_READ_TTL_MS } from "./asset-store.js";
+import {
+  S3AssetStore,
+  type S3Presigner,
+  type S3Transport,
+} from "./s3-asset-store.js";
 
 describe("S3AssetStore", () => {
   it("presigns a constrained PUT for exactly ten minutes", async () => {
@@ -17,7 +22,11 @@ describe("S3AssetStore", () => {
       expiresIn = options.expiresIn;
       return "https://storage.example/upload";
     };
-    const store = new S3AssetStore({ bucket: "test-bucket", transport, presign });
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport,
+      presign,
+    });
 
     const result = await store.createUpload({
       workspaceId: "ws_opak",
@@ -48,7 +57,10 @@ describe("S3AssetStore", () => {
     });
 
     await expect(
-      store.head("ws_opak", "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/file.pdf"),
+      store.head(
+        "ws_opak",
+        "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/file.pdf",
+      ),
     ).resolves.toEqual({ size: 1200, mimeType: "application/pdf" });
   });
 
@@ -70,5 +82,31 @@ describe("S3AssetStore", () => {
       store.createReadUrl("ws_opak", "ws/ws_other/sources/a/file.pdf"),
     ).rejects.toThrow(/workspace/i);
     expect(calls).toBe(0);
+  });
+
+  it("presigns a read for the caller's lifetime and defaults to ten minutes", async () => {
+    const seen: number[] = [];
+    const presign: S3Presigner = async (_transport, _command, options) => {
+      seen.push(options.expiresIn);
+      return "https://storage.example/read";
+    };
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: {
+        async send() {
+          return {};
+        },
+      },
+      presign,
+    });
+    const key =
+      "ws/ws_opak/sources/4f2807b3-73b8-4f74-9d2f-3359ef36a243/800x.webp";
+
+    await store.createReadUrl("ws_opak", key);
+    await store.createReadUrl("ws_opak", key, {
+      expiresInMs: ASSET_EXPORT_READ_TTL_MS,
+    });
+
+    expect(seen).toEqual([600, 604_800]);
   });
 });
