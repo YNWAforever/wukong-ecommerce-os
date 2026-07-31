@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { resolveListingImageUrls } from "@wukong/assets";
+import {
+  ASSET_EXPORT_READ_TTL_MS,
+  resolveListingImageUrls,
+} from "@wukong/assets";
 import { SHOPLINE_INGRESS_PATH } from "@wukong/jobs";
 
 import {
@@ -163,6 +166,10 @@ export function defaultDelivery(
                   imageAssetIds,
                   sourceAssets: repositories.sourceAssets,
                   assetStore,
+                  // The operator downloads this file and uploads it to SHOPLINE
+                  // by hand. Ten minutes expires before SHOPLINE ever fetches
+                  // the images.
+                  readTtlMs: ASSET_EXPORT_READ_TTL_MS,
                 }),
               audit: repositories.audit,
               publisher: {

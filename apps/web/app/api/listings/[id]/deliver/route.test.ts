@@ -1,3 +1,4 @@
+import { ASSET_EXPORT_READ_TTL_MS } from "@wukong/assets";
 import { describe, expect, it, vi } from "vitest";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -363,7 +364,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     });
   });
 
-  it("uses the default runtime to resolve owned listing images", async () => {
+  it("signs CSV image URLs for the export lifetime, not the in-app one", async () => {
     const listingContent = {
       sku: "OPAK-001",
       producer: "Opak",
@@ -469,8 +470,16 @@ describe("POST /api/listings/[id]/deliver", () => {
     );
     expect(sourceAssets.getByIds).toHaveBeenCalledWith(["asset_b", "asset_a"]);
     expect(createReadUrl.mock.calls).toEqual([
-      ["ws_opak", "ws/ws_opak/sources/asset-b/b.webp"],
-      ["ws_opak", "ws/ws_opak/sources/asset-a/a.png"],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-b/b.webp",
+        { expiresInMs: ASSET_EXPORT_READ_TTL_MS },
+      ],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-a/a.png",
+        { expiresInMs: ASSET_EXPORT_READ_TTL_MS },
+      ],
     ]);
   });
 });
