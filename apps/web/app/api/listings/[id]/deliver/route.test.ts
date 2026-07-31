@@ -42,6 +42,23 @@ const deliveryContent = {
   imageAssetIds: [],
 };
 
+const imageAssets = [
+  {
+    id: "asset_a",
+    workspaceId: "ws_opak",
+    listingId,
+    kind: "image/png",
+    storageKey: "ws/ws_opak/sources/asset-a/a.png",
+  },
+  {
+    id: "asset_b",
+    workspaceId: "ws_opak",
+    listingId,
+    kind: "image/webp",
+    storageKey: "ws/ws_opak/sources/asset-b/b.webp",
+  },
+];
+
 function routeContext() {
   return { params: Promise.resolve({ id: listingId }) };
 }
@@ -84,7 +101,7 @@ function makeHandler(
   return { handler, calls };
 }
 
-function makeDefaultRuntime() {
+function makeDefaultRuntime({ images = false } = {}) {
   const audits: any[] = [];
   const order: string[] = [];
   const job = {
@@ -102,7 +119,9 @@ function makeDefaultRuntime() {
           activeVersion: {
             id: versionId,
             sequence: 1,
-            content: deliveryContent,
+            content: images
+              ? { ...deliveryContent, imageAssetIds: ["asset_b", "asset_a"] }
+              : deliveryContent,
           },
           flags: [],
         };
@@ -110,7 +129,7 @@ function makeDefaultRuntime() {
     },
     sourceAssets: {
       async getByIds() {
-        return [];
+        return images ? imageAssets : [];
       },
     },
     shoplineConnections: {
@@ -151,13 +170,23 @@ function makeDefaultRuntime() {
       ) => work(repositories),
     ),
   };
+  const createReadUrl = vi.fn(
+    async (_workspaceId: string, storageKey: string) => ({
+      url: `https://signed.example/${encodeURIComponent(storageKey)}`,
+      expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+    }),
+  );
   runtimeMocks.getDatabase.mockReturnValue(database);
-  runtimeMocks.getAssetStore.mockReturnValue({
-    async createReadUrl() {
-      throw new Error("no image URLs expected");
-    },
-  });
-  return { audits, order, job, database };
+  runtimeMocks.getAssetStore.mockReturnValue(
+    images
+      ? { createReadUrl }
+      : {
+          async createReadUrl() {
+            throw new Error("no image URLs expected");
+          },
+        },
+  );
+  return { audits, order, job, database, createReadUrl };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -389,24 +418,7 @@ describe("POST /api/listings/[id]/deliver", () => {
       tags: ["wine"],
       imageAssetIds: ["asset_b", "asset_a"],
     };
-    const sourceAssets = {
-      getByIds: vi.fn(async () => [
-        {
-          id: "asset_a",
-          workspaceId: "ws_opak",
-          listingId,
-          kind: "image/png",
-          storageKey: "ws/ws_opak/sources/asset-a/a.png",
-        },
-        {
-          id: "asset_b",
-          workspaceId: "ws_opak",
-          listingId,
-          kind: "image/webp",
-          storageKey: "ws/ws_opak/sources/asset-b/b.webp",
-        },
-      ]),
-    };
+    const sourceAssets = { getByIds: vi.fn(async () => imageAssets) };
     const repositories = {
       listings: {
         async requireForPublish() {
@@ -479,6 +491,36 @@ describe("POST /api/listings/[id]/deliver", () => {
         "ws_opak",
         "ws/ws_opak/sources/asset-a/a.png",
         { expiresInMs: ASSET_EXPORT_READ_TTL_MS },
+      ],
+    ]);
+  });
+
+  it("leaves SHOPLINE API image URLs on the short lifetime", async () => {
+    const runtime = makeDefaultRuntime({ images: true });
+    const ingressClient = {
+      async enqueue() {
+        return { accepted: true as const };
+      },
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(result.kind).toBe("queued");
+    expect(runtime.createReadUrl.mock.calls).toEqual([
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-b/b.webp",
+        { expiresInMs: undefined },
+      ],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-a/a.png",
+        { expiresInMs: undefined },
       ],
     ]);
   });
