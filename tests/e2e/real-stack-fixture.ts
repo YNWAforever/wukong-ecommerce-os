@@ -6,27 +6,12 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { expect, type Page } from "@playwright/test";
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import postgres from "postgres";
 
 import { S3AssetStore } from "../../packages/assets/src/s3-asset-store.js";
 import { verifyAudit } from "../../packages/db/src/cli/audit-verify.js";
-
-const execFileAsync = promisify(execFile);
-
-async function runPnpm(args: string[], env: NodeJS.ProcessEnv) {
-  const windows = process.platform === "win32";
-  const command = windows ? (process.env.ComSpec ?? "cmd.exe") : "pnpm";
-  const commandArgs = windows
-    ? ["/d", "/s", "/c", ["pnpm.cmd", ...args].join(" ")]
-    : args;
-  await execFileAsync(command, commandArgs, {
-    cwd: process.cwd(),
-    env,
-  });
-}
+import { runPnpm } from "./run-pnpm.js";
 
 export const OPAK_WORKSPACE_ID = "ws_opak";
 export const OPAK_ADMIN_EMAIL = "opak-admin-e2e@local.invalid";
