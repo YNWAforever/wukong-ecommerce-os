@@ -53,9 +53,11 @@ describe("resolveListingImageUrls", () => {
     });
 
     expect(deps.getByIds).toHaveBeenCalledWith([assetB.id, assetA.id]);
+    // The pipeline fetches these itself, so it keeps the short default rather
+    // than the export lifetime a downloaded CSV needs.
     expect(deps.createReadUrl.mock.calls).toEqual([
-      [workspaceId, assetB.storageKey],
-      [workspaceId, assetA.storageKey],
+      [workspaceId, assetB.storageKey, { expiresInMs: undefined }],
+      [workspaceId, assetA.storageKey, { expiresInMs: undefined }],
     ]);
     expect(urls).toEqual([
       `https://signed.example/${encodeURIComponent(assetB.storageKey)}`,

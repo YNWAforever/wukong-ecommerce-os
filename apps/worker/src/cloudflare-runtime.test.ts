@@ -85,6 +85,7 @@ describe("Cloudflare runtime", () => {
     expect(createReadUrl).toHaveBeenCalledWith(
       "ws_opak",
       "ws/ws_opak/sources/asset-a/a.png",
+      { expiresInMs: undefined },
     );
   });
 });
