@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
+// Seven days is the SigV4 ceiling for a presigned URL. An exported CSV is carried
+// to SHOPLINE by a person, so the ten-minute upload window does not apply to the
+// image URLs inside it.
+export const ASSET_EXPORT_READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_ASSET_SIZE = 20 * 1024 * 1024;
 
 export const SUPPORTED_ASSET_MIME_TYPES = [
@@ -40,6 +44,7 @@ export interface AssetStore {
   createReadUrl(
     workspaceId: string,
     key: string,
+    options?: { expiresInMs?: number },
   ): Promise<{ url: string; expiresAt: Date }>;
   head(workspaceId: string, key: string): Promise<AssetObjectMetadata | null>;
   exists(workspaceId: string, key: string): Promise<boolean>;
@@ -62,7 +67,9 @@ export function assertAssetKey(workspaceId: string, key: string): void {
   if (
     segments.length !== 2 ||
     segments.some((segment) => segment.length === 0) ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segments[0] ?? "")
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      segments[0] ?? "",
+    )
   ) {
     throw new AssetInputError("Invalid asset key");
   }
@@ -102,7 +109,11 @@ export function assertAssetInput(input: CreateUploadInput): void {
   if (!SUPPORTED_ASSET_MIME_TYPES.includes(input.mimeType)) {
     throw new AssetInputError("Unsupported MIME type");
   }
-  if (!Number.isSafeInteger(input.size) || input.size <= 0 || input.size > MAX_ASSET_SIZE) {
+  if (
+    !Number.isSafeInteger(input.size) ||
+    input.size <= 0 ||
+    input.size > MAX_ASSET_SIZE
+  ) {
     throw new AssetInputError("File must be between 1 byte and 20 MB");
   }
 }
@@ -124,11 +135,16 @@ export class MemoryAssetStore implements AssetStore {
     };
   }
 
-  async createReadUrl(workspaceId: string, key: string) {
+  async createReadUrl(
+    workspaceId: string,
+    key: string,
+    options?: { expiresInMs?: number },
+  ) {
     assertAssetKey(workspaceId, key);
+    const lifetimeMs = options?.expiresInMs ?? ASSET_UPLOAD_TTL_MS;
     return {
       url: `memory://read/${encodeURIComponent(key)}`,
-      expiresAt: new Date(Date.now() + ASSET_UPLOAD_TTL_MS),
+      expiresAt: new Date(Date.now() + lifetimeMs),
     };
   }
 
@@ -141,7 +157,11 @@ export class MemoryAssetStore implements AssetStore {
     return (await this.head(workspaceId, key)) !== null;
   }
 
-  putObject(workspaceId: string, key: string, metadata: AssetObjectMetadata): void {
+  putObject(
+    workspaceId: string,
+    key: string,
+    metadata: AssetObjectMetadata,
+  ): void {
     assertAssetKey(workspaceId, key);
     this.#objects.set(key, metadata);
   }
