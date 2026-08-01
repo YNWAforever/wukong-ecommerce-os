@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import postgres from "postgres";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-const execFileAsync = promisify(execFile);
+
+import { runPnpm } from "./e2e/run-pnpm.js";
+
+const REAL_STACK_RUN = process.env.PLAYWRIGHT_E2E === "1";
+
 test.skip(
-  process.env.PLAYWRIGHT_E2E === "1",
+  REAL_STACK_RUN,
   "Auth E2E requires the disposable Postgres/Mailpit stack.",
 );
 
@@ -162,14 +164,15 @@ async function followCapturedUrl(page: Page, captured: string) {
 }
 
 test.beforeAll(async () => {
-  await execFileAsync("pnpm.cmd", ["--filter", "@wukong/db", "db:migrate"], {
-    cwd: process.cwd(),
-    shell: true,
-    env: {
-      ...process.env,
-      DATABASE_URL: RUNTIME_URL,
-      DATABASE_ADMIN_URL: ADMIN_URL,
-    },
+  // Playwright still runs file-level hooks when every test in the file is
+  // skipped, so the skip condition has to be repeated here. A suite that will
+  // not run must not migrate a database it is never going to read — and on the
+  // real-stack run that database belongs to the other fixture.
+  if (REAL_STACK_RUN) return;
+  await runPnpm(["--filter", "@wukong/db", "db:migrate"], {
+    ...process.env,
+    DATABASE_URL: RUNTIME_URL,
+    DATABASE_ADMIN_URL: ADMIN_URL,
   });
 });
 test.beforeEach(async () => {
