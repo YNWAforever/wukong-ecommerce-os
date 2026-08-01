@@ -137,4 +137,30 @@ describe("authenticatedWorkerHealth", () => {
     expect(health.checks.hyperdriveConnects).toBe(false);
     expect(database.close).toHaveBeenCalled();
   });
+
+  it("survives the database factory throwing", async () => {
+    const health = await authenticatedWorkerHealth(env(), {
+      createDatabase: () => {
+        throw new Error("HYPERDRIVE binding is required");
+      },
+    });
+
+    expect(health.authenticated).toBe(true);
+    expect(health.checks.hyperdriveConnects).toBe(false);
+  });
+
+  it("survives close() rejecting after a successful ping", async () => {
+    const database = {
+      ping: vi.fn(async () => undefined),
+      close: vi.fn(async () => {
+        throw new Error("socket already gone");
+      }),
+    };
+
+    const health = await authenticatedWorkerHealth(env(), {
+      createDatabase: () => database as never,
+    });
+
+    expect(health.checks.hyperdriveConnects).toBe(true);
+  });
 });

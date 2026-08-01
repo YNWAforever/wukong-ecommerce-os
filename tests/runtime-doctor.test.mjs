@@ -10,6 +10,7 @@ import {
   checkHealthGet,
   checkHealthSigned,
   signHealthProbe,
+  vercelEnvCheck,
 } from "../scripts/runtime-doctor.mjs";
 import { planQueueCreation } from "../scripts/provision-queues.mjs";
 
@@ -57,6 +58,24 @@ test("an unknown check blocks dependents but is not a failure", () => {
 
   assert.equal(resolved[0].status, "unknown");
   assert.equal(resolved[1].status, "blocked");
+});
+
+test("an unresolvable dependsOn is unknown, never silently ok", () => {
+  const resolved = resolveStatuses([
+    { id: "health-get", status: "ok", detail: "fine", dependsOn: "typo-id" },
+  ]);
+
+  assert.equal(resolved[0].status, "unknown");
+  assert.match(resolved[0].detail, /typo-id/);
+});
+
+test("a dependsOn declared later in the array does not silently pass", () => {
+  const resolved = resolveStatuses([
+    { id: "health-get", status: "ok", detail: "fine", dependsOn: "queues" },
+    { id: "queues", status: "failed", detail: "missing", fix: "x" },
+  ]);
+
+  assert.notEqual(resolved[0].status, "ok");
 });
 
 test("passing checks leave dependents to run", () => {
@@ -233,6 +252,14 @@ test("signHealthProbe matches the queue signing algorithm", () => {
   });
 
   assert.equal(signature, "6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
+});
+
+test("vercelEnvCheck names the environment it was run for", () => {
+  const check = vercelEnvCheck(undefined, undefined, "preview");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.fix, /preview/);
+  assert.doesNotMatch(check.fix, /production/);
 });
 
 test("planQueueCreation creates only the queues that are absent", () => {

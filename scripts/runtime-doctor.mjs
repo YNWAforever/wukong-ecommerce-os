@@ -20,16 +20,33 @@ export function resolveStatuses(checks) {
   const byId = new Map();
   const resolved = [];
   for (const check of checks) {
-    const dependency = check.dependsOn ? byId.get(check.dependsOn) : undefined;
-    const blocked = dependency && dependency.status !== "ok";
-    const entry = blocked
-      ? {
+    let entry;
+    if (check.dependsOn) {
+      const dependency = byId.get(check.dependsOn);
+      if (!dependency) {
+        // The dependency id was never resolved before this point — either it
+        // is a typo that appears nowhere in `checks`, or it names a check
+        // that comes later in the array. Either way we genuinely do not know
+        // its status, so this must never fall through to the check's own
+        // (possibly "ok") status.
+        entry = {
+          ...check,
+          status: "unknown",
+          detail: `dependsOn references unresolved check id "${check.dependsOn}"`,
+        };
+      } else if (dependency.status !== "ok") {
+        entry = {
           ...check,
           status: "blocked",
           detail: `blocked by ${check.dependsOn}`,
           fix: dependency.fix,
-        }
-      : { ...check, status: check.status ?? "unknown" };
+        };
+      } else {
+        entry = { ...check, status: check.status ?? "unknown" };
+      }
+    } else {
+      entry = { ...check, status: check.status ?? "unknown" };
+    }
     byId.set(entry.id, entry);
     resolved.push(entry);
   }
@@ -163,8 +180,11 @@ export function checkHealthSigned(result) {
       id: "health-signed",
       status: "failed",
       // The defining failure: both sides look configured, neither agrees.
-      detail: "Vercel's QUEUE_INGRESS_SECRET does not match the Worker's",
-      fix: "wrangler secret put QUEUE_INGRESS_SECRET  # must equal the Vercel value",
+      // A stale clock past verifyQueueRequest's +-300s window produces the
+      // same 401 and is worth ruling out before rotating the secret.
+      detail:
+        "Vercel's QUEUE_INGRESS_SECRET does not match the Worker's (or the two clocks have drifted more than 300s)",
+      fix: "wrangler secret put QUEUE_INGRESS_SECRET  # must equal the Vercel value; if both sides already match, check for clock skew",
       dependsOn: "health-get",
     };
   }
@@ -319,7 +339,7 @@ function secretsCheck(config) {
       };
 }
 
-function vercelEnvCheck(url, secret) {
+export function vercelEnvCheck(url, secret, environment) {
   const missing = [
     ...(url ? [] : ["QUEUE_INGRESS_URL"]),
     ...(secret ? [] : ["QUEUE_INGRESS_SECRET"]),
@@ -328,7 +348,7 @@ function vercelEnvCheck(url, secret) {
     ? {
         status: "failed",
         detail: `missing ${missing.join(", ")} in this environment`,
-        fix: `vercel env add ${missing[0]} production`,
+        fix: `vercel env add ${missing[0]} ${environment}`,
       }
     : { status: "ok", detail: "ingress url and secret present" };
 }
@@ -363,7 +383,7 @@ async function main() {
   if (!preDeployOnly) {
     checks.push({
       id: "vercel-env",
-      ...vercelEnvCheck(ingressUrl, ingressSecret),
+      ...vercelEnvCheck(ingressUrl, ingressSecret, environment),
     });
     if (ingressUrl) {
       const health = await fetch(new URL("/health", ingressUrl)).then(
