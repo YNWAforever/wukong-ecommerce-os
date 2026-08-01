@@ -95,9 +95,13 @@ describe("Cloudflare runtime", () => {
       expect.any(Function),
     );
     expect(sourceAssets.getByIds).toHaveBeenCalledWith(["asset_a"]);
+    // The pipeline resolves images for in-app use, so it asks for no explicit
+    // lifetime and the asset store applies its own default. Only the CSV export
+    // path requests the long one.
     expect(createReadUrl).toHaveBeenCalledWith(
       "ws_opak",
       "ws/ws_opak/sources/asset-a/a.png",
+      { expiresInMs: undefined },
     );
   });
 });
