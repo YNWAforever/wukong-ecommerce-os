@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 const STATUS_LABEL = {
   ok: "OK   ",
   failed: "FAIL ",
@@ -119,4 +121,85 @@ export function checkHyperdrive(listJson, configuredId) {
     };
   }
   return { id: "hyperdrive", status: "ok", detail: "configured id exists" };
+}
+
+export function checkHealthGet(body) {
+  const bindings = body?.bindings ?? {};
+  const unresolved = Object.entries(bindings)
+    .filter(([, resolved]) => !resolved)
+    .map(([name]) => name);
+  if (unresolved.length) {
+    return {
+      id: "health-get",
+      status: "failed",
+      detail: `unresolved bindings: ${unresolved.join(", ")}`,
+      fix: "pnpm --filter @wukong/worker deploy:production",
+      dependsOn: "worker-secrets",
+    };
+  }
+  return {
+    id: "health-get",
+    status: "ok",
+    detail: `deployed, build ${body.buildSha}`,
+    dependsOn: "worker-secrets",
+  };
+}
+
+export function checkHealthSigned(result) {
+  if (result.error) {
+    return {
+      id: "health-signed",
+      status: "unknown",
+      detail: `worker unreachable: ${result.error}`,
+      fix: "check QUEUE_INGRESS_URL in Vercel",
+      dependsOn: "health-get",
+    };
+  }
+  if (result.status === 401) {
+    return {
+      id: "health-signed",
+      status: "failed",
+      // The defining failure: both sides look configured, neither agrees.
+      detail: "Vercel's QUEUE_INGRESS_SECRET does not match the Worker's",
+      fix: "wrangler secret put QUEUE_INGRESS_SECRET  # must equal the Vercel value",
+      dependsOn: "health-get",
+    };
+  }
+  if (result.status !== 200) {
+    return {
+      id: "health-signed",
+      status: "unknown",
+      detail: `unexpected status ${result.status}`,
+      fix: "check the worker deployment logs",
+      dependsOn: "health-get",
+    };
+  }
+  if (!result.body?.checks?.hyperdriveConnects) {
+    return {
+      id: "health-signed",
+      status: "failed",
+      detail:
+        "secret matches, but the database did not answer through Hyperdrive",
+      fix: "wrangler hyperdrive list --json  # confirm the connection string",
+      dependsOn: "health-get",
+    };
+  }
+  return {
+    id: "health-signed",
+    status: "ok",
+    detail: "secret agrees and the database answers",
+    dependsOn: "health-get",
+  };
+}
+
+/**
+ * Mirrors signQueueRequest in packages/jobs/src/cloudflare-queue.ts, which is
+ * the source of truth. Duplicated deliberately so the doctor has no build
+ * dependency — it must run when the workspace build is broken, which is exactly
+ * when you reach for it. The test vector fails loudly if the two diverge.
+ */
+export function signHealthProbe({ secret, timestamp, path, body }) {
+  return createHmac("sha256", secret)
+    .update(`${timestamp}\n${path}\n${body}`)
+    .digest("base64url");
 }

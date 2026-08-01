@@ -7,6 +7,9 @@ import {
   checkQueues,
   checkHyperdrive,
   expectedQueueNames,
+  checkHealthGet,
+  checkHealthSigned,
+  signHealthProbe,
 } from "../scripts/runtime-doctor.mjs";
 
 test("marks dependents of a failed check as blocked, not failed", () => {
@@ -153,4 +156,80 @@ test("checkHyperdrive matches the configured id", () => {
   assert.equal(checkHyperdrive(listed, "def456").status, "failed");
   assert.equal(checkHyperdrive(listed, "").status, "failed");
   assert.equal(checkHyperdrive("not json", "abc123").status, "unknown");
+});
+
+test("checkHealthGet fails when a binding is unresolved", () => {
+  const check = checkHealthGet({
+    buildSha: "abc",
+    adapterMode: "disabled",
+    bindings: {
+      hyperdrive: true,
+      listingQueue: true,
+      shoplineQueue: false,
+      ingressSecret: true,
+    },
+  });
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /shoplineQueue/);
+});
+
+test("checkHealthGet passes when every binding resolves", () => {
+  const check = checkHealthGet({
+    buildSha: "abc",
+    adapterMode: "disabled",
+    bindings: {
+      hyperdrive: true,
+      listingQueue: true,
+      shoplineQueue: true,
+      ingressSecret: true,
+    },
+  });
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkHealthSigned treats 401 as a secret mismatch, the failure this tool exists for", () => {
+  const check = checkHealthSigned({ status: 401 });
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /does not match/i);
+  assert.match(check.fix, /QUEUE_INGRESS_SECRET/);
+});
+
+test("checkHealthSigned fails when the database is unreachable", () => {
+  const check = checkHealthSigned({
+    status: 200,
+    body: { authenticated: true, checks: { hyperdriveConnects: false } },
+  });
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /database/i);
+});
+
+test("checkHealthSigned passes when the secret agrees and the database answers", () => {
+  const check = checkHealthSigned({
+    status: 200,
+    body: { authenticated: true, checks: { hyperdriveConnects: true } },
+  });
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkHealthSigned reports an unreachable worker as unknown", () => {
+  assert.equal(checkHealthSigned({ error: "ECONNREFUSED" }).status, "unknown");
+});
+
+// Pins the duplicated HMAC against packages/jobs/src/cloudflare-queue.ts. If
+// signQueueRequest's message format ever changes, this vector fails and the
+// doctor stops silently signing requests the Worker will reject.
+test("signHealthProbe matches the queue signing algorithm", () => {
+  const signature = signHealthProbe({
+    secret: "q".repeat(32),
+    timestamp: 1_784_556_000,
+    path: "/health",
+    body: "{}",
+  });
+
+  assert.equal(signature, "6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
 });
