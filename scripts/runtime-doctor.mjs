@@ -116,12 +116,6 @@ export function parseWranglerTable(text) {
   return { columns, rows };
 }
 
-function parseNames(json, key) {
-  const parsed = JSON.parse(json);
-  if (!Array.isArray(parsed)) throw new Error("expected a JSON array");
-  return parsed.map((entry) => entry?.[key]).filter(Boolean);
-}
-
 export function checkQueues(expected, listOutput, environment) {
   const table = parseWranglerTable(listOutput);
   if (!table) {
