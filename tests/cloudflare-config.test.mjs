@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+  classifyPreflight,
   parseSecretNames,
   verifyExactSecretNames,
 } from "../scripts/verify-cloudflare-secrets.mjs";
@@ -243,6 +244,38 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
     rootPackage.scripts.test,
     "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/runtime-doctor.test.mjs && turbo run test",
   );
+});
+
+test("preflight allows a first deploy when the Worker does not exist", () => {
+  const decision = classifyPreflight({
+    status: 1,
+    stdout: "",
+    stderr: 'Worker "wukong-runtime-production" not found.',
+  });
+
+  assert.equal(decision.allow, true);
+  assert.match(decision.warning, /does not exist/i);
+});
+
+test("preflight reaches the name comparison when the Worker exists", () => {
+  const decision = classifyPreflight({
+    status: 0,
+    stdout: JSON.stringify([{ name: "OPENAI_API_KEY" }]),
+    stderr: "",
+  });
+
+  assert.equal(decision.allow, true);
+  assert.equal(decision.warning, undefined);
+});
+
+test("preflight aborts when wrangler fails for any other reason", () => {
+  const decision = classifyPreflight({
+    status: 1,
+    stdout: "",
+    stderr: "network unreachable",
+  });
+
+  assert.equal(decision.allow, false);
 });
 
 test("restores preview configuration for downstream CI gates", () => {
