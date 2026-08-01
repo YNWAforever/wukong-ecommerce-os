@@ -14,6 +14,7 @@ import {
   signHealthProbe,
   vercelEnvCheck,
   parseWranglerTable,
+  classifySecretList,
 } from "../scripts/runtime-doctor.mjs";
 import { planQueueCreation } from "../scripts/provision-queues.mjs";
 
@@ -428,4 +429,63 @@ test("parseWranglerTable strips ANSI escapes", () => {
 test("parseWranglerTable returns null when there is no table", () => {
   assert.equal(parseWranglerTable("✘ [ERROR] Unknown argument: json"), null);
   assert.equal(parseWranglerTable(""), null);
+});
+
+test("classifySecretList names a Worker that does not exist", () => {
+  const check = classifySecretList(
+    {
+      status: 1,
+      stdout: "",
+      stderr: 'Worker "wukong-runtime-production" not found.',
+    },
+    ["QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /wukong-runtime-production/);
+  assert.match(check.detail, /does not exist/i);
+  assert.match(check.fix, /deploy/i);
+});
+
+test("classifySecretList reports missing secret names", () => {
+  const check = classifySecretList(
+    {
+      status: 0,
+      stdout: JSON.stringify([{ name: "OPENAI_API_KEY" }]),
+      stderr: "",
+    },
+    ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /QUEUE_INGRESS_SECRET/);
+});
+
+test("classifySecretList passes when every required name is set", () => {
+  const check = classifySecretList(
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        { name: "OPENAI_API_KEY" },
+        { name: "QUEUE_INGRESS_SECRET" },
+      ]),
+      stderr: "",
+    },
+    ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("classifySecretList reports an unreadable list as unknown", () => {
+  const check = classifySecretList(
+    { status: 1, stdout: "", stderr: "network unreachable" },
+    ["OPENAI_API_KEY"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "unknown");
 });

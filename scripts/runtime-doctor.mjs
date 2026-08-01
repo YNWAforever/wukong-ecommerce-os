@@ -398,29 +398,40 @@ function whoamiCheck() {
       };
 }
 
-function secretsCheck(config) {
-  const required = config.requiredSecrets ?? [];
-  let configured = [];
+/** A Worker that does not exist is a different, more fundamental problem than
+ *  unset secrets, and needs a different fix. */
+export function classifySecretList(result, required, worker) {
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (/Worker .*not found/i.test(output)) {
+    return {
+      id: "worker-secrets",
+      status: "failed",
+      detail: `Worker ${worker} does not exist yet`,
+      fix: "pnpm --filter @wukong/worker deploy:production  # creates the Worker, then set secrets",
+      dependsOn: "wrangler-auth",
+    };
+  }
+
+  let configured;
   try {
-    configured = JSON.parse(wrangler(["secret", "list"]).stdout).map(
-      (entry) => entry.name,
-    );
+    configured = JSON.parse(result.stdout).map((entry) => entry.name);
   } catch {
     return {
       id: "worker-secrets",
       status: "unknown",
       detail: "could not list worker secrets",
-      fix: "wrangler secret list",
+      fix: `pnpm --filter @wukong/worker exec wrangler secret list --name ${worker}`,
       dependsOn: "wrangler-auth",
     };
   }
+
   const missing = required.filter((name) => !configured.includes(name));
   return missing.length
     ? {
         id: "worker-secrets",
         status: "failed",
         detail: `missing ${missing.join(", ")}`,
-        fix: `wrangler secret put ${missing[0]}`,
+        fix: `pnpm --filter @wukong/worker exec wrangler secret put ${missing[0]} --name ${worker}`,
         dependsOn: "wrangler-auth",
       }
     : {
@@ -429,6 +440,19 @@ function secretsCheck(config) {
         detail: `${required.length} secrets set`,
         dependsOn: "wrangler-auth",
       };
+}
+
+function secretsCheck(config, environment) {
+  const worker = config.environments[environment].worker;
+  const result = wrangler([
+    "secret",
+    "list",
+    "--name",
+    worker,
+    "--format",
+    "json",
+  ]);
+  return classifySecretList(result, config.requiredSecrets ?? [], worker);
 }
 
 export function vercelEnvCheck(url, secret, environment) {
@@ -469,7 +493,7 @@ async function main() {
       wrangler(["hyperdrive", "list", "--json"]).stdout,
       process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
     ),
-    secretsCheck(config),
+    secretsCheck(config, environment),
   ];
 
   if (!preDeployOnly) {
