@@ -78,6 +78,44 @@ export function expectedQueueNames(config, environment) {
   ];
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI = /\[[0-9;]*m/g;
+
+/**
+ * wrangler renders `queues list` and `hyperdrive list` as a box-drawing table
+ * and offers no machine-readable output — the only flag either accepts is
+ * --page. Rows are keyed by the header row rather than by column position, so
+ * an added or reordered column does not change the result, and a header without
+ * the column a caller needs is detectable instead of silently empty.
+ *
+ * Returns null when the input contains no table at all.
+ */
+export function parseWranglerTable(text) {
+  const cells = (line) =>
+    line
+      .split("│")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+
+  const lines = String(text ?? "")
+    .replace(ANSI, "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("│"));
+  if (lines.length === 0) return null;
+
+  const [header, ...rest] = lines;
+  const columns = cells(header);
+  if (columns.length === 0) return null;
+
+  const rows = rest
+    .map(cells)
+    .filter((row) => row.length === columns.length)
+    .map((row) =>
+      Object.fromEntries(columns.map((column, index) => [column, row[index]])),
+    );
+  return { columns, rows };
+}
+
 function parseNames(json, key) {
   const parsed = JSON.parse(json);
   if (!Array.isArray(parsed)) throw new Error("expected a JSON array");

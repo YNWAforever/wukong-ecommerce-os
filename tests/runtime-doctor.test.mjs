@@ -13,6 +13,7 @@ import {
   checkHealthSigned,
   signHealthProbe,
   vercelEnvCheck,
+  parseWranglerTable,
 } from "../scripts/runtime-doctor.mjs";
 import { planQueueCreation } from "../scripts/provision-queues.mjs";
 
@@ -321,4 +322,60 @@ test("shouldTryNextRunner retries an absent runner but not a real error", () => 
   assert.equal(shouldTryNextRunner({ code: "EINVAL" }), true);
   assert.equal(shouldTryNextRunner({ code: "EACCES" }), false);
   assert.equal(shouldTryNextRunner(undefined), false);
+});
+
+// Captured from `wrangler queues list` (wrangler 4.112.0) on 2026-08-01, not
+// written from documentation. The previous fixtures were inferred, and agreed
+// with equally inferred code, which is how two broken checks passed their tests.
+// Resource ids are placeholders; the structure is what matters here.
+const QUEUES_TABLE = [
+  " ⛅️ wrangler 4.112.0 (update available 4.118.0)",
+  "───────────────────────────────────────────────",
+  "┌──────────────────────────────────┬────────────────────────────────┬───────────┐",
+  "│ id                               │ name                           │ producers │",
+  "├──────────────────────────────────┼────────────────────────────────┼───────────┤",
+  "│ 00000000000000000000000000000001 │ wukong-listing-production      │ 0         │",
+  "├──────────────────────────────────┼────────────────────────────────┼───────────┤",
+  "│ 00000000000000000000000000000002 │ wukong-listing-dlq-production  │ 0         │",
+  "└──────────────────────────────────┴────────────────────────────────┴───────────┘",
+].join("\n");
+
+const EMPTY_TABLE = [
+  "┌──────────────────────────────────┬────────────────────────────────┐",
+  "│ id                               │ name                           │",
+  "└──────────────────────────────────┴────────────────────────────────┘",
+].join("\n");
+
+test("parseWranglerTable reads rows keyed by the header row", () => {
+  const table = parseWranglerTable(QUEUES_TABLE);
+
+  assert.deepEqual(table.columns, ["id", "name", "producers"]);
+  assert.equal(table.rows.length, 2);
+  assert.equal(table.rows[0].name, "wukong-listing-production");
+  assert.equal(table.rows[1].name, "wukong-listing-dlq-production");
+  assert.equal(table.rows[0].id, "00000000000000000000000000000001");
+});
+
+test("parseWranglerTable returns an empty row list for a header-only table", () => {
+  const table = parseWranglerTable(EMPTY_TABLE);
+
+  assert.deepEqual(table.columns, ["id", "name"]);
+  assert.deepEqual(table.rows, []);
+});
+
+test("parseWranglerTable strips ANSI escapes", () => {
+  const coloured = QUEUES_TABLE.replace(
+    "wukong-listing-production",
+    "[32mwukong-listing-production[0m",
+  );
+
+  assert.equal(
+    parseWranglerTable(coloured).rows[0].name,
+    "wukong-listing-production",
+  );
+});
+
+test("parseWranglerTable returns null when there is no table", () => {
+  assert.equal(parseWranglerTable("✘ [ERROR] Unknown argument: json"), null);
+  assert.equal(parseWranglerTable(""), null);
 });
