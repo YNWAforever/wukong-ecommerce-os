@@ -486,11 +486,11 @@ async function main() {
     { id: "wrangler-auth", ...whoamiCheck() },
     checkQueues(
       expectedQueueNames(config, environment),
-      wrangler(["queues", "list", "--json"]).stdout,
+      wrangler(["queues", "list"]).stdout,
       environment,
     ),
     checkHyperdrive(
-      wrangler(["hyperdrive", "list", "--json"]).stdout,
+      wrangler(["hyperdrive", "list"]).stdout,
       process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
     ),
     secretsCheck(config, environment),
