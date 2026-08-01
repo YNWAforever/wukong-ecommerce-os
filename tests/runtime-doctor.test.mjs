@@ -11,6 +11,7 @@ import {
   checkHealthSigned,
   signHealthProbe,
 } from "../scripts/runtime-doctor.mjs";
+import { planQueueCreation } from "../scripts/provision-queues.mjs";
 
 test("marks dependents of a failed check as blocked, not failed", () => {
   const resolved = resolveStatuses([
@@ -232,4 +233,24 @@ test("signHealthProbe matches the queue signing algorithm", () => {
   });
 
   assert.equal(signature, "6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
+});
+
+test("planQueueCreation creates only the queues that are absent", () => {
+  const plan = planQueueCreation(
+    ["a", "b", "c"],
+    JSON.stringify([{ queue_name: "b" }]),
+  );
+
+  assert.deepEqual(plan.create, ["a", "c"]);
+  assert.deepEqual(plan.existing, ["b"]);
+});
+
+test("planQueueCreation never plans a deletion", () => {
+  const plan = planQueueCreation(
+    ["a"],
+    JSON.stringify([{ queue_name: "zzz" }]),
+  );
+
+  assert.deepEqual(plan.create, ["a"]);
+  assert.equal(plan.delete, undefined);
 });

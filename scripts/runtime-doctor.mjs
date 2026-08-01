@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const STATUS_LABEL = {
   ok: "OK   ",
@@ -203,3 +205,159 @@ export function signHealthProbe({ secret, timestamp, path, body }) {
     .update(`${timestamp}\n${path}\n${body}`)
     .digest("base64url");
 }
+
+function wrangler(args) {
+  const result = spawnSync("wrangler", args, { encoding: "utf8" });
+  return result.stdout ?? "";
+}
+
+async function probeSigned(url, secret) {
+  const body = "{}";
+  const timestamp = Math.floor(Date.now() / 1_000);
+  const signature = signHealthProbe({
+    secret,
+    timestamp,
+    path: "/health",
+    body,
+  });
+  try {
+    const response = await fetch(new URL("/health", url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-wukong-timestamp": String(timestamp),
+        "x-wukong-signature": signature,
+      },
+      body,
+    });
+    return {
+      status: response.status,
+      body: response.status === 200 ? await response.json() : undefined,
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function whoamiCheck() {
+  const output = wrangler(["whoami"]);
+  return output.includes("@") || /account/i.test(output)
+    ? { status: "ok", detail: "wrangler authenticated" }
+    : {
+        status: "unknown",
+        detail: "wrangler is not logged in",
+        fix: "wrangler login",
+      };
+}
+
+function secretsCheck(config) {
+  const required = config.requiredSecrets ?? [];
+  let configured = [];
+  try {
+    configured = JSON.parse(wrangler(["secret", "list"])).map(
+      (entry) => entry.name,
+    );
+  } catch {
+    return {
+      id: "worker-secrets",
+      status: "unknown",
+      detail: "could not list worker secrets",
+      fix: "wrangler secret list",
+      dependsOn: "wrangler-auth",
+    };
+  }
+  const missing = required.filter((name) => !configured.includes(name));
+  return missing.length
+    ? {
+        id: "worker-secrets",
+        status: "failed",
+        detail: `missing ${missing.join(", ")}`,
+        fix: `wrangler secret put ${missing[0]}`,
+        dependsOn: "wrangler-auth",
+      }
+    : {
+        id: "worker-secrets",
+        status: "ok",
+        detail: `${required.length} secrets set`,
+        dependsOn: "wrangler-auth",
+      };
+}
+
+function vercelEnvCheck(url, secret) {
+  const missing = [
+    ...(url ? [] : ["QUEUE_INGRESS_URL"]),
+    ...(secret ? [] : ["QUEUE_INGRESS_SECRET"]),
+  ];
+  return missing.length
+    ? {
+        status: "failed",
+        detail: `missing ${missing.join(", ")} in this environment`,
+        fix: `vercel env add ${missing[0]} production`,
+      }
+    : { status: "ok", detail: "ingress url and secret present" };
+}
+
+async function main() {
+  const environment = process.argv[2]?.trim();
+  if (!environment) throw new Error("usage: runtime:doctor <environment>");
+  const preDeployOnly = process.argv.includes("--pre-deploy");
+  const config = JSON.parse(
+    readFileSync(
+      new URL("../cloudflare-runtime.config.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const ingressUrl = process.env.QUEUE_INGRESS_URL?.trim();
+  const ingressSecret = process.env.QUEUE_INGRESS_SECRET?.trim();
+
+  const checks = [
+    { id: "wrangler-auth", ...whoamiCheck() },
+    checkQueues(
+      expectedQueueNames(config, environment),
+      wrangler(["queues", "list", "--json"]),
+      environment,
+    ),
+    checkHyperdrive(
+      wrangler(["hyperdrive", "list", "--json"]),
+      process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
+    ),
+    secretsCheck(config),
+  ];
+
+  if (!preDeployOnly) {
+    checks.push({
+      id: "vercel-env",
+      ...vercelEnvCheck(ingressUrl, ingressSecret),
+    });
+    if (ingressUrl) {
+      const health = await fetch(new URL("/health", ingressUrl)).then(
+        (response) => response.json(),
+        () => null,
+      );
+      checks.push(
+        health
+          ? checkHealthGet(health)
+          : {
+              id: "health-get",
+              status: "unknown",
+              detail: "worker unreachable",
+              fix: "check QUEUE_INGRESS_URL",
+              dependsOn: "worker-secrets",
+            },
+      );
+      if (ingressSecret)
+        checks.push(
+          checkHealthSigned(await probeSigned(ingressUrl, ingressSecret)),
+        );
+    }
+  }
+
+  console.log(formatReport(checks));
+  console.log(
+    "\nnote: SHOPLINE_TOKEN_ENCRYPTION_KEY and the two shopline queues are required by the\n" +
+      "preflight but inert under CSV-only operation; a generated placeholder is correct.",
+  );
+  if (hasFailure(checks)) process.exitCode = 1;
+}
+
+if (process.argv[1]?.endsWith("runtime-doctor.mjs")) await main();

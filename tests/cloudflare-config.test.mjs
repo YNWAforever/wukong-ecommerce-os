@@ -241,7 +241,7 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
   const rootPackage = readJson("package.json");
   assert.equal(
     rootPackage.scripts.test,
-    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs && turbo run test",
+    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/runtime-doctor.test.mjs && turbo run test",
   );
 });
 
