@@ -199,4 +199,73 @@ describe("Cloudflare Worker ingress", () => {
       },
     });
   });
+
+  it("answers a signed POST /health with authenticated detail", async () => {
+    const response = await handleIngress(
+      await signedRequest("/health", {}),
+      env(),
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      authenticated: true,
+      bindings: { ingressSecret: true },
+    });
+  });
+
+  it("rejects an unsigned POST /health", async () => {
+    const response = await handleIngress(
+      new Request("https://worker.test/health", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+      env(),
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a POST /health signed with the wrong secret", async () => {
+    const response = await handleIngress(
+      await signedRequest("/health", {}, { signature: "not-a-signature" }),
+      env(),
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a replayed POST /health outside the timestamp window", async () => {
+    const response = await handleIngress(
+      await signedRequest("/health", {}, { timestamp: nowSeconds - 3_600 }),
+      env(),
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  it("keeps the unauthenticated GET /health body unchanged", async () => {
+    const response = await handleIngress(
+      new Request("https://worker.test/health", { method: "GET" }),
+      env(),
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+
+    expect(response.status).toBe(200);
+    // Pins the unauthenticated surface: it must never grow authenticated detail.
+    expect(Object.keys(await response.json()).sort()).toEqual([
+      "adapterMode",
+      "bindings",
+      "buildSha",
+    ]);
+  });
 });

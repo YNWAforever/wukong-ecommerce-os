@@ -6,7 +6,10 @@ import {
   verifyQueueRequest,
 } from "@wukong/jobs";
 
-import { workerHealth } from "./cloudflare-runtime.js";
+import {
+  authenticatedWorkerHealth,
+  workerHealth,
+} from "./cloudflare-runtime.js";
 import type { WorkerEnv } from "./worker-env.js";
 
 const MAX_BODY_BYTES = 4 * 1024;
@@ -63,8 +66,28 @@ export async function handleIngress(
 ): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (path === "/health") {
-    if (request.method !== "GET") return response(405);
-    return Response.json(workerHealth(env));
+    if (request.method === "GET") return Response.json(workerHealth(env));
+    if (request.method !== "POST") return response(405);
+
+    const body = await readLimitedBody(request);
+    if (body instanceof Response) return body;
+    const secret = env.QUEUE_INGRESS_SECRET?.trim();
+    const timestamp = request.headers.get("x-wukong-timestamp") ?? "";
+    const signature = request.headers.get("x-wukong-signature") ?? "";
+    if (!secret || !timestamp || !signature) return response(401);
+
+    const authenticated = await verifyQueueRequest({
+      secret,
+      nowSeconds: (
+        options.nowSeconds ?? (() => Math.floor(Date.now() / 1_000))
+      )(),
+      timestamp,
+      signature,
+      path,
+      body,
+    });
+    if (!authenticated) return response(401);
+    return Response.json(await authenticatedWorkerHealth(env));
   }
   if (path !== LISTING_INGRESS_PATH && path !== SHOPLINE_INGRESS_PATH) {
     return response(404);
