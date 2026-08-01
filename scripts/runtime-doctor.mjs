@@ -158,16 +158,14 @@ export function checkQueues(expected, listOutput, environment) {
   };
 }
 
-export function checkHyperdrive(listJson, configuredId) {
-  let ids;
-  try {
-    ids = parseNames(listJson, "id");
-  } catch {
+export function checkHyperdrive(listOutput, configuredId) {
+  const table = parseWranglerTable(listOutput);
+  if (!table || !table.columns.includes("id")) {
     return {
       id: "hyperdrive",
       status: "unknown",
-      detail: "could not read `wrangler hyperdrive list --json`",
-      fix: "wrangler hyperdrive list --json",
+      detail: "could not read `wrangler hyperdrive list`",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
   if (!configuredId) {
@@ -175,15 +173,15 @@ export function checkHyperdrive(listJson, configuredId) {
       id: "hyperdrive",
       status: "failed",
       detail: "CLOUDFLARE_HYPERDRIVE_ID is unset",
-      fix: "wrangler hyperdrive create wukong --connection-string <neon-url>",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
-  if (!ids.includes(configuredId)) {
+  if (!table.rows.some((row) => row.id === configuredId)) {
     return {
       id: "hyperdrive",
       status: "failed",
       detail: "no Hyperdrive config matches CLOUDFLARE_HYPERDRIVE_ID",
-      fix: "wrangler hyperdrive list --json",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
   return { id: "hyperdrive", status: "ok", detail: "configured id exists" };

@@ -192,13 +192,43 @@ test("checkQueues reports a table without a name column as a format change", () 
   assert.match(check.detail, /format/i);
 });
 
-test("checkHyperdrive matches the configured id", () => {
-  const listed = JSON.stringify([{ id: "abc123", name: "wukong" }]);
+const HYPERDRIVE_TABLE = [
+  "📋 Listing Hyperdrive configs",
+  "┌──────────────────────────────────┬────────────────────────┬──────┐",
+  "│ id                               │ name                   │ port │",
+  "├──────────────────────────────────┼────────────────────────┼──────┤",
+  "│ 000000000000000000000000000000aa │ wukong-neon-production │ 5432 │",
+  "└──────────────────────────────────┴────────────────────────┴──────┘",
+].join("\n");
 
-  assert.equal(checkHyperdrive(listed, "abc123").status, "ok");
-  assert.equal(checkHyperdrive(listed, "def456").status, "failed");
-  assert.equal(checkHyperdrive(listed, "").status, "failed");
-  assert.equal(checkHyperdrive("not json", "abc123").status, "unknown");
+test("checkHyperdrive passes when the configured id is listed", () => {
+  const check = checkHyperdrive(
+    HYPERDRIVE_TABLE,
+    "000000000000000000000000000000aa",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkHyperdrive fails when the configured id is not listed", () => {
+  const check = checkHyperdrive(HYPERDRIVE_TABLE, "definitely-not-there");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /no Hyperdrive config/i);
+});
+
+test("checkHyperdrive fails when no id is configured at all", () => {
+  const check = checkHyperdrive(HYPERDRIVE_TABLE, "");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /CLOUDFLARE_HYPERDRIVE_ID/);
+});
+
+test("checkHyperdrive reports unreadable output as unknown", () => {
+  assert.equal(
+    checkHyperdrive("✘ [ERROR] Unknown argument", "abc").status,
+    "unknown",
+  );
 });
 
 test("checkHealthGet fails when a binding is unresolved", () => {
