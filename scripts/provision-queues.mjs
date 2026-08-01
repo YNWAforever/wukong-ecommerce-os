@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { expectedQueueNames } from "./runtime-doctor.mjs";
+import { expectedQueueNames, packageRunners } from "./runtime-doctor.mjs";
 
 /** Creates only what the config declares, and never deletes. */
 export function planQueueCreation(expected, listJson) {
@@ -28,16 +28,24 @@ export function planQueueCreation(expected, listJson) {
  * scripts/verify-cloudflare-secrets.mjs and scripts/runtime-doctor.mjs do.
  */
 function wrangler(args) {
-  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  return spawnSync(
-    executable,
-    ["pnpm", "--filter", "@wukong/worker", "exec", "wrangler", ...args],
-    {
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
-      encoding: "utf8",
-      windowsHide: true,
-    },
-  );
+  const cwd = fileURLToPath(new URL("../", import.meta.url));
+  let last;
+  for (const runner of packageRunners()) {
+    last = spawnSync(
+      runner.command,
+      [
+        ...runner.lead,
+        "--filter",
+        "@wukong/worker",
+        "exec",
+        "wrangler",
+        ...args,
+      ],
+      { cwd, encoding: "utf8", windowsHide: true },
+    );
+    if (last.error?.code !== "ENOENT") break;
+  }
+  return last;
 }
 
 function main() {

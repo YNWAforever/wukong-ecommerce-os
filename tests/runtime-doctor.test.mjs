@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  packageRunners,
   resolveStatuses,
   formatReport,
   checkQueues,
@@ -280,4 +281,20 @@ test("planQueueCreation never plans a deletion", () => {
 
   assert.deepEqual(plan.create, ["a"]);
   assert.equal(plan.delete, undefined);
+});
+
+test("packageRunners falls back to pnpm when corepack is absent", () => {
+  const runners = packageRunners("darwin");
+
+  assert.deepEqual(
+    runners.map((runner) => [runner.command, ...runner.lead]),
+    [["corepack", "pnpm"], ["pnpm"]],
+  );
+});
+
+test("packageRunners uses the windows shims on win32", () => {
+  assert.deepEqual(
+    packageRunners("win32").map((runner) => runner.command),
+    ["corepack.cmd", "pnpm.cmd"],
+  );
 });

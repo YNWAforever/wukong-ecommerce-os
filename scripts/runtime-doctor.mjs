@@ -234,22 +234,43 @@ export function signHealthProbe({ secret, timestamp, path, body }) {
  * does — through the workspace that actually depends on it — so this check
  * is PATH-independent.
  */
+export function packageRunners(platform = process.platform) {
+  const windows = platform === "win32";
+  // corepack matches verify-cloudflare-secrets.mjs, but it is not installed
+  // everywhere pnpm is, and a diagnostic that cannot run is worse than useless.
+  // Fall back to pnpm directly rather than reporting a toolchain fault that
+  // only exists inside this script.
+  return [
+    { command: windows ? "corepack.cmd" : "corepack", lead: ["pnpm"] },
+    { command: windows ? "pnpm.cmd" : "pnpm", lead: [] },
+  ];
+}
+
 function wrangler(args) {
-  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  const result = spawnSync(
-    executable,
-    ["pnpm", "--filter", "@wukong/worker", "exec", "wrangler", ...args],
-    {
-      cwd: fileURLToPath(new URL("../", import.meta.url)),
-      encoding: "utf8",
-      windowsHide: true,
-    },
-  );
+  const cwd = fileURLToPath(new URL("../", import.meta.url));
+  let last;
+  for (const runner of packageRunners()) {
+    const result = spawnSync(
+      runner.command,
+      [
+        ...runner.lead,
+        "--filter",
+        "@wukong/worker",
+        "exec",
+        "wrangler",
+        ...args,
+      ],
+      { cwd, encoding: "utf8", windowsHide: true },
+    );
+    last = result;
+    // Only an absent runner is worth retrying; a wrangler error is a real answer.
+    if (result.error?.code !== "ENOENT") break;
+  }
   return {
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-    status: result.status,
-    error: result.error,
+    stdout: last.stdout ?? "",
+    stderr: last.stderr ?? "",
+    status: last.status,
+    error: last.error,
   };
 }
 
