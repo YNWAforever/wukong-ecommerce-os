@@ -137,39 +137,59 @@ test("expectedQueueNames reads the four queues from runtime config", () => {
   ]);
 });
 
-test("checkQueues names every missing queue", () => {
+test("checkQueues passes when every expected queue is in the table", () => {
   const check = checkQueues(
     ["wukong-listing-production", "wukong-listing-dlq-production"],
-    JSON.stringify([
-      { queue_name: "wukong-listing-production" },
-      { queue_name: "unrelated" },
-    ]),
-    "production",
-  );
-
-  assert.equal(check.status, "failed");
-  assert.match(check.detail, /wukong-listing-dlq-production/);
-  assert.match(check.fix, /runtime:provision production/);
-});
-
-test("checkQueues passes when every expected queue exists", () => {
-  const check = checkQueues(
-    ["a", "b"],
-    JSON.stringify([
-      { queue_name: "a" },
-      { queue_name: "b" },
-      { queue_name: "c" },
-    ]),
+    QUEUES_TABLE,
     "production",
   );
 
   assert.equal(check.status, "ok");
 });
 
-test("checkQueues reports unparsable output as unknown, not failed", () => {
-  const check = checkQueues(["a"], "not json", "production");
+test("checkQueues names a queue that is genuinely absent", () => {
+  const check = checkQueues(
+    ["wukong-listing-production", "wukong-shopline-production"],
+    QUEUES_TABLE,
+    "production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /wukong-shopline-production/);
+  assert.match(check.fix, /runtime:provision production/);
+});
+
+// An empty but well-formed table means the queues really are missing. Reporting
+// that as `unknown` would make the check useless in the one case it exists for.
+test("checkQueues treats a header-only table as genuinely missing", () => {
+  const check = checkQueues(
+    ["wukong-listing-production"],
+    EMPTY_TABLE,
+    "production",
+  );
+
+  assert.equal(check.status, "failed");
+});
+
+test("checkQueues reports unreadable output as unknown, not failed", () => {
+  const check = checkQueues(["a"], "✘ [ERROR] Unknown argument", "production");
 
   assert.equal(check.status, "unknown");
+  assert.match(check.detail, /could not read/i);
+});
+
+test("checkQueues reports a table without a name column as a format change", () => {
+  const noName = [
+    "┌──────────────────────────────────┐",
+    "│ id                               │",
+    "│ 00000000000000000000000000000001 │",
+    "└──────────────────────────────────┘",
+  ].join("\n");
+
+  const check = checkQueues(["a"], noName, "production");
+
+  assert.equal(check.status, "unknown");
+  assert.match(check.detail, /format/i);
 });
 
 test("checkHyperdrive matches the configured id", () => {

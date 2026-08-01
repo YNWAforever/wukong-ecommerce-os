@@ -122,18 +122,26 @@ function parseNames(json, key) {
   return parsed.map((entry) => entry?.[key]).filter(Boolean);
 }
 
-export function checkQueues(expected, listJson, environment) {
-  let present;
-  try {
-    present = parseNames(listJson, "queue_name");
-  } catch {
+export function checkQueues(expected, listOutput, environment) {
+  const table = parseWranglerTable(listOutput);
+  if (!table) {
     return {
       id: "queues",
       status: "unknown",
-      detail: "could not read `wrangler queues list --json`",
-      fix: "wrangler queues list --json",
+      detail: "could not read `wrangler queues list`",
+      fix: "pnpm --filter @wukong/worker exec wrangler queues list",
     };
   }
+  if (!table.columns.includes("name")) {
+    return {
+      id: "queues",
+      status: "unknown",
+      detail: "wrangler queues list output format changed: no `name` column",
+      fix: "pnpm --filter @wukong/worker exec wrangler queues list",
+    };
+  }
+
+  const present = table.rows.map((row) => row.name);
   const missing = expected.filter((name) => !present.includes(name));
   if (missing.length === 0) {
     return {
