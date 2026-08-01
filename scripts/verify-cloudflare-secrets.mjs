@@ -25,6 +25,24 @@ export function parseSecretNames(json) {
   });
 }
 
+/**
+ * A Worker that does not exist yet cannot hold secrets, and `wrangler deploy` is
+ * about to create it — so blocking here makes a first deploy impossible. Any
+ * other failure still aborts.
+ */
+export function classifyPreflight(result) {
+  if (result.status === 0) return { allow: true };
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (/Worker .*not found/i.test(output)) {
+    return {
+      allow: true,
+      warning:
+        "Worker does not exist yet; deploying to create it. Set the required secrets and redeploy before this environment is usable.",
+    };
+  }
+  return { allow: false };
+}
+
 export function verifyExactSecretNames(requiredNames, configuredNames) {
   const result = compareSecretNames(requiredNames, configuredNames);
   if (result.missing.length || result.unexpected.length) {
@@ -70,8 +88,13 @@ function main() {
       windowsHide: true,
     },
   );
-  if (result.status !== 0) {
+  const decision = classifyPreflight(result);
+  if (!decision.allow) {
     throw new Error("Wrangler secret list failed; deployment aborted");
+  }
+  if (decision.warning) {
+    process.stderr.write(`${decision.warning}\n`);
+    return;
   }
   verifyExactSecretNames(
     source.requiredSecrets,

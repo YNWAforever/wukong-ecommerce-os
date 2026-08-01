@@ -52,43 +52,30 @@ npx vercel env ls production
 is the signal that the Worker has never been deployed. That is a different problem
 from secrets being missing, and it is the one that blocks everything else.
 
-## Blocking issue: the deploy pipeline cannot perform a first deploy
+## First deploy of an environment
 
-`pnpm --filter @wukong/worker deploy:production` runs, in order:
+`deploy:production` now handles a Worker that does not exist: the secret preflight
+warns and lets the deploy through, because `wrangler deploy` is about to create
+it. No manual bootstrap is required.
 
+The order still matters, because a Worker deployed without secrets fails at
+runtime until they are set. Export the render inputs first — the deploy script
+sets `CLOUDFLARE_ENV` itself, so do not pass it:
+
+```bash
+export CLOUDFLARE_HYPERDRIVE_ID="<id from wrangler hyperdrive list>"
+export BUILD_SHA="$(git rev-parse HEAD)"
+export AI_PROVIDER=openai
+export OPENAI_LISTING_MODEL=gpt-5-mini
+export S3_BUCKET=wukong-opak-prod-assets
+export S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
+export S3_REGION=auto
+export S3_FORCE_PATH_STYLE=false
 ```
-runtime-doctor --pre-deploy  →  render-cloudflare-config  →  verify-cloudflare-secrets  →  wrangler deploy
-```
 
-`verify-cloudflare-secrets.mjs` runs `wrangler secret list --name <worker>` and
-aborts on any non-zero exit. On a Worker that does not exist yet, that call always
-fails. So:
-
-- you cannot set secrets, because there is no Worker to attach them to; and
-- you cannot deploy the Worker, because the preflight demands the secrets first.
-
-**The supported deploy path is for redeploys and cannot bootstrap a new
-environment.** Break the cycle once, by hand, then never again:
-
-1. Render the config and deploy directly, skipping the preflight, to create the
-   Worker. Supply the eight render inputs (`CLOUDFLARE_ENV` is set by the script,
-   so do not pass it here — render it explicitly instead):
-
-   ```bash
-   CLOUDFLARE_ENV=production \
-   CLOUDFLARE_HYPERDRIVE_ID="<id from wrangler hyperdrive list>" \
-   BUILD_SHA="$(git rev-parse HEAD)" \
-   AI_PROVIDER=openai \
-   OPENAI_LISTING_MODEL=gpt-5-mini \
-   S3_BUCKET=wukong-opak-prod-assets \
-   S3_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com" \
-   S3_REGION=auto \
-   S3_FORCE_PATH_STYLE=false \
-   node scripts/render-cloudflare-config.mjs
-
-   pnpm --filter @wukong/worker exec wrangler deploy src/cloudflare.ts \
-     --config ../../.wrangler/wrangler.generated.jsonc
-   ```
+1. `pnpm --filter @wukong/worker deploy:production` — creates the Worker. The
+   preflight prints a warning that the Worker did not exist and that secrets must
+   be set before the environment is usable.
 
 2. Set the five secrets now that the Worker exists. The exact commands are in
    `docs/runbooks/production-ai-runtime.md`; use
@@ -98,11 +85,8 @@ environment.** Break the cycle once, by hand, then never again:
    CSV-only operation. A generated placeholder is the correct value, not a real
    key. The two shopline queues are inert for the same reason.
 
-3. From here on, always use the gated path, which now works:
-
-   ```bash
-   pnpm --filter @wukong/worker deploy:production
-   ```
+3. `pnpm --filter @wukong/worker deploy:production` again — this time the preflight
+   verifies all five secret names properly and the Worker runs with them.
 
 ## Wiring Vercel
 
@@ -139,22 +123,16 @@ value is _present_.
 Finally, create a draft in the production app and confirm it no longer falls back
 to `retry_required`.
 
-## Known defects in the doctor
+## How the doctor reads Cloudflare state
 
-**`queues` and `hyperdrive` always report `unknown`.** They shell out with
-`--json`, which `wrangler queues list` and `wrangler hyperdrive list` do not
-support — the only option either accepts is `--page`. The flag was inferred from
-documentation rather than observed, and the unit-test fixtures were written to
-match the inference, so the suite passes while the checks cannot work.
+`wrangler queues list` and `wrangler hyperdrive list` have no machine-readable
+output — the only flag either accepts is `--page` — so the doctor parses their
+box-drawing table, keyed off the header row.
 
-Until this is fixed, verify queues and Hyperdrive by eye with the read-only
-commands above. The checks report `unknown` rather than `failed`, so they will not
-send you to create resources that already exist — but they are not doing useful
-work either.
-
-**`worker-secrets` reports `unknown` when the Worker does not exist.** The more
-useful message would name the missing Worker, since that is a different and more
-fundamental problem than unset secrets.
+That means the checks are parsing presentation output, and wrangler may change it.
+A change surfaces as `unknown — output format changed`, never as a false answer.
+If it recurs often, the fallback is the Cloudflare REST API, which costs a
+`CLOUDFLARE_API_TOKEN` this repository deliberately does not currently need.
 
 ## Coverage the doctor does not have
 

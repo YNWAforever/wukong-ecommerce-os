@@ -13,6 +13,8 @@ import {
   checkHealthSigned,
   signHealthProbe,
   vercelEnvCheck,
+  parseWranglerTable,
+  classifySecretList,
 } from "../scripts/runtime-doctor.mjs";
 import { planQueueCreation } from "../scripts/provision-queues.mjs";
 
@@ -136,48 +138,98 @@ test("expectedQueueNames reads the four queues from runtime config", () => {
   ]);
 });
 
-test("checkQueues names every missing queue", () => {
+test("checkQueues passes when every expected queue is in the table", () => {
   const check = checkQueues(
     ["wukong-listing-production", "wukong-listing-dlq-production"],
-    JSON.stringify([
-      { queue_name: "wukong-listing-production" },
-      { queue_name: "unrelated" },
-    ]),
-    "production",
-  );
-
-  assert.equal(check.status, "failed");
-  assert.match(check.detail, /wukong-listing-dlq-production/);
-  assert.match(check.fix, /runtime:provision production/);
-});
-
-test("checkQueues passes when every expected queue exists", () => {
-  const check = checkQueues(
-    ["a", "b"],
-    JSON.stringify([
-      { queue_name: "a" },
-      { queue_name: "b" },
-      { queue_name: "c" },
-    ]),
+    QUEUES_TABLE,
     "production",
   );
 
   assert.equal(check.status, "ok");
 });
 
-test("checkQueues reports unparsable output as unknown, not failed", () => {
-  const check = checkQueues(["a"], "not json", "production");
+test("checkQueues names a queue that is genuinely absent", () => {
+  const check = checkQueues(
+    ["wukong-listing-production", "wukong-shopline-production"],
+    QUEUES_TABLE,
+    "production",
+  );
 
-  assert.equal(check.status, "unknown");
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /wukong-shopline-production/);
+  assert.match(check.fix, /runtime:provision production/);
 });
 
-test("checkHyperdrive matches the configured id", () => {
-  const listed = JSON.stringify([{ id: "abc123", name: "wukong" }]);
+// An empty but well-formed table means the queues really are missing. Reporting
+// that as `unknown` would make the check useless in the one case it exists for.
+test("checkQueues treats a header-only table as genuinely missing", () => {
+  const check = checkQueues(
+    ["wukong-listing-production"],
+    EMPTY_TABLE,
+    "production",
+  );
 
-  assert.equal(checkHyperdrive(listed, "abc123").status, "ok");
-  assert.equal(checkHyperdrive(listed, "def456").status, "failed");
-  assert.equal(checkHyperdrive(listed, "").status, "failed");
-  assert.equal(checkHyperdrive("not json", "abc123").status, "unknown");
+  assert.equal(check.status, "failed");
+});
+
+test("checkQueues reports unreadable output as unknown, not failed", () => {
+  const check = checkQueues(["a"], "✘ [ERROR] Unknown argument", "production");
+
+  assert.equal(check.status, "unknown");
+  assert.match(check.detail, /could not read/i);
+});
+
+test("checkQueues reports a table without a name column as a format change", () => {
+  const noName = [
+    "┌──────────────────────────────────┐",
+    "│ id                               │",
+    "│ 00000000000000000000000000000001 │",
+    "└──────────────────────────────────┘",
+  ].join("\n");
+
+  const check = checkQueues(["a"], noName, "production");
+
+  assert.equal(check.status, "unknown");
+  assert.match(check.detail, /format/i);
+});
+
+const HYPERDRIVE_TABLE = [
+  "📋 Listing Hyperdrive configs",
+  "┌──────────────────────────────────┬────────────────────────┬──────┐",
+  "│ id                               │ name                   │ port │",
+  "├──────────────────────────────────┼────────────────────────┼──────┤",
+  "│ 000000000000000000000000000000aa │ wukong-neon-production │ 5432 │",
+  "└──────────────────────────────────┴────────────────────────┴──────┘",
+].join("\n");
+
+test("checkHyperdrive passes when the configured id is listed", () => {
+  const check = checkHyperdrive(
+    HYPERDRIVE_TABLE,
+    "000000000000000000000000000000aa",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkHyperdrive fails when the configured id is not listed", () => {
+  const check = checkHyperdrive(HYPERDRIVE_TABLE, "definitely-not-there");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /no Hyperdrive config/i);
+});
+
+test("checkHyperdrive fails when no id is configured at all", () => {
+  const check = checkHyperdrive(HYPERDRIVE_TABLE, "");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /CLOUDFLARE_HYPERDRIVE_ID/);
+});
+
+test("checkHyperdrive reports unreadable output as unknown", () => {
+  assert.equal(
+    checkHyperdrive("✘ [ERROR] Unknown argument", "abc").status,
+    "unknown",
+  );
 });
 
 test("checkHealthGet fails when a binding is unresolved", () => {
@@ -321,4 +373,119 @@ test("shouldTryNextRunner retries an absent runner but not a real error", () => 
   assert.equal(shouldTryNextRunner({ code: "EINVAL" }), true);
   assert.equal(shouldTryNextRunner({ code: "EACCES" }), false);
   assert.equal(shouldTryNextRunner(undefined), false);
+});
+
+// Captured from `wrangler queues list` (wrangler 4.112.0) on 2026-08-01, not
+// written from documentation. The previous fixtures were inferred, and agreed
+// with equally inferred code, which is how two broken checks passed their tests.
+// Resource ids are placeholders; the structure is what matters here.
+const QUEUES_TABLE = [
+  " ⛅️ wrangler 4.112.0 (update available 4.118.0)",
+  "───────────────────────────────────────────────",
+  "┌──────────────────────────────────┬────────────────────────────────┬───────────┐",
+  "│ id                               │ name                           │ producers │",
+  "├──────────────────────────────────┼────────────────────────────────┼───────────┤",
+  "│ 00000000000000000000000000000001 │ wukong-listing-production      │ 0         │",
+  "├──────────────────────────────────┼────────────────────────────────┼───────────┤",
+  "│ 00000000000000000000000000000002 │ wukong-listing-dlq-production  │ 0         │",
+  "└──────────────────────────────────┴────────────────────────────────┴───────────┘",
+].join("\n");
+
+const EMPTY_TABLE = [
+  "┌──────────────────────────────────┬────────────────────────────────┐",
+  "│ id                               │ name                           │",
+  "└──────────────────────────────────┴────────────────────────────────┘",
+].join("\n");
+
+test("parseWranglerTable reads rows keyed by the header row", () => {
+  const table = parseWranglerTable(QUEUES_TABLE);
+
+  assert.deepEqual(table.columns, ["id", "name", "producers"]);
+  assert.equal(table.rows.length, 2);
+  assert.equal(table.rows[0].name, "wukong-listing-production");
+  assert.equal(table.rows[1].name, "wukong-listing-dlq-production");
+  assert.equal(table.rows[0].id, "00000000000000000000000000000001");
+});
+
+test("parseWranglerTable returns an empty row list for a header-only table", () => {
+  const table = parseWranglerTable(EMPTY_TABLE);
+
+  assert.deepEqual(table.columns, ["id", "name"]);
+  assert.deepEqual(table.rows, []);
+});
+
+test("parseWranglerTable strips ANSI escapes", () => {
+  const coloured = QUEUES_TABLE.replace(
+    "wukong-listing-production",
+    "[32mwukong-listing-production[0m",
+  );
+
+  assert.equal(
+    parseWranglerTable(coloured).rows[0].name,
+    "wukong-listing-production",
+  );
+});
+
+test("parseWranglerTable returns null when there is no table", () => {
+  assert.equal(parseWranglerTable("✘ [ERROR] Unknown argument: json"), null);
+  assert.equal(parseWranglerTable(""), null);
+});
+
+test("classifySecretList names a Worker that does not exist", () => {
+  const check = classifySecretList(
+    {
+      status: 1,
+      stdout: "",
+      stderr: 'Worker "wukong-runtime-production" not found.',
+    },
+    ["QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /wukong-runtime-production/);
+  assert.match(check.detail, /does not exist/i);
+  assert.match(check.fix, /deploy/i);
+});
+
+test("classifySecretList reports missing secret names", () => {
+  const check = classifySecretList(
+    {
+      status: 0,
+      stdout: JSON.stringify([{ name: "OPENAI_API_KEY" }]),
+      stderr: "",
+    },
+    ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /QUEUE_INGRESS_SECRET/);
+});
+
+test("classifySecretList passes when every required name is set", () => {
+  const check = classifySecretList(
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        { name: "OPENAI_API_KEY" },
+        { name: "QUEUE_INGRESS_SECRET" },
+      ]),
+      stderr: "",
+    },
+    ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("classifySecretList reports an unreadable list as unknown", () => {
+  const check = classifySecretList(
+    { status: 1, stdout: "", stderr: "network unreachable" },
+    ["OPENAI_API_KEY"],
+    "wukong-runtime-production",
+  );
+
+  assert.equal(check.status, "unknown");
 });

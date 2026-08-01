@@ -78,24 +78,64 @@ export function expectedQueueNames(config, environment) {
   ];
 }
 
-function parseNames(json, key) {
-  const parsed = JSON.parse(json);
-  if (!Array.isArray(parsed)) throw new Error("expected a JSON array");
-  return parsed.map((entry) => entry?.[key]).filter(Boolean);
+// eslint-disable-next-line no-control-regex
+const ANSI = /\[[0-9;]*m/g;
+
+/**
+ * wrangler renders `queues list` and `hyperdrive list` as a box-drawing table
+ * and offers no machine-readable output — the only flag either accepts is
+ * --page. Rows are keyed by the header row rather than by column position, so
+ * an added or reordered column does not change the result, and a header without
+ * the column a caller needs is detectable instead of silently empty.
+ *
+ * Returns null when the input contains no table at all.
+ */
+export function parseWranglerTable(text) {
+  const cells = (line) =>
+    line
+      .split("│")
+      .slice(1, -1)
+      .map((cell) => cell.trim());
+
+  const lines = String(text ?? "")
+    .replace(ANSI, "")
+    .split(/\r?\n/)
+    .filter((line) => line.includes("│"));
+  if (lines.length === 0) return null;
+
+  const [header, ...rest] = lines;
+  const columns = cells(header);
+  if (columns.length === 0) return null;
+
+  const rows = rest
+    .map(cells)
+    .filter((row) => row.length === columns.length)
+    .map((row) =>
+      Object.fromEntries(columns.map((column, index) => [column, row[index]])),
+    );
+  return { columns, rows };
 }
 
-export function checkQueues(expected, listJson, environment) {
-  let present;
-  try {
-    present = parseNames(listJson, "queue_name");
-  } catch {
+export function checkQueues(expected, listOutput, environment) {
+  const table = parseWranglerTable(listOutput);
+  if (!table) {
     return {
       id: "queues",
       status: "unknown",
-      detail: "could not read `wrangler queues list --json`",
-      fix: "wrangler queues list --json",
+      detail: "could not read `wrangler queues list`",
+      fix: "pnpm --filter @wukong/worker exec wrangler queues list",
     };
   }
+  if (!table.columns.includes("name")) {
+    return {
+      id: "queues",
+      status: "unknown",
+      detail: "wrangler queues list output format changed: no `name` column",
+      fix: "pnpm --filter @wukong/worker exec wrangler queues list",
+    };
+  }
+
+  const present = table.rows.map((row) => row.name);
   const missing = expected.filter((name) => !present.includes(name));
   if (missing.length === 0) {
     return {
@@ -112,16 +152,14 @@ export function checkQueues(expected, listJson, environment) {
   };
 }
 
-export function checkHyperdrive(listJson, configuredId) {
-  let ids;
-  try {
-    ids = parseNames(listJson, "id");
-  } catch {
+export function checkHyperdrive(listOutput, configuredId) {
+  const table = parseWranglerTable(listOutput);
+  if (!table || !table.columns.includes("id")) {
     return {
       id: "hyperdrive",
       status: "unknown",
-      detail: "could not read `wrangler hyperdrive list --json`",
-      fix: "wrangler hyperdrive list --json",
+      detail: "could not read `wrangler hyperdrive list`",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
   if (!configuredId) {
@@ -129,15 +167,15 @@ export function checkHyperdrive(listJson, configuredId) {
       id: "hyperdrive",
       status: "failed",
       detail: "CLOUDFLARE_HYPERDRIVE_ID is unset",
-      fix: "wrangler hyperdrive create wukong --connection-string <neon-url>",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
-  if (!ids.includes(configuredId)) {
+  if (!table.rows.some((row) => row.id === configuredId)) {
     return {
       id: "hyperdrive",
       status: "failed",
       detail: "no Hyperdrive config matches CLOUDFLARE_HYPERDRIVE_ID",
-      fix: "wrangler hyperdrive list --json",
+      fix: "pnpm --filter @wukong/worker exec wrangler hyperdrive list",
     };
   }
   return { id: "hyperdrive", status: "ok", detail: "configured id exists" };
@@ -354,29 +392,40 @@ function whoamiCheck() {
       };
 }
 
-function secretsCheck(config) {
-  const required = config.requiredSecrets ?? [];
-  let configured = [];
+/** A Worker that does not exist is a different, more fundamental problem than
+ *  unset secrets, and needs a different fix. */
+export function classifySecretList(result, required, worker) {
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (/Worker .*not found/i.test(output)) {
+    return {
+      id: "worker-secrets",
+      status: "failed",
+      detail: `Worker ${worker} does not exist yet`,
+      fix: "pnpm --filter @wukong/worker deploy:production  # creates the Worker, then set secrets",
+      dependsOn: "wrangler-auth",
+    };
+  }
+
+  let configured;
   try {
-    configured = JSON.parse(wrangler(["secret", "list"]).stdout).map(
-      (entry) => entry.name,
-    );
+    configured = JSON.parse(result.stdout).map((entry) => entry.name);
   } catch {
     return {
       id: "worker-secrets",
       status: "unknown",
       detail: "could not list worker secrets",
-      fix: "wrangler secret list",
+      fix: `pnpm --filter @wukong/worker exec wrangler secret list --name ${worker}`,
       dependsOn: "wrangler-auth",
     };
   }
+
   const missing = required.filter((name) => !configured.includes(name));
   return missing.length
     ? {
         id: "worker-secrets",
         status: "failed",
         detail: `missing ${missing.join(", ")}`,
-        fix: `wrangler secret put ${missing[0]}`,
+        fix: `pnpm --filter @wukong/worker exec wrangler secret put ${missing[0]} --name ${worker}`,
         dependsOn: "wrangler-auth",
       }
     : {
@@ -385,6 +434,19 @@ function secretsCheck(config) {
         detail: `${required.length} secrets set`,
         dependsOn: "wrangler-auth",
       };
+}
+
+function secretsCheck(config, environment) {
+  const worker = config.environments[environment].worker;
+  const result = wrangler([
+    "secret",
+    "list",
+    "--name",
+    worker,
+    "--format",
+    "json",
+  ]);
+  return classifySecretList(result, config.requiredSecrets ?? [], worker);
 }
 
 export function vercelEnvCheck(url, secret, environment) {
@@ -418,14 +480,14 @@ async function main() {
     { id: "wrangler-auth", ...whoamiCheck() },
     checkQueues(
       expectedQueueNames(config, environment),
-      wrangler(["queues", "list", "--json"]).stdout,
+      wrangler(["queues", "list"]).stdout,
       environment,
     ),
     checkHyperdrive(
-      wrangler(["hyperdrive", "list", "--json"]).stdout,
+      wrangler(["hyperdrive", "list"]).stdout,
       process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
     ),
-    secretsCheck(config),
+    secretsCheck(config, environment),
   ];
 
   if (!preDeployOnly) {
