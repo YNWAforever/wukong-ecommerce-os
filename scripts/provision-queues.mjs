@@ -2,7 +2,11 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { expectedQueueNames, packageRunners } from "./runtime-doctor.mjs";
+import {
+  expectedQueueNames,
+  packageRunners,
+  shouldTryNextRunner,
+} from "./runtime-doctor.mjs";
 
 /** Creates only what the config declares, and never deletes. */
 export function planQueueCreation(expected, listJson) {
@@ -43,7 +47,7 @@ function wrangler(args) {
       ],
       { cwd, encoding: "utf8", windowsHide: true },
     );
-    if (last.error?.code !== "ENOENT") break;
+    if (!shouldTryNextRunner(last.error)) break;
   }
   return last;
 }

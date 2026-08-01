@@ -219,7 +219,9 @@ export function checkHealthSigned(result) {
  * Mirrors signQueueRequest in packages/jobs/src/cloudflare-queue.ts, which is
  * the source of truth. Duplicated deliberately so the doctor has no build
  * dependency — it must run when the workspace build is broken, which is exactly
- * when you reach for it. The test vector fails loudly if the two diverge.
+ * when you reach for it. The same signature vector is pinned on both sides
+ * (here and in packages/jobs/src/cloudflare-queue.test.ts), so changing the
+ * message format in either place turns one of the two tests red.
  */
 export function signHealthProbe({ secret, timestamp, path, body }) {
   return createHmac("sha256", secret)
@@ -234,16 +236,32 @@ export function signHealthProbe({ secret, timestamp, path, body }) {
  * does — through the workspace that actually depends on it — so this check
  * is PATH-independent.
  */
-export function packageRunners(platform = process.platform) {
-  const windows = platform === "win32";
-  // corepack matches verify-cloudflare-secrets.mjs, but it is not installed
-  // everywhere pnpm is, and a diagnostic that cannot run is worse than useless.
-  // Fall back to pnpm directly rather than reporting a toolchain fault that
-  // only exists inside this script.
+/**
+ * corepack matches verify-cloudflare-secrets.mjs, but it is not installed
+ * everywhere pnpm is, and a diagnostic that cannot run is worse than useless —
+ * hence the fallback to pnpm directly.
+ *
+ * On Windows both are `.cmd` shims, which Node refuses to spawn directly since
+ * the CVE-2024-27980 fix. They have to go through the command interpreter, the
+ * same way tests/e2e/real-stack-server.mjs does it.
+ */
+export function packageRunners(platform = process.platform, env = process.env) {
+  if (platform === "win32") {
+    const shell = env.ComSpec ?? "cmd.exe";
+    return [
+      { command: shell, lead: ["/d", "/s", "/c", "corepack", "pnpm"] },
+      { command: shell, lead: ["/d", "/s", "/c", "pnpm"] },
+    ];
+  }
   return [
-    { command: windows ? "corepack.cmd" : "corepack", lead: ["pnpm"] },
-    { command: windows ? "pnpm.cmd" : "pnpm", lead: [] },
+    { command: "corepack", lead: ["pnpm"] },
+    { command: "pnpm", lead: [] },
   ];
+}
+
+/** An absent runner is worth retrying; a real wrangler error is an answer. */
+export function shouldTryNextRunner(error) {
+  return error?.code === "ENOENT" || error?.code === "EINVAL";
 }
 
 function wrangler(args) {
@@ -264,7 +282,7 @@ function wrangler(args) {
     );
     last = result;
     // Only an absent runner is worth retrying; a wrangler error is a real answer.
-    if (result.error?.code !== "ENOENT") break;
+    if (!shouldTryNextRunner(result.error)) break;
   }
   return {
     stdout: last.stdout ?? "",
@@ -272,6 +290,15 @@ function wrangler(args) {
     status: last.status,
     error: last.error,
   };
+}
+
+async function readHealth(url) {
+  try {
+    const response = await fetch(new URL("/health", url));
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 async function probeSigned(url, secret) {
@@ -407,10 +434,11 @@ async function main() {
       ...vercelEnvCheck(ingressUrl, ingressSecret, environment),
     });
     if (ingressUrl) {
-      const health = await fetch(new URL("/health", ingressUrl)).then(
-        (response) => response.json(),
-        () => null,
-      );
+      // A half-deployed Worker answers with a Cloudflare HTML error page, so
+      // response.json() throws *after* the fetch resolves. A rejection handler
+      // on the fetch alone does not catch that, and a diagnostic must never be
+      // the thing that crashes.
+      const health = await readHealth(ingressUrl);
       checks.push(
         health
           ? checkHealthGet(health)

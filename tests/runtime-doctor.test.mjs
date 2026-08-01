@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   packageRunners,
+  shouldTryNextRunner,
   resolveStatuses,
   formatReport,
   checkQueues,
@@ -241,9 +242,10 @@ test("checkHealthSigned reports an unreachable worker as unknown", () => {
   assert.equal(checkHealthSigned({ error: "ECONNREFUSED" }).status, "unknown");
 });
 
-// Pins the duplicated HMAC against packages/jobs/src/cloudflare-queue.ts. If
-// signQueueRequest's message format ever changes, this vector fails and the
-// doctor stops silently signing requests the Worker will reject.
+// One half of a two-sided pin. packages/jobs/src/cloudflare-queue.test.ts
+// asserts signQueueRequest produces this same signature, so changing the
+// message format on either side turns one of the two tests red. This test
+// alone cannot see a change made only in packages/jobs.
 test("signHealthProbe matches the queue signing algorithm", () => {
   const signature = signHealthProbe({
     secret: "q".repeat(32),
@@ -292,9 +294,31 @@ test("packageRunners falls back to pnpm when corepack is absent", () => {
   );
 });
 
-test("packageRunners uses the windows shims on win32", () => {
+test("packageRunners routes windows shims through the command interpreter", () => {
+  // Node refuses to spawn a .cmd directly since the CVE-2024-27980 fix, so
+  // naming corepack.cmd/pnpm.cmd as the executable fails with EINVAL.
+  const runners = packageRunners("win32", { ComSpec: "C:\\Windows\\cmd.exe" });
+
   assert.deepEqual(
-    packageRunners("win32").map((runner) => runner.command),
-    ["corepack.cmd", "pnpm.cmd"],
+    runners.map((runner) => runner.command),
+    ["C:\\Windows\\cmd.exe", "C:\\Windows\\cmd.exe"],
   );
+  assert.deepEqual(runners[0].lead, ["/d", "/s", "/c", "corepack", "pnpm"]);
+  assert.deepEqual(runners[1].lead, ["/d", "/s", "/c", "pnpm"]);
+});
+
+test("packageRunners falls back to cmd.exe when ComSpec is unset", () => {
+  assert.deepEqual(
+    packageRunners("win32", {}).map((runner) => runner.command),
+    ["cmd.exe", "cmd.exe"],
+  );
+});
+
+test("shouldTryNextRunner retries an absent runner but not a real error", () => {
+  // EINVAL is what a .cmd spawn raises on Windows; without it the loop breaks
+  // before ever reaching the pnpm fallback.
+  assert.equal(shouldTryNextRunner({ code: "ENOENT" }), true);
+  assert.equal(shouldTryNextRunner({ code: "EINVAL" }), true);
+  assert.equal(shouldTryNextRunner({ code: "EACCES" }), false);
+  assert.equal(shouldTryNextRunner(undefined), false);
 });
