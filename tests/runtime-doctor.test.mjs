@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveStatuses, formatReport } from "../scripts/runtime-doctor.mjs";
+import {
+  resolveStatuses,
+  formatReport,
+  checkQueues,
+  checkHyperdrive,
+  expectedQueueNames,
+} from "../scripts/runtime-doctor.mjs";
 
 test("marks dependents of a failed check as blocked, not failed", () => {
   const resolved = resolveStatuses([
@@ -80,4 +86,71 @@ test("the report prints a fix for every red check and never a secret value", () 
   assert.match(report, /FAIL {2}queues/);
   assert.match(report, /pnpm runtime:provision production/);
   assert.match(report, /OK {4}worker-secrets/);
+});
+
+test("expectedQueueNames reads the four queues from runtime config", () => {
+  const names = expectedQueueNames(
+    {
+      environments: {
+        production: {
+          listingQueue: "wukong-listing-production",
+          listingDlq: "wukong-listing-dlq-production",
+          shoplineQueue: "wukong-shopline-production",
+          shoplineDlq: "wukong-shopline-dlq-production",
+        },
+      },
+    },
+    "production",
+  );
+
+  assert.deepEqual(names, [
+    "wukong-listing-production",
+    "wukong-listing-dlq-production",
+    "wukong-shopline-production",
+    "wukong-shopline-dlq-production",
+  ]);
+});
+
+test("checkQueues names every missing queue", () => {
+  const check = checkQueues(
+    ["wukong-listing-production", "wukong-listing-dlq-production"],
+    JSON.stringify([
+      { queue_name: "wukong-listing-production" },
+      { queue_name: "unrelated" },
+    ]),
+    "production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /wukong-listing-dlq-production/);
+  assert.match(check.fix, /runtime:provision production/);
+});
+
+test("checkQueues passes when every expected queue exists", () => {
+  const check = checkQueues(
+    ["a", "b"],
+    JSON.stringify([
+      { queue_name: "a" },
+      { queue_name: "b" },
+      { queue_name: "c" },
+    ]),
+    "production",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkQueues reports unparsable output as unknown, not failed", () => {
+  const check = checkQueues(["a"], "not json", "production");
+
+  assert.equal(check.status, "unknown");
+});
+
+test("checkHyperdrive matches the configured id", () => {
+  const listed = JSON.stringify([{ id: "abc123", name: "wukong" }]);
+
+  assert.equal(checkHyperdrive(listed, "abc123").status, "ok");
+  assert.equal(checkHyperdrive(listed, "def456").status, "failed");
+  assert.equal(checkHyperdrive(listed, "").status, "failed");
+  assert.equal(checkHyperdrive("not json", "abc123").status, "unknown");
 });
