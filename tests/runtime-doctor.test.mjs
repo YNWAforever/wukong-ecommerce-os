@@ -489,3 +489,20 @@ test("classifySecretList reports an unreadable list as unknown", () => {
 
   assert.equal(check.status, "unknown");
 });
+
+test("a missing Worker points at the secrets-file first deploy", () => {
+  const check = classifySecretList(
+    {
+      status: 1,
+      stdout: "",
+      stderr: 'Worker "wukong-runtime-production" not found.',
+    },
+    ["QUEUE_INGRESS_SECRET"],
+    "wukong-runtime-production",
+  );
+
+  // wrangler will not create a Worker with declared secrets unless they are
+  // supplied at deploy time, so `wrangler secret put` first is not an option.
+  assert.equal(check.status, "failed");
+  assert.match(check.fix, /--secrets-file/);
+});

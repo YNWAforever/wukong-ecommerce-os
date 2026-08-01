@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
+
 const root = new URL("../", import.meta.url);
 
 export function compareSecretNames(requiredNames, configuredNames) {
@@ -66,28 +68,30 @@ function main() {
   const selected = source.environments[environment];
   if (!selected) throw new Error("unsupported CLOUDFLARE_ENV");
 
-  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  const result = spawnSync(
-    executable,
-    [
-      "pnpm",
-      "--filter",
-      "@wukong/worker",
-      "exec",
-      "wrangler",
-      "secret",
-      "list",
-      "--name",
-      selected.worker,
-      "--format",
-      "json",
-    ],
-    {
+  // corepack is not installed everywhere pnpm is. Hardcoding it made this
+  // preflight abort with an empty ENOENT result, which reads identically to a
+  // genuine wrangler failure and blocked the deploy for the wrong reason.
+  const args = [
+    "--filter",
+    "@wukong/worker",
+    "exec",
+    "wrangler",
+    "secret",
+    "list",
+    "--name",
+    selected.worker,
+    "--format",
+    "json",
+  ];
+  let result;
+  for (const runner of packageRunners()) {
+    result = spawnSync(runner.command, [...runner.lead, ...args], {
       cwd: fileURLToPath(root),
       encoding: "utf8",
       windowsHide: true,
-    },
-  );
+    });
+    if (!shouldTryNextRunner(result.error)) break;
+  }
   const decision = classifyPreflight(result);
   if (!decision.allow) {
     throw new Error("Wrangler secret list failed; deployment aborted");
