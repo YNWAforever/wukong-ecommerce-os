@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { expectedQueueNames } from "./runtime-doctor.mjs";
 
@@ -20,8 +21,23 @@ export function planQueueCreation(expected, listJson) {
   };
 }
 
+/**
+ * wrangler is a devDependency of apps/worker only and this workspace declares
+ * no hoist pattern, so it is not on PATH from the repo root. Run it through
+ * the workspace that depends on it, the same way
+ * scripts/verify-cloudflare-secrets.mjs and scripts/runtime-doctor.mjs do.
+ */
 function wrangler(args) {
-  return spawnSync("wrangler", args, { encoding: "utf8" });
+  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
+  return spawnSync(
+    executable,
+    ["pnpm", "--filter", "@wukong/worker", "exec", "wrangler", ...args],
+    {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
 }
 
 function main() {

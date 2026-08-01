@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const STATUS_LABEL = {
   ok: "OK   ",
@@ -206,9 +207,30 @@ export function signHealthProbe({ secret, timestamp, path, body }) {
     .digest("base64url");
 }
 
+/**
+ * wrangler is a devDependency of apps/worker only; this workspace declares no
+ * hoist pattern, so a bare `spawnSync("wrangler", ...)` from the repo root
+ * finds nothing on PATH. Run it the same way verify-cloudflare-secrets.mjs
+ * does — through the workspace that actually depends on it — so this check
+ * is PATH-independent.
+ */
 function wrangler(args) {
-  const result = spawnSync("wrangler", args, { encoding: "utf8" });
-  return result.stdout ?? "";
+  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
+  const result = spawnSync(
+    executable,
+    ["pnpm", "--filter", "@wukong/worker", "exec", "wrangler", ...args],
+    {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
+  return {
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    status: result.status,
+    error: result.error,
+  };
 }
 
 async function probeSigned(url, secret) {
@@ -240,7 +262,21 @@ async function probeSigned(url, secret) {
 }
 
 function whoamiCheck() {
-  const output = wrangler(["whoami"]);
+  const result = wrangler(["whoami"]);
+  const output = result.stdout;
+  // The two "we don't know" cases are honestly distinct: wrangler never ran
+  // (a toolchain problem "wrangler login" cannot fix), versus wrangler ran
+  // and told us plainly that no account is authenticated.
+  if (result.error || (result.status !== 0 && !output.trim())) {
+    const reason = result.error
+      ? result.error.message
+      : (result.stderr ?? "").trim() || `exit code ${result.status}`;
+    return {
+      status: "unknown",
+      detail: `wrangler could not be run: ${reason}`,
+      fix: "pnpm install --filter @wukong/worker to repair the worker toolchain, then re-run this check",
+    };
+  }
   return output.includes("@") || /account/i.test(output)
     ? { status: "ok", detail: "wrangler authenticated" }
     : {
@@ -254,7 +290,7 @@ function secretsCheck(config) {
   const required = config.requiredSecrets ?? [];
   let configured = [];
   try {
-    configured = JSON.parse(wrangler(["secret", "list"])).map(
+    configured = JSON.parse(wrangler(["secret", "list"]).stdout).map(
       (entry) => entry.name,
     );
   } catch {
@@ -314,11 +350,11 @@ async function main() {
     { id: "wrangler-auth", ...whoamiCheck() },
     checkQueues(
       expectedQueueNames(config, environment),
-      wrangler(["queues", "list", "--json"]),
+      wrangler(["queues", "list", "--json"]).stdout,
       environment,
     ),
     checkHyperdrive(
-      wrangler(["hyperdrive", "list", "--json"]),
+      wrangler(["hyperdrive", "list", "--json"]).stdout,
       process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
     ),
     secretsCheck(config),
