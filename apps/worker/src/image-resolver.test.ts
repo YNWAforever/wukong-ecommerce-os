@@ -54,8 +54,8 @@ describe("resolveListingImageUrls", () => {
 
     expect(deps.getByIds).toHaveBeenCalledWith([assetB.id, assetA.id]);
     expect(deps.createReadUrl.mock.calls).toEqual([
-      [workspaceId, assetB.storageKey],
-      [workspaceId, assetA.storageKey],
+      [workspaceId, assetB.storageKey, { expiresInMs: undefined }],
+      [workspaceId, assetA.storageKey, { expiresInMs: undefined }],
     ]);
     expect(urls).toEqual([
       `https://signed.example/${encodeURIComponent(assetB.storageKey)}`,
