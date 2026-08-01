@@ -63,10 +63,13 @@ export type WorkspaceRepositories = {
 export type DatabaseOptions = {
   migrationUrl?: string;
   maxConnections?: number;
+  /** Injected by tests; production uses the real postgres driver. */
+  createClient?: typeof postgres;
 };
 
 export type Database = {
   migrate(): Promise<void>;
+  ping(): Promise<void>;
   forWorkspace<T>(
     workspaceId: string,
     work: (repositories: WorkspaceRepositories) => Promise<T>,
@@ -84,7 +87,7 @@ export function createDatabase(
     throw new Error("database URL is required");
   }
 
-  const client = postgres(url, {
+  const client = (options.createClient ?? postgres)(url, {
     connect_timeout: 10,
     idle_timeout: 20,
     max: options.maxConnections ?? 10,
@@ -178,6 +181,11 @@ export function createDatabase(
       } finally {
         await admin.end();
       }
+    },
+    async ping() {
+      // Deliberately not forWorkspace: this proves the connection answers, and
+      // must not open a tenant transaction or set a workspace GUC.
+      await client`select 1`;
     },
     forWorkspace: runForWorkspace,
     async close() {

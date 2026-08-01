@@ -176,3 +176,32 @@ export function workerHealth(env: WorkerEnv) {
     },
   } as const;
 }
+
+type HealthDeps = {
+  createDatabase?: (env: WorkerEnv) => Database;
+};
+
+export async function authenticatedWorkerHealth(
+  env: WorkerEnv,
+  deps: HealthDeps = {},
+) {
+  const create = deps.createDatabase ?? createWorkerDatabase;
+  let hyperdriveConnects = false;
+  let database: Database | undefined;
+  try {
+    database = create(env);
+    await database.ping();
+    hyperdriveConnects = true;
+  } catch {
+    // A health probe reports the failure; it must never propagate it, or the
+    // caller learns "the worker is down" instead of "the database is down".
+    hyperdriveConnects = false;
+  } finally {
+    await database?.close().catch(() => undefined);
+  }
+  return {
+    ...workerHealth(env),
+    authenticated: true,
+    checks: { hyperdriveConnects },
+  } as const;
+}
