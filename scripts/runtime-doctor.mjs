@@ -397,11 +397,15 @@ function whoamiCheck() {
 export function classifySecretList(result, required, worker) {
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (/Worker .*not found/i.test(output)) {
+    // wrangler refuses to create a Worker whose config declares required
+    // secrets unless they are supplied at deploy time, so `wrangler secret put`
+    // cannot be used to set them first. A first deploy is therefore a different
+    // command, not the ordinary gated one.
     return {
       id: "worker-secrets",
       status: "failed",
-      detail: `Worker ${worker} does not exist yet`,
-      fix: "pnpm --filter @wukong/worker deploy:production  # creates the Worker, then set secrets",
+      detail: `Worker ${worker} does not exist; a first deploy must supply all ${required.length} secrets at once`,
+      fix: "wrangler deploy --secrets-file <path>  # see docs/runbooks/production-bring-up.md",
       dependsOn: "wrangler-auth",
     };
   }

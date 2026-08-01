@@ -54,13 +54,24 @@ from secrets being missing, and it is the one that blocks everything else.
 
 ## First deploy of an environment
 
-`deploy:production` now handles a Worker that does not exist: the secret preflight
-warns and lets the deploy through, because `wrangler deploy` is about to create
-it. No manual bootstrap is required.
+**`deploy:production` cannot create a Worker that does not exist yet.** The
+rendered config declares a `secrets` block, and wrangler refuses to create a new
+Worker unless every declared secret is supplied _at deploy time_:
 
-The order still matters, because a Worker deployed without secrets fails at
-runtime until they are set. Export the render inputs first — the deploy script
-sets `CLOUDFLARE_ENV` itself, so do not pass it:
+```
+The following required secrets have not been set: QUEUE_INGRESS_SECRET,
+OPENAI_API_KEY, SHOPLINE_TOKEN_ENCRYPTION_KEY, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+This Worker does not exist yet, so secrets cannot be set in advance with
+`wrangler secret put`.
+```
+
+So `wrangler secret put` is not available before the first deploy, and there is
+no deploy-then-set-secrets ordering. All five values go in together, once, via a
+secrets file. Every deploy after that uses the ordinary gated command.
+
+Export the render inputs first — the deploy script sets `CLOUDFLARE_ENV` itself,
+so do not pass it:
 
 ```bash
 export CLOUDFLARE_HYPERDRIVE_ID="<id from wrangler hyperdrive list>"
@@ -73,20 +84,43 @@ export S3_REGION=auto
 export S3_FORCE_PATH_STYLE=false
 ```
 
-1. `pnpm --filter @wukong/worker deploy:production` — creates the Worker. The
-   preflight prints a warning that the Worker did not exist and that secrets must
-   be set before the environment is usable.
+1. Render the config:
 
-2. Set the five secrets now that the Worker exists. The exact commands are in
-   `docs/runbooks/production-ai-runtime.md`; use
-   `--name wukong-runtime-production`.
+   ```bash
+   CLOUDFLARE_ENV=production node scripts/render-cloudflare-config.mjs
+   ```
 
-   `SHOPLINE_TOKEN_ENCRYPTION_KEY` is required by the preflight but **inert** under
-   CSV-only operation. A generated placeholder is the correct value, not a real
+2. Write a secrets file **outside the repository** — never inside it, and delete
+   it when the deploy finishes. One `NAME=value` per line:
+
+   ```
+   QUEUE_INGRESS_SECRET=<generate a long random string; Vercel must hold the same value>
+   OPENAI_API_KEY=<your OpenAI key>
+   SHOPLINE_TOKEN_ENCRYPTION_KEY=<generated placeholder; inert under CSV-only operation>
+   S3_ACCESS_KEY_ID=<R2 access key id>
+   S3_SECRET_ACCESS_KEY=<R2 secret access key>
+   ```
+
+   `SHOPLINE_TOKEN_ENCRYPTION_KEY` is required by the config but **inert** under
+   CSV-only operation — a generated placeholder is the correct value, not a real
    key. The two shopline queues are inert for the same reason.
 
-3. `pnpm --filter @wukong/worker deploy:production` again — this time the preflight
-   verifies all five secret names properly and the Worker runs with them.
+3. Create the Worker:
+
+   ```bash
+   pnpm --filter @wukong/worker exec wrangler deploy src/cloudflare.ts \
+     --config ../../.wrangler/wrangler.generated.jsonc \
+     --secrets-file <path-outside-the-repo>
+   ```
+
+   Then delete the secrets file.
+
+4. Every deploy after this one uses the ordinary gated command, which now works
+   because the Worker exists:
+
+   ```bash
+   pnpm --filter @wukong/worker deploy:production
+   ```
 
 ## Wiring Vercel
 
