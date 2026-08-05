@@ -246,15 +246,20 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
   );
 });
 
-test("preflight allows a first deploy when the Worker does not exist", () => {
+test("preflight lets wrangler answer for a Worker that does not exist", () => {
   const decision = classifyPreflight({
     status: 1,
     stdout: "",
     stderr: 'Worker "wukong-runtime-production" not found.',
   });
 
+  // Allowed through so wrangler's own required-secrets error is what the
+  // operator reads. The warning must point at --secrets-file: wrangler will
+  // not create the Worker first and accept secrets afterwards.
   assert.equal(decision.allow, true);
   assert.match(decision.warning, /does not exist/i);
+  assert.match(decision.warning, /--secrets-file/);
+  assert.doesNotMatch(decision.warning, /redeploy before this environment/i);
 });
 
 test("preflight reaches the name comparison when the Worker exists", () => {

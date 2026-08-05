@@ -36,10 +36,14 @@ export function classifyPreflight(result) {
   if (result.status === 0) return { allow: true };
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (/Worker .*not found/i.test(output)) {
+    // Allowed through so wrangler's own error is what the operator reads — it
+    // is authoritative and names every missing secret. This warning must not
+    // promise a deploy-then-set-secrets order: wrangler refuses to create a
+    // Worker whose config declares secrets unless they arrive with the deploy.
     return {
       allow: true,
       warning:
-        "Worker does not exist yet; deploying to create it. Set the required secrets and redeploy before this environment is usable.",
+        "Worker does not exist yet. wrangler will only create it if this deploy supplies every declared secret with --secrets-file; see docs/runbooks/production-bring-up.md.",
     };
   }
   return { allow: false };
@@ -91,6 +95,14 @@ function main() {
       windowsHide: true,
     });
     if (!shouldTryNextRunner(result.error)) break;
+  }
+  if (shouldTryNextRunner(result.error)) {
+    // Every runner was absent, so wrangler never ran. Reporting this as a
+    // wrangler failure sends the operator to check auth and Worker names when
+    // the toolchain is what is missing.
+    throw new Error(
+      "Could not run wrangler: neither corepack nor pnpm is on PATH; deployment aborted",
+    );
   }
   const decision = classifyPreflight(result);
   if (!decision.allow) {
