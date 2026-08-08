@@ -17,6 +17,8 @@ const imageUrls = ["https://cdn.example.test/assets/asset_demo_1.jpg"];
 
 function input(overrides: Partial<DeliveryPolicyInput> = {}): DeliveryPolicyInput {
   return {
+    workspaceId,
+    draftId,
     method: "shopline_api",
     phase: "request",
     listing: {
@@ -35,6 +37,21 @@ function input(overrides: Partial<DeliveryPolicyInput> = {}): DeliveryPolicyInpu
 }
 
 describe("Shopline delivery policy", () => {
+  it("retains request identity in not_found audit facts", () => {
+    const result = evaluateDeliveryPolicy(input({ listing: null }));
+
+    expect(result).toMatchObject({
+      kind: "not_found",
+      auditFacts: {
+        workspaceId,
+        draftId,
+        method: "shopline_api",
+        phase: "request",
+        reason: "not_found",
+      },
+    });
+  });
+
   it("returns an API plan bound to the active version, digest, payload, connection, and audit facts", () => {
     const result = evaluateDeliveryPolicy(input());
 

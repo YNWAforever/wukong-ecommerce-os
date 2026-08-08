@@ -40,6 +40,8 @@ export type DeliveryJobSnapshot = {
 };
 
 export type DeliveryPolicyInput = {
+  workspaceId: string;
+  draftId: string;
   method: DeliveryMethod;
   phase: DeliveryPolicyPhase;
   listing: DeliveryListingSnapshot | null;
@@ -99,8 +101,8 @@ function auditFacts(
     : undefined,
 ): DeliveryAuditFacts {
   return {
-    workspaceId: input.listing?.workspaceId ?? null,
-    draftId: input.listing?.draftId ?? null,
+    workspaceId: input.workspaceId,
+    draftId: input.draftId,
     method: input.method,
     phase: input.phase,
     versionId,
@@ -150,7 +152,11 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
       versionId: input.job?.versionId ?? null,
       payloadDigest: input.job?.payloadDigest ?? null,
     };
-    if (observed.versionId !== versionId || observed.payloadDigest !== payloadDigest) {
+    if (
+      observed.versionId !== versionId ||
+      observed.payloadDigest !== payloadDigest ||
+      (listing.status === "published" && input.job?.status !== "published")
+    ) {
       return {
         kind: "stale_plan",
         expected: { versionId, payloadDigest },

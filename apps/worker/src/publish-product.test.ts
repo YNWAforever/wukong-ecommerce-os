@@ -212,6 +212,63 @@ function makeRepos(
 }
 
 describe("publishApprovedProduct", () => {
+  it("returns and audits stale_plan without persistence or connector work when the claimed job is missing", async () => {
+    const harness = makeHarness();
+    harness.state.jobs.splice(0);
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({ code: "stale_plan" });
+
+    expect(harness.state.jobs).toEqual([]);
+    expect(harness.audits).toContainEqual(
+      expect.objectContaining({
+        action: "listing.publish_policy_rejected",
+        metadata: expect.objectContaining({
+          reason: "stale_plan",
+          expectedVersionId: versionId,
+          observedVersionId: null,
+          observedPayloadDigest: null,
+        }),
+      }),
+    );
+    expect(harness.resolveImageUrls).not.toHaveBeenCalled();
+    expect(harness.connector.getProductStatus).not.toHaveBeenCalled();
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it.each(["running", "failed"] as const)(
+    "returns and audits stale_plan for a published listing with a %s job before connector work",
+    async (jobStatus) => {
+      const harness = makeHarness("published");
+      harness.state.jobs[0].status = jobStatus;
+
+      await expect(
+        publishApprovedProduct(publishInput(), harness),
+      ).rejects.toMatchObject({ code: "stale_plan" });
+
+      if (jobStatus === "running") {
+        expect(harness.state.jobs[0]).toMatchObject({
+          status: "failed",
+          error: "stale_plan",
+        });
+      }
+      expect(harness.audits).toContainEqual(
+        expect.objectContaining({
+          action: "listing.publish_policy_rejected",
+          metadata: expect.objectContaining({
+            reason: "stale_plan",
+            expectedVersionId: versionId,
+            observedVersionId: versionId,
+          }),
+        }),
+      );
+      expect(harness.resolveImageUrls).not.toHaveBeenCalled();
+      expect(harness.connector.getProductStatus).not.toHaveBeenCalled();
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    },
+  );
+
   it("sanitizes stale_plan errors without leaking delivery details", () => {
     const error = new PublishDeliveryError(
       "stale_plan",
@@ -529,6 +586,7 @@ describe("publishApprovedProduct", () => {
   });
   it("returns an existing published delivery without calling SHOPLINE twice", async () => {
     const key = `${workspaceId}:${versionId}:shopline:create`;
+    const payloadDigest = hashCanonicalListing(canonicalListing);
     const harness = makeHarness(
       "published",
       [],
@@ -538,7 +596,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "published",
           remoteProductId: "remote_existing",
-          payloadDigest: "d".repeat(64),
+          payloadDigest,
           error: null,
         },
       ],
@@ -547,7 +605,7 @@ describe("publishApprovedProduct", () => {
     expect(result).toMatchObject({
       status: "published",
       remoteProductId: "remote_existing",
-      payloadDigest: "d".repeat(64),
+      payloadDigest,
     });
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });

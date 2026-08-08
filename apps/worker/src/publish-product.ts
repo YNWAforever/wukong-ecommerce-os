@@ -251,17 +251,70 @@ export async function publishApprovedProduct(
       );
       const existing =
         await repositories.publishJobs.getByIdempotencyKey(idempotencyKey);
-      if (listing.status === "published") {
-        if (existing?.status === "published") {
-          return { result: existingResult(existing) };
+      const listingSnapshot = {
+        ...listing,
+        workspaceId: input.workspaceId,
+        draftId: listing.id,
+      };
+      const bindingOutcome = evaluateDeliveryPolicy({
+        workspaceId: input.workspaceId,
+        draftId: input.draftId,
+        method: "shopline_api",
+        phase: "worker",
+        listing: listingSnapshot,
+        imageUrls: [],
+        connection: null,
+        job: existing,
+      });
+      if (bindingOutcome.kind === "stale_plan") {
+        const error = errorFromPolicy(bindingOutcome);
+        if (
+          existing?.status === "running" &&
+          existing.leaseToken === input.leaseToken
+        ) {
+          await repositories.publishJobs.markFailed(
+            idempotencyKey,
+            input.leaseToken,
+            error.code,
+          );
         }
-        throw new Error("published listing is missing its delivery record");
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: policyAuditMetadata(bindingOutcome),
+        });
+        return { terminalError: error };
+      }
+      if (!existing) {
+        const error = new PublishDeliveryError("stale_plan");
+        const bindingAuditFacts =
+          bindingOutcome.kind === "ready"
+            ? bindingOutcome.plan.auditFacts
+            : bindingOutcome.auditFacts;
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: {
+            ...bindingAuditFacts,
+            reason: "stale_plan",
+            expectedVersionId:
+              listing.activeVersion?.id ?? input.expectedVersionId,
+            expectedPayloadDigest: bindingAuditFacts.payloadDigest,
+            observedVersionId: null,
+            observedPayloadDigest: null,
+          },
+        });
+        return { terminalError: error };
+      }
+      if (listing.status === "published" && existing?.status === "published") {
+        return { result: existingResult(existing) };
       }
       if (existing?.status === "published") {
         return { result: existingResult(existing) };
-      }
-      if (!existing || existing.versionId !== input.expectedVersionId) {
-        throw new Error("claimed publish job is unavailable");
       }
       if (existing.connectionId !== connectionId) {
         const error = new PublishDeliveryError("invalid_connection");
@@ -282,13 +335,11 @@ export async function publishApprovedProduct(
         connectionId,
       );
       const outcome = evaluateDeliveryPolicy({
+        workspaceId: input.workspaceId,
+        draftId: input.draftId,
         method: "shopline_api",
         phase: "worker",
-        listing: {
-          ...listing,
-          workspaceId: input.workspaceId,
-          draftId: listing.id,
-        },
+        listing: listingSnapshot,
         imageUrls,
         connection,
         job: existing,
