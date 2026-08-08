@@ -94,6 +94,7 @@ function makeDefaultRuntime() {
   const repositories = {
     listings: {
       async requireForPublish() {
+        order.push("listing");
         return {
           id: listingId,
           target: "shopline" as const,
@@ -114,6 +115,7 @@ function makeDefaultRuntime() {
     },
     shoplineConnections: {
       async getDefault() {
+        order.push("connection");
         return {
           id: "00000000-0000-4000-8000-000000000301",
           encryptedAccessToken: "ciphertext",
@@ -254,6 +256,8 @@ describe("POST /api/listings/[id]/deliver", () => {
       "listing.publish_requested",
     ]);
     expect(runtime.order).toEqual([
+      "listing",
+      "connection",
       "ensure",
       "listing.publish_requested",
       "ingress",
@@ -296,6 +300,8 @@ describe("POST /api/listings/[id]/deliver", () => {
       "listing.publish_queued",
     ]);
     expect(runtime.order).toEqual([
+      "listing",
+      "connection",
       "ensure",
       "listing.publish_requested",
       "ingress",

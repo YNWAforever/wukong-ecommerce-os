@@ -152,8 +152,6 @@ export function defaultDelivery(
         return database.forWorkspace(
           input.workspaceId,
           async (repositories) => {
-            const connection =
-              await repositories.shoplineConnections.getDefault();
             return deliverListing(input, {
               listings: repositories.listings,
               imageUrls: (workspaceId, draftId, imageAssetIds) =>
@@ -170,9 +168,10 @@ export function defaultDelivery(
                   throw new Error("SHOPLINE API must use two-phase enqueue");
                 },
               },
-              connection: connection
-                ? { id: connection.id, verified: true }
-                : null,
+              connection: async () => {
+                const connection = await repositories.shoplineConnections.getDefault();
+                return connection ? { id: connection.id, verified: true } : null;
+              },
               existingDelivery: (key) =>
                 repositories.publishJobs.getByIdempotencyKey(key),
             });
@@ -183,8 +182,6 @@ export function defaultDelivery(
       const prepared = await database.forWorkspace(
         input.workspaceId,
         async (repositories) => {
-          const connection =
-            await repositories.shoplineConnections.getDefault();
           return prepareShoplineDelivery(input, {
             listings: repositories.listings,
             imageUrls: (workspaceId, draftId, imageAssetIds) =>
@@ -197,9 +194,10 @@ export function defaultDelivery(
               }),
             audit: repositories.audit,
             publishJobs: repositories.publishJobs,
-            connection: connection
-              ? { id: connection.id, verified: true }
-              : null,
+            connection: async () => {
+              const connection = await repositories.shoplineConnections.getDefault();
+              return connection ? { id: connection.id, verified: true } : null;
+            },
             existingDelivery: (key) =>
               repositories.publishJobs.getByIdempotencyKey(key),
           });

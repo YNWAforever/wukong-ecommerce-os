@@ -53,3 +53,42 @@ Result: 3 test files / 26 tests passed; web TypeScript check exited 0; diff chec
 
 - The worktree retains pre-existing unrelated changes and untracked generated folders; they were not staged or modified by this task.
 - The snapshot reader intentionally resolves asset URLs only after a first pure-policy readiness check so disconnected/already-published paths retain the established no-unneeded-asset-read behavior. It re-evaluates the same shared policy after those URLs are available; it does not duplicate policy rules.
+
+---
+
+## Review-fix pass (4362b4d)
+
+### Changes
+
+- The snapshot reader now resolves listing asset URLs before its single policy invocation in both CSV and API delivery. The prior preflight call with `imageUrls: []` and second policy evaluation were removed.
+- The adapter now invokes the connection reader itself within the workspace-scoped repository callback. The route no longer preloads connection metadata; route tests assert the adapter reads the listing before the connection.
+- When `publishJobs.ensure` returns a reused pending job with a different connection ID, the publish request and both request/queued audit records use that persisted effective connection ID.
+
+### Changed files
+
+- `apps/web/lib/delivery-service.ts`
+- `apps/web/lib/delivery-service.review-fix.test.ts`
+- `apps/web/app/api/listings/[id]/deliver/route.ts`
+- `apps/web/app/api/listings/[id]/deliver/route.test.ts`
+
+### Commands and results
+
+```powershell
+& '.\\node_modules\\.bin\\vitest.cmd' run 'apps/web/lib/delivery-service.review-fix.test.ts' 'apps/web/app/api/listings/[id]/deliver/route.test.ts' 'apps/web/app/api/listings/[id]/deliver/route.review-fix.test.ts'
+& '.\\node_modules\\.bin\\tsc.cmd' -p 'apps/web/tsconfig.json' --noEmit
+git diff --check
+```
+
+Result: 3 test files / 28 tests passed; web TypeScript check exited 0; diff check exited 0.
+
+### Self-review
+
+- The focused policy spy proves CSV and API each call `evaluateDeliveryPolicy` once and only after receiving the resolved signed image URLs.
+- The snapshot reader owns listing, connection, existing-delivery, and derived publish-job reads; no route-level default-connection preload remains.
+- The persisted connection regression verifies the returned publish request and both request/queue audit records use the effective job connection ID.
+- Existing public response unions, disconnected fallback, pure-policy boundary, and ensure -> ingress -> markQueued sequencing remain unchanged.
+
+### Concerns
+
+- Asset resolution now occurs before all delivery policy outcomes, including disconnected and already-published API outcomes, as required by the reviewed single-authoritative-evaluation contract.
+- Pre-existing unrelated modified and untracked worktree files remain untouched and will not be committed.

@@ -67,7 +67,7 @@ export type DeliveryDeps = {
       payloadDigest: string;
     }): Promise<string>;
   };
-  connection?: { id: string; verified: boolean } | null;
+  connection?: () => Promise<{ id: string; verified: boolean } | null>;
   existingDelivery?: (
     idempotencyKey: string,
   ) => Promise<{
@@ -82,11 +82,7 @@ export type DeliveryDeps = {
 };
 
 export type DeliverySnapshotReader = {
-  read(
-    input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
-    options?: { resolveImageUrls?: boolean },
-  ): Promise<DeliveryPolicySnapshot>;
-  resolveImageUrls(snapshot: DeliveryPolicySnapshot): Promise<readonly string[]>;
+  read(input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">): Promise<DeliveryPolicySnapshot>;
 };
 
 export type DeliveryPolicySnapshot = {
@@ -102,7 +98,6 @@ export function createDeliverySnapshotReader(
 ): DeliverySnapshotReader {
   async function read(
     input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
-    options: { resolveImageUrls?: boolean } = {},
   ): Promise<DeliveryPolicySnapshot> {
     const source = await deps.listings.requireForPublish(input.draftId);
     const listing: DeliveryListingSnapshot = {
@@ -113,8 +108,11 @@ export function createDeliverySnapshotReader(
       activeVersion: source.activeVersion,
       flags: source.flags,
     };
-    const connection = deps.connection
-      ? { ...deps.connection, workspaceId: input.workspaceId }
+    const configuredConnection = deps.connection
+      ? await deps.connection()
+      : null;
+    const connection = configuredConnection
+      ? { ...configuredConnection, workspaceId: input.workspaceId }
       : null;
     const existingDelivery =
       input.method === "shopline_api" && listing.activeVersion && deps.existingDelivery
@@ -133,9 +131,7 @@ export function createDeliverySnapshotReader(
         }
       : null;
     const snapshot = { listing, imageUrls: [], connection, job, existingDelivery };
-    return options.resolveImageUrls === false
-      ? snapshot
-      : { ...snapshot, imageUrls: await resolveImageUrls(snapshot) };
+    return { ...snapshot, imageUrls: await resolveImageUrls(snapshot) };
   }
 
   async function resolveImageUrls(snapshot: DeliveryPolicySnapshot) {
@@ -149,7 +145,7 @@ export function createDeliverySnapshotReader(
       : [];
   }
 
-  return { read, resolveImageUrls };
+  return { read };
 }
 
 function auditMetadata(facts: DeliveryAuditFacts, metadata: Record<string, unknown> = {}) {
@@ -228,11 +224,8 @@ export async function prepareShoplineDelivery(
   deps: ShoplineDeliveryDeps,
 ): Promise<ShoplinePreparationResult> {
   const reader = createDeliverySnapshotReader(deps);
-  let snapshot = await reader.read(input, { resolveImageUrls: false });
-  let outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
-  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
-  snapshot = { ...snapshot, imageUrls: await reader.resolveImageUrls(snapshot) };
-  outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  const snapshot = await reader.read(input);
+  const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
   const { plan } = outcome;
@@ -249,12 +242,13 @@ export async function prepareShoplineDelivery(
   if (job.status !== "pending_enqueue") {
     return { kind: "retry_required", jobId: job.id, versionId: plan.versionId };
   }
+  const auditFacts = { ...plan.auditFacts, connectionId: job.connectionId };
   await deps.audit.write({
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     action: "listing.publish_requested",
     entityId: input.draftId,
-    metadata: auditMetadata(plan.auditFacts, { jobId: job.id }),
+    metadata: auditMetadata(auditFacts, { jobId: job.id }),
   });
   return {
     kind: "publish_request",
@@ -266,7 +260,7 @@ export async function prepareShoplineDelivery(
     draftId: input.draftId,
     idempotencyKey: plan.idempotencyKey!,
     payloadDigest: plan.payloadDigest,
-    auditFacts: plan.auditFacts,
+    auditFacts,
   };
 }
 
@@ -323,11 +317,8 @@ export async function deliverListing(
   deps: DeliveryDeps,
 ): Promise<DeliveryResult> {
   const reader = createDeliverySnapshotReader(deps);
-  let snapshot = await reader.read(input, { resolveImageUrls: false });
-  let outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
-  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
-  snapshot = { ...snapshot, imageUrls: await reader.resolveImageUrls(snapshot) };
-  outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  const snapshot = await reader.read(input);
+  const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
   const { plan } = outcome;
