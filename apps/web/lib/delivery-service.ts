@@ -95,6 +95,7 @@ export type DeliveryPolicySnapshot = {
 
 export function createDeliverySnapshotReader(
   deps: Pick<DeliveryDeps, "listings" | "imageUrls" | "connection" | "existingDelivery">,
+  options: { deferImageUrls?: boolean } = {},
 ): DeliverySnapshotReader {
   async function read(
     input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
@@ -130,7 +131,7 @@ export function createDeliverySnapshotReader(
           connectionId: existingDelivery.connectionId ?? null,
         }
       : null;
-    const imageUrls = listing.activeVersion
+    const imageUrls = listing.activeVersion && !options.deferImageUrls
       ? await deps.imageUrls(
           input.workspaceId,
           input.draftId,
@@ -141,6 +142,22 @@ export function createDeliverySnapshotReader(
   }
 
   return { read };
+}
+
+async function withResolvedImageUrls(
+  snapshot: DeliveryPolicySnapshot,
+  deps: Pick<DeliveryDeps, "imageUrls">,
+): Promise<DeliveryPolicySnapshot> {
+  const activeVersion = snapshot.listing.activeVersion;
+  if (!activeVersion) return snapshot;
+  return {
+    ...snapshot,
+    imageUrls: await deps.imageUrls(
+      snapshot.listing.workspaceId,
+      snapshot.listing.draftId,
+      activeVersion.content.imageAssetIds,
+    ),
+  };
 }
 
 function auditMetadata(facts: DeliveryAuditFacts, metadata: Record<string, unknown> = {}) {
@@ -218,12 +235,21 @@ export async function prepareShoplineDelivery(
   input: DeliverInput,
   deps: ShoplineDeliveryDeps,
 ): Promise<ShoplinePreparationResult> {
-  const reader = createDeliverySnapshotReader(deps);
+  const reader = createDeliverySnapshotReader(deps, { deferImageUrls: true });
   const snapshot = await reader.read(input);
   const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
-  const { plan } = outcome;
+  const resolvedSnapshot = await withResolvedImageUrls(snapshot, deps);
+  const resolvedOutcome = evaluateDeliveryPolicy({
+    ...input,
+    phase: "request",
+    ...resolvedSnapshot,
+  });
+  if (resolvedOutcome.kind !== "ready")
+    return resultFromPolicy(resolvedOutcome, resolvedSnapshot);
+
+  const { plan } = resolvedOutcome;
   const job = await deps.publishJobs.ensure({
     listingId: snapshot.listing.draftId,
     versionId: plan.versionId,

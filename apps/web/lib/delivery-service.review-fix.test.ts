@@ -116,7 +116,7 @@ describe("delivery audit and queue context", () => {
   });
 
   it.each(["csv", "shopline_api"] as const)(
-    "resolves image URLs before the single %s policy decision",
+    "keeps direct %s delivery eager with one policy decision",
     async (method) => {
       const audits: unknown[] = [];
       vi.mocked(evaluateDeliveryPolicy).mockClear();
@@ -135,23 +135,10 @@ describe("delivery audit and queue context", () => {
         flags: [],
       });
 
-      if (method === "csv") {
-        await deliverListing(
-          { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method },
-          harness,
-        );
-      } else {
-        harness.publishJobs = {
-          async ensure(input: any) {
-            return { ...input, id: "job_db_1", status: "pending_enqueue" };
-          },
-          async markQueued() { return true; },
-        };
-        await prepareShoplineDelivery(
-          { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method },
-          harness,
-        );
-      }
+      await deliverListing(
+        { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method },
+        harness,
+      );
 
       expect(imageUrls).toHaveBeenCalledTimes(1);
       expect(evaluateDeliveryPolicy).toHaveBeenCalledTimes(1);
@@ -160,6 +147,45 @@ describe("delivery audit and queue context", () => {
       });
     },
   );
+
+  it("preflights Shopline preparation before resolving image URLs", async () => {
+    const audits: unknown[] = [];
+    vi.mocked(evaluateDeliveryPolicy).mockClear();
+    const harness = deps(audits, []);
+    const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
+    harness.imageUrls = imageUrls;
+    harness.listings.requireForPublish = async () => ({
+      id: "listing_1",
+      target: "shopline" as const,
+      status: "approved" as const,
+      activeVersion: {
+        id: "version_1",
+        sequence: 1,
+        content: { ...content, imageAssetIds: ["asset_a"] },
+      },
+      flags: [],
+    });
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return { ...input, id: "job_db_1", status: "pending_enqueue" };
+      },
+      async markQueued() { return true; },
+    };
+
+    await prepareShoplineDelivery(
+      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "shopline_api" },
+      harness,
+    );
+
+    expect(imageUrls).toHaveBeenCalledTimes(1);
+    expect(evaluateDeliveryPolicy).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[0]?.[0]).toMatchObject({
+      imageUrls: [],
+    });
+    expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[1]?.[0]).toMatchObject({
+      imageUrls: ["https://signed.example/asset-a"],
+    });
+  });
 
   it("persists pending enqueue and publish requested before queue ingress", async () => {
     const audits: any[] = [];
