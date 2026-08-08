@@ -106,7 +106,6 @@ function isTerminal(error: unknown): boolean {
       error.code === "not_approved" ||
       error.code === "blocking_flags" ||
       error.code === "invalid_payload" ||
-      error.code === "invalid_connection" ||
       error.code === "stale_plan")
   );
 }

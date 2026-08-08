@@ -145,6 +145,21 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
 
   const { id: versionId, content } = listing.activeVersion;
   const payloadDigest = hashCanonicalListing(content);
+  if (input.phase === "worker") {
+    const observed = {
+      versionId: input.job?.versionId ?? null,
+      payloadDigest: input.job?.payloadDigest ?? null,
+    };
+    if (observed.versionId !== versionId || observed.payloadDigest !== payloadDigest) {
+      return {
+        kind: "stale_plan",
+        expected: { versionId, payloadDigest },
+        observed,
+        auditFacts: auditFacts(input, "stale_plan", versionId, payloadDigest),
+      };
+    }
+  }
+
   if (!isEligibleStatus(input.phase, listing.status)) {
     return { kind: "approval_required", auditFacts: auditFacts(input, "status_not_eligible", versionId, payloadDigest) };
   }
@@ -166,21 +181,6 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
       remoteProductId: null,
       auditFacts: auditFacts(input, "already_published", versionId, payloadDigest),
     };
-  }
-
-  if (input.phase === "worker") {
-    const observed = {
-      versionId: input.job?.versionId ?? null,
-      payloadDigest: input.job?.payloadDigest ?? null,
-    };
-    if (observed.versionId !== versionId || observed.payloadDigest !== payloadDigest) {
-      return {
-        kind: "stale_plan",
-        expected: { versionId, payloadDigest },
-        observed,
-        auditFacts: auditFacts(input, "stale_plan", versionId, payloadDigest),
-      };
-    }
   }
 
   let payload: ShoplineProductPayload;

@@ -40,6 +40,7 @@ function makeHarness(
     leaseToken?: string | null;
     leaseExpiresAt?: Date | null;
     attemptCount?: number;
+    missingConnection?: boolean;
   } = {},
 ) {
   const audits: any[] = [];
@@ -196,7 +197,7 @@ function makeHarness(
     },
     shoplineConnections: {
       async getById(id: string) {
-        return id === connectionId
+        return id === connectionId && !options.missingConnection
           ? {
               id: connectionId,
               shopDomain: "merchant.example",
@@ -279,6 +280,20 @@ describe("consumeShoplineMessage", () => {
       error: "stale_plan",
     });
     expect(harness.listing.status).toBe("approved");
+  });
+
+  it("retries invalid_connection instead of classifying it as terminal", async () => {
+    const harness = makeHarness({ missingConnection: true });
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    expect(harness.job).toMatchObject({
+      status: "failed",
+      error: "invalid_connection",
+    });
   });
 
   it("rejects a queue connection that differs from the claimed job", async () => {

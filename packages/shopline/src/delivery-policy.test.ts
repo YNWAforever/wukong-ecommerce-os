@@ -220,6 +220,49 @@ describe("Shopline delivery policy", () => {
     expect(JSON.stringify(result)).toContain(JSON.stringify(observed));
   });
 
+  it.each([
+    [
+      "the listing is no longer eligible",
+      { ...input().listing!, status: "review" as const },
+    ],
+    [
+      "the listing has blocking flags",
+      {
+        ...input().listing!,
+        flags: [
+          {
+            id: "flag-1",
+            field: "description",
+            rule: "unsupported_claim",
+            severity: "blocking" as const,
+            status: "open" as const,
+            resolutionReason: null,
+          },
+        ],
+      },
+    ],
+  ])(
+    "returns stale_plan before mutable worker eligibility checks when %s",
+    (_case, listing) => {
+      const result = evaluateDeliveryPolicy(
+        input({
+          phase: "worker",
+          listing,
+          job: {
+            id: "job-1",
+            versionId: "version-stale",
+            payloadDigest: "stale-digest",
+            idempotencyKey: "key",
+            connectionId,
+            status: "running",
+          },
+        }),
+      );
+
+      expect(result).toMatchObject({ kind: "stale_plan" });
+    },
+  );
+
   it("returns serializable outcomes with no executable or secret-bearing values", () => {
     const result = evaluateDeliveryPolicy(input());
     const serialized = JSON.parse(JSON.stringify(result)) as Record<string, unknown>;

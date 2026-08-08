@@ -65,3 +65,44 @@ Results:
 
 - Task 5 remains responsible for any repository/database terminal-code persistence changes beyond the worker's typed `stale_plan` handling.
 - The worktree had unrelated pre-existing edits and generated/untracked directories; they were preserved and excluded from this task commit.
+
+## Review-fix pass
+
+### Findings fixed
+
+- In worker phase, the shared policy now compares the claimed job's version and digest with the active version's canonical digest immediately after confirming an active version exists, before status or blocking-flag eligibility checks. Missing listings and missing active versions retain their prior `not_found` and `approval_required` outcomes.
+- Restored the existing consumer terminal classification by removing `invalid_connection`; `stale_plan` remains the sole intentional Task 4 terminal addition.
+
+### TDD evidence
+
+Added focused tests first for stale binding precedence over a changed listing status and blocking flags, plus an `invalid_connection` consumer retry outcome. The initial focused run failed as expected:
+
+```powershell
+.\node_modules\.bin\vitest.cmd run packages/shopline/src/delivery-policy.test.ts apps/worker/src/shopline-consumer.test.ts
+```
+
+Result: 3 expected failures: two outcomes were masked as `approval_required`/`blocking_flags`, and `invalid_connection` was acknowledged.
+
+### Verification
+
+```powershell
+.\node_modules\.bin\vitest.cmd run packages/shopline/src/delivery-policy.test.ts apps/worker/src/publish-product.test.ts apps/worker/src/shopline-consumer.test.ts
+pnpm.cmd --filter @wukong/worker typecheck
+pnpm.cmd --filter @wukong/shopline typecheck
+git -c safe.directory=C:/Users/laich/Documents/WukongEommerce/worktrees/shopline-ai-listing-mvp diff --check
+```
+
+Results:
+
+- Focused policy and worker tests: 3 files / 68 tests passed.
+- Worker and SHOPLINE typechecks: passed.
+- Diff check: passed.
+
+### Self-review
+
+- Reviewed the final diff against both findings: binding precedence changes only the worker branch after active-version resolution, leaving request behavior, not-found, and missing-active-version behavior unchanged.
+- Queue schema and approved web behavior were not changed. Consumer retry/terminal behavior changed only by removing the unintended `invalid_connection` terminal entry; `stale_plan` remains terminal.
+
+### Concerns
+
+- `invalid_connection` follows its established retry path; this pass intentionally does not alter job reclaim or broader queue semantics.
