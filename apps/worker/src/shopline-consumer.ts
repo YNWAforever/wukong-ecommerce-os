@@ -62,10 +62,19 @@ export type ShoplineConsumerDependencies = {
 
 function publishRepositories(
   repositories: WorkspaceRepositories,
+  workspaceId: string,
 ): PublishRepositories {
   return {
     listings: repositories.listings,
     publishJobs: repositories.publishJobs,
+    shoplineConnections: {
+      async getById(id) {
+        const connection = await repositories.shoplineConnections.getById(id);
+        return connection
+          ? { id: connection.id, workspaceId, verified: true }
+          : null;
+      },
+    },
     audit: repositories.audit as AuditWriter,
   };
 }
@@ -96,7 +105,9 @@ function isTerminal(error: unknown): boolean {
       error.code === "validation_failed" ||
       error.code === "not_approved" ||
       error.code === "blocking_flags" ||
-      error.code === "invalid_payload")
+      error.code === "invalid_payload" ||
+      error.code === "invalid_connection" ||
+      error.code === "stale_plan")
   );
 }
 
@@ -210,7 +221,7 @@ export async function consumeShoplineMessage(
           work: (repositories: PublishRepositories) => Promise<T>,
         ): Promise<T> {
           return runtime.database.forWorkspace(workspaceId, (repositories) =>
-            work(publishRepositories(repositories)),
+            work(publishRepositories(repositories, workspaceId)),
           );
         },
         resolveImageUrls: (workspaceId, draftId, imageAssetIds) =>

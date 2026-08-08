@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   SHOPLINE_REQUEST_TIMEOUT_MS,
+  hashCanonicalListing,
   type CommerceConnector,
 } from "@wukong/shopline";
 import {
@@ -56,7 +57,7 @@ function makeHarness(
     connectionId,
     status: options.status ?? "pending_enqueue",
     idempotencyKey: key,
-    payloadDigest: null,
+    payloadDigest: hashCanonicalListing(canonicalListing),
     remoteProductId: null,
     error: options.error ?? null,
     leaseToken: options.leaseToken ?? null,
@@ -275,7 +276,7 @@ describe("consumeShoplineMessage", () => {
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
     expect(harness.job).toMatchObject({
       status: "failed",
-      error: "not_approved",
+      error: "stale_plan",
     });
     expect(harness.listing.status).toBe("approved");
   });
