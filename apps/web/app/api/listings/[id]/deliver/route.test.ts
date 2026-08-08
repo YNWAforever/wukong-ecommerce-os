@@ -83,7 +83,12 @@ function makeHandler(
   return { handler, calls };
 }
 
-function makeDefaultRuntime() {
+function makeDefaultRuntime(
+  options: {
+    connection?: "connected" | "disconnected";
+    imageAssetIds?: readonly string[];
+  } = {},
+) {
   const audits: any[] = [];
   const order: string[] = [];
   const ensureInputs: any[] = [];
@@ -103,47 +108,58 @@ function makeDefaultRuntime() {
           activeVersion: {
             id: versionId,
             sequence: 1,
-            content: deliveryContent,
+            content: {
+              ...deliveryContent,
+              imageAssetIds:
+                options.imageAssetIds ?? deliveryContent.imageAssetIds,
+            },
           },
           flags: [],
         };
       },
     },
     sourceAssets: {
-      async getByIds() {
-        return [];
-      },
+      getByIds: vi.fn(async (assetIds: readonly string[]) =>
+        assetIds.map((id) => ({
+          id,
+          workspaceId: context.workspaceId,
+          listingId,
+          kind: "image/png",
+          storageKey: `ws/${context.workspaceId}/sources/${id}/image.png`,
+        })),
+      ),
     },
     shoplineConnections: {
-      async getDefault() {
+      getDefault: vi.fn(async () => {
         order.push("connection");
+        if (options.connection === "disconnected") return null;
         return {
           id: "00000000-0000-4000-8000-000000000301",
           encryptedAccessToken: "ciphertext",
         };
-      },
+      }),
     },
     audit: {
-      async write(event: any) {
+      write: vi.fn(async (event: any) => {
         audits.push(event);
         order.push(event.action);
-      },
+      }),
     },
     publishJobs: {
-      async ensure(input: any) {
+      ensure: vi.fn(async (input: any) => {
         order.push("ensure");
         ensureInputs.push(input);
         return job;
-      },
-      async getByIdempotencyKey() {
+      }),
+      getByIdempotencyKey: vi.fn(async () => {
         return job;
-      },
-      async markQueued() {
+      }),
+      markQueued: vi.fn(async () => {
         order.push("markQueued");
         if (job.status !== "pending_enqueue") return false;
         job.status = "queued";
         return true;
-      },
+      }),
     },
   };
   const database = {
@@ -155,12 +171,12 @@ function makeDefaultRuntime() {
     ),
   };
   runtimeMocks.getDatabase.mockReturnValue(database);
-  runtimeMocks.getAssetStore.mockReturnValue({
-    async createReadUrl() {
-      throw new Error("no image URLs expected");
-    },
-  });
-  return { audits, order, job, database, ensureInputs };
+  const createReadUrl = vi.fn(async (_workspaceId: string, storageKey: string) => ({
+    url: `https://signed.example/${encodeURIComponent(storageKey)}`,
+    expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+  }));
+  runtimeMocks.getAssetStore.mockReturnValue({ createReadUrl });
+  return { audits, order, job, database, ensureInputs, repositories, createReadUrl };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -191,6 +207,45 @@ describe("POST /api/listings/[id]/deliver", () => {
       code: "shopline_disconnected",
       csvFallback: { method: "csv" },
     });
+  });
+
+  it("uses default delivery to return the CSV fallback without queue or CSV side effects", async () => {
+    const runtime = makeDefaultRuntime({
+      connection: "disconnected",
+      imageAssetIds: ["asset_csv_side_effect_probe"],
+    });
+    const ingressClient = { enqueue: vi.fn() };
+    const handler = createDeliverListingHandler({
+      sessionContext: {
+        async resolve() {
+          return context;
+        },
+      },
+      delivery: defaultDelivery({ ingressClient } as never),
+    });
+
+    const response = await handler(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ method: "shopline_api" }),
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "shopline_disconnected",
+      message: "SHOPLINE is not connected; use CSV fallback.",
+      csvFallback: {
+        method: "csv",
+        path: `/api/listings/${listingId}/deliver`,
+      },
+    });
+    expect(runtime.repositories.publishJobs.ensure).not.toHaveBeenCalled();
+    expect(ingressClient.enqueue).not.toHaveBeenCalled();
+    expect(runtime.repositories.sourceAssets.getByIds).not.toHaveBeenCalled();
+    expect(runtime.createReadUrl).not.toHaveBeenCalled();
+    expect(runtime.repositories.audit.write).not.toHaveBeenCalled();
   });
 
   it("returns deterministic UTF-8 CRLF CSV content for an approved listing", async () => {

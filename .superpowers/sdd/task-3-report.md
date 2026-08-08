@@ -56,3 +56,39 @@ Both commands passed.
 ## Concerns
 
 - The worktree contained unrelated pre-existing changes and generated/untracked directories; they were preserved and not staged.
+
+## Review finding: disconnected default-delivery coverage
+
+### RED
+
+Added a route-level test using `createDeliverListingHandler` with the real `defaultDelivery` adapter, a disconnected connection, and a non-empty image fixture. The test asserted the explicit CSV fallback response and that no publish job, ingress, asset URL, or audit side effect ran.
+
+Command:
+
+```powershell
+.\node_modules\.bin\vitest.cmd run 'apps/web/app/api/listings/[id]/deliver/route.test.ts'
+```
+
+Result before the fix: failed as expected. `sourceAssets.getByIds` was called once for `asset_csv_side_effect_probe`, proving the snapshot reader eagerly resolved payload images before returning the disconnected fallback.
+
+### GREEN
+
+Deferred image URL resolution until the first policy evaluation has returned `ready`, then reevaluate with the resolved URLs before CSV generation or API job creation. This preserves the strict four-field ingress payload and existing ensure -> ingress -> markQueued ordering.
+
+### Verification
+
+```powershell
+.\node_modules\.bin\vitest.cmd run 'apps/web/app/api/listings/[id]/deliver/route.test.ts' apps/web/lib/cloudflare-queue-runtime.test.ts packages/jobs/src/cloudflare-queue.test.ts
+pnpm.cmd --filter @wukong/web typecheck
+pnpm.cmd --filter @wukong/jobs typecheck
+git diff --check
+```
+
+Results: 3 test files / 18 tests passed; web typecheck passed; jobs typecheck passed; diff check passed.
+
+### Self-review
+
+- The new test uses the real `defaultDelivery` path and retains the earlier stubbed `DeliveryPort` response-mapping test.
+- A disconnected API response is exactly the explicit CSV fallback and does not call `publishJobs.ensure`, ingress, asset lookup/signed URL generation, or audit writes.
+- The Shopline queue message remains the existing four identifiers; no digest was added.
+- Only the focused route test, delivery-service deferred resolution, and this report are intended for the commit.
