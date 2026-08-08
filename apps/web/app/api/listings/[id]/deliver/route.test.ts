@@ -86,6 +86,7 @@ function makeHandler(
 function makeDefaultRuntime() {
   const audits: any[] = [];
   const order: string[] = [];
+  const ensureInputs: any[] = [];
   const job = {
     id: "job_database_1",
     status: "pending_enqueue",
@@ -129,8 +130,9 @@ function makeDefaultRuntime() {
       },
     },
     publishJobs: {
-      async ensure() {
+      async ensure(input: any) {
         order.push("ensure");
+        ensureInputs.push(input);
         return job;
       },
       async getByIdempotencyKey() {
@@ -158,7 +160,7 @@ function makeDefaultRuntime() {
       throw new Error("no image URLs expected");
     },
   });
-  return { audits, order, job, database };
+  return { audits, order, job, database, ensureInputs };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -289,6 +291,16 @@ describe("POST /api/listings/[id]/deliver", () => {
         connectionId: "00000000-0000-4000-8000-000000000301",
       },
     );
+    expect(runtime.ensureInputs).toEqual([
+      {
+        listingId,
+        versionId,
+        connectionId: "00000000-0000-4000-8000-000000000301",
+        idempotencyKey: `ws_opak:${versionId}:shopline:create`,
+        payloadDigest: runtime.audits[0]?.metadata?.payloadDigest,
+      },
+    ]);
+    expect(runtime.ensureInputs[0]?.payloadDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(result).toEqual({
       kind: "queued",
       jobId: "job_database_1",

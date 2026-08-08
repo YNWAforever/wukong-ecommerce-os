@@ -22,13 +22,21 @@ describe("Cloudflare queue protocol", () => {
         activeVersionSequence: 0,
       }),
     ).toEqual({ workspaceId: "ws_opak", draftId, activeVersionSequence: 0 });
+    expect(
+      shoplinePublishJobSchema.parse({
+        workspaceId: "ws_opak",
+        draftId,
+        versionId,
+        connectionId,
+      }),
+    ).toEqual({ workspaceId: "ws_opak", draftId, versionId, connectionId });
     expect(() =>
       shoplinePublishJobSchema.parse({
         workspaceId: "ws_opak",
         draftId,
         versionId,
         connectionId,
-        token: "secret",
+        payloadDigest: "must-stay-on-the-publish-job",
       }),
     ).toThrow();
   });

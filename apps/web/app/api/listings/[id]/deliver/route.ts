@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { resolveListingImageUrls } from "@wukong/assets";
-import { SHOPLINE_INGRESS_PATH } from "@wukong/jobs";
+import {
+  SHOPLINE_INGRESS_PATH,
+  type ShoplinePublishJob,
+} from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -206,12 +209,13 @@ export function defaultDelivery(
       if (prepared.kind !== "publish_request") return prepared;
 
       try {
-        await ingressClient.enqueue(SHOPLINE_INGRESS_PATH, {
+        const message: ShoplinePublishJob = {
           workspaceId: input.workspaceId,
           draftId: input.draftId,
           versionId: prepared.versionId,
           connectionId: prepared.connectionId,
-        });
+        };
+        await ingressClient.enqueue(SHOPLINE_INGRESS_PATH, message);
       } catch {
         return {
           kind: "retry_required",

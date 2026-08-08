@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createCloudflareIngressClient,
+  type CloudflareIngressClient,
   QueueIngressError,
 } from "./cloudflare-queue-runtime.js";
 
@@ -17,6 +18,21 @@ const payload = {
 };
 
 describe("Cloudflare queue ingress runtime", () => {
+  it("types each ingress path to its strict queue payload", () => {
+    const ingress = null as unknown as CloudflareIngressClient;
+
+    if (false) {
+      // @ts-expect-error The SHOPLINE ingress message never carries the persisted digest.
+      void ingress.enqueue(SHOPLINE_INGRESS_PATH, {
+        workspaceId: "ws_opak",
+        draftId: "00000000-0000-4000-8000-000000000001",
+        versionId: "00000000-0000-4000-8000-000000000002",
+        connectionId: "00000000-0000-4000-8000-000000000003",
+        payloadDigest: "must-not-cross-ingress",
+      });
+    }
+  });
+
   it("posts exact JSON with timestamp and HMAC without logging the secret", async () => {
     const secret = "s".repeat(32);
     const fetch = vi.fn(
@@ -81,7 +97,7 @@ describe("Cloudflare queue ingress runtime", () => {
       client.enqueue(SHOPLINE_INGRESS_PATH, {
         ...shoplinePayload,
         payloadDigest: "must-not-cross-ingress",
-      }),
+      } as never),
     ).rejects.toEqual(new QueueIngressError("queue_unavailable"));
   });
 
