@@ -128,7 +128,9 @@ export class PublishDeliveryError extends Error {
           ? "Only the active approved version can be delivered"
           : code === "invalid_connection"
             ? "A valid tenant SHOPLINE connection is required"
-            : `SHOPLINE publish failed: ${code}`,
+            : code === "stale_plan"
+              ? "The approved listing plan is no longer current"
+              : `SHOPLINE publish failed: ${code}`,
     );
     this.name = "PublishDeliveryError";
     this.code = code;

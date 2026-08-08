@@ -212,6 +212,19 @@ function makeRepos(
 }
 
 describe("publishApprovedProduct", () => {
+  it("sanitizes stale_plan errors without leaking delivery details", () => {
+    const error = new PublishDeliveryError(
+      "stale_plan",
+      "listing body, https://shopline.example/products/123, token=secret",
+    );
+
+    expect(error).toMatchObject({ code: "stale_plan" });
+    expect(error.message).toBe(
+      "The approved listing plan is no longer current",
+    );
+    expect(error.message).not.toMatch(/listing body|shopline\.example|secret/i);
+  });
+
   it("marks a current-version mismatch as stale_plan with binding audit facts before connector work", async () => {
     const harness = makeHarness();
     if (!harness.state.listing.activeVersion) throw new Error("missing version");
