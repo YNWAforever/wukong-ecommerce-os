@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type {
   CanonicalListing,
   ComplianceFlag,
@@ -7,10 +5,13 @@ import type {
 } from "@wukong/core";
 import {
   createShoplineCsv,
-  projectToShopline,
+  evaluateDeliveryPolicy,
   SHOPLINE_CSV_SPEC_VERSION,
-  validateShoplineProduct,
-  type ShoplineProductPayload,
+  type DeliveryAuditFacts,
+  type DeliveryConnectionSnapshot,
+  type DeliveryJobSnapshot,
+  type DeliveryListingSnapshot,
+  type DeliveryPolicyOutcome,
 } from "@wukong/shopline";
 
 export type DeliverInput = {
@@ -69,17 +70,115 @@ export type DeliveryDeps = {
   connection?: { id: string; verified: boolean } | null;
   existingDelivery?: (
     idempotencyKey: string,
-  ) => Promise<{ status: string; remoteProductId: string | null } | null>;
+  ) => Promise<{
+    id?: string;
+    versionId?: string;
+    status: string;
+    idempotencyKey?: string;
+    payloadDigest?: string | null;
+    connectionId?: string | null;
+    remoteProductId: string | null;
+  } | null>;
 };
 
-function digest(content: CanonicalListing): string {
-  return createHash("sha256")
-    .update(JSON.stringify(content), "utf8")
-    .digest("hex");
+export type DeliverySnapshotReader = {
+  read(
+    input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
+    options?: { resolveImageUrls?: boolean },
+  ): Promise<DeliveryPolicySnapshot>;
+  resolveImageUrls(snapshot: DeliveryPolicySnapshot): Promise<readonly string[]>;
+};
+
+export type DeliveryPolicySnapshot = {
+  listing: DeliveryListingSnapshot;
+  imageUrls: readonly string[];
+  connection: DeliveryConnectionSnapshot | null;
+  job: DeliveryJobSnapshot | null;
+  existingDelivery: Awaited<ReturnType<NonNullable<DeliveryDeps["existingDelivery"]>>>;
+};
+
+export function createDeliverySnapshotReader(
+  deps: Pick<DeliveryDeps, "listings" | "imageUrls" | "connection" | "existingDelivery">,
+): DeliverySnapshotReader {
+  async function read(
+    input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
+    options: { resolveImageUrls?: boolean } = {},
+  ): Promise<DeliveryPolicySnapshot> {
+    const source = await deps.listings.requireForPublish(input.draftId);
+    const listing: DeliveryListingSnapshot = {
+      workspaceId: input.workspaceId,
+      draftId: input.draftId,
+      target: source.target,
+      status: source.status,
+      activeVersion: source.activeVersion,
+      flags: source.flags,
+    };
+    const connection = deps.connection
+      ? { ...deps.connection, workspaceId: input.workspaceId }
+      : null;
+    const existingDelivery =
+      input.method === "shopline_api" && listing.activeVersion && deps.existingDelivery
+        ? await deps.existingDelivery(
+            `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
+          )
+        : null;
+    const job = existingDelivery?.id && existingDelivery.versionId && existingDelivery.idempotencyKey
+      ? {
+          id: existingDelivery.id,
+          versionId: existingDelivery.versionId,
+          status: existingDelivery.status,
+          idempotencyKey: existingDelivery.idempotencyKey,
+          payloadDigest: existingDelivery.payloadDigest ?? null,
+          connectionId: existingDelivery.connectionId ?? null,
+        }
+      : null;
+    const snapshot = { listing, imageUrls: [], connection, job, existingDelivery };
+    return options.resolveImageUrls === false
+      ? snapshot
+      : { ...snapshot, imageUrls: await resolveImageUrls(snapshot) };
+  }
+
+  async function resolveImageUrls(snapshot: DeliveryPolicySnapshot) {
+    const activeVersion = snapshot.listing.activeVersion;
+    return activeVersion
+      ? deps.imageUrls(
+          snapshot.listing.workspaceId,
+          snapshot.listing.draftId,
+          activeVersion.content.imageAssetIds,
+        )
+      : [];
+  }
+
+  return { read, resolveImageUrls };
 }
 
-function approved(status: ListingStatus): boolean {
-  return status === "approved" || status === "published";
+function auditMetadata(facts: DeliveryAuditFacts, metadata: Record<string, unknown> = {}) {
+  return { ...facts, ...metadata };
+}
+
+function resultFromPolicy(
+  outcome: Exclude<DeliveryPolicyOutcome, { kind: "ready" }>,
+  snapshot: DeliveryPolicySnapshot,
+): Exclude<DeliveryResult, { kind: "csv" | "queued" | "retry_required" }> {
+  switch (outcome.kind) {
+    case "blocking_flags":
+      return { kind: "blocking_flags", issues: outcome.flags.map((flag) => `${flag.field}: ${flag.rule}`) };
+    case "validation_error":
+      return { kind: "validation_error", issues: outcome.issues.map((issue) => `${issue.path}: ${issue.message}`) };
+    case "already_published":
+      return {
+        kind: "already_published",
+        remoteProductId: snapshot.existingDelivery?.status === "published"
+          ? snapshot.existingDelivery.remoteProductId
+          : outcome.remoteProductId,
+      };
+    case "disconnected":
+      return { kind: "disconnected", csvFallback: outcome.csvFallback };
+    case "not_found":
+    case "approval_required":
+    case "stale_plan":
+      return { kind: "approval_required" };
+  }
 }
 
 export type ShoplinePublishRequest = {
@@ -91,6 +190,8 @@ export type ShoplinePublishRequest = {
   actorId: string;
   draftId: string;
   idempotencyKey: string;
+  payloadDigest: string;
+  auditFacts: DeliveryAuditFacts;
 };
 
 export type ShoplinePreparationResult =
@@ -126,106 +227,46 @@ export async function prepareShoplineDelivery(
   input: DeliverInput,
   deps: ShoplineDeliveryDeps,
 ): Promise<ShoplinePreparationResult> {
-  const listing = await deps.listings.requireForPublish(input.draftId);
-  if (
-    input.method !== "shopline_api" ||
-    listing.target !== "shopline" ||
-    !listing.activeVersion ||
-    !approved(listing.status)
-  ) {
-    return { kind: "approval_required" };
-  }
-  const blocking = listing.flags.filter(
-    (flag) =>
-      flag.severity === "blocking" &&
-      (flag.status === "open" ||
-        (flag.status === "resolved" &&
-          flag.resolutionReason.trim().length < 10)),
-  );
-  if (blocking.length > 0) {
-    return {
-      kind: "blocking_flags",
-      issues: blocking.map((flag) => `${flag.field}: ${flag.rule}`),
-    };
-  }
-  if (listing.status === "published") {
-    const existing = deps.existingDelivery
-      ? await deps.existingDelivery(
-          `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
-        )
-      : null;
-    return {
-      kind: "already_published",
-      remoteProductId:
-        existing?.status === "published" ? existing.remoteProductId : null,
-    };
-  }
-  if (!deps.connection?.verified) {
-    return {
-      kind: "disconnected",
-      csvFallback: {
-        method: "csv",
-        path: `/api/listings/${input.draftId}/deliver`,
-      },
-    };
-  }
+  const reader = createDeliverySnapshotReader(deps);
+  let snapshot = await reader.read(input, { resolveImageUrls: false });
+  let outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
+  snapshot = { ...snapshot, imageUrls: await reader.resolveImageUrls(snapshot) };
+  outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
-  let payload: ShoplineProductPayload;
-  try {
-    payload = projectToShopline(
-      listing.activeVersion.content,
-      await deps.imageUrls(
-        input.workspaceId,
-        input.draftId,
-        listing.activeVersion.content.imageAssetIds,
-      ),
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "SHOPLINE payload is invalid";
-    return { kind: "validation_error", issues: [message] };
-  }
-  const validation = validateShoplineProduct(payload);
-  if (!validation.valid) {
-    return {
-      kind: "validation_error",
-      issues: validation.issues.map(
-        (issue) => `${issue.path}: ${issue.message}`,
-      ),
-    };
-  }
-
-  const versionId = listing.activeVersion.id;
-  const idempotencyKey = `${input.workspaceId}:${versionId}:shopline:create`;
+  const { plan } = outcome;
   const job = await deps.publishJobs.ensure({
-    listingId: listing.id,
-    versionId,
-    connectionId: deps.connection.id,
-    idempotencyKey,
-    payloadDigest: digest(listing.activeVersion.content),
+    listingId: snapshot.listing.draftId,
+    versionId: plan.versionId,
+    connectionId: plan.connectionId!,
+    idempotencyKey: plan.idempotencyKey!,
+    payloadDigest: plan.payloadDigest,
   });
   if (job.status === "queued" || job.status === "running") {
-    return { kind: "queued", jobId: job.id, versionId };
+    return { kind: "queued", jobId: job.id, versionId: plan.versionId };
   }
   if (job.status !== "pending_enqueue") {
-    return { kind: "retry_required", jobId: job.id, versionId };
+    return { kind: "retry_required", jobId: job.id, versionId: plan.versionId };
   }
   await deps.audit.write({
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     action: "listing.publish_requested",
     entityId: input.draftId,
-    metadata: { versionId, jobId: job.id },
+    metadata: auditMetadata(plan.auditFacts, { jobId: job.id }),
   });
   return {
     kind: "publish_request",
     jobId: job.id,
-    versionId,
+    versionId: plan.versionId,
     connectionId: job.connectionId,
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     draftId: input.draftId,
-    idempotencyKey,
+    idempotencyKey: plan.idempotencyKey!,
+    payloadDigest: plan.payloadDigest,
+    auditFacts: plan.auditFacts,
   };
 }
 
@@ -267,10 +308,7 @@ export async function confirmShoplineQueued(
       actorId: prepared.actorId,
       action: "listing.publish_queued",
       entityId: prepared.draftId,
-      metadata: {
-        versionId: prepared.versionId,
-        jobId: prepared.jobId,
-      },
+      metadata: auditMetadata(prepared.auditFacts, { jobId: prepared.jobId }),
     });
   }
   return {
@@ -284,107 +322,47 @@ export async function deliverListing(
   input: DeliverInput,
   deps: DeliveryDeps,
 ): Promise<DeliveryResult> {
-  const listing = await deps.listings.requireForPublish(input.draftId);
-  if (
-    listing.target !== "shopline" ||
-    !listing.activeVersion ||
-    !approved(listing.status)
-  ) {
-    return { kind: "approval_required" };
-  }
-  const blocking = listing.flags.filter(
-    (flag) =>
-      flag.severity === "blocking" &&
-      (flag.status === "open" ||
-        (flag.status === "resolved" &&
-          flag.resolutionReason.trim().length < 10)),
-  );
-  if (blocking.length > 0) {
-    return {
-      kind: "blocking_flags",
-      issues: blocking.map((flag) => `${flag.field}: ${flag.rule}`),
-    };
-  }
+  const reader = createDeliverySnapshotReader(deps);
+  let snapshot = await reader.read(input, { resolveImageUrls: false });
+  let outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
+  snapshot = { ...snapshot, imageUrls: await reader.resolveImageUrls(snapshot) };
+  outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
-  if (input.method === "shopline_api" && listing.status === "published") {
-    const existing = deps.existingDelivery
-      ? await deps.existingDelivery(
-          `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
-        )
-      : null;
-    if (existing?.status === "published" && existing.remoteProductId)
-      return {
-        kind: "already_published",
-        remoteProductId: existing.remoteProductId,
-      };
-    return { kind: "already_published", remoteProductId: null };
-  }
-
-  if (input.method === "shopline_api" && !deps.connection?.verified) {
-    return {
-      kind: "disconnected",
-      csvFallback: {
-        method: "csv",
-        path: `/api/listings/${input.draftId}/deliver`,
-      },
-    };
-  }
-  let payload: ShoplineProductPayload;
-  try {
-    payload = projectToShopline(
-      listing.activeVersion.content,
-      await deps.imageUrls(
-        input.workspaceId,
-        input.draftId,
-        listing.activeVersion.content.imageAssetIds,
-      ),
-    );
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "SHOPLINE payload is invalid";
-    return { kind: "validation_error", issues: [message] };
-  }
-  const validation = validateShoplineProduct(payload);
-  if (!validation.valid)
-    return {
-      kind: "validation_error",
-      issues: validation.issues.map(
-        (issue) => `${issue.path}: ${issue.message}`,
-      ),
-    };
+  const { plan } = outcome;
 
   if (input.method === "csv") {
-    const body = createShoplineCsv([validation.value]);
+    const body = createShoplineCsv([plan.payload]);
     await deps.audit.write({
       workspaceId: input.workspaceId,
       actorId: input.actorId,
       action: "listing.csv_exported",
       entityId: input.draftId,
-      metadata: {
-        versionId: listing.activeVersion.id,
+      metadata: auditMetadata(plan.auditFacts, {
         specVersion: SHOPLINE_CSV_SPEC_VERSION,
-      },
+      }),
     });
     return {
       kind: "csv",
       body,
       specVersion: SHOPLINE_CSV_SPEC_VERSION,
-      versionId: listing.activeVersion.id,
+      versionId: plan.versionId,
     };
   }
 
   const jobId = await deps.publisher.enqueue({
     workspaceId: input.workspaceId,
     draftId: input.draftId,
-    versionId: listing.activeVersion.id,
-    payloadDigest: digest(listing.activeVersion.content),
+    versionId: plan.versionId,
+    payloadDigest: plan.payloadDigest,
   });
   await deps.audit.write({
     workspaceId: input.workspaceId,
     actorId: input.actorId,
     action: "listing.publish_queued",
     entityId: input.draftId,
-    metadata: { versionId: listing.activeVersion.id, jobId },
+    metadata: auditMetadata(plan.auditFacts, { jobId }),
   });
-  return { kind: "queued", jobId, versionId: listing.activeVersion.id };
+  return { kind: "queued", jobId, versionId: plan.versionId };
 }
