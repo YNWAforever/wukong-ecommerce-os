@@ -130,26 +130,17 @@ export function createDeliverySnapshotReader(
           connectionId: existingDelivery.connectionId ?? null,
         }
       : null;
-    return { listing, imageUrls: [], connection, job, existingDelivery };
+    const imageUrls = listing.activeVersion
+      ? await deps.imageUrls(
+          input.workspaceId,
+          input.draftId,
+          listing.activeVersion.content.imageAssetIds,
+        )
+      : [];
+    return { listing, imageUrls, connection, job, existingDelivery };
   }
 
   return { read };
-}
-
-async function withResolvedImageUrls(
-  snapshot: DeliveryPolicySnapshot,
-  deps: Pick<DeliveryDeps, "imageUrls">,
-): Promise<DeliveryPolicySnapshot> {
-  const activeVersion = snapshot.listing.activeVersion;
-  if (!activeVersion) return snapshot;
-  return {
-    ...snapshot,
-    imageUrls: await deps.imageUrls(
-      snapshot.listing.workspaceId,
-      snapshot.listing.draftId,
-      activeVersion.content.imageAssetIds,
-    ),
-  };
 }
 
 function auditMetadata(facts: DeliveryAuditFacts, metadata: Record<string, unknown> = {}) {
@@ -232,16 +223,7 @@ export async function prepareShoplineDelivery(
   const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
-  const resolvedSnapshot = await withResolvedImageUrls(snapshot, deps);
-  const resolvedOutcome = evaluateDeliveryPolicy({
-    ...input,
-    phase: "request",
-    ...resolvedSnapshot,
-  });
-  if (resolvedOutcome.kind !== "ready")
-    return resultFromPolicy(resolvedOutcome, resolvedSnapshot);
-
-  const { plan } = resolvedOutcome;
+  const { plan } = outcome;
   const job = await deps.publishJobs.ensure({
     listingId: snapshot.listing.draftId,
     versionId: plan.versionId,
@@ -334,16 +316,7 @@ export async function deliverListing(
   const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
-  const resolvedSnapshot = await withResolvedImageUrls(snapshot, deps);
-  const resolvedOutcome = evaluateDeliveryPolicy({
-    ...input,
-    phase: "request",
-    ...resolvedSnapshot,
-  });
-  if (resolvedOutcome.kind !== "ready")
-    return resultFromPolicy(resolvedOutcome, resolvedSnapshot);
-
-  const { plan } = resolvedOutcome;
+  const { plan } = outcome;
 
   if (input.method === "csv") {
     const body = createShoplineCsv([plan.payload]);
