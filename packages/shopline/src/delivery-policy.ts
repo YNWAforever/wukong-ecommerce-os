@@ -9,7 +9,6 @@ import type {
 import { projectToShopline, type ShoplineProductPayload } from "./projection.js";
 import {
   ShoplineValidationError,
-  validateShoplineProduct,
   type ShoplineValidationIssue,
 } from "./validation.js";
 
@@ -91,7 +90,14 @@ export type DeliveryPolicyOutcome =
       auditFacts: DeliveryAuditFacts;
     };
 
-function auditFacts(input: DeliveryPolicyInput, reason: string, versionId: string | null = null, payloadDigest?: string, connectionId?: string): DeliveryAuditFacts {
+function auditFacts(
+  input: DeliveryPolicyInput,
+  reason: string,
+  versionId = input.listing?.activeVersion?.id ?? null,
+  payloadDigest = input.listing?.activeVersion
+    ? hashCanonicalListing(input.listing.activeVersion.content)
+    : undefined,
+): DeliveryAuditFacts {
   return {
     workspaceId: input.listing?.workspaceId ?? null,
     draftId: input.listing?.draftId ?? null,
@@ -99,7 +105,7 @@ function auditFacts(input: DeliveryPolicyInput, reason: string, versionId: strin
     phase: input.phase,
     versionId,
     ...(payloadDigest === undefined ? {} : { payloadDigest }),
-    ...(connectionId === undefined ? {} : { connectionId }),
+    ...(input.connection ? { connectionId: input.connection.id } : {}),
     reason,
   };
 }
@@ -138,8 +144,9 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
   }
 
   const { id: versionId, content } = listing.activeVersion;
+  const payloadDigest = hashCanonicalListing(content);
   if (!isEligibleStatus(input.phase, listing.status)) {
-    return { kind: "approval_required", auditFacts: auditFacts(input, "status_not_eligible", versionId) };
+    return { kind: "approval_required", auditFacts: auditFacts(input, "status_not_eligible", versionId, payloadDigest) };
   }
 
   const blockingFlags = listing.flags.filter(
@@ -149,11 +156,18 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
     return {
       kind: "blocking_flags",
       flags: [...blockingFlags],
-      auditFacts: auditFacts(input, "blocking_flags", versionId),
+      auditFacts: auditFacts(input, "blocking_flags", versionId, payloadDigest),
     };
   }
 
-  const payloadDigest = hashCanonicalListing(content);
+  if (input.method === "shopline_api" && input.phase === "request" && listing.status === "published") {
+    return {
+      kind: "already_published",
+      remoteProductId: null,
+      auditFacts: auditFacts(input, "already_published", versionId, payloadDigest),
+    };
+  }
+
   if (input.phase === "worker") {
     const observed = {
       versionId: input.job?.versionId ?? null,
@@ -183,28 +197,12 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
     };
   }
 
-  const validation = validateShoplineProduct(payload);
-  if (!validation.valid) {
-    return {
-      kind: "validation_error",
-      issues: validation.issues,
-      auditFacts: auditFacts(input, "validation_error", versionId, payloadDigest),
-    };
-  }
-
   if (input.method === "shopline_api") {
     if (!input.connection || !input.connection.verified || input.connection.workspaceId !== listing.workspaceId) {
       return {
         kind: "disconnected",
         csvFallback: { method: "csv", path: `/api/listings/${listing.draftId}/deliver` },
         auditFacts: auditFacts(input, "disconnected", versionId, payloadDigest),
-      };
-    }
-    if (input.phase === "request" && listing.status === "published") {
-      return {
-        kind: "already_published",
-        remoteProductId: null,
-        auditFacts: auditFacts(input, "already_published", versionId, payloadDigest, input.connection.id),
       };
     }
     const idempotencyKey = `${listing.workspaceId}:${versionId}:shopline:create`;
@@ -215,11 +213,11 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
         workspaceId: listing.workspaceId,
         draftId: listing.draftId,
         versionId,
-        payload: validation.value,
+        payload,
         payloadDigest,
         connectionId: input.connection.id,
         idempotencyKey,
-        auditFacts: auditFacts(input, "ready", versionId, payloadDigest, input.connection.id),
+        auditFacts: auditFacts(input, "ready", versionId, payloadDigest),
       },
     };
   }
@@ -231,7 +229,7 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
       workspaceId: listing.workspaceId,
       draftId: listing.draftId,
       versionId,
-      payload: validation.value,
+      payload,
       payloadDigest,
       auditFacts: auditFacts(input, "ready", versionId, payloadDigest),
     },

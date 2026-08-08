@@ -106,6 +106,39 @@ describe("Shopline delivery policy", () => {
     expect(resolved).toMatchObject({ kind: "ready" });
   });
 
+  it.each([
+    ["an unsupported-method outcome", input({ method: "unsupported" as never })],
+    ["a wrong-target outcome", input({ listing: { ...input().listing!, target: "other" } })],
+    ["a status outcome", input({ listing: { ...input().listing!, status: "review" } })],
+    [
+      "a blocking outcome",
+      input({
+        listing: {
+          ...input().listing!,
+          flags: [{ id: "flag-1", field: "description", rule: "unsupported_claim", severity: "blocking", status: "open", resolutionReason: null }],
+        },
+      }),
+    ],
+    [
+      "a disconnected outcome",
+      input({ connection: { id: connectionId, workspaceId: "other-workspace", verified: true } }),
+    ],
+  ] as const)("includes complete audit facts for %s", (_case, policyInput) => {
+    const result = evaluateDeliveryPolicy(policyInput);
+
+    expect(result).not.toHaveProperty("kind", "ready");
+    expect(result.auditFacts).toMatchObject({
+      workspaceId,
+      draftId,
+      method: policyInput.method,
+      phase: "request",
+      versionId,
+      payloadDigest: hashCanonicalListing(fixture.canonicalListing),
+      connectionId,
+      reason: expect.any(String),
+    });
+  });
+
   it("returns structured validation issues instead of a plan when projection fails", () => {
     const result = evaluateDeliveryPolicy(
       input({ listing: { ...input().listing!, activeVersion: { id: versionId, content: { ...fixture.canonicalListing, priceHkd: null } as never } } }),
@@ -128,6 +161,31 @@ describe("Shopline delivery policy", () => {
       });
     },
   );
+
+  it("returns already_published before API connection eligibility", () => {
+    const result = evaluateDeliveryPolicy(
+      input({
+        listing: { ...input().listing!, status: "published" },
+        connection: { id: connectionId, workspaceId, verified: false },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      kind: "already_published",
+      auditFacts: { connectionId, reason: "already_published" },
+    });
+  });
+
+  it("returns disconnected for a verified connection from another workspace", () => {
+    const result = evaluateDeliveryPolicy(
+      input({ connection: { id: connectionId, workspaceId: "other-workspace", verified: true } }),
+    );
+
+    expect(result).toMatchObject({
+      kind: "disconnected",
+      auditFacts: { connectionId, reason: "disconnected" },
+    });
+  });
 
   it.each(["approved", "publishing", "publish_failed"] as const)(
     "accepts %s worker re-entry only when the job version and digest bind the current plan",

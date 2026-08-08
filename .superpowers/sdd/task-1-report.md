@@ -72,3 +72,66 @@ Result: exit 0; no whitespace errors.
 ## Concerns
 
 None for Task 1. Host adapter migration, publish-job state translation, and connector side-effect assertions remain intentionally deferred to Tasks 2–5.
+
+## Review Fix (2026-08-08)
+
+### Status
+
+DONE
+
+### Files
+
+- `packages/shopline/src/delivery-policy.ts`
+- `packages/shopline/src/delivery-policy.test.ts`
+- `.superpowers/sdd/task-1-report.md`
+
+### RED evidence
+
+```powershell
+npm.cmd run test -- src/delivery-policy.test.ts
+```
+
+Result: exit 1; the new published-before-connection, audit-facts, and cross-workspace connection regressions failed as expected (5 failures). After expanding the audit matrix to unsupported-method and wrong-target outcomes, the focused test correctly failed again with 2 missing version/digest assertions.
+
+### Fix
+
+- Restored the legacy policy order: after target, active-version, status, and blocking-flag checks, request-phase API `published` returns `already_published` before connection eligibility.
+- Made audit facts derive the active-version ID/digest whenever available and include any supplied connection ID; each result retains a specific reason.
+- Reused `projectToShopline` as the single established projection-and-validation boundary, removing the redundant second `validateShoplineProduct` call without changing API/CSV payload behavior.
+- Added focused coverage for a verified connection from another workspace returning `disconnected` with its connection ID in audit facts.
+
+### GREEN evidence
+
+Focused policy command:
+
+```powershell
+npm.cmd run test -- src/delivery-policy.test.ts
+```
+
+Result: exit 0; 1 passed file, 26 passed tests.
+
+Shopline package regression command:
+
+```powershell
+npm.cmd run test
+```
+
+Result: exit 0; 5 passed files, 52 passed tests.
+
+Typecheck command:
+
+```powershell
+npm.cmd run typecheck
+```
+
+Result: exit 0; `tsc -p tsconfig.json --noEmit` completed without errors.
+
+### Self-review
+
+- Confirmed stale-plan version/digest binding remains before projection and no policy-side connector work exists.
+- Confirmed API and CSV still share exactly `projectToShopline` and the resulting validated payload.
+- Confirmed the working changes are confined to the shared Shopline policy, its policy test, and this required report; existing web, worker, database, and unrelated worktree changes remain untouched.
+
+### Concerns
+
+None. The policy intentionally leaves remote-product lookup and host adapter side effects outside this pure contract.
