@@ -105,7 +105,9 @@ describe("POST /api/listings creation handoff", () => {
         ({
           async forWorkspace<T>(
             _workspaceId: string,
-            work: (repositories: { sourceAssets: { getByIds: typeof getByIds } }) => Promise<T>,
+            work: (repositories: {
+              sourceAssets: { getByIds: typeof getByIds };
+            }) => Promise<T>,
           ) {
             return work({ sourceAssets: { getByIds } });
           },
@@ -146,7 +148,12 @@ describe("POST /api/listings creation handoff", () => {
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     const enqueue = vi.fn<Enqueue>();
-    enqueue.mockRejectedValueOnce(new Error("connect timeout"));
+    // What createListingPublisher actually throws: the reason travels with it.
+    const unavailable = Object.assign(new Error("connect timeout"), {
+      name: "QueueIngressError",
+      reason: "not_configured",
+    });
+    enqueue.mockRejectedValueOnce(unavailable);
     const test = harness(enqueue);
 
     const response = await test.handler(requestForListing());
@@ -162,9 +169,12 @@ describe("POST /api/listings creation handoff", () => {
     });
     expect(test.mutations).toEqual(["create", "attach", "audit"]);
     expect(errorLog).toHaveBeenCalledOnce();
-    expect(errorLog.mock.calls.flat().join(" ")).toContain("queue_unavailable");
-    expect(errorLog.mock.calls.flat().join(" ")).not.toContain(
-      "connect timeout",
-    );
+    const logged = errorLog.mock.calls.flat().join(" ");
+    expect(logged).toContain("queue_unavailable");
+    // The request deliberately succeeds, so this log is the only record of why
+    // the queue refused it. Without the reason an unset variable and an
+    // unreachable Worker are the same line.
+    expect(logged).toContain('"queueReason":"not_configured"');
+    expect(logged).not.toContain("connect timeout");
   });
 });

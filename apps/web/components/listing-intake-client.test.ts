@@ -157,6 +157,66 @@ describe("live listing intake", () => {
     ).rejects.toThrow("Upload rejected");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("names object storage when the browser refuses the cross-origin upload", async () => {
+    const file = new File(["bottle"], "bottle.png", { type: "image/png" });
+    // What a blocked CORS preflight actually produces.
+    const blocked = new TypeError("Failed to fetch");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { key: "key-1", uploadUrl: "https://storage.example/upload-1" },
+          { status: 201 },
+        ),
+      )
+      .mockRejectedValueOnce(blocked);
+
+    const outcome = await createListingDraft(
+      { files: [file], note: "" },
+      { fetcher, digest: async () => "a".repeat(64) },
+    ).catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(Error);
+    const failure = outcome as Error;
+    expect(failure.message).toContain("object storage");
+    expect(failure.message).not.toBe("Failed to fetch");
+    expect(failure.cause).toBe(blocked);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [0, "prepare the upload"],
+    [2, "record the uploaded file"],
+    [3, "create the draft"],
+  ])(
+    "attributes an unreachable request at call %i to its own step",
+    async (failingCall, expected) => {
+      const file = new File(["bottle"], "bottle.png", { type: "image/png" });
+      const responses = [
+        Response.json(
+          { key: "key-1", uploadUrl: "https://storage.example/upload-1" },
+          { status: 201 },
+        ),
+        new Response(null, { status: 200 }),
+        Response.json({ assetId: "asset-1" }, { status: 201 }),
+      ];
+      let call = -1;
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
+        call += 1;
+        if (call === failingCall) throw new TypeError("Failed to fetch");
+        return responses[call] ?? new Response(null, { status: 200 });
+      });
+
+      const outcome = await createListingDraft(
+        { files: [file], note: "" },
+        { fetcher, digest: async () => "a".repeat(64) },
+      ).catch((error: unknown) => error);
+
+      expect(outcome).toBeInstanceOf(Error);
+      expect((outcome as Error).message).toContain(expected);
+    },
+  );
 });
 
 const intakeRoots: Root[] = [];
@@ -170,6 +230,22 @@ async function mountIntake() {
     root.render(createElement(ListingIntakeClient));
   });
   return { container, root };
+}
+
+/** Flushes React work until `condition` holds, instead of a fixed tick count. */
+async function settleUntil(
+  condition: () => boolean,
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the intake flow to settle");
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+  }
 }
 
 function navigationFetcher(state: "queued" | "retry_required") {
@@ -244,11 +320,13 @@ describe("ListingIntakeClient navigation", () => {
         form!.dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
         );
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await Promise.resolve();
-        await Promise.resolve();
-        await Promise.resolve();
       });
+      // Submit chains presign -> upload -> finalize -> create, so the number of
+      // microtask turns it needs is not fixed. Counting a set number of flushes
+      // made this assertion fail whenever the suite ran under parallel load.
+      await settleUntil(
+        () => fetcher.mock.calls.length >= 4 && push.mock.calls.length >= 1,
+      );
 
       expect(fetcher).toHaveBeenCalledTimes(4);
       expect(push).toHaveBeenCalledWith(

@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "csv:sample": "tsx src/cli/sample-csv.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "latest",
+    "tsx": "^4.20.6",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }

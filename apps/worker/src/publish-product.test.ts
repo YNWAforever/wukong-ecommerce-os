@@ -172,6 +172,15 @@ function makeRepos(
       async getByIdempotencyKey(key) {
         return input.jobs.find((job) => job.idempotencyKey === key) ?? null;
       },
+      async recordRemoteProduct(key, leaseToken, remoteProductId) {
+        const job = input.jobs.find((entry) => entry.idempotencyKey === key);
+        if (!job || job.status !== "running" || job.leaseToken !== leaseToken) {
+          throw new Error("publish job lease is not active");
+        }
+        // Mirrors the repository: the id lands while the job stays `running`
+        // and keeps its lease, so a later delivery can reconcile against it.
+        Object.assign(job, { remoteProductId });
+      },
       async markPublished(key, leaseToken, remoteProductId, payloadDigest) {
         const job = input.jobs.find((entry) => entry.idempotencyKey === key);
         if (!job || job.status !== "running" || job.leaseToken !== leaseToken) {
@@ -645,6 +654,43 @@ describe("publishApprovedProduct", () => {
     ).rejects.toMatchObject({ code: "remote_unavailable" });
     expect(calls).toEqual(["status", "create", "status", "create"]);
     expect(calls).toHaveLength(SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT);
+  });
+
+  it("never re-creates a product when the write after a successful create fails", async () => {
+    // normalizeConnectorError turns any unrecognised throw into
+    // `remote_unavailable`, which does not break the create-retry loop. With
+    // the completion write inside that loop, a database failure after a
+    // successful create issued a second POST /products.
+    const createProduct = vi.fn(async () => ({ remoteProductId: "prod_live" }));
+    const harness = makeHarness("publishing");
+    harness.connector = makeConnector({ createProduct });
+    harness.repos.publishJobs.recordRemoteProduct = async () => {
+      throw new Error("connection reset by peer");
+    };
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toThrow("connection reset by peer");
+
+    expect(createProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it("commits the remote product id before the completion write", async () => {
+    const createProduct = vi.fn(async () => ({ remoteProductId: "prod_live" }));
+    const harness = makeHarness("publishing");
+    harness.connector = makeConnector({ createProduct });
+    harness.repos.publishJobs.markPublished = async () => {
+      throw new Error("connection reset by peer");
+    };
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toThrow("connection reset by peer");
+
+    // The ledger now holds the id, so the next delivery reconciles against the
+    // live product instead of creating a duplicate.
+    expect(harness.state.jobs[0]?.remoteProductId).toBe("prod_live");
+    expect(createProduct).toHaveBeenCalledTimes(1);
   });
 
   it("reconciles an ambiguous write with remote status before retrying", async () => {

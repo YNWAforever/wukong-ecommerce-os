@@ -139,6 +139,14 @@ corepack pnpm --filter @wukong/db seed:shopline-connection
 
 The controlled command runs `packages/db/src/seed-shopline-connection.ts`. The SHOPLINE seed reads one token line from stdin and prints only safe IDs/domain fields. Never pass the token as an argument or environment variable. Confirm the Opak seed is idempotent and record only safe output.
 
+### Admin access is invite-only and single-operator
+
+`auth_get_eligible_user` returns a user only when both a `users` row and a `workspace_invites` row with status `pending` or `accepted` exist for the address. This seed is the only thing that creates that pair; there is no runtime path to request access, despite what the `/register` heading suggests.
+
+The seed is idempotent for the same address, but re-running it with a different `OPAK_OPERATOR_EMAIL` **renames the existing operator rather than adding one**. `upsertUser` conflicts on the fixed `OPAK_OPERATOR_ID` and overwrites the email, and `users.email` is `UNIQUE`. The previous address then fails the eligibility check, its `workspace_invites` row is left behind, and the existing credential and verified state stay attached to the renamed user. Treat a change of operator address as a replacement, not an addition.
+
+Every rejection along these flows is deliberately generic, so an address that was never seeded is indistinguishable on the wire from one that succeeded. When sign-in appears to do nothing, read `auth_audit_events` before suspecting mail or configuration: `magic_link_rejected` and `password_enrollment_rejected` mean the address is not eligible, and the flow stopped before mail was ever attempted.
+
 ## Preview and production sequence
 
 1. Require a clean-checkout gate for the exact commit.
@@ -177,11 +185,9 @@ The release formatter temporarily waives only the exact canonical LF content bel
 | `apps/web/app/api/assets/finalize/route.test.ts`                | `3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b` |
 | `apps/web/app/api/assets/finalize/route.ts`                     | `5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2` |
 | `apps/web/app/api/assets/presign/route.ts`                      | `7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea` |
-| `apps/web/app/api/listings/route.create.test.ts`                | `175f467561747ea218d165278e1e57eb4023b50761f81898b3a0f4dc0461cbc0` |
-| `apps/web/lib/listing-queue-runtime.ts`                         | `0140cf7c13dbc3dddd78e32fec238ff548e31b4a25b94558fd6d61c5f967ad68` |
-| `apps/worker/src/listing-consumer.test.ts`                      | `e1b487bd64cfe877d416cdd270e731b42ad2a3dba17b2c52a89161c10e7d1035` |
-| `apps/worker/src/pipeline-test-support.ts`                      | `f02b9b9d618c3d9d74ab50acc393d832f3f4ed1614f5c250568a91f36662b90b` |
-| `packages/db/src/index.ts`                                      | `314a726462f7407f4a608104634e1a3e6945a63a0bb9ac18c85077d2f6a1dc2d` |
+| `apps/worker/src/listing-consumer.test.ts`                      | `004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f` |
+| `apps/worker/src/pipeline-test-support.ts`                      | `45d5ebc4ea37bf5ac927578e992974a8604068c147cf760d4d376cf6c080d7b1` |
+| `packages/db/src/index.ts`                                      | `2307b20c6cdbccee39ac9e163da0c5357e4e8c459b3095ce575c141e98501651` |
 | `packages/db/src/publish-jobs-schema.test.ts`                   | `8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8` |
 | `packages/db/src/repositories/publish-jobs.integration.test.ts` | `60f109af4c944409f7cfe348c697299a3f34a83a008b1c3478581d43f6e36c7c` |
 | `packages/db/src/schema.ts`                                     | `21c8b510142bf891215df98175e1a168df6016a6a325b7a3b7a45457599034ee` |

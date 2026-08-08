@@ -13,13 +13,20 @@ vi.mock("./cloudflare-runtime.js", () => ({
   createCloudflareRuntime: runtimeMocks.createCloudflareRuntime,
 }));
 
-import { consumeListingMessage } from "./listing-consumer.js";
+import {
+  consumeListingMessage,
+  LISTING_MAX_ATTEMPTS,
+} from "./listing-consumer.js";
 import { handleQueue } from "./queue-consumer.js";
 
 const valid = { workspaceId, draftId, activeVersionSequence: 0 };
 
-function runtimeHarness(error?: Error, closeError?: Error) {
-  const { deps, state } = makeHarness({ extractError: error });
+function runtimeHarness(
+  error?: Error,
+  closeError?: Error,
+  extraOptions: Parameters<typeof makeHarness>[0] = {},
+) {
+  const { deps, state } = makeHarness({ extractError: error, ...extraOptions });
   const close = vi.fn(async () => {
     if (closeError) throw closeError;
   });
@@ -30,9 +37,10 @@ function runtimeHarness(error?: Error, closeError?: Error) {
   return { state, close };
 }
 
-function queueMessage() {
+function queueMessage(attempts = 1) {
   return {
     body: valid,
+    attempts,
     ack: vi.fn(),
     retry: vi.fn(),
   };
@@ -83,6 +91,71 @@ describe("Cloudflare listing consumer", () => {
     expect(logged).not.toHaveBeenCalled();
     expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-content-123");
     logged.mockRestore();
+  });
+
+  it("records terminal failure once a transient error exhausts the delivery budget", async () => {
+    // A transient provider error is not terminal by class, so before the
+    // attempt counter was wired through, this listing sat at `processing`
+    // forever with no audit trail once the queue gave up on it.
+    const { state } = runtimeHarness(new ProviderApiError("upstream 503"));
+
+    await expect(
+      consumeListingMessage(valid, {} as never, {
+        attempt: LISTING_MAX_ATTEMPTS,
+        maxAttempts: LISTING_MAX_ATTEMPTS,
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+
+    expect(state.status).toBe("failed");
+    expect(state.failure).toBe("provider_failure");
+    expect(state.audits).toContain("listing.pipeline_failed");
+  });
+
+  it("waits out a blocking lease instead of retrying into a guaranteed no-op", async () => {
+    // The step lease outlives the whole 4-delivery budget at a flat 30s, so a
+    // fixed delay spends every remaining delivery failing the same way and then
+    // dead-letters a listing that was only ever busy.
+    const busyLeaseExpiresAt = new Date(Date.now() + 240_000);
+    runtimeHarness(undefined, undefined, {
+      generationUnavailable: true,
+      busyLeaseExpiresAt,
+    });
+
+    const outcome = await consumeListingMessage(valid, {} as never, {
+      attempt: 1,
+      maxAttempts: LISTING_MAX_ATTEMPTS,
+    });
+
+    expect(outcome).not.toBe("ack");
+    const retryAfterSeconds = (outcome as { retryAfterSeconds: number })
+      .retryAfterSeconds;
+    expect(retryAfterSeconds).toBeGreaterThan(180);
+    expect(retryAfterSeconds).toBeLessThanOrEqual(240);
+  });
+
+  it("falls back to the flat delay when the blocking lease expiry is unknown", async () => {
+    runtimeHarness(undefined, undefined, { generationUnavailable: true });
+
+    await expect(
+      consumeListingMessage(valid, {} as never, {
+        attempt: 1,
+        maxAttempts: LISTING_MAX_ATTEMPTS,
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+  });
+
+  it("leaves the listing retryable on an earlier delivery attempt", async () => {
+    const { state } = runtimeHarness(new ProviderApiError("upstream 503"));
+
+    await expect(
+      consumeListingMessage(valid, {} as never, {
+        attempt: 1,
+        maxAttempts: LISTING_MAX_ATTEMPTS,
+      }),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+
+    expect(state.status).toBe("processing");
+    expect(state.audits).not.toContain("listing.pipeline_failed");
   });
 
   it("keeps a transient retry outcome when runtime cleanup fails", async () => {
@@ -157,6 +230,23 @@ describe("Cloudflare queue acknowledgement", () => {
     expect(success.retry).not.toHaveBeenCalled();
     expect(transient.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
     expect(transient.ack).not.toHaveBeenCalled();
+  });
+
+  it("forwards the delivery attempt so the pipeline can escalate on the last one", async () => {
+    const message = queueMessage(LISTING_MAX_ATTEMPTS);
+    const consume = vi.fn().mockResolvedValue("ack");
+
+    await handleQueue(
+      { queue: "wukong-listing-production", messages: [message] } as never,
+      {} as never,
+      undefined,
+      { consumeListingMessage: consume },
+    );
+
+    expect(consume).toHaveBeenCalledWith(message.body, expect.anything(), {
+      attempt: LISTING_MAX_ATTEMPTS,
+      maxAttempts: LISTING_MAX_ATTEMPTS,
+    });
   });
 
   it("throws for an unknown queue before acknowledgement", async () => {

@@ -90,3 +90,20 @@ describe("Cloudflare queue protocol", () => {
     ).resolves.toBe(false);
   });
 });
+
+describe("queue signing vector", () => {
+  // scripts/runtime-doctor.mjs duplicates this algorithm, because a diagnostic
+  // must run when the workspace build is broken and so cannot import from here.
+  // Both sides pin this same vector: change the message format below and this
+  // test fails, which is the signal to update the copy in the doctor.
+  it("pins the signature the runtime doctor also pins", async () => {
+    await expect(
+      signQueueRequest({
+        secret: "q".repeat(32),
+        timestamp: 1_784_556_000,
+        path: "/health",
+        body: "{}",
+      }),
+    ).resolves.toBe("6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
+  });
+});

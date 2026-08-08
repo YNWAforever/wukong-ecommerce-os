@@ -16,6 +16,8 @@ export type ResolveListingImageUrlsInput = {
     getByIds(ids: string[]): Promise<ListingImageAsset[]>;
   };
   assetStore: Pick<AssetStore, "createReadUrl">;
+  /** Omitted for in-app reads; set only for URLs leaving the app in a file. */
+  readTtlMs?: number;
 };
 
 export class ImageResolutionError extends Error {
@@ -31,6 +33,7 @@ export async function resolveListingImageUrls({
   imageAssetIds,
   sourceAssets,
   assetStore,
+  readTtlMs,
 }: ResolveListingImageUrlsInput): Promise<string[]> {
   const requestedIds = [...imageAssetIds];
   if (new Set(requestedIds).size !== requestedIds.length) {
@@ -56,7 +59,11 @@ export async function resolveListingImageUrls({
   return Promise.all(
     orderedAssets.map(
       async (asset) =>
-        (await assetStore.createReadUrl(workspaceId, asset.storageKey)).url,
+        (
+          await assetStore.createReadUrl(workspaceId, asset.storageKey, {
+            expiresInMs: readTtlMs,
+          })
+        ).url,
     ),
   );
 }

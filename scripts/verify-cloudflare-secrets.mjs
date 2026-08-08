@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
+
 const root = new URL("../", import.meta.url);
 
 export function compareSecretNames(requiredNames, configuredNames) {
@@ -23,6 +25,28 @@ export function parseSecretNames(json) {
     }
     return entry.name;
   });
+}
+
+/**
+ * A Worker that does not exist yet cannot hold secrets, and `wrangler deploy` is
+ * about to create it — so blocking here makes a first deploy impossible. Any
+ * other failure still aborts.
+ */
+export function classifyPreflight(result) {
+  if (result.status === 0) return { allow: true };
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  if (/Worker .*not found/i.test(output)) {
+    // Allowed through so wrangler's own error is what the operator reads — it
+    // is authoritative and names every missing secret. This warning must not
+    // promise a deploy-then-set-secrets order: wrangler refuses to create a
+    // Worker whose config declares secrets unless they arrive with the deploy.
+    return {
+      allow: true,
+      warning:
+        "Worker does not exist yet. wrangler will only create it if this deploy supplies every declared secret with --secrets-file; see docs/runbooks/production-bring-up.md.",
+    };
+  }
+  return { allow: false };
 }
 
 export function verifyExactSecretNames(requiredNames, configuredNames) {
@@ -48,30 +72,45 @@ function main() {
   const selected = source.environments[environment];
   if (!selected) throw new Error("unsupported CLOUDFLARE_ENV");
 
-  const executable = process.platform === "win32" ? "corepack.cmd" : "corepack";
-  const result = spawnSync(
-    executable,
-    [
-      "pnpm",
-      "--filter",
-      "@wukong/worker",
-      "exec",
-      "wrangler",
-      "secret",
-      "list",
-      "--name",
-      selected.worker,
-      "--format",
-      "json",
-    ],
-    {
+  // corepack is not installed everywhere pnpm is. Hardcoding it made this
+  // preflight abort with an empty ENOENT result, which reads identically to a
+  // genuine wrangler failure and blocked the deploy for the wrong reason.
+  const args = [
+    "--filter",
+    "@wukong/worker",
+    "exec",
+    "wrangler",
+    "secret",
+    "list",
+    "--name",
+    selected.worker,
+    "--format",
+    "json",
+  ];
+  let result;
+  for (const runner of packageRunners()) {
+    result = spawnSync(runner.command, [...runner.lead, ...args], {
       cwd: fileURLToPath(root),
       encoding: "utf8",
       windowsHide: true,
-    },
-  );
-  if (result.status !== 0) {
+    });
+    if (!shouldTryNextRunner(result.error)) break;
+  }
+  if (shouldTryNextRunner(result.error)) {
+    // Every runner was absent, so wrangler never ran. Reporting this as a
+    // wrangler failure sends the operator to check auth and Worker names when
+    // the toolchain is what is missing.
+    throw new Error(
+      "Could not run wrangler: neither corepack nor pnpm is on PATH; deployment aborted",
+    );
+  }
+  const decision = classifyPreflight(result);
+  if (!decision.allow) {
     throw new Error("Wrangler secret list failed; deployment aborted");
+  }
+  if (decision.warning) {
+    process.stderr.write(`${decision.warning}\n`);
+    return;
   }
   verifyExactSecretNames(
     source.requiredSecrets,

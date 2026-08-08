@@ -94,6 +94,7 @@ export type PipelineRepositories = {
       completed: boolean;
       output: unknown;
       leaseToken: string | null;
+      leaseExpiresAt?: Date | null;
     }>;
     recordStep(input: {
       idempotencyKey: string;
@@ -157,6 +158,29 @@ export class PipelineTimeoutError extends Error {
   constructor(message = "listing provider timed out") {
     super(message);
     this.name = "PipelineTimeoutError";
+  }
+}
+
+/**
+ * Another delivery still holds this step's lease. Carries when that lease goes
+ * stale so the consumer can schedule its retry for after that instant: a
+ * redelivery any sooner is guaranteed to fail the same way, and with only a
+ * handful of deliveries available it would burn the budget for nothing.
+ */
+export class PipelineStepBusyError extends Error {
+  constructor(
+    message: string,
+    readonly leaseExpiresAt: Date | null,
+  ) {
+    super(message);
+    this.name = "PipelineStepBusyError";
+  }
+
+  retryAfterSeconds(now: number, fallbackSeconds: number): number {
+    if (!this.leaseExpiresAt) return fallbackSeconds;
+    const remainingMs = this.leaseExpiresAt.getTime() - now;
+    if (!Number.isFinite(remainingMs)) return fallbackSeconds;
+    return Math.max(1, Math.ceil(remainingMs / 1_000));
   }
 }
 const WORKER_ACTOR_ID = "worker:listing-pipeline";
@@ -329,7 +353,10 @@ export async function runListingPipeline(
       completionLeaseToken = extractionLeaseToken;
     } else if (!extractionClaim.claimed) {
       stepUnavailable = true;
-      throw new Error("extraction step is already running");
+      throw new PipelineStepBusyError(
+        "extraction step is already running",
+        extractionClaim.leaseExpiresAt ?? null,
+      );
     } else {
       extraction = await deps.ai.extract({
         assets: await deps.assetInputs(source.assets),
@@ -347,11 +374,15 @@ export async function runListingPipeline(
           leaseToken: extractionLeaseToken!,
           output: extraction,
         });
-        completionStep = "extracted";
-        completionLeaseToken = extractionLeaseToken;
-        claimedStep = null;
-        claimedLeaseToken = null;
       });
+      // Only hand the lease over to the completion bookkeeping once the
+      // transaction has actually committed. Assigning inside the callback would
+      // survive a rollback that returned the step row to `running`, and the
+      // catch block would then skip releaseStep on a lease we still hold.
+      completionStep = "extracted";
+      completionLeaseToken = extractionLeaseToken;
+      claimedStep = null;
+      claimedLeaseToken = null;
     }
 
     if (extraction.missingFields.length > 0) {
@@ -424,7 +455,10 @@ export async function runListingPipeline(
     }
     if (!generationClaim.claimed || !generationLeaseToken) {
       stepUnavailable = true;
-      throw new Error("generation step is already running");
+      throw new PipelineStepBusyError(
+        "generation step is already running",
+        generationClaim.leaseExpiresAt ?? null,
+      );
     }
 
     const generation = await deps.ai.generate({
@@ -459,10 +493,6 @@ export async function runListingPipeline(
           leaseToken: generationLeaseToken,
           output: { versionId: version.id },
         });
-        completionStep = "generated";
-        completionLeaseToken = generationLeaseToken;
-        claimedStep = null;
-        claimedLeaseToken = null;
         const completedResult: PipelineResult = {
           status: "in_review",
           versionId: version.id,
@@ -477,14 +507,18 @@ export async function runListingPipeline(
           idempotencyKey,
           listingId: input.draftId,
           activeVersionSequence: input.activeVersionSequence,
-          step: completionStep,
-          leaseToken: completionLeaseToken ?? undefined,
+          step: "generated",
+          leaseToken: generationLeaseToken,
           status: completedResult.status,
           versionId: completedResult.versionId,
         });
         return completedResult;
       },
     );
+    // No lease bookkeeping here on purpose. The transaction above both records
+    // and completes the generation step, so on success there is nothing left to
+    // release, and on failure the catch block must still see claimedStep ===
+    // "generated" so it can release the lease this worker owns.
     return result;
   } catch (error) {
     if (stepUnavailable) throw error;

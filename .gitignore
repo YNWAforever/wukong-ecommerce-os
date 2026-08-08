@@ -3,8 +3,11 @@ worktrees/
 .superpowers/
 node_modules/
 .turbo/
+.wrangler/
 dist/
 coverage/
 .env
 .env.local
 *.tsbuildinfo
+.vercel
+.env*

@@ -85,18 +85,23 @@ export class S3AssetStore implements AssetStore {
     };
   }
 
-  async createReadUrl(workspaceId: string, key: string) {
+  async createReadUrl(
+    workspaceId: string,
+    key: string,
+    options?: { expiresInMs?: number },
+  ) {
     assertAssetKey(workspaceId, key);
+    const lifetimeMs = options?.expiresInMs ?? ASSET_UPLOAD_TTL_MS;
     const command = new GetObjectCommand({
       Bucket: this.#bucket,
       Key: key,
     }) as unknown as S3Command;
     const url = await this.#presign(this.#transport, command, {
-      expiresIn: TEN_MINUTES_SECONDS,
+      expiresIn: lifetimeMs / 1000,
     });
     return {
       url,
-      expiresAt: new Date(this.#now().getTime() + ASSET_UPLOAD_TTL_MS),
+      expiresAt: new Date(this.#now().getTime() + lifetimeMs),
     };
   }
 

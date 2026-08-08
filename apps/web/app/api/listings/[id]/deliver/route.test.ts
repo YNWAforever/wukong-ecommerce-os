@@ -1,3 +1,4 @@
+import { ASSET_EXPORT_READ_TTL_MS } from "@wukong/assets";
 import { describe, expect, it, vi } from "vitest";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -40,6 +41,23 @@ const deliveryContent = {
   tags: ["wine"],
   imageAssetIds: [],
 };
+
+const imageAssets = [
+  {
+    id: "asset_a",
+    workspaceId: "ws_opak",
+    listingId,
+    kind: "image/png",
+    storageKey: "ws/ws_opak/sources/asset-a/a.png",
+  },
+  {
+    id: "asset_b",
+    workspaceId: "ws_opak",
+    listingId,
+    kind: "image/webp",
+    storageKey: "ws/ws_opak/sources/asset-b/b.webp",
+  },
+];
 
 function routeContext() {
   return { params: Promise.resolve({ id: listingId }) };
@@ -87,8 +105,11 @@ function makeDefaultRuntime(
   options: {
     connection?: "connected" | "disconnected";
     imageAssetIds?: readonly string[];
+    images?: boolean;
   } = {},
 ) {
+  const images =
+    options.images ?? options.imageAssetIds !== undefined;
   const audits: any[] = [];
   const order: string[] = [];
   const ensureInputs: any[] = [];
@@ -111,7 +132,10 @@ function makeDefaultRuntime(
             content: {
               ...deliveryContent,
               imageAssetIds:
-                options.imageAssetIds ?? deliveryContent.imageAssetIds,
+                options.imageAssetIds ??
+                (images
+                  ? ["asset_b", "asset_a"]
+                  : deliveryContent.imageAssetIds),
             },
           },
           flags: [],
@@ -119,15 +143,16 @@ function makeDefaultRuntime(
       },
     },
     sourceAssets: {
-      getByIds: vi.fn(async (assetIds: readonly string[]) =>
-        assetIds.map((id) => ({
+      getByIds: vi.fn(async (assetIds: readonly string[]) => {
+        if (images && options.imageAssetIds === undefined) return imageAssets;
+        return assetIds.map((id) => ({
           id,
           workspaceId: context.workspaceId,
           listingId,
           kind: "image/png",
           storageKey: `ws/${context.workspaceId}/sources/${id}/image.png`,
-        })),
-      ),
+        }));
+      }),
     },
     shoplineConnections: {
       getDefault: vi.fn(async () => {
@@ -170,13 +195,31 @@ function makeDefaultRuntime(
       ) => work(repositories),
     ),
   };
+  const createReadUrl = vi.fn(
+    async (_workspaceId: string, storageKey: string) => ({
+      url: `https://signed.example/${encodeURIComponent(storageKey)}`,
+      expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+    }),
+  );
   runtimeMocks.getDatabase.mockReturnValue(database);
-  const createReadUrl = vi.fn(async (_workspaceId: string, storageKey: string) => ({
-    url: `https://signed.example/${encodeURIComponent(storageKey)}`,
-    expiresAt: new Date("2030-01-01T00:00:00.000Z"),
-  }));
-  runtimeMocks.getAssetStore.mockReturnValue({ createReadUrl });
-  return { audits, order, job, database, ensureInputs, repositories, createReadUrl };
+  runtimeMocks.getAssetStore.mockReturnValue(
+    images
+      ? { createReadUrl }
+      : {
+          async createReadUrl() {
+            throw new Error("no image URLs expected");
+          },
+        },
+  );
+  return {
+    audits,
+    order,
+    job,
+    database,
+    ensureInputs,
+    repositories,
+    createReadUrl,
+  };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -436,7 +479,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     });
   });
 
-  it("uses the default runtime to resolve owned listing images", async () => {
+  it("signs CSV image URLs for the export lifetime, not the in-app one", async () => {
     const listingContent = {
       sku: "OPAK-001",
       producer: "Opak",
@@ -461,24 +504,7 @@ describe("POST /api/listings/[id]/deliver", () => {
       tags: ["wine"],
       imageAssetIds: ["asset_b", "asset_a"],
     };
-    const sourceAssets = {
-      getByIds: vi.fn(async () => [
-        {
-          id: "asset_a",
-          workspaceId: "ws_opak",
-          listingId,
-          kind: "image/png",
-          storageKey: "ws/ws_opak/sources/asset-a/a.png",
-        },
-        {
-          id: "asset_b",
-          workspaceId: "ws_opak",
-          listingId,
-          kind: "image/webp",
-          storageKey: "ws/ws_opak/sources/asset-b/b.webp",
-        },
-      ]),
-    };
+    const sourceAssets = { getByIds: vi.fn(async () => imageAssets) };
     const repositories = {
       listings: {
         async requireForPublish() {
@@ -542,8 +568,46 @@ describe("POST /api/listings/[id]/deliver", () => {
     );
     expect(sourceAssets.getByIds).toHaveBeenCalledWith(["asset_b", "asset_a"]);
     expect(createReadUrl.mock.calls).toEqual([
-      ["ws_opak", "ws/ws_opak/sources/asset-b/b.webp"],
-      ["ws_opak", "ws/ws_opak/sources/asset-a/a.png"],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-b/b.webp",
+        { expiresInMs: ASSET_EXPORT_READ_TTL_MS },
+      ],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-a/a.png",
+        { expiresInMs: ASSET_EXPORT_READ_TTL_MS },
+      ],
+    ]);
+  });
+
+  it("leaves SHOPLINE API image URLs on the short lifetime", async () => {
+    const runtime = makeDefaultRuntime({ images: true });
+    const ingressClient = {
+      async enqueue() {
+        return { accepted: true as const };
+      },
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(result.kind).toBe("queued");
+    expect(runtime.createReadUrl.mock.calls).toEqual([
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-b/b.webp",
+        { expiresInMs: undefined },
+      ],
+      [
+        "ws_opak",
+        "ws/ws_opak/sources/asset-a/a.png",
+        { expiresInMs: undefined },
+      ],
     ]);
   });
 });

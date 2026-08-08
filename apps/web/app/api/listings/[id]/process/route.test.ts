@@ -16,9 +16,18 @@ type HandlerOptions = {
   role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
   status?: string;
   assets?: number;
-  pipelineState?: string | null;
+  pipelineState?: "started" | "succeeded" | "failed" | null;
   enqueueError?: boolean;
+  unexpectedError?: boolean;
 };
+
+// What createListingPublisher actually throws: every ingress failure leaves it
+// as a QueueIngressError carrying the reason.
+function queueIngressError(reason: string): Error {
+  const error = new Error("queue_unavailable");
+  error.name = "QueueIngressError";
+  return Object.assign(error, { reason });
+}
 
 function handlerFor(options: HandlerOptions = {}) {
   const listing = {
@@ -27,10 +36,12 @@ function handlerFor(options: HandlerOptions = {}) {
     activeVersionSequence: 0,
   };
   const enqueue = vi.fn(async () => {
-    if (options.enqueueError) throw new Error("Redis unavailable");
+    if (options.unexpectedError) throw new TypeError("publisher exploded");
+    if (options.enqueueError) throw queueIngressError("not_configured");
     return { id: "job_1" };
   });
   const pipelineRunKeys: string[] = [];
+  const reopenedKeys: string[] = [];
 
   const handler = createProcessListingHandler({
     sessionContext: {
@@ -72,7 +83,14 @@ function handlerFor(options: HandlerOptions = {}) {
           pipelineRuns: {
             async getState(key: string) {
               pipelineRunKeys.push(key);
-              return options.pipelineState ?? null;
+              // Shape matches the repository, which returns a run record.
+              return options.pipelineState
+                ? { status: options.pipelineState }
+                : null;
+            },
+            async reopenFailed(key: string) {
+              reopenedKeys.push(key);
+              return true;
             },
           },
         });
@@ -81,7 +99,7 @@ function handlerFor(options: HandlerOptions = {}) {
     publisher: { enqueue },
   });
 
-  return { handler, enqueue, listing, pipelineRunKeys };
+  return { handler, enqueue, listing, pipelineRunKeys, reopenedKeys };
 }
 
 function context(id = listingId) {
@@ -128,21 +146,68 @@ describe("POST /api/listings/[id]/process", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it.each(["processing", "needs_info", "in_review", "failed", "approved"])(
-    "rejects non-received status %s",
-    async (status) => {
-      const { handler, enqueue } = handlerFor({ status });
+  // `needs_info` and `failed` are deliberately absent: the workflow state
+  // machine allows processing to start from both, and refusing them left a
+  // failed listing with no operator-reachable recovery.
+  it.each([
+    "processing",
+    "in_review",
+    "approved",
+    "publishing",
+    "published",
+    "reopened",
+  ])("rejects status %s that cannot start processing", async (status) => {
+    const { handler, enqueue } = handlerFor({ status });
 
-      expect((await handler(request, context())).status).toBe(409);
-      expect(enqueue).not.toHaveBeenCalled();
-    },
-  );
+    expect((await handler(request, context())).status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 
   it("rejects a received listing with no finalized assets", async () => {
     const { handler, enqueue } = handlerFor({ status: "received", assets: 0 });
 
     expect((await handler(request, context())).status).toBe(409);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("re-drives a listing the pipeline gave up on", async () => {
+    // Before this, a failed listing was unreachable: the status guard rejected
+    // anything but `received`, and the run-state guard rejected any existing
+    // run. Recovery meant an engineer replaying the dead-letter queue by hand.
+    const { handler, enqueue, reopenedKeys } = handlerFor({
+      status: "failed",
+      pipelineState: "failed",
+    });
+
+    const response = await handler(request, context());
+
+    expect(response.status).toBe(202);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(reopenedKeys).toHaveLength(1);
+  });
+
+  it("re-drives a listing that stopped for missing information", async () => {
+    const { handler, enqueue } = handlerFor({ status: "needs_info" });
+
+    expect((await handler(request, context())).status).toBe(202);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("still refuses a listing that is already past processing", async () => {
+    const { handler, enqueue } = handlerFor({ status: "in_review" });
+
+    expect((await handler(request, context())).status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen a run that is still in flight", async () => {
+    const { handler, reopenedKeys } = handlerFor({
+      status: "failed",
+      pipelineState: "started",
+    });
+
+    expect((await handler(request, context())).status).toBe(409);
+    expect(reopenedKeys).toHaveLength(0);
   });
 
   it("rejects an existing pipeline run", async () => {
@@ -152,11 +217,47 @@ describe("POST /api/listings/[id]/process", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("returns 503 without changing the listing when Redis is unavailable", async () => {
+  it("returns 503 without changing the listing when the queue is unavailable", async () => {
     const { handler, listing } = handlerFor({ enqueueError: true });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handler(request, context());
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        code: "queue_unavailable",
+        message: "The processing queue is unavailable.",
+      });
+      // The reason has to survive the route. Rethrowing a generic ApiError here
+      // discarded it, so the log could not distinguish an unset variable from
+      // an unreachable Worker.
+      expect(logged.mock.calls.map(([line]) => String(line))).toContain(
+        JSON.stringify({
+          event: "route_error",
+          outcome: "failure",
+          reason: "queue_unavailable",
+          queueReason: "not_configured",
+        }),
+      );
+      expect(listing.status).toBe("received");
+    } finally {
+      logged.mockRestore();
+    }
+  });
 
-    expect((await handler(request, context())).status).toBe(503);
-    expect(listing.status).toBe("received");
+  it("does not label an unrelated fault a queue problem", async () => {
+    const { handler, listing } = handlerFor({ unexpectedError: true });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handler(request, context());
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({
+        code: "internal_error",
+        message: "The request could not be completed.",
+      });
+      expect(listing.status).toBe("received");
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("returns 404 for a foreign listing without enqueueing", async () => {

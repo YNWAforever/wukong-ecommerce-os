@@ -39,24 +39,16 @@ const knownFormatDebt = new Map([
     "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
   ],
   [
-    "apps/web/app/api/listings/route.create.test.ts",
-    "175f467561747ea218d165278e1e57eb4023b50761f81898b3a0f4dc0461cbc0",
-  ],
-  [
-    "apps/web/lib/listing-queue-runtime.ts",
-    "0140cf7c13dbc3dddd78e32fec238ff548e31b4a25b94558fd6d61c5f967ad68",
-  ],
-  [
     "apps/worker/src/listing-consumer.test.ts",
-    "e1b487bd64cfe877d416cdd270e731b42ad2a3dba17b2c52a89161c10e7d1035",
+    "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
   ],
   [
     "apps/worker/src/pipeline-test-support.ts",
-    "f02b9b9d618c3d9d74ab50acc393d832f3f4ed1614f5c250568a91f36662b90b",
+    "45d5ebc4ea37bf5ac927578e992974a8604068c147cf760d4d376cf6c080d7b1",
   ],
   [
     "packages/db/src/index.ts",
-    "314a726462f7407f4a608104634e1a3e6945a63a0bb9ac18c85077d2f6a1dc2d",
+    "2307b20c6cdbccee39ac9e163da0c5357e4e8c459b3095ce575c141e98501651",
   ],
   [
     "packages/db/src/publish-jobs-schema.test.ts",

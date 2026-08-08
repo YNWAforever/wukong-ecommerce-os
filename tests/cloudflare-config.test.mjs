@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
+  classifyPreflight,
   parseSecretNames,
   verifyExactSecretNames,
 } from "../scripts/verify-cloudflare-secrets.mjs";
@@ -241,8 +242,45 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
   const rootPackage = readJson("package.json");
   assert.equal(
     rootPackage.scripts.test,
-    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs && turbo run test",
+    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/runtime-doctor.test.mjs && turbo run test",
   );
+});
+
+test("preflight lets wrangler answer for a Worker that does not exist", () => {
+  const decision = classifyPreflight({
+    status: 1,
+    stdout: "",
+    stderr: 'Worker "wukong-runtime-production" not found.',
+  });
+
+  // Allowed through so wrangler's own required-secrets error is what the
+  // operator reads. The warning must point at --secrets-file: wrangler will
+  // not create the Worker first and accept secrets afterwards.
+  assert.equal(decision.allow, true);
+  assert.match(decision.warning, /does not exist/i);
+  assert.match(decision.warning, /--secrets-file/);
+  assert.doesNotMatch(decision.warning, /redeploy before this environment/i);
+});
+
+test("preflight reaches the name comparison when the Worker exists", () => {
+  const decision = classifyPreflight({
+    status: 0,
+    stdout: JSON.stringify([{ name: "OPENAI_API_KEY" }]),
+    stderr: "",
+  });
+
+  assert.equal(decision.allow, true);
+  assert.equal(decision.warning, undefined);
+});
+
+test("preflight aborts when wrangler fails for any other reason", () => {
+  const decision = classifyPreflight({
+    status: 1,
+    stdout: "",
+    stderr: "network unreachable",
+  });
+
+  assert.equal(decision.allow, false);
 });
 
 test("restores preview configuration for downstream CI gates", () => {

@@ -77,6 +77,11 @@ export type PublishRepositories = {
   };
   publishJobs: {
     getByIdempotencyKey(key: string): Promise<PublishJobRecord | null>;
+    recordRemoteProduct(
+      key: string,
+      leaseToken: string,
+      remoteProductId: string,
+    ): Promise<void>;
     markPublished(
       key: string,
       leaseToken: string,
@@ -452,11 +457,12 @@ export async function publishApprovedProduct(
   };
 
   if (job.remoteProductId) {
+    let remoteProductExists = false;
     try {
       const status = await dependencies.connector.getProductStatus(
         job.remoteProductId,
       );
-      if (status.exists) return complete(job.remoteProductId);
+      remoteProductExists = status.exists;
     } catch (error) {
       const normalized = normalizeConnectorError(error);
       if (
@@ -468,16 +474,26 @@ export async function publishApprovedProduct(
       if (input.persistRetryableFailure) return fail(normalized);
       throw normalized;
     }
+    // Outside the try: a database failure while completing must not be
+    // reclassified as a connector error and marked failed, because the remote
+    // product genuinely exists at this point.
+    if (remoteProductExists) return complete(job.remoteProductId);
   }
 
   let createError: PublishDeliveryError | null = null;
+  let deliveredRemoteProductId: string | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      // Only the connector call belongs in this try. Anything else in here gets
+      // laundered by normalizeConnectorError into `remote_unavailable`, which
+      // does not break the loop -- so a failed database write after a successful
+      // create would POST /products a second time.
       const created = await dependencies.connector.createProduct(
         payload,
         idempotencyKey,
       );
-      return complete(created.remoteProductId);
+      deliveredRemoteProductId = created.remoteProductId;
+      break;
     } catch (error) {
       createError = normalizeConnectorError(error);
       if (createError.code !== "remote_unavailable") break;
@@ -486,12 +502,30 @@ export async function publishApprovedProduct(
           const status = await dependencies.connector.getProductStatus(
             job.remoteProductId,
           );
-          if (status.exists) return complete(job.remoteProductId);
+          if (status.exists) {
+            deliveredRemoteProductId = job.remoteProductId;
+            break;
+          }
         } catch (statusError) {
           createError = normalizeConnectorError(statusError);
         }
       }
     }
+  }
+
+  if (deliveredRemoteProductId) {
+    const remoteProductId = deliveredRemoteProductId;
+    // Commit the remote id on its own before the wider completion write. This
+    // keeps the unreconcilable window down to one small UPDATE, and it is what
+    // makes the reconciliation reads above reachable on a later delivery.
+    await dependencies.withWorkspace(input.workspaceId, (repositories) =>
+      repositories.publishJobs.recordRemoteProduct(
+        idempotencyKey,
+        input.leaseToken,
+        remoteProductId,
+      ),
+    );
+    return complete(remoteProductId);
   }
 
   const finalError =

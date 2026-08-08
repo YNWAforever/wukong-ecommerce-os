@@ -1,17 +1,18 @@
 import { z } from "zod";
 
-import {
-  createRuntimeAuthFlow,
-  safeCallbackPath,
-  type AuthFlow,
-} from "../../../../lib/auth-flow";
+import { safeCallbackPath, type AuthFlow } from "../../../../lib/auth-flow";
+import { withRuntimeAuthFlow } from "../../../../lib/auth-route";
 
-const schema = z.object({
-  email: z.email(),
-  callbackURL: z.string().max(2048).optional(),
-}).strict();
+const schema = z
+  .object({
+    email: z.email(),
+    callbackURL: z.string().max(2048).optional(),
+  })
+  .strict();
 
-export function createRegisterHandler(flow: Pick<AuthFlow, "requestEnrollment">) {
+export function createRegisterHandler(
+  flow: Pick<AuthFlow, "requestEnrollment">,
+) {
   return async function register(request: Request): Promise<Response> {
     try {
       const input = schema.parse(await request.json());
@@ -33,4 +34,4 @@ export function createRegisterHandler(flow: Pick<AuthFlow, "requestEnrollment">)
 }
 
 export const POST = (request: Request) =>
-  createRegisterHandler(createRuntimeAuthFlow())(request);
+  withRuntimeAuthFlow((flow) => createRegisterHandler(flow)(request));

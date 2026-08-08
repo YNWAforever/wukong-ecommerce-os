@@ -1,4 +1,7 @@
-import { consumeListingMessage as defaultConsumeListingMessage } from "./listing-consumer.js";
+import {
+  consumeListingMessage as defaultConsumeListingMessage,
+  LISTING_MAX_ATTEMPTS,
+} from "./listing-consumer.js";
 import type { ListingConsumerOutcome } from "./listing-consumer.js";
 import {
   consumeShoplineMessage as defaultConsumeShoplineMessage,
@@ -21,10 +24,16 @@ type ShoplineAttempt = {
   maxAttempts: number;
 };
 
+type ListingAttempt = {
+  attempt: number;
+  maxAttempts: number;
+};
+
 type QueueDependencies = {
   consumeListingMessage?: (
     payload: unknown,
     env: WorkerEnv,
+    attempt: ListingAttempt,
   ) => Promise<ListingConsumerOutcome>;
   consumeShoplineMessage?: (
     payload: unknown,
@@ -63,7 +72,10 @@ export async function handleQueue(
   const consume =
     dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
   for (const message of batch.messages) {
-    const outcome = await consume(message.body, env);
+    const outcome = await consume(message.body, env, {
+      attempt: message.attempts,
+      maxAttempts: LISTING_MAX_ATTEMPTS,
+    });
     if (outcome === "ack") message.ack();
     else message.retry({ delaySeconds: outcome.retryAfterSeconds });
   }
