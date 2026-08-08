@@ -4,10 +4,19 @@ import {
   listingJobSchema,
   shoplinePublishJobSchema,
   signQueueRequest,
+  type ListingJob,
+  type ShoplinePublishJob,
 } from "@wukong/jobs";
 
 export type CloudflareIngressClient = {
-  enqueue(path: string, payload: unknown): Promise<{ accepted: true }>;
+  enqueue(
+    path: typeof LISTING_INGRESS_PATH,
+    payload: ListingJob,
+  ): Promise<{ accepted: true }>;
+  enqueue(
+    path: typeof SHOPLINE_INGRESS_PATH,
+    payload: ShoplinePublishJob,
+  ): Promise<{ accepted: true }>;
 };
 
 type Options = {
@@ -40,63 +49,66 @@ function queueUnavailable(reason: QueueIngressReason): QueueIngressError {
 export function createCloudflareIngressClient(
   options: Options = {},
 ): CloudflareIngressClient {
-  return {
-    async enqueue(path, payload) {
+  async function enqueue(
+    path: typeof LISTING_INGRESS_PATH | typeof SHOPLINE_INGRESS_PATH,
+    payload: ListingJob | ShoplinePublishJob,
+  ): Promise<{ accepted: true }> {
+    try {
+      const env = options.env ?? process.env;
+      const ingressUrl = env.QUEUE_INGRESS_URL?.trim();
+      const secret = env.QUEUE_INGRESS_SECRET?.trim();
+      if (!ingressUrl || !secret) throw queueUnavailable("not_configured");
+      const schema =
+        path === LISTING_INGRESS_PATH
+          ? listingJobSchema
+          : path === SHOPLINE_INGRESS_PATH
+            ? shoplinePublishJobSchema
+            : null;
+      if (!schema) throw queueUnavailable("unsupported_path");
+
+      let body: string;
       try {
-        const env = options.env ?? process.env;
-        const ingressUrl = env.QUEUE_INGRESS_URL?.trim();
-        const secret = env.QUEUE_INGRESS_SECRET?.trim();
-        if (!ingressUrl || !secret) throw queueUnavailable("not_configured");
-        const schema =
-          path === LISTING_INGRESS_PATH
-            ? listingJobSchema
-            : path === SHOPLINE_INGRESS_PATH
-              ? shoplinePublishJobSchema
-              : null;
-        if (!schema) throw queueUnavailable("unsupported_path");
+        body = JSON.stringify(schema.parse(payload));
+      } catch {
+        // Separated from the transport below. Reporting a rejected payload
+        // as unreachable would send an operator to inspect the network.
+        throw queueUnavailable("invalid_payload");
+      }
 
-        let body: string;
-        try {
-          body = JSON.stringify(schema.parse(payload));
-        } catch {
-          // Separated from the transport below. Reporting a rejected payload
-          // as unreachable would send an operator to inspect the network.
-          throw queueUnavailable("invalid_payload");
-        }
+      const timestamp = Math.floor((options.now ?? Date.now)() / 1_000);
+      const signature = await signQueueRequest({
+        secret,
+        timestamp,
+        path,
+        body,
+      });
 
-        const timestamp = Math.floor((options.now ?? Date.now)() / 1_000);
-        const signature = await signQueueRequest({
-          secret,
-          timestamp,
-          path,
-          body,
-        });
-
-        let response: Response;
-        try {
-          response = await (options.fetch ?? globalThis.fetch)(
-            new URL(path, ingressUrl),
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-wukong-timestamp": String(timestamp),
-                "x-wukong-signature": signature,
-              },
-              body,
-              signal: AbortSignal.timeout(5_000),
+      let response: Response;
+      try {
+        response = await (options.fetch ?? globalThis.fetch)(
+          new URL(path, ingressUrl),
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-wukong-timestamp": String(timestamp),
+              "x-wukong-signature": signature,
             },
-          );
-        } catch {
-          throw queueUnavailable("unreachable");
-        }
-        if (response.status !== 202) throw queueUnavailable("rejected");
-
-        return { accepted: true };
-      } catch (error) {
-        if (error instanceof QueueIngressError) throw error;
+            body,
+            signal: AbortSignal.timeout(5_000),
+          },
+        );
+      } catch {
         throw queueUnavailable("unreachable");
       }
-    },
-  };
+      if (response.status !== 202) throw queueUnavailable("rejected");
+
+      return { accepted: true };
+    } catch (error) {
+      if (error instanceof QueueIngressError) throw error;
+      throw queueUnavailable("unreachable");
+    }
+  }
+
+  return { enqueue };
 }

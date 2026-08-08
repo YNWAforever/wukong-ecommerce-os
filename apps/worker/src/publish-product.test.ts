@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CommerceConnector } from "@wukong/shopline";
+import {
+  hashCanonicalListing,
+  type CommerceConnector,
+} from "@wukong/shopline";
 import {
   listing as canonicalListing,
   workspaceId,
@@ -67,7 +70,7 @@ function makeHarness(
             idempotencyKey: `${workspaceId}:${versionId}:shopline:create`,
             status: "running",
             remoteProductId: null,
-            payloadDigest: null,
+            payloadDigest: hashCanonicalListing(canonicalListing),
             error: null,
             leaseToken: LEASE_TOKEN,
           },
@@ -202,6 +205,13 @@ function makeRepos(
         });
       },
     },
+    shoplineConnections: {
+      async getById(id) {
+        return id === VALID_CONNECTION_ID
+          ? { id, workspaceId, verified: true }
+          : null;
+      },
+    },
     audit: {
       async write(event) {
         audits.push({ action: event.action, metadata: event.metadata });
@@ -211,6 +221,131 @@ function makeRepos(
 }
 
 describe("publishApprovedProduct", () => {
+  it("returns and audits stale_plan without persistence or connector work when the claimed job is missing", async () => {
+    const harness = makeHarness();
+    harness.state.jobs.splice(0);
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({ code: "stale_plan" });
+
+    expect(harness.state.jobs).toEqual([]);
+    expect(harness.audits).toContainEqual(
+      expect.objectContaining({
+        action: "listing.publish_policy_rejected",
+        metadata: expect.objectContaining({
+          reason: "stale_plan",
+          expectedVersionId: versionId,
+          observedVersionId: null,
+          observedPayloadDigest: null,
+        }),
+      }),
+    );
+    expect(harness.resolveImageUrls).not.toHaveBeenCalled();
+    expect(harness.connector.getProductStatus).not.toHaveBeenCalled();
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it.each(["running", "failed"] as const)(
+    "returns and audits stale_plan for a published listing with a %s job before connector work",
+    async (jobStatus) => {
+      const harness = makeHarness("published");
+      harness.state.jobs[0].status = jobStatus;
+
+      await expect(
+        publishApprovedProduct(publishInput(), harness),
+      ).rejects.toMatchObject({ code: "stale_plan" });
+
+      if (jobStatus === "running") {
+        expect(harness.state.jobs[0]).toMatchObject({
+          status: "failed",
+          error: "stale_plan",
+        });
+      }
+      expect(harness.audits).toContainEqual(
+        expect.objectContaining({
+          action: "listing.publish_policy_rejected",
+          metadata: expect.objectContaining({
+            reason: "stale_plan",
+            expectedVersionId: versionId,
+            observedVersionId: versionId,
+          }),
+        }),
+      );
+      expect(harness.resolveImageUrls).not.toHaveBeenCalled();
+      expect(harness.connector.getProductStatus).not.toHaveBeenCalled();
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    },
+  );
+
+  it("sanitizes stale_plan errors without leaking delivery details", () => {
+    const error = new PublishDeliveryError(
+      "stale_plan",
+      "listing body, https://shopline.example/products/123, token=secret",
+    );
+
+    expect(error).toMatchObject({ code: "stale_plan" });
+    expect(error.message).toBe(
+      "The approved listing plan is no longer current",
+    );
+    expect(error.message).not.toMatch(/listing body|shopline\.example|secret/i);
+  });
+
+  it("marks a current-version mismatch as stale_plan with binding audit facts before connector work", async () => {
+    const harness = makeHarness();
+    if (!harness.state.listing.activeVersion) throw new Error("missing version");
+    harness.state.listing.activeVersion = {
+      ...harness.state.listing.activeVersion,
+      id: "version_current",
+    };
+
+    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
+      code: "stale_plan",
+    });
+
+    expect(harness.state.jobs[0]).toMatchObject({
+      status: "failed",
+      error: "stale_plan",
+    });
+    expect(harness.audits).toContainEqual(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reason: "stale_plan",
+          expectedVersionId: "version_current",
+          observedVersionId: versionId,
+        }),
+      }),
+    );
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "d".repeat(64)])(
+    "marks persisted digest %j as stale_plan before connector work",
+    async (persistedDigest) => {
+    const harness = makeHarness();
+    harness.state.jobs[0].payloadDigest = persistedDigest;
+
+    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
+      code: "stale_plan",
+    });
+
+    expect(harness.state.jobs[0]).toMatchObject({
+      status: "failed",
+      error: "stale_plan",
+    });
+    expect(harness.audits).toContainEqual(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reason: "stale_plan",
+          expectedPayloadDigest: hashCanonicalListing(canonicalListing),
+          observedPayloadDigest: persistedDigest,
+        }),
+      }),
+    );
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    },
+  );
+
   it("commits every pre-connector terminal write before its error escapes", async () => {
     const staleVersion = makeTransactionAwareHarness();
     staleVersion.state.jobs[0].versionId = "version_stale";
@@ -236,12 +371,15 @@ describe("publishApprovedProduct", () => {
       ...canonicalListing,
       sku: "",
     };
+    invalidPayload.state.jobs[0].payloadDigest = hashCanonicalListing(
+      invalidPayload.state.listing.activeVersion.content,
+    );
 
     const scenarios = [
       {
         harness: staleVersion,
         input: publishInput({ expectedVersionId: "version_stale" }),
-        code: "not_approved",
+        code: "stale_plan",
       },
       {
         harness: invalidState,
@@ -289,7 +427,7 @@ describe("publishApprovedProduct", () => {
         } as never,
         harness,
       ),
-    ).rejects.toMatchObject({ code: "not_approved" });
+    ).rejects.toMatchObject({ code: "stale_plan" });
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });
 
@@ -397,6 +535,9 @@ describe("publishApprovedProduct", () => {
       ...canonicalListing,
       imageAssetIds: ["asset_b", "asset_a"],
     };
+    harness.state.jobs[0].payloadDigest = hashCanonicalListing(
+      harness.state.listing.activeVersion.content,
+    );
     const resolveImageUrls = vi.fn(async () => [
       "https://signed.example/asset-b",
       "https://signed.example/asset-a",
@@ -454,6 +595,7 @@ describe("publishApprovedProduct", () => {
   });
   it("returns an existing published delivery without calling SHOPLINE twice", async () => {
     const key = `${workspaceId}:${versionId}:shopline:create`;
+    const payloadDigest = hashCanonicalListing(canonicalListing);
     const harness = makeHarness(
       "published",
       [],
@@ -463,7 +605,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "published",
           remoteProductId: "remote_existing",
-          payloadDigest: "d".repeat(64),
+          payloadDigest,
           error: null,
         },
       ],
@@ -472,7 +614,7 @@ describe("publishApprovedProduct", () => {
     expect(result).toMatchObject({
       status: "published",
       remoteProductId: "remote_existing",
-      payloadDigest: "d".repeat(64),
+      payloadDigest,
     });
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
   });
@@ -500,7 +642,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "running",
           remoteProductId: "remote_ambiguous",
-          payloadDigest: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
           error: null,
         },
       ],
@@ -568,7 +710,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "running",
           remoteProductId: "remote_existing",
-          payloadDigest: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
           error: null,
         },
       ],
@@ -613,7 +755,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "running",
           remoteProductId: null,
-          payloadDigest: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
           error: "remote_unavailable",
         },
       ],
@@ -653,7 +795,7 @@ describe("publishApprovedProduct", () => {
           idempotencyKey: key,
           status: "running",
           remoteProductId: "remote_old",
-          payloadDigest: "e".repeat(64),
+          payloadDigest: hashCanonicalListing(canonicalListing),
           error: null,
         },
       ],

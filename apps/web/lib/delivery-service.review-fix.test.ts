@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { evaluateDeliveryPolicy } from "@wukong/shopline";
+
+vi.mock("@wukong/shopline", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@wukong/shopline")>();
+  return { ...actual, evaluateDeliveryPolicy: vi.fn(actual.evaluateDeliveryPolicy) };
+});
 
 import {
   confirmShoplineQueued,
+  createDeliverySnapshotReader,
   deliverListing,
   prepareShoplineDelivery,
 } from "./delivery-service.js";
@@ -31,6 +38,17 @@ const content = {
   imageAssetIds: [],
 };
 
+const readyAuditFacts = {
+  workspaceId: "ws_opak",
+  draftId: "listing_1",
+  method: "shopline_api",
+  phase: "request" as const,
+  versionId: "version_1",
+  payloadDigest: "a".repeat(64),
+  connectionId: "00000000-0000-4000-8000-000000000301",
+  reason: "ready",
+};
+
 function deps(audits: unknown[], jobs: unknown[]): any {
   return {
     listings: {
@@ -56,11 +74,119 @@ function deps(audits: unknown[], jobs: unknown[]): any {
         return "job_1";
       },
     },
-    connection: { id: "00000000-0000-4000-8000-000000000301", verified: true },
+    connection: async () => ({ id: "00000000-0000-4000-8000-000000000301", verified: true }),
   };
 }
 
 describe("delivery audit and queue context", () => {
+  it("reads one workspace-scoped policy snapshot with images, connection, and publish job", async () => {
+    const harness = deps([], []);
+    const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
+    const existingDelivery = vi.fn(async () => ({
+      id: "job_1",
+      versionId: "version_1",
+      status: "pending_enqueue",
+      idempotencyKey: "ws_opak:version_1:shopline:create",
+      payloadDigest: "digest_1",
+      connectionId: "connection_1",
+      remoteProductId: null,
+    }));
+
+    const snapshot = await createDeliverySnapshotReader({
+      ...harness,
+      imageUrls,
+      connection: async () => ({ id: "connection_1", verified: true }),
+      existingDelivery,
+    }).read({
+      workspaceId: "ws_opak",
+      draftId: "listing_1",
+      method: "shopline_api",
+    });
+
+    expect(snapshot).toMatchObject({
+      listing: { workspaceId: "ws_opak", draftId: "listing_1" },
+      connection: { id: "connection_1", workspaceId: "ws_opak", verified: true },
+      job: { id: "job_1", versionId: "version_1", status: "pending_enqueue" },
+      imageUrls: ["https://signed.example/asset-a"],
+    });
+    expect(imageUrls).toHaveBeenCalledWith("ws_opak", "listing_1", []);
+    expect(existingDelivery).toHaveBeenCalledWith(
+      "ws_opak:version_1:shopline:create",
+    );
+  });
+
+  it.each(["csv", "shopline_api"] as const)(
+    "keeps direct %s delivery eager with one policy decision",
+    async (method) => {
+      const audits: unknown[] = [];
+      vi.mocked(evaluateDeliveryPolicy).mockClear();
+      const harness = deps(audits, []);
+      const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
+      harness.imageUrls = imageUrls;
+      harness.listings.requireForPublish = async () => ({
+        id: "listing_1",
+        target: "shopline" as const,
+        status: "approved" as const,
+        activeVersion: {
+          id: "version_1",
+          sequence: 1,
+          content: { ...content, imageAssetIds: ["asset_a"] },
+        },
+        flags: [],
+      });
+
+      await deliverListing(
+        { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method },
+        harness,
+      );
+
+      expect(imageUrls).toHaveBeenCalledTimes(1);
+      expect(evaluateDeliveryPolicy).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[0]?.[0]).toMatchObject({
+        imageUrls: ["https://signed.example/asset-a"],
+      });
+    },
+  );
+
+  it("preflights Shopline preparation before resolving image URLs", async () => {
+    const audits: unknown[] = [];
+    vi.mocked(evaluateDeliveryPolicy).mockClear();
+    const harness = deps(audits, []);
+    const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
+    harness.imageUrls = imageUrls;
+    harness.listings.requireForPublish = async () => ({
+      id: "listing_1",
+      target: "shopline" as const,
+      status: "approved" as const,
+      activeVersion: {
+        id: "version_1",
+        sequence: 1,
+        content: { ...content, imageAssetIds: ["asset_a"] },
+      },
+      flags: [],
+    });
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return { ...input, id: "job_db_1", status: "pending_enqueue" };
+      },
+      async markQueued() { return true; },
+    };
+
+    await prepareShoplineDelivery(
+      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "shopline_api" },
+      harness,
+    );
+
+    expect(imageUrls).toHaveBeenCalledTimes(1);
+    expect(evaluateDeliveryPolicy).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[0]?.[0]).toMatchObject({
+      imageUrls: [],
+    });
+    expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[1]?.[0]).toMatchObject({
+      imageUrls: ["https://signed.example/asset-a"],
+    });
+  });
+
   it("persists pending enqueue and publish requested before queue ingress", async () => {
     const audits: any[] = [];
     const jobs: any[] = [];
@@ -95,11 +221,20 @@ describe("delivery audit and queue context", () => {
       actorId: "reviewer_1",
       draftId: "listing_1",
       idempotencyKey: "ws_opak:version_1:shopline:create",
+      payloadDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      auditFacts: expect.objectContaining({ reason: "ready" }),
     });
     expect(jobs[0]).toMatchObject({ status: "pending_enqueue" });
     expect(audits.map((event) => event.action)).toEqual([
       "listing.publish_requested",
     ]);
+    expect(audits[0]).toMatchObject({
+      metadata: expect.objectContaining({
+        versionId: "version_1",
+        payloadDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        reason: "ready",
+      }),
+    });
   });
 
   it("uses the persisted pending job connection when the default rotates", async () => {
@@ -116,25 +251,32 @@ describe("delivery audit and queue context", () => {
         };
       },
       async markQueued() {
-        throw new Error("confirmation must happen after ingress");
+        return true;
       },
     };
 
-    await expect(
-      prepareShoplineDelivery(
-        {
-          workspaceId: "ws_opak",
-          actorId: "reviewer_1",
-          draftId: "listing_1",
-          method: "shopline_api",
-        },
-        harness,
-      ),
-    ).resolves.toMatchObject({
+    const prepared = await prepareShoplineDelivery(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "shopline_api",
+      },
+      harness,
+    );
+    expect(prepared).toMatchObject({
       kind: "publish_request",
       jobId: "job_db_1",
       connectionId: persistedConnectionId,
     });
+    if (prepared.kind !== "publish_request") throw new Error("expected publish request");
+    await confirmShoplineQueued(prepared, { audit: harness.audit, publishJobs: harness.publishJobs });
+    expect(audits).toHaveLength(2);
+    for (const audit of audits) {
+      expect(audit).toMatchObject({
+        metadata: expect.objectContaining({ connectionId: persistedConnectionId }),
+      });
+    }
   });
 
   it("returns retry required for a reused failed job before ingress", async () => {
@@ -182,6 +324,8 @@ describe("delivery audit and queue context", () => {
       actorId: "reviewer_1",
       draftId: "listing_1",
       idempotencyKey: "ws_opak:version_1:shopline:create",
+      payloadDigest: "a".repeat(64),
+      auditFacts: readyAuditFacts,
     };
 
     await expect(
@@ -220,6 +364,8 @@ describe("delivery audit and queue context", () => {
       actorId: "reviewer_1",
       draftId: "listing_1",
       idempotencyKey: "ws_opak:version_1:shopline:create",
+      payloadDigest: "a".repeat(64),
+      auditFacts: readyAuditFacts,
     };
 
     await expect(
@@ -245,6 +391,13 @@ describe("delivery audit and queue context", () => {
     expect(audits.map((event) => event.action)).toEqual([
       "listing.publish_queued",
     ]);
+    expect(audits[0]).toMatchObject({
+      metadata: expect.objectContaining({
+        versionId: "version_1",
+        payloadDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        reason: "ready",
+      }),
+    });
   });
 
   it("does not regress or re-audit a fast consumer state during confirmation", async () => {
@@ -260,6 +413,8 @@ describe("delivery audit and queue context", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         idempotencyKey: "ws_opak:version_1:shopline:create",
+        payloadDigest: "a".repeat(64),
+        auditFacts: readyAuditFacts,
       },
       {
         audit: {
@@ -295,6 +450,10 @@ describe("delivery audit and queue context", () => {
       actorId: "reviewer_1",
       entityId: "listing_1",
       action: "listing.csv_exported",
+      metadata: expect.objectContaining({
+        versionId: "version_1",
+        payloadDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
     });
   });
 
@@ -324,7 +483,7 @@ describe("delivery audit and queue context", () => {
     });
   });
 
-  it("blocks API delivery when a resolved blocking flag has a short reason", async () => {
+  it("follows policy by ignoring a resolved blocking flag", async () => {
     const audits: unknown[] = [];
     const harness = deps(audits, []);
     harness.listings.requireForPublish = async () => ({
@@ -352,7 +511,7 @@ describe("delivery audit and queue context", () => {
       },
       harness,
     );
-    expect(result.kind).toBe("blocking_flags");
+    expect(result).toMatchObject({ kind: "queued", jobId: "job_1" });
   });
 
   it("does not enqueue a new job for a published listing without a stored result", async () => {
@@ -475,11 +634,9 @@ describe("delivery audit and queue context", () => {
     });
   });
 
-  it("returns an existing published outcome without resolving unused images", async () => {
+  it("resolves assets before returning an existing published outcome", async () => {
     const harness = deps([], []);
-    const imageUrls = vi.fn(async () => {
-      throw new Error("images must not resolve");
-    });
+    const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
     harness.imageUrls = imageUrls;
     harness.listings.requireForPublish = async () => ({
       id: "listing_1",
@@ -511,16 +668,14 @@ describe("delivery audit and queue context", () => {
       kind: "already_published",
       remoteProductId: "remote_existing",
     });
-    expect(imageUrls).not.toHaveBeenCalled();
+    expect(imageUrls).toHaveBeenCalledOnce();
   });
 
-  it("returns disconnected without resolving unused images", async () => {
+  it("resolves assets before returning a disconnected outcome", async () => {
     const harness = deps([], []);
-    const imageUrls = vi.fn(async () => {
-      throw new Error("images must not resolve");
-    });
+    const imageUrls = vi.fn(async () => ["https://signed.example/asset-a"]);
     harness.imageUrls = imageUrls;
-    harness.connection = null;
+    harness.connection = async () => null;
     harness.listings.requireForPublish = async () => ({
       id: "listing_1",
       target: "shopline" as const,
@@ -550,6 +705,6 @@ describe("delivery audit and queue context", () => {
         path: "/api/listings/listing_1/deliver",
       },
     });
-    expect(imageUrls).not.toHaveBeenCalled();
+    expect(imageUrls).toHaveBeenCalledOnce();
   });
 });

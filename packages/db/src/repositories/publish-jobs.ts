@@ -10,6 +10,25 @@ const RETRYABLE_PUBLISH_JOB_ERRORS = [
   "rate_limited",
 ] as const;
 
+const SAFE_PUBLISH_JOB_ERROR_CODES = [
+  "invalid_credentials_or_permission",
+  "validation_failed",
+  "rate_limited",
+  "remote_unavailable",
+  "not_approved",
+  "blocking_flags",
+  "invalid_payload",
+  "stale_plan",
+] as const;
+
+export function sanitizePublishJobErrorCode(errorCode: string): string {
+  return SAFE_PUBLISH_JOB_ERROR_CODES.some(
+    (candidate) => candidate === errorCode,
+  )
+    ? errorCode
+    : "remote_unavailable";
+}
+
 export function isRetryablePublishJobError(errorCode: string | null): boolean {
   return (
     errorCode !== null &&
@@ -259,12 +278,7 @@ export function createPublishJobRepository(
 
     async markFailed(key, leaseToken, errorCode) {
       scope.assertOpen();
-      const safeCode =
-        /^(invalid_credentials_or_permission|validation_failed|rate_limited|remote_unavailable|not_approved|blocking_flags|invalid_payload)$/.test(
-          errorCode,
-        )
-          ? errorCode
-          : "remote_unavailable";
+      const safeCode = sanitizePublishJobErrorCode(errorCode);
       const updated = await transaction
         .update(publishJobs)
         .set({

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type {
   AuditContext,
   AuditWriter,
@@ -8,9 +6,11 @@ import type {
   ListingStatus,
 } from "@wukong/core";
 import {
-  projectToShopline,
+  evaluateDeliveryPolicy,
   type CommerceConnector,
   type ConnectorErrorCode,
+  type DeliveryConnectionSnapshot,
+  type DeliveryPolicyOutcome,
   type ShoplineProductPayload,
 } from "@wukong/shopline";
 
@@ -94,6 +94,9 @@ export type PublishRepositories = {
       errorCode: PublishErrorCode,
     ): Promise<void>;
   };
+  shoplineConnections: {
+    getById(id: string): Promise<DeliveryConnectionSnapshot | null>;
+  };
   audit: AuditWriter;
 };
 
@@ -116,7 +119,8 @@ export type PublishErrorCode =
   | "not_approved"
   | "blocking_flags"
   | "invalid_payload"
-  | "invalid_connection";
+  | "invalid_connection"
+  | "stale_plan";
 
 export class PublishDeliveryError extends Error {
   readonly code: PublishErrorCode;
@@ -129,7 +133,9 @@ export class PublishDeliveryError extends Error {
           ? "Only the active approved version can be delivered"
           : code === "invalid_connection"
             ? "A valid tenant SHOPLINE connection is required"
-            : `SHOPLINE publish failed: ${code}`,
+            : code === "stale_plan"
+              ? "The approved listing plan is no longer current"
+              : `SHOPLINE publish failed: ${code}`,
     );
     this.name = "PublishDeliveryError";
     this.code = code;
@@ -148,16 +154,6 @@ function context(input: PublishProductInput): AuditContext {
   };
 }
 
-function digestPayload(payload: CanonicalListing): string {
-  return createHash("sha256")
-    .update(JSON.stringify(payload), "utf8")
-    .digest("hex");
-}
-
-function isUnresolvedBlockingFlag(flag: ComplianceFlag): boolean {
-  return flag.severity === "blocking" && flag.status === "open";
-}
-
 function normalizeConnectorError(error: unknown): PublishDeliveryError {
   if (error instanceof PublishDeliveryError) return error;
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -172,6 +168,41 @@ function normalizeConnectorError(error: unknown): PublishDeliveryError {
     }
   }
   return new PublishDeliveryError("remote_unavailable");
+}
+
+function errorFromPolicy(
+  outcome: Exclude<DeliveryPolicyOutcome, { kind: "ready" }>,
+): PublishDeliveryError {
+  switch (outcome.kind) {
+    case "blocking_flags":
+      return new PublishDeliveryError("blocking_flags");
+    case "validation_error":
+      return new PublishDeliveryError("invalid_payload");
+    case "disconnected":
+      return new PublishDeliveryError("invalid_connection");
+    case "stale_plan":
+      return new PublishDeliveryError("stale_plan");
+    case "not_found":
+    case "approval_required":
+    case "already_published":
+      return new PublishDeliveryError("not_approved");
+  }
+}
+
+function policyAuditMetadata(
+  outcome: Exclude<DeliveryPolicyOutcome, { kind: "ready" }>,
+): Record<string, unknown> {
+  return {
+    ...outcome.auditFacts,
+    ...(outcome.kind === "stale_plan"
+      ? {
+          expectedVersionId: outcome.expected.versionId,
+          expectedPayloadDigest: outcome.expected.payloadDigest,
+          observedVersionId: outcome.observed.versionId,
+          observedPayloadDigest: outcome.observed.payloadDigest,
+        }
+      : {}),
+  };
 }
 
 function existingResult(job: PublishJobRecord): PublishResult {
@@ -223,49 +254,75 @@ export async function publishApprovedProduct(
       const listing = await repositories.listings.requireForPublish(
         input.draftId,
       );
-      if (
-        listing.target !== "shopline" ||
-        !listing.activeVersion ||
-        listing.activeVersion.id !== input.expectedVersionId
-      ) {
-        const error = new PublishDeliveryError("not_approved");
-        await repositories.publishJobs.markFailed(
-          idempotencyKey,
-          input.leaseToken,
-          error.code,
-        );
-        return { terminalError: error };
-      }
-
       const existing =
         await repositories.publishJobs.getByIdempotencyKey(idempotencyKey);
-      if (listing.status === "published") {
-        if (existing?.status === "published") {
-          return { result: existingResult(existing) };
+      const listingSnapshot = {
+        ...listing,
+        workspaceId: input.workspaceId,
+        draftId: listing.id,
+      };
+      const bindingOutcome = evaluateDeliveryPolicy({
+        workspaceId: input.workspaceId,
+        draftId: input.draftId,
+        method: "shopline_api",
+        phase: "worker",
+        listing: listingSnapshot,
+        imageUrls: [],
+        connection: null,
+        job: existing,
+      });
+      if (bindingOutcome.kind === "stale_plan") {
+        const error = errorFromPolicy(bindingOutcome);
+        if (
+          existing?.status === "running" &&
+          existing.leaseToken === input.leaseToken
+        ) {
+          await repositories.publishJobs.markFailed(
+            idempotencyKey,
+            input.leaseToken,
+            error.code,
+          );
         }
-        throw new Error("published listing is missing its delivery record");
-      }
-      if (
-        listing.status !== "approved" &&
-        listing.status !== "publishing" &&
-        listing.status !== "publish_failed"
-      ) {
-        const error = new PublishDeliveryError("not_approved");
-        await repositories.publishJobs.markFailed(
-          idempotencyKey,
-          input.leaseToken,
-          error.code,
-        );
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: policyAuditMetadata(bindingOutcome),
+        });
         return { terminalError: error };
+      }
+      if (!existing) {
+        const error = new PublishDeliveryError("stale_plan");
+        const bindingAuditFacts =
+          bindingOutcome.kind === "ready"
+            ? bindingOutcome.plan.auditFacts
+            : bindingOutcome.auditFacts;
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: {
+            ...bindingAuditFacts,
+            reason: "stale_plan",
+            expectedVersionId:
+              listing.activeVersion?.id ?? input.expectedVersionId,
+            expectedPayloadDigest: bindingAuditFacts.payloadDigest,
+            observedVersionId: null,
+            observedPayloadDigest: null,
+          },
+        });
+        return { terminalError: error };
+      }
+      if (listing.status === "published" && existing?.status === "published") {
+        return { result: existingResult(existing) };
       }
       if (existing?.status === "published") {
         return { result: existingResult(existing) };
       }
-      if (!existing || existing.versionId !== input.expectedVersionId) {
-        throw new Error("claimed publish job is unavailable");
-      }
-      if (listing.flags.some(isUnresolvedBlockingFlag)) {
-        const error = new PublishDeliveryError("blocking_flags");
+      if (existing.connectionId !== connectionId) {
+        const error = new PublishDeliveryError("invalid_connection");
         await repositories.publishJobs.markFailed(
           idempotencyKey,
           input.leaseToken,
@@ -277,21 +334,38 @@ export async function publishApprovedProduct(
       const imageUrls = await dependencies.resolveImageUrls(
         input.workspaceId,
         input.draftId,
-        listing.activeVersion.content.imageAssetIds,
+        listing.activeVersion?.content.imageAssetIds ?? [],
       );
-      let payload: ShoplineProductPayload;
-      try {
-        payload = projectToShopline(listing.activeVersion.content, imageUrls);
-      } catch {
-        const error = new PublishDeliveryError("invalid_payload");
+      const connection = await repositories.shoplineConnections.getById(
+        connectionId,
+      );
+      const outcome = evaluateDeliveryPolicy({
+        workspaceId: input.workspaceId,
+        draftId: input.draftId,
+        method: "shopline_api",
+        phase: "worker",
+        listing: listingSnapshot,
+        imageUrls,
+        connection,
+        job: existing,
+      });
+      if (outcome.kind !== "ready") {
+        const error = errorFromPolicy(outcome);
         await repositories.publishJobs.markFailed(
           idempotencyKey,
           input.leaseToken,
           error.code,
         );
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: policyAuditMetadata(outcome),
+        });
         return { terminalError: error };
       }
-      const payloadDigest = digestPayload(listing.activeVersion.content);
+      const { plan } = outcome;
       const auditContext = context(input);
       if (
         listing.status === "approved" ||
@@ -306,9 +380,9 @@ export async function publishApprovedProduct(
       return {
         listing,
         job: existing,
-        payload,
-        payloadDigest,
-        versionId: input.expectedVersionId,
+        payload: plan.payload,
+        payloadDigest: plan.payloadDigest,
+        versionId: plan.versionId,
         markListingOnFailure: true,
       };
     },

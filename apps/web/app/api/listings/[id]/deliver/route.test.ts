@@ -101,9 +101,18 @@ function makeHandler(
   return { handler, calls };
 }
 
-function makeDefaultRuntime({ images = false } = {}) {
+function makeDefaultRuntime(
+  options: {
+    connection?: "connected" | "disconnected";
+    imageAssetIds?: readonly string[];
+    images?: boolean;
+  } = {},
+) {
+  const images =
+    options.images ?? options.imageAssetIds !== undefined;
   const audits: any[] = [];
   const order: string[] = [];
+  const ensureInputs: any[] = [];
   const job = {
     id: "job_database_1",
     status: "pending_enqueue",
@@ -112,6 +121,7 @@ function makeDefaultRuntime({ images = false } = {}) {
   const repositories = {
     listings: {
       async requireForPublish() {
+        order.push("listing");
         return {
           id: listingId,
           target: "shopline" as const,
@@ -119,47 +129,62 @@ function makeDefaultRuntime({ images = false } = {}) {
           activeVersion: {
             id: versionId,
             sequence: 1,
-            content: images
-              ? { ...deliveryContent, imageAssetIds: ["asset_b", "asset_a"] }
-              : deliveryContent,
+            content: {
+              ...deliveryContent,
+              imageAssetIds:
+                options.imageAssetIds ??
+                (images
+                  ? ["asset_b", "asset_a"]
+                  : deliveryContent.imageAssetIds),
+            },
           },
           flags: [],
         };
       },
     },
     sourceAssets: {
-      async getByIds() {
-        return images ? imageAssets : [];
-      },
+      getByIds: vi.fn(async (assetIds: readonly string[]) => {
+        if (images && options.imageAssetIds === undefined) return imageAssets;
+        return assetIds.map((id) => ({
+          id,
+          workspaceId: context.workspaceId,
+          listingId,
+          kind: "image/png",
+          storageKey: `ws/${context.workspaceId}/sources/${id}/image.png`,
+        }));
+      }),
     },
     shoplineConnections: {
-      async getDefault() {
+      getDefault: vi.fn(async () => {
+        order.push("connection");
+        if (options.connection === "disconnected") return null;
         return {
           id: "00000000-0000-4000-8000-000000000301",
           encryptedAccessToken: "ciphertext",
         };
-      },
+      }),
     },
     audit: {
-      async write(event: any) {
+      write: vi.fn(async (event: any) => {
         audits.push(event);
         order.push(event.action);
-      },
+      }),
     },
     publishJobs: {
-      async ensure() {
+      ensure: vi.fn(async (input: any) => {
         order.push("ensure");
+        ensureInputs.push(input);
         return job;
-      },
-      async getByIdempotencyKey() {
+      }),
+      getByIdempotencyKey: vi.fn(async () => {
         return job;
-      },
-      async markQueued() {
+      }),
+      markQueued: vi.fn(async () => {
         order.push("markQueued");
         if (job.status !== "pending_enqueue") return false;
         job.status = "queued";
         return true;
-      },
+      }),
     },
   };
   const database = {
@@ -186,7 +211,15 @@ function makeDefaultRuntime({ images = false } = {}) {
           },
         },
   );
-  return { audits, order, job, database, createReadUrl };
+  return {
+    audits,
+    order,
+    job,
+    database,
+    ensureInputs,
+    repositories,
+    createReadUrl,
+  };
 }
 
 describe("POST /api/listings/[id]/deliver", () => {
@@ -217,6 +250,45 @@ describe("POST /api/listings/[id]/deliver", () => {
       code: "shopline_disconnected",
       csvFallback: { method: "csv" },
     });
+  });
+
+  it("uses default delivery to return the CSV fallback without queue or CSV side effects", async () => {
+    const runtime = makeDefaultRuntime({
+      connection: "disconnected",
+      imageAssetIds: ["asset_csv_side_effect_probe"],
+    });
+    const ingressClient = { enqueue: vi.fn() };
+    const handler = createDeliverListingHandler({
+      sessionContext: {
+        async resolve() {
+          return context;
+        },
+      },
+      delivery: defaultDelivery({ ingressClient } as never),
+    });
+
+    const response = await handler(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ method: "shopline_api" }),
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "shopline_disconnected",
+      message: "SHOPLINE is not connected; use CSV fallback.",
+      csvFallback: {
+        method: "csv",
+        path: `/api/listings/${listingId}/deliver`,
+      },
+    });
+    expect(runtime.repositories.publishJobs.ensure).not.toHaveBeenCalled();
+    expect(ingressClient.enqueue).not.toHaveBeenCalled();
+    expect(runtime.repositories.sourceAssets.getByIds).not.toHaveBeenCalled();
+    expect(runtime.createReadUrl).not.toHaveBeenCalled();
+    expect(runtime.repositories.audit.write).not.toHaveBeenCalled();
   });
 
   it("returns deterministic UTF-8 CRLF CSV content for an approved listing", async () => {
@@ -284,6 +356,8 @@ describe("POST /api/listings/[id]/deliver", () => {
       "listing.publish_requested",
     ]);
     expect(runtime.order).toEqual([
+      "listing",
+      "connection",
       "ensure",
       "listing.publish_requested",
       "ingress",
@@ -315,6 +389,16 @@ describe("POST /api/listings/[id]/deliver", () => {
         connectionId: "00000000-0000-4000-8000-000000000301",
       },
     );
+    expect(runtime.ensureInputs).toEqual([
+      {
+        listingId,
+        versionId,
+        connectionId: "00000000-0000-4000-8000-000000000301",
+        idempotencyKey: `ws_opak:${versionId}:shopline:create`,
+        payloadDigest: runtime.audits[0]?.metadata?.payloadDigest,
+      },
+    ]);
+    expect(runtime.ensureInputs[0]?.payloadDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(result).toEqual({
       kind: "queued",
       jobId: "job_database_1",
@@ -326,6 +410,8 @@ describe("POST /api/listings/[id]/deliver", () => {
       "listing.publish_queued",
     ]);
     expect(runtime.order).toEqual([
+      "listing",
+      "connection",
       "ensure",
       "listing.publish_requested",
       "ingress",

@@ -3,7 +3,10 @@ import {
   ASSET_EXPORT_READ_TTL_MS,
   resolveListingImageUrls,
 } from "@wukong/assets";
-import { SHOPLINE_INGRESS_PATH } from "@wukong/jobs";
+import {
+  SHOPLINE_INGRESS_PATH,
+  type ShoplinePublishJob,
+} from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -155,8 +158,6 @@ export function defaultDelivery(
         return database.forWorkspace(
           input.workspaceId,
           async (repositories) => {
-            const connection =
-              await repositories.shoplineConnections.getDefault();
             return deliverListing(input, {
               listings: repositories.listings,
               imageUrls: (workspaceId, draftId, imageAssetIds) =>
@@ -177,9 +178,10 @@ export function defaultDelivery(
                   throw new Error("SHOPLINE API must use two-phase enqueue");
                 },
               },
-              connection: connection
-                ? { id: connection.id, verified: true }
-                : null,
+              connection: async () => {
+                const connection = await repositories.shoplineConnections.getDefault();
+                return connection ? { id: connection.id, verified: true } : null;
+              },
               existingDelivery: (key) =>
                 repositories.publishJobs.getByIdempotencyKey(key),
             });
@@ -190,8 +192,6 @@ export function defaultDelivery(
       const prepared = await database.forWorkspace(
         input.workspaceId,
         async (repositories) => {
-          const connection =
-            await repositories.shoplineConnections.getDefault();
           return prepareShoplineDelivery(input, {
             listings: repositories.listings,
             imageUrls: (workspaceId, draftId, imageAssetIds) =>
@@ -204,9 +204,10 @@ export function defaultDelivery(
               }),
             audit: repositories.audit,
             publishJobs: repositories.publishJobs,
-            connection: connection
-              ? { id: connection.id, verified: true }
-              : null,
+            connection: async () => {
+              const connection = await repositories.shoplineConnections.getDefault();
+              return connection ? { id: connection.id, verified: true } : null;
+            },
             existingDelivery: (key) =>
               repositories.publishJobs.getByIdempotencyKey(key),
           });
@@ -215,12 +216,13 @@ export function defaultDelivery(
       if (prepared.kind !== "publish_request") return prepared;
 
       try {
-        await ingressClient.enqueue(SHOPLINE_INGRESS_PATH, {
+        const message: ShoplinePublishJob = {
           workspaceId: input.workspaceId,
           draftId: input.draftId,
           versionId: prepared.versionId,
           connectionId: prepared.connectionId,
-        });
+        };
+        await ingressClient.enqueue(SHOPLINE_INGRESS_PATH, message);
       } catch {
         return {
           kind: "retry_required",
