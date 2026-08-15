@@ -430,6 +430,8 @@ describe("workspace isolation", () => {
       ["listing_pipeline_runs", ["workspace_id", "version_id"], "listing_versions"],
       ["listing_pipeline_steps", ["workspace_id", "pipeline_run_id"], "listing_pipeline_runs"],
       ["listing_versions", ["workspace_id", "listing_id"], "listing_drafts"],
+      ["platform_products", ["workspace_id", "connection_id"], "shopline_connections"],
+      ["platform_products", ["workspace_id", "listing_id"], "listing_drafts"],
       ["publish_jobs", ["workspace_id", "connection_id"], "shopline_connections"],
       ["publish_jobs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["publish_jobs", ["workspace_id", "version_id"], "listing_versions"],
