@@ -8,6 +8,7 @@ import {
   BULK_FORM_LOCKED_COLUMNS,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
   ShoplineBulkFormError,
+  bulkFormGaps,
   createBulkFormUpdate,
   parseBulkForm,
   type BulkFormColumnKey,
@@ -350,6 +351,31 @@ describe("bulk form content gaps", () => {
       keywordsMirrorName: false,
       summaryMissing: false,
     });
+  });
+});
+
+describe("bulkFormGaps", () => {
+  it("computes the same gaps from a stored row as the parser reports", () => {
+    const parsed = parseBulkForm(sheetOf(dataRow()));
+    const row = parsed.rows[0];
+    if (row === undefined) throw new Error("fixture row did not parse");
+
+    expect(bulkFormGaps(row.raw)).toEqual(row.gaps);
+  });
+
+  it("accepts a partial row, because a stored snapshot may omit blank columns", () => {
+    expect(
+      bulkFormGaps({ nameEn: "Demo Estate Riesling 2024", nameZh: null }),
+    ).toMatchObject({ untranslatedName: true, summaryMissing: true });
+  });
+
+  it("treats a filled Chinese name as translated", () => {
+    expect(
+      bulkFormGaps({
+        nameEn: "Demo Estate Riesling 2024",
+        nameZh: "示範酒莊麗絲玲 2024",
+      }).untranslatedName,
+    ).toBe(false);
   });
 });
 
