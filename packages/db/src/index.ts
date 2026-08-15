@@ -26,6 +26,11 @@ export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";
 export type { PublishJob, PublishJobRepository, PublishJobStatus, EnsurePublishJobInput } from "./repositories/publish-jobs.js";
 export type { ShoplineConnection, ShoplineConnectionRepository } from "./repositories/shopline-connections.js";
+export type {
+  PlatformProduct,
+  PlatformProductRepository,
+  UpsertPlatformProductInput,
+} from "./repositories/platform-products.js";
 export {
   createAuthAccessRepository,
   type AuthAccessRepository,

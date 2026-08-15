@@ -36,6 +36,10 @@ import {
   createShoplineConnectionRepository,
   type ShoplineConnectionRepository,
 } from "./repositories/shopline-connections.js";
+import {
+  createPlatformProductRepository,
+  type PlatformProductRepository,
+} from "./repositories/platform-products.js";
 import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
@@ -54,6 +58,7 @@ export type WorkspaceRepositories = {
   sourceAssets: SourceAssetRepository;
   publishJobs: PublishJobRepository;
   shoplineConnections: ShoplineConnectionRepository;
+  platformProducts: PlatformProductRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
@@ -130,6 +135,11 @@ export function createDatabase(
           scope,
         ),
         shoplineConnections: createShoplineConnectionRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        platformProducts: createPlatformProductRepository(
           transaction,
           workspaceId,
           scope,
