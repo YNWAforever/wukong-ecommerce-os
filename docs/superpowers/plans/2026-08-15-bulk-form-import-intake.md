@@ -359,10 +359,13 @@ CREATE TABLE IF NOT EXISTS platform_products (
     FOREIGN KEY (workspace_id, connection_id)
     REFERENCES shopline_connections (workspace_id, id)
     ON DELETE CASCADE,
+  -- Restrict, not cascade: this row mirrors a product that exists on the
+  -- platform whether or not Wukong keeps a draft, and its digest is the only
+  -- thing that tells an unchanged re-import from a real catalog change.
   CONSTRAINT platform_products_workspace_listing_fkey
     FOREIGN KEY (workspace_id, listing_id)
     REFERENCES listing_drafts (workspace_id, id)
-    ON DELETE CASCADE
+    ON DELETE RESTRICT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS platform_products_workspace_id_uq
@@ -371,8 +374,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS platform_products_workspace_connection_remote_
   ON platform_products (workspace_id, connection_id, remote_product_id);
 CREATE INDEX IF NOT EXISTS platform_products_workspace_listing_idx
   ON platform_products (workspace_id, listing_id);
-CREATE INDEX IF NOT EXISTS platform_products_workspace_sku_idx
-  ON platform_products (workspace_id, sku);
 
 ALTER TABLE platform_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_products FORCE ROW LEVEL SECURITY;
@@ -622,6 +623,14 @@ export type UpsertPlatformProductInput = {
   specVersion: string;
   rawRow: Record<string, string | null>;
   factsPrefill: ListingFacts;
+  /**
+   * MUST be `hashBulkFormRow(rawRow)`. A digest that disagrees with its row
+   * reads as "unchanged" on the next import, which is a silent false negative
+   * in the only mechanism that detects a real catalog change. The repository
+   * cannot derive it here without coupling `@wukong/db` to a specific
+   * connector's row type, so the importer owns the invariant and its tests
+   * assert it.
+   */
   contentDigest: string;
 };
 
