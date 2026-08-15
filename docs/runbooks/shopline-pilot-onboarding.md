@@ -79,3 +79,42 @@ have produced is affected.
 
 Imported drafts are **not** enqueued for AI processing. Creating 500 drafts must
 not fire 500 uncapped AI runs, so enrichment is a separate budgeted batch.
+
+## 5. Enriching an imported catalog
+
+Enrichment costs real money proportional to catalog size, so it runs as an
+explicitly budgeted batch rather than automatically at import.
+
+1. Create a batch for one gap. `budgetUsd` is the ceiling for the whole batch;
+   `waveSize` is how many products are released at a time.
+
+   ```bash
+   curl -X POST "$WUKONG_BASE_URL/api/enrichment-batches" \
+     -H "Cookie: $WUKONG_SESSION_COOKIE" \
+     -H "Content-Type: application/json" \
+     -d '{"label":"zh names","gap":"untranslatedName","budgetUsd":5,"waveSize":25}'
+   ```
+
+   Valid gaps: `untranslatedName`, `untranslatedSeoTitle`, `seoTitleMirrorsName`,
+   `seoDescriptionMirrorsSeoTitle`, `keywordsMirrorName`, `summaryMissing`.
+   The response reports how many products were selected.
+
+2. Release a wave:
+
+   ```bash
+   curl -X POST "$WUKONG_BASE_URL/api/enrichment-batches/<batch-id>/advance" \
+     -H "Cookie: $WUKONG_SESSION_COOKIE"
+   ```
+
+   The response reports `enqueued`, `spentUsd`, `budgetUsd`, and `status`.
+   Repeat once a wave has drained. `status: "completed"` means there is nothing
+   left; `status: "budget_exhausted"` means the budget is spent and no further
+   work will be released.
+
+3. Enriched drafts land in the normal review queue as `in_review`. Nothing is
+   written back to SHOPLINE by this flow.
+
+**Budget is a stop condition between waves, not a hard ceiling within one.** A
+wave already in flight can overshoot by at most the cost of that wave, so size
+`waveSize` for the overshoot you are willing to accept. Spend is measured from
+`ai_runs.estimated_cost_usd`, which is the actual recorded cost of each run.
