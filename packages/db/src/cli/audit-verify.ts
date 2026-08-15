@@ -10,6 +10,30 @@ export const REQUIRED_AUDIT_SEQUENCE = [
   "listing.published",
 ] as const;
 
+/**
+ * Every workspace-scoped table. The RLS leak probe is generated from this list
+ * so adding a tenant table cannot silently narrow the release gate. Names are
+ * literals from this module, never user input, so interpolating them is safe.
+ */
+export const TENANT_TABLES = [
+  "memberships",
+  "workspace_invites",
+  "listing_drafts",
+  "listing_versions",
+  "source_assets",
+  "field_evidence",
+  "compliance_flags",
+  "prompt_versions",
+  "ai_runs",
+  "shopline_connections",
+  "platform_products",
+  "publish_jobs",
+  "review_events",
+  "audit_events",
+  "listing_pipeline_runs",
+  "listing_pipeline_steps",
+] as const;
+
 export type AuditVerificationResult = {
   workspaceId: string;
   draftId: string;
@@ -78,32 +102,18 @@ export async function verifyAudit(
       // Probe every tenant-scoped table, not only rows linked to this draft. RLS
       // should make all rows with another workspace invisible to the runtime role.
       // Running with an admin URL intentionally exposes any leaked foreign rows.
-      const foreignRows = await transaction<
+      const probe = [
+        `select 'workspaces' as source, count(*)::bigint as count from workspaces where id <> $1`,
+        ...TENANT_TABLES.map(
+          (table) =>
+            `select '${table}', count(*) from ${table} where workspace_id <> $1`,
+        ),
+      ].join(" union all ");
+      const foreignRows = await transaction.unsafe<
         { source: string; count: number }[]
-      >`
-        select source, count::int
-        from (
-          select 'workspaces' as source, count(*)::bigint as count
-          from workspaces
-          where id <> ${input.workspaceId}
-          union all select 'memberships', count(*) from memberships where workspace_id <> ${input.workspaceId}
-          union all select 'workspace_invites', count(*) from workspace_invites where workspace_id <> ${input.workspaceId}
-          union all select 'listing_drafts', count(*) from listing_drafts where workspace_id <> ${input.workspaceId}
-          union all select 'listing_versions', count(*) from listing_versions where workspace_id <> ${input.workspaceId}
-          union all select 'source_assets', count(*) from source_assets where workspace_id <> ${input.workspaceId}
-          union all select 'field_evidence', count(*) from field_evidence where workspace_id <> ${input.workspaceId}
-          union all select 'compliance_flags', count(*) from compliance_flags where workspace_id <> ${input.workspaceId}
-          union all select 'prompt_versions', count(*) from prompt_versions where workspace_id <> ${input.workspaceId}
-          union all select 'ai_runs', count(*) from ai_runs where workspace_id <> ${input.workspaceId}
-          union all select 'shopline_connections', count(*) from shopline_connections where workspace_id <> ${input.workspaceId}
-          union all select 'publish_jobs', count(*) from publish_jobs where workspace_id <> ${input.workspaceId}
-          union all select 'review_events', count(*) from review_events where workspace_id <> ${input.workspaceId}
-          union all select 'audit_events', count(*) from audit_events where workspace_id <> ${input.workspaceId}
-          union all select 'listing_pipeline_runs', count(*) from listing_pipeline_runs where workspace_id <> ${input.workspaceId}
-          union all select 'listing_pipeline_steps', count(*) from listing_pipeline_steps where workspace_id <> ${input.workspaceId}
-        ) as counts
-        where count > 0
-      `;
+      >(`select source, count::int from (${probe}) as counts where count > 0`, [
+        input.workspaceId,
+      ]);
       const actions = auditRows.map((row) => row.action);
       const aiRunTasks = aiRows.map((row) => row.task);
       const missingActions = requiredSequenceMissing(actions);
