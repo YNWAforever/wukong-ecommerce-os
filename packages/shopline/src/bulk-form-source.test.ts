@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+
+import { renderBulkFormSource } from "./bulk-form-source.js";
+
+const row = {
+  nameEn: "Demo Estate Riesling 2024",
+  nameZh: "PLACEHOLDER SHOULD NOT APPEAR",
+  seoTitleEn: "SEO PLACEHOLDER SHOULD NOT APPEAR",
+  seoKeywords: "KEYWORD PLACEHOLDER SHOULD NOT APPEAR",
+  summaryEn: "SUMMARY PLACEHOLDER SHOULD NOT APPEAR",
+  onlineStoreCategories: "White Wine>Germany>Mosel\nTop Picks",
+  regularPrice: "100.0",
+  salePrice: "80.0",
+  productCost: "40.0",
+  sku: "0001",
+  quantity: "6",
+  barcode: "1234567890123",
+  supplier: "Demo Supplier Ltd",
+  promotionLabelEn: "1500ML",
+};
+
+describe("renderBulkFormSource", () => {
+  it("renders the stated product facts as labelled lines", () => {
+    const source = renderBulkFormSource(row);
+
+    expect(source).toContain("Product name: Demo Estate Riesling 2024");
+    expect(source).toContain("SKU: 0001");
+    expect(source).toContain("Categories: White Wine > Germany > Mosel");
+    expect(source).toContain("Categories: Top Picks");
+    expect(source).toContain("Regular price (HKD): 100.0");
+    expect(source).toContain("Sale price (HKD): 80.0");
+    expect(source).toContain("Barcode: 1234567890123");
+    expect(source).toContain("Supplier: Demo Supplier Ltd");
+    expect(source).toContain("Promotion label: 1500ML");
+  });
+
+  it("never renders the merchant's wholesale cost", () => {
+    // Product Cost is the merchant's buying price. It has no bearing on
+    // customer-facing copy and must not reach a prompt.
+    expect(renderBulkFormSource(row)).not.toContain("40.0");
+    expect(renderBulkFormSource(row).toLowerCase()).not.toContain("cost");
+  });
+
+  it("never renders the fields that are about to be generated", () => {
+    // Feeding the existing placeholder Chinese name or SEO text back in as a
+    // source invites the model to reproduce it.
+    expect(renderBulkFormSource(row)).not.toContain("PLACEHOLDER");
+  });
+
+  it("omits blank fields rather than emitting empty labels", () => {
+    const source = renderBulkFormSource({ nameEn: "Only a name", sku: null });
+
+    expect(source).toBe("Product name: Only a name");
+  });
+
+  it("returns an empty string when the row states nothing usable", () => {
+    expect(renderBulkFormSource({})).toBe("");
+  });
+});
