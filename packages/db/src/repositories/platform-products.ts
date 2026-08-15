@@ -71,7 +71,10 @@ export function createPlatformProductRepository(
       scope.assertOpen();
       const [row] = await transaction
         .insert(platformProducts)
-        .values({ workspaceId, ...input })
+        // workspaceId last: the scoped ID must win even if a caller's object
+        // carries one of its own. RLS would reject the write anyway, but the
+        // tenancy boundary should not depend on the database catching it.
+        .values({ ...input, workspaceId })
         .onConflictDoUpdate({
           target: [
             platformProducts.workspaceId,
