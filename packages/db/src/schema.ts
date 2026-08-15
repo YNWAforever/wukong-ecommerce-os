@@ -1,4 +1,4 @@
-import type { CanonicalListing } from "@wukong/core";
+import type { CanonicalListing, ListingFacts } from "@wukong/core";
 import {
   type AnyPgColumn,
   bigint,
@@ -408,6 +408,42 @@ export const shoplineConnections = pgTable("shopline_connections", {
     table.workspaceId,
     table.shopDomain,
   ),
+]);
+
+export const platformProducts = pgTable("platform_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+  connectionId: uuid("connection_id").notNull(),
+  /** The platform's own product ID — the join key a listing has never carried. */
+  remoteProductId: text("remote_product_id").notNull(),
+  sku: text("sku").notNull(),
+  /** Null until a draft is created for this product. */
+  listingId: uuid("listing_id"),
+  specVersion: text("spec_version").notNull(),
+  rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
+  factsPrefill: jsonb("facts_prefill").$type<ListingFacts>().notNull(),
+  contentDigest: text("content_digest").notNull(),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+}, (table) => [
+  uniqueIndex("platform_products_workspace_id_uq").on(table.workspaceId, table.id),
+  uniqueIndex("platform_products_workspace_connection_remote_uq").on(
+    table.workspaceId,
+    table.connectionId,
+    table.remoteProductId,
+  ),
+  index("platform_products_workspace_listing_idx").on(table.workspaceId, table.listingId),
+  index("platform_products_workspace_sku_idx").on(table.workspaceId, table.sku),
+  foreignKey({
+    name: "platform_products_workspace_connection_fkey",
+    columns: [table.workspaceId, table.connectionId],
+    foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "platform_products_workspace_listing_fkey",
+    columns: [table.workspaceId, table.listingId],
+    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+  }).onDelete("cascade"),
 ]);
 
 export const publishJobs = pgTable("publish_jobs", {
