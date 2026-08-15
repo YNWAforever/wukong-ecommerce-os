@@ -43,28 +43,28 @@ export DATABASE_ADMIN_URL="postgres://wukong:wukong@localhost:54329/wukong"
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `packages/shopline/src/bulk-form.ts` (modify) | Extract the gaps computation into an exported pure function so a cohort can be selected from a stored row. |
-| `packages/shopline/src/bulk-form-source.ts` (create) | Render a stored raw row as a plain-text extraction source. Pure, no deps. |
-| `packages/shopline/src/bulk-form-source.test.ts` (create) | Rendering content and the two exclusion rules. |
-| `packages/shopline/src/index.ts` (modify) | Export the renderer and the gaps function. |
-| `apps/web/lib/bulk-form-import.ts` (modify) | Write the rendered document as the draft note. |
-| `packages/db/src/schema.ts` (modify) | `enrichmentBatches` and `enrichmentBatchItems` tables. |
-| `packages/db/src/enrichment-batches-schema.test.ts` (create) | Column and composite-FK assertions, no Postgres needed. |
-| `packages/db/drizzle/0005_enrichment_batches.sql` (create) | DDL, indexes, RLS policies, `wukong_app` grants. |
-| `packages/db/src/repositories/ai-runs.ts` (modify) | `sumCostForListings` — observed spend for a set of drafts. |
-| `packages/db/src/repositories/enrichment-batches.ts` (create) | Workspace-scoped batch and item access. |
-| `packages/db/src/repositories/enrichment-batches.integration.test.ts` (create) | Round-trip, wave claiming, isolation. |
-| `packages/db/src/client.ts`, `packages/db/src/index.ts` (modify) | Wire and export the repository. |
-| `packages/db/src/cli/audit-verify.ts` (modify) | Add both tables to `TENANT_TABLES`. |
-| `apps/web/lib/enrichment-batch-service.ts` (create) | Create a batch from a cohort; advance it within budget. |
-| `apps/web/lib/enrichment-batch-service.test.ts` (create) | Cohort selection, budget stop, wave sizing, idempotency. |
-| `apps/web/app/api/enrichment-batches/route.ts` (create) | `POST` create batch. |
-| `apps/web/app/api/enrichment-batches/route.test.ts` (create) | Role and validation. |
-| `apps/web/app/api/enrichment-batches/[id]/advance/route.ts` (create) | `POST` advance batch. |
-| `apps/web/app/api/enrichment-batches/[id]/advance/route.test.ts` (create) | Role, budget-exhausted response. |
-| `docs/runbooks/shopline-pilot-onboarding.md` (modify) | Operator steps for running a budgeted enrichment. |
+| File                                                                           | Responsibility                                                                                             |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `packages/shopline/src/bulk-form.ts` (modify)                                  | Extract the gaps computation into an exported pure function so a cohort can be selected from a stored row. |
+| `packages/shopline/src/bulk-form-source.ts` (create)                           | Render a stored raw row as a plain-text extraction source. Pure, no deps.                                  |
+| `packages/shopline/src/bulk-form-source.test.ts` (create)                      | Rendering content and the two exclusion rules.                                                             |
+| `packages/shopline/src/index.ts` (modify)                                      | Export the renderer and the gaps function.                                                                 |
+| `apps/web/lib/bulk-form-import.ts` (modify)                                    | Write the rendered document as the draft note.                                                             |
+| `packages/db/src/schema.ts` (modify)                                           | `enrichmentBatches` and `enrichmentBatchItems` tables.                                                     |
+| `packages/db/src/enrichment-batches-schema.test.ts` (create)                   | Column and composite-FK assertions, no Postgres needed.                                                    |
+| `packages/db/drizzle/0005_enrichment_batches.sql` (create)                     | DDL, indexes, RLS policies, `wukong_app` grants.                                                           |
+| `packages/db/src/repositories/ai-runs.ts` (modify)                             | `sumCostForListings` — observed spend for a set of drafts.                                                 |
+| `packages/db/src/repositories/enrichment-batches.ts` (create)                  | Workspace-scoped batch and item access.                                                                    |
+| `packages/db/src/repositories/enrichment-batches.integration.test.ts` (create) | Round-trip, wave claiming, isolation.                                                                      |
+| `packages/db/src/client.ts`, `packages/db/src/index.ts` (modify)               | Wire and export the repository.                                                                            |
+| `packages/db/src/cli/audit-verify.ts` (modify)                                 | Add both tables to `TENANT_TABLES`.                                                                        |
+| `apps/web/lib/enrichment-batch-service.ts` (create)                            | Create a batch from a cohort; advance it within budget.                                                    |
+| `apps/web/lib/enrichment-batch-service.test.ts` (create)                       | Cohort selection, budget stop, wave sizing, idempotency.                                                   |
+| `apps/web/app/api/enrichment-batches/route.ts` (create)                        | `POST` create batch.                                                                                       |
+| `apps/web/app/api/enrichment-batches/route.test.ts` (create)                   | Role and validation.                                                                                       |
+| `apps/web/app/api/enrichment-batches/[id]/advance/route.ts` (create)           | `POST` advance batch.                                                                                      |
+| `apps/web/app/api/enrichment-batches/[id]/advance/route.test.ts` (create)      | Role, budget-exhausted response.                                                                           |
+| `docs/runbooks/shopline-pilot-onboarding.md` (modify)                          | Operator steps for running a budgeted enrichment.                                                          |
 
 ---
 
@@ -73,6 +73,7 @@ export DATABASE_ADMIN_URL="postgres://wukong:wukong@localhost:54329/wukong"
 The batch service must select a cohort from `platform_products.rawRow`, which is a stored row rather than a parsed sheet. The gaps block is currently computed inline inside `parseRow`. Extract it — behaviour must not change.
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form.ts`
 - Modify: `packages/shopline/src/bulk-form.test.ts`
 
@@ -182,6 +183,7 @@ git commit -m "refactor(shopline): expose bulk form gaps as a reusable function"
 ### Task 2: Render a row as an extraction source
 
 **Files:**
+
 - Create: `packages/shopline/src/bulk-form-source.ts`
 - Create: `packages/shopline/src/bulk-form-source.test.ts`
 - Modify: `packages/shopline/src/index.ts`
@@ -345,6 +347,7 @@ git commit -m "feat(shopline): render a bulk form row as an extraction source"
 ### Task 3: Importer writes the rendered note
 
 **Files:**
+
 - Modify: `apps/web/lib/bulk-form-import.ts`
 - Modify: `apps/web/lib/bulk-form-import.test.ts`
 
@@ -353,20 +356,20 @@ git commit -m "feat(shopline): render a bulk form row as an extraction source"
 Add to `apps/web/lib/bulk-form-import.test.ts` inside the existing `describe("bulk form importer", …)`:
 
 ```ts
-  it("writes a note the extract step can read, keeping provenance first", async () => {
-    const { importBulkForm, recorded } = importerWith();
+it("writes a note the extract step can read, keeping provenance first", async () => {
+  const { importBulkForm, recorded } = importerWith();
 
-    await importBulkForm({
-      workspaceId: "ws_opak",
-      actorId: "user_1",
-      sheet: sheetOf(rowFor()),
-    });
-
-    const note = recorded.created[0]?.note ?? "";
-    expect(note.split("\n")[0]).toMatch(/^Imported from SHOPLINE bulk update/);
-    expect(note).toContain("Product name: Demo Estate Riesling 2024");
-    expect(note).toContain("Categories: White Wine > Germany > Mosel");
+  await importBulkForm({
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    sheet: sheetOf(rowFor()),
   });
+
+  const note = recorded.created[0]?.note ?? "";
+  expect(note.split("\n")[0]).toMatch(/^Imported from SHOPLINE bulk update/);
+  expect(note).toContain("Product name: Demo Estate Riesling 2024");
+  expect(note).toContain("Categories: White Wine > Germany > Mosel");
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -384,26 +387,26 @@ In `apps/web/lib/bulk-form-import.ts`, add `renderBulkFormSource` to the existin
 Then replace the `listings.create` call:
 
 ```ts
-            const draft = await repositories.listings.create({
-              target: "shopline",
-              note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
-            });
+const draft = await repositories.listings.create({
+  target: "shopline",
+  note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+});
 ```
 
 with:
 
 ```ts
-            const draft = await repositories.listings.create({
-              target: "shopline",
-              // Provenance first so the note stays readable to an operator, then
-              // the rendered row, which is what the extract step reads when this
-              // draft is enriched.
-              note: [
-                `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
-                "",
-                renderBulkFormSource(rawRow),
-              ].join("\n"),
-            });
+const draft = await repositories.listings.create({
+  target: "shopline",
+  // Provenance first so the note stays readable to an operator, then
+  // the rendered row, which is what the extract step reads when this
+  // draft is enriched.
+  note: [
+    `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+    "",
+    renderBulkFormSource(rawRow),
+  ].join("\n"),
+});
 ```
 
 - [ ] **Step 4: Write the failing test for the refresh path**
@@ -413,45 +416,47 @@ enrichment would then read data the merchant has already replaced. Add to
 `apps/web/lib/bulk-form-import.test.ts`:
 
 ```ts
-  it("refreshes the note when a re-import changes the row", async () => {
-    const { importBulkForm, recorded } = importerWith({
-      remote_1: { listingId: "draft_existing", contentDigest: "stale" },
-    });
-
-    await importBulkForm({
-      workspaceId: "ws_opak",
-      actorId: "user_1",
-      sheet: sheetOf(rowFor({ nameEn: "Renamed Estate Riesling 2024" })),
-    });
-
-    expect(recorded.notes).toEqual([
-      {
-        listingId: "draft_existing",
-        note: expect.stringContaining("Product name: Renamed Estate Riesling 2024"),
-      },
-    ]);
+it("refreshes the note when a re-import changes the row", async () => {
+  const { importBulkForm, recorded } = importerWith({
+    remote_1: { listingId: "draft_existing", contentDigest: "stale" },
   });
 
-  it("does not touch the note when a re-import changes nothing", async () => {
-    const first = importerWith();
-    await first.importBulkForm({
-      workspaceId: "ws_opak",
-      actorId: "user_1",
-      sheet: sheetOf(rowFor()),
-    });
-    const digest = first.recorded.upserts[0]?.contentDigest ?? "";
-
-    const second = importerWith({
-      remote_1: { listingId: "draft_existing", contentDigest: digest },
-    });
-    await second.importBulkForm({
-      workspaceId: "ws_opak",
-      actorId: "user_1",
-      sheet: sheetOf(rowFor()),
-    });
-
-    expect(second.recorded.notes).toEqual([]);
+  await importBulkForm({
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    sheet: sheetOf(rowFor({ nameEn: "Renamed Estate Riesling 2024" })),
   });
+
+  expect(recorded.notes).toEqual([
+    {
+      listingId: "draft_existing",
+      note: expect.stringContaining(
+        "Product name: Renamed Estate Riesling 2024",
+      ),
+    },
+  ]);
+});
+
+it("does not touch the note when a re-import changes nothing", async () => {
+  const first = importerWith();
+  await first.importBulkForm({
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    sheet: sheetOf(rowFor()),
+  });
+  const digest = first.recorded.upserts[0]?.contentDigest ?? "";
+
+  const second = importerWith({
+    remote_1: { listingId: "draft_existing", contentDigest: digest },
+  });
+  await second.importBulkForm({
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    sheet: sheetOf(rowFor()),
+  });
+
+  expect(second.recorded.notes).toEqual([]);
+});
 ```
 
 Extend the `Recorded` type in that file with `notes: { listingId: string; note: string }[]`, initialise it to `[]` in `importerWith`, and add this to the fake `listings` repository:
@@ -550,6 +555,7 @@ git commit -m "feat(web): give imported drafts an extractable note"
 ### Task 4: Enrichment batch schema
 
 **Files:**
+
 - Modify: `packages/db/src/schema.ts`
 - Create: `packages/db/src/enrichment-batches-schema.test.ts`
 
@@ -750,6 +756,7 @@ git commit -m "feat(db): add enrichment batch schema"
 ### Task 5: Enrichment batch migration
 
 **Files:**
+
 - Create: `packages/db/drizzle/0005_enrichment_batches.sql`
 
 - [ ] **Step 1: Write the migration**
@@ -882,6 +889,7 @@ git commit -m "feat(db): migrate enrichment batch tables with rls"
 `estimated_cost_usd` is written with `.toFixed(6)` into a numeric column, so it comes back as a string and must be cast before summing.
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/ai-runs.ts`
 - Create: `packages/db/src/repositories/ai-runs.integration.test.ts`
 
@@ -1058,6 +1066,7 @@ git commit -m "feat(db): sum observed ai run cost for a set of drafts"
 ### Task 7: Enrichment batch repository and wiring
 
 **Files:**
+
 - Create: `packages/db/src/repositories/enrichment-batches.ts`
 - Create: `packages/db/src/repositories/enrichment-batches.integration.test.ts`
 - Modify: `packages/db/src/client.ts`, `packages/db/src/index.ts`, `packages/db/src/cli/audit-verify.ts`, `packages/db/src/cli/audit-verify.test.ts`
@@ -1073,18 +1082,10 @@ import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { enrichmentBatchItems, enrichmentBatches } from "../schema.js";
 
 export type EnrichmentBatchStatus =
-  | "open"
-  | "running"
-  | "completed"
-  | "budget_exhausted"
-  | "cancelled";
+  "open" | "running" | "completed" | "budget_exhausted" | "cancelled";
 
 export type EnrichmentBatchItemStatus =
-  | "pending"
-  | "queued"
-  | "succeeded"
-  | "failed"
-  | "skipped";
+  "pending" | "queued" | "succeeded" | "failed" | "skipped";
 
 export type EnrichmentBatch = {
   id: string;
@@ -1166,7 +1167,8 @@ export function createEnrichmentBatchRepository(
           workspaceId,
         })
         .returning(BATCH_COLUMNS);
-      if (!batch) throw new Error("enrichment batch insert did not return a row");
+      if (!batch)
+        throw new Error("enrichment batch insert did not return a row");
 
       if (input.listingIds.length > 0) {
         await transaction.insert(enrichmentBatchItems).values(
@@ -1362,7 +1364,7 @@ import {
 Add to `WorkspaceRepositories`, after `platformProducts`:
 
 ```ts
-  enrichmentBatches: EnrichmentBatchRepository;
+enrichmentBatches: EnrichmentBatchRepository;
 ```
 
 Add to the `repositories` object literal inside `runForWorkspace`, after the `platformProducts` entry:
@@ -1400,10 +1402,10 @@ In `packages/db/src/cli/audit-verify.ts`, add both table names to `TENANT_TABLES
 The existing drift tests in `audit-verify.test.ts` derive the expected set from `schema.ts`, so they will fail until this is done — that is the guard working. Add an explicit assertion alongside the existing `platform_products` one:
 
 ```ts
-  it("includes the enrichment batch tables", () => {
-    expect(TENANT_TABLES).toContain("enrichment_batches");
-    expect(TENANT_TABLES).toContain("enrichment_batch_items");
-  });
+it("includes the enrichment batch tables", () => {
+  expect(TENANT_TABLES).toContain("enrichment_batches");
+  expect(TENANT_TABLES).toContain("enrichment_batch_items");
+});
 ```
 
 - [ ] **Step 5: Write the integration test**
@@ -1411,78 +1413,96 @@ The existing drift tests in `audit-verify.test.ts` derive the expected set from 
 Create `packages/db/src/repositories/enrichment-batches.integration.test.ts` using the same harness as Task 6 (workspace `ws_batches`):
 
 ```ts
-  it("creates a batch with one item per draft and claims waves without overlap", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const drafts = [];
-      for (let index = 0; index < 5; index += 1) {
-        drafts.push(
-          await repositories.listings.create({
-            target: "shopline",
-            note: null,
-          }),
-        );
-      }
-
-      const batch = await repositories.enrichmentBatches.create({
-        label: "zh names",
-        budgetUsd: 2.5,
-        waveSize: 2,
-        createdBy: "user_1",
-        listingIds: drafts.map((draft) => draft.id),
-      });
-
-      expect(batch.budgetUsd).toBe(2.5);
-      expect(await repositories.enrichmentBatches.countByStatus(batch.id)).toMatchObject({
-        pending: 5,
-        queued: 0,
-      });
-
-      const firstWave = await repositories.enrichmentBatches.claimWave(batch.id, 2);
-      const secondWave = await repositories.enrichmentBatches.claimWave(batch.id, 2);
-
-      expect(firstWave).toHaveLength(2);
-      expect(secondWave).toHaveLength(2);
-      // A claimed draft must never be handed out twice.
-      expect(new Set([...firstWave, ...secondWave]).size).toBe(4);
-      expect(await repositories.enrichmentBatches.countByStatus(batch.id)).toMatchObject({
-        pending: 1,
-        queued: 4,
-      });
-    });
-  });
-
-  it("records item outcomes and batch status", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: null,
-      });
-      const batch = await repositories.enrichmentBatches.create({
-        label: "one",
-        budgetUsd: 1,
-        waveSize: 1,
-        createdBy: "user_1",
-        listingIds: [draft.id],
-      });
-
-      await repositories.enrichmentBatches.claimWave(batch.id, 1);
-      await repositories.enrichmentBatches.markItems(batch.id, [draft.id], "succeeded");
-      await repositories.enrichmentBatches.setStatus(batch.id, "completed");
-
-      expect(await repositories.enrichmentBatches.countByStatus(batch.id)).toMatchObject({
-        succeeded: 1,
-      });
-      expect((await repositories.enrichmentBatches.getById(batch.id))?.status).toBe(
-        "completed",
+it("creates a batch with one item per draft and claims waves without overlap", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const drafts = [];
+    for (let index = 0; index < 5; index += 1) {
+      drafts.push(
+        await repositories.listings.create({
+          target: "shopline",
+          note: null,
+        }),
       );
-    });
-  });
+    }
 
-  it("never returns another workspace's batch", async () => {
-    await database.forWorkspace("ws_batches_other", async (repositories) => {
-      expect(await repositories.enrichmentBatches.listItemIds(otherBatchId)).toEqual([]);
+    const batch = await repositories.enrichmentBatches.create({
+      label: "zh names",
+      budgetUsd: 2.5,
+      waveSize: 2,
+      createdBy: "user_1",
+      listingIds: drafts.map((draft) => draft.id),
+    });
+
+    expect(batch.budgetUsd).toBe(2.5);
+    expect(
+      await repositories.enrichmentBatches.countByStatus(batch.id),
+    ).toMatchObject({
+      pending: 5,
+      queued: 0,
+    });
+
+    const firstWave = await repositories.enrichmentBatches.claimWave(
+      batch.id,
+      2,
+    );
+    const secondWave = await repositories.enrichmentBatches.claimWave(
+      batch.id,
+      2,
+    );
+
+    expect(firstWave).toHaveLength(2);
+    expect(secondWave).toHaveLength(2);
+    // A claimed draft must never be handed out twice.
+    expect(new Set([...firstWave, ...secondWave]).size).toBe(4);
+    expect(
+      await repositories.enrichmentBatches.countByStatus(batch.id),
+    ).toMatchObject({
+      pending: 1,
+      queued: 4,
     });
   });
+});
+
+it("records item outcomes and batch status", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const draft = await repositories.listings.create({
+      target: "shopline",
+      note: null,
+    });
+    const batch = await repositories.enrichmentBatches.create({
+      label: "one",
+      budgetUsd: 1,
+      waveSize: 1,
+      createdBy: "user_1",
+      listingIds: [draft.id],
+    });
+
+    await repositories.enrichmentBatches.claimWave(batch.id, 1);
+    await repositories.enrichmentBatches.markItems(
+      batch.id,
+      [draft.id],
+      "succeeded",
+    );
+    await repositories.enrichmentBatches.setStatus(batch.id, "completed");
+
+    expect(
+      await repositories.enrichmentBatches.countByStatus(batch.id),
+    ).toMatchObject({
+      succeeded: 1,
+    });
+    expect(
+      (await repositories.enrichmentBatches.getById(batch.id))?.status,
+    ).toBe("completed");
+  });
+});
+
+it("never returns another workspace's batch", async () => {
+  await database.forWorkspace("ws_batches_other", async (repositories) => {
+    expect(
+      await repositories.enrichmentBatches.listItemIds(otherBatchId),
+    ).toEqual([]);
+  });
+});
 ```
 
 Seed a second workspace `ws_batches_other` in `beforeAll` the same way, and create `otherBatchId` in the first workspace during `beforeAll` so the isolation test has a real ID to ask for.
@@ -1510,6 +1530,7 @@ git commit -m "feat(db): add enrichment batch repository"
 ### Task 8: Batch service — create from a cohort
 
 **Files:**
+
 - Create: `apps/web/lib/enrichment-batch-service.ts`
 - Create: `apps/web/lib/enrichment-batch-service.test.ts`
 
@@ -1570,7 +1591,11 @@ function serviceWith(products = [untranslated, translated, unlinked]) {
           });
         },
       }) as never,
-    publisher: { async enqueue() { return { id: "job_1" }; } },
+    publisher: {
+      async enqueue() {
+        return { id: "job_1" };
+      },
+    },
   });
 
   return { service, recorded };
@@ -1590,9 +1615,9 @@ describe("enrichment batch creation", () => {
     });
 
     expect(result.selected).toBe(1);
-    expect((recorded.created[0] as { listingIds: string[] }).listingIds).toEqual(
-      ["draft_1"],
-    );
+    expect(
+      (recorded.created[0] as { listingIds: string[] }).listingIds,
+    ).toEqual(["draft_1"]);
   });
 
   it("skips products that have no draft to enrich", async () => {
@@ -1768,6 +1793,7 @@ git commit -m "feat(web): create an enrichment batch from a gap cohort"
 ### Task 9: Batch service — advance within budget
 
 **Files:**
+
 - Modify: `apps/web/lib/enrichment-batch-service.ts`
 - Modify: `apps/web/lib/enrichment-batch-service.test.ts`
 
@@ -1936,162 +1962,156 @@ export type AdvanceBatchResult = {
 Add this function inside `createEnrichmentBatchService`, before the `return`:
 
 ```ts
-  async function advanceBatch(
-    input: AdvanceBatchInput,
-  ): Promise<AdvanceBatchResult> {
-    const plan = await deps
-      .getDatabase()
-      .forWorkspace(input.workspaceId, async (repositories) => {
-        const batch = await repositories.enrichmentBatches.getById(
-          input.batchId,
+async function advanceBatch(
+  input: AdvanceBatchInput,
+): Promise<AdvanceBatchResult> {
+  const plan = await deps
+    .getDatabase()
+    .forWorkspace(input.workspaceId, async (repositories) => {
+      const batch = await repositories.enrichmentBatches.getById(input.batchId);
+      if (!batch) {
+        throw new ApiError(404, "batch_not_found", "No such enrichment batch.");
+      }
+
+      const itemIds = await repositories.enrichmentBatches.listItemIds(
+        input.batchId,
+      );
+
+      // Reconcile before doing anything else. A queued draft that has since
+      // reached a terminal state is no longer in flight, and until it is
+      // recorded as such the batch can never report itself complete and a
+      // failed product would look like work still pending.
+      const queued = await repositories.enrichmentBatches.listItemsByStatus(
+        input.batchId,
+        "queued",
+      );
+      if (queued.length > 0) {
+        const statuses = await repositories.listings.statusesByIds(queued);
+        const succeeded = queued.filter((id) =>
+          ["in_review", "approved", "publishing", "published"].includes(
+            statuses[id] ?? "",
+          ),
         );
-        if (!batch) {
-          throw new ApiError(404, "batch_not_found", "No such enrichment batch.");
-        }
-
-        const itemIds = await repositories.enrichmentBatches.listItemIds(
-          input.batchId,
+        const failed = queued.filter((id) =>
+          ["failed", "publish_failed"].includes(statuses[id] ?? ""),
         );
-
-        // Reconcile before doing anything else. A queued draft that has since
-        // reached a terminal state is no longer in flight, and until it is
-        // recorded as such the batch can never report itself complete and a
-        // failed product would look like work still pending.
-        const queued = await repositories.enrichmentBatches.listItemsByStatus(
+        await repositories.enrichmentBatches.markItems(
           input.batchId,
-          "queued",
+          succeeded,
+          "succeeded",
         );
-        if (queued.length > 0) {
-          const statuses =
-            await repositories.listings.statusesByIds(queued);
-          const succeeded = queued.filter((id) =>
-            ["in_review", "approved", "publishing", "published"].includes(
-              statuses[id] ?? "",
-            ),
-          );
-          const failed = queued.filter((id) =>
-            ["failed", "publish_failed"].includes(statuses[id] ?? ""),
-          );
-          await repositories.enrichmentBatches.markItems(
-            input.batchId,
-            succeeded,
-            "succeeded",
-          );
-          // A failed product does not block the batch and is not retried here;
-          // re-running failures is a new, separately budgeted batch.
-          await repositories.enrichmentBatches.markItems(
-            input.batchId,
-            failed,
-            "failed",
-          );
-        }
-
-        // Budget is enforced on observed spend, never on a stored running
-        // total, so it cannot drift out of sync with the runs it counts.
-        const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
-
-        if (spentUsd >= batch.budgetUsd) {
-          await repositories.enrichmentBatches.setStatus(
-            input.batchId,
-            "budget_exhausted",
-          );
-          return { batch, spentUsd, wave: [] as string[], done: false };
-        }
-
-        const wave = await repositories.enrichmentBatches.claimWave(
+        // A failed product does not block the batch and is not retried here;
+        // re-running failures is a new, separately budgeted batch.
+        await repositories.enrichmentBatches.markItems(
           input.batchId,
-          batch.waveSize,
+          failed,
+          "failed",
         );
-        if (wave.length === 0) {
-          const counts = await repositories.enrichmentBatches.countByStatus(
-            input.batchId,
-          );
-          const done = counts.pending === 0 && counts.queued === 0;
-          if (done) {
-            await repositories.enrichmentBatches.setStatus(
-              input.batchId,
-              "completed",
-            );
-          }
-          return { batch, spentUsd, wave, done };
-        }
+      }
 
+      // Budget is enforced on observed spend, never on a stored running
+      // total, so it cannot drift out of sync with the runs it counts.
+      const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
+
+      if (spentUsd >= batch.budgetUsd) {
         await repositories.enrichmentBatches.setStatus(
           input.batchId,
-          "running",
+          "budget_exhausted",
         );
-        return { batch, spentUsd, wave, done: false };
-      });
+        return { batch, spentUsd, wave: [] as string[], done: false };
+      }
 
-    if (plan.wave.length === 0) {
-      return {
-        batchId: input.batchId,
-        status:
-          plan.spentUsd >= plan.batch.budgetUsd
-            ? "budget_exhausted"
-            : plan.done
-              ? "completed"
-              : "running",
-        enqueued: 0,
-        spentUsd: plan.spentUsd,
-        budgetUsd: plan.batch.budgetUsd,
-      };
-    }
+      const wave = await repositories.enrichmentBatches.claimWave(
+        input.batchId,
+        batch.waveSize,
+      );
+      if (wave.length === 0) {
+        const counts = await repositories.enrichmentBatches.countByStatus(
+          input.batchId,
+        );
+        const done = counts.pending === 0 && counts.queued === 0;
+        if (done) {
+          await repositories.enrichmentBatches.setStatus(
+            input.batchId,
+            "completed",
+          );
+        }
+        return { batch, spentUsd, wave, done };
+      }
 
-    // Enqueue outside the transaction: the queue is a remote service and must
-    // not hold a pooled connection open. Items are already `queued`, so a
-    // failure here leaves them claimed rather than silently re-runnable.
-    let enqueued = 0;
-    for (const draftId of plan.wave) {
-      await deps.publisher.enqueue({
-        workspaceId: input.workspaceId,
-        draftId,
-        activeVersionSequence: 0,
-      });
-      enqueued += 1;
-    }
+      await repositories.enrichmentBatches.setStatus(input.batchId, "running");
+      return { batch, spentUsd, wave, done: false };
+    });
 
-    await deps
-      .getDatabase()
-      .forWorkspace(input.workspaceId, async (repositories) => {
-        await repositories.audit.write({
-          workspaceId: input.workspaceId,
-          actorId: input.actorId,
-          entityId: input.batchId,
-          action: "enrichment_batch.advanced",
-          metadata: {
-            enqueued,
-            spentUsd: plan.spentUsd,
-            budgetUsd: plan.batch.budgetUsd,
-          },
-        });
-      });
-
-    console.info(
-      JSON.stringify({
-        event: "enrichment_batch.advanced",
-        workspaceId: input.workspaceId,
-        batchId: input.batchId,
-        enqueued,
-        spentUsd: plan.spentUsd,
-        budgetUsd: plan.batch.budgetUsd,
-      }),
-    );
-
+  if (plan.wave.length === 0) {
     return {
       batchId: input.batchId,
-      status: "running",
-      enqueued,
+      status:
+        plan.spentUsd >= plan.batch.budgetUsd
+          ? "budget_exhausted"
+          : plan.done
+            ? "completed"
+            : "running",
+      enqueued: 0,
       spentUsd: plan.spentUsd,
       budgetUsd: plan.batch.budgetUsd,
     };
   }
+
+  // Enqueue outside the transaction: the queue is a remote service and must
+  // not hold a pooled connection open. Items are already `queued`, so a
+  // failure here leaves them claimed rather than silently re-runnable.
+  let enqueued = 0;
+  for (const draftId of plan.wave) {
+    await deps.publisher.enqueue({
+      workspaceId: input.workspaceId,
+      draftId,
+      activeVersionSequence: 0,
+    });
+    enqueued += 1;
+  }
+
+  await deps
+    .getDatabase()
+    .forWorkspace(input.workspaceId, async (repositories) => {
+      await repositories.audit.write({
+        workspaceId: input.workspaceId,
+        actorId: input.actorId,
+        entityId: input.batchId,
+        action: "enrichment_batch.advanced",
+        metadata: {
+          enqueued,
+          spentUsd: plan.spentUsd,
+          budgetUsd: plan.batch.budgetUsd,
+        },
+      });
+    });
+
+  console.info(
+    JSON.stringify({
+      event: "enrichment_batch.advanced",
+      workspaceId: input.workspaceId,
+      batchId: input.batchId,
+      enqueued,
+      spentUsd: plan.spentUsd,
+      budgetUsd: plan.batch.budgetUsd,
+    }),
+  );
+
+  return {
+    batchId: input.batchId,
+    status: "running",
+    enqueued,
+    spentUsd: plan.spentUsd,
+    budgetUsd: plan.batch.budgetUsd,
+  };
+}
 ```
 
 Change the final return to:
 
 ```ts
-  return { createBatch, advanceBatch };
+return { createBatch, advanceBatch };
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -2114,6 +2134,7 @@ git commit -m "feat(web): advance an enrichment batch within its budget"
 ### Task 10: Routes
 
 **Files:**
+
 - Create: `apps/web/app/api/enrichment-batches/route.ts`
 - Create: `apps/web/app/api/enrichment-batches/route.test.ts`
 - Create: `apps/web/app/api/enrichment-batches/[id]/advance/route.ts`
@@ -2167,7 +2188,10 @@ describe("POST /api/enrichment-batches", () => {
     const response = await handlerFor("operator")(post(validBody));
 
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({ batchId: "batch_1", selected: 42 });
+    expect(await response.json()).toMatchObject({
+      batchId: "batch_1",
+      selected: 42,
+    });
   });
 
   it("refuses a viewer without creating anything", async () => {
@@ -2229,7 +2253,10 @@ describe("POST /api/enrichment-batches/[id]/advance", () => {
     const response = await handlerFor("operator")(request, context);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ enqueued: 2, status: "running" });
+    expect(await response.json()).toMatchObject({
+      enqueued: 2,
+      status: "running",
+    });
   });
 
   it("reports an exhausted budget without failing the request", async () => {
@@ -2434,6 +2461,7 @@ git commit -m "feat(web): add enrichment batch routes"
 ### Task 11: Runbook and full verification
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 
 - [ ] **Step 1: Document the operator flow**

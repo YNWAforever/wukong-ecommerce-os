@@ -34,8 +34,8 @@ describe("renderBulkFormSource", () => {
     expect(source).toContain("SKU: 0001");
     expect(source).toContain("Categories: White Wine > Germany > Mosel");
     expect(source).toContain("Categories: Top Picks");
-    expect(source).toContain("Regular price (HKD): 100.0");
-    expect(source).toContain("Sale price (HKD): 80.0");
+    expect(source).toContain("Regular price: HK$100");
+    expect(source).toContain("Sale price: HK$80");
     expect(source).toContain("Barcode: 1234567890123");
     expect(source).toContain("Supplier: Demo Supplier Ltd");
     expect(source).toContain("Promotion label: 1500ML");
