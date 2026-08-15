@@ -67,7 +67,11 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         // The reader's message can name internal container details; do not leak it.
         throw new ApiError(
           400,
-          "bulk_form_unreadable",
+          // Distinct from the importer's `bulk_form_unreadable` (422), which
+          // means the workbook parsed but held no product rows. A client
+          // branching on `code` must be able to tell "wrong file" from
+          // "empty catalog".
+          "upload_not_a_workbook",
           "The upload is not a readable xlsx workbook.",
         );
       }

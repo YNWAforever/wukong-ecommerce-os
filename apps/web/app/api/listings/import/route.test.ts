@@ -99,7 +99,7 @@ describe("POST /api/listings/import", () => {
     const response = await handler(requestWith(new Uint8Array([9, 9, 9])));
 
     expect(response.status).toBe(400);
-    expect((await response.json()).code).toBe("bulk_form_unreadable");
+    expect((await response.json()).code).toBe("upload_not_a_workbook");
   });
 
   it("caps the number of issues it echoes back", async () => {
