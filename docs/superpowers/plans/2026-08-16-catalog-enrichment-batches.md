@@ -1264,6 +1264,24 @@ export function createEnrichmentBatchRepository(
       return counts;
     },
 
+    // NOTE (corrected during execution): the `UPDATE ... WHERE id IN (subquery
+    // ... LIMIT n)` shape below DOES NOT BOUND THE WAVE. Postgres plans that
+    // `IN` as a per-row SubPlan and re-executes it for each candidate row, so a
+    // `waveSize: 2` claim returned 4 of 5 drafts. Use a CTE that is evaluated
+    // once instead — see the shipped implementation in
+    // `packages/db/src/repositories/enrichment-batches.ts`:
+    //
+    //   with claimed as (
+    //     select id from enrichment_batch_items
+    //     where workspace_id = $1 and batch_id = $2 and status = 'pending'
+    //     order by created_at, id limit $3 for update skip locked
+    //   )
+    //   update enrichment_batch_items set status = 'queued'
+    //   from claimed
+    //   where enrichment_batch_items.id = claimed.id and status = 'pending'
+    //   returning listing_id
+    //
+    // Drizzle cannot express `UPDATE ... FROM cte`, so this is raw `sql`.
     async claimWave(batchId, limit) {
       scope.assertOpen();
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
