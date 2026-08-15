@@ -243,7 +243,12 @@ describe("bulk form importer", () => {
     });
 
     const note = recorded.created[0]?.note ?? "";
-    expect(note.split("\n")[0]).toMatch(/^Imported from SHOPLINE bulk update/);
+    expect(note.split("\n")[0]).toMatch(
+      /^Imported from a SHOPLINE bulk update form, row \d+$/,
+    );
+    // The spec version carries a four-digit year, and extraction reads the first
+    // year-shaped token as the vintage. It must not appear in the note.
+    expect(note).not.toContain("2026");
     expect(note).toContain("Product name: Demo Estate Riesling 2024");
     expect(note).toContain("Categories: White Wine > Germany > Mosel");
   });

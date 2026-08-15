@@ -38,16 +38,21 @@ export type BulkFormImportResult = {
  * so the note stays readable to an operator, then the rendered row, which is
  * what `extract` reads when this draft is enriched.
  *
+ * The form's spec version is deliberately absent. It contains a four-digit year
+ * (`opak-2026-05`), and extraction reads the first year-shaped token in the note
+ * as the product's vintage — so including it made every imported product a 2026
+ * vintage. The version is already recorded durably on `platform_products` and in
+ * the import audit event, so the note does not need to carry it.
+ *
  * Both write paths — first import and refresh — go through here so the note has
  * one shape.
  */
 function importedDraftNote(
-  specVersion: string,
   rowNumber: number,
   rawRow: BulkFormGapsInput,
 ): string {
   return [
-    `Imported from SHOPLINE bulk update form ${specVersion}, row ${rowNumber}`,
+    `Imported from a SHOPLINE bulk update form, row ${rowNumber}`,
     "",
     renderBulkFormSource(rawRow),
   ].join("\n");
@@ -125,11 +130,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           if (existingListingId === null) {
             const draft = await repositories.listings.create({
               target: "shopline",
-              note: importedDraftNote(
-                parsed.specVersion,
-                row.rowNumber,
-                rawRow,
-              ),
+              note: importedDraftNote(row.rowNumber, rawRow),
             });
             listingId = draft.id;
             createdDrafts += 1;
@@ -141,7 +142,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
               // update it or enrichment runs on data the merchant replaced.
               await repositories.listings.updateNote(
                 listingId,
-                importedDraftNote(parsed.specVersion, row.rowNumber, rawRow),
+                importedDraftNote(row.rowNumber, rawRow),
               );
             }
           }

@@ -158,10 +158,16 @@ export function createListingRepository(
 
     async updateNote(id, note) {
       scope.assertOpen();
-      await transaction
+      const updated = await transaction
         .update(listingDrafts)
         .set({ note, updatedAt: new Date() })
-        .where(byId(id));
+        .where(byId(id))
+        .returning({ id: listingDrafts.id });
+      // Matching the other mutators: a silent no-op here would leave a stale
+      // note while the caller records a refresh, so the two would disagree
+      // about what the extract step is going to read.
+      if (updated.length !== 1)
+        throw new Error("listing note update did not match exactly one row");
     },
 
     async getById(id) {
