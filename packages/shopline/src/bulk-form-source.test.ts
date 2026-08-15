@@ -54,6 +54,31 @@ describe("renderBulkFormSource", () => {
     expect(renderBulkFormSource(row)).not.toContain("PLACEHOLDER");
   });
 
+  it("writes prices as currency amounts extraction can read", () => {
+    // Measured against the extraction step: a bare "Regular price (HKD): 750.0"
+    // does not extract at all, while "HK$750" does. `priceHkd` is required on
+    // the canonical listing, so a price that cannot be read has to be invented
+    // downstream. This format matches fixtures/opak/supplier-sheet.txt.
+    const source = renderBulkFormSource({
+      regularPrice: "750.0",
+      salePrice: "620.0",
+    });
+
+    expect(source).toContain("Regular price: HK$750");
+    expect(source).toContain("Sale price: HK$620");
+  });
+
+  it("omits a zero or unparsable price rather than claiming it is free", () => {
+    // A 0.0 sale price means "not on sale" in this form, not "costs nothing".
+    const source = renderBulkFormSource({
+      regularPrice: "750.0",
+      salePrice: "0.0",
+    });
+
+    expect(source).toContain("Regular price: HK$750");
+    expect(source).not.toContain("Sale price");
+  });
+
   it("omits blank fields rather than emitting empty labels", () => {
     const source = renderBulkFormSource({ nameEn: "Only a name", sku: null });
 

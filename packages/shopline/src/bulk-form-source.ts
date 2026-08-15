@@ -49,6 +49,17 @@ export function renderBulkFormSource(raw: BulkFormGapsInput): string {
     lines.push(`${label}: ${trimmed}`);
   };
 
+  // Prices are the one value the form states that extraction must not miss:
+  // `priceHkd` is required on the canonical listing, so a price it cannot read
+  // has to be invented downstream or the listing fails validation.
+  const pushMoney = (label: string, key: SourceColumn): void => {
+    const amount = raw[key]?.trim();
+    if (amount === undefined || amount.length === 0) return;
+    const numeric = Number(amount);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    lines.push(`${label}: HK$${numeric}`);
+  };
+
   push("Product name", "nameEn");
   push("SKU", "sku");
 
@@ -64,8 +75,14 @@ export function renderBulkFormSource(raw: BulkFormGapsInput): string {
   }
 
   push("Brand", "brand");
-  push("Regular price (HKD)", "regularPrice");
-  push("Sale price (HKD)", "salePrice");
+  // `HK$` rather than a bare number with a currency label: it matches the
+  // convention in fixtures/opak/supplier-sheet.txt, which is the format the
+  // extraction step was built around, and it reads unambiguously as a currency
+  // amount rather than as one more number on the page. Verified: with a bare
+  // "Regular price (HKD): 750.0" the price does not extract at all, and
+  // `priceHkd` is a required canonical field the form states authoritatively.
+  pushMoney("Regular price", "regularPrice");
+  pushMoney("Sale price", "salePrice");
   push("Stock quantity", "quantity");
   push("Barcode", "barcode");
   push("Manufacturer part number", "mpn");
