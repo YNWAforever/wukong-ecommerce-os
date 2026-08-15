@@ -2,6 +2,8 @@ import type { Database } from "@wukong/db";
 import {
   hashBulkFormRow,
   parseBulkForm,
+  renderBulkFormSource,
+  type BulkFormGapsInput,
   type BulkFormIssue,
   type BulkFormSheet,
 } from "@wukong/shopline";
@@ -29,6 +31,27 @@ export type BulkFormImportResult = {
   refreshedProducts: number;
   issues: BulkFormIssue[];
 };
+
+/**
+ * The note an imported draft carries. An imported draft has no assets, so the
+ * note is the only thing the AI `extract` step can read. Provenance comes first
+ * so the note stays readable to an operator, then the rendered row, which is
+ * what `extract` reads when this draft is enriched.
+ *
+ * Both write paths — first import and refresh — go through here so the note has
+ * one shape.
+ */
+function importedDraftNote(
+  specVersion: string,
+  rowNumber: number,
+  rawRow: BulkFormGapsInput,
+): string {
+  return [
+    `Imported from SHOPLINE bulk update form ${specVersion}, row ${rowNumber}`,
+    "",
+    renderBulkFormSource(rawRow),
+  ].join("\n");
+}
 
 /**
  * Turns a parsed bulk update form into drafts joined to their remote products.
@@ -102,13 +125,25 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           if (existingListingId === null) {
             const draft = await repositories.listings.create({
               target: "shopline",
-              note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+              note: importedDraftNote(
+                parsed.specVersion,
+                row.rowNumber,
+                rawRow,
+              ),
             });
             listingId = draft.id;
             createdDrafts += 1;
           } else {
             listingId = existingListingId;
-            if (isRefresh) refreshedProducts += 1;
+            if (isRefresh) {
+              refreshedProducts += 1;
+              // The note is what the extract step reads, so a changed row must
+              // update it or enrichment runs on data the merchant replaced.
+              await repositories.listings.updateNote(
+                listingId,
+                importedDraftNote(parsed.specVersion, row.rowNumber, rawRow),
+              );
+            }
           }
 
           // Both branches are domain mutations, so both are audited. Refreshing

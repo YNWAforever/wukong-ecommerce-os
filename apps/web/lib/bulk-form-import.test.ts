@@ -34,12 +34,18 @@ type Recorded = {
     contentDigest: string;
   }[];
   audits: { action: string; entityId: string }[];
+  notes: { listingId: string; note: string }[];
 };
 
 function importerWith(
   existing: Record<string, { listingId: string; contentDigest: string }> = {},
 ) {
-  const recorded: Recorded = { created: [], upserts: [], audits: [] };
+  const recorded: Recorded = {
+    created: [],
+    upserts: [],
+    audits: [],
+    notes: [],
+  };
   let nextDraft = 0;
 
   const importBulkForm = createBulkFormImporter({
@@ -78,6 +84,9 @@ function importerWith(
                 recorded.created.push(input);
                 nextDraft += 1;
                 return { id: `draft_${nextDraft}` };
+              },
+              async updateNote(listingId: string, note: string) {
+                recorded.notes.push({ listingId, note });
               },
             },
             audit: {
@@ -222,6 +231,63 @@ describe("bulk form importer", () => {
     });
 
     expect(second.recorded.audits).toEqual([]);
+  });
+
+  it("writes a note the extract step can read, keeping provenance first", async () => {
+    const { importBulkForm, recorded } = importerWith();
+
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+
+    const note = recorded.created[0]?.note ?? "";
+    expect(note.split("\n")[0]).toMatch(/^Imported from SHOPLINE bulk update/);
+    expect(note).toContain("Product name: Demo Estate Riesling 2024");
+    expect(note).toContain("Categories: White Wine > Germany > Mosel");
+  });
+
+  it("refreshes the note when a re-import changes the row", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: "stale" },
+    });
+
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor({ nameEn: "Renamed Estate Riesling 2024" })),
+    });
+
+    expect(recorded.notes).toEqual([
+      {
+        listingId: "draft_existing",
+        note: expect.stringContaining(
+          "Product name: Renamed Estate Riesling 2024",
+        ),
+      },
+    ]);
+  });
+
+  it("does not touch the note when a re-import changes nothing", async () => {
+    const first = importerWith();
+    await first.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+    const digest = first.recorded.upserts[0]?.contentDigest ?? "";
+
+    const second = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: digest },
+    });
+    await second.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+
+    expect(second.recorded.notes).toEqual([]);
   });
 
   it("refuses a sheet larger than one transaction should carry", async () => {

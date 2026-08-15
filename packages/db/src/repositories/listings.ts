@@ -42,6 +42,12 @@ export type ReviewSnapshot = {
 
 export type ListingRepository = {
   create(input: CreateListingInput): Promise<Listing>;
+  /**
+   * Replaces the draft's note. Used when a re-import changes the source row:
+   * the note is what the extract step reads, so a stale note means enrichment
+   * runs on data the merchant has already replaced.
+   */
+  updateNote(id: string, note: string): Promise<void>;
   getById(id: string): Promise<Listing | null>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
@@ -148,6 +154,14 @@ export function createListingRepository(
         .returning();
       if (!created) throw new Error("listing insert did not return a row");
       return created;
+    },
+
+    async updateNote(id, note) {
+      scope.assertOpen();
+      await transaction
+        .update(listingDrafts)
+        .set({ note, updatedAt: new Date() })
+        .where(byId(id));
     },
 
     async getById(id) {
