@@ -56,9 +56,12 @@ export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
 
       const body = bodySchema.parse(await request.json());
       const result = await deps.createBatch({
+        ...body,
+        // Session identity last: the tenancy boundary must not depend on the
+        // body schema staying `.strict()`. It rejects a stray workspaceId today,
+        // but a future schema edit should not be able to open a hole here.
         workspaceId: context.workspaceId,
         actorId: context.actorId,
-        ...body,
       });
 
       return jsonResponse(201, result);
