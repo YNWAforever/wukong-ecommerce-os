@@ -8,6 +8,12 @@ const row = {
   seoTitleEn: "SEO PLACEHOLDER SHOULD NOT APPEAR",
   seoKeywords: "KEYWORD PLACEHOLDER SHOULD NOT APPEAR",
   summaryEn: "SUMMARY PLACEHOLDER SHOULD NOT APPEAR",
+  // All eight enrichable columns are seeded so the exclusion assertion below is
+  // as strong as the implementation, not just a sample of it.
+  summaryZh: "SUMMARY ZH PLACEHOLDER SHOULD NOT APPEAR",
+  seoTitleZh: "SEO ZH PLACEHOLDER SHOULD NOT APPEAR",
+  seoDescriptionEn: "SEO DESC PLACEHOLDER SHOULD NOT APPEAR",
+  seoDescriptionZh: "SEO DESC ZH PLACEHOLDER SHOULD NOT APPEAR",
   onlineStoreCategories: "White Wine>Germany>Mosel\nTop Picks",
   regularPrice: "100.0",
   salePrice: "80.0",
