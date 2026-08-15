@@ -18,8 +18,16 @@ const appUrl =
 const ignoreNotice = (): void => undefined;
 
 describe("workspace isolation", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
-  const app = postgres(appUrl, { max: 3, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
+  const app = postgres(appUrl, {
+    max: 3,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -169,10 +177,8 @@ describe("workspace isolation", () => {
     await forWorkspace(database, "ws_child_a", (repos) =>
       repos.listings.create({ target: "shopline" }),
     );
-    const foreignListing = await forWorkspace(
-      database,
-      "ws_child_b",
-      (repos) => repos.listings.create({ target: "shopline" }),
+    const foreignListing = await forWorkspace(database, "ws_child_b", (repos) =>
+      repos.listings.create({ target: "shopline" }),
     );
 
     await expect(
@@ -293,7 +299,9 @@ describe("workspace isolation", () => {
         can_delete: false,
       });
     } finally {
-      await admin.unsafe("REVOKE UPDATE, DELETE ON audit_events FROM wukong_app");
+      await admin.unsafe(
+        "REVOKE UPDATE, DELETE ON audit_events FROM wukong_app",
+      );
     }
   });
 
@@ -422,15 +430,49 @@ describe("workspace isolation", () => {
     const expected = [
       ["ai_runs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["ai_runs", ["workspace_id", "prompt_version_id"], "prompt_versions"],
-      ["compliance_flags", ["workspace_id", "listing_version_id"], "listing_versions"],
-      ["field_evidence", ["workspace_id", "listing_version_id"], "listing_versions"],
+      [
+        "compliance_flags",
+        ["workspace_id", "listing_version_id"],
+        "listing_versions",
+      ],
+      [
+        "field_evidence",
+        ["workspace_id", "listing_version_id"],
+        "listing_versions",
+      ],
       ["field_evidence", ["workspace_id", "source_asset_id"], "source_assets"],
-      ["listing_drafts", ["workspace_id", "active_version_id"], "listing_versions"],
-      ["listing_pipeline_runs", ["workspace_id", "listing_id"], "listing_drafts"],
-      ["listing_pipeline_runs", ["workspace_id", "version_id"], "listing_versions"],
-      ["listing_pipeline_steps", ["workspace_id", "pipeline_run_id"], "listing_pipeline_runs"],
+      [
+        "listing_drafts",
+        ["workspace_id", "active_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_steps",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
       ["listing_versions", ["workspace_id", "listing_id"], "listing_drafts"],
-      ["publish_jobs", ["workspace_id", "connection_id"], "shopline_connections"],
+      [
+        "platform_products",
+        ["workspace_id", "connection_id"],
+        "shopline_connections",
+      ],
+      ["platform_products", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
+        "publish_jobs",
+        ["workspace_id", "connection_id"],
+        "shopline_connections",
+      ],
       ["publish_jobs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["publish_jobs", ["workspace_id", "version_id"], "listing_versions"],
       ["review_events", ["workspace_id", "listing_id"], "listing_drafts"],
@@ -464,11 +506,7 @@ describe("workspace isolation", () => {
     `;
 
     expect(
-      rows.map((row) => [
-        row.child_table,
-        row.child_columns,
-        row.parent_table,
-      ]),
+      rows.map((row) => [row.child_table, row.child_columns, row.parent_table]),
     ).toEqual(expected);
     expect(rows.every(({ child_fk_indexed }) => child_fk_indexed)).toBe(true);
   });
