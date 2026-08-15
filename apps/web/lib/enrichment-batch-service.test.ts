@@ -165,3 +165,230 @@ describe("enrichment batch creation", () => {
     expect(recorded.created).toEqual([]);
   });
 });
+
+type Marked = { listingIds: string[]; status: string };
+
+function advanceServiceWith(options: {
+  spent: number;
+  budget: number;
+  pending: string[];
+  queued?: string[];
+  listingStatuses?: Record<string, string>;
+  counts?: Record<string, number>;
+}) {
+  const enqueued: string[] = [];
+  const statuses: string[] = [];
+  const marked: Marked[] = [];
+  const audits: AuditRecord[] = [];
+  const queued = options.queued ?? [];
+  let remaining = [...options.pending];
+
+  const service = createEnrichmentBatchService({
+    getDatabase: () =>
+      ({
+        async forWorkspace<T>(
+          _workspaceId: string,
+          work: (repositories: any) => Promise<T>,
+        ) {
+          return work({
+            enrichmentBatches: {
+              async getById() {
+                return {
+                  id: "batch_1",
+                  label: "zh names",
+                  budgetUsd: options.budget,
+                  waveSize: 2,
+                  status: "open",
+                  createdBy: "user_1",
+                };
+              },
+              async listItemIds() {
+                return [...options.pending, ...queued];
+              },
+              async listItemsByStatus(_batchId: string, status: string) {
+                return status === "queued" ? queued : [];
+              },
+              async claimWave(_batchId: string, limit: number) {
+                const wave = remaining.slice(0, limit);
+                remaining = remaining.slice(limit);
+                return wave;
+              },
+              async countByStatus() {
+                return {
+                  pending: remaining.length,
+                  queued: 0,
+                  succeeded: 0,
+                  failed: 0,
+                  skipped: 0,
+                  ...options.counts,
+                };
+              },
+              async setStatus(_batchId: string, status: string) {
+                statuses.push(status);
+              },
+              async markItems(
+                _batchId: string,
+                listingIds: string[],
+                status: string,
+              ) {
+                marked.push({ listingIds: [...listingIds], status });
+              },
+            },
+            listings: {
+              async statusesByIds(ids: string[]) {
+                return Object.fromEntries(
+                  ids
+                    .filter((id) => options.listingStatuses?.[id] !== undefined)
+                    .map((id) => [id, options.listingStatuses?.[id]]),
+                );
+              },
+            },
+            aiRuns: {
+              async sumCostForListings() {
+                return options.spent;
+              },
+            },
+            audit: {
+              async write(entry: AuditRecord) {
+                audits.push(entry);
+              },
+            },
+          });
+        },
+      }) as never,
+    publisher: {
+      async enqueue(job: { draftId: string }) {
+        enqueued.push(job.draftId);
+        return { id: `job_${job.draftId}` };
+      },
+    },
+  });
+
+  return { service, enqueued, statuses, marked, audits };
+}
+
+const advanceInput = {
+  workspaceId: "ws_opak",
+  actorId: "user_1",
+  batchId: "batch_1",
+};
+
+describe("enrichment batch advance", () => {
+  it("enqueues one wave of existing listing jobs", async () => {
+    const { service, enqueued, audits } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1", "draft_2", "draft_3"],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_1", "draft_2"]);
+    expect(result.enqueued).toBe(2);
+    expect(result.status).toBe("running");
+    expect(audits).toEqual([
+      {
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        entityId: "batch_1",
+        action: "enrichment_batch.advanced",
+        metadata: { enqueued: 2, spentUsd: 0, budgetUsd: 10 },
+      },
+    ]);
+  });
+
+  it("stops and enqueues nothing once observed spend reaches the budget", async () => {
+    const { service, enqueued, statuses } = advanceServiceWith({
+      spent: 10,
+      budget: 10,
+      pending: ["draft_1", "draft_2"],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual([]);
+    expect(result.status).toBe("budget_exhausted");
+    expect(statuses).toContain("budget_exhausted");
+  });
+
+  it("completes the batch when nothing is left to do", async () => {
+    const { service, statuses } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      counts: { pending: 0, queued: 0 },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("completed");
+    expect(statuses).toContain("completed");
+  });
+
+  it("reconciles queued drafts that reached a terminal state", async () => {
+    const { service, marked } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_done", "draft_dead", "draft_busy"],
+      listingStatuses: {
+        draft_done: "in_review",
+        draft_dead: "failed",
+        draft_busy: "processing",
+      },
+      counts: { pending: 0, queued: 1 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(marked).toEqual([
+      { listingIds: ["draft_done"], status: "succeeded" },
+      { listingIds: ["draft_dead"], status: "failed" },
+    ]);
+  });
+
+  it("does not complete a batch whose queued drafts are still running", async () => {
+    const { service, statuses } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_busy"],
+      listingStatuses: { draft_busy: "processing" },
+      counts: { pending: 0, queued: 1 },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("running");
+    expect(statuses).not.toContain("completed");
+  });
+
+  it("rejects an unknown batch", async () => {
+    const service = createEnrichmentBatchService({
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async getById() {
+                  return null;
+                },
+              },
+            });
+          },
+        }) as never,
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
+    });
+
+    await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+      /no such enrichment batch/i,
+    );
+  });
+});
