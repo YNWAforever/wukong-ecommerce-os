@@ -40,12 +40,21 @@ describe("platform product schema", () => {
       foreignTable: shoplineConnections,
       onDelete: "cascade",
     });
+    // Restrict, not cascade: deleting a draft must not destroy the catalog
+    // mirror row, whose digest is what detects a real catalog change.
     expect(foreignKeys).toContainEqual({
       columns: ["workspace_id", "listing_id"],
       foreignColumns: ["workspace_id", "id"],
       foreignTable: listingDrafts,
-      onDelete: "cascade",
+      onDelete: "restrict",
     });
+  });
+
+  it("anchors the tenancy boundary the RLS policy is keyed to", () => {
+    const columns = getTableColumns(platformProducts);
+
+    expect(columns.workspaceId.notNull).toBe(true);
+    expect(getTableConfig(platformProducts).name).toBe("platform_products");
   });
 
   it("admits one row per remote product per connection", () => {

@@ -433,17 +433,20 @@ export const platformProducts = pgTable("platform_products", {
     table.remoteProductId,
   ),
   index("platform_products_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("platform_products_workspace_sku_idx").on(table.workspaceId, table.sku),
   foreignKey({
     name: "platform_products_workspace_connection_fkey",
     columns: [table.workspaceId, table.connectionId],
     foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
   }).onDelete("cascade"),
+  // Restrict, not cascade: this row mirrors a product that exists on the
+  // platform whether or not Wukong keeps a draft for it, and its digest is the
+  // only thing that tells an unchanged re-import from a real catalog change.
+  // Deleting a draft must unlink the mirror deliberately, not destroy it.
   foreignKey({
     name: "platform_products_workspace_listing_fkey",
     columns: [table.workspaceId, table.listingId],
     foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
-  }).onDelete("cascade"),
+  }).onDelete("restrict"),
 ]);
 
 export const publishJobs = pgTable("publish_jobs", {
