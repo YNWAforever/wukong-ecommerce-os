@@ -48,6 +48,7 @@ export type {
   BulkFormUpdate,
   BulkFormUpdateOptions,
 } from "./bulk-form.js";
+export { hashBulkFormRow } from "./bulk-form-digest.js";
 export { evaluateDeliveryPolicy, hashCanonicalListing } from "./delivery-policy.js";
 export type {
   DeliveryAuditFacts,
