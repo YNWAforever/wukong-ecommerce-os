@@ -35,6 +35,23 @@ export DATABASE_URL="postgres://wukong_app:wukong-app-local@localhost:54329/wuko
 export DATABASE_ADMIN_URL="postgres://wukong:wukong@localhost:54329/wukong"
 ```
 
+## Adding a tenant table touches four places, not one
+
+Learned the hard way while executing this plan: adding a workspace-scoped table
+makes `pnpm test` fail until every guard below knows about it. Three of the four
+are in files the new table's task never opens.
+
+1. `packages/db/src/schema.ts` and the matching raw SQL migration.
+2. `TENANT_TABLES` in `packages/db/src/cli/audit-verify.ts` — generates the RLS
+   leak probe for the `audit:verify` release gate. Omitting a table silently
+   narrows the gate rather than failing.
+3. `expectedTenantTables` in `packages/db/src/repositories/listings.integration.test.ts`
+   — asserts forced RLS, a `wukong_app` policy, and a workspace-leading index per
+   table. It filters by name, so an omitted table is skipped, not caught.
+4. The `expected` composite-FK list in the same file — asserts the **complete**
+   set of two-column FKs with `toEqual`. Every new composite FK must be added, in
+   the query's sort order (by child table name, then by column list).
+
 ## Hard constraints
 
 - **Do not modify `apps/worker/src/listing-pipeline.ts`, `packages/ai/src/contracts.ts`, or `packages/ai/src/prompts.ts`.** The whole design rests on reusing them unchanged. If a task seems to need a change there, stop and report it.
