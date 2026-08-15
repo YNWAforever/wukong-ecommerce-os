@@ -63,5 +63,22 @@ export function createAiRunRepository(
         })
         .onConflictDoNothing();
     },
+
+    async sumCostForListings(listingIds) {
+      scope.assertOpen();
+      if (listingIds.length === 0) return 0;
+      const [row] = await transaction
+        .select({
+          total: sql<string>`coalesce(sum(${aiRuns.estimatedCostUsd}::numeric), 0)::text`,
+        })
+        .from(aiRuns)
+        .where(
+          and(
+            eq(aiRuns.workspaceId, workspaceId),
+            inArray(aiRuns.listingId, [...listingIds]),
+          ),
+        );
+      return Number(row?.total ?? 0);
+    },
   };
 }
