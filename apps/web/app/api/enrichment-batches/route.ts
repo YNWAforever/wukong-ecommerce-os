@@ -1,0 +1,77 @@
+import { z } from "zod";
+
+import {
+  createEnrichmentBatchService,
+  type CreateBatchInput,
+  type CreateBatchResult,
+} from "../../../lib/enrichment-batch-service";
+import { getDatabase } from "../../../lib/intake-runtime";
+import { listingPublisher } from "../../../lib/listing-queue-runtime";
+import {
+  ApiError,
+  jsonResponse,
+  requireSessionContext,
+  withRouteErrors,
+} from "../../../lib/route-support";
+import {
+  authSessionContext,
+  requireWorkspaceRole,
+} from "../../../lib/session-context";
+import type { SessionContextPort } from "../../../lib/session-context-port";
+
+const bodySchema = z
+  .object({
+    label: z.string().trim().min(1).max(200),
+    gap: z.enum([
+      "untranslatedName",
+      "untranslatedSeoTitle",
+      "seoTitleMirrorsName",
+      "seoDescriptionMirrorsSeoTitle",
+      "keywordsMirrorName",
+      "summaryMissing",
+    ]),
+    budgetUsd: z.number().positive().max(10_000),
+    waveSize: z.number().int().min(1).max(500),
+  })
+  .strict();
+
+export type EnrichmentBatchRouteDeps = {
+  sessionContext: SessionContextPort;
+  createBatch(input: CreateBatchInput): Promise<CreateBatchResult>;
+};
+
+export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
+  return async function createEnrichmentBatch(
+    request: Request,
+  ): Promise<Response> {
+    return withRouteErrors(async () => {
+      const context = await requireSessionContext(deps.sessionContext);
+      if (!requireWorkspaceRole("operator", context.role)) {
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
+      }
+
+      const body = bodySchema.parse(await request.json());
+      const result = await deps.createBatch({
+        workspaceId: context.workspaceId,
+        actorId: context.actorId,
+        ...body,
+      });
+
+      return jsonResponse(201, result);
+    });
+  };
+}
+
+const service = createEnrichmentBatchService({
+  getDatabase,
+  publisher: listingPublisher,
+});
+
+export const POST = createEnrichmentBatchHandler({
+  sessionContext: authSessionContext,
+  createBatch: service.createBatch,
+});
