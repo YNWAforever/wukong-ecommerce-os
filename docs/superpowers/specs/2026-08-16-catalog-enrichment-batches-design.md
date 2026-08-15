@@ -73,7 +73,7 @@ task returning exactly those fields looks appealing. Rejected, for two reasons:
 - Enrich imported drafts through the existing listing pipeline, unchanged.
 - Never spend more than an operator-approved budget on a batch.
 - Make the cohort a query over data the parser already computes, so an operator
-  chooses a *category* of gap rather than picking products by hand.
+  chooses a _category_ of gap rather than picking products by hand.
 - Survive interruption: a batch that stops halfway can be resumed, and a
   re-delivered queue message must not double-charge.
 - Keep every AI dollar attributable to a batch, a workspace, and a product.
@@ -86,7 +86,7 @@ task returning exactly those fields looks appealing. Rejected, for two reasons:
   an attended operation.
 - No new review UI. Enriched drafts appear in the existing queue.
 - No writing back to SHOPLINE. That is the exporter slice.
-- No per-product cost prediction. Budget is enforced on *observed* spend.
+- No per-product cost prediction. Budget is enforced on _observed_ spend.
 
 ## Chosen design
 
@@ -96,7 +96,7 @@ task returning exactly those fields looks appealing. Rejected, for two reasons:
 document. It is pure, dependency-free, and lives beside the parser because it is
 part of reading the form, not part of the worker.
 
-The rendering carries only what the form *states* — name, categories, pricing,
+The rendering carries only what the form _states_ — name, categories, pricing,
 promotion labels, supplier, barcode — as labelled lines. It never editorialises,
 because every line becomes potential evidence that `extract` may quote. The
 existing `fixtures/opak/supplier-sheet.txt` is the precedent for a text source.
@@ -104,7 +104,7 @@ existing `fixtures/opak/supplier-sheet.txt` is the precedent for a text source.
 Two rules matter:
 
 - **The enrichable columns are excluded from the rendering.** The Chinese name,
-  the SEO fields, and the summary are the fields being *generated*; feeding a
+  the SEO fields, and the summary are the fields being _generated_; feeding a
   placeholder Chinese name (which for 499/500 pilot rows is just the English
   name) back in as a source would invite the model to reproduce it.
 - **Cost data is excluded.** `Product Cost` is the merchant's wholesale price.
@@ -112,9 +112,17 @@ Two rules matter:
 
 ### Where the source text lives
 
-The importer already writes a `note` on each draft, currently only provenance
-(`Imported from SHOPLINE bulk update form …, row N`). It will write the rendered
-document instead, with the provenance line kept as the first line.
+The importer already writes a `note` on each draft, currently only provenance. It
+will write the rendered document instead, with a provenance line kept first.
+
+The provenance line deliberately omits the form spec version. The version string
+contains a four-digit year (`opak-2026-05`), and extraction reads the first
+year-shaped token in the note as the product vintage — including it made every
+imported product a 2026 vintage. The version is already recorded on
+`platform_products` and in the import audit event, so the note does not carry it.
+This is the general hazard of the design restated: everything in the note is
+evidence, so anything in the note that merely _looks_ like a fact will be read as
+one.
 
 A note written at first import would go stale once a re-import refreshed the
 row, and enrichment would then run against data the merchant has already
