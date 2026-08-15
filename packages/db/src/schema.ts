@@ -691,7 +691,12 @@ export const enrichmentBatches = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" })
       .notNull(),
     label: text("label").notNull(),
-    /** USD, matching ai_runs.estimated_cost_usd. */
+    /**
+     * USD. Shares the scale of `ai_runs.estimated_cost_usd` (6dp) so observed
+     * spend sums against it without rounding; the integer headroom is smaller,
+     * which caps a batch budget near $1M rather than matching that column
+     * exactly.
+     */
     budgetUsd: numeric("budget_usd", { precision: 12, scale: 6 }).notNull(),
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
