@@ -84,9 +84,9 @@ describe("enrichment batch creation", () => {
     });
 
     expect(result.selected).toBe(1);
-    expect((recorded.created[0] as { listingIds: string[] }).listingIds).toEqual(
-      ["draft_1"],
-    );
+    expect(
+      (recorded.created[0] as { listingIds: string[] }).listingIds,
+    ).toEqual(["draft_1"]);
     expect(result.batchId).toBe("batch_1");
   });
 
