@@ -16,6 +16,21 @@ const ZIP_LOCAL_HEADER = 0x04034b50;
 const ZIP_CENTRAL_HEADER = 0x02014b50;
 const ZIP_EOCD = 0x06054b50;
 
+/**
+ * Bounds on untrusted input. This is the only place the product parses a binary
+ * upload, and every one of these numbers is attacker-controlled in the file:
+ * a worksheet declares its own row and column references, and a zip entry
+ * declares nothing about how large it inflates to.
+ *
+ * The row and column ceilings are Excel's own limits, so no workbook a
+ * spreadsheet could have produced is rejected. The inflate ceiling is generous
+ * for a worksheet but finite: without it a 272KB upload inflates to 112MB at a
+ * realistic compression ratio, and a 4MB one to well over a gigabyte.
+ */
+const MAX_WORKSHEET_ROWS = 1_048_576;
+const MAX_WORKSHEET_COLUMNS = 16_384;
+const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+
 export class BulkFormWorkbookError extends Error {
   constructor(message: string) {
     super(message);
@@ -65,9 +80,19 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
     const raw = bytes.subarray(start, start + compressedSize);
 
     if (method === 0) entries.set(name, raw);
-    else if (method === 8)
-      entries.set(name, new Uint8Array(inflateRawSync(raw)));
-    else
+    else if (method === 8) {
+      let inflated;
+      try {
+        inflated = inflateRawSync(raw, { maxOutputLength: MAX_INFLATED_BYTES });
+      } catch {
+        // zlib throws ERR_BUFFER_TOO_LARGE past maxOutputLength; report it as a
+        // rejected workbook rather than leaking a runtime error to the caller.
+        throw new BulkFormWorkbookError(
+          `zip entry ${name} inflates beyond the supported size`,
+        );
+      }
+      entries.set(name, new Uint8Array(inflated));
+    } else
       throw new BulkFormWorkbookError(
         `unsupported zip compression method ${method} for ${name}`,
       );
@@ -116,6 +141,13 @@ function columnIndexFromRef(ref: string): number {
     if (code >= 65 && code <= 90) index = index * 26 + (code - 64);
     else if (code >= 97 && code <= 122) index = index * 26 + (code - 96);
     else break;
+    // Bail early rather than at the end: `AAAAAA` would otherwise overflow past
+    // any ceiling before we could check it.
+    if (index > MAX_WORKSHEET_COLUMNS) {
+      throw new BulkFormWorkbookError(
+        `cell reference ${ref} exceeds the maximum column count`,
+      );
+    }
   }
   return index - 1;
 }
@@ -204,6 +236,13 @@ export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
 
     // Worksheets omit empty rows entirely; keep the sheet positional so a
     // 1-based row number in an issue points at the operator's spreadsheet.
+    // The row number is attacker-controlled, so bound it before allocating:
+    // a single `<row r="200000000">` would otherwise exhaust the heap.
+    if (!Number.isSafeInteger(rowNumber) || rowNumber > MAX_WORKSHEET_ROWS) {
+      throw new BulkFormWorkbookError(
+        `row reference ${rowNumber} exceeds the maximum row count`,
+      );
+    }
     while (rows.length < rowNumber - 1) rows.push([]);
 
     const width = cells.size === 0 ? 0 : Math.max(...cells.keys()) + 1;

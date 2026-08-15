@@ -66,9 +66,16 @@ Prerequisite: the workspace has a verified SHOPLINE connection.
    existing draft and only refreshes its row snapshot; `refreshedProducts`
    counts the ones whose content actually changed since the last import.
 
-Two failure codes are deliberately distinct: `upload_not_a_workbook` (400) means
-the bytes are not a readable xlsx, while `bulk_form_unreadable` (422) means the
-workbook parsed but held no product rows — a wrong file versus an empty catalog.
+Failure codes are deliberately distinct: `upload_not_a_workbook` (400) means the
+bytes are not a readable xlsx, `bulk_form_unreadable` (422) means the workbook
+parsed but held no product rows (a wrong file versus an empty catalog), and
+`bulk_form_too_many_rows` (413) means the form exceeds the 5,000-product
+per-import limit — split it and upload in batches.
+
+The reader also refuses a workbook whose declared row or column references
+exceed a spreadsheet's own limits, or whose compressed parts inflate beyond the
+supported size. These bound an untrusted upload; no file a spreadsheet could
+have produced is affected.
 
 Imported drafts are **not** enqueued for AI processing. Creating 500 drafts must
 not fire 500 uncapped AI runs, so enrichment is a separate budgeted batch.

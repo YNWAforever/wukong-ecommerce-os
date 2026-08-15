@@ -1,4 +1,4 @@
-import { crc32 } from "node:zlib";
+import { crc32, deflateRawSync } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
@@ -18,7 +18,9 @@ import {
  * reader is exercised against a package it did not produce — in particular the
  * shared-string layout Excel writes when an operator opens and re-saves a form.
  */
-function zipOf(files: readonly { name: string; text: string }[]): Uint8Array {
+function zipOf(
+  files: readonly { name: string; text?: string; raw?: Uint8Array }[],
+): Uint8Array {
   const encoder = new TextEncoder();
   const locals: Uint8Array[] = [];
   const centrals: Uint8Array[] = [];
@@ -26,17 +28,22 @@ function zipOf(files: readonly { name: string; text: string }[]): Uint8Array {
 
   for (const file of files) {
     const nameBytes = encoder.encode(file.name);
-    const data = encoder.encode(file.text);
-    const crc = crc32(data);
+    // `raw` carries an already-deflated payload, so the entry is written with
+    // method 8 and the reader has to inflate it.
+    const deflated = file.raw !== undefined;
+    const uncompressed = encoder.encode(file.text ?? "");
+    const data = file.raw ?? uncompressed;
+    const crc = crc32(uncompressed);
 
     const local = new Uint8Array(30 + nameBytes.length + data.length);
     const localView = new DataView(local.buffer);
     localView.setUint32(0, 0x04034b50, true);
     localView.setUint16(4, 20, true);
     localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, deflated ? 8 : 0, true);
     localView.setUint32(14, crc, true);
     localView.setUint32(18, data.length, true);
-    localView.setUint32(22, data.length, true);
+    localView.setUint32(22, uncompressed.length, true);
     localView.setUint16(26, nameBytes.length, true);
     local.set(nameBytes, 30);
     local.set(data, 30 + nameBytes.length);
@@ -48,9 +55,10 @@ function zipOf(files: readonly { name: string; text: string }[]): Uint8Array {
     centralView.setUint16(4, 20, true);
     centralView.setUint16(6, 20, true);
     centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, deflated ? 8 : 0, true);
     centralView.setUint32(16, crc, true);
     centralView.setUint32(20, data.length, true);
-    centralView.setUint32(24, data.length, true);
+    centralView.setUint32(24, uncompressed.length, true);
     centralView.setUint16(28, nameBytes.length, true);
     centralView.setUint32(42, offset, true);
     central.set(nameBytes, 46);
@@ -160,6 +168,61 @@ describe("bulk form xlsx adapter", () => {
     ]);
 
     expect(readBulkFormSheet(bytes)).toEqual([["first"], [], ["third"]]);
+  });
+
+  // Every number below is attacker-controlled in the uploaded file. Without
+  // these bounds each case allocates until the process dies, from a payload
+  // smaller than this comment.
+  it("rejects a row reference beyond the worksheet row limit", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="200000000"><c r="A200000000" t="inlineStr"><is><t>boom</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    expect(bytes.byteLength).toBeLessThan(1024);
+    expect(() => readBulkFormSheet(bytes)).toThrow(/exceeds the maximum row/);
+  });
+
+  it("rejects a cell reference beyond the worksheet column limit", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="AAAAAA1" t="inlineStr"><is><t>boom</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(
+      /exceeds the maximum column/,
+    );
+  });
+
+  it("accepts the last row and column a spreadsheet can actually produce", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="XFD1" t="inlineStr"><is><t>edge</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    // XFD is Excel's 16,384th column; the ceiling must not reject real files.
+    expect(readBulkFormSheet(bytes)[0]?.[16_383]).toBe("edge");
+  });
+
+  it("rejects a zip entry that inflates beyond the supported size", () => {
+    const bomb = deflateRawSync(Buffer.alloc(80 * 1024 * 1024, 0x61));
+
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      { name: "xl/worksheets/sheet1.xml", raw: new Uint8Array(bomb) },
+    ]);
+
+    expect(bytes.byteLength).toBeLessThan(200 * 1024);
+    expect(() => readBulkFormSheet(bytes)).toThrow(/inflates beyond/);
   });
 
   it("rejects a file that is not a workbook", () => {

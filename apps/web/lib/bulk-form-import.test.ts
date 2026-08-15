@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, type BulkFormColumnKey } from "@wukong/shopline";
 
-import { createBulkFormImporter } from "./bulk-form-import";
+import { MAX_IMPORT_ROWS, createBulkFormImporter } from "./bulk-form-import";
 
 const HEADER_EN = BULK_FORM_COLUMNS.map((column) => column.en);
 const HEADER_ZH = BULK_FORM_COLUMNS.map((column) => column.zh);
@@ -178,6 +178,39 @@ describe("bulk form importer", () => {
     expect(result.issues.map((issue) => issue.code)).toContain(
       "quantity_negative",
     );
+  });
+
+  it("refuses a sheet larger than one transaction should carry", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    const rows = Array.from({ length: MAX_IMPORT_ROWS + 1 }, (_unused, index) =>
+      rowFor({ productId: `remote_${index}`, sku: `sku_${index}` }),
+    );
+
+    await expect(
+      importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: sheetOf(...rows),
+      }),
+    ).rejects.toThrow(/imports are limited to/);
+    // The guard must run before the transaction opens, not partway through it.
+    expect(recorded.created).toEqual([]);
+    expect(recorded.upserts).toEqual([]);
+  });
+
+  it("accepts a sheet exactly at the limit", async () => {
+    const { importBulkForm } = importerWith();
+    const rows = Array.from({ length: MAX_IMPORT_ROWS }, (_unused, index) =>
+      rowFor({ productId: `remote_${index}`, sku: `sku_${index}` }),
+    );
+
+    const result = await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(...rows),
+    });
+
+    expect(result.createdDrafts).toBe(MAX_IMPORT_ROWS);
   });
 
   it("rejects a sheet with no readable rows", async () => {

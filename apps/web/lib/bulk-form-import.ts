@@ -10,6 +10,12 @@ import { ApiError } from "./route-support";
 
 export type BulkFormImportDeps = { getDatabase(): Database };
 
+/**
+ * Ten times the pilot catalog. High enough that no real merchant form is
+ * refused, low enough that the single import transaction stays bounded.
+ */
+export const MAX_IMPORT_ROWS = 5_000;
+
 export type BulkFormImportInput = {
   workspaceId: string;
   actorId: string;
@@ -41,6 +47,16 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
         422,
         "bulk_form_unreadable",
         "No product rows could be read from this bulk update form.",
+      );
+    }
+    // Each row costs three statements inside one transaction, so an unbounded
+    // sheet holds a pooled connection open for as long as it takes and can
+    // outlive the function timeout. Bound it before opening the transaction.
+    if (parsed.rows.length > MAX_IMPORT_ROWS) {
+      throw new ApiError(
+        413,
+        "bulk_form_too_many_rows",
+        `This form holds ${parsed.rows.length} products; imports are limited to ${MAX_IMPORT_ROWS} at a time.`,
       );
     }
 
