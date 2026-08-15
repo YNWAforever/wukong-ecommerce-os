@@ -8,10 +8,16 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./bulk-form-xlsx": {
+      "types": "./src/bulk-form-xlsx.ts",
+      "development": "./src/bulk-form-xlsx.ts",
+      "default": "./dist/bulk-form-xlsx.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "bulk-form:profile": "tsx src/cli/profile-bulk-form.ts",
     "csv:sample": "tsx src/cli/sample-csv.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

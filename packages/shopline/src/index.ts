@@ -18,6 +18,36 @@ export type {
 } from "./validation.js";
 
 export { SHOPLINE_CSV_SPEC_VERSION, createShoplineCsv } from "./csv.js";
+
+export {
+  BULK_FORM_COLUMNS,
+  BULK_FORM_ENRICHABLE_COLUMNS,
+  BULK_FORM_LOCKED_COLUMNS,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  ShoplineBulkFormError,
+  createBulkFormUpdate,
+  parseBulkForm,
+} from "./bulk-form.js";
+export type {
+  BulkFormCategoryPath,
+  BulkFormCell,
+  BulkFormChange,
+  BulkFormColumnKey,
+  BulkFormContentGaps,
+  BulkFormEnrichableColumn,
+  BulkFormEnrichment,
+  BulkFormEnrichmentIssue,
+  BulkFormEnrichmentIssueCode,
+  BulkFormIssue,
+  BulkFormIssueCode,
+  BulkFormParseResult,
+  BulkFormProductRow,
+  BulkFormRawRow,
+  BulkFormSheet,
+  BulkFormText,
+  BulkFormUpdate,
+  BulkFormUpdateOptions,
+} from "./bulk-form.js";
 export { evaluateDeliveryPolicy, hashCanonicalListing } from "./delivery-policy.js";
 export type {
   DeliveryAuditFacts,
