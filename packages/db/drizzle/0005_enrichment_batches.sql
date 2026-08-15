@@ -13,8 +13,11 @@ CREATE TABLE IF NOT EXISTS enrichment_batches (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   label text NOT NULL,
-  budget_usd numeric(12, 6) NOT NULL,
-  wave_size integer NOT NULL,
+  -- Constrained at the schema level, matching how this repo constrains token
+  -- counts and version sequences. A zero wave size yields a batch that can never
+  -- progress and never completes; a negative one is a LIMIT error at the far end.
+  budget_usd numeric(12, 6) NOT NULL CHECK (budget_usd >= 0),
+  wave_size integer NOT NULL CHECK (wave_size > 0),
   status enrichment_batch_status NOT NULL DEFAULT 'open',
   created_by text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -77,3 +80,20 @@ $enrichment_rls$;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE enrichment_batches, enrichment_batch_items
   TO wukong_app;
+
+-- CREATE TABLE IF NOT EXISTS skips column constraints on a database that
+-- already has the table, so add these separately and idempotently. A zero wave
+-- size yields a batch that can never progress and never completes; a negative
+-- one is a LIMIT error at the far end.
+DO $enrichment_checks$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enrichment_batches_wave_size_positive') THEN
+    ALTER TABLE enrichment_batches
+      ADD CONSTRAINT enrichment_batches_wave_size_positive CHECK (wave_size > 0);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enrichment_batches_budget_nonnegative') THEN
+    ALTER TABLE enrichment_batches
+      ADD CONSTRAINT enrichment_batches_budget_nonnegative CHECK (budget_usd >= 0);
+  END IF;
+END
+$enrichment_checks$;

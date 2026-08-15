@@ -27,6 +27,8 @@ export const TENANT_TABLES = [
   "ai_runs",
   "shopline_connections",
   "platform_products",
+  "enrichment_batches",
+  "enrichment_batch_items",
   "publish_jobs",
   "review_events",
   "audit_events",
