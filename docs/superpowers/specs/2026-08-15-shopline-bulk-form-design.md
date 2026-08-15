@@ -35,20 +35,18 @@ Profiled from Opak's 2026-05-21 export (500 products × 71 columns) using the
 they also set the parser's obligations. Text comparisons trim surrounding
 whitespace, which is what `gaps` computes:
 
-| Observation                                                | Count   | Consequence                                 |
-| ---------------------------------------------------------- | ------- | ------------------------------------------- |
-| Traditional Chinese name identical to English              | 499/500 | The catalog is not localized at all         |
-| Traditional Chinese SEO title identical to the English one | 487/500 | —                                           |
-| SEO keywords identical to the product name                 | 478/500 | Keywords carry no information               |
-| SEO description identical to SEO title                     | 407/500 | SEO fields are placeholders                 |
-| SEO title identical to the product name                    | 392/500 | —                                           |
-| Product Summary empty                                      | 489/500 | Descriptions are greenfield                 |
-| Quantity at zero or below                                  | 342/500 | Dead stock dominates (338 at 0, 4 oversold) |
-| Hidden from the online store                               | 275/500 | —                                           |
-| Visible in the retail store                                | 249/500 | —                                           |
-| Product Cost > 0                                           | 493/500 | Margin analysis needs no new data           |
-| Sale price below regular price                             | 439/500 | —                                           |
-| No product type derivable from the category path           | 36/500  | Merchandising-only rows need `extract`      |
+| Observation                                                | Count   | Consequence                                         |
+| ---------------------------------------------------------- | ------- | --------------------------------------------------- |
+| Traditional Chinese name identical to English              | 499/500 | The catalog is not localized at all                 |
+| Traditional Chinese SEO title identical to the English one | 487/500 | —                                                   |
+| SEO keywords identical to the product name                 | 478/500 | Keywords carry no information                       |
+| SEO description identical to SEO title                     | 407/500 | SEO fields are placeholders                         |
+| SEO title identical to the product name                    | 392/500 | —                                                   |
+| Product Summary empty                                      | 489/500 | Descriptions are greenfield                         |
+| Rows with stock at or below zero                           | present | Oversold rows exist, so the clamp below is required |
+| Product Cost > 0                                           | 493/500 | Margin analysis needs no new data                   |
+| Sale price below regular price                             | 439/500 | —                                                   |
+| No product type derivable from the category path           | 36/500  | Merchandising-only rows need `extract`              |
 
 A full parse of that file produces **500 rows, zero errors, and seven
 warnings**: four `quantity_negative`, two `categories_missing`, and one

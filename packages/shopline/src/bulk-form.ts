@@ -338,6 +338,7 @@ export type BulkFormIssueCode =
   | "sku_missing"
   | "quantity_unlimited_sentinel"
   | "quantity_negative"
+  | "price_negative"
   | "number_not_numeric"
   | "flag_not_recognized"
   | "categories_missing"
@@ -704,7 +705,26 @@ function parseRow(
   const sale = numberFor("salePrice");
   // A 0.0 sale price means "not on sale" — 24 of the pilot's 500 rows — so
   // treating zero as a price would give the catalog away.
-  const priceHkd = sale !== null && sale > 0 ? sale : regular;
+  const resolvedPrice = sale !== null && sale > 0 ? sale : regular;
+  // listingFactsSchema.priceHkd is nonnegative, and the facts prefill is now
+  // parsed at the persistence boundary — a negative price would throw there
+  // instead of surfacing here as a readable issue. Report it and drop the value
+  // rather than inventing one; stock gets clamped because zero stock is
+  // meaningful, whereas a zero price is not.
+  let priceHkd = resolvedPrice;
+  if (resolvedPrice !== null && resolvedPrice < 0) {
+    issues.push(
+      issue(
+        "price_negative",
+        "warning",
+        rowNumber,
+        sale !== null && sale > 0 ? "salePrice" : "regularPrice",
+        String(resolvedPrice),
+        "negative price dropped; the listing has no price until it is corrected",
+      ),
+    );
+    priceHkd = null;
+  }
 
   const name: BulkFormText = { en: raw.nameEn, "zh-Hant": raw.nameZh };
   const summary: BulkFormText = { en: raw.summaryEn, "zh-Hant": raw.summaryZh };

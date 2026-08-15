@@ -83,6 +83,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
 
         let createdDrafts = 0;
         let refreshedProducts = 0;
+        const mirrors = [];
 
         for (const row of parsed.rows) {
           const prior = knownByRemoteId.get(row.productId);
@@ -90,35 +91,49 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           // one statement, so the pair the repository stores cannot disagree.
           const rawRow = { ...row.raw };
           const contentDigest = hashBulkFormRow(rawRow);
-          let listingId = prior?.listingId ?? null;
+          const existingListingId = prior?.listingId ?? null;
+          const isNewDraft = existingListingId === null;
+          const isRefresh =
+            !isNewDraft &&
+            prior !== undefined &&
+            prior.contentDigest !== contentDigest;
 
-          if (listingId === null) {
+          let listingId: string;
+          if (existingListingId === null) {
             const draft = await repositories.listings.create({
               target: "shopline",
               note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
             });
             listingId = draft.id;
             createdDrafts += 1;
+          } else {
+            listingId = existingListingId;
+            if (isRefresh) refreshedProducts += 1;
+          }
+
+          // Both branches are domain mutations, so both are audited. Refreshing
+          // a snapshot rewrites the row and its digest — the record of what the
+          // catalog looked like — and that must not happen unrecorded. An
+          // unchanged re-import mutates nothing and so writes nothing.
+          if (isNewDraft || isRefresh) {
             // Metadata carries identifiers only — never merchant content.
             await repositories.audit.write({
               workspaceId: input.workspaceId,
               actorId: input.actorId,
-              entityId: draft.id,
-              action: "listing.imported",
+              entityId: listingId,
+              action: isNewDraft
+                ? "listing.imported"
+                : "listing.import_refreshed",
               metadata: {
                 remoteProductId: row.productId,
                 specVersion: parsed.specVersion,
                 sourceRow: row.rowNumber,
+                ...(isRefresh ? { priorDigest: prior?.contentDigest } : {}),
               },
             });
-          } else if (
-            prior !== undefined &&
-            prior.contentDigest !== contentDigest
-          ) {
-            refreshedProducts += 1;
           }
 
-          await repositories.platformProducts.upsert({
+          mirrors.push({
             connectionId: connection.id,
             remoteProductId: row.productId,
             sku: row.sku,
@@ -129,6 +144,9 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             contentDigest,
           });
         }
+
+        // One statement for every mirror row rather than one per product.
+        await repositories.platformProducts.upsertMany(mirrors);
 
         return {
           specVersion: parsed.specVersion,

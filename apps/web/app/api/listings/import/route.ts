@@ -22,6 +22,14 @@ import type { SessionContextPort } from "../../../../lib/session-context-port";
 // readBulkFormSheet unzips with node:zlib, so this route cannot run on edge.
 export const runtime = "nodejs";
 
+/**
+ * A catalog import creates a draft and an audit event per product inside one
+ * transaction, so a full-size form is thousands of statements against a remote
+ * Postgres. The default function timeout is far too short for that, and a
+ * timeout mid-transaction rolls the whole import back.
+ */
+export const maxDuration = 300;
+
 /** Opak's real export is ~180KB; this leaves generous headroom under Vercel's body limit. */
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_ECHOED_ISSUES = 100;

@@ -68,6 +68,10 @@ function importerWith(
                 recorded.upserts.push(input);
                 return input;
               },
+              async upsertMany(inputs: Recorded["upserts"]) {
+                recorded.upserts.push(...inputs);
+                return inputs;
+              },
             },
             listings: {
               async create(input: { note: string | null }) {
@@ -178,6 +182,46 @@ describe("bulk form importer", () => {
     expect(result.issues.map((issue) => issue.code)).toContain(
       "quantity_negative",
     );
+  });
+
+  it("audits a refreshed snapshot, because rewriting a row is a mutation", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: "stale" },
+    });
+
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+
+    expect(recorded.audits).toEqual([
+      expect.objectContaining({
+        action: "listing.import_refreshed",
+        entityId: "draft_existing",
+      }),
+    ]);
+  });
+
+  it("writes no audit event when a re-import changes nothing", async () => {
+    const first = importerWith();
+    await first.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+    const digest = first.recorded.upserts[0]?.contentDigest ?? "";
+
+    const second = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: digest },
+    });
+    await second.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
+
+    expect(second.recorded.audits).toEqual([]);
   });
 
   it("refuses a sheet larger than one transaction should carry", async () => {
