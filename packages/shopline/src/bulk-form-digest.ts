@@ -12,6 +12,9 @@ import { BULK_FORM_COLUMNS, type BulkFormRawRow } from "./bulk-form.js";
  * dependency-free, as its design doc states.
  */
 export function hashBulkFormRow(raw: BulkFormRawRow): string {
-  const ordered = BULK_FORM_COLUMNS.map((column) => [column.key, raw[column.key] ?? null]);
+  const ordered = BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    raw[column.key] ?? null,
+  ]);
   return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
 }

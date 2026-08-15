@@ -44,75 +44,83 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
       );
     }
 
-    return deps.getDatabase().forWorkspace(input.workspaceId, async (repositories) => {
-      const connection = await repositories.shoplineConnections.getDefault();
-      if (!connection) {
-        throw new ApiError(
-          409,
-          "shopline_connection_missing",
-          "Connect a SHOPLINE store before importing a catalog.",
-        );
-      }
-
-      const known = await repositories.platformProducts.listByRemoteProductIds(
-        connection.id,
-        parsed.rows.map((row) => row.productId),
-      );
-      const knownByRemoteId = new Map(known.map((product) => [product.remoteProductId, product]));
-
-      let createdDrafts = 0;
-      let refreshedProducts = 0;
-
-      for (const row of parsed.rows) {
-        const prior = knownByRemoteId.get(row.productId);
-        // `rawRow` and `contentDigest` are derived from this one object in this
-        // one statement, so the pair the repository stores cannot disagree.
-        const rawRow = { ...row.raw };
-        const contentDigest = hashBulkFormRow(rawRow);
-        let listingId = prior?.listingId ?? null;
-
-        if (listingId === null) {
-          const draft = await repositories.listings.create({
-            target: "shopline",
-            note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
-          });
-          listingId = draft.id;
-          createdDrafts += 1;
-          // Metadata carries identifiers only — never merchant content.
-          await repositories.audit.write({
-            workspaceId: input.workspaceId,
-            actorId: input.actorId,
-            entityId: draft.id,
-            action: "listing.imported",
-            metadata: {
-              remoteProductId: row.productId,
-              specVersion: parsed.specVersion,
-              sourceRow: row.rowNumber,
-            },
-          });
-        } else if (prior !== undefined && prior.contentDigest !== contentDigest) {
-          refreshedProducts += 1;
+    return deps
+      .getDatabase()
+      .forWorkspace(input.workspaceId, async (repositories) => {
+        const connection = await repositories.shoplineConnections.getDefault();
+        if (!connection) {
+          throw new ApiError(
+            409,
+            "shopline_connection_missing",
+            "Connect a SHOPLINE store before importing a catalog.",
+          );
         }
 
-        await repositories.platformProducts.upsert({
-          connectionId: connection.id,
-          remoteProductId: row.productId,
-          sku: row.sku,
-          listingId,
-          specVersion: parsed.specVersion,
-          rawRow,
-          factsPrefill: row.facts,
-          contentDigest,
-        });
-      }
+        const known =
+          await repositories.platformProducts.listByRemoteProductIds(
+            connection.id,
+            parsed.rows.map((row) => row.productId),
+          );
+        const knownByRemoteId = new Map(
+          known.map((product) => [product.remoteProductId, product]),
+        );
 
-      return {
-        specVersion: parsed.specVersion,
-        parsedRows: parsed.rows.length,
-        createdDrafts,
-        refreshedProducts,
-        issues: [...parsed.issues],
-      };
-    });
+        let createdDrafts = 0;
+        let refreshedProducts = 0;
+
+        for (const row of parsed.rows) {
+          const prior = knownByRemoteId.get(row.productId);
+          // `rawRow` and `contentDigest` are derived from this one object in this
+          // one statement, so the pair the repository stores cannot disagree.
+          const rawRow = { ...row.raw };
+          const contentDigest = hashBulkFormRow(rawRow);
+          let listingId = prior?.listingId ?? null;
+
+          if (listingId === null) {
+            const draft = await repositories.listings.create({
+              target: "shopline",
+              note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+            });
+            listingId = draft.id;
+            createdDrafts += 1;
+            // Metadata carries identifiers only — never merchant content.
+            await repositories.audit.write({
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              entityId: draft.id,
+              action: "listing.imported",
+              metadata: {
+                remoteProductId: row.productId,
+                specVersion: parsed.specVersion,
+                sourceRow: row.rowNumber,
+              },
+            });
+          } else if (
+            prior !== undefined &&
+            prior.contentDigest !== contentDigest
+          ) {
+            refreshedProducts += 1;
+          }
+
+          await repositories.platformProducts.upsert({
+            connectionId: connection.id,
+            remoteProductId: row.productId,
+            sku: row.sku,
+            listingId,
+            specVersion: parsed.specVersion,
+            rawRow,
+            factsPrefill: row.facts,
+            contentDigest,
+          });
+        }
+
+        return {
+          specVersion: parsed.specVersion,
+          parsedRows: parsed.rows.length,
+          createdDrafts,
+          refreshedProducts,
+          issues: [...parsed.issues],
+        };
+      });
   };
 }

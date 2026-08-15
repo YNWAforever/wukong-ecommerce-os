@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { TENANT_TABLES, verifyAudit } from "./audit-verify.js";
 
-const adminUrl = process.env.TEST_DATABASE_ADMIN_URL ?? process.env.DATABASE_ADMIN_URL ?? "postgres://wukong:wukong@localhost:54329/wukong";
+const adminUrl =
+  process.env.TEST_DATABASE_ADMIN_URL ??
+  process.env.DATABASE_ADMIN_URL ??
+  "postgres://wukong:wukong@localhost:54329/wukong";
 const runtimeUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
 
 describe.skipIf(!adminUrl || !runtimeUrl)("audit foreign-table probe", () => {
@@ -15,12 +18,17 @@ describe.skipIf(!adminUrl || !runtimeUrl)("audit foreign-table probe", () => {
     try {
       await admin.begin(async (transaction) => {
         await transaction`insert into workspaces (id, name, profile) values (${workspaceId}, 'Audit probe', '{}'::jsonb)`;
-        const [draft] = await transaction`insert into listing_drafts (workspace_id, target) values (${workspaceId}, 'shopline') returning id`;
+        const [draft] =
+          await transaction`insert into listing_drafts (workspace_id, target) values (${workspaceId}, 'shopline') returning id`;
         draftId = String(draft?.id);
         await transaction`insert into source_assets (workspace_id, listing_id, storage_key, kind, metadata) values (${workspaceId}, ${draftId}, 'audit-probe/fixture.svg', 'image', '{}'::jsonb)`;
       });
 
-      const result = await verifyAudit({ workspaceId: "ws_opak", draftId, url: runtimeUrl! });
+      const result = await verifyAudit({
+        workspaceId: "ws_opak",
+        draftId,
+        url: runtimeUrl!,
+      });
       expect(result.accessibleForeignRecordCount).toBe(0);
       expect(result.accessibleForeignTables).toEqual([]);
       expect(result.passed).toBe(false);

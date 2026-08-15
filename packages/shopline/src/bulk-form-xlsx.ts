@@ -52,7 +52,9 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
     const localOffset = view.getUint32(offset + 42, true);
-    const name = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLength));
+    const name = decoder.decode(
+      bytes.subarray(offset + 46, offset + 46 + nameLength),
+    );
 
     if (view.getUint32(localOffset, true) !== ZIP_LOCAL_HEADER) {
       throw new BulkFormWorkbookError(`malformed local header for ${name}`);
@@ -63,8 +65,12 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
     const raw = bytes.subarray(start, start + compressedSize);
 
     if (method === 0) entries.set(name, raw);
-    else if (method === 8) entries.set(name, new Uint8Array(inflateRawSync(raw)));
-    else throw new BulkFormWorkbookError(`unsupported zip compression method ${method} for ${name}`);
+    else if (method === 8)
+      entries.set(name, new Uint8Array(inflateRawSync(raw)));
+    else
+      throw new BulkFormWorkbookError(
+        `unsupported zip compression method ${method} for ${name}`,
+      );
 
     offset += 46 + nameLength + extraLength + commentLength;
   }
@@ -81,13 +87,17 @@ const XML_ENTITIES = new Map([
 ]);
 
 function decodeXmlText(text: string): string {
-  return text.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g, (whole, body: string) => {
-    if (body.startsWith("#x") || body.startsWith("#X")) {
-      return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-    }
-    if (body.startsWith("#")) return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
-    return XML_ENTITIES.get(body) ?? whole;
-  });
+  return text.replace(
+    /&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g,
+    (whole, body: string) => {
+      if (body.startsWith("#x") || body.startsWith("#X")) {
+        return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
+      }
+      if (body.startsWith("#"))
+        return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+      return XML_ENTITIES.get(body) ?? whole;
+    },
+  );
 }
 
 /** Concatenates every `<t>` run, which is how a styled cell keeps one value. */
@@ -141,7 +151,8 @@ function firstWorksheetName(entries: Map<string, Uint8Array>): string {
       return leftNumber - rightNumber;
     });
   const first = sheets[0];
-  if (first === undefined) throw new BulkFormWorkbookError("workbook contains no worksheet");
+  if (first === undefined)
+    throw new BulkFormWorkbookError("workbook contains no worksheet");
   return first;
 }
 
@@ -154,17 +165,22 @@ export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
   const entries = readZipEntries(bytes);
   const shared = readSharedStrings(entries);
   const worksheet = entries.get(firstWorksheetName(entries));
-  if (worksheet === undefined) throw new BulkFormWorkbookError("workbook contains no worksheet");
+  if (worksheet === undefined)
+    throw new BulkFormWorkbookError("workbook contains no worksheet");
   const xml = new TextDecoder().decode(worksheet);
 
   const rows: BulkFormCell[][] = [];
 
   for (const rowMatch of xml.matchAll(/<row(\s[^>]*)?>([\s\S]*?)<\/row>/g)) {
-    const rowNumber = Number(/\br="(\d+)"/.exec(rowMatch[1] ?? "")?.[1] ?? rows.length + 1);
+    const rowNumber = Number(
+      /\br="(\d+)"/.exec(rowMatch[1] ?? "")?.[1] ?? rows.length + 1,
+    );
     const body = rowMatch[2] ?? "";
     const cells = new Map<number, string | null>();
 
-    for (const cellMatch of body.matchAll(/<c(\s[^>]*?)?(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const cellMatch of body.matchAll(
+      /<c(\s[^>]*?)?(?:\/>|>([\s\S]*?)<\/c>)/g,
+    )) {
       const attributes = cellMatch[1] ?? "";
       const content = cellMatch[2];
       const ref = /\br="([A-Za-z]+)\d+"/.exec(attributes)?.[1];
@@ -191,7 +207,12 @@ export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
     while (rows.length < rowNumber - 1) rows.push([]);
 
     const width = cells.size === 0 ? 0 : Math.max(...cells.keys()) + 1;
-    rows.push(Array.from({ length: width }, (_unused, index) => cells.get(index) ?? null));
+    rows.push(
+      Array.from(
+        { length: width },
+        (_unused, index) => cells.get(index) ?? null,
+      ),
+    );
   }
 
   return rows;
@@ -313,7 +334,10 @@ function buildZip(parts: readonly ZipPart[]): Uint8Array {
     offset += local.length;
   }
 
-  const centralSize = centrals.reduce((total, entry) => total + entry.length, 0);
+  const centralSize = centrals.reduce(
+    (total, entry) => total + entry.length,
+    0,
+  );
   const eocd = new Uint8Array(22);
   const eocdView = new DataView(eocd.buffer);
   eocdView.setUint32(0, ZIP_EOCD, true);
@@ -337,13 +361,21 @@ function buildZip(parts: readonly ZipPart[]): Uint8Array {
  * uncompressed, so writing needs no deflate and the output is byte-deterministic
  * for a given matrix.
  */
-export function writeBulkFormWorkbook(sheet: readonly (readonly string[])[]): Uint8Array {
+export function writeBulkFormWorkbook(
+  sheet: readonly (readonly string[])[],
+): Uint8Array {
   const encoder = new TextEncoder();
   return buildZip([
     { name: "[Content_Types].xml", data: encoder.encode(CONTENT_TYPES_XML) },
     { name: "_rels/.rels", data: encoder.encode(ROOT_RELS_XML) },
     { name: "xl/workbook.xml", data: encoder.encode(WORKBOOK_XML) },
-    { name: "xl/_rels/workbook.xml.rels", data: encoder.encode(WORKBOOK_RELS_XML) },
-    { name: "xl/worksheets/sheet1.xml", data: encoder.encode(worksheetXml(sheet)) },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      data: encoder.encode(WORKBOOK_RELS_XML),
+    },
+    {
+      name: "xl/worksheets/sheet1.xml",
+      data: encoder.encode(worksheetXml(sheet)),
+    },
   ]);
 }

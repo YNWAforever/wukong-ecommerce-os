@@ -2,7 +2,11 @@ import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { listingDrafts, platformProducts, shoplineConnections } from "./schema.js";
+import {
+  listingDrafts,
+  platformProducts,
+  shoplineConnections,
+} from "./schema.js";
 
 const foreignKeysOf = (table: Parameters<typeof getTableConfig>[0]) =>
   getTableConfig(table).foreignKeys.map((foreignKey) => {
@@ -60,9 +64,15 @@ describe("platform product schema", () => {
   it("admits one row per remote product per connection", () => {
     const uniqueIndexes = getTableConfig(platformProducts)
       .indexes.filter((index) => index.config.unique)
-      .map((index) => index.config.columns.map((column) => (column as { name: string }).name));
+      .map((index) =>
+        index.config.columns.map((column) => (column as { name: string }).name),
+      );
 
     expect(uniqueIndexes).toContainEqual(["workspace_id", "id"]);
-    expect(uniqueIndexes).toContainEqual(["workspace_id", "connection_id", "remote_product_id"]);
+    expect(uniqueIndexes).toContainEqual([
+      "workspace_id",
+      "connection_id",
+      "remote_product_id",
+    ]);
   });
 });

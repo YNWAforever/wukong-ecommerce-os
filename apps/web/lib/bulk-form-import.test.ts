@@ -20,24 +20,35 @@ const DEFAULTS: Partial<Record<BulkFormColumnKey, string>> = {
 };
 
 const rowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) =>
-  BULK_FORM_COLUMNS.map((column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "");
+  BULK_FORM_COLUMNS.map(
+    (column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "",
+  );
 
 const sheetOf = (...rows: string[][]) => [HEADER_EN, HEADER_ZH, ...rows];
 
 type Recorded = {
   created: { note: string | null }[];
-  upserts: { remoteProductId: string; listingId: string | null; contentDigest: string }[];
+  upserts: {
+    remoteProductId: string;
+    listingId: string | null;
+    contentDigest: string;
+  }[];
   audits: { action: string; entityId: string }[];
 };
 
-function importerWith(existing: Record<string, { listingId: string; contentDigest: string }> = {}) {
+function importerWith(
+  existing: Record<string, { listingId: string; contentDigest: string }> = {},
+) {
   const recorded: Recorded = { created: [], upserts: [], audits: [] };
   let nextDraft = 0;
 
   const importBulkForm = createBulkFormImporter({
     getDatabase: () =>
       ({
-        async forWorkspace<T>(_workspaceId: string, work: (repositories: any) => Promise<T>) {
+        async forWorkspace<T>(
+          _workspaceId: string,
+          work: (repositories: any) => Promise<T>,
+        ) {
           return work({
             shoplineConnections: {
               async getDefault() {
@@ -45,7 +56,10 @@ function importerWith(existing: Record<string, { listingId: string; contentDiges
               },
             },
             platformProducts: {
-              async listByRemoteProductIds(_connectionId: string, ids: string[]) {
+              async listByRemoteProductIds(
+                _connectionId: string,
+                ids: string[],
+              ) {
                 return ids
                   .filter((id) => existing[id] !== undefined)
                   .map((id) => ({ remoteProductId: id, ...existing[id] }));
@@ -89,16 +103,26 @@ describe("bulk form importer", () => {
     expect(result.createdDrafts).toBe(2);
     expect(result.refreshedProducts).toBe(0);
     expect(recorded.created).toHaveLength(2);
-    expect(recorded.upserts.map((upsert) => upsert.listingId)).toEqual(["draft_1", "draft_2"]);
+    expect(recorded.upserts.map((upsert) => upsert.listingId)).toEqual([
+      "draft_1",
+      "draft_2",
+    ]);
   });
 
   it("writes an audit event per created draft", async () => {
     const { importBulkForm, recorded } = importerWith();
 
-    await importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) });
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
 
     expect(recorded.audits).toEqual([
-      expect.objectContaining({ action: "listing.imported", entityId: "draft_1" }),
+      expect.objectContaining({
+        action: "listing.imported",
+        entityId: "draft_1",
+      }),
     ]);
   });
 
@@ -121,10 +145,16 @@ describe("bulk form importer", () => {
 
   it("does not count an unchanged re-import as a refresh", async () => {
     const first = importerWith();
-    await first.importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) });
+    await first.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
     const digest = first.recorded.upserts[0]?.contentDigest ?? "";
 
-    const second = importerWith({ remote_1: { listingId: "draft_existing", contentDigest: digest } });
+    const second = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: digest },
+    });
     const result = await second.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
@@ -145,14 +175,20 @@ describe("bulk form importer", () => {
     });
 
     expect(result.createdDrafts).toBe(1);
-    expect(result.issues.map((issue) => issue.code)).toContain("quantity_negative");
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      "quantity_negative",
+    );
   });
 
   it("rejects a sheet with no readable rows", async () => {
     const { importBulkForm } = importerWith();
 
     await expect(
-      importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: [["nonsense"]] }),
+      importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: [["nonsense"]],
+      }),
     ).rejects.toThrow(/No product rows/);
   });
 
@@ -160,14 +196,27 @@ describe("bulk form importer", () => {
     const importBulkForm = createBulkFormImporter({
       getDatabase: () =>
         ({
-          async forWorkspace<T>(_workspaceId: string, work: (repositories: any) => Promise<T>) {
-            return work({ shoplineConnections: { async getDefault() { return null; } } });
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              shoplineConnections: {
+                async getDefault() {
+                  return null;
+                },
+              },
+            });
           },
         }) as never,
     });
 
     await expect(
-      importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) }),
+      importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: sheetOf(rowFor()),
+      }),
     ).rejects.toThrow(/Connect a SHOPLINE store/);
   });
 });

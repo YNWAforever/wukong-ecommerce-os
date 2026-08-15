@@ -20,65 +20,197 @@ export const SHOPLINE_BULK_FORM_SPEC_VERSION = "opak-2026-05" as const;
  * and cannot drift apart.
  */
 export const BULK_FORM_COLUMNS = [
-  { key: "productId", en: "Product ID (DO NOT EDIT)", zh: "商品編號 （切勿更改)" },
+  {
+    key: "productId",
+    en: "Product ID (DO NOT EDIT)",
+    zh: "商品編號 （切勿更改)",
+  },
   { key: "nameEn", en: "Product Name (English)", zh: "商品名稱 (英文)" },
-  { key: "nameZh", en: "Product Name (Traditional Chinese)", zh: "商品名稱 (繁體中文)" },
+  {
+    key: "nameZh",
+    en: "Product Name (Traditional Chinese)",
+    zh: "商品名稱 (繁體中文)",
+  },
   { key: "summaryEn", en: "Product Summary (English)", zh: "商品摘要 (英文)" },
-  { key: "summaryZh", en: "Product Summary (Traditional Chinese)", zh: "商品摘要 (繁體中文)" },
+  {
+    key: "summaryZh",
+    en: "Product Summary (Traditional Chinese)",
+    zh: "商品摘要 (繁體中文)",
+  },
   { key: "seoTitleEn", en: "SEO Title (English)", zh: "SEO標題 (英文)" },
-  { key: "seoTitleZh", en: "SEO Title (Traditional Chinese)", zh: "SEO標題 (繁體中文)" },
-  { key: "seoDescriptionEn", en: "SEO Description (English)", zh: "SEO簡介 (英文)" },
-  { key: "seoDescriptionZh", en: "SEO Description (Traditional Chinese)", zh: "SEO簡介 (繁體中文)" },
+  {
+    key: "seoTitleZh",
+    en: "SEO Title (Traditional Chinese)",
+    zh: "SEO標題 (繁體中文)",
+  },
+  {
+    key: "seoDescriptionEn",
+    en: "SEO Description (English)",
+    zh: "SEO簡介 (英文)",
+  },
+  {
+    key: "seoDescriptionZh",
+    en: "SEO Description (Traditional Chinese)",
+    zh: "SEO簡介 (繁體中文)",
+  },
   { key: "seoKeywords", en: "SEO Keywords", zh: "SEO關鍵字" },
   { key: "hiddenProduct", en: "Hidden Product", zh: "隱藏商品" },
   { key: "preorderFeature", en: "Preorder Feature", zh: "預購功能" },
-  { key: "preorderNoteEn", en: "Preorder Note (English)", zh: "預購提示 (英文)" },
-  { key: "preorderNoteZh", en: "Preorder Note (Traditional Chinese)", zh: "預購提示 (繁體中文)" },
-  { key: "unlimitedPreorderSupply", en: "Unlimited Preorder Supply", zh: "預購商品可無限供貨" },
+  {
+    key: "preorderNoteEn",
+    en: "Preorder Note (English)",
+    zh: "預購提示 (英文)",
+  },
+  {
+    key: "preorderNoteZh",
+    en: "Preorder Note (Traditional Chinese)",
+    zh: "預購提示 (繁體中文)",
+  },
+  {
+    key: "unlimitedPreorderSupply",
+    en: "Unlimited Preorder Supply",
+    zh: "預購商品可無限供貨",
+  },
   { key: "preorderLimit", en: "Preorder Limit", zh: "預購上限" },
   { key: "onlineStoreStatus", en: "Online Store Status", zh: "網店上架狀態" },
   { key: "retailStoreStatus", en: "Retail Store Status", zh: "實體店上架狀態" },
-  { key: "presetOnlineStorePublishDate", en: "Preset Online Store Publish Date", zh: "預設網店上架日期" },
-  { key: "productAvailableStartDate", en: "Product Available start date", zh: "銷售開始時間" },
-  { key: "productAvailableEndDate", en: "Product Available end date", zh: "銷售結束時間" },
+  {
+    key: "presetOnlineStorePublishDate",
+    en: "Preset Online Store Publish Date",
+    zh: "預設網店上架日期",
+  },
+  {
+    key: "productAvailableStartDate",
+    en: "Product Available start date",
+    zh: "銷售開始時間",
+  },
+  {
+    key: "productAvailableEndDate",
+    en: "Product Available end date",
+    zh: "銷售結束時間",
+  },
   { key: "brand", en: "Brand", zh: "商品品牌" },
   { key: "hidePrice", en: "Hide Price", zh: "隱藏價格" },
-  { key: "onlineStoreCategories", en: "Online Store Categories", zh: "網店分類" },
-  { key: "posCategoriesEn", en: "POS Categories (English)", zh: "POS分類 (英文)" },
-  { key: "posCategoriesZh", en: "POS Categories (Traditional Chinese)", zh: "POS分類 (繁體中文)" },
+  {
+    key: "onlineStoreCategories",
+    en: "Online Store Categories",
+    zh: "網店分類",
+  },
+  {
+    key: "posCategoriesEn",
+    en: "POS Categories (English)",
+    zh: "POS分類 (英文)",
+  },
+  {
+    key: "posCategoriesZh",
+    en: "POS Categories (Traditional Chinese)",
+    zh: "POS分類 (繁體中文)",
+  },
   { key: "regularPrice", en: "Regular Price", zh: "商品原價" },
   { key: "salePrice", en: "Sale Price", zh: "商品特價" },
-  { key: "productRetailStorePrice", en: "Product Retail Store Price", zh: "實體店價格" },
+  {
+    key: "productRetailStorePrice",
+    en: "Product Retail Store Price",
+    zh: "實體店價格",
+  },
   { key: "memberPrice", en: "Member Price", zh: "商品會員價" },
   { key: "goldMembershipPrice", en: "Gold Membership Price", zh: "金會員價" },
-  { key: "platinumMembershipPrice", en: "Platinum Membership Price", zh: "鉑金會員價" },
-  { key: "diamondMembershipPrice", en: "Diamond Membership Price", zh: "鑽石會員價" },
+  {
+    key: "platinumMembershipPrice",
+    en: "Platinum Membership Price",
+    zh: "鉑金會員價",
+  },
+  {
+    key: "diamondMembershipPrice",
+    en: "Diamond Membership Price",
+    zh: "鑽石會員價",
+  },
   { key: "tradePrice", en: "Trade Price", zh: "Trade價" },
   { key: "unlimitedQuantity", en: "Unlimited Quantity", zh: "無限數量" },
   { key: "samePrice", en: "Same Price", zh: "價格一致" },
   { key: "productCost", en: "Product Cost", zh: "商品成本" },
   { key: "sku", en: "SKU", zh: "商品貨號" },
-  { key: "quantity", en: "Quantity (DO NOT EDIT)", zh: "數量 (參考用，請勿修改)" },
-  { key: "updateQuantity", en: "Update Quantity (e.g. +5 or -8)", zh: "增減數量 (例: +5 或 -8)" },
+  {
+    key: "quantity",
+    en: "Quantity (DO NOT EDIT)",
+    zh: "數量 (參考用，請勿修改)",
+  },
+  {
+    key: "updateQuantity",
+    en: "Update Quantity (e.g. +5 or -8)",
+    zh: "增減數量 (例: +5 或 -8)",
+  },
   { key: "weightKg", en: "Weight(KG)", zh: "重量(公斤)" },
   { key: "supplier", en: "Supplier", zh: "供應商" },
   { key: "productTag", en: "Product Tag", zh: "商品管理標籤" },
-  { key: "promotionLabelEn", en: "Product Promotion Label (English)", zh: "商品促銷標籤 (英文)" },
-  { key: "promotionLabelZh", en: "Product Promotion Label (Traditional Chinese)", zh: "商品促銷標籤 (繁體中文)" },
-  { key: "excludePaymentOptions", en: "Exclude Payment Options", zh: "排除的付款方式" },
-  { key: "excludeDeliveryOptions", en: "Exclude Delivery Options", zh: "排除的送貨方式" },
-  { key: "variantId", en: "Variant ID (DO NOT EDIT)", zh: "款式編號 （切勿更改)" },
-  { key: "variantEn", en: "Variant (English) (DO NOT EDIT)", zh: "款式 (英文) (勿更改)" },
-  { key: "variantZh", en: "Variant (Traditional Chinese) (DO NOT EDIT)", zh: "款式 (繁體中文) (勿更改)" },
-  { key: "variantQuantity", en: "Variant Quantity (DO NOT EDIT)", zh: "款式數量 (參考用，請勿修改)" },
-  { key: "updateVariantQuantity", en: "Update Variant Quantity (e.g. +5 or -8)", zh: "增減款式數量 (例: +5 或 -8)" },
+  {
+    key: "promotionLabelEn",
+    en: "Product Promotion Label (English)",
+    zh: "商品促銷標籤 (英文)",
+  },
+  {
+    key: "promotionLabelZh",
+    en: "Product Promotion Label (Traditional Chinese)",
+    zh: "商品促銷標籤 (繁體中文)",
+  },
+  {
+    key: "excludePaymentOptions",
+    en: "Exclude Payment Options",
+    zh: "排除的付款方式",
+  },
+  {
+    key: "excludeDeliveryOptions",
+    en: "Exclude Delivery Options",
+    zh: "排除的送貨方式",
+  },
+  {
+    key: "variantId",
+    en: "Variant ID (DO NOT EDIT)",
+    zh: "款式編號 （切勿更改)",
+  },
+  {
+    key: "variantEn",
+    en: "Variant (English) (DO NOT EDIT)",
+    zh: "款式 (英文) (勿更改)",
+  },
+  {
+    key: "variantZh",
+    en: "Variant (Traditional Chinese) (DO NOT EDIT)",
+    zh: "款式 (繁體中文) (勿更改)",
+  },
+  {
+    key: "variantQuantity",
+    en: "Variant Quantity (DO NOT EDIT)",
+    zh: "款式數量 (參考用，請勿修改)",
+  },
+  {
+    key: "updateVariantQuantity",
+    en: "Update Variant Quantity (e.g. +5 or -8)",
+    zh: "增減款式數量 (例: +5 或 -8)",
+  },
   { key: "variantPrice", en: "Variant Price", zh: "款式價格" },
   { key: "variantSalePrice", en: "Variant Sale Price", zh: "款式特價" },
-  { key: "variantRetailStorePrice", en: "Variant Retail Store Price", zh: "款式實體店價格" },
+  {
+    key: "variantRetailStorePrice",
+    en: "Variant Retail Store Price",
+    zh: "款式實體店價格",
+  },
   { key: "variantMemberPrice", en: "Variant Member Price", zh: "款式會員價" },
-  { key: "variantGoldMembershipPrice", en: "Variant Gold Membership Price", zh: "款式金會員價" },
-  { key: "variantPlatinumMembershipPrice", en: "Variant Platinum Membership Price", zh: "款式鉑金會員價" },
-  { key: "variantDiamondMembershipPrice", en: "Variant Diamond Membership Price", zh: "款式鑽石會員價" },
+  {
+    key: "variantGoldMembershipPrice",
+    en: "Variant Gold Membership Price",
+    zh: "款式金會員價",
+  },
+  {
+    key: "variantPlatinumMembershipPrice",
+    en: "Variant Platinum Membership Price",
+    zh: "款式鉑金會員價",
+  },
+  {
+    key: "variantDiamondMembershipPrice",
+    en: "Variant Diamond Membership Price",
+    zh: "款式鑽石會員價",
+  },
   { key: "variantTradePrice", en: "Variant Trade Price", zh: "款式Trade價" },
   { key: "variantCost", en: "Variant Cost", zh: "款式成本" },
   { key: "variantWeightKg", en: "Variant Weight(KG)", zh: "款式重量(KG)" },
@@ -86,11 +218,31 @@ export const BULK_FORM_COLUMNS = [
   { key: "locationId", en: "Location ID", zh: "儲位編號" },
   { key: "mpn", en: "MPN", zh: "製造編號" },
   { key: "barcode", en: "Barcode", zh: "商品條碼編號" },
-  { key: "slStockId", en: "SL_STOCK_ID(DO NOT EDIT)", zh: "庫存參照值(切勿更改)" },
-  { key: "warehouse", en: "Warehouse(DO NOT EDIT)", zh: "出貨倉庫(參考用，請勿修改)" },
-  { key: "productNotApplicableToDiscount", en: "Product not applicable to discount", zh: "不適用折扣商品" },
-  { key: "slKey0", en: "SL_KEY0(DO NOT EDIT)", zh: "商品名稱參照值0(切勿更改)" },
-  { key: "slKey1", en: "SL_KEY1(DO NOT EDIT)", zh: "商品名稱參照值1(切勿更改)" },
+  {
+    key: "slStockId",
+    en: "SL_STOCK_ID(DO NOT EDIT)",
+    zh: "庫存參照值(切勿更改)",
+  },
+  {
+    key: "warehouse",
+    en: "Warehouse(DO NOT EDIT)",
+    zh: "出貨倉庫(參考用，請勿修改)",
+  },
+  {
+    key: "productNotApplicableToDiscount",
+    en: "Product not applicable to discount",
+    zh: "不適用折扣商品",
+  },
+  {
+    key: "slKey0",
+    en: "SL_KEY0(DO NOT EDIT)",
+    zh: "商品名稱參照值0(切勿更改)",
+  },
+  {
+    key: "slKey1",
+    en: "SL_KEY1(DO NOT EDIT)",
+    zh: "商品名稱參照值1(切勿更改)",
+  },
 ] as const;
 
 export type BulkFormColumnKey = (typeof BULK_FORM_COLUMNS)[number]["key"];
@@ -126,14 +278,21 @@ export const BULK_FORM_ENRICHABLE_COLUMNS = [
   "seoKeywords",
 ] as const satisfies readonly BulkFormColumnKey[];
 
-export type BulkFormEnrichableColumn = (typeof BULK_FORM_ENRICHABLE_COLUMNS)[number];
+export type BulkFormEnrichableColumn =
+  (typeof BULK_FORM_ENRICHABLE_COLUMNS)[number];
 
 /** Enrichable columns SHOPLINE treats as a title, and so length-limits. */
-const TITLE_COLUMNS: readonly BulkFormEnrichableColumn[] = ["nameZh", "seoTitleEn", "seoTitleZh"];
+const TITLE_COLUMNS: readonly BulkFormEnrichableColumn[] = [
+  "nameZh",
+  "seoTitleEn",
+  "seoTitleZh",
+];
 
 /** Delta columns. Echoing a non-zero delta re-applies a stock movement. */
-const QUANTITY_DELTA_COLUMNS = ["updateQuantity", "updateVariantQuantity"] as const satisfies
-  readonly BulkFormColumnKey[];
+const QUANTITY_DELTA_COLUMNS = [
+  "updateQuantity",
+  "updateVariantQuantity",
+] as const satisfies readonly BulkFormColumnKey[];
 
 const NEUTRAL_QUANTITY_DELTA = "+0";
 
@@ -146,7 +305,10 @@ const UNLIMITED_QUANTITY_SENTINEL = "無限數量";
  * are intentionally absent so a product filed under both a real category and a
  * merchandising one resolves by the real one.
  */
-const CATEGORY_PRODUCT_TYPES = new Map<string, NonNullable<ListingFacts["productType"]>>([
+const CATEGORY_PRODUCT_TYPES = new Map<
+  string,
+  NonNullable<ListingFacts["productType"]>
+>([
   ["Whisky", "spirits"],
   ["Brandy", "spirits"],
   ["Spirits / Fortified Wine", "spirits"],
@@ -226,14 +388,22 @@ export type BulkFormProductRow = {
     trade: number | null;
     cost: number | null;
   };
-  inventory: { quantity: number | null; unlimited: boolean; warehouse: string | null };
+  inventory: {
+    quantity: number | null;
+    unlimited: boolean;
+    warehouse: string | null;
+  };
   visibility: {
     onlineStore: boolean;
     retailStore: boolean;
     hiddenProduct: boolean;
     hidePrice: boolean;
   };
-  identifiers: { barcode: string | null; mpn: string | null; supplier: string | null };
+  identifiers: {
+    barcode: string | null;
+    mpn: string | null;
+    supplier: string | null;
+  };
   content: {
     name: BulkFormText;
     summary: BulkFormText;
@@ -271,8 +441,13 @@ const issue = (
   message: string,
 ): BulkFormIssue => ({ code, severity, row, column, value, message });
 
-const matchesHeaders = (row: readonly BulkFormCell[], locale: "en" | "zh"): boolean =>
-  BULK_FORM_COLUMNS.every((column, index) => (row[index] ?? "").trim() === column[locale]);
+const matchesHeaders = (
+  row: readonly BulkFormCell[],
+  locale: "en" | "zh",
+): boolean =>
+  BULK_FORM_COLUMNS.every(
+    (column, index) => (row[index] ?? "").trim() === column[locale],
+  );
 
 function parseNumber(value: string | null): number | null {
   if (value === null) return null;
@@ -292,7 +467,9 @@ function parseFlag(value: string | null): boolean | null {
  * Splits the category cell. Newlines separate complete category paths — 26 of
  * the pilot's 500 rows carry two — so collapsing them destroys an assignment.
  */
-function parseCategories(value: string | null): readonly BulkFormCategoryPath[] {
+function parseCategories(
+  value: string | null,
+): readonly BulkFormCategoryPath[] {
   if (value === null) return [];
   return value
     .split(/\r?\n/)
@@ -356,19 +533,37 @@ function parseRow(
 
   const productId = raw.productId;
   if (productId === null) {
-    issues.push(issue("product_id_missing", "error", rowNumber, "productId", null, "row has no Product ID"));
+    issues.push(
+      issue(
+        "product_id_missing",
+        "error",
+        rowNumber,
+        "productId",
+        null,
+        "row has no Product ID",
+      ),
+    );
     return null;
   }
   if (seenProductIds.has(productId)) {
     issues.push(
-      issue("product_id_duplicated", "error", rowNumber, "productId", productId, "Product ID already seen in this sheet"),
+      issue(
+        "product_id_duplicated",
+        "error",
+        rowNumber,
+        "productId",
+        productId,
+        "Product ID already seen in this sheet",
+      ),
     );
     return null;
   }
 
   const sku = raw.sku;
   if (sku === null) {
-    issues.push(issue("sku_missing", "error", rowNumber, "sku", null, "row has no SKU"));
+    issues.push(
+      issue("sku_missing", "error", rowNumber, "sku", null, "row has no SKU"),
+    );
     return null;
   }
   seenProductIds.add(productId);
@@ -407,7 +602,16 @@ function parseRow(
     if (value === null) return null;
     const parsed = parseNumber(value);
     if (parsed === null) {
-      issues.push(issue("number_not_numeric", "warning", rowNumber, column, value, "value is not a number"));
+      issues.push(
+        issue(
+          "number_not_numeric",
+          "warning",
+          rowNumber,
+          column,
+          value,
+          "value is not a number",
+        ),
+      );
     }
     return parsed;
   };
@@ -416,7 +620,16 @@ function parseRow(
     const value = raw[column];
     const parsed = parseFlag(value);
     if (parsed === null) {
-      issues.push(issue("flag_not_recognized", "warning", rowNumber, column, value, "expected Y or N"));
+      issues.push(
+        issue(
+          "flag_not_recognized",
+          "warning",
+          rowNumber,
+          column,
+          value,
+          "expected Y or N",
+        ),
+      );
       return false;
     }
     return parsed;
@@ -427,7 +640,10 @@ function parseRow(
   let quantity: number | null = null;
   let unlimited = unlimitedFlag;
 
-  if (rawQuantity !== null && rawQuantity.trim() === UNLIMITED_QUANTITY_SENTINEL) {
+  if (
+    rawQuantity !== null &&
+    rawQuantity.trim() === UNLIMITED_QUANTITY_SENTINEL
+  ) {
     unlimited = true;
     issues.push(
       issue(
@@ -442,11 +658,27 @@ function parseRow(
   } else if (rawQuantity !== null) {
     const parsed = parseNumber(rawQuantity);
     if (parsed === null) {
-      issues.push(issue("number_not_numeric", "warning", rowNumber, "quantity", rawQuantity, "value is not a number"));
+      issues.push(
+        issue(
+          "number_not_numeric",
+          "warning",
+          rowNumber,
+          "quantity",
+          rawQuantity,
+          "value is not a number",
+        ),
+      );
     } else if (parsed < 0) {
       // listingFactsSchema.stockQuantity is nonnegative; oversold rows clamp.
       issues.push(
-        issue("quantity_negative", "warning", rowNumber, "quantity", rawQuantity, "negative stock clamped to 0"),
+        issue(
+          "quantity_negative",
+          "warning",
+          rowNumber,
+          "quantity",
+          rawQuantity,
+          "negative stock clamped to 0",
+        ),
       );
       quantity = 0;
     } else {
@@ -457,7 +689,14 @@ function parseRow(
   const categories = parseCategories(raw.onlineStoreCategories);
   if (categories.length === 0) {
     issues.push(
-      issue("categories_missing", "warning", rowNumber, "onlineStoreCategories", raw.onlineStoreCategories, "row has no category path"),
+      issue(
+        "categories_missing",
+        "warning",
+        rowNumber,
+        "onlineStoreCategories",
+        raw.onlineStoreCategories,
+        "row has no category path",
+      ),
     );
   }
 
@@ -469,8 +708,14 @@ function parseRow(
 
   const name: BulkFormText = { en: raw.nameEn, "zh-Hant": raw.nameZh };
   const summary: BulkFormText = { en: raw.summaryEn, "zh-Hant": raw.summaryZh };
-  const seoTitle: BulkFormText = { en: raw.seoTitleEn, "zh-Hant": raw.seoTitleZh };
-  const seoDescription: BulkFormText = { en: raw.seoDescriptionEn, "zh-Hant": raw.seoDescriptionZh };
+  const seoTitle: BulkFormText = {
+    en: raw.seoTitleEn,
+    "zh-Hant": raw.seoTitleZh,
+  };
+  const seoDescription: BulkFormText = {
+    en: raw.seoDescriptionEn,
+    "zh-Hant": raw.seoDescriptionZh,
+  };
 
   const posEn = raw.posCategoriesEn;
 
@@ -480,7 +725,8 @@ function parseRow(
     sku,
     raw,
     categories,
-    posCategory: posEn === null ? null : { en: posEn, "zh-Hant": raw.posCategoriesZh },
+    posCategory:
+      posEn === null ? null : { en: posEn, "zh-Hant": raw.posCategoriesZh },
     pricing: {
       regular,
       sale,
@@ -488,7 +734,11 @@ function parseRow(
       trade: numberFor("tradePrice"),
       cost: numberFor("productCost"),
     },
-    inventory: { quantity: unlimited ? null : quantity, unlimited, warehouse: raw.warehouse },
+    inventory: {
+      quantity: unlimited ? null : quantity,
+      unlimited,
+      warehouse: raw.warehouse,
+    },
     visibility: {
       onlineStore: flagFor("onlineStoreStatus"),
       retailStore: flagFor("retailStoreStatus"),
@@ -496,10 +746,19 @@ function parseRow(
       hidePrice: flagFor("hidePrice"),
     },
     identifiers: { barcode: raw.barcode, mpn: raw.mpn, supplier: raw.supplier },
-    content: { name, summary, seoTitle, seoDescription, seoKeywords: raw.seoKeywords },
+    content: {
+      name,
+      summary,
+      seoTitle,
+      seoDescription,
+      seoKeywords: raw.seoKeywords,
+    },
     gaps: {
-      untranslatedName: name["zh-Hant"] === null || sameText(name.en, name["zh-Hant"]),
-      untranslatedSeoTitle: seoTitle["zh-Hant"] === null || sameText(seoTitle.en, seoTitle["zh-Hant"]),
+      untranslatedName:
+        name["zh-Hant"] === null || sameText(name.en, name["zh-Hant"]),
+      untranslatedSeoTitle:
+        seoTitle["zh-Hant"] === null ||
+        sameText(seoTitle.en, seoTitle["zh-Hant"]),
       seoTitleMirrorsName: sameText(seoTitle.en, name.en),
       seoDescriptionMirrorsSeoTitle: sameText(seoDescription.en, seoTitle.en),
       keywordsMirrorName: sameText(raw.seoKeywords, name.en),
@@ -537,7 +796,9 @@ export function parseBulkForm(sheet: BulkFormSheet): BulkFormParseResult {
     const width = sheet[0]?.length ?? 0;
     issues.push(
       issue(
-        width === BULK_FORM_COLUMNS.length ? "column_contract_mismatch" : "header_row_missing",
+        width === BULK_FORM_COLUMNS.length
+          ? "column_contract_mismatch"
+          : "header_row_missing",
         "error",
         null,
         null,
@@ -555,7 +816,8 @@ export function parseBulkForm(sheet: BulkFormSheet): BulkFormParseResult {
   }
 
   const localeRow = sheet[headerIndex + 1];
-  const hasLocaleHeader = localeRow !== undefined && matchesHeaders(localeRow, "zh");
+  const hasLocaleHeader =
+    localeRow !== undefined && matchesHeaders(localeRow, "zh");
   const firstDataIndex = headerIndex + (hasLocaleHeader ? 2 : 1);
 
   const rows: BulkFormProductRow[] = [];
@@ -563,7 +825,8 @@ export function parseBulkForm(sheet: BulkFormSheet): BulkFormParseResult {
   for (let index = firstDataIndex; index < sheet.length; index += 1) {
     const row = sheet[index];
     if (row === undefined) continue;
-    if (row.every((cell) => cell === null || cell.trim().length === 0)) continue;
+    if (row.every((cell) => cell === null || cell.trim().length === 0))
+      continue;
     const parsed = parseRow(row, index + 1, seenProductIds, issues);
     if (parsed !== null) rows.push(parsed);
   }
@@ -598,7 +861,14 @@ export class ShoplineBulkFormError extends Error {
   readonly issues: BulkFormEnrichmentIssue[];
 
   constructor(issues: BulkFormEnrichmentIssue[]) {
-    super(issues.map((item) => `${item.productId ?? "-"}.${item.column ?? "-"}: ${item.message}`).join("; "));
+    super(
+      issues
+        .map(
+          (item) =>
+            `${item.productId ?? "-"}.${item.column ?? "-"}: ${item.message}`,
+        )
+        .join("; "),
+    );
     this.name = "ShoplineBulkFormError";
     this.issues = issues;
   }
@@ -647,7 +917,14 @@ function validateEnrichments(
 ): BulkFormEnrichmentIssue[] {
   const issues: BulkFormEnrichmentIssue[] = [];
   if (enrichments.length === 0) {
-    return [{ code: "enrichment_empty", productId: null, column: null, message: "no enrichments supplied" }];
+    return [
+      {
+        code: "enrichment_empty",
+        productId: null,
+        column: null,
+        message: "no enrichments supplied",
+      },
+    ];
   }
 
   const known = new Set(rows.map((row) => row.productId));
@@ -686,7 +963,12 @@ function validateEnrichments(
         continue;
       }
       if (value === undefined || value.trim().length === 0) {
-        issues.push({ code: "enrichment_value_blank", productId, column, message: "value must not be blank" });
+        issues.push({
+          code: "enrichment_value_blank",
+          productId,
+          column,
+          message: "value must not be blank",
+        });
         continue;
       }
       if (CONTROL_CHARACTERS.test(value)) {
@@ -694,11 +976,15 @@ function validateEnrichments(
           code: "enrichment_value_control_characters",
           productId,
           column,
-          message: "value must not contain newlines, tabs, or other control characters",
+          message:
+            "value must not contain newlines, tabs, or other control characters",
         });
         continue;
       }
-      if (TITLE_COLUMNS.includes(column) && value.length > SHOPLINE_TITLE_MAX_LENGTH) {
+      if (
+        TITLE_COLUMNS.includes(column) &&
+        value.length > SHOPLINE_TITLE_MAX_LENGTH
+      ) {
         issues.push({
           code: "enrichment_value_too_long",
           productId,
@@ -725,7 +1011,9 @@ export function createBulkFormUpdate(
   const issues = validateEnrichments(rows, enrichments);
   if (issues.length > 0) throw new ShoplineBulkFormError(issues);
 
-  const byProductId = new Map(enrichments.map((enrichment) => [enrichment.productId, enrichment.values]));
+  const byProductId = new Map(
+    enrichments.map((enrichment) => [enrichment.productId, enrichment.values]),
+  );
   const include = options.include ?? "changed";
 
   const changes: BulkFormChange[] = [];

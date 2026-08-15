@@ -2,8 +2,16 @@ import { crc32 } from "node:zlib";
 
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS, createBulkFormUpdate, parseBulkForm } from "./bulk-form.js";
-import { BulkFormWorkbookError, readBulkFormSheet, writeBulkFormWorkbook } from "./bulk-form-xlsx.js";
+import {
+  BULK_FORM_COLUMNS,
+  createBulkFormUpdate,
+  parseBulkForm,
+} from "./bulk-form.js";
+import {
+  BulkFormWorkbookError,
+  readBulkFormSheet,
+  writeBulkFormWorkbook,
+} from "./bulk-form-xlsx.js";
 
 /**
  * Builds a stored-entry xlsx independently of `writeBulkFormWorkbook`, so the
@@ -51,7 +59,10 @@ function zipOf(files: readonly { name: string; text: string }[]): Uint8Array {
     offset += local.length;
   }
 
-  const centralSize = centrals.reduce((total, entry) => total + entry.length, 0);
+  const centralSize = centrals.reduce(
+    (total, entry) => total + entry.length,
+    0,
+  );
   const eocd = new Uint8Array(22);
   const eocdView = new DataView(eocd.buffer);
   eocdView.setUint32(0, 0x06054b50, true);
@@ -80,14 +91,21 @@ describe("bulk form xlsx adapter", () => {
   it("round-trips leading zeros, Traditional Chinese, and in-cell newlines", () => {
     const sheet = [
       ["Product ID (DO NOT EDIT)", "SKU", "Online Store Categories", "Name"],
-      ["aaaaaaaaaaaaaaaaaaaaaa01", "0001", "Champagne>Rose\nParty Wines Selection", "示範酒莊"],
+      [
+        "aaaaaaaaaaaaaaaaaaaaaa01",
+        "0001",
+        "Champagne>Rose\nParty Wines Selection",
+        "示範酒莊",
+      ],
     ];
 
     expect(readBulkFormSheet(writeBulkFormWorkbook(sheet))).toEqual(sheet);
   });
 
   it("never lets a numeric-looking SKU lose its leading zeros", () => {
-    const read = readBulkFormSheet(writeBulkFormWorkbook([["0001", "007", "0.0", "+0"]]));
+    const read = readBulkFormSheet(
+      writeBulkFormWorkbook([["0001", "007", "0.0", "+0"]]),
+    );
 
     expect(read[0]).toEqual(["0001", "007", "0.0", "+0"]);
   });
@@ -145,10 +163,12 @@ describe("bulk form xlsx adapter", () => {
   });
 
   it("rejects a file that is not a workbook", () => {
-    expect(() => readBulkFormSheet(new TextEncoder().encode("not a zip"))).toThrow(
-      BulkFormWorkbookError,
+    expect(() =>
+      readBulkFormSheet(new TextEncoder().encode("not a zip")),
+    ).toThrow(BulkFormWorkbookError);
+    expect(() => readBulkFormSheet(zipOf(MINIMAL_PARTS))).toThrow(
+      /no worksheet/,
     );
-    expect(() => readBulkFormSheet(zipOf(MINIMAL_PARTS))).toThrow(/no worksheet/);
   });
 
   it("carries a full bulk form through xlsx and back into the parser", () => {
@@ -159,7 +179,8 @@ describe("bulk form xlsx adapter", () => {
       if (column.key === "sku") return "0001";
       if (column.key === "nameEn") return "Demo Estate Riesling 2024";
       if (column.key === "nameZh") return "Demo Estate Riesling 2024";
-      if (column.key === "onlineStoreCategories") return "White Wine>Germany>Mosel\nTop Picks";
+      if (column.key === "onlineStoreCategories")
+        return "White Wine>Germany>Mosel\nTop Picks";
       if (column.key === "regularPrice") return "100.0";
       if (column.key === "salePrice") return "80.0";
       if (column.key === "quantity") return "6";
@@ -167,17 +188,29 @@ describe("bulk form xlsx adapter", () => {
       return "";
     });
 
-    const parsed = parseBulkForm(readBulkFormSheet(writeBulkFormWorkbook([headerEn, headerZh, row])));
+    const parsed = parseBulkForm(
+      readBulkFormSheet(writeBulkFormWorkbook([headerEn, headerZh, row])),
+    );
     expect(parsed.rows).toHaveLength(1);
 
     const update = createBulkFormUpdate(parsed.rows, [
-      { productId: "aaaaaaaaaaaaaaaaaaaaaa01", values: { nameZh: "示範酒莊麗絲玲 2024" } },
+      {
+        productId: "aaaaaaaaaaaaaaaaaaaaaa01",
+        values: { nameZh: "示範酒莊麗絲玲 2024" },
+      },
     ]);
-    const reparsed = parseBulkForm(readBulkFormSheet(writeBulkFormWorkbook(update.sheet)));
+    const reparsed = parseBulkForm(
+      readBulkFormSheet(writeBulkFormWorkbook(update.sheet)),
+    );
 
     expect(reparsed.rows[0]?.sku).toBe("0001");
-    expect(reparsed.rows[0]?.content.name["zh-Hant"]).toBe("示範酒莊麗絲玲 2024");
-    expect(reparsed.rows[0]?.categories).toEqual([["White Wine", "Germany", "Mosel"], ["Top Picks"]]);
+    expect(reparsed.rows[0]?.content.name["zh-Hant"]).toBe(
+      "示範酒莊麗絲玲 2024",
+    );
+    expect(reparsed.rows[0]?.categories).toEqual([
+      ["White Wine", "Germany", "Mosel"],
+      ["Top Picks"],
+    ]);
     expect(reparsed.rows[0]?.facts.priceHkd).toBe(80);
   });
 });

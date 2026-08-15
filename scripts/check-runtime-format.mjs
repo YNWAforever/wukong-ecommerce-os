@@ -47,20 +47,12 @@ const knownFormatDebt = new Map([
     "45d5ebc4ea37bf5ac927578e992974a8604068c147cf760d4d376cf6c080d7b1",
   ],
   [
-    "packages/db/src/index.ts",
-    "2307b20c6cdbccee39ac9e163da0c5357e4e8c459b3095ce575c141e98501651",
-  ],
-  [
     "packages/db/src/publish-jobs-schema.test.ts",
     "8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8",
   ],
   [
     "packages/db/src/repositories/publish-jobs.integration.test.ts",
     "60f109af4c944409f7cfe348c697299a3f34a83a008b1c3478581d43f6e36c7c",
-  ],
-  [
-    "packages/db/src/schema.ts",
-    "21c8b510142bf891215df98175e1a168df6016a6a325b7a3b7a45457599034ee",
   ],
   [
     "packages/jobs/src/cloudflare-queue.ts",

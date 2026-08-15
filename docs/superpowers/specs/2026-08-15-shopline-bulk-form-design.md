@@ -5,7 +5,7 @@
 
 ## Context
 
-Every listing Wukong has produced so far was *created* from messy inputs: photos,
+Every listing Wukong has produced so far was _created_ from messy inputs: photos,
 a supplier sheet, an operator note. The pilot merchant's actual catalog problem
 is the opposite shape. Opak Cellar already has 500 products live on Shopline,
 and Shopline's own round-trip artifact for that catalog is the **bulk update
@@ -23,8 +23,8 @@ exclusions, and a full variant block.
 
 The two forms are not versions of one thing. They are different directions:
 create pushes new products out; the bulk form is the only supported way to
-*read the existing catalog in* and to write enrichment *back onto products
-Shopline already owns*.
+_read the existing catalog in_ and to write enrichment _back onto products
+Shopline already owns_.
 
 The domain term **Shopline bulk form** is recorded in `CONTEXT.md`.
 
@@ -35,20 +35,20 @@ Profiled from Opak's 2026-05-21 export (500 products × 71 columns) using the
 they also set the parser's obligations. Text comparisons trim surrounding
 whitespace, which is what `gaps` computes:
 
-| Observation | Count | Consequence |
-|---|---|---|
-| Traditional Chinese name identical to English | 499/500 | The catalog is not localized at all |
-| Traditional Chinese SEO title identical to the English one | 487/500 | — |
-| SEO keywords identical to the product name | 478/500 | Keywords carry no information |
-| SEO description identical to SEO title | 407/500 | SEO fields are placeholders |
-| SEO title identical to the product name | 392/500 | — |
-| Product Summary empty | 489/500 | Descriptions are greenfield |
-| Quantity at zero or below | 342/500 | Dead stock dominates (338 at 0, 4 oversold) |
-| Hidden from the online store | 275/500 | — |
-| Visible in the retail store | 249/500 | — |
-| Product Cost > 0 | 493/500 | Margin analysis needs no new data |
-| Sale price below regular price | 439/500 | — |
-| No product type derivable from the category path | 36/500 | Merchandising-only rows need `extract` |
+| Observation                                                | Count   | Consequence                                 |
+| ---------------------------------------------------------- | ------- | ------------------------------------------- |
+| Traditional Chinese name identical to English              | 499/500 | The catalog is not localized at all         |
+| Traditional Chinese SEO title identical to the English one | 487/500 | —                                           |
+| SEO keywords identical to the product name                 | 478/500 | Keywords carry no information               |
+| SEO description identical to SEO title                     | 407/500 | SEO fields are placeholders                 |
+| SEO title identical to the product name                    | 392/500 | —                                           |
+| Product Summary empty                                      | 489/500 | Descriptions are greenfield                 |
+| Quantity at zero or below                                  | 342/500 | Dead stock dominates (338 at 0, 4 oversold) |
+| Hidden from the online store                               | 275/500 | —                                           |
+| Visible in the retail store                                | 249/500 | —                                           |
+| Product Cost > 0                                           | 493/500 | Margin analysis needs no new data           |
+| Sale price below regular price                             | 439/500 | —                                           |
+| No product type derivable from the category path           | 36/500  | Merchandising-only rows need `extract`      |
 
 A full parse of that file produces **500 rows, zero errors, and seven
 warnings**: four `quantity_negative`, two `categories_missing`, and one
@@ -69,7 +69,7 @@ Each of these is present in the real file, and each one breaks a naive reader:
    lets a spreadsheet engine type them as numbers silently destroys every SKU
    in the catalog. This is the single highest-consequence parsing rule here.
 3. **`無限數量` appears in a numeric column.** Row 437's `Quantity (DO NOT
-   EDIT)` holds that literal instead of an integer. The same row also has
+EDIT)` holds that literal instead of an integer. The same row also has
    `Unlimited Quantity = Y`, so the sentinel is consistent and means unlimited,
    not corrupt.
 4. **Negative quantities exist.** Four rows carry `-1` (oversold). The
@@ -78,7 +78,7 @@ Each of these is present in the real file, and each one breaks a naive reader:
 5. **Newlines in the category cell are multi-category assignment, not dirty
    data.** 26 cells hold two complete category paths separated by `\n`, e.g.
    `Champagne>Non-Vintage Champagne>Rose` and `Party Wines
-   Selection>Party Champagne Selection`. Stripping or collapsing the newline
+Selection>Party Champagne Selection`. Stripping or collapsing the newline
    destroys a category assignment. Category paths run up to depth 5.
 6. **`Update Quantity` is a delta column, not a value column.** Every row reads
    `+0`. A round-trip that echoes a non-zero delta re-applies a stock movement
@@ -95,7 +95,7 @@ Each of these is present in the real file, and each one breaks a naive reader:
 - Preserve `Product ID` as the platform join key Wukong currently lacks — today
   a remote product ID exists only on `publish_jobs.remoteProductId`, never on
   the listing.
-- Prefill `ListingFacts` with values the form *states*, so the existing
+- Prefill `ListingFacts` with values the form _states_, so the existing
   extract/generate pipeline starts from real data instead of a blank draft.
 - Report every defensive-parsing case as a typed issue rather than throwing,
   guessing, or silently dropping a row.
@@ -145,7 +145,7 @@ Columns fall into three classes:
 - **Echoed** — everything else: pricing, stock, categories, status, logistics.
   Read and exposed, never written.
 
-`nameEn` is deliberately *not* enrichable. Rewriting the English product name
+`nameEn` is deliberately _not_ enrichable. Rewriting the English product name
 changes the merchant's product identity and their operators' search handle;
 only the untranslated Chinese name is Wukong's to fill.
 
@@ -228,8 +228,8 @@ was neutralized. Rules:
   non-enrichable target column, a blank value, a title over
   `SHOPLINE_TITLE_MAX_LENGTH`, control characters, and an empty enrichment set.
 
-Control characters — including newlines — are rejected in *enriched* values
-while being preserved in *echoed* ones. That asymmetry is deliberate: the
+Control characters — including newlines — are rejected in _enriched_ values
+while being preserved in _echoed_ ones. That asymmetry is deliberate: the
 category column's newlines are meaningful and must survive, but a generated SEO
 description containing a newline is a defect that would corrupt the cell.
 
@@ -250,7 +250,7 @@ Worker can act on a matrix without linking a ZIP reader.
 
 ## Consequences
 
-- Wukong gains its first ingestion path for *existing* platform listings, and
+- Wukong gains its first ingestion path for _existing_ platform listings, and
   the Product ID that path carries is the join key the schema has been missing.
 - The enrichable whitelist bounds catalog-takeover risk to eight content
   columns before any of it runs against a live store.

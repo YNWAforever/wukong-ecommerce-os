@@ -31,31 +31,32 @@ docker compose up -d postgres minio minio-tls mailpit
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `packages/shopline/src/bulk-form-digest.ts` (create) | Stable sha-256 of one raw row, ordered by the column contract. Separate from `bulk-form.ts` so that module stays dependency-free as its spec claims. |
-| `packages/shopline/src/bulk-form-digest.test.ts` (create) | Digest stability and sensitivity. |
-| `packages/shopline/src/index.ts` (modify) | Export the digest helper. |
-| `packages/db/src/schema.ts` (modify) | `platformProducts` table definition. |
-| `packages/db/src/platform-products-schema.test.ts` (create) | Column and composite-FK assertions, no Postgres needed. |
-| `packages/db/drizzle/0004_platform_products.sql` (create) | DDL, indexes, RLS policy, `wukong_app` grants. |
-| `packages/db/src/repositories/platform-products.ts` (create) | Workspace-scoped read/upsert for the link table. |
-| `packages/db/src/repositories/platform-products.integration.test.ts` (create) | Round-trip and cross-workspace isolation against real Postgres. |
-| `packages/db/src/client.ts` (modify) | Wire the repository into `WorkspaceRepositories`. |
-| `packages/db/src/index.ts` (modify) | Export the repository types. |
-| `packages/db/src/cli/audit-verify.ts` (modify) | Add `platform_products` to the RLS leak probe, driven by an exported table list. |
-| `packages/db/src/cli/audit-verify.test.ts` (modify) | Assert the probe list covers every workspace-scoped table. |
-| `apps/web/lib/bulk-form-import.ts` (create) | Importer service: parse → drafts → link rows → audit, injectable. |
-| `apps/web/lib/bulk-form-import.test.ts` (create) | Service behaviour against fake repositories. |
-| `apps/web/app/api/listings/import/route.ts` (create) | Handler factory + concrete binding. |
-| `apps/web/app/api/listings/import/route.test.ts` (create) | Role, body, and error mapping. |
-| `docs/runbooks/shopline-pilot-onboarding.md` (modify) | Operator steps for a catalog import. |
+| File                                                                          | Responsibility                                                                                                                                       |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shopline/src/bulk-form-digest.ts` (create)                          | Stable sha-256 of one raw row, ordered by the column contract. Separate from `bulk-form.ts` so that module stays dependency-free as its spec claims. |
+| `packages/shopline/src/bulk-form-digest.test.ts` (create)                     | Digest stability and sensitivity.                                                                                                                    |
+| `packages/shopline/src/index.ts` (modify)                                     | Export the digest helper.                                                                                                                            |
+| `packages/db/src/schema.ts` (modify)                                          | `platformProducts` table definition.                                                                                                                 |
+| `packages/db/src/platform-products-schema.test.ts` (create)                   | Column and composite-FK assertions, no Postgres needed.                                                                                              |
+| `packages/db/drizzle/0004_platform_products.sql` (create)                     | DDL, indexes, RLS policy, `wukong_app` grants.                                                                                                       |
+| `packages/db/src/repositories/platform-products.ts` (create)                  | Workspace-scoped read/upsert for the link table.                                                                                                     |
+| `packages/db/src/repositories/platform-products.integration.test.ts` (create) | Round-trip and cross-workspace isolation against real Postgres.                                                                                      |
+| `packages/db/src/client.ts` (modify)                                          | Wire the repository into `WorkspaceRepositories`.                                                                                                    |
+| `packages/db/src/index.ts` (modify)                                           | Export the repository types.                                                                                                                         |
+| `packages/db/src/cli/audit-verify.ts` (modify)                                | Add `platform_products` to the RLS leak probe, driven by an exported table list.                                                                     |
+| `packages/db/src/cli/audit-verify.test.ts` (modify)                           | Assert the probe list covers every workspace-scoped table.                                                                                           |
+| `apps/web/lib/bulk-form-import.ts` (create)                                   | Importer service: parse → drafts → link rows → audit, injectable.                                                                                    |
+| `apps/web/lib/bulk-form-import.test.ts` (create)                              | Service behaviour against fake repositories.                                                                                                         |
+| `apps/web/app/api/listings/import/route.ts` (create)                          | Handler factory + concrete binding.                                                                                                                  |
+| `apps/web/app/api/listings/import/route.test.ts` (create)                     | Role, body, and error mapping.                                                                                                                       |
+| `docs/runbooks/shopline-pilot-onboarding.md` (modify)                         | Operator steps for a catalog import.                                                                                                                 |
 
 ---
 
 ### Task 1: Row content digest
 
 **Files:**
+
 - Create: `packages/shopline/src/bulk-form-digest.ts`
 - Create: `packages/shopline/src/bulk-form-digest.test.ts`
 - Modify: `packages/shopline/src/index.ts`
@@ -67,7 +68,11 @@ Create `packages/shopline/src/bulk-form-digest.test.ts`:
 ```ts
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS, parseBulkForm, type BulkFormColumnKey } from "./bulk-form.js";
+import {
+  BULK_FORM_COLUMNS,
+  parseBulkForm,
+  type BulkFormColumnKey,
+} from "./bulk-form.js";
 import { hashBulkFormRow } from "./bulk-form-digest.js";
 
 const HEADER_EN = BULK_FORM_COLUMNS.map((column) => column.en);
@@ -86,9 +91,13 @@ const DEFAULTS: Partial<Record<BulkFormColumnKey, string>> = {
 };
 
 const rowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) =>
-  BULK_FORM_COLUMNS.map((column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "");
+  BULK_FORM_COLUMNS.map(
+    (column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "",
+  );
 
-const rawRowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) => {
+const rawRowFor = (
+  overrides: Partial<Record<BulkFormColumnKey, string>> = {},
+) => {
   const parsed = parseBulkForm([HEADER_EN, HEADER_ZH, rowFor(overrides)]);
   const row = parsed.rows[0];
   if (row === undefined) throw new Error("fixture row did not parse");
@@ -112,8 +121,12 @@ describe("hashBulkFormRow", () => {
   it("changes when any cell changes", () => {
     const baseline = hashBulkFormRow(rawRowFor());
 
-    expect(hashBulkFormRow(rawRowFor({ nameZh: "示範酒莊麗絲玲 2024" }))).not.toBe(baseline);
-    expect(hashBulkFormRow(rawRowFor({ salePrice: "70.0" }))).not.toBe(baseline);
+    expect(
+      hashBulkFormRow(rawRowFor({ nameZh: "示範酒莊麗絲玲 2024" })),
+    ).not.toBe(baseline);
+    expect(hashBulkFormRow(rawRowFor({ salePrice: "70.0" }))).not.toBe(
+      baseline,
+    );
   });
 
   it("emits a hex sha-256", () => {
@@ -149,7 +162,10 @@ import { BULK_FORM_COLUMNS, type BulkFormRawRow } from "./bulk-form.js";
  * dependency-free, as its design doc states.
  */
 export function hashBulkFormRow(raw: BulkFormRawRow): string {
-  const ordered = BULK_FORM_COLUMNS.map((column) => [column.key, raw[column.key] ?? null]);
+  const ordered = BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    raw[column.key] ?? null,
+  ]);
   return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
 }
 ```
@@ -182,6 +198,7 @@ git commit -m "feat(shopline): add bulk form row digest"
 ### Task 2: platform_products schema
 
 **Files:**
+
 - Modify: `packages/db/src/schema.ts`
 - Create: `packages/db/src/platform-products-schema.test.ts`
 
@@ -194,7 +211,11 @@ import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { listingDrafts, platformProducts, shoplineConnections } from "./schema.js";
+import {
+  listingDrafts,
+  platformProducts,
+  shoplineConnections,
+} from "./schema.js";
 
 const foreignKeysOf = (table: Parameters<typeof getTableConfig>[0]) =>
   getTableConfig(table).foreignKeys.map((foreignKey) => {
@@ -243,10 +264,16 @@ describe("platform product schema", () => {
   it("admits one row per remote product per connection", () => {
     const uniqueIndexes = getTableConfig(platformProducts)
       .indexes.filter((index) => index.config.unique)
-      .map((index) => index.config.columns.map((column) => (column as { name: string }).name));
+      .map((index) =>
+        index.config.columns.map((column) => (column as { name: string }).name),
+      );
 
     expect(uniqueIndexes).toContainEqual(["workspace_id", "id"]);
-    expect(uniqueIndexes).toContainEqual(["workspace_id", "connection_id", "remote_product_id"]);
+    expect(uniqueIndexes).toContainEqual([
+      "workspace_id",
+      "connection_id",
+      "remote_product_id",
+    ]);
   });
 });
 ```
@@ -264,41 +291,56 @@ Expected: FAIL — `platformProducts` is not exported from `./schema.js`.
 In `packages/db/src/schema.ts`, add the following immediately after the `shoplineConnections` table definition (both referenced tables are declared above that point):
 
 ```ts
-export const platformProducts = pgTable("platform_products", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
-  connectionId: uuid("connection_id").notNull(),
-  /** The platform's own product ID — the join key a listing has never carried. */
-  remoteProductId: text("remote_product_id").notNull(),
-  sku: text("sku").notNull(),
-  /** Null until a draft is created for this product. */
-  listingId: uuid("listing_id"),
-  specVersion: text("spec_version").notNull(),
-  rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
-  factsPrefill: jsonb("facts_prefill").$type<ListingFacts>().notNull(),
-  contentDigest: text("content_digest").notNull(),
-  createdAt: timestamps.createdAt,
-  updatedAt: timestamps.updatedAt,
-}, (table) => [
-  uniqueIndex("platform_products_workspace_id_uq").on(table.workspaceId, table.id),
-  uniqueIndex("platform_products_workspace_connection_remote_uq").on(
-    table.workspaceId,
-    table.connectionId,
-    table.remoteProductId,
-  ),
-  index("platform_products_workspace_listing_idx").on(table.workspaceId, table.listingId),
-  index("platform_products_workspace_sku_idx").on(table.workspaceId, table.sku),
-  foreignKey({
-    name: "platform_products_workspace_connection_fkey",
-    columns: [table.workspaceId, table.connectionId],
-    foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
-  }).onDelete("cascade"),
-  foreignKey({
-    name: "platform_products_workspace_listing_fkey",
-    columns: [table.workspaceId, table.listingId],
-    foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
-  }).onDelete("cascade"),
-]);
+export const platformProducts = pgTable(
+  "platform_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    /** The platform's own product ID — the join key a listing has never carried. */
+    remoteProductId: text("remote_product_id").notNull(),
+    sku: text("sku").notNull(),
+    /** Null until a draft is created for this product. */
+    listingId: uuid("listing_id"),
+    specVersion: text("spec_version").notNull(),
+    rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
+    factsPrefill: jsonb("facts_prefill").$type<ListingFacts>().notNull(),
+    contentDigest: text("content_digest").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("platform_products_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("platform_products_workspace_connection_remote_uq").on(
+      table.workspaceId,
+      table.connectionId,
+      table.remoteProductId,
+    ),
+    index("platform_products_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    index("platform_products_workspace_sku_idx").on(
+      table.workspaceId,
+      table.sku,
+    ),
+    foreignKey({
+      name: "platform_products_workspace_connection_fkey",
+      columns: [table.workspaceId, table.connectionId],
+      foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "platform_products_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+  ],
+);
 ```
 
 `rawRow` is typed as `Record<string, string | null>` rather than `BulkFormRawRow` so the schema stays connector-neutral; the precise type is applied at the repository boundary in Task 4.
@@ -333,6 +375,7 @@ git commit -m "feat(db): add platform products link table schema"
 ### Task 3: platform_products migration
 
 **Files:**
+
 - Create: `packages/db/drizzle/0004_platform_products.sql`
 
 The composite foreign keys require unique indexes on the referenced columns. Both already exist: `shopline_connections_workspace_id_uq` and `listing_drafts_workspace_id_uq`.
@@ -422,6 +465,7 @@ git commit -m "feat(db): migrate platform products table with rls"
 ### Task 4: platform products repository
 
 **Files:**
+
 - Create: `packages/db/src/repositories/platform-products.ts`
 - Create: `packages/db/src/repositories/platform-products.integration.test.ts`
 
@@ -472,7 +516,11 @@ const factsFixture: ListingFacts = {
 };
 
 describe("platform product repository", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -505,7 +553,10 @@ describe("platform product repository", () => {
 
   it("inserts a link row and reads it back by remote product id", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({ target: "shopline", note: null });
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
       const upserted = await repositories.platformProducts.upsert({
         connectionId,
         remoteProductId: "aaaaaaaaaaaaaaaaaaaaaa01",
@@ -520,9 +571,10 @@ describe("platform product repository", () => {
       expect(upserted.remoteProductId).toBe("aaaaaaaaaaaaaaaaaaaaaa01");
       expect(upserted.listingId).toBe(draft.id);
 
-      const found = await repositories.platformProducts.listByRemoteProductIds(connectionId, [
-        "aaaaaaaaaaaaaaaaaaaaaa01",
-      ]);
+      const found = await repositories.platformProducts.listByRemoteProductIds(
+        connectionId,
+        ["aaaaaaaaaaaaaaaaaaaaaa01"],
+      );
       expect(found).toHaveLength(1);
       expect(found[0]?.sku).toBe("0001");
       expect(found[0]?.contentDigest).toBe("a".repeat(64));
@@ -531,7 +583,10 @@ describe("platform product repository", () => {
 
   it("refreshes the snapshot instead of duplicating the remote product", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({ target: "shopline", note: null });
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
       const base = {
         connectionId,
         remoteProductId: "aaaaaaaaaaaaaaaaaaaaaa02",
@@ -552,9 +607,10 @@ describe("platform product repository", () => {
         contentDigest: "c".repeat(64),
       });
 
-      const found = await repositories.platformProducts.listByRemoteProductIds(connectionId, [
-        "aaaaaaaaaaaaaaaaaaaaaa02",
-      ]);
+      const found = await repositories.platformProducts.listByRemoteProductIds(
+        connectionId,
+        ["aaaaaaaaaaaaaaaaaaaaaa02"],
+      );
       expect(found).toHaveLength(1);
       expect(found[0]?.contentDigest).toBe("c".repeat(64));
       expect(found[0]?.listingId).toBe(draft.id);
@@ -563,15 +619,21 @@ describe("platform product repository", () => {
 
   it("returns an empty list rather than querying when no ids are asked for", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
-      expect(await repositories.platformProducts.listByRemoteProductIds(connectionId, [])).toEqual([]);
+      expect(
+        await repositories.platformProducts.listByRemoteProductIds(
+          connectionId,
+          [],
+        ),
+      ).toEqual([]);
     });
   });
 
   it("never returns another workspace's link rows", async () => {
     await database.forWorkspace(otherWorkspaceId, async (repositories) => {
-      const found = await repositories.platformProducts.listByRemoteProductIds(connectionId, [
-        "aaaaaaaaaaaaaaaaaaaaaa01",
-      ]);
+      const found = await repositories.platformProducts.listByRemoteProductIds(
+        connectionId,
+        ["aaaaaaaaaaaaaaaaaaaaaa01"],
+      );
       expect(found).toEqual([]);
     });
   });
@@ -738,6 +800,7 @@ git commit -m "feat(db): add platform product repository"
 ### Task 5: Wire the repository into the workspace scope
 
 **Files:**
+
 - Modify: `packages/db/src/client.ts`
 - Modify: `packages/db/src/index.ts`
 
@@ -824,6 +887,7 @@ git commit -m "feat(db): expose platform products in workspace scope"
 `audit:verify` is a release gate that must report zero accessible foreign records. Its probe is a hand-written UNION, so a new tenant table silently weakens the gate. Drive the probe from an exported list and test that list against the schema.
 
 **Files:**
+
 - Modify: `packages/db/src/cli/audit-verify.ts`
 - Modify: `packages/db/src/cli/audit-verify.test.ts`
 
@@ -901,20 +965,21 @@ export const TENANT_TABLES = [
 Then replace the hand-written `foreignRows` query with:
 
 ```ts
-      // Probe every tenant-scoped table, not only rows linked to this draft. RLS
-      // should make all rows with another workspace invisible to the runtime role.
-      // Running with an admin URL intentionally exposes any leaked foreign rows.
-      const probe = [
-        `select 'workspaces' as source, count(*)::bigint as count from workspaces where id <> $1`,
-        ...TENANT_TABLES.map(
-          (table) =>
-            `select '${table}', count(*) from ${table} where workspace_id <> $1`,
-        ),
-      ].join(" union all ");
-      const foreignRows = await transaction.unsafe<{ source: string; count: number }[]>(
-        `select source, count::int from (${probe}) as counts where count > 0`,
-        [input.workspaceId],
-      );
+// Probe every tenant-scoped table, not only rows linked to this draft. RLS
+// should make all rows with another workspace invisible to the runtime role.
+// Running with an admin URL intentionally exposes any leaked foreign rows.
+const probe = [
+  `select 'workspaces' as source, count(*)::bigint as count from workspaces where id <> $1`,
+  ...TENANT_TABLES.map(
+    (table) =>
+      `select '${table}', count(*) from ${table} where workspace_id <> $1`,
+  ),
+].join(" union all ");
+const foreignRows = await transaction.unsafe<
+  { source: string; count: number }[]
+>(`select source, count::int from (${probe}) as counts where count > 0`, [
+  input.workspaceId,
+]);
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -947,6 +1012,7 @@ git commit -m "fix(db): generate audit rls probe from the tenant table list"
 ### Task 7: Import service
 
 **Files:**
+
 - Create: `apps/web/lib/bulk-form-import.ts`
 - Create: `apps/web/lib/bulk-form-import.test.ts`
 
@@ -977,24 +1043,35 @@ const DEFAULTS: Partial<Record<BulkFormColumnKey, string>> = {
 };
 
 const rowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) =>
-  BULK_FORM_COLUMNS.map((column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "");
+  BULK_FORM_COLUMNS.map(
+    (column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "",
+  );
 
 const sheetOf = (...rows: string[][]) => [HEADER_EN, HEADER_ZH, ...rows];
 
 type Recorded = {
   created: { note: string | null }[];
-  upserts: { remoteProductId: string; listingId: string | null; contentDigest: string }[];
+  upserts: {
+    remoteProductId: string;
+    listingId: string | null;
+    contentDigest: string;
+  }[];
   audits: { action: string; entityId: string }[];
 };
 
-function importerWith(existing: Record<string, { listingId: string; contentDigest: string }> = {}) {
+function importerWith(
+  existing: Record<string, { listingId: string; contentDigest: string }> = {},
+) {
   const recorded: Recorded = { created: [], upserts: [], audits: [] };
   let nextDraft = 0;
 
   const importBulkForm = createBulkFormImporter({
     getDatabase: () =>
       ({
-        async forWorkspace<T>(_workspaceId: string, work: (repositories: any) => Promise<T>) {
+        async forWorkspace<T>(
+          _workspaceId: string,
+          work: (repositories: any) => Promise<T>,
+        ) {
           return work({
             shoplineConnections: {
               async getDefault() {
@@ -1002,7 +1079,10 @@ function importerWith(existing: Record<string, { listingId: string; contentDiges
               },
             },
             platformProducts: {
-              async listByRemoteProductIds(_connectionId: string, ids: string[]) {
+              async listByRemoteProductIds(
+                _connectionId: string,
+                ids: string[],
+              ) {
                 return ids
                   .filter((id) => existing[id] !== undefined)
                   .map((id) => ({ remoteProductId: id, ...existing[id] }));
@@ -1046,16 +1126,26 @@ describe("bulk form importer", () => {
     expect(result.createdDrafts).toBe(2);
     expect(result.refreshedProducts).toBe(0);
     expect(recorded.created).toHaveLength(2);
-    expect(recorded.upserts.map((upsert) => upsert.listingId)).toEqual(["draft_1", "draft_2"]);
+    expect(recorded.upserts.map((upsert) => upsert.listingId)).toEqual([
+      "draft_1",
+      "draft_2",
+    ]);
   });
 
   it("writes an audit event per created draft", async () => {
     const { importBulkForm, recorded } = importerWith();
 
-    await importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) });
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
 
     expect(recorded.audits).toEqual([
-      expect.objectContaining({ action: "listing.imported", entityId: "draft_1" }),
+      expect.objectContaining({
+        action: "listing.imported",
+        entityId: "draft_1",
+      }),
     ]);
   });
 
@@ -1078,10 +1168,16 @@ describe("bulk form importer", () => {
 
   it("does not count an unchanged re-import as a refresh", async () => {
     const first = importerWith();
-    await first.importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) });
+    await first.importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      sheet: sheetOf(rowFor()),
+    });
     const digest = first.recorded.upserts[0]?.contentDigest ?? "";
 
-    const second = importerWith({ remote_1: { listingId: "draft_existing", contentDigest: digest } });
+    const second = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: digest },
+    });
     const result = await second.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
@@ -1102,14 +1198,20 @@ describe("bulk form importer", () => {
     });
 
     expect(result.createdDrafts).toBe(1);
-    expect(result.issues.map((issue) => issue.code)).toContain("quantity_negative");
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      "quantity_negative",
+    );
   });
 
   it("rejects a sheet with no readable rows", async () => {
     const { importBulkForm } = importerWith();
 
     await expect(
-      importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: [["nonsense"]] }),
+      importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: [["nonsense"]],
+      }),
     ).rejects.toThrow(/No product rows/);
   });
 
@@ -1117,14 +1219,27 @@ describe("bulk form importer", () => {
     const importBulkForm = createBulkFormImporter({
       getDatabase: () =>
         ({
-          async forWorkspace<T>(_workspaceId: string, work: (repositories: any) => Promise<T>) {
-            return work({ shoplineConnections: { async getDefault() { return null; } } });
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              shoplineConnections: {
+                async getDefault() {
+                  return null;
+                },
+              },
+            });
           },
         }) as never,
     });
 
     await expect(
-      importBulkForm({ workspaceId: "ws_opak", actorId: "user_1", sheet: sheetOf(rowFor()) }),
+      importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: sheetOf(rowFor()),
+      }),
     ).rejects.toThrow(/Connect a SHOPLINE store/);
   });
 });
@@ -1189,75 +1304,83 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
       );
     }
 
-    return deps.getDatabase().forWorkspace(input.workspaceId, async (repositories) => {
-      const connection = await repositories.shoplineConnections.getDefault();
-      if (!connection) {
-        throw new ApiError(
-          409,
-          "shopline_connection_missing",
-          "Connect a SHOPLINE store before importing a catalog.",
-        );
-      }
-
-      const known = await repositories.platformProducts.listByRemoteProductIds(
-        connection.id,
-        parsed.rows.map((row) => row.productId),
-      );
-      const knownByRemoteId = new Map(known.map((product) => [product.remoteProductId, product]));
-
-      let createdDrafts = 0;
-      let refreshedProducts = 0;
-
-      for (const row of parsed.rows) {
-        const prior = knownByRemoteId.get(row.productId);
-        const contentDigest = hashBulkFormRow(row.raw);
-        let listingId = prior?.listingId ?? null;
-
-        if (listingId === null) {
-          const draft = await repositories.listings.create({
-            target: "shopline",
-            note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
-          });
-          listingId = draft.id;
-          createdDrafts += 1;
-          // Metadata carries identifiers only — never merchant content.
-          await repositories.audit.write({
-            workspaceId: input.workspaceId,
-            actorId: input.actorId,
-            entityId: draft.id,
-            action: "listing.imported",
-            metadata: {
-              remoteProductId: row.productId,
-              specVersion: parsed.specVersion,
-              sourceRow: row.rowNumber,
-            },
-          });
-        } else if (prior !== undefined && prior.contentDigest !== contentDigest) {
-          refreshedProducts += 1;
+    return deps
+      .getDatabase()
+      .forWorkspace(input.workspaceId, async (repositories) => {
+        const connection = await repositories.shoplineConnections.getDefault();
+        if (!connection) {
+          throw new ApiError(
+            409,
+            "shopline_connection_missing",
+            "Connect a SHOPLINE store before importing a catalog.",
+          );
         }
 
-        await repositories.platformProducts.upsert({
-          connectionId: connection.id,
-          remoteProductId: row.productId,
-          sku: row.sku,
-          listingId,
-          specVersion: parsed.specVersion,
-          // Spread rather than pass through: `row.raw` is a readonly mapped type
-          // and the repository takes a plain mutable record.
-          rawRow: { ...row.raw },
-          factsPrefill: row.facts,
-          contentDigest,
-        });
-      }
+        const known =
+          await repositories.platformProducts.listByRemoteProductIds(
+            connection.id,
+            parsed.rows.map((row) => row.productId),
+          );
+        const knownByRemoteId = new Map(
+          known.map((product) => [product.remoteProductId, product]),
+        );
 
-      return {
-        specVersion: parsed.specVersion,
-        parsedRows: parsed.rows.length,
-        createdDrafts,
-        refreshedProducts,
-        issues: [...parsed.issues],
-      };
-    });
+        let createdDrafts = 0;
+        let refreshedProducts = 0;
+
+        for (const row of parsed.rows) {
+          const prior = knownByRemoteId.get(row.productId);
+          const contentDigest = hashBulkFormRow(row.raw);
+          let listingId = prior?.listingId ?? null;
+
+          if (listingId === null) {
+            const draft = await repositories.listings.create({
+              target: "shopline",
+              note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+            });
+            listingId = draft.id;
+            createdDrafts += 1;
+            // Metadata carries identifiers only — never merchant content.
+            await repositories.audit.write({
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              entityId: draft.id,
+              action: "listing.imported",
+              metadata: {
+                remoteProductId: row.productId,
+                specVersion: parsed.specVersion,
+                sourceRow: row.rowNumber,
+              },
+            });
+          } else if (
+            prior !== undefined &&
+            prior.contentDigest !== contentDigest
+          ) {
+            refreshedProducts += 1;
+          }
+
+          await repositories.platformProducts.upsert({
+            connectionId: connection.id,
+            remoteProductId: row.productId,
+            sku: row.sku,
+            listingId,
+            specVersion: parsed.specVersion,
+            // Spread rather than pass through: `row.raw` is a readonly mapped type
+            // and the repository takes a plain mutable record.
+            rawRow: { ...row.raw },
+            factsPrefill: row.facts,
+            contentDigest,
+          });
+        }
+
+        return {
+          specVersion: parsed.specVersion,
+          parsedRows: parsed.rows.length,
+          createdDrafts,
+          refreshedProducts,
+          issues: [...parsed.issues],
+        };
+      });
   };
 }
 ```
@@ -1282,6 +1405,7 @@ git commit -m "feat(web): add bulk form import service"
 ### Task 8: Import route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/import/route.ts`
 - Create: `apps/web/app/api/listings/import/route.test.ts`
 
@@ -1323,7 +1447,9 @@ const requestWith = (body: Uint8Array) =>
 
 describe("POST /api/listings/import", () => {
   it("imports for an operator and returns the counts", async () => {
-    const response = await handlerFor("operator")(requestWith(new Uint8Array([1, 2, 3])));
+    const response = await handlerFor("operator")(
+      requestWith(new Uint8Array([1, 2, 3])),
+    );
 
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
@@ -1335,13 +1461,17 @@ describe("POST /api/listings/import", () => {
   });
 
   it("refuses a viewer", async () => {
-    const response = await handlerFor("viewer")(requestWith(new Uint8Array([1])));
+    const response = await handlerFor("viewer")(
+      requestWith(new Uint8Array([1])),
+    );
 
     expect(response.status).toBe(403);
   });
 
   it("rejects an empty upload", async () => {
-    const response = await handlerFor("operator")(requestWith(new Uint8Array()));
+    const response = await handlerFor("operator")(
+      requestWith(new Uint8Array()),
+    );
 
     expect(response.status).toBe(400);
     expect((await response.json()).code).toBe("empty_upload");
@@ -1434,15 +1564,27 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("operator", context.role)) {
-        throw new ApiError(403, "insufficient_role", "Operator access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
       }
 
       const body = new Uint8Array(await request.arrayBuffer());
       if (body.byteLength === 0) {
-        throw new ApiError(400, "empty_upload", "Attach a SHOPLINE bulk update form.");
+        throw new ApiError(
+          400,
+          "empty_upload",
+          "Attach a SHOPLINE bulk update form.",
+        );
       }
       if (body.byteLength > MAX_UPLOAD_BYTES) {
-        throw new ApiError(413, "upload_too_large", "The bulk update form is too large.");
+        throw new ApiError(
+          413,
+          "upload_too_large",
+          "The bulk update form is too large.",
+        );
       }
 
       let sheet: BulkFormSheet;
@@ -1529,13 +1671,14 @@ git commit -m "feat(web): add bulk form import route"
 ### Task 9: Runbook and full verification
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 
 - [ ] **Step 1: Document the operator flow**
 
 Append this section to `docs/runbooks/shopline-pilot-onboarding.md`:
 
-```markdown
+````markdown
 ## Importing an existing catalog
 
 Prerequisite: the workspace has a verified SHOPLINE connection.
@@ -1551,6 +1694,7 @@ Prerequisite: the workspace has a verified SHOPLINE connection.
      -H "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
      --data-binary @bulk-update-form.xlsx
    ```
+````
 
 4. The response reports `parsedRows`, `createdDrafts`, `refreshedProducts`, and
    up to 100 parse issues. Re-running the same file is safe: products already
@@ -1563,13 +1707,14 @@ To inspect a form before importing it:
 ```bash
 pnpm --filter @wukong/shopline bulk-form:profile <bulk-update-form.xlsx>
 ```
-```
+
+````
 
 - [ ] **Step 2: Run the full gate**
 
 ```bash
 pnpm lint && pnpm test
-```
+````
 
 Expected: typecheck 14/14 successful; all unit suites pass.
 

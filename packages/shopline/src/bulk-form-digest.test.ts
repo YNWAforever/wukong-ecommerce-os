@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS, parseBulkForm, type BulkFormColumnKey } from "./bulk-form.js";
+import {
+  BULK_FORM_COLUMNS,
+  parseBulkForm,
+  type BulkFormColumnKey,
+} from "./bulk-form.js";
 import { hashBulkFormRow } from "./bulk-form-digest.js";
 
 const HEADER_EN = BULK_FORM_COLUMNS.map((column) => column.en);
@@ -19,9 +23,13 @@ const DEFAULTS: Partial<Record<BulkFormColumnKey, string>> = {
 };
 
 const rowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) =>
-  BULK_FORM_COLUMNS.map((column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "");
+  BULK_FORM_COLUMNS.map(
+    (column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "",
+  );
 
-const rawRowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) => {
+const rawRowFor = (
+  overrides: Partial<Record<BulkFormColumnKey, string>> = {},
+) => {
   const parsed = parseBulkForm([HEADER_EN, HEADER_ZH, rowFor(overrides)]);
   const row = parsed.rows[0];
   if (row === undefined) throw new Error("fixture row did not parse");
@@ -45,8 +53,12 @@ describe("hashBulkFormRow", () => {
   it("changes when any cell changes", () => {
     const baseline = hashBulkFormRow(rawRowFor());
 
-    expect(hashBulkFormRow(rawRowFor({ nameZh: "示範酒莊麗絲玲 2024" }))).not.toBe(baseline);
-    expect(hashBulkFormRow(rawRowFor({ salePrice: "70.0" }))).not.toBe(baseline);
+    expect(
+      hashBulkFormRow(rawRowFor({ nameZh: "示範酒莊麗絲玲 2024" })),
+    ).not.toBe(baseline);
+    expect(hashBulkFormRow(rawRowFor({ salePrice: "70.0" }))).not.toBe(
+      baseline,
+    );
   });
 
   it("emits a hex sha-256", () => {

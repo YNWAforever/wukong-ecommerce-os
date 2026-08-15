@@ -35,3 +35,40 @@ curl.exe -i -X POST "http://localhost:3000/api/listings/<draft-uuid>/deliver" `
 ```
 
 Review the UTF-8/CRLF file and import it manually in SHOPLINE. For API delivery, use the recorded SHOPLINE contract version, retain only the remote product ID and payload digest, and confirm the product remains hidden. Never store raw access tokens in audit metadata.
+
+## 4. Importing an existing catalog
+
+Prerequisite: the workspace has a verified SHOPLINE connection.
+
+1. In SHOPLINE admin, export the bulk update form for the catalog.
+2. **Do not open the file in Excel before importing.** A re-save can retype the
+   SKU column and strip the leading zeros that every Opak SKU carries.
+3. Inspect the form before committing to it. This prints only aggregates — issue
+   counts, content gaps, stock and margin totals — never product content:
+
+   ```bash
+   pnpm --filter @wukong/shopline bulk-form:profile <bulk-update-form.xlsx>
+   ```
+
+4. Upload it:
+
+   ```bash
+   curl -X POST "$WUKONG_BASE_URL/api/listings/import" \
+     -H "Cookie: $WUKONG_SESSION_COOKIE" \
+     -H "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
+     --data-binary @bulk-update-form.xlsx
+   ```
+
+   Requires the operator role. The response reports `parsedRows`,
+   `createdDrafts`, `refreshedProducts`, and up to 100 parse issues.
+
+5. Re-running the same file is safe. A product already imported keeps its
+   existing draft and only refreshes its row snapshot; `refreshedProducts`
+   counts the ones whose content actually changed since the last import.
+
+Two failure codes are deliberately distinct: `upload_not_a_workbook` (400) means
+the bytes are not a readable xlsx, while `bulk_form_unreadable` (422) means the
+workbook parsed but held no product rows — a wrong file versus an empty catalog.
+
+Imported drafts are **not** enqueued for AI processing. Creating 500 drafts must
+not fire 500 uncapped AI runs, so enrichment is a separate budgeted batch.

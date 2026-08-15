@@ -54,13 +54,22 @@ const DEFAULTS: Partial<Record<BulkFormColumnKey, string>> = {
   slKey1: "dddddddddddddddddddddddddddddd01",
 };
 
-const dataRow = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}): string[] =>
-  BULK_FORM_COLUMNS.map((column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "");
+const dataRow = (
+  overrides: Partial<Record<BulkFormColumnKey, string>> = {},
+): string[] =>
+  BULK_FORM_COLUMNS.map(
+    (column) => overrides[column.key] ?? DEFAULTS[column.key] ?? "",
+  );
 
-const sheetOf = (...rows: readonly string[][]): BulkFormSheet => [HEADER_EN, HEADER_ZH, ...rows];
+const sheetOf = (...rows: readonly string[][]): BulkFormSheet => [
+  HEADER_EN,
+  HEADER_ZH,
+  ...rows,
+];
 
-const codes = (issues: readonly { code: BulkFormIssueCode }[]): BulkFormIssueCode[] =>
-  issues.map((issue) => issue.code);
+const codes = (
+  issues: readonly { code: BulkFormIssueCode }[],
+): BulkFormIssueCode[] => issues.map((issue) => issue.code);
 
 describe("SHOPLINE bulk form column contract", () => {
   it("matches the headers of a real exported bulk update form", () => {
@@ -74,11 +83,16 @@ describe("SHOPLINE bulk form column contract", () => {
     const keys = BULK_FORM_COLUMNS.map((column) => column.key);
     expect(new Set(keys).size).toBe(keys.length);
 
-    for (const key of [...BULK_FORM_LOCKED_COLUMNS, ...BULK_FORM_ENRICHABLE_COLUMNS]) {
+    for (const key of [
+      ...BULK_FORM_LOCKED_COLUMNS,
+      ...BULK_FORM_ENRICHABLE_COLUMNS,
+    ]) {
       expect(keys).toContain(key);
     }
     const locked = new Set<string>(BULK_FORM_LOCKED_COLUMNS);
-    expect(BULK_FORM_ENRICHABLE_COLUMNS.filter((key) => locked.has(key))).toEqual([]);
+    expect(
+      BULK_FORM_ENRICHABLE_COLUMNS.filter((key) => locked.has(key)),
+    ).toEqual([]);
   });
 
   it("never exposes the English product name as enrichable", () => {
@@ -88,7 +102,9 @@ describe("SHOPLINE bulk form column contract", () => {
 
 describe("parseBulkForm", () => {
   it("skips both header rows and reports 1-based worksheet row numbers", () => {
-    const result = parseBulkForm(sheetOf(dataRow(), dataRow({ productId: "p2", sku: "0002" })));
+    const result = parseBulkForm(
+      sheetOf(dataRow(), dataRow({ productId: "p2", sku: "0002" })),
+    );
 
     expect(result.headerRow).toBe(1);
     expect(result.localeHeaderRow).toBe(2);
@@ -132,13 +148,18 @@ describe("parseBulkForm", () => {
       sheetOf(dataRow({ quantity: "無限數量", unlimitedQuantity: "Y" })),
     );
 
-    expect(result.rows[0]?.inventory).toMatchObject({ unlimited: true, quantity: null });
+    expect(result.rows[0]?.inventory).toMatchObject({
+      unlimited: true,
+      quantity: null,
+    });
     expect(result.rows[0]?.facts.stockQuantity).toBeNull();
     expect(codes(result.issues)).toContain("quantity_unlimited_sentinel");
   });
 
   it("treats the unlimited flag alone as unlimited stock", () => {
-    const result = parseBulkForm(sheetOf(dataRow({ quantity: "0", unlimitedQuantity: "Y" })));
+    const result = parseBulkForm(
+      sheetOf(dataRow({ quantity: "0", unlimitedQuantity: "Y" })),
+    );
 
     expect(result.rows[0]?.inventory.unlimited).toBe(true);
     expect(result.rows[0]?.facts.stockQuantity).toBeNull();
@@ -152,8 +173,12 @@ describe("parseBulkForm", () => {
   });
 
   it("reads a zero sale price as not on sale", () => {
-    const onSale = parseBulkForm(sheetOf(dataRow({ regularPrice: "100.0", salePrice: "80.0" })));
-    const notOnSale = parseBulkForm(sheetOf(dataRow({ regularPrice: "100.0", salePrice: "0.0" })));
+    const onSale = parseBulkForm(
+      sheetOf(dataRow({ regularPrice: "100.0", salePrice: "80.0" })),
+    );
+    const notOnSale = parseBulkForm(
+      sheetOf(dataRow({ regularPrice: "100.0", salePrice: "0.0" })),
+    );
 
     expect(onSale.rows[0]?.facts.priceHkd).toBe(80);
     expect(notOnSale.rows[0]?.facts.priceHkd).toBe(100);
@@ -168,7 +193,11 @@ describe("parseBulkForm", () => {
 
   it("drops rows without a Product ID or SKU and keeps the rest", () => {
     const result = parseBulkForm(
-      sheetOf(dataRow(), dataRow({ productId: "" }), dataRow({ productId: "p3", sku: "" })),
+      sheetOf(
+        dataRow(),
+        dataRow({ productId: "" }),
+        dataRow({ productId: "p3", sku: "" }),
+      ),
     );
 
     expect(result.rows).toHaveLength(1);
@@ -186,7 +215,10 @@ describe("parseBulkForm", () => {
   });
 
   it("rejects a sheet whose columns do not match the contract", () => {
-    const result = parseBulkForm([HEADER_EN.slice(0, 70), HEADER_ZH.slice(0, 70)]);
+    const result = parseBulkForm([
+      HEADER_EN.slice(0, 70),
+      HEADER_ZH.slice(0, 70),
+    ]);
 
     expect(result.rows).toEqual([]);
     expect(result.headerRow).toBeNull();
@@ -194,7 +226,12 @@ describe("parseBulkForm", () => {
   });
 
   it("skips fully blank rows without reporting them", () => {
-    const result = parseBulkForm(sheetOf(dataRow(), BULK_FORM_COLUMNS.map(() => "")));
+    const result = parseBulkForm(
+      sheetOf(
+        dataRow(),
+        BULK_FORM_COLUMNS.map(() => ""),
+      ),
+    );
 
     expect(result.rows).toHaveLength(1);
     expect(result.issues).toEqual([]);
@@ -234,16 +271,20 @@ describe("bulk form facts prefill", () => {
 
   it("maps whisky and sake tops and leaves unknown tops null", () => {
     const sheet = sheetOf(
-      dataRow({ productId: "p1", onlineStoreCategories: "Whisky>Scotland>Islay" }),
-      dataRow({ productId: "p2", onlineStoreCategories: "Sake>Junmai Ginjo & Ginjo" }),
+      dataRow({
+        productId: "p1",
+        onlineStoreCategories: "Whisky>Scotland>Islay",
+      }),
+      dataRow({
+        productId: "p2",
+        onlineStoreCategories: "Sake>Junmai Ginjo & Ginjo",
+      }),
       dataRow({ productId: "p3", onlineStoreCategories: "Demo Consignment" }),
     );
 
-    expect(parseBulkForm(sheet).rows.map((row) => row.facts.productType)).toEqual([
-      "spirits",
-      "sake",
-      null,
-    ]);
+    expect(
+      parseBulkForm(sheet).rows.map((row) => row.facts.productType),
+    ).toEqual(["spirits", "sake", null]);
   });
 
   it("leaves prose-derived facts for the extract step", () => {
@@ -264,7 +305,9 @@ describe("bulk form facts prefill", () => {
   });
 
   it("warns when a row carries no category path", () => {
-    const result = parseBulkForm(sheetOf(dataRow({ onlineStoreCategories: "" })));
+    const result = parseBulkForm(
+      sheetOf(dataRow({ onlineStoreCategories: "" })),
+    );
 
     expect(codes(result.issues)).toContain("categories_missing");
     expect(result.rows[0]?.facts.productType).toBeNull();
@@ -332,7 +375,9 @@ describe("createBulkFormUpdate", () => {
     const emitted = update.sheet[2] ?? [];
     BULK_FORM_COLUMNS.forEach((column, index) => {
       const expected =
-        column.key === "nameZh" ? "示範酒莊麗絲玲 2024" : (result.rows[0]?.raw[column.key] ?? "");
+        column.key === "nameZh"
+          ? "示範酒莊麗絲玲 2024"
+          : (result.rows[0]?.raw[column.key] ?? "");
       expect(emitted[index]).toBe(expected);
     });
 
@@ -349,31 +394,47 @@ describe("createBulkFormUpdate", () => {
 
   it("omits untouched rows by default and keeps them on request", () => {
     const rows = parsed().rows;
-    const enrichment = [{ productId: "p1", values: { seoKeywords: "riesling, mosel" } }];
+    const enrichment = [
+      { productId: "p1", values: { seoKeywords: "riesling, mosel" } },
+    ];
 
     expect(createBulkFormUpdate(rows, enrichment).sheet).toHaveLength(3);
-    expect(createBulkFormUpdate(rows, enrichment, { include: "all" }).sheet).toHaveLength(4);
+    expect(
+      createBulkFormUpdate(rows, enrichment, { include: "all" }).sheet,
+    ).toHaveLength(4);
   });
 
   it("neutralizes a stock delta rather than echoing it", () => {
-    const result = parseBulkForm(sheetOf(dataRow({ productId: "p1", updateQuantity: "+5" })));
+    const result = parseBulkForm(
+      sheetOf(dataRow({ productId: "p1", updateQuantity: "+5" })),
+    );
     const update = createBulkFormUpdate(result.rows, [
       { productId: "p1", values: { seoKeywords: "riesling" } },
     ]);
 
-    const deltaIndex = BULK_FORM_COLUMNS.findIndex((column) => column.key === "updateQuantity");
+    const deltaIndex = BULK_FORM_COLUMNS.findIndex(
+      (column) => column.key === "updateQuantity",
+    );
     expect(update.sheet[2]?.[deltaIndex]).toBe("+0");
     expect(update.neutralizedQuantityDeltas).toEqual([3]);
   });
 
   it("survives a round-trip back through the parser", () => {
     const update = createBulkFormUpdate(parsed().rows, [
-      { productId: "p1", values: { nameZh: "示範酒莊麗絲玲 2024", seoKeywords: "riesling, mosel" } },
+      {
+        productId: "p1",
+        values: {
+          nameZh: "示範酒莊麗絲玲 2024",
+          seoKeywords: "riesling, mosel",
+        },
+      },
     ]);
     const reparsed = parseBulkForm(update.sheet);
 
     expect(reparsed.rows).toHaveLength(1);
-    expect(reparsed.rows[0]?.content.name["zh-Hant"]).toBe("示範酒莊麗絲玲 2024");
+    expect(reparsed.rows[0]?.content.name["zh-Hant"]).toBe(
+      "示範酒莊麗絲玲 2024",
+    );
     expect(reparsed.rows[0]?.content.seoKeywords).toBe("riesling, mosel");
     expect(reparsed.rows[0]?.sku).toBe("0001");
     expect(reparsed.rows[0]?.gaps.untranslatedName).toBe(false);
@@ -383,40 +444,55 @@ describe("createBulkFormUpdate", () => {
     const rows = parsed().rows;
 
     expect(() =>
-      createBulkFormUpdate(rows, [{ productId: "p1", values: { productId: "x" } as never }]),
+      createBulkFormUpdate(rows, [
+        { productId: "p1", values: { productId: "x" } as never },
+      ]),
     ).toThrow(ShoplineBulkFormError);
     expect(() =>
-      createBulkFormUpdate(rows, [{ productId: "p1", values: { regularPrice: "1" } as never }]),
+      createBulkFormUpdate(rows, [
+        { productId: "p1", values: { regularPrice: "1" } as never },
+      ]),
     ).toThrow(ShoplineBulkFormError);
     expect(() =>
-      createBulkFormUpdate(rows, [{ productId: "p1", values: { nameEn: "New name" } as never }]),
+      createBulkFormUpdate(rows, [
+        { productId: "p1", values: { nameEn: "New name" } as never },
+      ]),
     ).toThrow(ShoplineBulkFormError);
   });
 
   it("rejects an unknown Product ID, a duplicate, and an empty enrichment set", () => {
     const rows = parsed().rows;
 
-    expect(() => createBulkFormUpdate(rows, [{ productId: "nope", values: { nameZh: "x" } }])).toThrow(
-      /not present in the parsed sheet/,
-    );
+    expect(() =>
+      createBulkFormUpdate(rows, [
+        { productId: "nope", values: { nameZh: "x" } },
+      ]),
+    ).toThrow(/not present in the parsed sheet/);
     expect(() =>
       createBulkFormUpdate(rows, [
         { productId: "p1", values: { nameZh: "x" } },
         { productId: "p1", values: { seoKeywords: "y" } },
       ]),
     ).toThrow(/more than once/);
-    expect(() => createBulkFormUpdate(rows, [])).toThrow(/no enrichments supplied/);
+    expect(() => createBulkFormUpdate(rows, [])).toThrow(
+      /no enrichments supplied/,
+    );
   });
 
   it("rejects blank values, over-long titles, and control characters", () => {
     const rows = parsed().rows;
 
-    expect(() => createBulkFormUpdate(rows, [{ productId: "p1", values: { nameZh: "   " } }])).toThrow(
-      /must not be blank/,
-    );
     expect(() =>
       createBulkFormUpdate(rows, [
-        { productId: "p1", values: { seoTitleZh: "字".repeat(SHOPLINE_TITLE_MAX_LENGTH + 1) } },
+        { productId: "p1", values: { nameZh: "   " } },
+      ]),
+    ).toThrow(/must not be blank/);
+    expect(() =>
+      createBulkFormUpdate(rows, [
+        {
+          productId: "p1",
+          values: { seoTitleZh: "字".repeat(SHOPLINE_TITLE_MAX_LENGTH + 1) },
+        },
       ]),
     ).toThrow(/at most 255 characters/);
     expect(() =>
