@@ -48,6 +48,14 @@ export type {
   PlatformProductRepository,
   UpsertPlatformProductInput,
 } from "./repositories/platform-products.js";
+export type {
+  CreateEnrichmentBatchInput,
+  EnrichmentBatch,
+  EnrichmentBatchCounts,
+  EnrichmentBatchItemStatus,
+  EnrichmentBatchRepository,
+  EnrichmentBatchStatus,
+} from "./repositories/enrichment-batches.js";
 export {
   createAuthAccessRepository,
   type AuthAccessRepository,

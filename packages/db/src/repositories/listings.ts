@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { canonicalListingSchema } from "@wukong/core";
 import type {
@@ -49,6 +49,12 @@ export type ListingRepository = {
    */
   updateNote(id: string, note: string): Promise<void>;
   getById(id: string): Promise<Listing | null>;
+  /**
+   * Status for each of the given drafts, keyed by draft ID. Used to reconcile
+   * batch items whose pipeline run has finished; asking per draft would be one
+   * round trip per product.
+   */
+  statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
   requireForPublish(id: string): Promise<{
@@ -178,6 +184,23 @@ export function createListingRepository(
         .where(byId(id))
         .limit(1);
       return listing ?? null;
+    },
+
+    async statusesByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return {};
+      const rows = await transaction
+        .select({ id: listingDrafts.id, status: listingDrafts.status })
+        .from(listingDrafts)
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, [...ids]),
+          ),
+        );
+      return Object.fromEntries(
+        rows.map((row) => [row.id, row.status as ListingStatus]),
+      );
     },
 
     async listRecent(limit = 100) {
