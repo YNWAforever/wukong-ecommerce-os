@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { BULK_FORM_ENRICHABLE_COLUMNS } from "./bulk-form.js";
 import { renderBulkFormSource } from "./bulk-form-source.js";
 
 const row = {
@@ -57,6 +58,43 @@ describe("renderBulkFormSource", () => {
     const source = renderBulkFormSource({ nameEn: "Only a name", sku: null });
 
     expect(source).toBe("Product name: Only a name");
+  });
+
+  it("excludes every enrichable column, derived from the contract", () => {
+    // Derived rather than hand-listed: adding a ninth enrichable column extends
+    // this assertion automatically instead of silently passing.
+    const seeded = Object.fromEntries(
+      BULK_FORM_ENRICHABLE_COLUMNS.map((key) => [key, "DO-NOT-RENDER-" + key]),
+    );
+
+    expect(renderBulkFormSource({ ...row, ...seeded })).not.toContain(
+      "DO-NOT-RENDER",
+    );
+  });
+
+  it("collapses a newline inside a cell instead of orphaning a line", () => {
+    // An unlabelled line could be quoted as evidence with nothing saying what
+    // it describes, which defeats the labelled-line format.
+    const source = renderBulkFormSource({
+      nameEn: "Demo Wine",
+      supplier: "Acme Ltd\n123 Some Road",
+    });
+
+    expect(source).toBe(
+      "Product name: Demo Wine\nSupplier: Acme Ltd 123 Some Road",
+    );
+  });
+
+  it("renders the remaining stated fields", () => {
+    const source = renderBulkFormSource({
+      brand: "Demo Brand",
+      mpn: "MPN-9",
+      quantity: "6",
+    });
+
+    expect(source).toContain("Brand: Demo Brand");
+    expect(source).toContain("Manufacturer part number: MPN-9");
+    expect(source).toContain("Stock quantity: 6");
   });
 
   it("returns an empty string when the row states nothing usable", () => {
