@@ -142,16 +142,16 @@ The enrichment values `createBulkFormUpdate` needs come from the listing's
 from `platform_products`. The mapping is direct — every bulk-form enrichable
 column has exactly one canonical-listing source:
 
-| Bulk-form column   | `CanonicalListing` source           |
-|---------------------|--------------------------------------|
-| `nameZh`            | `title["zh-Hant"]`                  |
-| `summaryEn`         | `description.en`                    |
-| `summaryZh`         | `description["zh-Hant"]`            |
-| `seoTitleEn`        | `seo.title.en`                      |
-| `seoTitleZh`        | `seo.title["zh-Hant"]`               |
-| `seoDescriptionEn`  | `seo.description.en`                |
-| `seoDescriptionZh`  | `seo.description["zh-Hant"]`         |
-| `seoKeywords`       | `tags.join(", ")`                   |
+| Bulk-form column   | `CanonicalListing` source    |
+| ------------------ | ---------------------------- |
+| `nameZh`           | `title["zh-Hant"]`           |
+| `summaryEn`        | `description.en`             |
+| `summaryZh`        | `description["zh-Hant"]`     |
+| `seoTitleEn`       | `seo.title.en`               |
+| `seoTitleZh`       | `seo.title["zh-Hant"]`       |
+| `seoDescriptionEn` | `seo.description.en`         |
+| `seoDescriptionZh` | `seo.description["zh-Hant"]` |
+| `seoKeywords`      | `tags.join(", ")`            |
 
 `seoKeywords` needs a delimiter decision: nothing in the codebase parses or
 splits it (`bulk-form.ts:535` only ever compares it whole against `nameEn`

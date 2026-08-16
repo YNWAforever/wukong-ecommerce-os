@@ -23,32 +23,33 @@ Task 1's test needs Postgres on port 54329 with the `wukong_app` role, same as p
 
 ## Hard constraints
 
-- **Do not change `createBulkFormUpdate`'s or `writeBulkFormWorkbook`'s validation, neutralization, or write logic.** Task 2 narrows a parameter *type*; it does not touch the function body beyond the signature line.
+- **Do not change `createBulkFormUpdate`'s or `writeBulkFormWorkbook`'s validation, neutralization, or write logic.** Task 2 narrows a parameter _type_; it does not touch the function body beyond the signature line.
 - **Do not reuse `evaluateDeliveryPolicy`** for the bulk-form eligibility check. It is shaped around `ShoplineProductPayload` and is orthogonal here — see spec's "Chosen design → Status gate."
 - **Audit metadata carries identifiers only** — `specVersion`, `versionId`, `remoteProductId`. Never a column value, never product content.
 - **`packages/shopline/src/bulk-form-xlsx.ts` stays out of the main barrel.** It uses `node:zlib` and is imported only via the `@wukong/shopline/bulk-form-xlsx` subpath, exactly as the importer already does — this is what keeps `node:zlib` out of the Cloudflare Worker bundle.
 
 ## File Structure
 
-| File | Change | Responsibility |
-|------|--------|-----------------|
-| `packages/db/src/repositories/platform-products.ts` | Modify | Add `getByListingId` |
-| `packages/db/src/repositories/platform-products.integration.test.ts` | Modify | Prove it against real Postgres |
-| `packages/shopline/src/bulk-form.ts` | Modify | `BulkFormExportRow`, `isBulkFormRawRow`, narrow `createBulkFormUpdate`'s row parameter |
-| `packages/shopline/src/bulk-form.test.ts` | Modify | Prove the guard and the narrowed signature |
-| `packages/shopline/src/index.ts` | Modify | Export the two new symbols |
-| `apps/web/lib/delivery-service.ts` | Modify | Widen `DeliverInput.method`/`DeliveryResult`; add the bulk-form branch |
-| `apps/web/lib/delivery-service.review-fix.test.ts` | Modify | Unit-test the bulk-form branch against fakes (this is the module's primary test file despite its name) |
-| `apps/web/app/api/listings/[id]/deliver/route.ts` | Modify | Widen the body schema, add the response case, wire `platformProducts` into `defaultDelivery` |
-| `apps/web/app/api/listings/[id]/deliver/route.test.ts` | Modify | Route-level test against the real handler |
-| `docs/runbooks/shopline-pilot-onboarding.md` | Modify | Document the flow and the staleness hazard |
-| `CONTEXT.md` | Modify | Extend the "Shopline bulk form" domain entry |
+| File                                                                 | Change | Responsibility                                                                                         |
+| -------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `packages/db/src/repositories/platform-products.ts`                  | Modify | Add `getByListingId`                                                                                   |
+| `packages/db/src/repositories/platform-products.integration.test.ts` | Modify | Prove it against real Postgres                                                                         |
+| `packages/shopline/src/bulk-form.ts`                                 | Modify | `BulkFormExportRow`, `isBulkFormRawRow`, narrow `createBulkFormUpdate`'s row parameter                 |
+| `packages/shopline/src/bulk-form.test.ts`                            | Modify | Prove the guard and the narrowed signature                                                             |
+| `packages/shopline/src/index.ts`                                     | Modify | Export the two new symbols                                                                             |
+| `apps/web/lib/delivery-service.ts`                                   | Modify | Widen `DeliverInput.method`/`DeliveryResult`; add the bulk-form branch                                 |
+| `apps/web/lib/delivery-service.review-fix.test.ts`                   | Modify | Unit-test the bulk-form branch against fakes (this is the module's primary test file despite its name) |
+| `apps/web/app/api/listings/[id]/deliver/route.ts`                    | Modify | Widen the body schema, add the response case, wire `platformProducts` into `defaultDelivery`           |
+| `apps/web/app/api/listings/[id]/deliver/route.test.ts`               | Modify | Route-level test against the real handler                                                              |
+| `docs/runbooks/shopline-pilot-onboarding.md`                         | Modify | Document the flow and the staleness hazard                                                             |
+| `CONTEXT.md`                                                         | Modify | Extend the "Shopline bulk form" domain entry                                                           |
 
 ---
 
 ### Task 1: `platform_products.getByListingId`
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/platform-products.ts`
 - Test: `packages/db/src/repositories/platform-products.integration.test.ts`
 
@@ -57,42 +58,42 @@ Task 1's test needs Postgres on port 54329 with the `wukong_app` role, same as p
 Read `packages/db/src/repositories/platform-products.integration.test.ts` first. It already defines module-level `workspaceId` and `connectionId` constants, seeded once in `beforeAll` via raw admin SQL (`shopline_connections` has no repository `upsert` — only `getDefault`/`getById` — so every existing test in this file reuses that pre-seeded `connectionId` rather than creating a connection itself). It also defines a `factsFixture: ListingFacts` constant. Reuse both rather than inventing new ones. Append this test inside the existing `describe` block:
 
 ```ts
-  it("finds a platform product by its linked listing", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: null,
-      });
-
-      const created = await repositories.platformProducts.upsert({
-        connectionId,
-        remoteProductId: "remote_lookup_1",
-        sku: "SKU-1",
-        listingId: draft.id,
-        specVersion: "opak-2026-05",
-        rawRow: { productId: "remote_lookup_1", sku: "SKU-1" },
-        factsPrefill: factsFixture,
-        contentDigest: "b".repeat(64),
-      });
-
-      const found = await repositories.platformProducts.getByListingId(draft.id);
-      expect(found?.id).toBe(created.id);
-      expect(found?.remoteProductId).toBe("remote_lookup_1");
+it("finds a platform product by its linked listing", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const draft = await repositories.listings.create({
+      target: "shopline",
+      note: null,
     });
-  });
 
-  it("returns null when no platform product links to the listing", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: null,
-      });
-
-      expect(
-        await repositories.platformProducts.getByListingId(draft.id),
-      ).toBeNull();
+    const created = await repositories.platformProducts.upsert({
+      connectionId,
+      remoteProductId: "remote_lookup_1",
+      sku: "SKU-1",
+      listingId: draft.id,
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_lookup_1", sku: "SKU-1" },
+      factsPrefill: factsFixture,
+      contentDigest: "b".repeat(64),
     });
+
+    const found = await repositories.platformProducts.getByListingId(draft.id);
+    expect(found?.id).toBe(created.id);
+    expect(found?.remoteProductId).toBe("remote_lookup_1");
   });
+});
+
+it("returns null when no platform product links to the listing", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const draft = await repositories.listings.create({
+      target: "shopline",
+      note: null,
+    });
+
+    expect(
+      await repositories.platformProducts.getByListingId(draft.id),
+    ).toBeNull();
+  });
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -201,6 +202,7 @@ git commit -m "feat(db): look up a platform product by its linked listing"
 `createBulkFormUpdate` reads only `row.productId`, `row.raw`, and `row.rowNumber` at runtime (verified by reading its body — the loop never touches `categories`, `pricing`, `inventory`, `gaps`, or `facts`), but its signature demands the full `BulkFormProductRow` shape that only `parseBulkForm` produces. `platform_products` stores none of the unused fields. This task narrows the parameter type to exactly what the function reads, and adds a runtime guard for reading a stored `rawRow` back safely.
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form.ts`
 - Modify: `packages/shopline/src/index.ts`
 - Test: `packages/shopline/src/bulk-form.test.ts`
@@ -388,6 +390,7 @@ git commit -m "feat(shopline): narrow the bulk-form update row to what export ca
 This is the service-layer logic: reading the listing and its platform-product link, checking eligibility, mapping enriched content onto the eight writable columns, and calling the two already-tested functions from Task 2. No database, no route — everything here runs against fakes.
 
 **Files:**
+
 - Modify: `apps/web/lib/delivery-service.ts`
 - Test: `apps/web/lib/delivery-service.review-fix.test.ts`
 
@@ -413,10 +416,12 @@ describe("bulk-form export", () => {
     ),
   };
 
-  function bulkFormDeps(options: {
-    status?: "approved" | "published" | "in_review";
-    hasLink?: boolean;
-  } = {}) {
+  function bulkFormDeps(
+    options: {
+      status?: "approved" | "published" | "in_review";
+      hasLink?: boolean;
+    } = {},
+  ) {
     const audits: unknown[] = [];
     return {
       audits,
@@ -456,7 +461,12 @@ describe("bulk-form export", () => {
     const { deps, audits } = bulkFormDeps();
 
     const result = await deliverListing(
-      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "bulk_form" },
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
       deps,
     );
 
@@ -484,7 +494,12 @@ describe("bulk-form export", () => {
     const { deps } = bulkFormDeps();
 
     const result = await deliverListing(
-      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "bulk_form" },
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
       deps,
     );
 
@@ -500,7 +515,12 @@ describe("bulk-form export", () => {
     const { deps, audits } = bulkFormDeps({ status: "in_review" });
 
     const result = await deliverListing(
-      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "bulk_form" },
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
       deps,
     );
 
@@ -512,7 +532,12 @@ describe("bulk-form export", () => {
     const { deps, audits } = bulkFormDeps({ hasLink: false });
 
     const result = await deliverListing(
-      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "bulk_form" },
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
       deps,
     );
 
@@ -585,7 +610,12 @@ Replace with:
 ```ts
 export type DeliveryResult =
   | { kind: "csv"; body: string; specVersion: string; versionId: string }
-  | { kind: "bulk_form"; body: Uint8Array; specVersion: string; versionId: string }
+  | {
+      kind: "bulk_form";
+      body: Uint8Array;
+      specVersion: string;
+      versionId: string;
+    }
   | { kind: "queued"; jobId: string; versionId: string }
   | { kind: "retry_required"; jobId: string; versionId: string }
   | { kind: "approval_required" }
@@ -648,7 +678,6 @@ export async function deliverListing(
 Then, after `deliverListing`'s closing brace (the function ends with `return { kind: "queued", jobId, versionId: plan.versionId };\n}`), add the new function:
 
 ```ts
-
 /**
  * Bulk-form export does not go through `evaluateDeliveryPolicy` — that
  * function is shaped around `ShoplineProductPayload` projection and
@@ -787,6 +816,7 @@ git commit -m "feat(web): export a listing as a bulk-form update"
 ### Task 4: Wire the route
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/[id]/deliver/route.ts`
 - Test: `apps/web/app/api/listings/[id]/deliver/route.test.ts`
 
@@ -799,9 +829,10 @@ git commit -m "feat(web): export a listing as a bulk-form update"
 Read `apps/web/app/api/listings/[id]/deliver/route.test.ts` first — reuse its existing `deliveryContent`, `listingId`, `context`, and mock-runtime pattern (`vi.hoisted`/`vi.mock("../../../../../lib/intake-runtime", ...)`) rather than rebuilding them. Append this test inside the existing `describe("POST /api/listings/[id]/deliver", ...)` block:
 
 ```ts
-  it("delivers a bulk-form export for an approved, linked listing", async () => {
-    const database = {
-      forWorkspace: vi.fn(async (_workspaceId: string, work: (repos: any) => unknown) =>
+it("delivers a bulk-form export for an approved, linked listing", async () => {
+  const database = {
+    forWorkspace: vi.fn(
+      async (_workspaceId: string, work: (repos: any) => unknown) =>
         work({
           listings: {
             async requireForPublish() {
@@ -809,7 +840,11 @@ Read `apps/web/app/api/listings/[id]/deliver/route.test.ts` first — reuse its 
                 id: listingId,
                 target: "shopline" as const,
                 status: "approved" as const,
-                activeVersion: { id: versionId, sequence: 1, content: deliveryContent },
+                activeVersion: {
+                  id: versionId,
+                  sequence: 1,
+                  content: deliveryContent,
+                },
                 flags: [],
               };
             },
@@ -830,40 +865,41 @@ Read `apps/web/app/api/listings/[id]/deliver/route.test.ts` first — reuse its 
             },
           },
         }),
-      ),
-    };
-    runtimeMocks.getDatabase.mockReturnValue(database);
-    runtimeMocks.getAssetStore.mockReturnValue({});
+    ),
+  };
+  runtimeMocks.getDatabase.mockReturnValue(database);
+  runtimeMocks.getAssetStore.mockReturnValue({});
 
-    const handler = createDeliverListingHandler({
-      sessionContext: {
-        async resolve() {
-          return context;
-        },
+  const handler = createDeliverListingHandler({
+    sessionContext: {
+      async resolve() {
+        return context;
       },
-      delivery: defaultDelivery(),
-    });
-
-    const response = await handler(
-      new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
-        method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
-      }),
-      { params: Promise.resolve({ id: listingId }) },
-    );
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe(
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
-    expect(response.headers.get("content-disposition")).toContain(".xlsx");
-    const body = new Uint8Array(await response.arrayBuffer());
-    expect(body.length).toBeGreaterThan(0);
+    },
+    delivery: defaultDelivery(),
   });
 
-  it("refuses a bulk-form export with no linked platform product", async () => {
-    const database = {
-      forWorkspace: vi.fn(async (_workspaceId: string, work: (repos: any) => unknown) =>
+  const response = await handler(
+    new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+      method: "POST",
+      body: JSON.stringify({ method: "bulk_form" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  expect(response.headers.get("content-disposition")).toContain(".xlsx");
+  const body = new Uint8Array(await response.arrayBuffer());
+  expect(body.length).toBeGreaterThan(0);
+});
+
+it("refuses a bulk-form export with no linked platform product", async () => {
+  const database = {
+    forWorkspace: vi.fn(
+      async (_workspaceId: string, work: (repos: any) => unknown) =>
         work({
           listings: {
             async requireForPublish() {
@@ -871,41 +907,49 @@ Read `apps/web/app/api/listings/[id]/deliver/route.test.ts` first — reuse its 
                 id: listingId,
                 target: "shopline" as const,
                 status: "approved" as const,
-                activeVersion: { id: versionId, sequence: 1, content: deliveryContent },
+                activeVersion: {
+                  id: versionId,
+                  sequence: 1,
+                  content: deliveryContent,
+                },
                 flags: [],
               };
             },
           },
           sourceAssets: { listForListing: async () => [] },
           audit: { write: vi.fn(async () => undefined) },
-          platformProducts: { async getByListingId() { return null; } },
+          platformProducts: {
+            async getByListingId() {
+              return null;
+            },
+          },
         }),
-      ),
-    };
-    runtimeMocks.getDatabase.mockReturnValue(database);
-    runtimeMocks.getAssetStore.mockReturnValue({});
+    ),
+  };
+  runtimeMocks.getDatabase.mockReturnValue(database);
+  runtimeMocks.getAssetStore.mockReturnValue({});
 
-    const handler = createDeliverListingHandler({
-      sessionContext: {
-        async resolve() {
-          return context;
-        },
+  const handler = createDeliverListingHandler({
+    sessionContext: {
+      async resolve() {
+        return context;
       },
-      delivery: defaultDelivery(),
-    });
-
-    const response = await handler(
-      new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
-        method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
-      }),
-      { params: Promise.resolve({ id: listingId }) },
-    );
-
-    expect(response.status).toBe(409);
-    const json = await response.json();
-    expect(json.code).toBe("no_remote_link");
+    },
+    delivery: defaultDelivery(),
   });
+
+  const response = await handler(
+    new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+      method: "POST",
+      body: JSON.stringify({ method: "bulk_form" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(409);
+  const json = await response.json();
+  expect(json.code).toBe("no_remote_link");
+});
 ```
 
 Add the import this test needs, alongside the existing `ASSET_EXPORT_READ_TTL_MS` import:
@@ -989,80 +1033,74 @@ Confirm `jsonResponse` is already imported in this file (it's used by several ex
 Find `defaultDelivery`'s `if (input.method === "csv")` block:
 
 ```ts
-      if (input.method === "csv") {
-        return database.forWorkspace(
-          input.workspaceId,
-          async (repositories) => {
-            return deliverListing(input, {
-              listings: repositories.listings,
-              imageUrls: (workspaceId, draftId, imageAssetIds) =>
-                resolveListingImageUrls({
-                  workspaceId,
-                  draftId,
-                  imageAssetIds,
-                  sourceAssets: repositories.sourceAssets,
-                  assetStore,
-                  // The operator downloads this file and uploads it to SHOPLINE
-                  // by hand. Ten minutes expires before SHOPLINE ever fetches
-                  // the images.
-                  readTtlMs: ASSET_EXPORT_READ_TTL_MS,
-                }),
-              audit: repositories.audit,
-              publisher: {
-                async enqueue() {
-                  throw new Error("SHOPLINE API must use two-phase enqueue");
-                },
-              },
-              connection: async () => {
-                const connection = await repositories.shoplineConnections.getDefault();
-                return connection ? { id: connection.id, verified: true } : null;
-              },
-              existingDelivery: (key) =>
-                repositories.publishJobs.getByIdempotencyKey(key),
-            });
-          },
-        );
-      }
+if (input.method === "csv") {
+  return database.forWorkspace(input.workspaceId, async (repositories) => {
+    return deliverListing(input, {
+      listings: repositories.listings,
+      imageUrls: (workspaceId, draftId, imageAssetIds) =>
+        resolveListingImageUrls({
+          workspaceId,
+          draftId,
+          imageAssetIds,
+          sourceAssets: repositories.sourceAssets,
+          assetStore,
+          // The operator downloads this file and uploads it to SHOPLINE
+          // by hand. Ten minutes expires before SHOPLINE ever fetches
+          // the images.
+          readTtlMs: ASSET_EXPORT_READ_TTL_MS,
+        }),
+      audit: repositories.audit,
+      publisher: {
+        async enqueue() {
+          throw new Error("SHOPLINE API must use two-phase enqueue");
+        },
+      },
+      connection: async () => {
+        const connection = await repositories.shoplineConnections.getDefault();
+        return connection ? { id: connection.id, verified: true } : null;
+      },
+      existingDelivery: (key) =>
+        repositories.publishJobs.getByIdempotencyKey(key),
+    });
+  });
+}
 ```
 
 Replace the condition and add `platformProducts` to the deps object — `bulk_form` needs the exact same wrapping (`database.forWorkspace`, same `audit`, same `listings`) and never touches `imageUrls`/`connection`/`existingDelivery`, but `DeliveryDeps` still requires `imageUrls` and `publisher` to be present, so it reuses the same values csv already supplies rather than inventing a second wrapping block:
 
 ```ts
-      if (input.method === "csv" || input.method === "bulk_form") {
-        return database.forWorkspace(
-          input.workspaceId,
-          async (repositories) => {
-            return deliverListing(input, {
-              listings: repositories.listings,
-              imageUrls: (workspaceId, draftId, imageAssetIds) =>
-                resolveListingImageUrls({
-                  workspaceId,
-                  draftId,
-                  imageAssetIds,
-                  sourceAssets: repositories.sourceAssets,
-                  assetStore,
-                  // The operator downloads this file and uploads it to SHOPLINE
-                  // by hand. Ten minutes expires before SHOPLINE ever fetches
-                  // the images.
-                  readTtlMs: ASSET_EXPORT_READ_TTL_MS,
-                }),
-              audit: repositories.audit,
-              publisher: {
-                async enqueue() {
-                  throw new Error("SHOPLINE API must use two-phase enqueue");
-                },
-              },
-              connection: async () => {
-                const connection = await repositories.shoplineConnections.getDefault();
-                return connection ? { id: connection.id, verified: true } : null;
-              },
-              existingDelivery: (key) =>
-                repositories.publishJobs.getByIdempotencyKey(key),
-              platformProducts: repositories.platformProducts,
-            });
-          },
-        );
-      }
+if (input.method === "csv" || input.method === "bulk_form") {
+  return database.forWorkspace(input.workspaceId, async (repositories) => {
+    return deliverListing(input, {
+      listings: repositories.listings,
+      imageUrls: (workspaceId, draftId, imageAssetIds) =>
+        resolveListingImageUrls({
+          workspaceId,
+          draftId,
+          imageAssetIds,
+          sourceAssets: repositories.sourceAssets,
+          assetStore,
+          // The operator downloads this file and uploads it to SHOPLINE
+          // by hand. Ten minutes expires before SHOPLINE ever fetches
+          // the images.
+          readTtlMs: ASSET_EXPORT_READ_TTL_MS,
+        }),
+      audit: repositories.audit,
+      publisher: {
+        async enqueue() {
+          throw new Error("SHOPLINE API must use two-phase enqueue");
+        },
+      },
+      connection: async () => {
+        const connection = await repositories.shoplineConnections.getDefault();
+        return connection ? { id: connection.id, verified: true } : null;
+      },
+      existingDelivery: (key) =>
+        repositories.publishJobs.getByIdempotencyKey(key),
+      platformProducts: repositories.platformProducts,
+    });
+  });
+}
 ```
 
 - [ ] **Step 7: Declare the Node runtime explicitly**
@@ -1116,6 +1154,7 @@ git commit -m "feat(web): add bulk-form export to the deliver route"
 ### Task 5: Runbook, domain context, and full verification
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 - Modify: `CONTEXT.md`
 
@@ -1123,7 +1162,7 @@ git commit -m "feat(web): add bulk-form export to the deliver route"
 
 Read `docs/runbooks/shopline-pilot-onboarding.md` in full first — find its numbered sections (the existing ones cover Developer Center installation, merchant enablement, the hidden test product, importing a catalog, and enriching an imported catalog). Add a new section after the enrichment section (§5), keeping the existing numbering scheme:
 
-```markdown
+````markdown
 ## 6. Exporting enrichment back to SHOPLINE
 
 Once an enriched draft is approved, export it as a bulk update form and
@@ -1137,6 +1176,7 @@ curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/deliver" \
   -d '{"method":"bulk_form"}' \
   -o export.xlsx
 ```
+````
 
 This only applies to a listing imported from an existing SHOPLINE product —
 one with a linked `platform_products` row. A listing authored fresh in
@@ -1154,7 +1194,8 @@ If the merchant changed a price or stock level directly in SHOPLINE since
 that import, uploading this export will silently revert it. This is not
 validated or warned about automatically; re-importing right before exporting
 is the operator's responsibility for now.
-```
+
+````
 
 - [ ] **Step 2: Extend the domain context entry**
 
@@ -1168,7 +1209,7 @@ no bulk-form row to update; it is not a bulk-form case at all. Every
 non-enriched column in an exported row is exactly what the last import saw,
 not SHOPLINE's current state, so a merchant-side change since import is
 silently reverted on re-upload unless the catalog is re-imported first.
-```
+````
 
 - [ ] **Step 3: Commit**
 
