@@ -285,4 +285,43 @@ describe("platform product repository", () => {
       ).resolves.toBeDefined();
     });
   });
+
+  it("finds a platform product by its linked listing", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
+
+      const created = await repositories.platformProducts.upsert({
+        connectionId,
+        remoteProductId: "remote_lookup_1",
+        sku: "SKU-1",
+        listingId: draft.id,
+        specVersion: "opak-2026-05",
+        rawRow: { productId: "remote_lookup_1", sku: "SKU-1" },
+        factsPrefill: factsFixture,
+        contentDigest: "b".repeat(64),
+      });
+
+      const found = await repositories.platformProducts.getByListingId(
+        draft.id,
+      );
+      expect(found?.id).toBe(created.id);
+      expect(found?.remoteProductId).toBe("remote_lookup_1");
+    });
+  });
+
+  it("returns null when no platform product links to the listing", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
+
+      expect(
+        await repositories.platformProducts.getByListingId(draft.id),
+      ).toBeNull();
+    });
+  });
 });
