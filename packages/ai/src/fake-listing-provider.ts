@@ -40,14 +40,31 @@ function usage(promptVersion: string): AIUsage {
   };
 }
 
-function capture(note: string, pattern: RegExp): string | null {
-  return note.match(pattern)?.[1]?.trim() ?? null;
+/**
+ * A captured fact and the text the note actually used to state it.
+ *
+ * The excerpt is the matched substring rather than a re-spelling of the value,
+ * because evidence must be quotable from the source. A note that writes
+ * `SKU: DEMO0001` has to be quoted that way; emitting `SKU DEMO0001` would be a
+ * quote the note does not contain.
+ */
+type Capture = { value: string; excerpt: string };
+
+function capture(note: string, pattern: RegExp): Capture | null {
+  const match = note.match(pattern);
+  const value = match?.[1]?.trim();
+  if (!match || value === undefined || value.length === 0) return null;
+  return { value, excerpt: match[0].trim() };
 }
 
-function numberCapture(note: string, pattern: RegExp): number | null {
-  const value = capture(note, pattern);
-  return value === null ? null : Number(value);
+function numberCapture(note: string, pattern: RegExp): Capture | null {
+  const found = capture(note, pattern);
+  if (found === null) return null;
+  return Number.isFinite(Number(found.value)) ? found : null;
 }
+
+const numberOf = (found: Capture | null): number | null =>
+  found === null ? null : Number(found.value);
 
 function noteEvidence(field: string, excerpt: string): FieldEvidence {
   return {
@@ -62,15 +79,25 @@ function noteEvidence(field: string, excerpt: string): FieldEvidence {
 export class FakeListingProvider implements ListingAIProvider {
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
     const note = input.note?.trim() ?? "";
-    const sku = capture(note, /\bSKU\s+([A-Z0-9-]+)/i);
+    // Each pattern accepts both note shapes this codebase produces: the
+    // comma-separated one-liner of the supplier-sheet fixture, and the labelled
+    // lines `renderBulkFormSource` writes for an imported catalog row
+    // (`SKU: DEMO0001`, `Stock quantity: 6`). Reading only the first meant every
+    // imported draft failed to enrich under `AI_PROVIDER=fake`.
+    const sku = capture(note, /\bSKU:?\s+([A-Z0-9-]+)/i);
     const vintage = numberCapture(note, /\b((?:18|19|20|21)\d{2})\b/);
     const volumeMl = numberCapture(note, /\b(\d{2,5})\s*ml\b/i);
     const abvPercent = numberCapture(note, /\b(\d+(?:\.\d+)?)\s*%\s*ABV\b/i);
     const priceHkd = numberCapture(note, /\bHK\$\s*(\d+(?:\.\d+)?)\b/i);
-    const stockQuantity = numberCapture(note, /\bstock\s+(\d+)\b/i);
+    const stockQuantity = numberCapture(
+      note,
+      /\bstock(?:\s+quantity)?:?\s+(\d+)\b/i,
+    );
+    // `:\s*` and the `m` flag let a producer be read out of a labelled line
+    // (`Product name: Demo Estate Riesling 2024`), not only after a comma.
     const producer = capture(
       note,
-      /(?:^|,\s*)([A-Za-z][A-Za-z ]+?)(?=\s+(?:Riesling|Cabernet|Chardonnay|Pinot|Sauvignon|Merlot|Shiraz)\b)/i,
+      /(?:^|,\s*|:\s*)([A-Za-z][A-Za-z ]+?)(?=\s+(?:Riesling|Cabernet|Chardonnay|Pinot|Sauvignon|Merlot|Shiraz)\b)/im,
     );
     const country = /\bGermany\b/i.test(note) ? "Germany" : null;
     const region = /\bMosel\b/i.test(note) ? "Mosel" : null;
@@ -85,8 +112,8 @@ export class FakeListingProvider implements ListingAIProvider {
     ].filter((grape) => new RegExp(`\\b${grape}\\b`, "i").test(note));
 
     const facts = listingFactsSchema.parse({
-      sku,
-      producer,
+      sku: sku?.value ?? null,
+      producer: producer?.value ?? null,
       productType: /\bwine\b/i.test(note)
         ? "wine"
         : /\bspirits?\b/i.test(note)
@@ -98,39 +125,40 @@ export class FakeListingProvider implements ListingAIProvider {
               : null,
       country,
       region,
-      vintage,
+      vintage: numberOf(vintage),
       grapeVarieties: grapes,
-      volumeMl,
-      abvPercent,
+      volumeMl: numberOf(volumeMl),
+      abvPercent: numberOf(abvPercent),
       packQuantity: 1,
-      priceHkd,
-      stockQuantity,
+      priceHkd: numberOf(priceHkd),
+      stockQuantity: numberOf(stockQuantity),
       criticScores: [],
       awards: [],
     });
 
     const evidence: FieldEvidence[] = [];
     const excerpts: Partial<Record<keyof ListingFacts, string>> = {
-      sku: sku === null ? undefined : `SKU ${sku}`,
-      producer: producer ?? undefined,
+      sku: sku?.excerpt,
+      // The producer's own name, not the match: the pattern consumes the `,` or
+      // `:` that precedes it, and neither belongs in the quote.
+      producer: producer?.value,
       productType: facts.productType ?? undefined,
       country: country ?? undefined,
       region: region ?? undefined,
-      vintage: vintage === null ? undefined : String(vintage),
-
-      volumeMl: volumeMl === null ? undefined : `${volumeMl}ml`,
-      abvPercent: abvPercent === null ? undefined : `${abvPercent}% ABV`,
-      priceHkd: priceHkd === null ? undefined : `HK$${priceHkd}`,
-      stockQuantity:
-        stockQuantity === null ? undefined : `stock ${stockQuantity}`,
+      vintage: vintage?.excerpt,
+      volumeMl: volumeMl?.excerpt,
+      abvPercent: abvPercent?.excerpt,
+      priceHkd: priceHkd?.excerpt,
+      stockQuantity: stockQuantity?.excerpt,
     };
     for (const [field, excerpt] of Object.entries(excerpts)) {
-      if (
-        excerpt &&
-        note.toLocaleLowerCase().includes(excerpt.toLocaleLowerCase())
-      ) {
-        evidence.push(noteEvidence(field, excerpt));
-      }
+      if (!excerpt) continue;
+      const at = note.toLocaleLowerCase().indexOf(excerpt.toLocaleLowerCase());
+      if (at < 0) continue;
+      // Quote the note's own casing. `wine`, matched case-insensitively against
+      // a `White Wine` category, has to be quoted as `Wine` — an excerpt that
+      // differs from the source even in case is not a verbatim quote.
+      evidence.push(noteEvidence(field, note.slice(at, at + excerpt.length)));
     }
     for (const grape of grapes) {
       evidence.push(noteEvidence("grapeVarieties", grape));

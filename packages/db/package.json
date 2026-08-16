@@ -17,7 +17,7 @@
     "seed:opak": "tsx src/seed-opak.ts",
     "seed:shopline-connection": "tsx src/seed-shopline-connection.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude src/**/*.integration.test.ts",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run src/repositories/listings.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

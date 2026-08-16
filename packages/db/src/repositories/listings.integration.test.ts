@@ -324,6 +324,8 @@ describe("workspace isolation", () => {
       "ai_runs",
       "audit_events",
       "compliance_flags",
+      "enrichment_batch_items",
+      "enrichment_batches",
       "field_evidence",
       "listing_drafts",
       "listing_pipeline_runs",
@@ -434,6 +436,16 @@ describe("workspace isolation", () => {
         "compliance_flags",
         ["workspace_id", "listing_version_id"],
         "listing_versions",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "batch_id"],
+        "enrichment_batches",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
       ],
       [
         "field_evidence",

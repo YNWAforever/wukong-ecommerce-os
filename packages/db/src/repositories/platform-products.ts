@@ -193,8 +193,11 @@ export function createPlatformProductRepository(
 
     async listRecent(limit = 100) {
       scope.assertOpen();
-      if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
-        throw new Error("platform product limit must be between 1 and 1000");
+      // 5000 matches the import cap: a cohort is selected by scanning the
+      // mirror, so anything importable in one request must be scannable in one
+      // read. A lower cap here silently made every catalog-wide batch fail.
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5000) {
+        throw new Error("platform product limit must be between 1 and 5000");
       }
       const rows = await transaction
         .select(COLUMNS)

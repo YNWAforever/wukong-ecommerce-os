@@ -670,6 +670,101 @@ export const platformProducts = pgTable(
   ],
 );
 
+export const enrichmentBatchStatus = pgEnum("enrichment_batch_status", [
+  "open",
+  "running",
+  "completed",
+  "budget_exhausted",
+  "cancelled",
+]);
+
+export const enrichmentBatchItemStatus = pgEnum(
+  "enrichment_batch_item_status",
+  ["pending", "queued", "succeeded", "failed", "skipped"],
+);
+
+export const enrichmentBatches = pgTable(
+  "enrichment_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    label: text("label").notNull(),
+    /**
+     * USD. Shares the scale of `ai_runs.estimated_cost_usd` (6dp) so observed
+     * spend sums against it without rounding; the integer headroom is smaller,
+     * which caps a batch budget near $1M rather than matching that column
+     * exactly.
+     */
+    budgetUsd: numeric("budget_usd", { precision: 12, scale: 6 }).notNull(),
+    /** Bounds how far a wave already in flight can overshoot the budget. */
+    waveSize: integer("wave_size").notNull(),
+    status: enrichmentBatchStatus("status").default("open").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("enrichment_batches_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("enrichment_batches_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+    ),
+  ],
+);
+
+export const enrichmentBatchItems = pgTable(
+  "enrichment_batch_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    batchId: uuid("batch_id").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    status: enrichmentBatchItemStatus("status").default("pending").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("enrichment_batch_items_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("enrichment_batch_items_batch_listing_uq").on(
+      table.workspaceId,
+      table.batchId,
+      table.listingId,
+    ),
+    index("enrichment_batch_items_workspace_batch_status_idx").on(
+      table.workspaceId,
+      table.batchId,
+      table.status,
+    ),
+    index("enrichment_batch_items_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    foreignKey({
+      name: "enrichment_batch_items_workspace_batch_fkey",
+      columns: [table.workspaceId, table.batchId],
+      foreignColumns: [enrichmentBatches.workspaceId, enrichmentBatches.id],
+    }).onDelete("cascade"),
+    // Restrict, not cascade: an item records money spent on a draft, and a
+    // draft delete must not erase that record.
+    foreignKey({
+      name: "enrichment_batch_items_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+  ],
+);
+
 export const publishJobs = pgTable(
   "publish_jobs",
   {

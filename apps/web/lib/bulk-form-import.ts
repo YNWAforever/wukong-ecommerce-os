@@ -2,6 +2,8 @@ import type { Database } from "@wukong/db";
 import {
   hashBulkFormRow,
   parseBulkForm,
+  renderBulkFormSource,
+  type BulkFormGapsInput,
   type BulkFormIssue,
   type BulkFormSheet,
 } from "@wukong/shopline";
@@ -29,6 +31,32 @@ export type BulkFormImportResult = {
   refreshedProducts: number;
   issues: BulkFormIssue[];
 };
+
+/**
+ * The note an imported draft carries. An imported draft has no assets, so the
+ * note is the only thing the AI `extract` step can read. Provenance comes first
+ * so the note stays readable to an operator, then the rendered row, which is
+ * what `extract` reads when this draft is enriched.
+ *
+ * The form's spec version is deliberately absent. It contains a four-digit year
+ * (`opak-2026-05`), and extraction reads the first year-shaped token in the note
+ * as the product's vintage — so including it made every imported product a 2026
+ * vintage. The version is already recorded durably on `platform_products` and in
+ * the import audit event, so the note does not need to carry it.
+ *
+ * Both write paths — first import and refresh — go through here so the note has
+ * one shape.
+ */
+function importedDraftNote(
+  rowNumber: number,
+  rawRow: BulkFormGapsInput,
+): string {
+  return [
+    `Imported from a SHOPLINE bulk update form, row ${rowNumber}`,
+    "",
+    renderBulkFormSource(rawRow),
+  ].join("\n");
+}
 
 /**
  * Turns a parsed bulk update form into drafts joined to their remote products.
@@ -102,13 +130,21 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           if (existingListingId === null) {
             const draft = await repositories.listings.create({
               target: "shopline",
-              note: `Imported from SHOPLINE bulk update form ${parsed.specVersion}, row ${row.rowNumber}`,
+              note: importedDraftNote(row.rowNumber, rawRow),
             });
             listingId = draft.id;
             createdDrafts += 1;
           } else {
             listingId = existingListingId;
-            if (isRefresh) refreshedProducts += 1;
+            if (isRefresh) {
+              refreshedProducts += 1;
+              // The note is what the extract step reads, so a changed row must
+              // update it or enrichment runs on data the merchant replaced.
+              await repositories.listings.updateNote(
+                listingId,
+                importedDraftNote(row.rowNumber, rawRow),
+              );
+            }
           }
 
           // Both branches are domain mutations, so both are audited. Refreshing

@@ -508,6 +508,35 @@ function buildRawRow(row: readonly BulkFormCell[]): BulkFormRawRow {
   return raw as BulkFormRawRow;
 }
 
+/**
+ * A stored snapshot may omit columns that were blank, so this accepts a partial
+ * row rather than a complete one. Exported so a cohort can be selected from
+ * `platform_products.rawRow` without re-parsing a sheet.
+ */
+export type BulkFormGapsInput = Readonly<
+  Partial<Record<BulkFormColumnKey, string | null>>
+>;
+
+export function bulkFormGaps(raw: BulkFormGapsInput): BulkFormContentGaps {
+  const nameEn = raw.nameEn ?? null;
+  const nameZh = raw.nameZh ?? null;
+  const seoTitleEn = raw.seoTitleEn ?? null;
+  const seoTitleZh = raw.seoTitleZh ?? null;
+  const seoDescriptionEn = raw.seoDescriptionEn ?? null;
+  const summaryEn = raw.summaryEn ?? null;
+  const summaryZh = raw.summaryZh ?? null;
+
+  return {
+    untranslatedName: nameZh === null || sameText(nameEn, nameZh),
+    untranslatedSeoTitle:
+      seoTitleZh === null || sameText(seoTitleEn, seoTitleZh),
+    seoTitleMirrorsName: sameText(seoTitleEn, nameEn),
+    seoDescriptionMirrorsSeoTitle: sameText(seoDescriptionEn, seoTitleEn),
+    keywordsMirrorName: sameText(raw.seoKeywords ?? null, nameEn),
+    summaryMissing: summaryEn === null && summaryZh === null,
+  };
+}
+
 function parseRow(
   row: readonly BulkFormCell[],
   rowNumber: number,
@@ -773,17 +802,7 @@ function parseRow(
       seoDescription,
       seoKeywords: raw.seoKeywords,
     },
-    gaps: {
-      untranslatedName:
-        name["zh-Hant"] === null || sameText(name.en, name["zh-Hant"]),
-      untranslatedSeoTitle:
-        seoTitle["zh-Hant"] === null ||
-        sameText(seoTitle.en, seoTitle["zh-Hant"]),
-      seoTitleMirrorsName: sameText(seoTitle.en, name.en),
-      seoDescriptionMirrorsSeoTitle: sameText(seoDescription.en, seoTitle.en),
-      keywordsMirrorName: sameText(raw.seoKeywords, name.en),
-      summaryMissing: summary.en === null && summary["zh-Hant"] === null,
-    },
+    gaps: bulkFormGaps(raw),
     facts: {
       sku,
       producer: null,

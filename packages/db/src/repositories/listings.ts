@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { canonicalListingSchema } from "@wukong/core";
 import type {
@@ -42,7 +42,19 @@ export type ReviewSnapshot = {
 
 export type ListingRepository = {
   create(input: CreateListingInput): Promise<Listing>;
+  /**
+   * Replaces the draft's note. Used when a re-import changes the source row:
+   * the note is what the extract step reads, so a stale note means enrichment
+   * runs on data the merchant has already replaced.
+   */
+  updateNote(id: string, note: string): Promise<void>;
   getById(id: string): Promise<Listing | null>;
+  /**
+   * Status for each of the given drafts, keyed by draft ID. Used to reconcile
+   * batch items whose pipeline run has finished; asking per draft would be one
+   * round trip per product.
+   */
+  statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
   requireForPublish(id: string): Promise<{
@@ -150,6 +162,20 @@ export function createListingRepository(
       return created;
     },
 
+    async updateNote(id, note) {
+      scope.assertOpen();
+      const updated = await transaction
+        .update(listingDrafts)
+        .set({ note, updatedAt: new Date() })
+        .where(byId(id))
+        .returning({ id: listingDrafts.id });
+      // Matching the other mutators: a silent no-op here would leave a stale
+      // note while the caller records a refresh, so the two would disagree
+      // about what the extract step is going to read.
+      if (updated.length !== 1)
+        throw new Error("listing note update did not match exactly one row");
+    },
+
     async getById(id) {
       scope.assertOpen();
       const [listing] = await transaction
@@ -158,6 +184,23 @@ export function createListingRepository(
         .where(byId(id))
         .limit(1);
       return listing ?? null;
+    },
+
+    async statusesByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return {};
+      const rows = await transaction
+        .select({ id: listingDrafts.id, status: listingDrafts.status })
+        .from(listingDrafts)
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, [...ids]),
+          ),
+        );
+      return Object.fromEntries(
+        rows.map((row) => [row.id, row.status as ListingStatus]),
+      );
     },
 
     async listRecent(limit = 100) {

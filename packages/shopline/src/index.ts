@@ -25,6 +25,7 @@ export {
   BULK_FORM_LOCKED_COLUMNS,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
   ShoplineBulkFormError,
+  bulkFormGaps,
   createBulkFormUpdate,
   parseBulkForm,
 } from "./bulk-form.js";
@@ -38,6 +39,7 @@ export type {
   BulkFormEnrichment,
   BulkFormEnrichmentIssue,
   BulkFormEnrichmentIssueCode,
+  BulkFormGapsInput,
   BulkFormIssue,
   BulkFormIssueCode,
   BulkFormParseResult,
@@ -49,6 +51,7 @@ export type {
   BulkFormUpdateOptions,
 } from "./bulk-form.js";
 export { hashBulkFormRow } from "./bulk-form-digest.js";
+export { renderBulkFormSource } from "./bulk-form-source.js";
 export {
   evaluateDeliveryPolicy,
   hashCanonicalListing,

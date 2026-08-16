@@ -22,6 +22,27 @@ describe.skipIf(!adminUrl || !runtimeUrl)("audit foreign-table probe", () => {
           await transaction`insert into listing_drafts (workspace_id, target) values (${workspaceId}, 'shopline') returning id`;
         draftId = String(draft?.id);
         await transaction`insert into source_assets (workspace_id, listing_id, storage_key, kind, metadata) values (${workspaceId}, ${draftId}, 'audit-probe/fixture.svg', 'image', '{}'::jsonb)`;
+
+        // The probe can only catch a leak in a table that has a foreign row in
+        // it. Seeding only drafts and assets left the catalog and enrichment
+        // tables covered by the list but not by the data, so a table added to
+        // TENANT_TABLES without an RLS policy would still have passed here.
+        const [connection] =
+          await transaction`insert into shopline_connections (workspace_id, shop_domain, encrypted_access_token) values (${workspaceId}, 'audit-probe.test', 'not-a-token') returning id`;
+        await transaction`
+          insert into platform_products
+            (workspace_id, connection_id, remote_product_id, sku, listing_id, spec_version, raw_row, facts_prefill, content_digest)
+          values
+            (${workspaceId}, ${String(connection?.id)}, 'audit_probe_1', 'AUDIT-PROBE-1', ${draftId}, 'audit-probe', '{}'::jsonb, '{}'::jsonb, 'audit-probe-digest')
+        `;
+        const [batch] = await transaction`
+          insert into enrichment_batches (workspace_id, label, budget_usd, wave_size, created_by)
+          values (${workspaceId}, 'audit probe', 1, 1, 'audit-probe') returning id
+        `;
+        await transaction`
+          insert into enrichment_batch_items (workspace_id, batch_id, listing_id)
+          values (${workspaceId}, ${String(batch?.id)}, ${draftId})
+        `;
       });
 
       const result = await verifyAudit({
