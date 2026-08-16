@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FakeListingProvider } from "@wukong/ai";
-import {
-  renderBulkFormSource,
-  type BulkFormColumnKey,
-} from "@wukong/shopline";
+import { renderBulkFormSource, type BulkFormColumnKey } from "@wukong/shopline";
 
 /**
  * The renderer and the fake provider live in different packages and had no test

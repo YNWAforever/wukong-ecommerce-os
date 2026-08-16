@@ -51,11 +51,11 @@ The integration suites create the `wukong_app` role themselves in `beforeAll`.
 
 ## The three defects
 
-| # | Defect | Consequence | Task |
-|---|--------|-------------|------|
-| 1 | `needs_info` and `reopened` appear in neither terminal list | A draft landing there is neither finished nor in flight, so `countByStatus().queued` never reaches 0 and the batch can never report `completed` | 1 |
-| 2 | Spend is summed per listing over all time | A draft enriched by an earlier batch carries its old cost into a new batch's budget, so the new batch can report itself exhausted before doing any work | 2, 3, 4 |
-| 3 | `advanceBatch` has no status guard | A `cancelled` batch with pending items can be advanced back to `running` and spend its budget | 5 |
+| #   | Defect                                                      | Consequence                                                                                                                                             | Task    |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1   | `needs_info` and `reopened` appear in neither terminal list | A draft landing there is neither finished nor in flight, so `countByStatus().queued` never reaches 0 and the batch can never report `completed`         | 1       |
+| 2   | Spend is summed per listing over all time                   | A draft enriched by an earlier batch carries its old cost into a new batch's budget, so the new batch can report itself exhausted before doing any work | 2, 3, 4 |
+| 3   | `advanceBatch` has no status guard                          | A `cancelled` batch with pending items can be advanced back to `running` and spend its budget                                                           | 5       |
 
 **Honest scoping note on defect 3.** There is no cancel route today (`apps/web/app/api/enrichment-batches/`
 holds only `route.ts` and `[id]/advance/route.ts`), so `cancelled` is currently unreachable and
@@ -80,15 +80,15 @@ Carried forward from the enrichment design. Violating any of these invalidates t
 
 ## File Structure
 
-| File | Change | Responsibility |
-|------|--------|----------------|
-| `apps/web/lib/enrichment-batch-service.ts` | Modify | Replace the two status arrays with one exhaustive map; scope spend to the batch window; guard terminal batches |
-| `apps/web/lib/enrichment-batch-service.test.ts` | Modify | Unit coverage for all three fixes; helper gains a `status` option |
-| `packages/db/src/repositories/ai-runs.ts` | Modify | `sumCostForListings` accepts an optional lower time bound |
-| `packages/db/src/repositories/ai-runs.integration.test.ts` | Modify | Prove the bound excludes older runs, using the database clock |
-| `packages/db/src/repositories/enrichment-batches.ts` | Modify | `EnrichmentBatch` carries `createdAt`, which is the spend window's start |
-| `packages/db/src/repositories/enrichment-batches.integration.test.ts` | Modify | Prove `createdAt` round-trips as a `Date` |
-| `docs/runbooks/shopline-pilot-onboarding.md` | Modify | Document how a stalled draft is counted and what the budget window is |
+| File                                                                  | Change | Responsibility                                                                                                 |
+| --------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
+| `apps/web/lib/enrichment-batch-service.ts`                            | Modify | Replace the two status arrays with one exhaustive map; scope spend to the batch window; guard terminal batches |
+| `apps/web/lib/enrichment-batch-service.test.ts`                       | Modify | Unit coverage for all three fixes; helper gains a `status` option                                              |
+| `packages/db/src/repositories/ai-runs.ts`                             | Modify | `sumCostForListings` accepts an optional lower time bound                                                      |
+| `packages/db/src/repositories/ai-runs.integration.test.ts`            | Modify | Prove the bound excludes older runs, using the database clock                                                  |
+| `packages/db/src/repositories/enrichment-batches.ts`                  | Modify | `EnrichmentBatch` carries `createdAt`, which is the spend window's start                                       |
+| `packages/db/src/repositories/enrichment-batches.integration.test.ts` | Modify | Prove `createdAt` round-trips as a `Date`                                                                      |
+| `docs/runbooks/shopline-pilot-onboarding.md`                          | Modify | Document how a stalled draft is counted and what the budget window is                                          |
 
 ---
 
@@ -111,61 +111,61 @@ Append these three tests inside the existing `describe("enrichment batch advance
 `"does not complete a batch whose queued drafts are still running"` test:
 
 ```ts
-  it("counts a draft that stopped for more information as finished, not in flight", async () => {
-    const { service, marked } = advanceServiceWith({
-      spent: 1,
-      budget: 10,
-      pending: [],
-      queued: ["draft_stuck"],
-      listingStatuses: { draft_stuck: "needs_info" },
-      counts: { pending: 0, queued: 0 },
-    });
-
-    await service.advanceBatch(advanceInput);
-
-    // It spent budget and produced no listing, so it is a failure for the
-    // batch — but above all it must not stay queued forever.
-    expect(marked).toContainEqual({
-      listingIds: ["draft_stuck"],
-      status: "failed",
-    });
+it("counts a draft that stopped for more information as finished, not in flight", async () => {
+  const { service, marked } = advanceServiceWith({
+    spent: 1,
+    budget: 10,
+    pending: [],
+    queued: ["draft_stuck"],
+    listingStatuses: { draft_stuck: "needs_info" },
+    counts: { pending: 0, queued: 0 },
   });
 
-  it("completes a batch whose last draft stopped for more information", async () => {
-    const { service, statuses } = advanceServiceWith({
-      spent: 1,
-      budget: 10,
-      pending: [],
-      queued: ["draft_stuck"],
-      listingStatuses: { draft_stuck: "needs_info" },
-      counts: { pending: 0, queued: 0 },
-    });
+  await service.advanceBatch(advanceInput);
 
-    const result = await service.advanceBatch(advanceInput);
+  // It spent budget and produced no listing, so it is a failure for the
+  // batch — but above all it must not stay queued forever.
+  expect(marked).toContainEqual({
+    listingIds: ["draft_stuck"],
+    status: "failed",
+  });
+});
 
-    expect(result.status).toBe("completed");
-    expect(statuses).toContain("completed");
+it("completes a batch whose last draft stopped for more information", async () => {
+  const { service, statuses } = advanceServiceWith({
+    spent: 1,
+    budget: 10,
+    pending: [],
+    queued: ["draft_stuck"],
+    listingStatuses: { draft_stuck: "needs_info" },
+    counts: { pending: 0, queued: 0 },
   });
 
-  it("counts a reopened draft as enriched", async () => {
-    const { service, marked } = advanceServiceWith({
-      spent: 1,
-      budget: 10,
-      pending: [],
-      queued: ["draft_reopened"],
-      listingStatuses: { draft_reopened: "reopened" },
-      counts: { pending: 0, queued: 0 },
-    });
+  const result = await service.advanceBatch(advanceInput);
 
-    await service.advanceBatch(advanceInput);
+  expect(result.status).toBe("completed");
+  expect(statuses).toContain("completed");
+});
 
-    // A human approved it and then reopened it. The enrichment run the batch
-    // paid for did its job; what happened afterwards is review work.
-    expect(marked).toContainEqual({
-      listingIds: ["draft_reopened"],
-      status: "succeeded",
-    });
+it("counts a reopened draft as enriched", async () => {
+  const { service, marked } = advanceServiceWith({
+    spent: 1,
+    budget: 10,
+    pending: [],
+    queued: ["draft_reopened"],
+    listingStatuses: { draft_reopened: "reopened" },
+    counts: { pending: 0, queued: 0 },
   });
+
+  await service.advanceBatch(advanceInput);
+
+  // A human approved it and then reopened it. The enrichment run the batch
+  // paid for did its job; what happened afterwards is review work.
+  expect(marked).toContainEqual({
+    listingIds: ["draft_reopened"],
+    status: "succeeded",
+  });
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -235,8 +235,12 @@ const BATCH_OUTCOME: Record<ListingStatus, "succeeded" | "failed" | null> = {
   failed: "failed",
 };
 
-const outcomeOf = (status: string | undefined): "succeeded" | "failed" | null =>
-  status === undefined ? null : (BATCH_OUTCOME[status as ListingStatus] ?? null);
+const outcomeOf = (
+  status: string | undefined,
+): "succeeded" | "failed" | null =>
+  status === undefined
+    ? null
+    : (BATCH_OUTCOME[status as ListingStatus] ?? null);
 ```
 
 Add the type import at the top of the file, after the existing `@wukong/db` import:
@@ -250,23 +254,19 @@ import type { ListingStatus } from "@wukong/core";
 In `apps/web/lib/enrichment-batch-service.ts`, replace:
 
 ```ts
-          const succeeded = queued.filter((id) =>
-            includes(SUCCEEDED_STATUSES, statuses[id]),
-          );
-          const failed = queued.filter((id) =>
-            includes(FAILED_STATUSES, statuses[id]),
-          );
+const succeeded = queued.filter((id) =>
+  includes(SUCCEEDED_STATUSES, statuses[id]),
+);
+const failed = queued.filter((id) => includes(FAILED_STATUSES, statuses[id]));
 ```
 
 with:
 
 ```ts
-          const succeeded = queued.filter(
-            (id) => outcomeOf(statuses[id]) === "succeeded",
-          );
-          const failed = queued.filter(
-            (id) => outcomeOf(statuses[id]) === "failed",
-          );
+const succeeded = queued.filter(
+  (id) => outcomeOf(statuses[id]) === "succeeded",
+);
+const failed = queued.filter((id) => outcomeOf(statuses[id]) === "failed");
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
@@ -315,46 +315,46 @@ Append this test to `packages/db/src/repositories/ai-runs.integration.test.ts`, 
 `"returns zero for an empty set of drafts without querying"` test:
 
 ```ts
-  it("counts only runs at or after the given instant", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: null,
-      });
-
-      const run = (idempotencyKey: string, estimatedCostUsd: number) => ({
-        listingId: draft.id,
-        task: "extract" as const,
-        idempotencyKey,
-        provider: "fake",
-        model: "fake-1",
-        promptVersion: "1.0.0",
-        inputTokens: 10,
-        outputTokens: 20,
-        latencyMs: 5,
-        estimatedCostUsd,
-      });
-
-      await repositories.aiRuns.append(run("older-batch", 4));
-
-      // Read the cutoff from the database, not from Date.now(). `created_at`
-      // defaults to the database's now(), so an app-side clock would make this
-      // assertion depend on the two clocks agreeing.
-      const [marker] = await admin<{ now: Date }[]>`select now() as now`;
-      const cutoff = marker!.now;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      await repositories.aiRuns.append(run("this-batch", 1.5));
-
-      // Without a bound, the earlier batch's spend is charged to this one.
-      expect(
-        await repositories.aiRuns.sumCostForListings([draft.id]),
-      ).toBeCloseTo(5.5, 6);
-      expect(
-        await repositories.aiRuns.sumCostForListings([draft.id], cutoff),
-      ).toBeCloseTo(1.5, 6);
+it("counts only runs at or after the given instant", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const draft = await repositories.listings.create({
+      target: "shopline",
+      note: null,
     });
+
+    const run = (idempotencyKey: string, estimatedCostUsd: number) => ({
+      listingId: draft.id,
+      task: "extract" as const,
+      idempotencyKey,
+      provider: "fake",
+      model: "fake-1",
+      promptVersion: "1.0.0",
+      inputTokens: 10,
+      outputTokens: 20,
+      latencyMs: 5,
+      estimatedCostUsd,
+    });
+
+    await repositories.aiRuns.append(run("older-batch", 4));
+
+    // Read the cutoff from the database, not from Date.now(). `created_at`
+    // defaults to the database's now(), so an app-side clock would make this
+    // assertion depend on the two clocks agreeing.
+    const [marker] = await admin<{ now: Date }[]>`select now() as now`;
+    const cutoff = marker!.now;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await repositories.aiRuns.append(run("this-batch", 1.5));
+
+    // Without a bound, the earlier batch's spend is charged to this one.
+    expect(
+      await repositories.aiRuns.sumCostForListings([draft.id]),
+    ).toBeCloseTo(5.5, 6);
+    expect(
+      await repositories.aiRuns.sumCostForListings([draft.id], cutoff),
+    ).toBeCloseTo(1.5, 6);
   });
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -490,32 +490,32 @@ Append this test to `packages/db/src/repositories/enrichment-batches.integration
 top-level `describe` block:
 
 ```ts
-  it("carries the batch's creation instant as a Date", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: null,
-      });
-      const before = new Date(Date.now() - 60_000);
-
-      const created = await repositories.enrichmentBatches.create({
-        label: "created at",
-        budgetUsd: 5,
-        waveSize: 2,
-        createdBy: "user_1",
-        listingIds: [draft.id],
-      });
-
-      // A Date, not the string the driver hands back for a timestamp column:
-      // the spend bound is compared against it, and a string would be silently
-      // accepted by the query builder and compared as text.
-      expect(created.createdAt).toBeInstanceOf(Date);
-      expect(created.createdAt.getTime()).toBeGreaterThan(before.getTime());
-
-      const fetched = await repositories.enrichmentBatches.getById(created.id);
-      expect(fetched?.createdAt.getTime()).toBe(created.createdAt.getTime());
+it("carries the batch's creation instant as a Date", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const draft = await repositories.listings.create({
+      target: "shopline",
+      note: null,
     });
+    const before = new Date(Date.now() - 60_000);
+
+    const created = await repositories.enrichmentBatches.create({
+      label: "created at",
+      budgetUsd: 5,
+      waveSize: 2,
+      createdBy: "user_1",
+      listingIds: [draft.id],
+    });
+
+    // A Date, not the string the driver hands back for a timestamp column:
+    // the spend bound is compared against it, and a string would be silently
+    // accepted by the query builder and compared as text.
+    expect(created.createdAt).toBeInstanceOf(Date);
+    expect(created.createdAt.getTime()).toBeGreaterThan(before.getTime());
+
+    const fetched = await repositories.enrichmentBatches.getById(created.id);
+    expect(fetched?.createdAt.getTime()).toBe(created.createdAt.getTime());
   });
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -646,19 +646,19 @@ Declare the recorder alongside the other recorders near the top of the same help
 `const audits: AuditRecord[] = [];`:
 
 ```ts
-  const spendBounds: (Date | undefined)[] = [];
+const spendBounds: (Date | undefined)[] = [];
 ```
 
 And add it to the helper's return value, replacing:
 
 ```ts
-  return { service, enqueued, statuses, marked, audits };
+return { service, enqueued, statuses, marked, audits };
 ```
 
 with:
 
 ```ts
-  return { service, enqueued, statuses, marked, audits, spendBounds };
+return { service, enqueued, statuses, marked, audits, spendBounds };
 ```
 
 The helper's `getById` fake must now return the field Task 3 added. Replace:
@@ -733,19 +733,19 @@ function advanceServiceWith(options: {
 Append to the `describe("enrichment batch advance", ...)` block:
 
 ```ts
-  it("charges only spend recorded since the batch was created", async () => {
-    const { service, spendBounds } = advanceServiceWith({
-      spent: 0,
-      budget: 10,
-      pending: ["draft_1"],
-    });
-
-    await service.advanceBatch(advanceInput);
-
-    // Unbounded, a draft that an earlier batch already enriched would arrive
-    // carrying that batch's cost and could exhaust this budget immediately.
-    expect(spendBounds).toEqual([BATCH_CREATED_AT]);
+it("charges only spend recorded since the batch was created", async () => {
+  const { service, spendBounds } = advanceServiceWith({
+    spent: 0,
+    budget: 10,
+    pending: ["draft_1"],
   });
+
+  await service.advanceBatch(advanceInput);
+
+  // Unbounded, a draft that an earlier batch already enriched would arrive
+  // carrying that batch's cost and could exhaust this budget immediately.
+  expect(spendBounds).toEqual([BATCH_CREATED_AT]);
+});
 ```
 
 - [ ] **Step 3: Run the test to verify it fails**
@@ -761,30 +761,26 @@ Expected: FAIL — `spendBounds` is `[undefined]`.
 In `apps/web/lib/enrichment-batch-service.ts`, replace:
 
 ```ts
-        // Budget is enforced on observed spend, never on a stored running
-        // total, so it cannot drift out of sync with the runs it counts.
-        const itemIds = await repositories.enrichmentBatches.listItemIds(
-          input.batchId,
-        );
-        const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
+// Budget is enforced on observed spend, never on a stored running
+// total, so it cannot drift out of sync with the runs it counts.
+const itemIds = await repositories.enrichmentBatches.listItemIds(input.batchId);
+const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
 ```
 
 with:
 
 ```ts
-        // Budget is enforced on observed spend, never on a stored running
-        // total, so it cannot drift out of sync with the runs it counts.
-        //
-        // Bounded by the batch's own creation instant: a draft that an earlier
-        // batch enriched still has those runs on record, and charging them here
-        // would let a fresh batch report itself exhausted before doing any work.
-        const itemIds = await repositories.enrichmentBatches.listItemIds(
-          input.batchId,
-        );
-        const spentUsd = await repositories.aiRuns.sumCostForListings(
-          itemIds,
-          batch.createdAt,
-        );
+// Budget is enforced on observed spend, never on a stored running
+// total, so it cannot drift out of sync with the runs it counts.
+//
+// Bounded by the batch's own creation instant: a draft that an earlier
+// batch enriched still has those runs on record, and charging them here
+// would let a fresh batch report itself exhausted before doing any work.
+const itemIds = await repositories.enrichmentBatches.listItemIds(input.batchId);
+const spentUsd = await repositories.aiRuns.sumCostForListings(
+  itemIds,
+  batch.createdAt,
+);
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
@@ -819,41 +815,41 @@ one being born broken.
 Append to the `describe("enrichment batch advance", ...)` block:
 
 ```ts
-  it.each(["completed", "cancelled"])(
-    "refuses to advance a %s batch",
-    async (status) => {
-      const { service, enqueued, statuses } = advanceServiceWith({
-        spent: 0,
-        budget: 10,
-        pending: ["draft_1"],
-        status,
-      });
-
-      await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
-        /finished/i,
-      );
-      // The point of the guard: a cancelled batch with pending items would
-      // otherwise claim a wave and set itself back to running.
-      expect(enqueued).toEqual([]);
-      expect(statuses).toEqual([]);
-    },
-  );
-
-  it("still advances a batch that previously exhausted its budget", async () => {
-    const { service, enqueued } = advanceServiceWith({
+it.each(["completed", "cancelled"])(
+  "refuses to advance a %s batch",
+  async (status) => {
+    const { service, enqueued, statuses } = advanceServiceWith({
       spent: 0,
       budget: 10,
       pending: ["draft_1"],
-      status: "budget_exhausted",
+      status,
     });
 
-    // Not terminal: re-advancing re-derives spend, which is the only way an
-    // operator learns the batch is still stuck.
-    const result = await service.advanceBatch(advanceInput);
+    await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+      /finished/i,
+    );
+    // The point of the guard: a cancelled batch with pending items would
+    // otherwise claim a wave and set itself back to running.
+    expect(enqueued).toEqual([]);
+    expect(statuses).toEqual([]);
+  },
+);
 
-    expect(result.status).toBe("running");
-    expect(enqueued).toEqual(["draft_1"]);
+it("still advances a batch that previously exhausted its budget", async () => {
+  const { service, enqueued } = advanceServiceWith({
+    spent: 0,
+    budget: 10,
+    pending: ["draft_1"],
+    status: "budget_exhausted",
   });
+
+  // Not terminal: re-advancing re-derives spend, which is the only way an
+  // operator learns the batch is still stuck.
+  const result = await service.advanceBatch(advanceInput);
+
+  expect(result.status).toBe("running");
+  expect(enqueued).toEqual(["draft_1"]);
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -870,39 +866,31 @@ to pin the boundary so a future edit does not over-broaden the guard.
 In `apps/web/lib/enrichment-batch-service.ts`, replace:
 
 ```ts
-        if (!batch) {
-          throw new ApiError(
-            404,
-            "batch_not_found",
-            "No such enrichment batch.",
-          );
-        }
+if (!batch) {
+  throw new ApiError(404, "batch_not_found", "No such enrichment batch.");
+}
 ```
 
 with:
 
 ```ts
-        if (!batch) {
-          throw new ApiError(
-            404,
-            "batch_not_found",
-            "No such enrichment batch.",
-          );
-        }
+if (!batch) {
+  throw new ApiError(404, "batch_not_found", "No such enrichment batch.");
+}
 
-        // `completed` and `cancelled` are terminal. Without this, a cancelled
-        // batch that still holds pending items would claim a wave on the next
-        // advance and set itself back to `running` — spending a budget an
-        // operator believed they had stopped. `budget_exhausted` is deliberately
-        // absent: re-advancing it re-derives observed spend, which is how an
-        // operator confirms it is still stuck.
-        if (batch.status === "completed" || batch.status === "cancelled") {
-          throw new ApiError(
-            409,
-            "batch_not_advanceable",
-            "This batch is finished and cannot be advanced.",
-          );
-        }
+// `completed` and `cancelled` are terminal. Without this, a cancelled
+// batch that still holds pending items would claim a wave on the next
+// advance and set itself back to `running` — spending a budget an
+// operator believed they had stopped. `budget_exhausted` is deliberately
+// absent: re-advancing it re-derives observed spend, which is how an
+// operator confirms it is still stuck.
+if (batch.status === "completed" || batch.status === "cancelled") {
+  throw new ApiError(
+    409,
+    "batch_not_advanceable",
+    "This batch is finished and cannot be advanced.",
+  );
+}
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
