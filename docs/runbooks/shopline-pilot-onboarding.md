@@ -118,3 +118,34 @@ explicitly budgeted batch rather than automatically at import.
 wave already in flight can overshoot by at most the cost of that wave, so size
 `waveSize` for the overshoot you are willing to accept. Spend is measured from
 `ai_runs.estimated_cost_usd`, which is the actual recorded cost of each run.
+
+## 6. Exporting enrichment back to SHOPLINE
+
+Once an enriched draft is approved, export it as a bulk update form and
+re-import that file into SHOPLINE by hand — the same download-then-upload
+shape as CSV delivery, using the same route:
+
+```bash
+curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/deliver" \
+  -H "Cookie: $WUKONG_SESSION_COOKIE" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"bulk_form"}' \
+  -o export.xlsx
+```
+
+This only applies to a listing imported from an existing SHOPLINE product —
+one with a linked `platform_products` row. A listing authored fresh in
+Wukong has no known remote product ID, so there is nothing for a bulk-form
+row to update; use `shopline_api` or `csv` for those, unchanged. Requesting
+`bulk_form` for an unlinked listing returns `409 no_remote_link`.
+
+Requires the listing to be `approved` (or `published`), the same review gate
+CSV and API delivery already enforce.
+
+**Re-import the catalog immediately before exporting.** The exported file
+carries every non-enriched column exactly as it stood at the listing's last
+import — price, stock, everything except the eight fields Wukong enriched.
+If the merchant changed a price or stock level directly in SHOPLINE since
+that import, uploading this export will silently revert it. This is not
+validated or warned about automatically; re-importing right before exporting
+is the operator's responsibility for now.
