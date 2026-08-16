@@ -178,6 +178,7 @@ function advanceServiceWith(options: {
   queued?: string[];
   listingStatuses?: Record<string, string>;
   counts?: Record<string, number>;
+  status?: string;
 }) {
   const enqueued: string[] = [];
   const statuses: string[] = [];
@@ -206,7 +207,7 @@ function advanceServiceWith(options: {
                   label: "zh names",
                   budgetUsd: options.budget,
                   waveSize: 2,
-                  status: "open",
+                  status: options.status ?? "open",
                   createdBy: "user_1",
                   createdAt: BATCH_CREATED_AT,
                 };
@@ -469,5 +470,41 @@ describe("enrichment batch advance", () => {
     await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
       /no such enrichment batch/i,
     );
+  });
+
+  it.each(["completed", "cancelled"])(
+    "refuses to advance a %s batch",
+    async (status) => {
+      const { service, enqueued, statuses } = advanceServiceWith({
+        spent: 0,
+        budget: 10,
+        pending: ["draft_1"],
+        status,
+      });
+
+      await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+        /finished/i,
+      );
+      // The point of the guard: a cancelled batch with pending items would
+      // otherwise claim a wave and set itself back to running.
+      expect(enqueued).toEqual([]);
+      expect(statuses).toEqual([]);
+    },
+  );
+
+  it("still advances a batch that previously exhausted its budget", async () => {
+    const { service, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+      status: "budget_exhausted",
+    });
+
+    // Not terminal: re-advancing re-derives spend, which is the only way an
+    // operator learns the batch is still stuck.
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("running");
+    expect(enqueued).toEqual(["draft_1"]);
   });
 });

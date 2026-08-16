@@ -177,6 +177,24 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           );
         }
 
+        // `completed` and `cancelled` are terminal. Defensive: no cancel route
+        // exists yet, so `cancelled` is unreachable today, and a completed
+        // batch is already self-healing (no pending items, so claimWave
+        // returns [] and the code below re-sets `completed`, not `running`).
+        // This guard exists so the first cancel API isn't born broken — a
+        // cancelled batch with pending items would otherwise claim a wave on
+        // its next advance and spend a budget an operator believed stopped.
+        // `budget_exhausted` is deliberately absent: re-advancing it
+        // re-derives observed spend, which is how an operator confirms it is
+        // still stuck.
+        if (batch.status === "completed" || batch.status === "cancelled") {
+          throw new ApiError(
+            409,
+            "batch_not_advanceable",
+            "This batch is finished and cannot be advanced.",
+          );
+        }
+
         // Reconcile before doing anything else. A queued draft that has since
         // reached a terminal state is no longer in flight, and until it is
         // recorded as such the batch can never report itself complete and a
