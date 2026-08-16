@@ -153,4 +153,46 @@ describe("ai run repository", () => {
       ).toBeCloseTo(1.5, 6);
     });
   });
+
+  it("includes a run recorded at exactly the since instant", async () => {
+    // The bound must be inclusive (`gte`, not `gt`): a run recorded in the
+    // same instant as `since` still belongs to the batch that instant marks
+    // the start of. Proving that needs an exact-equality comparison, and a
+    // real round trip can't give us one: Postgres timestamps carry
+    // microsecond precision, but a JS `Date` only holds milliseconds, so
+    // reading a run's own created_at back through the driver truncates it —
+    // the resulting `since` would already be strictly earlier than the row,
+    // and a `gt` bug would pass by accident. Instead, pick the `Date`
+    // ourselves and insert a run at exactly that instant directly (bypassing
+    // the repository, which always defers to the database's own now()), so
+    // the write and the query share the identical millisecond-precision
+    // value with nothing lost in between.
+    const draftId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        return draft.id;
+      },
+    );
+
+    const boundary = new Date();
+    await admin`
+      insert into ai_runs (
+        workspace_id, listing_id, task, idempotency_key, provider, model,
+        status, input, latency_ms, estimated_cost_usd, created_at
+      ) values (
+        ${workspaceId}, ${draftId}, 'extract', 'on-the-boundary', 'fake',
+        'fake-1', 'succeeded', ${admin.json({})}, 5, ${"2.25"}, ${boundary}
+      )
+    `;
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      expect(
+        await repositories.aiRuns.sumCostForListings([draftId], boundary),
+      ).toBeCloseTo(2.25, 6);
+    });
+  });
 });
