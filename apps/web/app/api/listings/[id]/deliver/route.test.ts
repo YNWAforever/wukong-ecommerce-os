@@ -1,4 +1,5 @@
 import { ASSET_EXPORT_READ_TTL_MS } from "@wukong/assets";
+import { BULK_FORM_COLUMNS } from "@wukong/shopline";
 import { describe, expect, it, vi } from "vitest";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -108,8 +109,7 @@ function makeDefaultRuntime(
     images?: boolean;
   } = {},
 ) {
-  const images =
-    options.images ?? options.imageAssetIds !== undefined;
+  const images = options.images ?? options.imageAssetIds !== undefined;
   const audits: any[] = [];
   const order: string[] = [];
   const ensureInputs: any[] = [];
@@ -609,5 +609,127 @@ describe("POST /api/listings/[id]/deliver", () => {
         { expiresInMs: undefined },
       ],
     ]);
+  });
+
+  it("delivers a bulk-form export for an approved, linked listing", async () => {
+    const database = {
+      forWorkspace: vi.fn(
+        async (_workspaceId: string, work: (repos: any) => unknown) =>
+          work({
+            listings: {
+              async requireForPublish() {
+                return {
+                  id: listingId,
+                  target: "shopline" as const,
+                  status: "approved" as const,
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
+            },
+            sourceAssets: { listForListing: async () => [] },
+            audit: { write: vi.fn(async () => undefined) },
+            platformProducts: {
+              async getByListingId() {
+                return {
+                  remoteProductId: "remote_1",
+                  rawRow: Object.fromEntries(
+                    BULK_FORM_COLUMNS.map((column) => [
+                      column.key,
+                      column.key === "nameEn" ? "Demo Estate Riesling" : "",
+                    ]),
+                  ),
+                };
+              },
+            },
+          }),
+      ),
+    };
+    runtimeMocks.getDatabase.mockReturnValue(database);
+    runtimeMocks.getAssetStore.mockReturnValue({});
+
+    const handler = createDeliverListingHandler({
+      sessionContext: {
+        async resolve() {
+          return context;
+        },
+      },
+      delivery: defaultDelivery(),
+    });
+
+    const response = await handler(
+      new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+        method: "POST",
+        body: JSON.stringify({ method: "bulk_form" }),
+      }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(response.headers.get("content-disposition")).toContain(".xlsx");
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a bulk-form export with no linked platform product", async () => {
+    const database = {
+      forWorkspace: vi.fn(
+        async (_workspaceId: string, work: (repos: any) => unknown) =>
+          work({
+            listings: {
+              async requireForPublish() {
+                return {
+                  id: listingId,
+                  target: "shopline" as const,
+                  status: "approved" as const,
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
+            },
+            sourceAssets: { listForListing: async () => [] },
+            audit: { write: vi.fn(async () => undefined) },
+            platformProducts: {
+              async getByListingId() {
+                return null;
+              },
+            },
+          }),
+      ),
+    };
+    runtimeMocks.getDatabase.mockReturnValue(database);
+    runtimeMocks.getAssetStore.mockReturnValue({});
+
+    const handler = createDeliverListingHandler({
+      sessionContext: {
+        async resolve() {
+          return context;
+        },
+      },
+      delivery: defaultDelivery(),
+    });
+
+    const response = await handler(
+      new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+        method: "POST",
+        body: JSON.stringify({ method: "bulk_form" }),
+      }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect(response.status).toBe(409);
+    const json = await response.json();
+    expect(json.code).toBe("no_remote_link");
   });
 });
