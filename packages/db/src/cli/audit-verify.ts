@@ -1,14 +1,24 @@
 ﻿import postgres from "postgres";
 
+/**
+ * The audited lifecycle a draft must be able to show, in order.
+ *
+ * Each step is a set of interchangeable actions. A draft opens with either
+ * `listing.created` (an operator typed the product in) or `listing.imported`
+ * (it came from a SHOPLINE bulk update form). The importer records the distinct
+ * action deliberately — the two are not the same event and the trail should say
+ * which happened — so without the alternative here no imported draft could ever
+ * satisfy this gate, however far through the lifecycle it got.
+ */
 export const REQUIRED_AUDIT_SEQUENCE = [
-  "listing.created",
-  "listing.submitted_for_review",
-  "listing.edited",
-  "listing.approved",
-  "listing.csv_exported",
-  "listing.publish_queued",
-  "listing.published",
-] as const;
+  ["listing.created", "listing.imported"],
+  ["listing.submitted_for_review"],
+  ["listing.edited"],
+  ["listing.approved"],
+  ["listing.csv_exported"],
+  ["listing.publish_queued"],
+  ["listing.published"],
+] as const satisfies readonly (readonly string[])[];
 
 /**
  * Every workspace-scoped table. The RLS leak probe is generated from this list
@@ -58,14 +68,17 @@ function readArg(args: readonly string[], name: string): string | null {
   );
 }
 
-function requiredSequenceMissing(actions: readonly string[]): string[] {
+export function requiredSequenceMissing(actions: readonly string[]): string[] {
   const missing: string[] = [];
   let cursor = 0;
-  for (const required of REQUIRED_AUDIT_SEQUENCE) {
+  for (const step of REQUIRED_AUDIT_SEQUENCE) {
     const found = actions.findIndex(
-      (action, index) => index >= cursor && action === required,
+      (action, index) =>
+        index >= cursor && (step as readonly string[]).includes(action),
     );
-    if (found < 0) missing.push(required);
+    // Reported as "a or b" so the operator sees both spellings that satisfy the
+    // step, rather than being sent looking for one the draft never had.
+    if (found < 0) missing.push(step.join(" or "));
     else cursor = found + 1;
   }
   return missing;
