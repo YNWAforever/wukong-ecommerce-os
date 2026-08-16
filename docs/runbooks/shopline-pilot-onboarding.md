@@ -111,10 +111,26 @@ explicitly budgeted batch rather than automatically at import.
    left; `status: "budget_exhausted"` means the budget is spent and no further
    work will be released.
 
-3. Enriched drafts land in the normal review queue as `in_review`. Nothing is
-   written back to SHOPLINE by this flow.
+3. Enriched drafts land in the normal review queue as `in_review`. Two things
+   stop a draft before review: it may land in `needs_info` for missing
+   information (see below), or the enrichment run itself may fail outright (an
+   AI provider error or exhausted retries) and land in `failed`. Both count as
+   a batch failure. Nothing is written back to SHOPLINE by this flow.
 
 **Budget is a stop condition between waves, not a hard ceiling within one.** A
 wave already in flight can overshoot by at most the cost of that wave, so size
 `waveSize` for the overshoot you are willing to accept. Spend is measured from
 `ai_runs.estimated_cost_usd`, which is the actual recorded cost of each run.
+
+**A batch is charged only for runs recorded after it was created.** Re-enriching
+a product that an earlier batch already processed starts that product's spend at
+zero for the new batch, so an old run cannot exhaust a fresh budget.
+
+**A product that stops for more information counts as failed, not pending.** If
+the pipeline decides it cannot write a listing without more detail, the draft
+lands in `needs_info` and the batch records it as a failure and moves on. It is
+not retried — re-running failures is a new, separately budgeted batch. Without
+this the batch would wait on it forever and never report `completed`.
+
+**A batch that has reached `completed` cannot be advanced again**; the request
+is refused with `batch_not_advanceable` (409).

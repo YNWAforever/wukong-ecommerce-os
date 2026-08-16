@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { aiRuns } from "../schema.js";
@@ -29,8 +29,16 @@ export type AiRunRepository = {
    * returns as a string and must be cast before summing. Budgets are enforced
    * on this number rather than on a running total stored elsewhere, so the
    * budget can never drift out of sync with the runs it is counting.
+   *
+   * `since` bounds the sum below, and is what makes a budget belong to one
+   * batch rather than to a draft's whole history: a draft enriched by an
+   * earlier batch would otherwise arrive already carrying that batch's spend.
+   * Omit it to sum a draft's entire history.
    */
-  sumCostForListings(listingIds: readonly string[]): Promise<number>;
+  sumCostForListings(
+    listingIds: readonly string[],
+    since?: Date,
+  ): Promise<number>;
 };
 
 export function createAiRunRepository(
@@ -64,7 +72,7 @@ export function createAiRunRepository(
         .onConflictDoNothing();
     },
 
-    async sumCostForListings(listingIds) {
+    async sumCostForListings(listingIds, since) {
       scope.assertOpen();
       if (listingIds.length === 0) return 0;
       const [row] = await transaction
@@ -76,6 +84,9 @@ export function createAiRunRepository(
           and(
             eq(aiRuns.workspaceId, workspaceId),
             inArray(aiRuns.listingId, [...listingIds]),
+            // Inclusive: a run recorded in the same instant the batch was
+            // created belongs to that batch.
+            ...(since === undefined ? [] : [gte(aiRuns.createdAt, since)]),
           ),
         );
       return Number(row?.total ?? 0);

@@ -1,3 +1,4 @@
+import type { ListingStatus } from "@wukong/core";
 import type { Database } from "@wukong/db";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
@@ -45,20 +46,43 @@ export type AdvanceBatchResult = {
 };
 
 /**
- * A queued draft in one of these states has finished its enrichment run. The
- * two lists are disjoint and neither contains `received` or `processing`, so a
- * draft still in flight stays queued and cannot be counted twice.
+ * How a queued draft's listing status resolves for the batch that queued it.
+ *
+ * `null` means still in flight: the draft stays queued and is reconciled on a
+ * later advance. Every other status is terminal for the batch.
+ *
+ * This is a `Record` over `ListingStatus` rather than a pair of arrays
+ * precisely because the arrays could be — and were — incomplete. `needs_info`
+ * and `reopened` appeared in neither, so a draft landing there was counted as
+ * neither finished nor in flight, and its batch could never reach `completed`.
+ * A `Record` over a union requires every key, so an eleventh listing status
+ * fails `pnpm lint` until someone decides how a batch reads it.
  */
-const SUCCEEDED_STATUSES = [
-  "in_review",
-  "approved",
-  "publishing",
-  "published",
-] as const;
-const FAILED_STATUSES = ["failed", "publish_failed"] as const;
+const BATCH_OUTCOME: Record<ListingStatus, "succeeded" | "failed" | null> = {
+  received: null,
+  processing: null,
+  // The pipeline ran, spent budget, and concluded it cannot produce a listing
+  // without more information. Nothing further happens without operator action,
+  // so it is finished as far as the batch is concerned — and it produced no
+  // enrichment, so it is not a success.
+  needs_info: "failed",
+  in_review: "succeeded",
+  approved: "succeeded",
+  // Approved and then reopened by a human. The enrichment run succeeded; the
+  // reopen is review work that happens to overlap the batch's lifetime.
+  reopened: "succeeded",
+  publishing: "succeeded",
+  published: "succeeded",
+  publish_failed: "failed",
+  failed: "failed",
+};
 
-const includes = (statuses: readonly string[], value: string | undefined) =>
-  value !== undefined && statuses.includes(value);
+const outcomeOf = (
+  status: string | undefined,
+): "succeeded" | "failed" | null =>
+  status === undefined
+    ? null
+    : (BATCH_OUTCOME[status as ListingStatus] ?? null);
 
 export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
   async function createBatch(
@@ -153,21 +177,25 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           );
         }
 
-        // Reconcile before doing anything else. A queued draft that has since
-        // reached a terminal state is no longer in flight, and until it is
-        // recorded as such the batch can never report itself complete and a
-        // failed product would look like work still pending.
+        // Reconcile first, before the terminal-status guard below or the
+        // budget check. A queued draft that has since reached a terminal
+        // state is no longer in flight, and until it is recorded as such the
+        // batch can never report itself complete, a failed product would
+        // look like work still pending, and — if a batch somehow reached
+        // `completed`/`cancelled` while an item was still `queued` — that
+        // item would never get a last chance to resolve, because the guard
+        // below returns before this step runs on every later call.
         const queued = await repositories.enrichmentBatches.listItemsByStatus(
           input.batchId,
           "queued",
         );
         if (queued.length > 0) {
           const statuses = await repositories.listings.statusesByIds(queued);
-          const succeeded = queued.filter((id) =>
-            includes(SUCCEEDED_STATUSES, statuses[id]),
+          const succeeded = queued.filter(
+            (id) => outcomeOf(statuses[id]) === "succeeded",
           );
-          const failed = queued.filter((id) =>
-            includes(FAILED_STATUSES, statuses[id]),
+          const failed = queued.filter(
+            (id) => outcomeOf(statuses[id]) === "failed",
           );
           await repositories.enrichmentBatches.markItems(
             input.batchId,
@@ -183,12 +211,39 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           );
         }
 
+        // `completed` and `cancelled` are terminal. Defensive: no cancel route
+        // exists yet, so `cancelled` is unreachable today. `completed` would
+        // normally be self-healing too — nothing in this codebase re-adds items
+        // to a completed batch, so it has no pending items, claimWave finds
+        // nothing to claim, and the code below re-sets `completed`, not
+        // `running`. This guard is the backstop for both: if that invariant is
+        // ever wrong, or the first cancel API is born without this check, a
+        // batch with pending items would otherwise claim a wave on its next
+        // advance and spend a budget an operator believed stopped.
+        // `budget_exhausted` is deliberately absent: re-advancing it
+        // re-derives observed spend, which is how an operator confirms it is
+        // still stuck.
+        if (batch.status === "completed" || batch.status === "cancelled") {
+          throw new ApiError(
+            409,
+            "batch_not_advanceable",
+            "This batch is finished and cannot be advanced.",
+          );
+        }
+
         // Budget is enforced on observed spend, never on a stored running
         // total, so it cannot drift out of sync with the runs it counts.
+        //
+        // Bounded by the batch's own creation instant: a draft that an earlier
+        // batch enriched still has those runs on record, and charging them here
+        // would let a fresh batch report itself exhausted before doing any work.
         const itemIds = await repositories.enrichmentBatches.listItemIds(
           input.batchId,
         );
-        const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
+        const spentUsd = await repositories.aiRuns.sumCostForListings(
+          itemIds,
+          batch.createdAt,
+        );
 
         if (spentUsd >= batch.budgetUsd) {
           await repositories.enrichmentBatches.setStatus(

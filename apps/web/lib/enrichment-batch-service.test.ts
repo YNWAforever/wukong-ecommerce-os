@@ -168,6 +168,9 @@ describe("enrichment batch creation", () => {
 
 type Marked = { listingIds: string[]; status: string };
 
+/** Fixed so the spend-window assertion does not depend on wall-clock time. */
+const BATCH_CREATED_AT = new Date("2026-08-16T00:00:00.000Z");
+
 function advanceServiceWith(options: {
   spent: number;
   budget: number;
@@ -175,13 +178,19 @@ function advanceServiceWith(options: {
   queued?: string[];
   listingStatuses?: Record<string, string>;
   counts?: Record<string, number>;
+  status?: string;
 }) {
   const enqueued: string[] = [];
   const statuses: string[] = [];
   const marked: Marked[] = [];
   const audits: AuditRecord[] = [];
+  const spendBounds: (Date | undefined)[] = [];
   const queued = options.queued ?? [];
   let remaining = [...options.pending];
+  // Which queued drafts reconciliation actually resolved. `countByStatus` is
+  // derived from this rather than from a fixture, so a test that asserts a
+  // batch completed genuinely depends on the classification under test.
+  const resolved = new Set<string>();
 
   const service = createEnrichmentBatchService({
     getDatabase: () =>
@@ -198,8 +207,9 @@ function advanceServiceWith(options: {
                   label: "zh names",
                   budgetUsd: options.budget,
                   waveSize: 2,
-                  status: "open",
+                  status: options.status ?? "open",
                   createdBy: "user_1",
+                  createdAt: BATCH_CREATED_AT,
                 };
               },
               async listItemIds() {
@@ -216,7 +226,7 @@ function advanceServiceWith(options: {
               async countByStatus() {
                 return {
                   pending: remaining.length,
-                  queued: 0,
+                  queued: queued.filter((id) => !resolved.has(id)).length,
                   succeeded: 0,
                   failed: 0,
                   skipped: 0,
@@ -232,6 +242,7 @@ function advanceServiceWith(options: {
                 status: string,
               ) {
                 marked.push({ listingIds: [...listingIds], status });
+                for (const id of listingIds) resolved.add(id);
               },
             },
             listings: {
@@ -244,7 +255,8 @@ function advanceServiceWith(options: {
               },
             },
             aiRuns: {
-              async sumCostForListings() {
+              async sumCostForListings(_ids: string[], since?: Date) {
+                spendBounds.push(since);
                 return options.spent;
               },
             },
@@ -264,7 +276,7 @@ function advanceServiceWith(options: {
     },
   });
 
-  return { service, enqueued, statuses, marked, audits };
+  return { service, enqueued, statuses, marked, audits, spendBounds };
 }
 
 const advanceInput = {
@@ -354,13 +366,81 @@ describe("enrichment batch advance", () => {
       pending: [],
       queued: ["draft_busy"],
       listingStatuses: { draft_busy: "processing" },
-      counts: { pending: 0, queued: 1 },
     });
 
     const result = await service.advanceBatch(advanceInput);
 
     expect(result.status).toBe("running");
     expect(statuses).not.toContain("completed");
+  });
+
+  it("counts a draft that stopped for more information as finished, not in flight", async () => {
+    const { service, marked } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "needs_info" },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // It spent budget and produced no listing, so it is a failure for the
+    // batch — but above all it must not stay queued forever.
+    expect(marked).toContainEqual({
+      listingIds: ["draft_stuck"],
+      status: "failed",
+    });
+  });
+
+  it("completes a batch whose last draft stopped for more information", async () => {
+    const { service, statuses } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "needs_info" },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("completed");
+    expect(statuses).toContain("completed");
+  });
+
+  it("counts a reopened draft as enriched", async () => {
+    const { service, marked } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_reopened"],
+      listingStatuses: { draft_reopened: "reopened" },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // A human approved it and then reopened it. The enrichment run the batch
+    // paid for did its job; what happened afterwards is review work.
+    expect(marked).toContainEqual({
+      listingIds: ["draft_reopened"],
+      status: "succeeded",
+    });
+  });
+
+  it("charges only spend recorded since the batch was created", async () => {
+    const { service, spendBounds } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // Unbounded, a draft that an earlier batch already enriched would arrive
+    // carrying that batch's cost and could exhaust this budget immediately.
+    expect(spendBounds).toEqual([BATCH_CREATED_AT]);
   });
 
   it("rejects an unknown batch", async () => {
@@ -390,5 +470,67 @@ describe("enrichment batch advance", () => {
     await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
       /no such enrichment batch/i,
     );
+  });
+
+  it.each(["completed", "cancelled"])(
+    "refuses to advance a %s batch",
+    async (status) => {
+      const { service, enqueued, statuses } = advanceServiceWith({
+        spent: 0,
+        budget: 10,
+        pending: ["draft_1"],
+        status,
+      });
+
+      await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+        /finished/i,
+      );
+      // The point of the guard: a cancelled batch with pending items would
+      // otherwise claim a wave and set itself back to running.
+      expect(enqueued).toEqual([]);
+      expect(statuses).toEqual([]);
+    },
+  );
+
+  it("still advances a batch that previously exhausted its budget", async () => {
+    const { service, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+      status: "budget_exhausted",
+    });
+
+    // Not terminal: re-advancing re-derives spend, which is the only way an
+    // operator learns the batch is still stuck.
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("running");
+    expect(enqueued).toEqual(["draft_1"]);
+  });
+
+  it("reconciles a stray queued item before refusing a completed batch", async () => {
+    const { service, marked, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: [],
+      status: "completed",
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "in_review" },
+    });
+
+    // The guard sits after reconciliation, not before it: if a batch ever
+    // reaches `completed`/`cancelled` while an item is still `queued`, that
+    // item gets one last chance to resolve to its real terminal state rather
+    // than being frozen forever behind the 409.
+    await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+      /finished/i,
+    );
+    expect(marked).toContainEqual({
+      listingIds: ["draft_stuck"],
+      status: "succeeded",
+    });
+    // Reconciliation resolves the stray item, but the guard still prevents a
+    // new wave from being claimed and enqueued.
+    expect(enqueued).toEqual([]);
   });
 });
