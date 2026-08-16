@@ -460,8 +460,10 @@ export async function deliverListing(
  * validation, neither of which applies to a bulk-form row. The review-state
  * gate is deliberately the same one the create path enforces (`approved` or
  * `published`, matching `isEligibleStatus`'s request-phase check in
- * `@wukong/shopline`'s delivery policy) — bulk-form export must not be an
- * easier way to ship unreviewed AI content than CSV or the API path is.
+ * `@wukong/shopline`'s delivery policy), and the blocking-flags gate mirrors
+ * `evaluateDeliveryPolicy`'s own check on `listing.flags` — bulk-form export
+ * must not be an easier way to ship unreviewed AI content than CSV or the
+ * API path is.
  */
 async function deliverBulkForm(
   input: DeliverInput,
@@ -473,6 +475,16 @@ async function deliverBulkForm(
     !(source.status === "approved" || source.status === "published")
   ) {
     return { kind: "approval_required" };
+  }
+
+  const blockingFlags = source.flags.filter(
+    (flag) => flag.severity === "blocking" && flag.status === "open",
+  );
+  if (blockingFlags.length > 0) {
+    return {
+      kind: "blocking_flags",
+      issues: blockingFlags.map((flag) => `${flag.field}: ${flag.rule}`),
+    };
   }
 
   if (!deps.platformProducts) {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ComplianceFlag } from "@wukong/core";
 import { evaluateDeliveryPolicy } from "@wukong/shopline";
 
 vi.mock("@wukong/shopline", async (importOriginal) => {
@@ -761,6 +762,7 @@ describe("bulk-form export", () => {
     options: {
       status?: "approved" | "published" | "in_review";
       hasLink?: boolean;
+      flags?: ComplianceFlag[];
     } = {},
   ) {
     const audits: unknown[] = [];
@@ -774,7 +776,7 @@ describe("bulk-form export", () => {
               target: "shopline" as const,
               status: options.status ?? "approved",
               activeVersion: { id: "version_1", sequence: 1, content },
-              flags: [],
+              flags: options.flags ?? [],
             };
           },
         },
@@ -947,5 +949,72 @@ describe("bulk-form export", () => {
 
     expect(result).toEqual({ kind: "no_remote_link" });
     expect(audits).toEqual([]);
+  });
+
+  it("refuses an approved listing with an open blocking compliance flag", async () => {
+    const { deps, audits } = bulkFormDeps({
+      flags: [
+        {
+          id: "flag_1",
+          field: "description",
+          rule: "health_claim",
+          severity: "blocking",
+          status: "open",
+          resolutionReason: null,
+        },
+      ],
+    });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result).toEqual({
+      kind: "blocking_flags",
+      issues: ["description: health_claim"],
+    });
+    expect(audits).toEqual([]);
+  });
+
+  it("still exports when the only flags are a warning or a resolved blocking flag", async () => {
+    const { deps, audits } = bulkFormDeps({
+      flags: [
+        {
+          id: "flag_1",
+          field: "description",
+          rule: "superlative",
+          severity: "warning",
+          status: "open",
+          resolutionReason: null,
+        },
+        {
+          id: "flag_2",
+          field: "title",
+          rule: "guarantee",
+          severity: "blocking",
+          status: "resolved",
+          resolutionReason: "reviewed and cleared",
+        },
+      ],
+    });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result.kind).toBe("bulk_form");
+    expect(audits).toHaveLength(1);
   });
 });
