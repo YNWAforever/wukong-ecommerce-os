@@ -97,4 +97,60 @@ describe("ai run repository", () => {
       expect(await repositories.aiRuns.sumCostForListings([])).toBe(0);
     });
   });
+
+  it("counts only runs at or after the given instant", async () => {
+    const run = (
+      listingId: string,
+      idempotencyKey: string,
+      estimatedCostUsd: number,
+    ) => ({
+      listingId,
+      task: "extract" as const,
+      idempotencyKey,
+      provider: "fake",
+      model: "fake-1",
+      promptVersion: "1.0.0",
+      inputTokens: 10,
+      outputTokens: 20,
+      latencyMs: 5,
+      estimatedCostUsd,
+    });
+
+    // `created_at` defaults to the database's now(), and Postgres freezes
+    // now() at transaction start — every statement in one transaction sees
+    // the same instant. So the "older" and "this batch" runs are written in
+    // separate forWorkspace transactions, the same way two real batches
+    // would be separated in time, rather than both inside one transaction
+    // where they'd otherwise get an identical created_at.
+    const draftId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        await repositories.aiRuns.append(run(draft.id, "older-batch", 4));
+        return draft.id;
+      },
+    );
+
+    // Read the cutoff from the database, not from Date.now(), so this
+    // assertion doesn't depend on the app clock and the database clock
+    // agreeing.
+    const [marker] = await admin<{ now: Date }[]>`select now() as now`;
+    const cutoff = marker!.now;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await repositories.aiRuns.append(run(draftId, "this-batch", 1.5));
+
+      // Without a bound, the earlier batch's spend is charged to this one.
+      expect(
+        await repositories.aiRuns.sumCostForListings([draftId]),
+      ).toBeCloseTo(5.5, 6);
+      expect(
+        await repositories.aiRuns.sumCostForListings([draftId], cutoff),
+      ).toBeCloseTo(1.5, 6);
+    });
+  });
 });
