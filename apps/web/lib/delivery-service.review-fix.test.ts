@@ -849,8 +849,70 @@ describe("bulk-form export", () => {
     const header = sheet[0];
     const dataRow = sheet[2];
     if (!header || !dataRow) throw new Error("expected header and data rows");
-    const nameZhIndex = header.indexOf("Product Name (Traditional Chinese)");
-    expect(dataRow[nameZhIndex]).toBe(content.title["zh-Hant"]);
+
+    const expected: Record<string, string> = {
+      "Product Name (Traditional Chinese)": content.title["zh-Hant"],
+      "Product Summary (English)": content.description.en,
+      "Product Summary (Traditional Chinese)": content.description["zh-Hant"],
+      "SEO Title (English)": content.seo.title.en,
+      "SEO Title (Traditional Chinese)": content.seo.title["zh-Hant"],
+      "SEO Description (English)": content.seo.description.en,
+      "SEO Description (Traditional Chinese)":
+        content.seo.description["zh-Hant"],
+      "SEO Keywords": content.tags.join(", "),
+    };
+    for (const [columnHeader, value] of Object.entries(expected)) {
+      const index = header.indexOf(columnHeader);
+      expect(
+        index,
+        `missing column header "${columnHeader}"`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(dataRow[index]).toBe(value);
+    }
+  });
+
+  it("throws when deps.platformProducts is not supplied at all", async () => {
+    const audits: unknown[] = [];
+    const deps = {
+      listings: {
+        async requireForPublish() {
+          return {
+            id: "listing_1",
+            target: "shopline" as const,
+            status: "approved" as const,
+            activeVersion: { id: "version_1", sequence: 1, content },
+            flags: [],
+          };
+        },
+      },
+      imageUrls: async () => [],
+      audit: {
+        async write(event: unknown) {
+          audits.push(event);
+        },
+      },
+      publisher: {
+        async enqueue() {
+          throw new Error("bulk_form must not enqueue a publish job");
+        },
+      },
+      // platformProducts intentionally omitted — a wiring bug, not the
+      // "no linked product" business case (which supplies the dep and has
+      // it return null instead).
+    };
+
+    await expect(
+      deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "bulk_form",
+        },
+        deps,
+      ),
+    ).rejects.toThrow("deliverBulkForm requires deps.platformProducts");
+    expect(audits).toEqual([]);
   });
 
   it("refuses an unapproved listing", async () => {

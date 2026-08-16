@@ -475,7 +475,10 @@ async function deliverBulkForm(
     return { kind: "approval_required" };
   }
 
-  const link = await deps.platformProducts?.getByListingId(input.draftId);
+  if (!deps.platformProducts) {
+    throw new Error("deliverBulkForm requires deps.platformProducts");
+  }
+  const link = await deps.platformProducts.getByListingId(input.draftId);
   if (!link) return { kind: "no_remote_link" };
   if (!isBulkFormRawRow(link.rawRow)) {
     return {
