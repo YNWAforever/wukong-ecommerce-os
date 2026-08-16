@@ -209,10 +209,17 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
 
         // Budget is enforced on observed spend, never on a stored running
         // total, so it cannot drift out of sync with the runs it counts.
+        //
+        // Bounded by the batch's own creation instant: a draft that an earlier
+        // batch enriched still has those runs on record, and charging them here
+        // would let a fresh batch report itself exhausted before doing any work.
         const itemIds = await repositories.enrichmentBatches.listItemIds(
           input.batchId,
         );
-        const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds);
+        const spentUsd = await repositories.aiRuns.sumCostForListings(
+          itemIds,
+          batch.createdAt,
+        );
 
         if (spentUsd >= batch.budgetUsd) {
           await repositories.enrichmentBatches.setStatus(

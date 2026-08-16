@@ -168,6 +168,9 @@ describe("enrichment batch creation", () => {
 
 type Marked = { listingIds: string[]; status: string };
 
+/** Fixed so the spend-window assertion does not depend on wall-clock time. */
+const BATCH_CREATED_AT = new Date("2026-08-16T00:00:00.000Z");
+
 function advanceServiceWith(options: {
   spent: number;
   budget: number;
@@ -180,6 +183,7 @@ function advanceServiceWith(options: {
   const statuses: string[] = [];
   const marked: Marked[] = [];
   const audits: AuditRecord[] = [];
+  const spendBounds: (Date | undefined)[] = [];
   const queued = options.queued ?? [];
   let remaining = [...options.pending];
   // Which queued drafts reconciliation actually resolved. `countByStatus` is
@@ -204,6 +208,7 @@ function advanceServiceWith(options: {
                   waveSize: 2,
                   status: "open",
                   createdBy: "user_1",
+                  createdAt: BATCH_CREATED_AT,
                 };
               },
               async listItemIds() {
@@ -249,7 +254,8 @@ function advanceServiceWith(options: {
               },
             },
             aiRuns: {
-              async sumCostForListings() {
+              async sumCostForListings(_ids: string[], since?: Date) {
+                spendBounds.push(since);
                 return options.spent;
               },
             },
@@ -269,7 +275,7 @@ function advanceServiceWith(options: {
     },
   });
 
-  return { service, enqueued, statuses, marked, audits };
+  return { service, enqueued, statuses, marked, audits, spendBounds };
 }
 
 const advanceInput = {
@@ -420,6 +426,20 @@ describe("enrichment batch advance", () => {
       listingIds: ["draft_reopened"],
       status: "succeeded",
     });
+  });
+
+  it("charges only spend recorded since the batch was created", async () => {
+    const { service, spendBounds } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // Unbounded, a draft that an earlier batch already enriched would arrive
+    // carrying that batch's cost and could exhaust this budget immediately.
+    expect(spendBounds).toEqual([BATCH_CREATED_AT]);
   });
 
   it("rejects an unknown batch", async () => {
