@@ -17,9 +17,9 @@ export type EnrichmentBatch = {
   status: EnrichmentBatchStatus;
   createdBy: string;
   /**
-   * Batch creation instant. Will bound `aiRuns.sumCostForListings`'s `since`
-   * parameter so a draft's spend from an earlier batch isn't double-charged —
-   * not yet wired into `advanceBatch` as of this commit.
+   * Batch creation instant. Bounds `aiRuns.sumCostForListings`'s `since`
+   * parameter in `advanceBatch`, so a draft's spend from an earlier batch
+   * isn't double-charged.
    */
   createdAt: Date;
 };
