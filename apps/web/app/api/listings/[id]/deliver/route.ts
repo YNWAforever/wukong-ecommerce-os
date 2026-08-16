@@ -3,10 +3,7 @@ import {
   ASSET_EXPORT_READ_TTL_MS,
   resolveListingImageUrls,
 } from "@wukong/assets";
-import {
-  SHOPLINE_INGRESS_PATH,
-  type ShoplinePublishJob,
-} from "@wukong/jobs";
+import { SHOPLINE_INGRESS_PATH, type ShoplinePublishJob } from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -105,6 +102,18 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
         message: "SHOPLINE is not connected; use CSV fallback.",
         csvFallback: result.csvFallback,
       });
+    default:
+      // bulk_form / no_remote_link: delivery-service.ts's deliverListing can
+      // now produce these DeliveryResult kinds, but this route does not wire
+      // them yet (bodySchema below still restricts method to "csv" |
+      // "shopline_api"), so they are unreachable in practice today. This
+      // case exists only to keep the switch exhaustive against the widened
+      // DeliveryResult type.
+      throw new ApiError(
+        500,
+        "unhandled_delivery_result",
+        `Unhandled delivery result kind: ${result.kind}`,
+      );
   }
 }
 
@@ -179,8 +188,11 @@ export function defaultDelivery(
                 },
               },
               connection: async () => {
-                const connection = await repositories.shoplineConnections.getDefault();
-                return connection ? { id: connection.id, verified: true } : null;
+                const connection =
+                  await repositories.shoplineConnections.getDefault();
+                return connection
+                  ? { id: connection.id, verified: true }
+                  : null;
               },
               existingDelivery: (key) =>
                 repositories.publishJobs.getByIdempotencyKey(key),
@@ -205,7 +217,8 @@ export function defaultDelivery(
             audit: repositories.audit,
             publishJobs: repositories.publishJobs,
             connection: async () => {
-              const connection = await repositories.shoplineConnections.getDefault();
+              const connection =
+                await repositories.shoplineConnections.getDefault();
               return connection ? { id: connection.id, verified: true } : null;
             },
             existingDelivery: (key) =>
