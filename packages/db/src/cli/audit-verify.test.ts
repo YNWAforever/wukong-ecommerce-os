@@ -11,11 +11,8 @@ import {
 
 const FULL_LIFECYCLE = [
   "listing.submitted_for_review",
-  "listing.edited",
   "listing.approved",
   "listing.csv_exported",
-  "listing.publish_queued",
-  "listing.published",
 ];
 
 describe("audit:verify arguments", () => {
@@ -62,6 +59,10 @@ describe("required audit sequence", () => {
   });
 
   it("keeps the remaining steps ordered", () => {
+    // "approved" appears before "submitted_for_review" here, out of order —
+    // the cursor consumes "submitted_for_review" at its real position and
+    // then can't look backward to find the earlier "approved", so it's
+    // correctly reported missing rather than matched out of sequence.
     expect(
       requiredSequenceMissing([
         "listing.imported",
@@ -69,12 +70,60 @@ describe("required audit sequence", () => {
         "listing.submitted_for_review",
       ]),
     ).toEqual([
-      "listing.edited",
       "listing.approved",
-      "listing.csv_exported",
-      "listing.publish_queued",
-      "listing.published",
+      "listing.csv_exported or listing.bulk_form_exported or listing.published",
     ]);
+  });
+
+  it("accepts a listing delivered only by CSV, never queued or published", () => {
+    // CSV and bulk-form export are both terminal — the operator uploads the
+    // file to SHOPLINE by hand, and Wukong never queues or tracks a publish
+    // for that delivery. Requiring publish_queued/published in addition would
+    // make the gate unsatisfiable for a listing delivered this way.
+    expect(
+      requiredSequenceMissing([
+        "listing.created",
+        "listing.submitted_for_review",
+        "listing.approved",
+        "listing.csv_exported",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("accepts a listing delivered only by bulk-form export", () => {
+    expect(
+      requiredSequenceMissing([
+        "listing.imported",
+        "listing.submitted_for_review",
+        "listing.approved",
+        "listing.bulk_form_exported",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("accepts a listing that went through the full shopline_api chain", () => {
+    expect(
+      requiredSequenceMissing([
+        "listing.created",
+        "listing.submitted_for_review",
+        "listing.approved",
+        "listing.publish_queued",
+        "listing.published",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("does not require an edit during review", () => {
+    // A listing approved on first submission never writes listing.edited —
+    // that action is optional, not part of the required lifecycle.
+    expect(
+      requiredSequenceMissing([
+        "listing.created",
+        "listing.submitted_for_review",
+        "listing.approved",
+        "listing.csv_exported",
+      ]),
+    ).toEqual([]);
   });
 });
 

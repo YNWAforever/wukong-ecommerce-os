@@ -9,15 +9,27 @@
  * action deliberately — the two are not the same event and the trail should say
  * which happened — so without the alternative here no imported draft could ever
  * satisfy this gate, however far through the lifecycle it got.
+ *
+ * The final step is the same shape for the same reason: there are three
+ * mutually exclusive ways a listing leaves Wukong, and a draft only ever takes
+ * one. `csv_exported` and `bulk_form_exported` are both terminal — the operator
+ * downloads a file and uploads it to SHOPLINE by hand, and nothing further is
+ * queued or tracked here. Only the `shopline_api` path continues past its own
+ * `publish_queued` into `published`, so `published` alone stands in for that
+ * whole chain — a listing that reached it necessarily passed through
+ * `publish_queued` first. Requiring all three as separate mandatory steps (as
+ * this list once did) made the gate unsatisfiable for a listing delivered by
+ * only one of the three methods, which is every listing.
+ *
+ * `listing.edited` is deliberately absent. Editing during review is optional —
+ * a listing can be approved on first submission — so requiring it here would
+ * make the gate unsatisfiable for a legitimate listing that never needed one.
  */
 export const REQUIRED_AUDIT_SEQUENCE = [
   ["listing.created", "listing.imported"],
   ["listing.submitted_for_review"],
-  ["listing.edited"],
   ["listing.approved"],
-  ["listing.csv_exported"],
-  ["listing.publish_queued"],
-  ["listing.published"],
+  ["listing.csv_exported", "listing.bulk_form_exported", "listing.published"],
 ] as const satisfies readonly (readonly string[])[];
 
 /**
