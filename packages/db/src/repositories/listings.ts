@@ -440,6 +440,17 @@ export function createListingRepository(
         .returning({ id: listingDrafts.id });
       if (updated.length !== 1)
         throw new Error("listing status changed while approving");
+      // `transitionListing` above only writes the generic `listing.transition`
+      // action. Every other status-changing method here (`complete`,
+      // `editReview`, `markPublished`) also writes its own explicit action, and
+      // this one is what `audit-verify`'s required sequence looks for — without
+      // it, no listing that was genuinely approved through this method can ever
+      // satisfy that gate, no matter how far through the lifecycle it goes.
+      await audit.write({
+        ...context,
+        action: "listing.approved",
+        metadata: { versionId },
+      });
     },
 
     async editReview(
