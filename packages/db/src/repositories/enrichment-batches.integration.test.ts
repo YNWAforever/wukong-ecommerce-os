@@ -260,4 +260,41 @@ describe("enrichment batch repository", () => {
       ).toEqual([]);
     });
   });
+
+  it("carries the batch's creation instant as a Date", async () => {
+    // Read the cutoff from the database, not from Date.now(), so this
+    // assertion doesn't depend on the app clock and the database clock
+    // agreeing. Read it — and wait past it — before the workspace transaction
+    // below even opens: Postgres freezes now() at transaction start, so a
+    // marker read from inside that transaction (or before it settles) could
+    // land later than a row the transaction itself inserts.
+    const [marker] = await admin<{ now: Date }[]>`select now() as now`;
+    const before = marker!.now;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
+
+      const created = await repositories.enrichmentBatches.create({
+        label: "created at",
+        budgetUsd: 5,
+        waveSize: 2,
+        createdBy: "user_1",
+        listingIds: [draft.id],
+      });
+
+      // A Date the spend bound can be compared against directly, not a raw
+      // driver value that would need parsing first.
+      expect(created.createdAt).toBeInstanceOf(Date);
+      expect(created.createdAt.getTime()).toBeGreaterThanOrEqual(
+        before.getTime(),
+      );
+
+      const fetched = await repositories.enrichmentBatches.getById(created.id);
+      expect(fetched?.createdAt.getTime()).toBe(created.createdAt.getTime());
+    });
+  });
 });

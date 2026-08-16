@@ -16,6 +16,12 @@ export type EnrichmentBatch = {
   waveSize: number;
   status: EnrichmentBatchStatus;
   createdBy: string;
+  /**
+   * Batch creation instant. Will bound `aiRuns.sumCostForListings`'s `since`
+   * parameter so a draft's spend from an earlier batch isn't double-charged —
+   * not yet wired into `advanceBatch` as of this commit.
+   */
+  createdAt: Date;
 };
 
 export type CreateEnrichmentBatchInput = {
@@ -54,6 +60,7 @@ const COLUMNS = {
   waveSize: enrichmentBatches.waveSize,
   status: enrichmentBatches.status,
   createdBy: enrichmentBatches.createdBy,
+  createdAt: enrichmentBatches.createdAt,
 };
 
 type EnrichmentBatchRow = Omit<EnrichmentBatch, "budgetUsd"> & {
