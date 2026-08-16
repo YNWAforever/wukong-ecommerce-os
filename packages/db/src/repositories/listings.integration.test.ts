@@ -556,6 +556,124 @@ describe("workspace isolation", () => {
       },
     ]);
   });
+  it("counts only open blocking flags on the active version, per listing", async () => {
+    const content = {
+      sku: "OPAK-001",
+      producer: "Opak",
+      productType: "wine" as const,
+      country: "Germany",
+      region: "Mosel",
+      vintage: 2024,
+      grapeVarieties: ["Riesling"],
+      volumeMl: 750,
+      abvPercent: 12.5,
+      packQuantity: 1,
+      priceHkd: 288,
+      stockQuantity: null,
+      criticScores: [],
+      awards: [],
+      title: { en: "Opak Riesling", "zh-Hant": "Opak 雷司令" },
+      description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+      seo: {
+        title: { en: "Opak Riesling", "zh-Hant": "Opak 雷司令" },
+        description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+      },
+      tags: ["wine"],
+      imageAssetIds: [],
+    };
+    const workspaceId = "ws_flagcount";
+
+    const { cleanId, flaggedId } = await forWorkspace(
+      database,
+      workspaceId,
+      async (repos) => {
+        const clean = await repos.listings.create({ target: "shopline" });
+        const flagged = await repos.listings.create({ target: "shopline" });
+        const auditContext = {
+          workspaceId,
+          actorId: "audit-probe",
+          entityId: clean.id,
+        };
+        // appendVersion alone only inserts a listing_versions row — it does
+        // not point listing_drafts.active_version_id at it. That link is
+        // what listRecent's leftJoin (and this whole feature) reads, so the
+        // draft must actually be driven to a real status with this version
+        // active, matching how the real pipeline does it: start_processing
+        // (received -> processing) is required before complete's own
+        // submit_review transition (processing -> in_review) is legal.
+        await repos.listings.startProcessing(
+          clean.id,
+          auditContext,
+          repos.audit,
+        );
+        const cleanVersion = await repos.listings.appendVersion(
+          clean.id,
+          content,
+          auditContext,
+          repos.audit,
+        );
+        await repos.listings.complete(
+          clean.id,
+          {
+            status: "in_review",
+            versionId: cleanVersion.id,
+            idempotencyKey: "clean-1",
+          },
+          auditContext,
+          repos.audit,
+        );
+        await repos.listings.startProcessing(
+          flagged.id,
+          { ...auditContext, entityId: flagged.id },
+          repos.audit,
+        );
+        const flaggedVersion = await repos.listings.appendVersion(
+          flagged.id,
+          content,
+          { ...auditContext, entityId: flagged.id },
+          repos.audit,
+        );
+        await repos.listings.complete(
+          flagged.id,
+          {
+            status: "in_review",
+            versionId: flaggedVersion.id,
+            idempotencyKey: "flagged-1",
+          },
+          { ...auditContext, entityId: flagged.id },
+          repos.audit,
+        );
+        await repos.listings.replaceFlags(flaggedVersion.id, [
+          {
+            id: "flag_1",
+            field: "description",
+            rule: "health_claim",
+            severity: "blocking",
+            status: "open",
+            resolutionReason: null,
+          },
+          // A resolved blocking flag must not count.
+          {
+            id: "flag_2",
+            field: "description",
+            rule: "guarantee",
+            severity: "blocking",
+            status: "resolved",
+            resolutionReason: "checked with legal",
+          },
+        ]);
+        return { cleanId: clean.id, flaggedId: flagged.id };
+      },
+    );
+
+    const items = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.listRecent(100),
+    );
+    const byId = new Map(items.map((item) => [item.id, item]));
+    expect(byId.get(cleanId)?.openBlockingFlagCount).toBe(0);
+    expect(byId.get(flaggedId)?.openBlockingFlagCount).toBe(1);
+  });
+
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(

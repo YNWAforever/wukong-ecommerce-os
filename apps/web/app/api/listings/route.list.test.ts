@@ -61,6 +61,7 @@ describe("GET /api/listings", () => {
                           },
                         },
                       },
+                      openBlockingFlagCount: 2,
                     },
                   ];
                 },
@@ -82,6 +83,7 @@ describe("GET /api/listings", () => {
           title: "Opak \u96f7\u53f8\u4ee4",
           sku: "OPAK-001",
           updatedAt: "2026-07-18T05:00:00.000Z",
+          openBlockingFlagCount: 2,
         },
       ],
     });

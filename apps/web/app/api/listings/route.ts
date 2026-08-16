@@ -203,6 +203,7 @@ export function createListListingsHandler(deps: ListListingsDeps) {
             title,
             sku: content?.sku ?? null,
             updatedAt,
+            openBlockingFlagCount: item.openBlockingFlagCount,
           };
         }),
       });

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { canonicalListingSchema } from "@wukong/core";
 import type {
@@ -27,6 +27,13 @@ export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
 export type ListingSummary = Listing & {
   activeVersion: { id: string; content: CanonicalListing } | null;
+  /**
+   * Open, blocking-severity compliance flags on the active version. A listing
+   * is bulk-approvable exactly when this is 0 and status is `in_review` — the
+   * same condition `approveListing` already enforces one listing at a time.
+   * 0 for a listing with no active version.
+   */
+  openBlockingFlagCount: number;
 };
 
 export type ReviewSnapshot = {
@@ -227,6 +234,36 @@ export function createListingRepository(
         .where(eq(listingDrafts.workspaceId, workspaceId))
         .orderBy(desc(listingDrafts.updatedAt))
         .limit(limit);
+
+      const activeVersionIds = rows
+        .map((row) => row.activeVersion?.id)
+        .filter((id): id is string => id !== undefined);
+      // One batched query for every returned listing's flag count, not one
+      // query per listing — listRecent already bounds the result to at most
+      // 100 rows, so this is at most one extra round trip regardless of how
+      // many of them have an active version.
+      const flagCounts =
+        activeVersionIds.length > 0
+          ? await transaction
+              .select({
+                versionId: complianceFlags.listingVersionId,
+                count: sql<number>`count(*)::int`,
+              })
+              .from(complianceFlags)
+              .where(
+                and(
+                  eq(complianceFlags.workspaceId, workspaceId),
+                  inArray(complianceFlags.listingVersionId, activeVersionIds),
+                  eq(complianceFlags.status, "open"),
+                  eq(complianceFlags.severity, "blocking"),
+                ),
+              )
+              .groupBy(complianceFlags.listingVersionId)
+          : [];
+      const flagCountByVersionId = new Map(
+        flagCounts.map((row) => [row.versionId, row.count]),
+      );
+
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
           ? canonicalListingSchema.safeParse(activeVersion.content)
@@ -236,6 +273,9 @@ export function createListingRepository(
           activeVersion: parsed?.success
             ? { id: activeVersion!.id, content: parsed.data }
             : null,
+          openBlockingFlagCount: activeVersion?.id
+            ? (flagCountByVersionId.get(activeVersion.id) ?? 0)
+            : 0,
         };
       });
     },
