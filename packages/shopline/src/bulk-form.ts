@@ -434,9 +434,9 @@ export type BulkFormProductRow = {
 /**
  * The only fields `createBulkFormUpdate` reads at runtime. Export builds this
  * directly from a stored `platform_products` row, which carries none of
- * `BulkFormProductRow`'s other fields (categories, pricing, inventory, gaps,
- * facts) — those exist only because `parseBulkForm` derives them from a fresh
- * upload, and the writer never needed them.
+ * `BulkFormProductRow`'s other derived fields — those exist only because
+ * `parseBulkForm` derives them from a fresh upload, and the writer never
+ * needed them.
  */
 export type BulkFormExportRow = Pick<
   BulkFormProductRow,
