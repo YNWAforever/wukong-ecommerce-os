@@ -507,4 +507,30 @@ describe("enrichment batch advance", () => {
     expect(result.status).toBe("running");
     expect(enqueued).toEqual(["draft_1"]);
   });
+
+  it("reconciles a stray queued item before refusing a completed batch", async () => {
+    const { service, marked, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: [],
+      status: "completed",
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "in_review" },
+    });
+
+    // The guard sits after reconciliation, not before it: if a batch ever
+    // reaches `completed`/`cancelled` while an item is still `queued`, that
+    // item gets one last chance to resolve to its real terminal state rather
+    // than being frozen forever behind the 409.
+    await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+      /finished/i,
+    );
+    expect(marked).toContainEqual({
+      listingIds: ["draft_stuck"],
+      status: "succeeded",
+    });
+    // Reconciliation resolves the stray item, but the guard still prevents a
+    // new wave from being claimed and enqueued.
+    expect(enqueued).toEqual([]);
+  });
 });
