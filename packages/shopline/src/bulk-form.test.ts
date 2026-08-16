@@ -10,8 +10,10 @@ import {
   ShoplineBulkFormError,
   bulkFormGaps,
   createBulkFormUpdate,
+  isBulkFormRawRow,
   parseBulkForm,
   type BulkFormColumnKey,
+  type BulkFormExportRow,
   type BulkFormIssueCode,
   type BulkFormSheet,
 } from "./bulk-form.js";
@@ -555,5 +557,54 @@ describe("createBulkFormUpdate", () => {
         "enrichment_value_control_characters",
       ] as never);
     }
+  });
+});
+
+describe("isBulkFormRawRow", () => {
+  it("accepts a row with every bulk-form column present", () => {
+    const raw: Record<string, string | null> = {};
+    for (const column of BULK_FORM_COLUMNS) raw[column.key] = null;
+    expect(isBulkFormRawRow(raw)).toBe(true);
+  });
+
+  it("rejects a row missing a column", () => {
+    const raw: Record<string, string | null> = {};
+    for (const column of BULK_FORM_COLUMNS) raw[column.key] = null;
+    delete raw[BULK_FORM_COLUMNS[0].key];
+    expect(isBulkFormRawRow(raw)).toBe(false);
+  });
+});
+
+describe("createBulkFormUpdate with a minimal export row", () => {
+  it("accepts a BulkFormExportRow that carries only productId, raw, and rowNumber", () => {
+    const raw: Record<BulkFormColumnKey, string | null> = Object.fromEntries(
+      BULK_FORM_COLUMNS.map((column) => [column.key, ""]),
+    ) as Record<BulkFormColumnKey, string | null>;
+    raw.nameEn = "Demo Estate Riesling 2024";
+    raw.nameZh = "Demo Estate Riesling 2024";
+
+    // Deliberately NOT a BulkFormProductRow: no categories, pricing,
+    // inventory, gaps, or facts. If createBulkFormUpdate's signature still
+    // demanded the full parsed shape, this would fail to compile.
+    const row: BulkFormExportRow = {
+      productId: "remote_1",
+      raw,
+      rowNumber: 1,
+    };
+
+    const update = createBulkFormUpdate(
+      [row],
+      [{ productId: "remote_1", values: { nameZh: "示範莊園麗絲玲 2024" } }],
+    );
+
+    expect(update.changes).toEqual([
+      {
+        rowNumber: 1,
+        productId: "remote_1",
+        column: "nameZh",
+        from: "Demo Estate Riesling 2024",
+        to: "示範莊園麗絲玲 2024",
+      },
+    ]);
   });
 });
