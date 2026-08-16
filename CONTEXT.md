@@ -33,3 +33,13 @@ no bulk-form row to update; it is not a bulk-form case at all. Every
 non-enriched column in an exported row is exactly what the last import saw,
 not SHOPLINE's current state, so a merchant-side change since import is
 silently reverted on re-upload unless the catalog is re-imported first.
+
+## Bulk approve
+
+Bulk approve lets a reviewer select several `in_review` listings with no open
+blocking compliance flags and approve them in one action. It is not a new
+kind of approval — each selected listing goes through the exact same
+single-listing approval logic, once per listing, in its own transaction, so
+one listing's stale flag cannot roll back another's legitimate approval.
+There is no field-level or partial-within-a-listing approval anywhere in the
+system; approval is still whole-listing, all-or-nothing.

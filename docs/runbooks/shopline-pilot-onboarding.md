@@ -149,3 +149,21 @@ If the merchant changed a price or stock level directly in SHOPLINE since
 that import, uploading this export will silently revert it. This is not
 validated or warned about automatically; re-importing right before exporting
 is the operator's responsibility for now.
+
+## 7. Approving many listings at once
+
+From the dashboard's work queue, an `in_review` listing with no open blocking
+compliance flags can be selected via its checkbox. "Select all eligible"
+selects every flag-free `in_review` listing currently loaded, up to 50 at a
+time — the API refuses more than 50 IDs in one request. Selecting more than
+50 requires approving in batches.
+
+Approving a selection calls the same single-listing approval logic once per
+listing, sequentially, each in its own transaction. A listing whose flags
+changed since the queue last loaded (for example, a compliance re-scan
+opened a new flag between page load and clicking approve) fails on its own
+without blocking the rest of the batch — the result list shows exactly which
+listings succeeded and which didn't, and why.
+
+Nothing about single-listing review changes: this is a faster way to approve
+many already-eligible listings, not a new kind of approval.
