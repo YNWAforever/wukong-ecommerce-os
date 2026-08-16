@@ -17,6 +17,8 @@ export type QueueItem = {
   status: QueueStatus;
   updatedAt: string;
   nextAction: string;
+  /** 0 means eligible for bulk approval when status is "in_review". */
+  openBlockingFlagCount: number;
 };
 
 export type Evidence = {
@@ -104,6 +106,7 @@ export const fallbackQueue: QueueItem[] = [
     status: "in_review",
     updatedAt: "剛剛更新",
     nextAction: "繼續審核",
+    openBlockingFlagCount: 0,
   },
   {
     id: "opak-demo-002",
@@ -112,6 +115,7 @@ export const fallbackQueue: QueueItem[] = [
     status: "needs_info",
     updatedAt: "12 分鐘前",
     nextAction: "補充資料",
+    openBlockingFlagCount: 0,
   },
   {
     id: "opak-demo-003",
@@ -120,6 +124,7 @@ export const fallbackQueue: QueueItem[] = [
     status: "approved",
     updatedAt: "昨天",
     nextAction: "準備上架",
+    openBlockingFlagCount: 0,
   },
   {
     id: "opak-demo-004",
@@ -128,6 +133,7 @@ export const fallbackQueue: QueueItem[] = [
     status: "published",
     updatedAt: "3 天前",
     nextAction: "查看商品",
+    openBlockingFlagCount: 0,
   },
   {
     id: "opak-demo-005",
@@ -136,6 +142,7 @@ export const fallbackQueue: QueueItem[] = [
     status: "failed",
     updatedAt: "4 天前",
     nextAction: "查看錯誤",
+    openBlockingFlagCount: 0,
   },
 ];
 

@@ -2,9 +2,22 @@ import Link from "next/link";
 
 import { queueGroups, type QueueItem } from "./listing-view-models";
 
-type ListingQueueProps = { items: QueueItem[] };
+type ListingQueueProps = {
+  items: QueueItem[];
+  selected: Set<string>;
+  eligibleIds: string[];
+  onToggle: (id: string) => void;
+  onSelectAllEligible: () => void;
+};
 
-export function ListingQueue({ items }: ListingQueueProps) {
+export function ListingQueue({
+  items,
+  selected,
+  eligibleIds,
+  onToggle,
+  onSelectAllEligible,
+}: ListingQueueProps) {
+  const eligibleSet = new Set(eligibleIds);
   return (
     <section className="queue" aria-labelledby="queue-heading">
       <div className="section-heading">
@@ -23,6 +36,9 @@ export function ListingQueue({ items }: ListingQueueProps) {
           const groupItems = items.filter(
             (item) => item.status === group.status,
           );
+          const groupEligibleCount = groupItems.filter((item) =>
+            eligibleSet.has(item.id),
+          ).length;
           return (
             <section
               className="queue-group"
@@ -34,6 +50,15 @@ export function ListingQueue({ items }: ListingQueueProps) {
                   <h3 id={`queue-${group.status}`}>{group.label}</h3>
                   <p>{group.englishLabel}</p>
                 </div>
+                {group.status === "in_review" && groupEligibleCount > 0 ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onSelectAllEligible}
+                  >
+                    全選可批准項目 Select all eligible
+                  </button>
+                ) : null}
                 <span
                   className="count-badge"
                   aria-label={`${groupItems.length} items`}
@@ -43,27 +68,50 @@ export function ListingQueue({ items }: ListingQueueProps) {
               </div>
               {groupItems.length > 0 ? (
                 <ul className="queue-list">
-                  {groupItems.map((item) => (
-                    <li key={item.id} className="queue-item">
-                      <div>
+                  {groupItems.map((item) => {
+                    const eligible = eligibleSet.has(item.id);
+                    return (
+                      <li key={item.id} className="queue-item">
+                        {item.status === "in_review" ? (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(item.id)}
+                            disabled={!eligible}
+                            aria-label={
+                              eligible
+                                ? `選取 ${item.title}`
+                                : `${item.openBlockingFlagCount} 個未解決的合規標記`
+                            }
+                            title={
+                              eligible
+                                ? undefined
+                                : `${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
+                            }
+                            onChange={() => onToggle(item.id)}
+                          />
+                        ) : null}
+                        <div>
+                          <Link
+                            className="queue-item-title"
+                            href={`/listings/${item.id}`}
+                          >
+                            {item.title}
+                          </Link>
+                          <p>{item.subtitle}</p>
+                          <time dateTime={item.updatedAt}>
+                            {item.updatedAt}
+                          </time>
+                        </div>
                         <Link
-                          className="queue-item-title"
+                          className="secondary-button queue-action"
                           href={`/listings/${item.id}`}
                         >
-                          {item.title}
+                          {item.nextAction}
+                          <span aria-hidden="true"> →</span>
                         </Link>
-                        <p>{item.subtitle}</p>
-                        <time dateTime={item.updatedAt}>{item.updatedAt}</time>
-                      </div>
-                      <Link
-                        className="secondary-button queue-action"
-                        href={`/listings/${item.id}`}
-                      >
-                        {item.nextAction}
-                        <span aria-hidden="true"> →</span>
-                      </Link>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="empty-state">
