@@ -30,29 +30,30 @@ Postgres on port 54329 is needed for nothing in this plan — every task here is
 
 ## File Structure
 
-| File | Change | Responsibility |
-|------|--------|-----------------|
-| `apps/web/lib/listing-approval.ts` | Create | `approveOne`, extracted and shared by both routes |
-| `apps/web/app/api/listings/[id]/approve/route.ts` | Modify | Call the extracted `approveOne` instead of inline logic |
-| `apps/web/app/api/listings/[id]/approve/route.test.ts` | Unmodified | Proves the extraction is behavior-preserving |
-| `apps/web/app/api/listings/bulk-approve/route.ts` | Create | The new bulk endpoint |
-| `apps/web/app/api/listings/bulk-approve/route.test.ts` | Create | Unit tests against fakes |
-| `packages/db/src/repositories/listings.ts` | Modify | `listRecent` gains `openBlockingFlagCount` |
-| `packages/db/src/repositories/listings.integration.test.ts` | Modify | Prove the flag-count join against real Postgres |
-| `apps/web/app/api/listings/route.ts` | Modify | Surface `openBlockingFlagCount` in the GET response |
-| `apps/web/app/api/listings/route.list.test.ts` | Modify | Prove the new field is present |
-| `apps/web/components/listing-view-models.ts` | Modify | `QueueItem` gains `openBlockingFlagCount`/`id` selectability |
-| `apps/web/components/dashboard-listings-client.tsx` | Modify | Map the new field; own selection state; call bulk-approve |
-| `apps/web/components/dashboard-listings-client.test.ts` | Create | Unit test the mapping and selection logic |
-| `apps/web/components/listing-queue.tsx` | Modify | Checkboxes, select-all-eligible, bulk action bar |
-| `docs/runbooks/shopline-pilot-onboarding.md` | Modify | Document the flow and the 50-item cap |
-| `CONTEXT.md` | Modify | Record the "bulk approve" domain term |
+| File                                                        | Change     | Responsibility                                               |
+| ----------------------------------------------------------- | ---------- | ------------------------------------------------------------ |
+| `apps/web/lib/listing-approval.ts`                          | Create     | `approveOne`, extracted and shared by both routes            |
+| `apps/web/app/api/listings/[id]/approve/route.ts`           | Modify     | Call the extracted `approveOne` instead of inline logic      |
+| `apps/web/app/api/listings/[id]/approve/route.test.ts`      | Unmodified | Proves the extraction is behavior-preserving                 |
+| `apps/web/app/api/listings/bulk-approve/route.ts`           | Create     | The new bulk endpoint                                        |
+| `apps/web/app/api/listings/bulk-approve/route.test.ts`      | Create     | Unit tests against fakes                                     |
+| `packages/db/src/repositories/listings.ts`                  | Modify     | `listRecent` gains `openBlockingFlagCount`                   |
+| `packages/db/src/repositories/listings.integration.test.ts` | Modify     | Prove the flag-count join against real Postgres              |
+| `apps/web/app/api/listings/route.ts`                        | Modify     | Surface `openBlockingFlagCount` in the GET response          |
+| `apps/web/app/api/listings/route.list.test.ts`              | Modify     | Prove the new field is present                               |
+| `apps/web/components/listing-view-models.ts`                | Modify     | `QueueItem` gains `openBlockingFlagCount`/`id` selectability |
+| `apps/web/components/dashboard-listings-client.tsx`         | Modify     | Map the new field; own selection state; call bulk-approve    |
+| `apps/web/components/dashboard-listings-client.test.ts`     | Create     | Unit test the mapping and selection logic                    |
+| `apps/web/components/listing-queue.tsx`                     | Modify     | Checkboxes, select-all-eligible, bulk action bar             |
+| `docs/runbooks/shopline-pilot-onboarding.md`                | Modify     | Document the flow and the 50-item cap                        |
+| `CONTEXT.md`                                                | Modify     | Record the "bulk approve" domain term                        |
 
 ---
 
 ### Task 1: Extract `approveOne`
 
 **Files:**
+
 - Create: `apps/web/lib/listing-approval.ts`
 - Modify: `apps/web/app/api/listings/[id]/approve/route.ts`
 - Test: `apps/web/app/api/listings/[id]/approve/route.test.ts` (must pass unchanged — do not edit it in this task)
@@ -66,7 +67,10 @@ Read `apps/web/app/api/listings/[id]/approve/route.ts` and `apps/web/app/api/lis
 Create `apps/web/lib/listing-approval.ts`:
 
 ```ts
-import { approveListing as domainApprove, type AuditContext } from "@wukong/core";
+import {
+  approveListing as domainApprove,
+  type AuditContext,
+} from "@wukong/core";
 
 import { ApiError } from "./route-support";
 
@@ -128,8 +132,15 @@ export async function approveOne(
       status: approved.status as "approved",
     };
   } catch (error) {
-    if (error instanceof Error && /blocking compliance flags/i.test(error.message)) {
-      throw new ApiError(422, "blocking_flags", "仍有未解決的合規標記，請先處理。");
+    if (
+      error instanceof Error &&
+      /blocking compliance flags/i.test(error.message)
+    ) {
+      throw new ApiError(
+        422,
+        "blocking_flags",
+        "仍有未解決的合規標記，請先處理。",
+      );
     }
     throw error;
   }
@@ -161,7 +172,12 @@ import type { SessionContextPort } from "../../../../../lib/session-context-port
 type RouteContext = { params: Promise<{ id: string }> };
 type ApprovalRouteDeps = {
   sessionContext: SessionContextPort;
-  getDatabase: () => { forWorkspace<T>(workspaceId: string, work: (repositories: any) => Promise<T>): Promise<T> };
+  getDatabase: () => {
+    forWorkspace<T>(
+      workspaceId: string,
+      work: (repositories: any) => Promise<T>,
+    ): Promise<T>;
+  };
   approve?: typeof domainApprove;
 };
 
@@ -169,22 +185,36 @@ const bodySchema = z.object({}).strip();
 
 function assertReviewer(role: string): void {
   if (!["reviewer", "admin", "owner"].includes(role)) {
-    throw new ApiError(403, "insufficient_role", "Reviewer access is required.");
+    throw new ApiError(
+      403,
+      "insufficient_role",
+      "Reviewer access is required.",
+    );
   }
 }
 
 export function createApproveListingHandler(deps: ApprovalRouteDeps) {
-  return async function approveListingHandler(request: Request, context: RouteContext): Promise<Response> {
+  return async function approveListingHandler(
+    request: Request,
+    context: RouteContext,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       assertReviewer(session.role);
       const { id } = await context.params;
-      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ApiError(404, "listing_not_found", "Listing not found.");
+      if (!/^[0-9a-f-]{36}$/i.test(id))
+        throw new ApiError(404, "listing_not_found", "Listing not found.");
       await bodySchema.parseAsync(await request.json().catch(() => ({})));
-      const auditContext: AuditContext = { workspaceId: session.workspaceId, actorId: session.actorId, entityId: id };
-      const result = await deps.getDatabase().forWorkspace(session.workspaceId, (repositories) =>
-        approveOne(id, auditContext, repositories, { approve: deps.approve }),
-      );
+      const auditContext: AuditContext = {
+        workspaceId: session.workspaceId,
+        actorId: session.actorId,
+        entityId: id,
+      };
+      const result = await deps
+        .getDatabase()
+        .forWorkspace(session.workspaceId, (repositories) =>
+          approveOne(id, auditContext, repositories, { approve: deps.approve }),
+        );
       return jsonResponse(200, result);
     });
   };
@@ -233,6 +263,7 @@ git commit -m "refactor(web): extract single-listing approval for reuse"
 ### Task 2: The bulk-approve route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/bulk-approve/route.ts`
 - Test: `apps/web/app/api/listings/bulk-approve/route.test.ts`
 
@@ -245,7 +276,11 @@ import { describe, expect, it } from "vitest";
 
 import { createBulkApproveHandler } from "./route.js";
 
-const context = { workspaceId: "ws_opak", actorId: "reviewer_1", role: "reviewer" as const };
+const context = {
+  workspaceId: "ws_opak",
+  actorId: "reviewer_1",
+  role: "reviewer" as const,
+};
 
 function request(listingIds: string[]) {
   return new Request("http://localhost/api/listings/bulk-approve", {
@@ -255,40 +290,68 @@ function request(listingIds: string[]) {
   });
 }
 
-function makeHandler(options: {
-  role?: "viewer" | "operator" | "reviewer" | "admin";
-  flaggedIds?: string[];
-} = {}) {
+function makeHandler(
+  options: {
+    role?: "viewer" | "operator" | "reviewer" | "admin";
+    flaggedIds?: string[];
+  } = {},
+) {
   const approved: string[] = [];
   const flagged = new Set(options.flaggedIds ?? []);
   const handler = createBulkApproveHandler({
-    sessionContext: { async resolve() { return { ...context, role: options.role ?? "reviewer" }; } },
-    getDatabase: () => ({
-      async forWorkspace<T>(_workspaceId: string, work: (repos: any) => Promise<T>) {
-        return work({
-          listings: {
-            async requireForPublish(id: string) {
-              return {
-                id,
-                target: "shopline",
-                status: "in_review",
-                activeVersion: { id: `${id}-v1`, sequence: 1, content: { sku: "OPAK-001" } },
-                flags: flagged.has(id)
-                  ? [{ id: "flag_1", field: "description", rule: "health_claim", severity: "blocking", status: "open", resolutionReason: null }]
-                  : [],
-              };
-            },
-            async approve(id: string) {
-              approved.push(id);
-            },
-          },
-          audit: { async write() {} },
-        });
+    sessionContext: {
+      async resolve() {
+        return { ...context, role: options.role ?? "reviewer" };
       },
-    }) as never,
+    },
+    getDatabase: () =>
+      ({
+        async forWorkspace<T>(
+          _workspaceId: string,
+          work: (repos: any) => Promise<T>,
+        ) {
+          return work({
+            listings: {
+              async requireForPublish(id: string) {
+                return {
+                  id,
+                  target: "shopline",
+                  status: "in_review",
+                  activeVersion: {
+                    id: `${id}-v1`,
+                    sequence: 1,
+                    content: { sku: "OPAK-001" },
+                  },
+                  flags: flagged.has(id)
+                    ? [
+                        {
+                          id: "flag_1",
+                          field: "description",
+                          rule: "health_claim",
+                          severity: "blocking",
+                          status: "open",
+                          resolutionReason: null,
+                        },
+                      ]
+                    : [],
+                };
+              },
+              async approve(id: string) {
+                approved.push(id);
+              },
+            },
+            audit: { async write() {} },
+          });
+        },
+      }) as never,
     approve: async (versionId: string, flags: any[]) => {
-      const open = flags.some((flag) => flag.severity === "blocking" && flag.status === "open");
-      if (open) throw new Error("Blocking compliance flags must be resolved before approval");
+      const open = flags.some(
+        (flag) => flag.severity === "blocking" && flag.status === "open",
+      );
+      if (open)
+        throw new Error(
+          "Blocking compliance flags must be resolved before approval",
+        );
       return { versionId, status: "approved" as const };
     },
   });
@@ -314,8 +377,10 @@ describe("POST /api/listings/bulk-approve", () => {
 
   it("rejects more than 50 ids", async () => {
     const { handler } = makeHandler();
-    const ids = Array.from({ length: 51 }, (_, index) =>
-      `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    const ids = Array.from(
+      { length: 51 },
+      (_, index) =>
+        `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     );
     const response = await handler(request(ids));
     expect(response.status).toBe(400);
@@ -330,7 +395,12 @@ describe("POST /api/listings/bulk-approve", () => {
     expect(body.failed).toBe(1);
     expect(body.results).toEqual([
       { listingId: id1, ok: true, versionId: `${id1}-v1` },
-      { listingId: id2, ok: false, code: "blocking_flags", message: expect.any(String) },
+      {
+        listingId: id2,
+        ok: false,
+        code: "blocking_flags",
+        message: expect.any(String),
+      },
       { listingId: id3, ok: true, versionId: `${id3}-v1` },
     ]);
     expect(approved).toEqual([id1, id3]);
@@ -379,7 +449,11 @@ const bodySchema = z.object({
 
 function assertReviewer(role: string): void {
   if (!["reviewer", "admin", "owner"].includes(role)) {
-    throw new ApiError(403, "insufficient_role", "Reviewer access is required.");
+    throw new ApiError(
+      403,
+      "insufficient_role",
+      "Reviewer access is required.",
+    );
   }
 }
 
@@ -389,12 +463,19 @@ export type BulkApproveItemResult =
 
 export type BulkApproveRouteDeps = {
   sessionContext: SessionContextPort;
-  getDatabase: () => { forWorkspace<T>(workspaceId: string, work: (repositories: any) => Promise<T>): Promise<T> };
+  getDatabase: () => {
+    forWorkspace<T>(
+      workspaceId: string,
+      work: (repositories: any) => Promise<T>,
+    ): Promise<T>;
+  };
   approve?: typeof domainApprove;
 };
 
 export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
-  return async function bulkApproveHandler(request: Request): Promise<Response> {
+  return async function bulkApproveHandler(
+    request: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       assertReviewer(session.role);
@@ -411,18 +492,35 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
           entityId: id,
         };
         try {
-          const approved = await deps.getDatabase().forWorkspace(
-            session.workspaceId,
-            (repositories) =>
-              approveOne(id, auditContext, repositories, { approve: deps.approve }),
-          );
-          results.push({ listingId: id, ok: true, versionId: approved.versionId });
+          const approved = await deps
+            .getDatabase()
+            .forWorkspace(session.workspaceId, (repositories) =>
+              approveOne(id, auditContext, repositories, {
+                approve: deps.approve,
+              }),
+            );
+          results.push({
+            listingId: id,
+            ok: true,
+            versionId: approved.versionId,
+          });
         } catch (error) {
           if (error instanceof ApiError) {
-            results.push({ listingId: id, ok: false, code: error.code, message: error.message });
+            results.push({
+              listingId: id,
+              ok: false,
+              code: error.code,
+              message: error.message,
+            });
           } else {
-            const message = error instanceof Error ? error.message : "Unknown error";
-            results.push({ listingId: id, ok: false, code: "unknown_error", message });
+            const message =
+              error instanceof Error ? error.message : "Unknown error";
+            results.push({
+              listingId: id,
+              ok: false,
+              code: "unknown_error",
+              message,
+            });
           }
         }
       }
@@ -480,6 +578,7 @@ git commit -m "feat(web): add a bulk-approve route"
 ### Task 3: Surface open blocking flag counts in the queue read path
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/listings.ts`
 - Test: `packages/db/src/repositories/listings.integration.test.ts`
 - Modify: `apps/web/app/api/listings/route.ts`
@@ -490,49 +589,49 @@ git commit -m "feat(web): add a bulk-approve route"
 Read `packages/db/src/repositories/listings.integration.test.ts` first to find its `describe` block and how it creates a workspace/listing/version/flags, so the new test reuses that setup rather than inventing a new one. Append:
 
 ```ts
-  it("counts only open blocking flags on the active version, per listing", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const clean = await repositories.listings.create({ target: "shopline" });
-      const flagged = await repositories.listings.create({ target: "shopline" });
+it("counts only open blocking flags on the active version, per listing", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const clean = await repositories.listings.create({ target: "shopline" });
+    const flagged = await repositories.listings.create({ target: "shopline" });
 
-      const cleanVersion = await repositories.listings.appendVersion(
-        clean.id,
-        content,
-        auditContext(clean.id),
-        repositories.audit,
-      );
-      const flaggedVersion = await repositories.listings.appendVersion(
-        flagged.id,
-        content,
-        auditContext(flagged.id),
-        repositories.audit,
-      );
-      await repositories.listings.replaceFlags(flaggedVersion.id, [
-        {
-          id: "flag_1",
-          field: "description",
-          rule: "health_claim",
-          severity: "blocking",
-          status: "open",
-          resolutionReason: null,
-        },
-        // A resolved blocking flag and an open warning must not count.
-        {
-          id: "flag_2",
-          field: "description",
-          rule: "guarantee",
-          severity: "blocking",
-          status: "resolved",
-          resolutionReason: "checked with legal",
-        },
-      ]);
+    const cleanVersion = await repositories.listings.appendVersion(
+      clean.id,
+      content,
+      auditContext(clean.id),
+      repositories.audit,
+    );
+    const flaggedVersion = await repositories.listings.appendVersion(
+      flagged.id,
+      content,
+      auditContext(flagged.id),
+      repositories.audit,
+    );
+    await repositories.listings.replaceFlags(flaggedVersion.id, [
+      {
+        id: "flag_1",
+        field: "description",
+        rule: "health_claim",
+        severity: "blocking",
+        status: "open",
+        resolutionReason: null,
+      },
+      // A resolved blocking flag and an open warning must not count.
+      {
+        id: "flag_2",
+        field: "description",
+        rule: "guarantee",
+        severity: "blocking",
+        status: "resolved",
+        resolutionReason: "checked with legal",
+      },
+    ]);
 
-      const items = await repositories.listings.listRecent(100);
-      const byId = new Map(items.map((item) => [item.id, item]));
-      expect(byId.get(clean.id)?.openBlockingFlagCount).toBe(0);
-      expect(byId.get(flagged.id)?.openBlockingFlagCount).toBe(1);
-    });
+    const items = await repositories.listings.listRecent(100);
+    const byId = new Map(items.map((item) => [item.id, item]));
+    expect(byId.get(clean.id)?.openBlockingFlagCount).toBe(0);
+    expect(byId.get(flagged.id)?.openBlockingFlagCount).toBe(1);
   });
+});
 ```
 
 Check the file's actual `content`/`auditContext` helper names before pasting — if it already has fixtures with different names, reuse those instead of introducing new ones.
@@ -667,14 +766,14 @@ Read `apps/web/app/api/listings/route.ts`'s `createListListingsHandler` first (t
 Read `apps/web/app/api/listings/route.list.test.ts` first to find its existing fake-repository shape. Add `openBlockingFlagCount` to whatever fake `listRecent` response it already constructs, and add one assertion that the GET response includes it:
 
 ```ts
-  it("includes the open blocking flag count for each listing", async () => {
-    // Reuse this file's existing handler-construction helper, adding
-    // openBlockingFlagCount: 2 to its fake listRecent() item.
-    // ... (match this file's actual existing test-setup pattern)
-    const response = await handler();
-    const body = await response.json();
-    expect(body.items[0]).toMatchObject({ openBlockingFlagCount: 2 });
-  });
+it("includes the open blocking flag count for each listing", async () => {
+  // Reuse this file's existing handler-construction helper, adding
+  // openBlockingFlagCount: 2 to its fake listRecent() item.
+  // ... (match this file's actual existing test-setup pattern)
+  const response = await handler();
+  const body = await response.json();
+  expect(body.items[0]).toMatchObject({ openBlockingFlagCount: 2 });
+});
 ```
 
 Run:
@@ -712,6 +811,7 @@ git commit -m "feat(db): surface open blocking flag counts in the listing queue"
 ### Task 4: Multi-select UI
 
 **Files:**
+
 - Modify: `apps/web/components/listing-view-models.ts`
 - Modify: `apps/web/components/dashboard-listings-client.tsx`
 - Test: `apps/web/components/dashboard-listings-client.test.ts` (create)
@@ -797,7 +897,9 @@ const baseItem = {
 
 describe("mapDashboardItems", () => {
   it("carries openBlockingFlagCount through to the queue item", () => {
-    const [item] = mapDashboardItems([{ ...baseItem, openBlockingFlagCount: 2 }]);
+    const [item] = mapDashboardItems([
+      { ...baseItem, openBlockingFlagCount: 2 },
+    ]);
     expect(item?.openBlockingFlagCount).toBe(2);
   });
 
@@ -1080,7 +1182,9 @@ export function ListingQueue({
                             {item.title}
                           </Link>
                           <p>{item.subtitle}</p>
-                          <time dateTime={item.updatedAt}>{item.updatedAt}</time>
+                          <time dateTime={item.updatedAt}>
+                            {item.updatedAt}
+                          </time>
                         </div>
                         <Link
                           className="secondary-button queue-action"
@@ -1142,6 +1246,7 @@ git commit -m "feat(web): add multi-select bulk approval to the listing queue"
 ### Task 5: Runbook, domain context, and full verification
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 - Modify: `CONTEXT.md`
 

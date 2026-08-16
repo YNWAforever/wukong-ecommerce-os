@@ -12,7 +12,7 @@ granularity anywhere in the domain model.** `approveListing`
 (`packages/core/src/review.ts:6-40`) takes one `versionId` and flips one
 listing's status; there is no schema, workflow, or API concept of "these
 fields are approved, these are still pending" within a listing.
-`review_events`/`editReview` record *which* fields an edit changed, but that's
+`review_events`/`editReview` record _which_ fields an edit changed, but that's
 a different concept from partial approval.
 
 Building true field-level partial approval would mean new domain state
@@ -59,7 +59,7 @@ The domain term **bulk approve** will be recorded in `CONTEXT.md`.
 - No change to which fields the review UI shows or edits. SEO/tags fields
   are absent from the review screen today; that gap is unrelated to this
   feature and out of scope here.
-- No bulk *delivery* (CSV/publish). This is approval only — delivering many
+- No bulk _delivery_ (CSV/publish). This is approval only — delivering many
   listings at once is a plausible, separate follow-on.
 - No new compliance-flag severity tiers or detection rules. "Eligible for
   bulk approve" is defined by the flag data that already exists (`open` +
@@ -126,10 +126,11 @@ the bulk handler loops that same logic, one call per ID:
 const results: BulkApproveItemResult[] = [];
 for (const id of listingIds) {
   try {
-    const result = await deps.getDatabase().forWorkspace(
-      session.workspaceId,
-      (repositories) => approveOne(id, session, repositories),
-    );
+    const result = await deps
+      .getDatabase()
+      .forWorkspace(session.workspaceId, (repositories) =>
+        approveOne(id, session, repositories),
+      );
     results.push({ listingId: id, ok: true, versionId: result.versionId });
   } catch (error) {
     results.push({
@@ -205,7 +206,7 @@ queue's first checkbox.
   itself.
 - `approveOne`'s extraction is the only touch to existing single-listing
   approval code, and it's refactor-only: behavior for `POST
-  /api/listings/[id]/approve` must be identical before and after, which the
+/api/listings/[id]/approve` must be identical before and after, which the
   plan verifies by running that route's existing tests unchanged against the
   extracted function.
 
@@ -215,7 +216,7 @@ queue's first checkbox.
    separate, larger spec, informed by whichever compliance rules end up
    actually implemented by then.
 2. Bulk delivery (CSV/publish many approved listings at once).
-3. Surfacing flag *reasons*, not just counts, in the queue — an operator
+3. Surfacing flag _reasons_, not just counts, in the queue — an operator
    deciding whether to open a flagged listing today only sees "0 vs
    nonzero"; the rule/field a flag concerns is only visible after opening it.
 
