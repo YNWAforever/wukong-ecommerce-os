@@ -182,6 +182,10 @@ function advanceServiceWith(options: {
   const audits: AuditRecord[] = [];
   const queued = options.queued ?? [];
   let remaining = [...options.pending];
+  // Which queued drafts reconciliation actually resolved. `countByStatus` is
+  // derived from this rather than from a fixture, so a test that asserts a
+  // batch completed genuinely depends on the classification under test.
+  const resolved = new Set<string>();
 
   const service = createEnrichmentBatchService({
     getDatabase: () =>
@@ -216,7 +220,7 @@ function advanceServiceWith(options: {
               async countByStatus() {
                 return {
                   pending: remaining.length,
-                  queued: 0,
+                  queued: queued.filter((id) => !resolved.has(id)).length,
                   succeeded: 0,
                   failed: 0,
                   skipped: 0,
@@ -232,6 +236,7 @@ function advanceServiceWith(options: {
                 status: string,
               ) {
                 marked.push({ listingIds: [...listingIds], status });
+                for (const id of listingIds) resolved.add(id);
               },
             },
             listings: {
@@ -390,7 +395,6 @@ describe("enrichment batch advance", () => {
       pending: [],
       queued: ["draft_stuck"],
       listingStatuses: { draft_stuck: "needs_info" },
-      counts: { pending: 0, queued: 0 },
     });
 
     const result = await service.advanceBatch(advanceInput);
