@@ -4,21 +4,26 @@ import type {
   ListingStatus,
 } from "@wukong/core";
 import {
+  createBulkFormUpdate,
   createShoplineCsv,
   evaluateDeliveryPolicy,
+  isBulkFormRawRow,
+  ShoplineBulkFormError,
   SHOPLINE_CSV_SPEC_VERSION,
+  type BulkFormExportRow,
   type DeliveryAuditFacts,
   type DeliveryConnectionSnapshot,
   type DeliveryJobSnapshot,
   type DeliveryListingSnapshot,
   type DeliveryPolicyOutcome,
 } from "@wukong/shopline";
+import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
 
 export type DeliverInput = {
   workspaceId: string;
   actorId: string;
   draftId: string;
-  method: "csv" | "shopline_api";
+  method: "csv" | "shopline_api" | "bulk_form";
 };
 
 export type DeliverySnapshot = {
@@ -35,13 +40,20 @@ export type DeliverySnapshot = {
 
 export type DeliveryResult =
   | { kind: "csv"; body: string; specVersion: string; versionId: string }
+  | {
+      kind: "bulk_form";
+      body: Uint8Array;
+      specVersion: string;
+      versionId: string;
+    }
   | { kind: "queued"; jobId: string; versionId: string }
   | { kind: "retry_required"; jobId: string; versionId: string }
   | { kind: "approval_required" }
   | { kind: "blocking_flags"; issues: string[] }
   | { kind: "validation_error"; issues: string[] }
   | { kind: "disconnected"; csvFallback: { method: "csv"; path: string } }
-  | { kind: "already_published"; remoteProductId: string | null };
+  | { kind: "already_published"; remoteProductId: string | null }
+  | { kind: "no_remote_link" };
 
 export type DeliveryDeps = {
   listings: { requireForPublish(draftId: string): Promise<DeliverySnapshot> };
@@ -68,9 +80,7 @@ export type DeliveryDeps = {
     }): Promise<string>;
   };
   connection?: () => Promise<{ id: string; verified: boolean } | null>;
-  existingDelivery?: (
-    idempotencyKey: string,
-  ) => Promise<{
+  existingDelivery?: (idempotencyKey: string) => Promise<{
     id?: string;
     versionId?: string;
     status: string;
@@ -79,10 +89,25 @@ export type DeliveryDeps = {
     connectionId?: string | null;
     remoteProductId: string | null;
   } | null>;
+  /**
+   * Only read by the `bulk_form` method. Optional so every existing csv and
+   * shopline_api test — which never touches this — keeps compiling unchanged.
+   * A caller that reaches the bulk_form branch without supplying it has a
+   * wiring bug, not a business outcome, so that path throws rather than
+   * returning a DeliveryResult variant for it.
+   */
+  platformProducts?: {
+    getByListingId(listingId: string): Promise<{
+      remoteProductId: string;
+      rawRow: Record<string, string | null>;
+    } | null>;
+  };
 };
 
 export type DeliverySnapshotReader = {
-  read(input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">): Promise<DeliveryPolicySnapshot>;
+  read(
+    input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
+  ): Promise<DeliveryPolicySnapshot>;
 };
 
 export type DeliveryPolicySnapshot = {
@@ -90,11 +115,16 @@ export type DeliveryPolicySnapshot = {
   imageUrls: readonly string[];
   connection: DeliveryConnectionSnapshot | null;
   job: DeliveryJobSnapshot | null;
-  existingDelivery: Awaited<ReturnType<NonNullable<DeliveryDeps["existingDelivery"]>>>;
+  existingDelivery: Awaited<
+    ReturnType<NonNullable<DeliveryDeps["existingDelivery"]>>
+  >;
 };
 
 export function createDeliverySnapshotReader(
-  deps: Pick<DeliveryDeps, "listings" | "imageUrls" | "connection" | "existingDelivery">,
+  deps: Pick<
+    DeliveryDeps,
+    "listings" | "imageUrls" | "connection" | "existingDelivery"
+  >,
   options: { deferImageUrls?: boolean } = {},
 ): DeliverySnapshotReader {
   async function read(
@@ -116,28 +146,34 @@ export function createDeliverySnapshotReader(
       ? { ...configuredConnection, workspaceId: input.workspaceId }
       : null;
     const existingDelivery =
-      input.method === "shopline_api" && listing.activeVersion && deps.existingDelivery
+      input.method === "shopline_api" &&
+      listing.activeVersion &&
+      deps.existingDelivery
         ? await deps.existingDelivery(
             `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
           )
         : null;
-    const job = existingDelivery?.id && existingDelivery.versionId && existingDelivery.idempotencyKey
-      ? {
-          id: existingDelivery.id,
-          versionId: existingDelivery.versionId,
-          status: existingDelivery.status,
-          idempotencyKey: existingDelivery.idempotencyKey,
-          payloadDigest: existingDelivery.payloadDigest ?? null,
-          connectionId: existingDelivery.connectionId ?? null,
-        }
-      : null;
-    const imageUrls = listing.activeVersion && !options.deferImageUrls
-      ? await deps.imageUrls(
-          input.workspaceId,
-          input.draftId,
-          listing.activeVersion.content.imageAssetIds,
-        )
-      : [];
+    const job =
+      existingDelivery?.id &&
+      existingDelivery.versionId &&
+      existingDelivery.idempotencyKey
+        ? {
+            id: existingDelivery.id,
+            versionId: existingDelivery.versionId,
+            status: existingDelivery.status,
+            idempotencyKey: existingDelivery.idempotencyKey,
+            payloadDigest: existingDelivery.payloadDigest ?? null,
+            connectionId: existingDelivery.connectionId ?? null,
+          }
+        : null;
+    const imageUrls =
+      listing.activeVersion && !options.deferImageUrls
+        ? await deps.imageUrls(
+            input.workspaceId,
+            input.draftId,
+            listing.activeVersion.content.imageAssetIds,
+          )
+        : [];
     return { listing, imageUrls, connection, job, existingDelivery };
   }
 
@@ -160,25 +196,40 @@ async function withResolvedImageUrls(
   };
 }
 
-function auditMetadata(facts: DeliveryAuditFacts, metadata: Record<string, unknown> = {}) {
+function auditMetadata(
+  facts: DeliveryAuditFacts,
+  metadata: Record<string, unknown> = {},
+) {
   return { ...facts, ...metadata };
 }
 
 function resultFromPolicy(
   outcome: Exclude<DeliveryPolicyOutcome, { kind: "ready" }>,
   snapshot: DeliveryPolicySnapshot,
-): Exclude<DeliveryResult, { kind: "csv" | "queued" | "retry_required" }> {
+): Exclude<
+  DeliveryResult,
+  { kind: "csv" | "bulk_form" | "queued" | "retry_required" | "no_remote_link" }
+> {
   switch (outcome.kind) {
     case "blocking_flags":
-      return { kind: "blocking_flags", issues: outcome.flags.map((flag) => `${flag.field}: ${flag.rule}`) };
+      return {
+        kind: "blocking_flags",
+        issues: outcome.flags.map((flag) => `${flag.field}: ${flag.rule}`),
+      };
     case "validation_error":
-      return { kind: "validation_error", issues: outcome.issues.map((issue) => `${issue.path}: ${issue.message}`) };
+      return {
+        kind: "validation_error",
+        issues: outcome.issues.map(
+          (issue) => `${issue.path}: ${issue.message}`,
+        ),
+      };
     case "already_published":
       return {
         kind: "already_published",
-        remoteProductId: snapshot.existingDelivery?.status === "published"
-          ? snapshot.existingDelivery.remoteProductId
-          : outcome.remoteProductId,
+        remoteProductId:
+          snapshot.existingDelivery?.status === "published"
+            ? snapshot.existingDelivery.remoteProductId
+            : outcome.remoteProductId,
       };
     case "disconnected":
       return { kind: "disconnected", csvFallback: outcome.csvFallback };
@@ -235,14 +286,30 @@ export async function prepareShoplineDelivery(
   input: DeliverInput,
   deps: ShoplineDeliveryDeps,
 ): Promise<ShoplinePreparationResult> {
+  // bulk_form never reaches this function: it is the shopline_api two-phase
+  // prep flow, and `evaluateDeliveryPolicy` (which this calls below) is not
+  // shaped to understand bulk_form at all. A caller that reaches here with
+  // method: "bulk_form" has a wiring bug, not a business outcome.
+  if (input.method === "bulk_form") {
+    throw new Error(
+      "prepareShoplineDelivery does not support bulk_form delivery",
+    );
+  }
+  const method = input.method;
   const reader = createDeliverySnapshotReader(deps, { deferImageUrls: true });
   const snapshot = await reader.read(input);
-  const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  const outcome = evaluateDeliveryPolicy({
+    ...input,
+    method,
+    phase: "request",
+    ...snapshot,
+  });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
   const resolvedSnapshot = await withResolvedImageUrls(snapshot, deps);
   const resolvedOutcome = evaluateDeliveryPolicy({
     ...input,
+    method,
     phase: "request",
     ...resolvedSnapshot,
   });
@@ -337,9 +404,17 @@ export async function deliverListing(
   input: DeliverInput,
   deps: DeliveryDeps,
 ): Promise<DeliveryResult> {
+  if (input.method === "bulk_form") return deliverBulkForm(input, deps);
+
+  const method = input.method;
   const reader = createDeliverySnapshotReader(deps);
   const snapshot = await reader.read(input);
-  const outcome = evaluateDeliveryPolicy({ ...input, phase: "request", ...snapshot });
+  const outcome = evaluateDeliveryPolicy({
+    ...input,
+    method,
+    phase: "request",
+    ...snapshot,
+  });
   if (outcome.kind !== "ready") return resultFromPolicy(outcome, snapshot);
 
   const { plan } = outcome;
@@ -377,4 +452,109 @@ export async function deliverListing(
     metadata: auditMetadata(plan.auditFacts, { jobId }),
   });
   return { kind: "queued", jobId, versionId: plan.versionId };
+}
+
+/**
+ * Bulk-form export does not go through `evaluateDeliveryPolicy` — that
+ * function is shaped around `ShoplineProductPayload` projection and
+ * validation, neither of which applies to a bulk-form row. The review-state
+ * gate is deliberately the same one the create path enforces (`approved` or
+ * `published`, matching `isEligibleStatus`'s request-phase check in
+ * `@wukong/shopline`'s delivery policy), and the blocking-flags gate mirrors
+ * `evaluateDeliveryPolicy`'s own check on `listing.flags` — bulk-form export
+ * must not be an easier way to ship unreviewed AI content than CSV or the
+ * API path is.
+ */
+async function deliverBulkForm(
+  input: DeliverInput,
+  deps: DeliveryDeps,
+): Promise<DeliveryResult> {
+  const source = await deps.listings.requireForPublish(input.draftId);
+  if (
+    !source.activeVersion ||
+    !(source.status === "approved" || source.status === "published")
+  ) {
+    return { kind: "approval_required" };
+  }
+
+  const blockingFlags = source.flags.filter(
+    (flag) => flag.severity === "blocking" && flag.status === "open",
+  );
+  if (blockingFlags.length > 0) {
+    return {
+      kind: "blocking_flags",
+      issues: blockingFlags.map((flag) => `${flag.field}: ${flag.rule}`),
+    };
+  }
+
+  if (!deps.platformProducts) {
+    throw new Error("deliverBulkForm requires deps.platformProducts");
+  }
+  const link = await deps.platformProducts.getByListingId(input.draftId);
+  if (!link) return { kind: "no_remote_link" };
+  if (!isBulkFormRawRow(link.rawRow)) {
+    return {
+      kind: "validation_error",
+      issues: ["stored bulk-form row is missing one or more columns"],
+    };
+  }
+
+  const { content } = source.activeVersion;
+  const row: BulkFormExportRow = {
+    productId: link.remoteProductId,
+    raw: link.rawRow,
+    rowNumber: 1,
+  };
+
+  let update: ReturnType<typeof createBulkFormUpdate>;
+  try {
+    update = createBulkFormUpdate(
+      [row],
+      [
+        {
+          productId: link.remoteProductId,
+          values: {
+            nameZh: content.title["zh-Hant"],
+            summaryEn: content.description.en,
+            summaryZh: content.description["zh-Hant"],
+            seoTitleEn: content.seo.title.en,
+            seoTitleZh: content.seo.title["zh-Hant"],
+            seoDescriptionEn: content.seo.description.en,
+            seoDescriptionZh: content.seo.description["zh-Hant"],
+            // No delimiter convention exists elsewhere in the codebase for
+            // this field — chosen as the plain, human-editable form an
+            // operator reviewing the file by eye would expect.
+            seoKeywords: content.tags.join(", "),
+          },
+        },
+      ],
+    );
+  } catch (error) {
+    if (error instanceof ShoplineBulkFormError) {
+      return {
+        kind: "validation_error",
+        issues: error.issues.map((issue) => issue.message),
+      };
+    }
+    throw error;
+  }
+
+  const body = writeBulkFormWorkbook(update.sheet);
+  await deps.audit.write({
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
+    action: "listing.bulk_form_exported",
+    entityId: input.draftId,
+    metadata: {
+      specVersion: update.specVersion,
+      versionId: source.activeVersion.id,
+      remoteProductId: link.remoteProductId,
+    },
+  });
+  return {
+    kind: "bulk_form",
+    body,
+    specVersion: update.specVersion,
+    versionId: source.activeVersion.id,
+  };
 }

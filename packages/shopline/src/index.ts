@@ -27,6 +27,7 @@ export {
   ShoplineBulkFormError,
   bulkFormGaps,
   createBulkFormUpdate,
+  isBulkFormRawRow,
   parseBulkForm,
 } from "./bulk-form.js";
 export type {
@@ -39,6 +40,7 @@ export type {
   BulkFormEnrichment,
   BulkFormEnrichmentIssue,
   BulkFormEnrichmentIssueCode,
+  BulkFormExportRow,
   BulkFormGapsInput,
   BulkFormIssue,
   BulkFormIssueCode,

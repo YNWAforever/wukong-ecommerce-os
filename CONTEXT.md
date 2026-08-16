@@ -25,3 +25,11 @@ issues instead of throwing. Writing it is a diff: only the eight enrichable
 content columns may change, the ten `DO NOT EDIT` columns are echoed verbatim,
 and stock delta columns are always reset to `+0` so a re-import never moves
 inventory.
+
+Export writes back only through a listing's `platform_products` link — the
+join the importer records between a listing and the remote product it came
+from. A listing with no such link has no known remote product ID, so there is
+no bulk-form row to update; it is not a bulk-form case at all. Every
+non-enriched column in an exported row is exactly what the last import saw,
+not SHOPLINE's current state, so a merchant-side change since import is
+silently reverted on re-upload unless the catalog is re-imported first.

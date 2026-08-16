@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ComplianceFlag } from "@wukong/core";
 import { evaluateDeliveryPolicy } from "@wukong/shopline";
 
 vi.mock("@wukong/shopline", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@wukong/shopline")>();
-  return { ...actual, evaluateDeliveryPolicy: vi.fn(actual.evaluateDeliveryPolicy) };
+  return {
+    ...actual,
+    evaluateDeliveryPolicy: vi.fn(actual.evaluateDeliveryPolicy),
+  };
 });
 
+import {
+  BULK_FORM_COLUMNS,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
+import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import {
   confirmShoplineQueued,
   createDeliverySnapshotReader,
@@ -74,7 +83,10 @@ function deps(audits: unknown[], jobs: unknown[]): any {
         return "job_1";
       },
     },
-    connection: async () => ({ id: "00000000-0000-4000-8000-000000000301", verified: true }),
+    connection: async () => ({
+      id: "00000000-0000-4000-8000-000000000301",
+      verified: true,
+    }),
   };
 }
 
@@ -105,7 +117,11 @@ describe("delivery audit and queue context", () => {
 
     expect(snapshot).toMatchObject({
       listing: { workspaceId: "ws_opak", draftId: "listing_1" },
-      connection: { id: "connection_1", workspaceId: "ws_opak", verified: true },
+      connection: {
+        id: "connection_1",
+        workspaceId: "ws_opak",
+        verified: true,
+      },
       job: { id: "job_1", versionId: "version_1", status: "pending_enqueue" },
       imageUrls: ["https://signed.example/asset-a"],
     });
@@ -136,13 +152,20 @@ describe("delivery audit and queue context", () => {
       });
 
       await deliverListing(
-        { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method },
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method,
+        },
         harness,
       );
 
       expect(imageUrls).toHaveBeenCalledTimes(1);
       expect(evaluateDeliveryPolicy).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(evaluateDeliveryPolicy).mock.calls[0]?.[0]).toMatchObject({
+      expect(
+        vi.mocked(evaluateDeliveryPolicy).mock.calls[0]?.[0],
+      ).toMatchObject({
         imageUrls: ["https://signed.example/asset-a"],
       });
     },
@@ -169,11 +192,18 @@ describe("delivery audit and queue context", () => {
       async ensure(input: any) {
         return { ...input, id: "job_db_1", status: "pending_enqueue" };
       },
-      async markQueued() { return true; },
+      async markQueued() {
+        return true;
+      },
     };
 
     await prepareShoplineDelivery(
-      { workspaceId: "ws_opak", actorId: "reviewer_1", draftId: "listing_1", method: "shopline_api" },
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "shopline_api",
+      },
       harness,
     );
 
@@ -269,12 +299,18 @@ describe("delivery audit and queue context", () => {
       jobId: "job_db_1",
       connectionId: persistedConnectionId,
     });
-    if (prepared.kind !== "publish_request") throw new Error("expected publish request");
-    await confirmShoplineQueued(prepared, { audit: harness.audit, publishJobs: harness.publishJobs });
+    if (prepared.kind !== "publish_request")
+      throw new Error("expected publish request");
+    await confirmShoplineQueued(prepared, {
+      audit: harness.audit,
+      publishJobs: harness.publishJobs,
+    });
     expect(audits).toHaveLength(2);
     for (const audit of audits) {
       expect(audit).toMatchObject({
-        metadata: expect.objectContaining({ connectionId: persistedConnectionId }),
+        metadata: expect.objectContaining({
+          connectionId: persistedConnectionId,
+        }),
       });
     }
   });
@@ -706,5 +742,279 @@ describe("delivery audit and queue context", () => {
       },
     });
     expect(imageUrls).toHaveBeenCalledOnce();
+  });
+});
+
+describe("bulk-form export", () => {
+  const platformProduct = {
+    remoteProductId: "remote_1",
+    rawRow: Object.fromEntries(
+      BULK_FORM_COLUMNS.map((column) => [
+        column.key,
+        column.key === "nameEn" || column.key === "nameZh"
+          ? "Demo Estate Riesling 2024"
+          : "",
+      ]),
+    ),
+  };
+
+  function bulkFormDeps(
+    options: {
+      status?: "approved" | "published" | "in_review";
+      hasLink?: boolean;
+      flags?: ComplianceFlag[];
+    } = {},
+  ) {
+    const audits: unknown[] = [];
+    return {
+      audits,
+      deps: {
+        listings: {
+          async requireForPublish() {
+            return {
+              id: "listing_1",
+              target: "shopline" as const,
+              status: options.status ?? "approved",
+              activeVersion: { id: "version_1", sequence: 1, content },
+              flags: options.flags ?? [],
+            };
+          },
+        },
+        imageUrls: async () => [],
+        audit: {
+          async write(event: unknown) {
+            audits.push(event);
+          },
+        },
+        publisher: {
+          async enqueue() {
+            throw new Error("bulk_form must not enqueue a publish job");
+          },
+        },
+        platformProducts: {
+          async getByListingId() {
+            return options.hasLink === false ? null : platformProduct;
+          },
+        },
+      },
+    };
+  }
+
+  it("exports an .xlsx workbook for an approved, linked listing", async () => {
+    const { deps, audits } = bulkFormDeps();
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result.kind).toBe("bulk_form");
+    if (result.kind !== "bulk_form") throw new Error("expected bulk_form");
+    expect(result.body).toBeInstanceOf(Uint8Array);
+    expect(result.body.length).toBeGreaterThan(0);
+    expect(result.specVersion).toBe(SHOPLINE_BULK_FORM_SPEC_VERSION);
+    expect(audits).toEqual([
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        action: "listing.bulk_form_exported",
+        entityId: "listing_1",
+        metadata: {
+          specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+          versionId: "version_1",
+          remoteProductId: "remote_1",
+        },
+      },
+    ]);
+  });
+
+  it("maps the canonical listing onto the eight enrichable columns", async () => {
+    const { deps } = bulkFormDeps();
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    if (result.kind !== "bulk_form") throw new Error("expected bulk_form");
+    const sheet = readBulkFormSheet(result.body);
+    const header = sheet[0];
+    const dataRow = sheet[2];
+    if (!header || !dataRow) throw new Error("expected header and data rows");
+
+    const expected: Record<string, string> = {
+      "Product Name (Traditional Chinese)": content.title["zh-Hant"],
+      "Product Summary (English)": content.description.en,
+      "Product Summary (Traditional Chinese)": content.description["zh-Hant"],
+      "SEO Title (English)": content.seo.title.en,
+      "SEO Title (Traditional Chinese)": content.seo.title["zh-Hant"],
+      "SEO Description (English)": content.seo.description.en,
+      "SEO Description (Traditional Chinese)":
+        content.seo.description["zh-Hant"],
+      "SEO Keywords": content.tags.join(", "),
+    };
+    for (const [columnHeader, value] of Object.entries(expected)) {
+      const index = header.indexOf(columnHeader);
+      expect(
+        index,
+        `missing column header "${columnHeader}"`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(dataRow[index]).toBe(value);
+    }
+  });
+
+  it("throws when deps.platformProducts is not supplied at all", async () => {
+    const audits: unknown[] = [];
+    const deps = {
+      listings: {
+        async requireForPublish() {
+          return {
+            id: "listing_1",
+            target: "shopline" as const,
+            status: "approved" as const,
+            activeVersion: { id: "version_1", sequence: 1, content },
+            flags: [],
+          };
+        },
+      },
+      imageUrls: async () => [],
+      audit: {
+        async write(event: unknown) {
+          audits.push(event);
+        },
+      },
+      publisher: {
+        async enqueue() {
+          throw new Error("bulk_form must not enqueue a publish job");
+        },
+      },
+      // platformProducts intentionally omitted — a wiring bug, not the
+      // "no linked product" business case (which supplies the dep and has
+      // it return null instead).
+    };
+
+    await expect(
+      deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "bulk_form",
+        },
+        deps,
+      ),
+    ).rejects.toThrow("deliverBulkForm requires deps.platformProducts");
+    expect(audits).toEqual([]);
+  });
+
+  it("refuses an unapproved listing", async () => {
+    const { deps, audits } = bulkFormDeps({ status: "in_review" });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result).toEqual({ kind: "approval_required" });
+    expect(audits).toEqual([]);
+  });
+
+  it("refuses a listing with no linked platform product", async () => {
+    const { deps, audits } = bulkFormDeps({ hasLink: false });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result).toEqual({ kind: "no_remote_link" });
+    expect(audits).toEqual([]);
+  });
+
+  it("refuses an approved listing with an open blocking compliance flag", async () => {
+    const { deps, audits } = bulkFormDeps({
+      flags: [
+        {
+          id: "flag_1",
+          field: "description",
+          rule: "health_claim",
+          severity: "blocking",
+          status: "open",
+          resolutionReason: null,
+        },
+      ],
+    });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result).toEqual({
+      kind: "blocking_flags",
+      issues: ["description: health_claim"],
+    });
+    expect(audits).toEqual([]);
+  });
+
+  it("still exports when the only flags are a warning or a resolved blocking flag", async () => {
+    const { deps, audits } = bulkFormDeps({
+      flags: [
+        {
+          id: "flag_1",
+          field: "description",
+          rule: "superlative",
+          severity: "warning",
+          status: "open",
+          resolutionReason: null,
+        },
+        {
+          id: "flag_2",
+          field: "title",
+          rule: "guarantee",
+          severity: "blocking",
+          status: "resolved",
+          resolutionReason: "reviewed and cleared",
+        },
+      ],
+    });
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+
+    expect(result.kind).toBe("bulk_form");
+    expect(audits).toHaveLength(1);
   });
 });

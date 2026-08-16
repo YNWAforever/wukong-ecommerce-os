@@ -51,6 +51,13 @@ export type PlatformProductRepository = {
   ): Promise<PlatformProduct[]>;
   listRecent(limit?: number): Promise<PlatformProduct[]>;
   /**
+   * The link the exporter reads: does this listing have a known remote
+   * product at all. `listingId` has no unique constraint on the table, so a
+   * listing could in principle link to more than one row; this returns the
+   * most recently updated one, matching `listRecent`'s own ordering.
+   */
+  getByListingId(listingId: string): Promise<PlatformProduct | null>;
+  /**
    * Detaches mirror rows from a draft so the draft can be deleted.
    *
    * The listing foreign key is `ON DELETE RESTRICT` precisely so a draft delete
@@ -158,6 +165,22 @@ export function createPlatformProductRepository(
         })
         .returning(COLUMNS);
       return rows.map(toPlatformProduct);
+    },
+
+    async getByListingId(listingId) {
+      scope.assertOpen();
+      const [row] = await transaction
+        .select(COLUMNS)
+        .from(platformProducts)
+        .where(
+          and(
+            eq(platformProducts.workspaceId, workspaceId),
+            eq(platformProducts.listingId, listingId),
+          ),
+        )
+        .orderBy(desc(platformProducts.updatedAt))
+        .limit(1);
+      return row ? toPlatformProduct(row) : null;
     },
 
     async unlinkListing(listingId) {

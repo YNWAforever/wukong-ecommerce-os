@@ -329,6 +329,20 @@ export type BulkFormSheet = readonly (readonly BulkFormCell[])[];
 /** A row exactly as the sheet holds it. Blank and whitespace-only cells are null. */
 export type BulkFormRawRow = Readonly<Record<BulkFormColumnKey, string | null>>;
 
+/**
+ * `platform_products.rawRow` is stored as `Record<string, string | null>` —
+ * looser than `BulkFormRawRow`, because the database column has no way to
+ * enforce that all 71 `BulkFormColumnKey`s are present. The importer always
+ * writes a full row, so this should never fail in practice; it exists so a
+ * malformed stored row is reported as unexportable instead of producing
+ * `undefined` cells `createBulkFormUpdate` wasn't written to expect.
+ */
+export function isBulkFormRawRow(
+  value: Record<string, string | null>,
+): value is BulkFormRawRow {
+  return BULK_FORM_COLUMNS.every((column) => column.key in value);
+}
+
 export type BulkFormIssueCode =
   | "header_row_missing"
   | "column_contract_mismatch"
@@ -416,6 +430,18 @@ export type BulkFormProductRow = {
   /** Only values the form states. Inference from prose belongs to `extract`. */
   facts: ListingFacts;
 };
+
+/**
+ * The only fields `createBulkFormUpdate` reads at runtime. Export builds this
+ * directly from a stored `platform_products` row, which carries none of
+ * `BulkFormProductRow`'s other derived fields — those exist only because
+ * `parseBulkForm` derives them from a fresh upload, and the writer never
+ * needed them.
+ */
+export type BulkFormExportRow = Pick<
+  BulkFormProductRow,
+  "productId" | "raw" | "rowNumber"
+>;
 
 export type BulkFormParseResult = {
   specVersion: typeof SHOPLINE_BULK_FORM_SPEC_VERSION;
@@ -951,7 +977,7 @@ const isEnrichable = (column: string): column is BulkFormEnrichableColumn =>
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function validateEnrichments(
-  rows: readonly BulkFormProductRow[],
+  rows: readonly BulkFormExportRow[],
   enrichments: readonly BulkFormEnrichment[],
 ): BulkFormEnrichmentIssue[] {
   const issues: BulkFormEnrichmentIssue[] = [];
@@ -1043,7 +1069,7 @@ function validateEnrichments(
  * mirroring `createShoplineCsv`: never emit a file SHOPLINE would reject.
  */
 export function createBulkFormUpdate(
-  rows: readonly BulkFormProductRow[],
+  rows: readonly BulkFormExportRow[],
   enrichments: readonly BulkFormEnrichment[],
   options: BulkFormUpdateOptions = {},
 ): BulkFormUpdate {

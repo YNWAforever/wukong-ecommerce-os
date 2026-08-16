@@ -3,10 +3,7 @@ import {
   ASSET_EXPORT_READ_TTL_MS,
   resolveListingImageUrls,
 } from "@wukong/assets";
-import {
-  SHOPLINE_INGRESS_PATH,
-  type ShoplinePublishJob,
-} from "@wukong/jobs";
+import { SHOPLINE_INGRESS_PATH, type ShoplinePublishJob } from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -29,8 +26,9 @@ import {
 } from "../../../../../lib/delivery-service";
 
 const bodySchema = z
-  .object({ method: z.enum(["csv", "shopline_api"]) })
+  .object({ method: z.enum(["csv", "shopline_api", "bulk_form"]) })
   .strict();
+export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 type DeliveryPort = { deliver(input: DeliverInput): Promise<DeliveryResult> };
 export type DeliverListingRouteDeps = {
@@ -55,6 +53,20 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
         headers: {
           "content-type": "text/csv; charset=utf-8",
           "content-disposition": `attachment; filename="${listingId}-${result.specVersion}.csv"`,
+        },
+      });
+    case "bulk_form":
+      // `writeBulkFormWorkbook`'s return type is `Uint8Array<ArrayBufferLike>`
+      // under this repo's Node type augmentation, which `BodyInit` doesn't
+      // structurally accept in TS 5.9's DOM lib (it wants
+      // `Uint8Array<ArrayBuffer>`). Re-wrapping copies into a fresh,
+      // concretely-typed buffer rather than casting past the checker.
+      return new Response(new Uint8Array(result.body), {
+        status: 200,
+        headers: {
+          "content-type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "content-disposition": `attachment; filename="${listingId}-${result.specVersion}.xlsx"`,
         },
       });
     case "queued":
@@ -105,6 +117,12 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
         message: "SHOPLINE is not connected; use CSV fallback.",
         csvFallback: result.csvFallback,
       });
+    case "no_remote_link":
+      return jsonResponse(409, {
+        code: "no_remote_link",
+        message:
+          "This listing has no linked SHOPLINE product; bulk-form export does not apply.",
+      });
   }
 }
 
@@ -154,7 +172,7 @@ export function defaultDelivery(
     async deliver(input) {
       const database = getDatabase();
       const assetStore = getAssetStore();
-      if (input.method === "csv") {
+      if (input.method === "csv" || input.method === "bulk_form") {
         return database.forWorkspace(
           input.workspaceId,
           async (repositories) => {
@@ -179,11 +197,15 @@ export function defaultDelivery(
                 },
               },
               connection: async () => {
-                const connection = await repositories.shoplineConnections.getDefault();
-                return connection ? { id: connection.id, verified: true } : null;
+                const connection =
+                  await repositories.shoplineConnections.getDefault();
+                return connection
+                  ? { id: connection.id, verified: true }
+                  : null;
               },
               existingDelivery: (key) =>
                 repositories.publishJobs.getByIdempotencyKey(key),
+              platformProducts: repositories.platformProducts,
             });
           },
         );
@@ -205,7 +227,8 @@ export function defaultDelivery(
             audit: repositories.audit,
             publishJobs: repositories.publishJobs,
             connection: async () => {
-              const connection = await repositories.shoplineConnections.getDefault();
+              const connection =
+                await repositories.shoplineConnections.getDefault();
               return connection ? { id: connection.id, verified: true } : null;
             },
             existingDelivery: (key) =>
