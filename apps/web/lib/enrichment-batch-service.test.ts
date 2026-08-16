@@ -359,7 +359,6 @@ describe("enrichment batch advance", () => {
       pending: [],
       queued: ["draft_busy"],
       listingStatuses: { draft_busy: "processing" },
-      counts: { pending: 0, queued: 1 },
     });
 
     const result = await service.advanceBatch(advanceInput);
