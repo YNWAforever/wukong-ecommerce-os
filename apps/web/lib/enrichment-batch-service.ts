@@ -1,3 +1,4 @@
+import type { ListingStatus } from "@wukong/core";
 import type { Database } from "@wukong/db";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
@@ -45,20 +46,43 @@ export type AdvanceBatchResult = {
 };
 
 /**
- * A queued draft in one of these states has finished its enrichment run. The
- * two lists are disjoint and neither contains `received` or `processing`, so a
- * draft still in flight stays queued and cannot be counted twice.
+ * How a queued draft's listing status resolves for the batch that queued it.
+ *
+ * `null` means still in flight: the draft stays queued and is reconciled on a
+ * later advance. Every other status is terminal for the batch.
+ *
+ * This is a `Record` over `ListingStatus` rather than a pair of arrays
+ * precisely because the arrays could be — and were — incomplete. `needs_info`
+ * and `reopened` appeared in neither, so a draft landing there was counted as
+ * neither finished nor in flight, and its batch could never reach `completed`.
+ * A `Record` over a union requires every key, so an eleventh listing status
+ * fails `pnpm lint` until someone decides how a batch reads it.
  */
-const SUCCEEDED_STATUSES = [
-  "in_review",
-  "approved",
-  "publishing",
-  "published",
-] as const;
-const FAILED_STATUSES = ["failed", "publish_failed"] as const;
+const BATCH_OUTCOME: Record<ListingStatus, "succeeded" | "failed" | null> = {
+  received: null,
+  processing: null,
+  // The pipeline ran, spent budget, and concluded it cannot produce a listing
+  // without more information. Nothing further happens without operator action,
+  // so it is finished as far as the batch is concerned — and it produced no
+  // enrichment, so it is not a success.
+  needs_info: "failed",
+  in_review: "succeeded",
+  approved: "succeeded",
+  // Approved and then reopened by a human. The enrichment run succeeded; the
+  // reopen is review work that happens to overlap the batch's lifetime.
+  reopened: "succeeded",
+  publishing: "succeeded",
+  published: "succeeded",
+  publish_failed: "failed",
+  failed: "failed",
+};
 
-const includes = (statuses: readonly string[], value: string | undefined) =>
-  value !== undefined && statuses.includes(value);
+const outcomeOf = (
+  status: string | undefined,
+): "succeeded" | "failed" | null =>
+  status === undefined
+    ? null
+    : (BATCH_OUTCOME[status as ListingStatus] ?? null);
 
 export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
   async function createBatch(
@@ -163,11 +187,11 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         );
         if (queued.length > 0) {
           const statuses = await repositories.listings.statusesByIds(queued);
-          const succeeded = queued.filter((id) =>
-            includes(SUCCEEDED_STATUSES, statuses[id]),
+          const succeeded = queued.filter(
+            (id) => outcomeOf(statuses[id]) === "succeeded",
           );
-          const failed = queued.filter((id) =>
-            includes(FAILED_STATUSES, statuses[id]),
+          const failed = queued.filter(
+            (id) => outcomeOf(statuses[id]) === "failed",
           );
           await repositories.enrichmentBatches.markItems(
             input.batchId,

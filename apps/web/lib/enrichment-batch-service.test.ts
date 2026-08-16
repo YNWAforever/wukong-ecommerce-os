@@ -363,6 +363,62 @@ describe("enrichment batch advance", () => {
     expect(statuses).not.toContain("completed");
   });
 
+  it("counts a draft that stopped for more information as finished, not in flight", async () => {
+    const { service, marked } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "needs_info" },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // It spent budget and produced no listing, so it is a failure for the
+    // batch — but above all it must not stay queued forever.
+    expect(marked).toContainEqual({
+      listingIds: ["draft_stuck"],
+      status: "failed",
+    });
+  });
+
+  it("completes a batch whose last draft stopped for more information", async () => {
+    const { service, statuses } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_stuck"],
+      listingStatuses: { draft_stuck: "needs_info" },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("completed");
+    expect(statuses).toContain("completed");
+  });
+
+  it("counts a reopened draft as enriched", async () => {
+    const { service, marked } = advanceServiceWith({
+      spent: 1,
+      budget: 10,
+      pending: [],
+      queued: ["draft_reopened"],
+      listingStatuses: { draft_reopened: "reopened" },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    // A human approved it and then reopened it. The enrichment run the batch
+    // paid for did its job; what happened afterwards is review work.
+    expect(marked).toContainEqual({
+      listingIds: ["draft_reopened"],
+      status: "succeeded",
+    });
+  });
+
   it("rejects an unknown batch", async () => {
     const service = createEnrichmentBatchService({
       getDatabase: () =>
