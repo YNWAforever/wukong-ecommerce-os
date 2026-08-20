@@ -23,7 +23,10 @@ type Options = {
   env?: Readonly<Record<string, string | undefined>>;
   now?: () => number;
   fetch?: typeof globalThis.fetch;
+  sleep?: (ms: number) => Promise<void>;
 };
+
+const RETRY_DELAY_MS = 750;
 
 export type QueueIngressReason =
   | "not_configured"
@@ -83,23 +86,37 @@ export function createCloudflareIngressClient(
         body,
       });
 
+      const attemptFetch = () =>
+        (options.fetch ?? globalThis.fetch)(new URL(path, ingressUrl), {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-wukong-timestamp": String(timestamp),
+            "x-wukong-signature": signature,
+          },
+          body,
+          signal: AbortSignal.timeout(5_000),
+        });
+
+      // The shared *.workers.dev route is subject to connection-level
+      // throttling under bursty traffic from Vercel's shared egress IPs
+      // (observed directly: identical requests spaced 5s apart always
+      // succeed, tight bursts hard-timeout at the TCP level). One retry
+      // after a short delay clears the transient case without masking a
+      // genuinely broken ingress.
       let response: Response;
       try {
-        response = await (options.fetch ?? globalThis.fetch)(
-          new URL(path, ingressUrl),
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-wukong-timestamp": String(timestamp),
-              "x-wukong-signature": signature,
-            },
-            body,
-            signal: AbortSignal.timeout(5_000),
-          },
-        );
+        response = await attemptFetch();
       } catch {
-        throw queueUnavailable("unreachable");
+        await (
+          options.sleep ??
+          ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)))
+        )(RETRY_DELAY_MS);
+        try {
+          response = await attemptFetch();
+        } catch {
+          throw queueUnavailable("unreachable");
+        }
       }
       if (response.status !== 202) throw queueUnavailable("rejected");
 
