@@ -110,39 +110,64 @@ describe("Cloudflare queue ingress runtime", () => {
     ).rejects.toEqual(new QueueIngressError("not_configured"));
   });
 
-  it("fails safely when ingress does not accept the request", async () => {
+  it("fails safely without retrying when ingress does not accept the request", async () => {
+    const fetch = vi.fn(
+      async () => new Response("internal secret response", { status: 500 }),
+    );
     const client = createCloudflareIngressClient({
       env: {
         QUEUE_INGRESS_URL: "https://queue.example",
         QUEUE_INGRESS_SECRET: "s".repeat(32),
       },
-      fetch: vi.fn(
-        async () => new Response("internal secret response", { status: 500 }),
-      ),
+      fetch,
     });
 
     await expect(client.enqueue(LISTING_INGRESS_PATH, payload)).rejects.toEqual(
       new QueueIngressError("rejected"),
     );
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("uses a five-second abort and fails safely on timeout", async () => {
+  it("uses a five-second abort and retries once before failing safely on timeout", async () => {
     const timeout = vi
       .spyOn(AbortSignal, "timeout")
       .mockReturnValue(new AbortController().signal);
+    const fetch = vi.fn(async () => {
+      throw new DOMException("request timed out", "AbortError");
+    });
     const client = createCloudflareIngressClient({
       env: {
         QUEUE_INGRESS_URL: "https://queue.example",
         QUEUE_INGRESS_SECRET: "s".repeat(32),
       },
-      fetch: vi.fn(async () => {
-        throw new DOMException("request timed out", "AbortError");
-      }),
+      fetch,
+      sleep: async () => {},
     });
 
     await expect(client.enqueue(LISTING_INGRESS_PATH, payload)).rejects.toEqual(
       new QueueIngressError("unreachable"),
     );
     expect(timeout).toHaveBeenCalledWith(5_000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries once after a transient connection failure, then succeeds", async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const client = createCloudflareIngressClient({
+      env: {
+        QUEUE_INGRESS_URL: "https://queue.example",
+        QUEUE_INGRESS_SECRET: "s".repeat(32),
+      },
+      fetch,
+      sleep: async () => {},
+    });
+
+    await expect(
+      client.enqueue(LISTING_INGRESS_PATH, payload),
+    ).resolves.toEqual({ accepted: true });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
