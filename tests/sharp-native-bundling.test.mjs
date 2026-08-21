@@ -20,22 +20,36 @@ import { describe, it } from "node:test";
 // (POST /api/listings/[id]/approve) pulls sharp into its module graph.
 // This test proves the decoupling actually holds for the route that broke.
 //
+// A first attempt at fixing the approve route's own native-library bundling
+// used a broad, unscoped outputFileTracingIncludes glob -- that deploy failed
+// to build on Vercel entirely (ENOENT), most likely from matching pnpm's
+// symlinked virtual-store entries. The fix below is scoped to only the one
+// route that needs it, and uses a narrow glob that walks directly into
+// pnpm's real (non-symlinked) content-addressed package directories instead
+// of through any symlink indirection layer.
+//
 // Requires `pnpm --filter @wukong/web build` to have already run (CI runs
 // this as the "Production build" step) -- skips gracefully otherwise, since
 // this file has nothing to inspect without that output.
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const traceFile = `${root}apps/web/.next/server/app/api/listings/route.js.nft.json`;
+const listingsTraceFile = `${root}apps/web/.next/server/app/api/listings/route.js.nft.json`;
+const approveTraceFile = `${root}apps/web/.next/server/app/api/listings/[id]/approve/route.js.nft.json`;
+
+function readTrace(traceFile, t) {
+  if (!existsSync(traceFile)) {
+    t.skip(
+      "apps/web/.next build output not present -- run `pnpm --filter @wukong/web build` first",
+    );
+    return null;
+  }
+  return JSON.parse(readFileSync(traceFile, "utf8"));
+}
 
 describe("GET /api/listings does not transitively depend on sharp", () => {
   it("has no sharp/libvips reference in its production build trace manifest", (t) => {
-    if (!existsSync(traceFile)) {
-      t.skip(
-        "apps/web/.next build output not present -- run `pnpm --filter @wukong/web build` first",
-      );
-      return;
-    }
-    const trace = JSON.parse(readFileSync(traceFile, "utf8"));
+    const trace = readTrace(listingsTraceFile, t);
+    if (!trace) return;
     const sharpReferences = trace.files.filter((file) =>
       /(^|\/)(sharp|@img\+sharp)/i.test(file),
     );
@@ -47,6 +61,25 @@ describe("GET /api/listings does not transitively depend on sharp", () => {
         "production). If this now legitimately needs sharp, this test's premise no longer holds " +
         "and it should be revisited alongside the native-library-bundling problem it was written " +
         "to avoid.",
+    );
+  });
+});
+
+describe("POST /api/listings/[id]/approve bundles sharp's native libvips library", () => {
+  it("includes a libvips shared library in its production build trace manifest", (t) => {
+    const trace = readTrace(approveTraceFile, t);
+    if (!trace) return;
+    const libvipsSharedLibrary = trace.files.find(
+      (file) =>
+        /\.pnpm\/.*sharp-libvips/.test(file) &&
+        /\.(so|dylib)(\.[0-9.]+)?$/.test(file),
+    );
+    assert.ok(
+      libvipsSharedLibrary,
+      "expected the approve route's trace manifest to include a sharp-libvips shared library " +
+        "file (.so on Linux, .dylib locally) -- if this is missing, next.config.mjs's " +
+        "outputFileTracingIncludes no longer covers this route and it will fail at runtime with " +
+        "ERR_DLOPEN_FAILED whenever a reviewer actually approves a listing with a background choice",
     );
   });
 });
