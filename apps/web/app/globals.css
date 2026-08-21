@@ -448,7 +448,8 @@ button:disabled {
 .listing-fields-form,
 .evidence-panel,
 .flags,
-.delivery-panel {
+.delivery-panel,
+.product-shot-panel {
   padding: 28px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -696,6 +697,24 @@ button:disabled {
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+.product-shot-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 280px;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+.product-shot-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.product-shot-toggle {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }
 .form-heading {
   display: flex;
@@ -1007,7 +1026,8 @@ button:disabled {
   .listing-fields-form,
   .evidence-panel,
   .flags,
-  .delivery-panel {
+  .delivery-panel,
+  .product-shot-panel {
     padding: 20px 16px;
   }
   .upload-dropzone {
