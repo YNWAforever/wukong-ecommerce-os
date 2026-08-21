@@ -49,7 +49,7 @@ export function ProductShotPanel({
         className="product-shot-preview"
         style={backgroundStyleFor(choice, brandBackgroundColor)}
       >
-        <img src={previewUrl} alt="Product shot preview" />
+        <img src={previewUrl} alt="商品照預覽" />
       </div>
       <div className="product-shot-toggle" role="group" aria-label="背景選擇">
         <button
@@ -69,6 +69,9 @@ export function ProductShotPanel({
           }
           aria-pressed={choice === "brand"}
           disabled={!brandBackgroundColor}
+          aria-label={
+            brandBackgroundColor ? undefined : "品牌背景 — 尚未設定品牌背景色"
+          }
           title={brandBackgroundColor ? undefined : "尚未設定品牌背景色"}
           onClick={() => select("brand")}
         >
