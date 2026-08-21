@@ -21,6 +21,7 @@ import type {
   ListingField,
   ListingReviewModel,
 } from "./listing-view-models";
+import { ProductShotPanel, type BackgroundChoice } from "./product-shot-panel";
 
 type ListingPermissions = {
   canProcess: boolean;
@@ -396,6 +397,8 @@ export function ListingReviewClient({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [productShotChoice, setProductShotChoice] =
+    useState<BackgroundChoice>("white");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -651,6 +654,13 @@ export function ListingReviewClient({
       <div className="review-layout">
         <EvidencePanel evidence={evidence} />
         <div className="review-content">
+          {snapshot.productShot ? (
+            <ProductShotPanel
+              previewUrl={snapshot.productShot.previewUrl}
+              brandBackgroundColor={snapshot.productShot.brandBackgroundColor}
+              onChoiceChange={setProductShotChoice}
+            />
+          ) : null}
           <ListingFieldsForm
             key={model.versionId}
             model={model}
