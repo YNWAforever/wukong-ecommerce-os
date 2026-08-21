@@ -30,4 +30,66 @@ describe("runListingPipeline", () => {
     await expect(runListingPipeline(input, deps)).resolves.toEqual(first);
     expect({ ai: state.aiRuns.length, versions: state.versions.length, audits: state.audits.length }).toEqual(counts);
   });
+
+  it("stores a product shot cutout and logs its cost when a productShot provider is configured", async () => {
+    const writtenObjects: Array<{
+      key: string;
+      body: Uint8Array;
+      mimeType: string;
+    }> = [];
+    const { deps, state } = makeHarness({
+      productShot: {
+        async generateProductShot() {
+          return {
+            cutoutPng: new TextEncoder().encode("cutout-bytes"),
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              estimatedCostUsd: 0.02,
+              latencyMs: 8,
+              model: "fake-listing-provider",
+              promptVersion: "1.0.0",
+            },
+          };
+        },
+      },
+      assetStore: {
+        createAssetKey({ workspaceId: ws, fileName }) {
+          return `ws/${ws}/sources/00000000-0000-4000-8000-000000000099/${fileName}`;
+        },
+        async writeObject(_workspaceId, key, body, mimeType) {
+          writtenObjects.push({ key, body, mimeType });
+          return { size: body.byteLength, mimeType };
+        },
+      },
+    });
+
+    const result = await runListingPipeline(
+      { workspaceId, draftId, activeVersionSequence: 0 },
+      deps,
+    );
+
+    expect(result).toEqual({ status: "in_review", versionId: "version_1" });
+    expect(state.sourceAssetsCreated).toHaveLength(1);
+    expect(state.sourceAssetsCreated[0]).toMatchObject({
+      kind: "image/png",
+      metadata: { role: "product_shot_cutout" },
+    });
+    expect(writtenObjects).toHaveLength(1);
+    expect(writtenObjects[0]?.mimeType).toBe("image/png");
+    expect(state.aiRuns).toEqual(
+      expect.arrayContaining([expect.objectContaining({ task: "product_shot" })]),
+    );
+  });
+
+  it("skips product shot generation entirely when no productShot provider is configured (unchanged existing behavior)", async () => {
+    const { deps, state } = makeHarness();
+    const result = await runListingPipeline(
+      { workspaceId, draftId, activeVersionSequence: 0 },
+      deps,
+    );
+    expect(result).toEqual({ status: "in_review", versionId: "version_1" });
+    expect(state.sourceAssetsCreated).toEqual([]);
+    expect(state.aiRuns).toHaveLength(2);
+  });
 });

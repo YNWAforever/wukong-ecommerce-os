@@ -1,4 +1,12 @@
-import type { ExtractionInput, ExtractionResult, GenerationInput, GenerationResult, AIUsage, ListingAIProvider } from "@wukong/ai";
+import type {
+  ExtractionInput,
+  ExtractionResult,
+  GenerationInput,
+  GenerationResult,
+  AIUsage,
+  ListingAIProvider,
+  ProductShotProvider,
+} from "@wukong/ai";
 import type { AuditContext, AuditWriter, CanonicalListing, FieldEvidence, ListingFacts, WorkspaceProfile } from "@wukong/core";
 import type { PipelineDependencies, PipelineRepositories } from "./listing-pipeline.js";
 
@@ -9,8 +17,34 @@ export const facts: ListingFacts = { sku: "OPAK-001", producer: "Demo Estate", p
 export const evidence: FieldEvidence[] = [{ field: "priceHkd", sourceAssetId: "asset_1", page: null, excerpt: "HK$288", confidence: 1 }];
 export const listing: CanonicalListing = { ...facts, sku: facts.sku!, producer: facts.producer!, productType: facts.productType!, country: facts.country!, volumeMl: facts.volumeMl!, abvPercent: facts.abvPercent!, priceHkd: facts.priceHkd!, title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" }, seo: { title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" } }, tags: ["Riesling"], imageAssetIds: ["asset_1"] };
 export const profile: WorkspaceProfile = { name: "Opak Cellar", currency: "HKD", locales: ["en", "zh-Hant"], tone: "clear and restrained", claimPolicy: ["No invented claims"], requiredFields: ["sku", "priceHkd"] };
-export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown; leaseToken: string }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null } };
-export type HarnessOptions = { missingFields?: string[]; extractError?: Error; generateError?: Error; generateProvider?: (input: GenerationInput) => Promise<GenerationResult>; sourceError?: Error; completeError?: Error; completeErrorOnce?: Error; generationUnavailable?: boolean; busyLeaseExpiresAt?: Date; nullLeaseTokenForCompleted?: boolean };
+export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown; leaseToken: string }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null }; sourceAssetsCreated: Array<{ storageKey: string; kind: string; metadata: unknown }> };
+export type HarnessOptions = {
+  missingFields?: string[];
+  extractError?: Error;
+  generateError?: Error;
+  generateProvider?: (input: GenerationInput) => Promise<GenerationResult>;
+  sourceError?: Error;
+  completeError?: Error;
+  completeErrorOnce?: Error;
+  generationUnavailable?: boolean;
+  busyLeaseExpiresAt?: Date;
+  nullLeaseTokenForCompleted?: boolean;
+  productShot?: ProductShotProvider;
+  assetStore?: {
+    createAssetKey(input: {
+      workspaceId: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }): string;
+    writeObject(
+      workspaceId: string,
+      key: string,
+      body: Uint8Array,
+      mimeType: string,
+    ): Promise<{ size: number; mimeType: string }>;
+  };
+};
 
 export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
   return {
@@ -20,7 +54,7 @@ export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
 }
 
 export function makeHarness(options: HarnessOptions = {}): { state: HarnessState; deps: PipelineDependencies & { state: HarnessState } } {
-  const state: HarnessState = { status: "received", steps: new Map(), aiRuns: [], versions: [], audits: [] };
+  const state: HarnessState = { status: "received", steps: new Map(), aiRuns: [], versions: [], audits: [], sourceAssetsCreated: [] };
   let completeErrorConsumed = false;
   const audit: AuditWriter = { async write(event) { state.audits.push(event.action); } };
   const repos: PipelineRepositories = {
@@ -33,7 +67,13 @@ export function makeHarness(options: HarnessOptions = {}): { state: HarnessState
       async complete(_id: string, result, _context: AuditContext, _audit: AuditWriter) { if (options.completeError || (options.completeErrorOnce && !completeErrorConsumed)) { completeErrorConsumed = true; throw options.completeError ?? options.completeErrorOnce; } state.status = result.status; state.completed = { status: result.status, versionId: result.versionId }; state.audits.push(result.status === "in_review" ? "listing.submitted_for_review" : "listing.info_requested"); },
       async fail(_id: string, code, _context: AuditContext, _audit: AuditWriter) { state.status = "failed"; state.failure = code; state.audits.push("listing.pipeline_failed"); },
     },
-    sourceAssets: { async listForListing() { if (options.sourceError) throw options.sourceError; return [{ id: "asset_1", mimeType: "image/png", storageKey: `ws/${workspaceId}/sources/asset_1/label.png` }]; } },
+    sourceAssets: {
+      async listForListing() { if (options.sourceError) throw options.sourceError; return [{ id: "asset_1", mimeType: "image/png", storageKey: `ws/${workspaceId}/sources/asset_1/label.png` }]; },
+      async create(input: { storageKey: string; kind: string; metadata: unknown }) {
+        state.sourceAssetsCreated.push(input);
+        return { id: `asset_shot_${state.sourceAssetsCreated.length}` };
+      },
+    },
     workspaces: { async requireProfile() { return profile; } },
     pipelineRuns: {
       async getCompleted() { return state.completed ?? null; },
@@ -66,7 +106,7 @@ export function makeHarness(options: HarnessOptions = {}): { state: HarnessState
     aiRuns: { async append(run) { if (!state.aiRuns.some((existing) => existing.task === run.task && existing.idempotencyKey === run.idempotencyKey)) state.aiRuns.push({ task: run.task, idempotencyKey: run.idempotencyKey }); } },
     audit,
   };
-  const deps: PipelineDependencies & { state: HarnessState } = { state, async withWorkspace<T>(id: string, work: (repositories: PipelineRepositories) => Promise<T>) { if (id !== workspaceId) throw new Error("wrong workspace"); return work(repos); }, async assetInputs(assets) { return assets.map((asset) => ({ id: asset.id, mimeType: asset.mimeType, readUrl: `https://assets.test/${asset.id}` })); }, ai: makeProvider(options) };
+  const deps: PipelineDependencies & { state: HarnessState } = { state, async withWorkspace<T>(id: string, work: (repositories: PipelineRepositories) => Promise<T>) { if (id !== workspaceId) throw new Error("wrong workspace"); return work(repos); }, async assetInputs(assets) { return assets.map((asset) => ({ id: asset.id, mimeType: asset.mimeType, readUrl: `https://assets.test/${asset.id}` })); }, ai: makeProvider(options), productShot: options.productShot, assetStore: options.assetStore };
   return { state, deps };
 }
 

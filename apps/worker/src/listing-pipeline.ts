@@ -80,7 +80,14 @@ export type PipelineRepositories = {
       audit: PipelineAuditWriter,
     ): Promise<void>;
   };
-  sourceAssets: { listForListing(id: string): Promise<PipelineAsset[]> };
+  sourceAssets: {
+    listForListing(id: string): Promise<PipelineAsset[]>;
+    create?(input: {
+      storageKey: string;
+      kind: string;
+      metadata: Record<string, unknown>;
+    }): Promise<{ id: string }>;
+  };
   workspaces: { requireProfile(): Promise<WorkspaceProfile> };
   pipelineRuns: {
     getCompleted(idempotencyKey: string): Promise<PipelineResult | null>;
@@ -129,7 +136,7 @@ export type PipelineRepositories = {
   };
   aiRuns: {
     append(run: {
-      task: "extract" | "generate";
+      task: "extract" | "generate" | "product_shot";
       draftId: string;
       idempotencyKey: string;
       outcome: "succeeded";
@@ -151,6 +158,21 @@ export type PipelineDependencies = {
   ): Promise<T>;
   assetInputs(assets: PipelineAsset[]): Promise<ExtractionAsset[]>;
   ai: ListingAIProvider;
+  productShot?: import("@wukong/ai").ProductShotProvider;
+  assetStore?: {
+    writeObject(
+      workspaceId: string,
+      key: string,
+      body: Uint8Array,
+      mimeType: string,
+    ): Promise<{ size: number; mimeType: string }>;
+    createAssetKey(input: {
+      workspaceId: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    }): string;
+  };
 };
 export type PipelineErrorCode =
   "provider_timeout" | "provider_failure" | "pipeline_failure";
@@ -193,7 +215,7 @@ function context(input: ListingPipelineInput): AuditContext {
   };
 }
 function aiRunFrom(
-  task: "extract" | "generate",
+  task: "extract" | "generate" | "product_shot",
   usage: AIUsage,
   input: ListingPipelineInput,
 ) {
@@ -485,6 +507,29 @@ export async function runListingPipeline(
         await repos.aiRuns.append(
           aiRunFrom("generate", generation.usage, input),
         );
+        if (deps.productShot && deps.assetStore && repos.sourceAssets.create) {
+          const shot = await deps.productShot.generateProductShot({
+            assets: await deps.assetInputs(source.assets),
+          });
+          const storageKey = deps.assetStore.createAssetKey({
+            workspaceId: input.workspaceId,
+            fileName: "product-shot-cutout.png",
+            mimeType: "image/png",
+            size: shot.cutoutPng.byteLength,
+          });
+          await deps.assetStore.writeObject(
+            input.workspaceId,
+            storageKey,
+            shot.cutoutPng,
+            "image/png",
+          );
+          await repos.sourceAssets.create({
+            storageKey,
+            kind: "image/png",
+            metadata: { role: "product_shot_cutout", listingId: input.draftId },
+          });
+          await repos.aiRuns.append(aiRunFrom("product_shot", shot.usage, input));
+        }
         await repos.pipelineRuns.recordStep({
           idempotencyKey,
           listingId: input.draftId,
