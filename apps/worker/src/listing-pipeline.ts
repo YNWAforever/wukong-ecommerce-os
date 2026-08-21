@@ -502,17 +502,21 @@ export async function runListingPipeline(
     // deps.ai.generate above is itself called outside a transaction: the worker's
     // Postgres pool is capped at 5 connections, so a transaction must never sit
     // open across a slow external HTTP round trip.
-    let productShotOutcome: { storageKey: string; usage: AIUsage } | null =
-      null;
+    let productShotOutcome: {
+      storageKey: string;
+      usage: AIUsage;
+      size: number;
+    } | null = null;
     if (deps.productShot && deps.assetStore) {
       const shot = await deps.productShot.generateProductShot({
         assets: await deps.assetInputs(source.assets),
       });
+      const size = shot.cutoutPng.byteLength;
       const storageKey = deps.assetStore.createAssetKey({
         workspaceId: input.workspaceId,
         fileName: "product-shot-cutout.png",
         mimeType: "image/png",
-        size: shot.cutoutPng.byteLength,
+        size,
       });
       await deps.assetStore.writeObject(
         input.workspaceId,
@@ -520,7 +524,7 @@ export async function runListingPipeline(
         shot.cutoutPng,
         "image/png",
       );
-      productShotOutcome = { storageKey, usage: shot.usage };
+      productShotOutcome = { storageKey, usage: shot.usage, size };
     }
     const result = await deps.withWorkspace(
       input.workspaceId,
@@ -546,6 +550,16 @@ export async function runListingPipeline(
           await repos.sourceAssets.attachToListing?.(input.draftId, [
             created.id,
           ]);
+          await repos.audit.write({
+            ...context(input),
+            entityId: created.id,
+            action: "asset.product_shot_created",
+            metadata: {
+              size: productShotOutcome.size,
+              mimeType: "image/png",
+              listingId: input.draftId,
+            },
+          });
           await repos.aiRuns.append(
             aiRunFrom("product_shot", productShotOutcome.usage, input),
           );
