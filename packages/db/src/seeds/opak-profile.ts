@@ -21,6 +21,7 @@ export const opakProfile: WorkspaceProfile = workspaceProfileSchema.parse({
     "abvPercent",
     "priceHkd",
   ],
+  brandBackgroundColor: null,
 });
 
 export const OPAK_WORKSPACE_ID = "ws_opak";

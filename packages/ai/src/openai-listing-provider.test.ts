@@ -135,6 +135,7 @@ const profile = {
   tone: "clear and restrained",
   claimPolicy: ["No invented claims"],
   requiredFields: ["sku", "producer"],
+  brandBackgroundColor: null,
 };
 
 function fakeClient(...responses: unknown[]) {

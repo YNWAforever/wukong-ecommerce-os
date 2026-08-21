@@ -80,6 +80,7 @@ export const profile: WorkspaceProfile = {
   tone: "clear and restrained",
   claimPolicy: ["No invented claims"],
   requiredFields: ["sku", "priceHkd"],
+  brandBackgroundColor: null,
 };
 export type HarnessState = {
   status: "received" | "processing" | "needs_info" | "in_review" | "failed";
