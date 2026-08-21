@@ -165,3 +165,68 @@ describe("S3AssetStore", () => {
     expect(calls).toBe(0);
   });
 });
+
+describe("S3AssetStore.readObject", () => {
+  it("issues a GetObjectCommand and returns the body bytes", async () => {
+    const bodyBytes = new TextEncoder().encode("fake-png-bytes");
+    const send = vi.fn(async () => ({
+      Body: { transformToByteArray: async () => bodyBytes },
+    }));
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: { send },
+    });
+
+    const result = await store.readObject(
+      "ws_opak",
+      "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+    );
+
+    expect(result).toEqual(bodyBytes);
+    expect(send).toHaveBeenCalledOnce();
+    const [command] = send.mock.calls[0]!;
+    expect((command as { input: Record<string, unknown> }).input).toMatchObject(
+      {
+        Bucket: "test-bucket",
+        Key: "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+      },
+    );
+  });
+
+  it("makes no request for a cross-workspace read", async () => {
+    let calls = 0;
+    const transport: S3Transport = {
+      async send() {
+        calls += 1;
+        return {};
+      },
+    };
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport,
+    });
+
+    await expect(
+      store.readObject(
+        "ws_opak",
+        "ws/ws_other/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+      ),
+    ).rejects.toThrow(/workspace/i);
+    expect(calls).toBe(0);
+  });
+
+  it("throws when the response has no readable body", async () => {
+    const send = vi.fn(async () => ({}));
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: { send },
+    });
+
+    await expect(
+      store.readObject(
+        "ws_opak",
+        "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+      ),
+    ).rejects.toThrow();
+  });
+});

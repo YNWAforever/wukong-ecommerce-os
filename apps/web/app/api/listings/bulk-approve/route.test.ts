@@ -38,16 +38,19 @@ function makeHandler(
         ) {
           return work({
             listings: {
-              async requireForPublish(id: string) {
+              async getReviewSnapshot(id: string) {
                 return {
-                  id,
-                  target: "shopline",
-                  status: "in_review",
+                  listing: {
+                    id,
+                    target: "shopline",
+                    status: "in_review",
+                  },
                   activeVersion: {
                     id: `${id}-v1`,
                     sequence: 1,
-                    content: { sku: "OPAK-001" },
+                    content: { sku: "OPAK-001", imageAssetIds: [] },
                   },
+                  evidence: [],
                   flags: flagged.has(id)
                     ? [
                         {

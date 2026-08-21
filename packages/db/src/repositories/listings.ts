@@ -82,6 +82,13 @@ export type ListingRepository = {
     context: AuditContext,
     audit: AuditWriter,
   ): Promise<void>;
+  promoteAndApprove(
+    id: string,
+    baseVersionId: string,
+    newVersionId: string,
+    context: AuditContext,
+    audit: AuditWriter,
+  ): Promise<void>;
   editReview(
     id: string,
     baseVersionId: string,
@@ -470,10 +477,7 @@ export function createListingRepository(
         .where(
           and(
             byId(id),
-            eq(
-              listingDrafts.status,
-              listing.status === "reopened" ? "in_review" : listing.status,
-            ),
+            eq(listingDrafts.status, listing.status),
             eq(listingDrafts.activeVersionId, versionId),
           ),
         )
@@ -490,6 +494,64 @@ export function createListingRepository(
         ...context,
         action: "listing.approved",
         metadata: { versionId },
+      });
+    },
+
+    async promoteAndApprove(id, baseVersionId, newVersionId, context, audit) {
+      scope.assertOpen();
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId === newVersionId) return;
+      if (listing.activeVersionId !== baseVersionId)
+        throw new Error("active listing version changed");
+      // `approve()`'s "approved -> approve" transition is illegal by design --
+      // there is only ever one active, approved version there. Here, though,
+      // re-promoting a different version while already approved is a normal
+      // use of this method (e.g. re-approving with a different background
+      // choice), not a state change, so it skips the state machine entirely
+      // and keeps `next` at "approved" instead of asking it for one.
+      let next: ListingStatus;
+      if (listing.status === "reopened") {
+        await transitionListing(
+          listing.status,
+          "submit_review",
+          context,
+          audit,
+        );
+        next = await transitionListing("in_review", "approve", context, audit);
+      } else if (listing.status === "approved") {
+        next = "approved";
+      } else {
+        next = await transitionListing(
+          listing.status,
+          "approve",
+          context,
+          audit,
+        );
+      }
+      const updated = await transaction
+        .update(listingDrafts)
+        .set({
+          status: next,
+          activeVersionId: newVersionId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            byId(id),
+            eq(listingDrafts.status, listing.status),
+            eq(listingDrafts.activeVersionId, baseVersionId),
+          ),
+        )
+        .returning({ id: listingDrafts.id });
+      if (updated.length !== 1)
+        throw new Error("listing status changed while approving");
+      // Mirrors `approve()`'s explicit `listing.approved` action below the
+      // generic `listing.transition` write above -- `audit-verify`'s required
+      // sequence looks for this action, not the transition record.
+      await audit.write({
+        ...context,
+        action: "listing.approved",
+        metadata: { versionId: newVersionId },
       });
     },
 
