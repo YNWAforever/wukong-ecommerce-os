@@ -80,6 +80,21 @@ export type DatabaseOptions = {
 export type Database = {
   migrate(): Promise<void>;
   ping(): Promise<void>;
+  /**
+   * Cross-workspace read used only by the Worker's cron sweeper. Deliberately
+   * not forWorkspace: wukong_app cannot enumerate tenants, so this calls a
+   * SECURITY DEFINER function (0007_stuck_listing_sweeper.sql) instead.
+   */
+  findStuckListingJobs(input: {
+    olderThanSeconds: number;
+    maxRows: number;
+  }): Promise<
+    Array<{
+      workspaceId: string;
+      draftId: string;
+      activeVersionSequence: number;
+    }>
+  >;
   forWorkspace<T>(
     workspaceId: string,
     work: (repositories: WorkspaceRepositories) => Promise<T>,
@@ -206,6 +221,17 @@ export function createDatabase(
       // Deliberately not forWorkspace: this proves the connection answers, and
       // must not open a tenant transaction or set a workspace GUC.
       await client`select 1`;
+    },
+    async findStuckListingJobs({ olderThanSeconds, maxRows }) {
+      const rows = await client`
+        select workspace_id, draft_id, active_version_sequence
+        from sweeper_find_stuck_listing_jobs(${olderThanSeconds}, ${maxRows})
+      `;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        draftId: String(row.draft_id),
+        activeVersionSequence: Number(row.active_version_sequence),
+      }));
     },
     forWorkspace: runForWorkspace,
     async close() {
