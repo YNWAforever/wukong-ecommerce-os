@@ -5,7 +5,7 @@ import { aiRuns } from "../schema.js";
 
 export type AppendAiRunInput = {
   listingId: string;
-  task: "extract" | "generate";
+  task: "extract" | "generate" | "product_shot";
   idempotencyKey: string;
   provider: string;
   model: string;

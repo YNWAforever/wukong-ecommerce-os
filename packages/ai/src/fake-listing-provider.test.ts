@@ -134,3 +134,38 @@ describe("FakeListingProvider", () => {
     }
   });
 });
+
+describe("FakeListingProvider.generateProductShot", () => {
+  it("returns deterministic cutout bytes and zero-cost usage", async () => {
+    const provider = new FakeListingProvider();
+
+    const result = await provider.generateProductShot({
+      assets: [
+        {
+          id: "asset_1",
+          mimeType: "image/jpeg",
+          readUrl: "https://example.test/1.jpg",
+        },
+      ],
+    });
+
+    expect(new TextDecoder().decode(result.cutoutPng)).toBe(
+      "fake-product-shot-cutout:asset_1",
+    );
+    expect(result.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+      latencyMs: 0,
+      model: "fake-listing-provider",
+      promptVersion: "1.0.0",
+    });
+  });
+
+  it("rejects an empty asset list", async () => {
+    const provider = new FakeListingProvider();
+    await expect(provider.generateProductShot({ assets: [] })).rejects.toThrow(
+      "generateProductShot requires at least one asset",
+    );
+  });
+});

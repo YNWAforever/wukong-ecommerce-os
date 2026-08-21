@@ -11,3 +11,5 @@ coverage/
 *.tsbuildinfo
 .vercel
 .env*
+packages/ai/fixtures/product-shot-spike/*
+!packages/ai/fixtures/product-shot-spike/README.md

@@ -8,6 +8,11 @@ export const GENERATION_PROMPT = {
   version: "1.0.0",
 } as const;
 
+export const PRODUCT_SHOT_PROMPT = {
+  name: "product-shot-generation",
+  version: "1.0.0",
+} as const;
+
 export const EXTRACTION_INSTRUCTIONS = `You extract product facts for an ecommerce listing.
 Use only the supplied note and assets. Never invent a fact, claim, score, award, price, stock level, SKU, origin, vintage, volume, or alcohol value.
 Every absent protected fact must be null and absent lists must be empty.

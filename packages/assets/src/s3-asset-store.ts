@@ -12,6 +12,7 @@ import {
   ASSET_UPLOAD_TTL_MS,
   assertAssetKey,
   createAssetKey,
+  type AssetObjectMetadata,
   type AssetStore,
   type CreateUploadInput,
 } from "./asset-store.js";
@@ -138,5 +139,24 @@ export class S3AssetStore implements AssetStore {
 
   async exists(workspaceId: string, key: string) {
     return (await this.head(workspaceId, key)) !== null;
+  }
+
+  async writeObject(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<AssetObjectMetadata> {
+    assertAssetKey(workspaceId, key);
+    await this.#transport.send(
+      new PutObjectCommand({
+        Bucket: this.#bucket,
+        Key: key,
+        Body: body,
+        ContentType: mimeType,
+        ContentLength: body.byteLength,
+      }) as unknown as S3Command,
+    );
+    return { size: body.byteLength, mimeType };
   }
 }

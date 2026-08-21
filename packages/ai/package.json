@@ -12,9 +12,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "lint": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
+    "spike:product-shot": "tsx scripts/product-shot-spike.ts"
   },
   "dependencies": {
     "@wukong/core": "workspace:*",
@@ -23,6 +24,8 @@
   },
   "devDependencies": {
     "@types/node": "latest",
+    "sharp": "^0.35.3",
+    "tsx": "^4.23.0",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   }
