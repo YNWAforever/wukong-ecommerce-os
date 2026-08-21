@@ -13,8 +13,11 @@ import {
   type GenerationInput,
   type GenerationResult,
   type ListingAIProvider,
+  type ProductShotInput,
+  type ProductShotProvider,
+  type ProductShotResult,
 } from "./contracts.js";
-import { EXTRACTION_PROMPT, GENERATION_PROMPT } from "./prompts.js";
+import { EXTRACTION_PROMPT, GENERATION_PROMPT, PRODUCT_SHOT_PROMPT } from "./prompts.js";
 
 const PROTECTED_FIELDS = [
   "sku",
@@ -76,7 +79,9 @@ function noteEvidence(field: string, excerpt: string): FieldEvidence {
   };
 }
 
-export class FakeListingProvider implements ListingAIProvider {
+export class FakeListingProvider
+  implements ListingAIProvider, ProductShotProvider
+{
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
     const note = input.note?.trim() ?? "";
     // Each pattern accepts both note shapes this codebase produces: the
@@ -215,5 +220,20 @@ export class FakeListingProvider implements ListingAIProvider {
       imageAssetIds: input.imageAssetIds,
     });
     return { listing, usage: usage(GENERATION_PROMPT.version) };
+  }
+
+  async generateProductShot(
+    input: ProductShotInput,
+  ): Promise<ProductShotResult> {
+    const firstAsset = input.assets[0];
+    if (!firstAsset) {
+      throw new Error("generateProductShot requires at least one asset");
+    }
+    return {
+      cutoutPng: new TextEncoder().encode(
+        `fake-product-shot-cutout:${firstAsset.id}`,
+      ),
+      usage: usage(PRODUCT_SHOT_PROMPT.version),
+    };
   }
 }

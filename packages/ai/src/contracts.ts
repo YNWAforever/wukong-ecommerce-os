@@ -46,7 +46,20 @@ export type GenerationResult = {
   usage: AIUsage;
 };
 
+export type ProductShotInput = {
+  assets: ExtractionAsset[];
+};
+
+export type ProductShotResult = {
+  cutoutPng: Uint8Array;
+  usage: AIUsage;
+};
+
 export interface ListingAIProvider {
   extract(input: ExtractionInput): Promise<ExtractionResult>;
   generate(input: GenerationInput): Promise<GenerationResult>;
+}
+
+export interface ProductShotProvider {
+  generateProductShot(input: ProductShotInput): Promise<ProductShotResult>;
 }

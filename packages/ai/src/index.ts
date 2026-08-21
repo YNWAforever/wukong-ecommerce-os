@@ -6,6 +6,9 @@ export type {
   GenerationInput,
   GenerationResult,
   ListingAIProvider,
+  ProductShotInput,
+  ProductShotResult,
+  ProductShotProvider,
 } from "./contracts.js";
 export { NOTE_SOURCE_ID } from "./contracts.js";
 export { FakeListingProvider } from "./fake-listing-provider.js";
@@ -23,7 +26,7 @@ export type {
   OpenAIListingProviderConfig,
   ResponsesClientPort,
 } from "./openai-listing-provider.js";
-export { EXTRACTION_PROMPT, GENERATION_PROMPT } from "./prompts.js";
+export { EXTRACTION_PROMPT, GENERATION_PROMPT, PRODUCT_SHOT_PROMPT } from "./prompts.js";
 
 export {
   PROTECTED_FACT_FIELDS,
