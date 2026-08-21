@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MemoryAssetStore } from "./asset-store.js";
+import { createAssetKey, MemoryAssetStore } from "./asset-store.js";
 
 describe("MemoryAssetStore", () => {
   it("prefixes every key with the authorized workspace", async () => {
@@ -66,5 +66,39 @@ describe("MemoryAssetStore", () => {
       /workspace/i,
     );
     await expect(store.head("ws_opak", upload.key)).rejects.toThrow(/workspace/i);
+  });
+});
+
+describe("MemoryAssetStore.writeObject", () => {
+  it("stores metadata derived from the written bytes and makes it visible to head/exists", async () => {
+    const store = new MemoryAssetStore();
+    const body = new TextEncoder().encode("fake-png-bytes");
+    const key = createAssetKey({
+      workspaceId: "ws_opak",
+      fileName: "cutout.png",
+      mimeType: "image/png",
+      size: body.byteLength,
+    });
+
+    const result = await store.writeObject("ws_opak", key, body, "image/png");
+
+    expect(result).toEqual({ size: body.byteLength, mimeType: "image/png" });
+    await expect(store.head("ws_opak", key)).resolves.toEqual({
+      size: body.byteLength,
+      mimeType: "image/png",
+    });
+    await expect(store.exists("ws_opak", key)).resolves.toBe(true);
+  });
+
+  it("rejects a key that does not belong to the workspace", async () => {
+    const store = new MemoryAssetStore();
+    await expect(
+      store.writeObject(
+        "ws_opak",
+        "ws/other-workspace/sources/x/file.png",
+        new Uint8Array(),
+        "image/png",
+      ),
+    ).rejects.toThrow("Asset key does not belong to workspace");
   });
 });

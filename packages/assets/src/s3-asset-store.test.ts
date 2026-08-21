@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ASSET_EXPORT_READ_TTL_MS } from "./asset-store.js";
 import {
@@ -108,5 +108,35 @@ describe("S3AssetStore", () => {
     });
 
     expect(seen).toEqual([600, 604_800]);
+  });
+
+  it("issues a PutObjectCommand with the given body and content type", async () => {
+    const send = vi.fn(async () => ({}));
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: { send },
+      presign: async () => "https://storage.example/signed",
+    });
+    const body = new TextEncoder().encode("fake-png-bytes");
+
+    const result = await store.writeObject(
+      "ws_opak",
+      "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+      body,
+      "image/png",
+    );
+
+    expect(result).toEqual({ size: body.byteLength, mimeType: "image/png" });
+    expect(send).toHaveBeenCalledOnce();
+    const [command] = send.mock.calls[0]!;
+    expect((command as { input: Record<string, unknown> }).input).toMatchObject(
+      {
+        Bucket: "test-bucket",
+        Key: "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
+        Body: body,
+        ContentType: "image/png",
+        ContentLength: body.byteLength,
+      },
+    );
   });
 });

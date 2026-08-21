@@ -48,6 +48,12 @@ export interface AssetStore {
   ): Promise<{ url: string; expiresAt: Date }>;
   head(workspaceId: string, key: string): Promise<AssetObjectMetadata | null>;
   exists(workspaceId: string, key: string): Promise<boolean>;
+  writeObject(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<AssetObjectMetadata>;
 }
 
 export function assertWorkspaceId(workspaceId: string): void {
@@ -155,6 +161,18 @@ export class MemoryAssetStore implements AssetStore {
 
   async exists(workspaceId: string, key: string) {
     return (await this.head(workspaceId, key)) !== null;
+  }
+
+  async writeObject(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<AssetObjectMetadata> {
+    assertAssetKey(workspaceId, key);
+    const metadata: AssetObjectMetadata = { size: body.byteLength, mimeType };
+    this.#objects.set(key, metadata);
+    return metadata;
   }
 
   putObject(
