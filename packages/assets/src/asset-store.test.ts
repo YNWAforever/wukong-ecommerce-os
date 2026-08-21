@@ -12,7 +12,9 @@ describe("MemoryAssetStore", () => {
       size: 1024,
     });
 
-    expect(upload.key).toMatch(/^ws\/ws_opak\/sources\/[0-9a-f-]+\/supplier\.pdf$/);
+    expect(upload.key).toMatch(
+      /^ws\/ws_opak\/sources\/[0-9a-f-]+\/supplier\.pdf$/,
+    );
   });
 
   it.each([
@@ -65,7 +67,9 @@ describe("MemoryAssetStore", () => {
     await expect(store.createReadUrl("ws_opak", upload.key)).rejects.toThrow(
       /workspace/i,
     );
-    await expect(store.head("ws_opak", upload.key)).rejects.toThrow(/workspace/i);
+    await expect(store.head("ws_opak", upload.key)).rejects.toThrow(
+      /workspace/i,
+    );
   });
 });
 
