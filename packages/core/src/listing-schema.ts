@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const localizedTextSchema = z.object({
   en: z.string().trim().min(1),
-  "zh-Hant": z.string().trim().min(1)
+  "zh-Hant": z.string().trim().min(1),
 });
 
 export const fieldEvidenceSchema = z.object({
@@ -10,7 +10,7 @@ export const fieldEvidenceSchema = z.object({
   sourceAssetId: z.string().min(1),
   page: z.number().int().positive().nullable(),
   excerpt: z.string().min(1),
-  confidence: z.number().min(0).max(1)
+  confidence: z.number().min(0).max(1),
 });
 
 export const listingFactsSchema = z.object({
@@ -26,8 +26,10 @@ export const listingFactsSchema = z.object({
   packQuantity: z.number().int().positive().default(1),
   priceHkd: z.number().nonnegative().nullable(),
   stockQuantity: z.number().int().nonnegative().nullable(),
-  criticScores: z.array(z.object({ source: z.string(), score: z.string(), evidenceId: z.string() })),
-  awards: z.array(z.object({ name: z.string(), evidenceId: z.string() }))
+  criticScores: z.array(
+    z.object({ source: z.string(), score: z.string(), evidenceId: z.string() }),
+  ),
+  awards: z.array(z.object({ name: z.string(), evidenceId: z.string() })),
 });
 
 export const canonicalListingSchema = listingFactsSchema.extend({
@@ -40,9 +42,12 @@ export const canonicalListingSchema = listingFactsSchema.extend({
   priceHkd: z.number().nonnegative(),
   title: localizedTextSchema,
   description: localizedTextSchema,
-  seo: z.object({ title: localizedTextSchema, description: localizedTextSchema }),
+  seo: z.object({
+    title: localizedTextSchema,
+    description: localizedTextSchema,
+  }),
   tags: z.array(z.string().trim().min(1)),
-  imageAssetIds: z.array(z.string().min(1))
+  imageAssetIds: z.array(z.string().min(1)),
 });
 
 export const workspaceProfileSchema = z.object({
@@ -55,7 +60,7 @@ export const workspaceProfileSchema = z.object({
   brandBackgroundColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
-    .nullable()
+    .nullable(),
 });
 
 export type CanonicalListing = z.infer<typeof canonicalListingSchema>;

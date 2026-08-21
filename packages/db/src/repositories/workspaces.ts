@@ -17,7 +17,11 @@ export function createWorkspaceRepository(
   return {
     async requireProfile() {
       scope.assertOpen();
-      const [workspace] = await transaction.select({ profile: workspaces.profile }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+      const [workspace] = await transaction
+        .select({ profile: workspaces.profile })
+        .from(workspaces)
+        .where(eq(workspaces.id, workspaceId))
+        .limit(1);
       if (!workspace) throw new Error("workspace not found");
       return workspaceProfileSchema.parse(workspace.profile);
     },
