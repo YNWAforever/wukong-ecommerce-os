@@ -51,7 +51,11 @@ export const workspaceProfileSchema = z.object({
   locales: z.tuple([z.literal("en"), z.literal("zh-Hant")]),
   tone: z.string().min(1),
   claimPolicy: z.array(z.string().min(1)),
-  requiredFields: z.array(z.string().min(1))
+  requiredFields: z.array(z.string().min(1)),
+  brandBackgroundColor: z
+    .string()
+    .regex(/^#[0-9a-f]{6}$/i)
+    .nullable()
 });
 
 export type CanonicalListing = z.infer<typeof canonicalListingSchema>;

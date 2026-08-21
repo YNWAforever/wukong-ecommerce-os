@@ -102,6 +102,7 @@ describe("imported note extraction", () => {
           "abvPercent",
           "priceHkd",
         ],
+        brandBackgroundColor: null,
       },
       imageAssetIds: [],
     });

@@ -120,6 +120,7 @@ describe("FakeListingProvider", () => {
             "abvPercent",
             "priceHkd",
           ],
+          brandBackgroundColor: null,
         },
         imageAssetIds: ["asset_1"],
       });
