@@ -41,6 +41,10 @@ export type ListingViewResponse = {
   evidence: FieldEvidence[];
   flags: ComplianceFlag[];
   connection: "connected" | "disconnected" | "error";
+  productShot: {
+    previewUrl: string;
+    brandBackgroundColor: string | null;
+  } | null;
   delivery: {
     status: string;
     remoteProductId: string | null;

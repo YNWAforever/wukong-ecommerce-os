@@ -72,6 +72,7 @@ const response: ListingViewResponse = {
     },
   ],
   connection: "connected",
+  productShot: null,
   delivery: null,
   queueStatus: null,
   permissions: {

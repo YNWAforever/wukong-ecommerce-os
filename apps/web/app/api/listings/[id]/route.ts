@@ -1,4 +1,6 @@
-import { getDatabase } from "../../../../lib/intake-runtime";
+import type { AssetStore } from "@wukong/assets";
+
+import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
   jsonResponse,
@@ -17,10 +19,13 @@ type ListingRouteDeps = {
       work: (repositories: any) => Promise<T>,
     ): Promise<T>;
   };
+  getAssetStore: () => Pick<AssetStore, "createReadUrl">;
   connectionStatus?: (
     workspaceId: string,
   ) => Promise<"connected" | "disconnected" | "error">;
 };
+
+const PRODUCT_SHOT_PREVIEW_TTL_MS = 5 * 60 * 1000;
 
 const roleRank: Record<string, number> = {
   viewer: 10,
@@ -75,6 +80,31 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             connection = "error";
           }
 
+          const listingAssets =
+            await repositories.sourceAssets.listForListing(id);
+          const cutout = listingAssets.find(
+            (asset: { kind: string; metadata: unknown }) =>
+              asset.kind === "image/png" &&
+              (asset.metadata as Record<string, unknown> | null)?.role ===
+                "product_shot_cutout",
+          );
+          let productShot: {
+            previewUrl: string;
+            brandBackgroundColor: string | null;
+          } | null = null;
+          if (cutout) {
+            const profile = await repositories.workspaces.requireProfile();
+            const read = await deps
+              .getAssetStore()
+              .createReadUrl(session.workspaceId, cutout.storageKey, {
+                expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
+              });
+            productShot = {
+              previewUrl: read.url,
+              brandBackgroundColor: profile.brandBackgroundColor,
+            };
+          }
+
           return {
             listingId: id,
             workspaceId: session.workspaceId,
@@ -83,6 +113,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             evidence: snapshot.evidence,
             flags: snapshot.flags,
             connection,
+            productShot,
             delivery: job
               ? {
                   status: job.status,
@@ -103,4 +134,5 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
 export const GET = createListingViewHandler({
   sessionContext: authSessionContext,
   getDatabase,
+  getAssetStore,
 });
