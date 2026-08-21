@@ -76,6 +76,7 @@ test("keeps exact isolated queue and DLQ resource names", () => {
     retryDelay: 30,
     maxConcurrency: 1,
   });
+  assert.deepEqual(source.sweeper, { cron: "*/5 * * * *" });
 });
 
 test("renders deterministic non-secret Wrangler config", () => {
@@ -135,6 +136,7 @@ test("renders deterministic non-secret Wrangler config", () => {
         },
       ],
     },
+    triggers: { crons: ["*/5 * * * *"] },
   });
   const rendered = readFileSync(output, "utf8");
   assert.doesNotMatch(
