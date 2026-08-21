@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./product-shot-flatten": {
+      "types": "./src/product-shot-flatten.ts",
+      "development": "./src/product-shot-flatten.ts",
+      "default": "./dist/product-shot-flatten.js"
     }
   },
   "scripts": {

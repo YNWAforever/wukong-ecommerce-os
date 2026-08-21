@@ -2,7 +2,12 @@ import {
   approveListing as domainApprove,
   type AuditContext,
 } from "@wukong/core";
-import { createAssetKey, flattenProductShot } from "@wukong/assets";
+import { createAssetKey } from "@wukong/assets";
+// Imported from its own subpath, not the package's main barrel, so routes
+// that only need AssetStore/createAssetKey (i.e. every route except this
+// one) don't transitively pull in sharp's native binding -- that coupling
+// broke GET /api/listings in production (see next.config.mjs history).
+import { flattenProductShot } from "@wukong/assets/product-shot-flatten";
 import { z } from "zod";
 
 import {

@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@wukong/assets", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@wukong/assets")>();
+vi.mock("@wukong/assets/product-shot-flatten", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@wukong/assets/product-shot-flatten")
+    >();
   return {
     ...actual,
     flattenProductShot: vi.fn(async () => new Uint8Array([9, 9, 9])),
   };
 });
 
-import { flattenProductShot } from "@wukong/assets";
+import { flattenProductShot } from "@wukong/assets/product-shot-flatten";
 
 import { createApproveListingHandler } from "./route.js";
 
