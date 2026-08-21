@@ -528,7 +528,9 @@ export async function runListingPipeline(
             kind: "image/png",
             metadata: { role: "product_shot_cutout", listingId: input.draftId },
           });
-          await repos.aiRuns.append(aiRunFrom("product_shot", shot.usage, input));
+          await repos.aiRuns.append(
+            aiRunFrom("product_shot", shot.usage, input),
+          );
         }
         await repos.pipelineRuns.recordStep({
           idempotencyKey,
