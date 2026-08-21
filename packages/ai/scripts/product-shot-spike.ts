@@ -11,9 +11,17 @@ const OUTPUT_DIR = path.join(INPUT_DIR, "output");
 
 type BoundingBox = { x: number; y: number; width: number; height: number };
 
+function getMimeType(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  return "image/jpeg"; // default fallback
+}
+
 async function detectProductBox(
   client: OpenAI,
   imageBase64: string,
+  mimeType: string,
 ): Promise<BoundingBox> {
   const response = await client.chat.completions.create({
     model: "gpt-4o-mini",
@@ -27,7 +35,7 @@ async function detectProductBox(
           },
           {
             type: "image_url",
-            image_url: { url: `data:image/jpeg;base64,${imageBase64}` },
+            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
           },
         ],
       },
@@ -92,18 +100,22 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     const originalBuffer = await readFile(path.join(INPUT_DIR, file));
-    const metadata = await sharp(originalBuffer).metadata();
+    // Auto-rotate based on EXIF orientation, then read metadata and convert to PNG
+    // so that coordinates and pixel positions are consistent across detection and editing.
+    const rotatedBuffer = await sharp(originalBuffer)
+      .rotate() // auto-orient based on EXIF
+      .toBuffer();
+    const metadata = await sharp(rotatedBuffer).metadata();
     const width = metadata.width;
     const height = metadata.height;
     if (!width || !height)
       throw new Error(`Could not read dimensions for ${file}`);
 
-    const box = await detectProductBox(
-      client,
-      originalBuffer.toString("base64"),
-    );
+    const mimeType = getMimeType(file);
+    const imageBase64 = rotatedBuffer.toString("base64");
+    const box = await detectProductBox(client, imageBase64, mimeType);
     const mask = await buildProtectiveMask(width, height, box);
-    const pngInput = await sharp(originalBuffer).png().toBuffer();
+    const pngInput = await sharp(rotatedBuffer).png().toBuffer();
 
     await writeFile(path.join(OUTPUT_DIR, `${file}.mask.png`), mask);
 
