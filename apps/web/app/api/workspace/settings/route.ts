@@ -52,6 +52,15 @@ export function createSettingsHandler(deps: SettingsRouteDeps) {
             ...current,
             brandBackgroundColor: parsed.data.brandBackgroundColor,
           });
+          await repositories.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: session.workspaceId,
+            action: "workspace.settings_updated",
+            metadata: {
+              brandBackgroundColor: parsed.data.brandBackgroundColor,
+            },
+          });
         });
       return jsonResponse(200, { ok: true });
     });

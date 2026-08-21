@@ -24,6 +24,7 @@ describe("POST /api/workspace/settings", () => {
   it("rejects a role below admin", async () => {
     const updateProfile = vi.fn();
     const requireProfile = vi.fn(async () => baseProfile);
+    const auditWrite = vi.fn(async () => {});
     const handler = createSettingsHandler({
       sessionContext: {
         async resolve() {
@@ -37,7 +38,10 @@ describe("POST /api/workspace/settings", () => {
       getDatabase: () =>
         ({
           forWorkspace: async (_id: string, work: any) =>
-            work({ workspaces: { requireProfile, updateProfile } }),
+            work({
+              workspaces: { requireProfile, updateProfile },
+              audit: { write: auditWrite },
+            }),
         }) as any,
     });
     const response = await handler(
@@ -45,11 +49,13 @@ describe("POST /api/workspace/settings", () => {
     );
     expect(response.status).toBe(403);
     expect(updateProfile).not.toHaveBeenCalled();
+    expect(auditWrite).not.toHaveBeenCalled();
   });
 
   it("updates the brand background color for admin and above", async () => {
     const updateProfile = vi.fn(async () => {});
     const requireProfile = vi.fn(async () => baseProfile);
+    const auditWrite = vi.fn(async () => {});
     const handler = createSettingsHandler({
       sessionContext: {
         async resolve() {
@@ -63,7 +69,10 @@ describe("POST /api/workspace/settings", () => {
       getDatabase: () =>
         ({
           forWorkspace: async (_id: string, work: any) =>
-            work({ workspaces: { requireProfile, updateProfile } }),
+            work({
+              workspaces: { requireProfile, updateProfile },
+              audit: { write: auditWrite },
+            }),
         }) as any,
     });
     const response = await handler(
@@ -73,6 +82,13 @@ describe("POST /api/workspace/settings", () => {
     expect(updateProfile).toHaveBeenCalledWith(
       expect.objectContaining({ brandBackgroundColor: "#112233" }),
     );
+    expect(auditWrite).toHaveBeenCalledWith({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      entityId: "ws_opak",
+      action: "workspace.settings_updated",
+      metadata: { brandBackgroundColor: "#112233" },
+    });
   });
 
   it("rejects a malformed color with 400", async () => {
