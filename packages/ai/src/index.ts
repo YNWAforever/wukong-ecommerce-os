@@ -26,7 +26,11 @@ export type {
   OpenAIListingProviderConfig,
   ResponsesClientPort,
 } from "./openai-listing-provider.js";
-export { EXTRACTION_PROMPT, GENERATION_PROMPT, PRODUCT_SHOT_PROMPT } from "./prompts.js";
+export {
+  EXTRACTION_PROMPT,
+  GENERATION_PROMPT,
+  PRODUCT_SHOT_PROMPT,
+} from "./prompts.js";
 
 export {
   PROTECTED_FACT_FIELDS,

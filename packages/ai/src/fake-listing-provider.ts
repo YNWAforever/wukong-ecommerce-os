@@ -17,7 +17,11 @@ import {
   type ProductShotProvider,
   type ProductShotResult,
 } from "./contracts.js";
-import { EXTRACTION_PROMPT, GENERATION_PROMPT, PRODUCT_SHOT_PROMPT } from "./prompts.js";
+import {
+  EXTRACTION_PROMPT,
+  GENERATION_PROMPT,
+  PRODUCT_SHOT_PROMPT,
+} from "./prompts.js";
 
 const PROTECTED_FIELDS = [
   "sku",
