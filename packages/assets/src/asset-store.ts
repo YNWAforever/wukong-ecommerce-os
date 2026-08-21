@@ -54,6 +54,7 @@ export interface AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata>;
+  readObject(workspaceId: string, key: string): Promise<Uint8Array>;
 }
 
 export function assertWorkspaceId(workspaceId: string): void {
@@ -130,7 +131,10 @@ export function createAssetKey(input: CreateUploadInput): string {
 }
 
 export class MemoryAssetStore implements AssetStore {
-  readonly #objects = new Map<string, AssetObjectMetadata>();
+  readonly #objects = new Map<
+    string,
+    { metadata: AssetObjectMetadata; body?: Uint8Array }
+  >();
 
   async createUpload(input: CreateUploadInput) {
     const key = createAssetKey(input);
@@ -156,7 +160,7 @@ export class MemoryAssetStore implements AssetStore {
 
   async head(workspaceId: string, key: string) {
     assertAssetKey(workspaceId, key);
-    return this.#objects.get(key) ?? null;
+    return this.#objects.get(key)?.metadata ?? null;
   }
 
   async exists(workspaceId: string, key: string) {
@@ -171,8 +175,17 @@ export class MemoryAssetStore implements AssetStore {
   ): Promise<AssetObjectMetadata> {
     assertAssetKey(workspaceId, key);
     const metadata: AssetObjectMetadata = { size: body.byteLength, mimeType };
-    this.#objects.set(key, metadata);
+    this.#objects.set(key, { metadata, body });
     return metadata;
+  }
+
+  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+    assertAssetKey(workspaceId, key);
+    const entry = this.#objects.get(key);
+    if (!entry?.body) {
+      throw new Error("Asset object has no stored body");
+    }
+    return entry.body;
   }
 
   putObject(
@@ -181,6 +194,6 @@ export class MemoryAssetStore implements AssetStore {
     metadata: AssetObjectMetadata,
   ): void {
     assertAssetKey(workspaceId, key);
-    this.#objects.set(key, metadata);
+    this.#objects.set(key, { metadata });
   }
 }
