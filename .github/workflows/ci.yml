@@ -109,6 +109,8 @@ jobs:
         run: pnpm test:integration
       - name: Production build
         run: pnpm build
+      - name: Verify sharp's native library is bundled
+        run: node --test tests/sharp-native-bundling.test.mjs
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright Wrangler Queue acceptance (fake AI/mock SHOPLINE)
