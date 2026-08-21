@@ -16,6 +16,7 @@ import {
   ExtractionAsset,
   ExtractionResult,
   ListingAIProvider,
+  ProductShotProvider,
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
 import type { ListingJob } from "@wukong/jobs";
@@ -87,6 +88,7 @@ export type PipelineRepositories = {
       kind: string;
       metadata: Record<string, unknown>;
     }): Promise<{ id: string }>;
+    attachToListing?(listingId: string, assetIds: string[]): Promise<void>;
   };
   workspaces: { requireProfile(): Promise<WorkspaceProfile> };
   pipelineRuns: {
@@ -158,7 +160,7 @@ export type PipelineDependencies = {
   ): Promise<T>;
   assetInputs(assets: PipelineAsset[]): Promise<ExtractionAsset[]>;
   ai: ListingAIProvider;
-  productShot?: import("@wukong/ai").ProductShotProvider;
+  productShot?: ProductShotProvider;
   assetStore?: {
     writeObject(
       workspaceId: string,
@@ -492,6 +494,34 @@ export async function runListingPipeline(
         .map((asset) => asset.id),
     });
     const flags = scanCompliance(flattenLocalizedContent(generation.listing));
+    // A ProductShotProvider/AssetStore pair is optional, and neither is wired in
+    // wherever PipelineDependencies is bound to real implementations for
+    // production today — this whole feature stays a no-op until a future task
+    // deliberately supplies both. When it is, the two external calls (an AI image
+    // call and an S3 write) run out here, before deps.withWorkspace, matching how
+    // deps.ai.generate above is itself called outside a transaction: the worker's
+    // Postgres pool is capped at 5 connections, so a transaction must never sit
+    // open across a slow external HTTP round trip.
+    let productShotOutcome: { storageKey: string; usage: AIUsage } | null =
+      null;
+    if (deps.productShot && deps.assetStore) {
+      const shot = await deps.productShot.generateProductShot({
+        assets: await deps.assetInputs(source.assets),
+      });
+      const storageKey = deps.assetStore.createAssetKey({
+        workspaceId: input.workspaceId,
+        fileName: "product-shot-cutout.png",
+        mimeType: "image/png",
+        size: shot.cutoutPng.byteLength,
+      });
+      await deps.assetStore.writeObject(
+        input.workspaceId,
+        storageKey,
+        shot.cutoutPng,
+        "image/png",
+      );
+      productShotOutcome = { storageKey, usage: shot.usage };
+    }
     const result = await deps.withWorkspace(
       input.workspaceId,
       async (repos) => {
@@ -507,29 +537,17 @@ export async function runListingPipeline(
         await repos.aiRuns.append(
           aiRunFrom("generate", generation.usage, input),
         );
-        if (deps.productShot && deps.assetStore && repos.sourceAssets.create) {
-          const shot = await deps.productShot.generateProductShot({
-            assets: await deps.assetInputs(source.assets),
-          });
-          const storageKey = deps.assetStore.createAssetKey({
-            workspaceId: input.workspaceId,
-            fileName: "product-shot-cutout.png",
-            mimeType: "image/png",
-            size: shot.cutoutPng.byteLength,
-          });
-          await deps.assetStore.writeObject(
-            input.workspaceId,
-            storageKey,
-            shot.cutoutPng,
-            "image/png",
-          );
-          await repos.sourceAssets.create({
-            storageKey,
+        if (productShotOutcome && repos.sourceAssets.create) {
+          const created = await repos.sourceAssets.create({
+            storageKey: productShotOutcome.storageKey,
             kind: "image/png",
             metadata: { role: "product_shot_cutout", listingId: input.draftId },
           });
+          await repos.sourceAssets.attachToListing?.(input.draftId, [
+            created.id,
+          ]);
           await repos.aiRuns.append(
-            aiRunFrom("product_shot", shot.usage, input),
+            aiRunFrom("product_shot", productShotOutcome.usage, input),
           );
         }
         await repos.pipelineRuns.recordStep({

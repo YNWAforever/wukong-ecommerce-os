@@ -17,7 +17,7 @@ export const facts: ListingFacts = { sku: "OPAK-001", producer: "Demo Estate", p
 export const evidence: FieldEvidence[] = [{ field: "priceHkd", sourceAssetId: "asset_1", page: null, excerpt: "HK$288", confidence: 1 }];
 export const listing: CanonicalListing = { ...facts, sku: facts.sku!, producer: facts.producer!, productType: facts.productType!, country: facts.country!, volumeMl: facts.volumeMl!, abvPercent: facts.abvPercent!, priceHkd: facts.priceHkd!, title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" }, seo: { title: { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate Riesling" }, description: { en: "A restrained German wine.", "zh-Hant": "德國葡萄酒。" } }, tags: ["Riesling"], imageAssetIds: ["asset_1"] };
 export const profile: WorkspaceProfile = { name: "Opak Cellar", currency: "HKD", locales: ["en", "zh-Hant"], tone: "clear and restrained", claimPolicy: ["No invented claims"], requiredFields: ["sku", "priceHkd"] };
-export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown; leaseToken: string }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null }; sourceAssetsCreated: Array<{ storageKey: string; kind: string; metadata: unknown }> };
+export type HarnessState = { status: "received" | "processing" | "needs_info" | "in_review" | "failed"; steps: Map<string, { state: "running" | "completed"; output: unknown; leaseToken: string }>; aiRuns: Array<{ task: string; idempotencyKey: string }>; versions: string[]; audits: string[]; failure?: string; completed?: { status: "in_review" | "needs_info"; versionId: string | null }; sourceAssetsCreated: Array<{ storageKey: string; kind: string; metadata: unknown }>; sourceAssetsAttached: Array<{ listingId: string; assetIds: string[] }> };
 export type HarnessOptions = {
   missingFields?: string[];
   extractError?: Error;
@@ -54,7 +54,7 @@ export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
 }
 
 export function makeHarness(options: HarnessOptions = {}): { state: HarnessState; deps: PipelineDependencies & { state: HarnessState } } {
-  const state: HarnessState = { status: "received", steps: new Map(), aiRuns: [], versions: [], audits: [], sourceAssetsCreated: [] };
+  const state: HarnessState = { status: "received", steps: new Map(), aiRuns: [], versions: [], audits: [], sourceAssetsCreated: [], sourceAssetsAttached: [] };
   let completeErrorConsumed = false;
   const audit: AuditWriter = { async write(event) { state.audits.push(event.action); } };
   const repos: PipelineRepositories = {
@@ -72,6 +72,9 @@ export function makeHarness(options: HarnessOptions = {}): { state: HarnessState
       async create(input: { storageKey: string; kind: string; metadata: unknown }) {
         state.sourceAssetsCreated.push(input);
         return { id: `asset_shot_${state.sourceAssetsCreated.length}` };
+      },
+      async attachToListing(listingId: string, assetIds: string[]) {
+        state.sourceAssetsAttached.push({ listingId, assetIds });
       },
     },
     workspaces: { async requireProfile() { return profile; } },

@@ -80,6 +80,9 @@ describe("runListingPipeline", () => {
     expect(state.aiRuns).toEqual(
       expect.arrayContaining([expect.objectContaining({ task: "product_shot" })]),
     );
+    expect(state.sourceAssetsAttached).toEqual([
+      { listingId: draftId, assetIds: ["asset_shot_1"] },
+    ]);
   });
 
   it("skips product shot generation entirely when no productShot provider is configured (unchanged existing behavior)", async () => {
