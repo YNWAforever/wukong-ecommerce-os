@@ -97,6 +97,7 @@ const wrangler = {
       consumer(selected.shoplineQueue, selected.shoplineDlq),
     ],
   },
+  triggers: { crons: [source.sweeper.cron] },
 };
 
 const outputDirectory = new URL(".wrangler/", root);

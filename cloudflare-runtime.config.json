@@ -30,5 +30,8 @@
     "maxRetries": 3,
     "retryDelay": 30,
     "maxConcurrency": 1
+  },
+  "sweeper": {
+    "cron": "*/5 * * * *"
   }
 }

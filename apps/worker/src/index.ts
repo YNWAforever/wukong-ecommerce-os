@@ -20,6 +20,7 @@ export { handleIngress } from "./ingress.js";
 export { consumeListingMessage } from "./listing-consumer.js";
 export type { ListingConsumerOutcome } from "./listing-consumer.js";
 export { handleQueue } from "./queue-consumer.js";
+export { handleScheduled } from "./sweeper.js";
 export {
   createCloudflareRuntime,
   createWorkerDatabase,

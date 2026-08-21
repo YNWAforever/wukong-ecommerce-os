@@ -79,6 +79,12 @@ Create two distinct bucket-scoped R2 credentials per environment and record only
 
 The credential values must never be reused or shared between Vercel and the Worker, and preview credentials must differ from production credentials. Using the same environment variable names in separate platform scopes is intentional; the underlying access keys remain distinct. Apply CORS only for the Vercel origin, required `PUT` and `HEAD` methods, and `Content-Type` header. Worker read-only S3 access is server-side and requires no CORS permission. Keep every bucket private and forbid wildcard CORS.
 
+## Queue sweeper cron trigger
+
+The Worker also runs a cron sweeper every 5 minutes (`triggers.crons` in the generated Wrangler configuration) that re-enqueues stuck listing jobs found by `sweeper_find_stuck_listing_jobs` (migration `0007`). It needs no new secrets. The next `deploy:preview` or `deploy:production` automatically registers the cron trigger from the checked-in `sweeper.cron` value. The sweeper's own grace window is 300 seconds, so worst-case sweep latency is roughly one grace window plus one cron tick, about 10 minutes.
+
+For production, migration `0007` reaching the database before the Worker deploys is already covered by step 5 of the preview and production sequence below, which runs the controlled migration (see "Controlled migration and Opak seed") before the production Worker deploy in step 6; no extra action is needed there. Preview has no documented migration step anywhere in that same sequence, so before deploying the preview Worker an operator must independently confirm migration `0007` has reached the preview database some other way — otherwise every sweep tick on preview will error against the missing function.
+
 ## Configuration boundaries
 
 ### Vercel variable allowlist
