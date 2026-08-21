@@ -139,4 +139,29 @@ describe("S3AssetStore", () => {
       },
     );
   });
+
+  it("makes no request for a cross-workspace write", async () => {
+    let calls = 0;
+    const transport: S3Transport = {
+      async send() {
+        calls += 1;
+        return {};
+      },
+    };
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport,
+      presign: async () => "https://storage.example/signed",
+    });
+
+    await expect(
+      store.writeObject(
+        "ws_opak",
+        "ws/ws_other/sources/00000000-0000-4000-8000-000000000001/file.png",
+        new Uint8Array(),
+        "image/png",
+      ),
+    ).rejects.toThrow(/workspace/i);
+    expect(calls).toBe(0);
+  });
 });
