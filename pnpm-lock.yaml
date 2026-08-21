@@ -167,6 +167,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.910.0
         version: 3.1085.0
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@26.2.0)
     devDependencies:
       '@types/node':
         specifier: latest
@@ -3573,7 +3576,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.2.0
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -3873,7 +3876,7 @@ snapshots:
 
   happy-dom@20.8.3:
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.2.0
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       entities: 7.0.1
