@@ -57,10 +57,15 @@ export const workspaceProfileSchema = z.object({
   tone: z.string().min(1),
   claimPolicy: z.array(z.string().min(1)),
   requiredFields: z.array(z.string().min(1)),
+  // .nullish() (not .nullable()) so a legacy profile row written before this
+  // field existed -- where the key is simply absent, not present-as-null --
+  // still parses. The transform folds "absent" and "null" into the same
+  // `null` value so every consumer keeps the simpler `string | null` type.
   brandBackgroundColor: z
     .string()
     .regex(/^#[0-9a-f]{6}$/i)
-    .nullable(),
+    .nullish()
+    .transform((value) => value ?? null),
 });
 
 export type CanonicalListing = z.infer<typeof canonicalListingSchema>;
