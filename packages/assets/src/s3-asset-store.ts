@@ -159,4 +159,20 @@ export class S3AssetStore implements AssetStore {
     );
     return { size: body.byteLength, mimeType };
   }
+
+  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+    assertAssetKey(workspaceId, key);
+    const response = (await this.#transport.send(
+      new GetObjectCommand({
+        Bucket: this.#bucket,
+        Key: key,
+      }) as unknown as S3Command,
+    )) as {
+      Body?: { transformToByteArray(): Promise<Uint8Array> };
+    };
+    if (!response.Body) {
+      throw new Error("Asset object has no stored body");
+    }
+    return response.Body.transformToByteArray();
+  }
 }

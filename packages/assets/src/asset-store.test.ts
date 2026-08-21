@@ -106,3 +106,54 @@ describe("MemoryAssetStore.writeObject", () => {
     ).rejects.toThrow("Asset key does not belong to workspace");
   });
 });
+
+describe("MemoryAssetStore.readObject", () => {
+  it("returns the exact bytes a prior writeObject call stored", async () => {
+    const store = new MemoryAssetStore();
+    const body = new TextEncoder().encode("fake-png-bytes");
+    const key = createAssetKey({
+      workspaceId: "ws_opak",
+      fileName: "cutout.png",
+      mimeType: "image/png",
+      size: body.byteLength,
+    });
+    await store.writeObject("ws_opak", key, body, "image/png");
+
+    const read = await store.readObject("ws_opak", key);
+
+    expect(read).toEqual(body);
+  });
+
+  it("rejects a key that does not belong to the workspace", async () => {
+    const store = new MemoryAssetStore();
+    await expect(
+      store.readObject("ws_opak", "ws/other-workspace/sources/x/file.png"),
+    ).rejects.toThrow("Asset key does not belong to workspace");
+  });
+
+  it("rejects reading an object that was never written", async () => {
+    const store = new MemoryAssetStore();
+    const key = createAssetKey({
+      workspaceId: "ws_opak",
+      fileName: "missing.png",
+      mimeType: "image/png",
+      size: 1,
+    });
+    await expect(store.readObject("ws_opak", key)).rejects.toThrow();
+  });
+
+  it("rejects reading an object seeded with putObject (metadata only, no body)", async () => {
+    const store = new MemoryAssetStore();
+    const key = createAssetKey({
+      workspaceId: "ws_opak",
+      fileName: "metadata-only.png",
+      mimeType: "image/png",
+      size: 1,
+    });
+    store.putObject("ws_opak", key, { size: 1, mimeType: "image/png" });
+
+    await expect(store.readObject("ws_opak", key)).rejects.toThrow(
+      "Asset object has no stored body",
+    );
+  });
+});
