@@ -21,6 +21,7 @@ function handlerFor(
     sourceAssets?: { listForListing: (id: string) => Promise<any[]> };
     workspaces?: { requireProfile: () => Promise<any> };
     assetStore?: { createReadUrl: (...args: any[]) => Promise<any> };
+    platformProducts?: { getByListingId: (id: string) => Promise<any> };
   } = {},
 ) {
   return createListingViewHandler({
@@ -67,6 +68,11 @@ function handlerFor(
             workspaces: overrides.workspaces ?? {
               async requireProfile() {
                 return baseWorkspaceProfile;
+              },
+            },
+            platformProducts: overrides.platformProducts ?? {
+              async getByListingId() {
+                return null;
               },
             },
           });
@@ -227,4 +233,31 @@ it("resolves a preview URL and the workspace brand color when a cutout exists", 
     "ws/ws_opak/sources/x/product-shot-cutout.png",
     expect.objectContaining({ expiresInMs: expect.any(Number) }),
   );
+});
+
+it("resolves shoplineLink from the platform product link when one exists", async () => {
+  const response = await handlerFor("reviewer", true, {
+    platformProducts: {
+      async getByListingId() {
+        return { remoteProductId: "remote_existing_1" };
+      },
+    },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    shoplineLink: { remoteProductId: "remote_existing_1" },
+  });
+});
+
+it("resolves shoplineLink as null when no platform product link exists", async () => {
+  const response = await handlerFor("reviewer", true)(
+    new Request("http://localhost"),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ shoplineLink: null });
 });

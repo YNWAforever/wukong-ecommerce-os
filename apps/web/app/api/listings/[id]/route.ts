@@ -1,4 +1,5 @@
 import type { AssetStore } from "@wukong/assets";
+import { shoplinePublishIdempotencyKey } from "@wukong/shopline";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
@@ -62,9 +63,15 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           if (!snapshot)
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           const versionId = snapshot.activeVersion?.id ?? null;
+          const platformProductLink =
+            await repositories.platformProducts.getByListingId(id);
           const job = versionId
             ? await repositories.publishJobs.getByIdempotencyKey(
-                `${session.workspaceId}:${versionId}:shopline:create`,
+                shoplinePublishIdempotencyKey(
+                  session.workspaceId,
+                  versionId,
+                  platformProductLink ? "update" : "create",
+                ),
               )
             : null;
           let connection: "connected" | "disconnected" | "error";
@@ -123,6 +130,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
                 }
               : null,
             queueStatus: job?.status ?? null,
+            shoplineLink: platformProductLink
+              ? { remoteProductId: platformProductLink.remoteProductId }
+              : null,
             permissions: listingPermissions(session.role),
           };
         });
