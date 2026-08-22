@@ -81,7 +81,10 @@ const ADMIN_TIER_ROLES = new Set(["admin", "owner"]);
 // scans and locks the rows in the same order for every concurrent caller.
 // The second caller to reach a given row simply blocks until the first
 // caller's transaction ends, rather than two callers each holding one row
-// and waiting on the other's.
+// and waiting on the other's. Postgres doesn't guarantee scan order for a
+// query without ORDER BY, so `.orderBy(memberships.userId)` makes that
+// consistent lock-acquisition order a documented property of this query
+// rather than an artifact of the current planner's behavior.
 async function lockMembershipRows(
   transaction: WorkspaceTransaction,
   workspaceId: string,
@@ -90,6 +93,7 @@ async function lockMembershipRows(
     .select({ userId: memberships.userId, role: memberships.role })
     .from(memberships)
     .where(eq(memberships.workspaceId, workspaceId))
+    .orderBy(memberships.userId)
     .for("update");
 }
 
