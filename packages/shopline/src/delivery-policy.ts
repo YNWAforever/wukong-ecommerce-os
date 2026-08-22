@@ -6,7 +6,10 @@ import type {
   ListingStatus,
 } from "@wukong/core";
 
-import { projectToShopline, type ShoplineProductPayload } from "./projection.js";
+import {
+  projectToShopline,
+  type ShoplineProductPayload,
+} from "./projection.js";
 import {
   ShoplineValidationError,
   type ShoplineValidationIssue,
@@ -86,9 +89,21 @@ export type DeliveryPolicyOutcome =
   | { kind: "ready"; plan: DeliveryPlan }
   | { kind: "not_found"; auditFacts: DeliveryAuditFacts }
   | { kind: "approval_required"; auditFacts: DeliveryAuditFacts }
-  | { kind: "blocking_flags"; flags: ComplianceFlag[]; auditFacts: DeliveryAuditFacts }
-  | { kind: "validation_error"; issues: ShoplineValidationIssue[]; auditFacts: DeliveryAuditFacts }
-  | { kind: "already_published"; remoteProductId: string | null; auditFacts: DeliveryAuditFacts }
+  | {
+      kind: "blocking_flags";
+      flags: ComplianceFlag[];
+      auditFacts: DeliveryAuditFacts;
+    }
+  | {
+      kind: "validation_error";
+      issues: ShoplineValidationIssue[];
+      auditFacts: DeliveryAuditFacts;
+    }
+  | {
+      kind: "already_published";
+      remoteProductId: string | null;
+      auditFacts: DeliveryAuditFacts;
+    }
   | {
       kind: "disconnected";
       csvFallback: { method: "csv"; path: string };
@@ -121,10 +136,15 @@ function auditFacts(
   };
 }
 
-function isEligibleStatus(phase: DeliveryPolicyPhase, status: ListingStatus): boolean {
+function isEligibleStatus(
+  phase: DeliveryPolicyPhase,
+  status: ListingStatus,
+): boolean {
   return phase === "request"
     ? status === "approved" || status === "published"
-    : status === "approved" || status === "publishing" || status === "publish_failed";
+    : status === "approved" ||
+        status === "publishing" ||
+        status === "publish_failed";
 }
 
 function validationIssue(message: string): ShoplineValidationIssue[] {
@@ -133,7 +153,9 @@ function validationIssue(message: string): ShoplineValidationIssue[] {
 
 /** Preserves the legacy SHA-256 digest of JSON.stringify(canonical listing). */
 export function hashCanonicalListing(listing: CanonicalListing): string {
-  return createHash("sha256").update(JSON.stringify(listing), "utf8").digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(listing), "utf8")
+    .digest("hex");
 }
 
 export function shoplinePublishIdempotencyKey(
@@ -148,18 +170,30 @@ export function shoplinePublishIdempotencyKey(
  * Evaluates delivery facts without reading adapters or invoking provider code.
  * Callers own persistence, CSV serialization, queue ingress, audit writes, and connectors.
  */
-export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPolicyOutcome {
-  if (!input.listing) return { kind: "not_found", auditFacts: auditFacts(input, "not_found") };
+export function evaluateDeliveryPolicy(
+  input: DeliveryPolicyInput,
+): DeliveryPolicyOutcome {
+  if (!input.listing)
+    return { kind: "not_found", auditFacts: auditFacts(input, "not_found") };
   if (input.method !== "shopline_api" && input.method !== "csv") {
-    return { kind: "approval_required", auditFacts: auditFacts(input, "unsupported_method") };
+    return {
+      kind: "approval_required",
+      auditFacts: auditFacts(input, "unsupported_method"),
+    };
   }
 
   const { listing } = input;
   if (listing.target !== "shopline") {
-    return { kind: "approval_required", auditFacts: auditFacts(input, "wrong_target") };
+    return {
+      kind: "approval_required",
+      auditFacts: auditFacts(input, "wrong_target"),
+    };
   }
   if (!listing.activeVersion) {
-    return { kind: "approval_required", auditFacts: auditFacts(input, "missing_active_version") };
+    return {
+      kind: "approval_required",
+      auditFacts: auditFacts(input, "missing_active_version"),
+    };
   }
 
   const { id: versionId, content } = listing.activeVersion;
@@ -184,7 +218,15 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
   }
 
   if (!isEligibleStatus(input.phase, listing.status)) {
-    return { kind: "approval_required", auditFacts: auditFacts(input, "status_not_eligible", versionId, payloadDigest) };
+    return {
+      kind: "approval_required",
+      auditFacts: auditFacts(
+        input,
+        "status_not_eligible",
+        versionId,
+        payloadDigest,
+      ),
+    };
   }
 
   const blockingFlags = listing.flags.filter(
@@ -198,11 +240,20 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
     };
   }
 
-  if (input.method === "shopline_api" && input.phase === "request" && listing.status === "published") {
+  if (
+    input.method === "shopline_api" &&
+    input.phase === "request" &&
+    listing.status === "published"
+  ) {
     return {
       kind: "already_published",
       remoteProductId: null,
-      auditFacts: auditFacts(input, "already_published", versionId, payloadDigest),
+      auditFacts: auditFacts(
+        input,
+        "already_published",
+        versionId,
+        payloadDigest,
+      ),
     };
   }
 
@@ -210,26 +261,49 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
   try {
     payload = projectToShopline(content, input.imageUrls);
   } catch (error) {
-    const issues = error instanceof ShoplineValidationError
-      ? error.issues
-      : validationIssue(error instanceof Error ? error.message : "SHOPLINE payload is invalid");
+    const issues =
+      error instanceof ShoplineValidationError
+        ? error.issues
+        : validationIssue(
+            error instanceof Error
+              ? error.message
+              : "SHOPLINE payload is invalid",
+          );
     return {
       kind: "validation_error",
       issues,
-      auditFacts: auditFacts(input, "validation_error", versionId, payloadDigest),
+      auditFacts: auditFacts(
+        input,
+        "validation_error",
+        versionId,
+        payloadDigest,
+      ),
     };
   }
 
   if (input.method === "shopline_api") {
-    if (!input.connection || !input.connection.verified || input.connection.workspaceId !== listing.workspaceId) {
+    if (
+      !input.connection ||
+      !input.connection.verified ||
+      input.connection.workspaceId !== listing.workspaceId
+    ) {
       return {
         kind: "disconnected",
-        csvFallback: { method: "csv", path: `/api/listings/${listing.draftId}/deliver` },
+        csvFallback: {
+          method: "csv",
+          path: `/api/listings/${listing.draftId}/deliver`,
+        },
         auditFacts: auditFacts(input, "disconnected", versionId, payloadDigest),
       };
     }
-    const action: "create" | "update" = input.platformProductLink ? "update" : "create";
-    const idempotencyKey = shoplinePublishIdempotencyKey(listing.workspaceId, versionId, action);
+    const action: "create" | "update" = input.platformProductLink
+      ? "update"
+      : "create";
+    const idempotencyKey = shoplinePublishIdempotencyKey(
+      listing.workspaceId,
+      versionId,
+      action,
+    );
     return {
       kind: "ready",
       plan: {

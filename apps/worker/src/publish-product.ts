@@ -117,7 +117,9 @@ export type PublishRepositories = {
     getById(id: string): Promise<DeliveryConnectionSnapshot | null>;
   };
   platformProducts: {
-    getByListingId(listingId: string): Promise<PublishPlatformProductLink | null>;
+    getByListingId(
+      listingId: string,
+    ): Promise<PublishPlatformProductLink | null>;
     // Returns `Promise<unknown>`, not `Promise<void>`: the real `@wukong/db`
     // repository resolves the upserted row, and this file deliberately does
     // not import that type just to narrow this signature. `complete()` below
@@ -392,9 +394,8 @@ export async function publishApprovedProduct(
         input.draftId,
         listing.activeVersion?.content.imageAssetIds ?? [],
       );
-      const connection = await repositories.shoplineConnections.getById(
-        connectionId,
-      );
+      const connection =
+        await repositories.shoplineConnections.getById(connectionId);
       const outcome = evaluateDeliveryPolicy({
         workspaceId: input.workspaceId,
         draftId: input.draftId,

@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ListingFacts } from "@wukong/core";
-import {
-  hashCanonicalListing,
-  type CommerceConnector,
-} from "@wukong/shopline";
+import { hashCanonicalListing, type CommerceConnector } from "@wukong/shopline";
 import {
   listing as canonicalListing,
   workspaceId,
@@ -308,13 +305,16 @@ describe("publishApprovedProduct", () => {
 
   it("marks a current-version mismatch as stale_plan with binding audit facts before connector work", async () => {
     const harness = makeHarness();
-    if (!harness.state.listing.activeVersion) throw new Error("missing version");
+    if (!harness.state.listing.activeVersion)
+      throw new Error("missing version");
     harness.state.listing.activeVersion = {
       ...harness.state.listing.activeVersion,
       id: "version_current",
     };
 
-    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({
       code: "stale_plan",
     });
 
@@ -337,27 +337,29 @@ describe("publishApprovedProduct", () => {
   it.each([null, "d".repeat(64)])(
     "marks persisted digest %j as stale_plan before connector work",
     async (persistedDigest) => {
-    const harness = makeHarness();
-    harness.state.jobs[0].payloadDigest = persistedDigest;
+      const harness = makeHarness();
+      harness.state.jobs[0].payloadDigest = persistedDigest;
 
-    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
-      code: "stale_plan",
-    });
+      await expect(
+        publishApprovedProduct(publishInput(), harness),
+      ).rejects.toMatchObject({
+        code: "stale_plan",
+      });
 
-    expect(harness.state.jobs[0]).toMatchObject({
-      status: "failed",
-      error: "stale_plan",
-    });
-    expect(harness.audits).toContainEqual(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          reason: "stale_plan",
-          expectedPayloadDigest: hashCanonicalListing(canonicalListing),
-          observedPayloadDigest: persistedDigest,
+      expect(harness.state.jobs[0]).toMatchObject({
+        status: "failed",
+        error: "stale_plan",
+      });
+      expect(harness.audits).toContainEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            reason: "stale_plan",
+            expectedPayloadDigest: hashCanonicalListing(canonicalListing),
+            observedPayloadDigest: persistedDigest,
+          }),
         }),
-      }),
-    );
-    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+      );
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
     },
   );
 

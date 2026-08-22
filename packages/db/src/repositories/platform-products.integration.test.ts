@@ -358,7 +358,9 @@ describe("platform product repository", () => {
       expect(created.factsPrefill).toBeNull();
       expect(created.contentDigest).toBeNull();
 
-      const found = await repositories.platformProducts.getByListingId(draft.id);
+      const found = await repositories.platformProducts.getByListingId(
+        draft.id,
+      );
       expect(found?.origin).toBe("created");
     });
   });
@@ -385,7 +387,8 @@ describe("platform product repository", () => {
 
       // Simulate the worker's update-path upsert: re-supplies the same
       // import fields it read back from getByListingId, unchanged.
-      const reUpserted = await repositories.platformProducts.upsert(importInput);
+      const reUpserted =
+        await repositories.platformProducts.upsert(importInput);
 
       expect(reUpserted.origin).toBe("import");
       expect(reUpserted.sku).toBe("SKU-IMPORT-1");
@@ -582,10 +585,11 @@ describe("platform product repository", () => {
       // Re-fetch independently of upsertMany's own `.returning()` to prove
       // the ON CONFLICT branch actually wrote these values to the table,
       // per row, rather than collapsing the batch to one shared value.
-      const refetched = await repositories.platformProducts.listByRemoteProductIds(
-        connectionId,
-        ["batch_conflict_1", "batch_conflict_2", "batch_conflict_3"],
-      );
+      const refetched =
+        await repositories.platformProducts.listByRemoteProductIds(
+          connectionId,
+          ["batch_conflict_1", "batch_conflict_2", "batch_conflict_3"],
+        );
       const refetchedByRemoteId = new Map(
         refetched.map((row) => [row.remoteProductId, row]),
       );
