@@ -1382,6 +1382,32 @@ git add apps/web/lib/delivery-service.ts apps/web/lib/delivery-service.review-fi
 git commit -m "feat(web): resolve create-vs-update from the platform product link at request time"
 ```
 
+**Addendum discovered during Task 7 (Step 7.5): wire `platformProducts` into
+`prepareShoplineDelivery`'s deps in `deliver/route.ts`.** Task 7 widened
+`DeliveryDeps.platformProducts` and made `read()` use it, but no task in this
+plan updates the ROUTE that actually calls `prepareShoplineDelivery` in
+production — `apps/web/app/api/listings/[id]/deliver/route.ts`. That file's
+`deliverListing` call site (the `bulk_form`/`csv` path, ~9 lines above)
+already passes `platformProducts: repositories.platformProducts`, but the
+`prepareShoplineDelivery` call site (the `shopline_api` request-phase path)
+does not. Left unfixed, the request-phase snapshot's `platformProductLink`
+would always resolve to `null` in production, and the reviewer-facing
+SHOPLINE delivery flow would never compute an "update" idempotency key —
+silently defeating the point of this whole feature at the one route that
+matters. Fix: add `platformProducts: repositories.platformProducts,` to the
+`prepareShoplineDelivery(input, {...})` deps object (mirrors the existing
+`deliverListing` wiring exactly), plus a regression test in
+`apps/web/app/api/listings/[id]/deliver/route.test.ts` proving the wiring is
+live (not just structurally present) — e.g. supply a `platformProducts.getByListingId`
+fake that returns a link and assert the resulting publish job/ensure-call
+reflects an "update" idempotency key, following whichever of this file's
+existing shopline_api tests is closest in shape.
+
+```bash
+git add "apps/web/app/api/listings/[id]/deliver/route.ts" "apps/web/app/api/listings/[id]/deliver/route.test.ts"
+git commit -m "fix(web): wire the platform product link into the request-phase SHOPLINE delivery route"
+```
+
 ---
 
 ### Task 8: Listing GET route — `shoplineLink` field
