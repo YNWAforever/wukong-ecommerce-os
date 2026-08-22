@@ -64,7 +64,9 @@ describe("DeliveryPanel", () => {
       remoteProductId: null,
       shoplineLink: null,
     };
-    const markup = renderToStaticMarkup(<DeliveryPanel model={model} sku={null} />);
+    const markup = renderToStaticMarkup(
+      <DeliveryPanel model={model} sku={null} />,
+    );
 
     expect(markup).toContain("此操作將建立新的 SHOPLINE 商品");
     expect(markup).toContain("This will create a new SHOPLINE product");
@@ -84,7 +86,9 @@ describe("DeliveryPanel", () => {
       <DeliveryPanel model={model} sku="OPAK-2024-RIES" />,
     );
 
-    expect(markup).toContain("此操作將更新現有 SHOPLINE 商品「OPAK-2024-RIES」");
+    expect(markup).toContain(
+      "此操作將更新現有 SHOPLINE 商品「OPAK-2024-RIES」",
+    );
     expect(markup).toContain(
       "This will update the existing SHOPLINE product for OPAK-2024-RIES",
     );
