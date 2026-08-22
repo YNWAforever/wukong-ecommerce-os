@@ -125,6 +125,7 @@ export function AdminMembersPanel() {
                   <select
                     value={member.role}
                     disabled={busy}
+                    aria-label={`變更 ${member.email} 的角色 Change role for ${member.email}`}
                     onChange={(event) =>
                       changeRole(member.userId, event.target.value as AssignableRole)
                     }
@@ -183,6 +184,7 @@ export function AdminMembersPanel() {
           type="email"
           required
           placeholder="email@example.com"
+          aria-label="邀請成員的電子郵件 Invite email address"
           value={inviteEmail}
           disabled={busy}
           onChange={(event) => setInviteEmail(event.target.value)}
@@ -190,6 +192,7 @@ export function AdminMembersPanel() {
         <select
           value={inviteRole}
           disabled={busy}
+          aria-label="新成員的角色 Role for new member"
           onChange={(event) => setInviteRole(event.target.value as AssignableRole)}
         >
           {ROLE_OPTIONS.map((role) => (

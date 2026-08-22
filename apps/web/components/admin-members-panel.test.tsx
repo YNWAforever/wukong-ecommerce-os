@@ -98,6 +98,32 @@ describe("AdminMembersPanel", () => {
     expect(container.textContent).toContain("待接受 Pending");
   });
 
+  it("labels every form control accessibly", async () => {
+    stubFetch({
+      members: [
+        {
+          userId: "u1",
+          email: "admin@opak.test",
+          role: "admin",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      invites: [],
+    });
+
+    const { container } = await mountPanel();
+
+    expect(
+      container.querySelector('select[aria-label*="Change role for admin@opak.test"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('input[aria-label="邀請成員的電子郵件 Invite email address"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('select[aria-label="新成員的角色 Role for new member"]'),
+    ).not.toBeNull();
+  });
+
   it("shows an error banner when the initial load fails", async () => {
     vi.stubGlobal(
       "fetch",
