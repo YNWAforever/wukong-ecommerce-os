@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
-import { AdminConnectionPanel } from "./admin-connection-panel.js";
-import { AdminMembersPanel } from "./admin-members-panel.js";
-import { AdminSettingsPanel } from "./admin-settings-panel.js";
+import { AdminConnectionPanel } from "./admin-connection-panel";
+import { AdminMembersPanel } from "./admin-members-panel";
+import { AdminSettingsPanel } from "./admin-settings-panel";
 
 type AdminTab = "members" | "connection" | "settings";
 

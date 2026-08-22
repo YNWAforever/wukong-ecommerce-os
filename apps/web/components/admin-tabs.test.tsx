@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { AdminTabs } from "./admin-tabs.js";
+import { AdminTabs } from "./admin-tabs";
 
 describe("AdminTabs", () => {
   it("shows three tabs with Members selected by default", () => {
