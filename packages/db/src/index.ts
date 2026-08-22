@@ -42,6 +42,7 @@ export type {
 export type {
   ShoplineConnection,
   ShoplineConnectionRepository,
+  ShoplineConnectionSummary,
 } from "./repositories/shopline-connections.js";
 export type {
   PlatformProduct,
