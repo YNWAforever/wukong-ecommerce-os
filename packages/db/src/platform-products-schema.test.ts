@@ -24,11 +24,14 @@ describe("platform product schema", () => {
     const columns = getTableColumns(platformProducts);
 
     expect(columns.remoteProductId.notNull).toBe(true);
-    expect(columns.sku.notNull).toBe(true);
-    expect(columns.specVersion.notNull).toBe(true);
-    expect(columns.rawRow.notNull).toBe(true);
-    expect(columns.factsPrefill.notNull).toBe(true);
-    expect(columns.contentDigest.notNull).toBe(true);
+    expect(columns.origin.notNull).toBe(true);
+    // Nullable: these are import-specific fields, absent on a "created"-origin
+    // row that came from a direct SHOPLINE product creation, not an import.
+    expect(columns.sku.notNull).toBe(false);
+    expect(columns.specVersion.notNull).toBe(false);
+    expect(columns.rawRow.notNull).toBe(false);
+    expect(columns.factsPrefill.notNull).toBe(false);
+    expect(columns.contentDigest.notNull).toBe(false);
   });
 
   it("allows a link row that has no draft yet", () => {
