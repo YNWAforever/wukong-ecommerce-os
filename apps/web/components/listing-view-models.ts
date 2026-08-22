@@ -69,6 +69,7 @@ export type DeliveryModel = {
   canReview: boolean;
   remoteProductUrl: string | null;
   remoteProductId: string | null;
+  shoplineLink: { remoteProductId: string } | null;
 };
 
 export const queueGroups: ReadonlyArray<{

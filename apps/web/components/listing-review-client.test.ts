@@ -75,6 +75,7 @@ const response: ListingViewResponse = {
   productShot: null,
   delivery: null,
   queueStatus: null,
+  shoplineLink: null,
   permissions: {
     canProcess: true,
     canEdit: true,
