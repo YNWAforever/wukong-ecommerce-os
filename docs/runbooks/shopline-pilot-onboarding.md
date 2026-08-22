@@ -177,11 +177,12 @@ rotating the SHOPLINE credential, and setting the brand background color.
 **Inviting a teammate.** From the Members tab, enter their email, pick a role
 (`viewer`, `operator`, `reviewer`, or `admin` — `owner` is not assignable
 here), and submit. This creates a pending invite row; Wukong does not send an
-invitation email. Share the app's sign-in URL with the teammate manually
-(Slack, a ticket comment, etc.) and have them sign in with the exact email
-address that was invited — the sign-in flow checks it against the pending
-invite and completes enrollment. Revoke a pending invite from the same tab if
-it's no longer needed.
+invitation email itself. Share the app's `/register` URL with the teammate
+manually (Slack, a ticket comment, etc.) and have them submit the exact email
+address that was invited there — the register flow checks it against the
+pending invite and, if eligible, sends them an enrollment email; setting a
+password on that email's link is what actually completes enrollment. Revoke
+a pending invite from the same tab if it's no longer needed.
 
 **Connecting or rotating the SHOPLINE credential.** From the Connection tab,
 enter the shop domain and access token once to connect a workspace that has
@@ -193,4 +194,4 @@ connection date.
 
 **Changing the brand background color.** From the Settings tab, pick a color
 and save. It takes effect immediately for the workspace's branding — no
-deploy or DB write required.
+deploy or code change required.
