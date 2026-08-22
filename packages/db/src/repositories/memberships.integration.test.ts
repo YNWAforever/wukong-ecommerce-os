@@ -2,6 +2,24 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, forWorkspace } from "../index.js";
+import { MembershipGuardViolation } from "./memberships.js";
+
+/**
+ * A promise plus its resolver, exposed separately so a test can hand the
+ * `promise` half to one async flow and hold the `resolve` half to release it
+ * from another -- used below to pin down the interleaving of two genuinely
+ * concurrent Postgres transactions instead of guessing at timing.
+ */
+function createDeferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const adminUrl =
   process.env.TEST_DATABASE_ADMIN_URL ??
@@ -264,5 +282,81 @@ describe("MembershipRepository — read and invite methods", () => {
         repositories.memberships.remove("user_admin", "user_owner"),
       ),
     ).rejects.toThrow(/owner's role is not managed/i);
+  });
+
+  describe("concurrent last-admin guard (TOCTOU race)", () => {
+    it("does not let two concurrent removals both pass the last-admin guard", async () => {
+      // Seed a second admin so the workspace has exactly two admin-tier
+      // members: user_admin and user_admin2 (plus the non-admin
+      // user_viewer from the outer beforeEach).
+      await admin.unsafe(
+        `INSERT INTO users (id, email) VALUES ('user_admin2', 'admin2@opak.test')`,
+      );
+      await admin.unsafe(
+        `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_admin2', 'admin')`,
+        [workspaceId],
+      );
+
+      const firstRemovalStarted = createDeferred<void>();
+      const releaseFirstRemoval = createDeferred<void>();
+
+      // Transaction A: user_admin2 removes user_admin. This passes the
+      // guard (one admin, user_admin2, remains) and performs its DELETE,
+      // but the surrounding Postgres transaction is deliberately held open
+      // -- uncommitted -- until the test releases it below, so a second,
+      // concurrent transaction can race its own guard check against this
+      // one before it commits.
+      const first = forWorkspace(
+        database,
+        workspaceId,
+        async (repositories) => {
+          await repositories.memberships.remove("user_admin2", "user_admin");
+          firstRemovalStarted.resolve();
+          await releaseFirstRemoval.promise;
+        },
+      );
+
+      await firstRemovalStarted.promise;
+
+      // Transaction B: user_admin removes user_admin2 -- the *other*
+      // remaining admin. Its guard check races against transaction A's
+      // still-uncommitted removal of user_admin. Without row locking, this
+      // reads the stale (pre-delete) admin count and wrongly proceeds,
+      // which is exactly the TOCTOU bug: both transactions would then
+      // commit, leaving the workspace with zero admins. With locking, this
+      // read blocks on user_admin's row (held by transaction A's
+      // uncommitted DELETE) until transaction A commits, then correctly
+      // observes only one admin (itself) and rejects.
+      const second = forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.remove("user_admin", "user_admin2"),
+      );
+
+      // Give transaction B's query a generous, deterministic window to
+      // actually reach Postgres and (post-fix) start blocking on
+      // transaction A's row lock before we let transaction A commit. This
+      // is not a guess at which of two racing operations finishes first --
+      // transaction A is parked on `releaseFirstRemoval` and cannot
+      // proceed until we resolve it below, so there is nothing for
+      // transaction B to lose a race against; the delay only ensures its
+      // already-dispatched query has left the process before we act.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      releaseFirstRemoval.resolve();
+      await first;
+
+      await expect(second).rejects.toThrow(MembershipGuardViolation);
+      await expect(second).rejects.toThrow(/at least one admin/i);
+
+      const members = await forWorkspace(
+        database,
+        workspaceId,
+        (repositories) => repositories.memberships.listForWorkspace(),
+      );
+      const remainingAdmins = members.filter((member) =>
+        ["admin", "owner"].includes(member.role),
+      );
+      expect(remainingAdmins).toHaveLength(1);
+      expect(remainingAdmins[0]?.userId).toBe("user_admin2");
+    });
   });
 });
