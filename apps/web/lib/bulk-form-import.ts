@@ -1,4 +1,4 @@
-import type { Database } from "@wukong/db";
+import type { Database, UpsertPlatformProductInput } from "@wukong/db";
 import {
   hashBulkFormRow,
   parseBulkForm,
@@ -111,7 +111,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
 
         let createdDrafts = 0;
         let refreshedProducts = 0;
-        const mirrors = [];
+        const mirrors: UpsertPlatformProductInput[] = [];
 
         for (const row of parsed.rows) {
           const prior = knownByRemoteId.get(row.productId);
@@ -178,6 +178,9 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             rawRow,
             factsPrefill: row.facts,
             contentDigest,
+            // Every row this importer writes came from a bulk update form, never
+            // from the direct-create-publish path.
+            origin: "import",
           });
         }
 
