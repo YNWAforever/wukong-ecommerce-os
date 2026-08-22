@@ -420,6 +420,32 @@ describe("POST /api/listings/[id]/deliver", () => {
     ]);
   });
 
+  it("wires the platform product link into the request-phase idempotency key", async () => {
+    const runtime = makeDefaultRuntime();
+    (runtime.repositories as any).platformProducts = {
+      async getByListingId() {
+        return { remoteProductId: "remote_existing_1", rawRow: null };
+      },
+    };
+    const ingressClient = {
+      enqueue: vi.fn(async () => ({ accepted: true as const })),
+    };
+
+    const result = await defaultDelivery({ ingressClient } as never).deliver({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api",
+    });
+
+    expect(result).toMatchObject({ kind: "queued" });
+    expect(runtime.ensureInputs).toEqual([
+      expect.objectContaining({
+        idempotencyKey: `ws_opak:${versionId}:shopline:update`,
+      }),
+    ]);
+  });
+
   it("does not regress a fast consumer running state after ingress acceptance", async () => {
     const runtime = makeDefaultRuntime();
     const ingressClient = {
