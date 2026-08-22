@@ -25,48 +25,28 @@
 - Create: `packages/db/drizzle/0008_workspace_admin_area.sql`
 - Modify: `packages/db/src/schema.ts` (add `check(...)` entries to the `memberships` and `workspaceInvites` table definitions — no column changes)
 
-Both `memberships.role` and `workspace_invites.role`/`status` are currently plain `text()` columns with no DB-level constraint on their value domain (confirmed via `packages/db/src/schema.ts:216-260`). This task adds CHECK constraints matching the actual value domain already in use: `memberships.role` allows all five ranks (`viewer|operator|reviewer|admin|owner` — `owner` rows already exist and must keep working), `workspace_invites.role` allows only the four assignable-via-invite ranks (no `owner` — nothing in this codebase ever invites someone as owner), and `workspace_invites.status` allows exactly the two values the existing enrollment SQL function (`packages/db/drizzle/0002_auth_access_rls.sql:14,38,64,78`) already reads and writes: `pending` and `accepted`.
+**Corrected premise (this section originally claimed these columns had no DB-level constraint at all — that was wrong, caught during Task 1's own code-quality review):** `packages/db/drizzle/0000_initial.sql:95-96,117` already declares INLINE, UNNAMED `CHECK` constraints on both tables — `workspace_invites`: `role IN ('owner','admin','reviewer','operator')` and `status IN ('pending','accepted','revoked')`; `memberships`: `role IN ('owner','admin','reviewer','operator')`. Postgres auto-names an unnamed inline `CHECK` as `<table>_<column>_check`, which is EXACTLY the name this task's constraints need — so an `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '...')` guard finds the pre-existing (wrong) constraint already there under that name and silently no-ops, leaving the old, narrower definition in place forever. Concretely, this pre-existing constraint is ALSO a real, unrelated pre-existing bug: it never allowed `viewer` at all, despite `viewer` being the lowest rank in `apps/web/lib/session-context.ts`'s `roleOrder` — meaning no `viewer` membership could ever have been inserted in any environment until this task fixes it.
+
+The fix (this task's actual job, revised): use this repo's OTHER established idiom for replacing a `CHECK` regardless of prior state — `DROP CONSTRAINT IF EXISTS` followed by an unconditional `ADD CONSTRAINT`, exactly as `packages/db/drizzle/0006_compliance_flag_severity.sql` does for the same "an old inline `CHECK` needs replacing" situation. This is naturally idempotent (a repeated `DROP ... IF EXISTS` + `ADD` produces the same end state every run) without needing a `pg_constraint` name lookup at all.
+
+Also revised: `workspace_invites.status` keeps its ORIGINAL three-value domain (`pending`, `accepted`, `revoked`), not narrowed to two. `packages/db/src/repositories/auth-access.integration.test.ts:143,250` genuinely relies on inserting `status: "revoked"` rows today to test enrollment-eligibility rejection — narrowing the constraint breaks that unrelated, legitimate existing test. This plan's own Task 2 never needs `revoked` as a status value (invite revocation there is a row `DELETE`, not a status transition), so keeping `revoked` in the allowed set costs this plan nothing while avoiding an unrelated regression.
 
 - [ ] **Step 1: Write the migration SQL**
 
-This repo's migration runner (`packages/db/src/client.ts`'s `migrate()`) has no applied-migrations ledger — it replays every `.sql` file on every invocation, wrapped in one transaction per file. Every migration must be idempotent. Follow the exact `DO $ ... IF NOT EXISTS (SELECT 1 FROM pg_constraint...) END $` guard pattern established by `packages/db/drizzle/0008_shopline_update_after_publish.sql` (the sibling PR's migration — read it if present in your branch history for the exact idiom; otherwise use the pattern below, which is the same one):
+This repo's migration runner (`packages/db/src/client.ts`'s `migrate()`) has no applied-migrations ledger — it replays every `.sql` file on every invocation, wrapped in one transaction per file. Every migration must be idempotent.
 
 ```sql
-DO $membership_role$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'memberships_role_check'
-  ) THEN
-    ALTER TABLE memberships
-      ADD CONSTRAINT memberships_role_check
-      CHECK (role IN ('viewer', 'operator', 'reviewer', 'admin', 'owner'));
-  END IF;
-END
-$membership_role$;
+ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_role_check;
+ALTER TABLE memberships ADD CONSTRAINT memberships_role_check
+  CHECK (role IN ('viewer', 'operator', 'reviewer', 'admin', 'owner'));
 
-DO $invite_role$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'workspace_invites_role_check'
-  ) THEN
-    ALTER TABLE workspace_invites
-      ADD CONSTRAINT workspace_invites_role_check
-      CHECK (role IN ('viewer', 'operator', 'reviewer', 'admin'));
-  END IF;
-END
-$invite_role$;
+ALTER TABLE workspace_invites DROP CONSTRAINT IF EXISTS workspace_invites_role_check;
+ALTER TABLE workspace_invites ADD CONSTRAINT workspace_invites_role_check
+  CHECK (role IN ('viewer', 'operator', 'reviewer', 'admin'));
 
-DO $invite_status$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'workspace_invites_status_check'
-  ) THEN
-    ALTER TABLE workspace_invites
-      ADD CONSTRAINT workspace_invites_status_check
-      CHECK (status IN ('pending', 'accepted'));
-  END IF;
-END
-$invite_status$;
+ALTER TABLE workspace_invites DROP CONSTRAINT IF EXISTS workspace_invites_status_check;
+ALTER TABLE workspace_invites ADD CONSTRAINT workspace_invites_status_check
+  CHECK (status IN ('pending', 'accepted', 'revoked'));
 ```
 
 Save this as `packages/db/drizzle/0008_workspace_admin_area.sql` (or `0009_...` — see the numbering-risk note at the top of this plan).
@@ -133,7 +113,7 @@ export const workspaceInvites = pgTable(
     ),
     check(
       "workspace_invites_status_check",
-      sql`${table.status} IN ('pending', 'accepted')`,
+      sql`${table.status} IN ('pending', 'accepted', 'revoked')`,
     ),
   ],
 );
@@ -146,10 +126,12 @@ export const workspaceInvites = pgTable(
 Run: `pnpm --filter @wukong/db db:migrate` twice in a row against a running local Postgres (`docker compose up -d postgres` first if not already running, per `docs/runbooks/local-development.md`).
 Expected: both runs succeed with no error (no "constraint already exists" failure on the second run — this is exactly what the `IF NOT EXISTS` guard is for).
 
-- [ ] **Step 4: Verify schema.test.ts / a fresh-DB check passes**
+- [ ] **Step 4: Verify schema.test.ts / a fresh-DB check passes, AND that the pre-existing `revoked`-status test still passes**
 
 Run: `pnpm --filter @wukong/db lint && pnpm --filter @wukong/db test`
 Expected: all pass — this confirms the Drizzle schema's TypeScript compiles and no existing schema-shape test broke.
+
+Also run the specific integration test that exercises the ORIGINAL, unrelated `workspace_invites` constraint this task is touching: `pnpm --filter @wukong/db exec vitest run src/repositories/auth-access.integration.test.ts`. Expected: PASS, including the two tests that insert a `status: "revoked"` row (`rejects users whose invite is not pending or accepted`, `does not partially enroll a user without an eligible invite`) — this is the exact regression this task's own code-quality review caught (a narrower status domain than the plan first specified would have broken these). This test file isn't part of the plain `pnpm --filter @wukong/db test` script (it's excluded as `*.integration.test.ts`), so it must be run explicitly here, not assumed covered by Step 4's first command.
 
 - [ ] **Step 5: Commit**
 
