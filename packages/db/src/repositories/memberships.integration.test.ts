@@ -139,42 +139,57 @@ describe("MembershipRepository — read and invite methods", () => {
     expect(members).toHaveLength(1);
   });
 
-  it("rejects demoting yourself, and rejects demoting the last remaining admin", async () => {
+  it("rejects demoting yourself", async () => {
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
         repositories.memberships.updateRole("user_admin", "user_admin", "operator"),
       ),
     ).rejects.toThrow(/cannot change or remove your own/i);
+  });
 
-    // add a second admin so the self-action guard on user_admin no longer
-    // masks the last-admin guard
-    await admin.unsafe(
-      `INSERT INTO users (id, email) VALUES ('user_admin2', 'admin2@opak.test')`,
-    );
-    await admin.unsafe(
-      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_admin2', 'admin')`,
-      [workspaceId],
-    );
-    // two admins remain (user_admin, user_admin2) -- demoting one of them
-    // (as a different actor) is allowed
+  it("rejects a different admin demoting the only remaining admin", async () => {
     await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.updateRole("user_admin", "user_admin2", "operator"),
-    );
-
-    // now only user_admin is left at admin tier -- demoting them (acting as
-    // a *different*, third admin) must fail with last_admin
-    await admin.unsafe(
-      `INSERT INTO users (id, email) VALUES ('user_admin3', 'admin3@opak.test')`,
+      repositories.memberships.remove("user_admin", "user_viewer"),
     );
     await admin.unsafe(
-      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_admin3', 'admin')`,
+      `INSERT INTO users (id, email) VALUES ('user_other', 'other@opak.test')`,
+    );
+    await admin.unsafe(
+      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_other', 'operator')`,
       [workspaceId],
     );
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
-        repositories.memberships.updateRole("user_admin3", "user_admin", "operator"),
+        repositories.memberships.updateRole("user_other", "user_admin", "operator"),
       ),
-    ).resolves.toBeUndefined(); // two admins remain (admin3, admin) before this call -> allowed
+    ).rejects.toThrow(/at least one admin/i);
+  });
+
+  it("does not trigger the last-admin guard for promotions or no-op admin role changes", async () => {
+    // promoting a non-admin to admin never removes an admin from the tier,
+    // so this must succeed even though it changes who's admin-tier.
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.updateRole("user_admin", "user_viewer", "admin"),
+    );
+    const afterPromotion = await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.listForWorkspace(),
+    );
+    expect(afterPromotion.find((m) => m.userId === "user_viewer")?.role).toBe(
+      "admin",
+    );
+
+    // re-seed a workspace where user_admin is the sole admin, then reassign
+    // them to "admin" again (a no-op) acting as a different, non-admin
+    // member -- since the target never leaves the admin tier, this must
+    // succeed even though only one admin exists.
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.updateRole("user_admin", "user_viewer", "viewer"),
+    );
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.updateRole("user_viewer", "user_admin", "admin"),
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it("rejects removing the only remaining admin", async () => {
