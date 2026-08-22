@@ -1,8 +1,10 @@
 import type { CanonicalListing, ListingFacts } from "@wukong/core";
+import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
   foreignKey,
   index,
   integer,
@@ -232,6 +234,10 @@ export const memberships = pgTable(
       table.userId,
     ),
     index("memberships_user_id_idx").on(table.userId),
+    check(
+      "memberships_role_check",
+      sql`${table.role} IN ('viewer', 'operator', 'reviewer', 'admin', 'owner')`,
+    ),
   ],
 );
 
@@ -255,6 +261,14 @@ export const workspaceInvites = pgTable(
     index("workspace_invites_workspace_status_idx").on(
       table.workspaceId,
       table.status,
+    ),
+    check(
+      "workspace_invites_role_check",
+      sql`${table.role} IN ('viewer', 'operator', 'reviewer', 'admin')`,
+    ),
+    check(
+      "workspace_invites_status_check",
+      sql`${table.status} IN ('pending', 'accepted')`,
     ),
   ],
 );
