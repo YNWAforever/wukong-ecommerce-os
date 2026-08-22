@@ -34,9 +34,15 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
-      const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+      const parsed = bodySchema.safeParse(
+        await request.json().catch(() => null),
+      );
       if (!parsed.success) {
         throw new ApiError(400, "invalid_body", "Invalid invite payload.");
       }

@@ -23,7 +23,11 @@ export function createMembersListHandler(deps: MembersListRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const result = await deps
         .getDatabase()

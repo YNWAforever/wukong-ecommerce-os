@@ -25,7 +25,11 @@ export function createInviteRevokeHandler(deps: InviteRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const { inviteId } = await context.params;
       await deps

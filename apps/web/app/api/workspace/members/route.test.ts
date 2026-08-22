@@ -4,10 +4,20 @@ import { createMembersListHandler } from "./route.js";
 
 function harness(role: string) {
   const listForWorkspace = vi.fn(async () => [
-    { userId: "u1", email: "admin@opak.test", role: "admin", createdAt: new Date("2026-01-01") },
+    {
+      userId: "u1",
+      email: "admin@opak.test",
+      role: "admin",
+      createdAt: new Date("2026-01-01"),
+    },
   ]);
   const listInvites = vi.fn(async () => [
-    { id: "inv1", email: "new@opak.test", role: "operator", createdAt: new Date("2026-01-02") },
+    {
+      id: "inv1",
+      email: "new@opak.test",
+      role: "operator",
+      createdAt: new Date("2026-01-02"),
+    },
   ]);
   const handler = createMembersListHandler({
     sessionContext: {
