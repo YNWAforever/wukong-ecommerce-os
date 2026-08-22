@@ -121,12 +121,18 @@ describe("MembershipRepository — read and invite methods", () => {
 
   it("changes a non-admin member's role", async () => {
     await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.updateRole("user_admin", "user_viewer", "operator"),
+      repositories.memberships.updateRole(
+        "user_admin",
+        "user_viewer",
+        "operator",
+      ),
     );
     const members = await forWorkspace(database, workspaceId, (repositories) =>
       repositories.memberships.listForWorkspace(),
     );
-    expect(members.find((m) => m.userId === "user_viewer")?.role).toBe("operator");
+    expect(members.find((m) => m.userId === "user_viewer")?.role).toBe(
+      "operator",
+    );
   });
 
   it("removes a non-admin member", async () => {
@@ -142,7 +148,11 @@ describe("MembershipRepository — read and invite methods", () => {
   it("rejects demoting yourself", async () => {
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
-        repositories.memberships.updateRole("user_admin", "user_admin", "operator"),
+        repositories.memberships.updateRole(
+          "user_admin",
+          "user_admin",
+          "operator",
+        ),
       ),
     ).rejects.toThrow(/cannot change or remove your own/i);
   });
@@ -160,7 +170,11 @@ describe("MembershipRepository — read and invite methods", () => {
     );
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
-        repositories.memberships.updateRole("user_other", "user_admin", "operator"),
+        repositories.memberships.updateRole(
+          "user_other",
+          "user_admin",
+          "operator",
+        ),
       ),
     ).rejects.toThrow(/at least one admin/i);
   });
@@ -171,8 +185,10 @@ describe("MembershipRepository — read and invite methods", () => {
     await forWorkspace(database, workspaceId, (repositories) =>
       repositories.memberships.updateRole("user_admin", "user_viewer", "admin"),
     );
-    const afterPromotion = await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.listForWorkspace(),
+    const afterPromotion = await forWorkspace(
+      database,
+      workspaceId,
+      (repositories) => repositories.memberships.listForWorkspace(),
     );
     expect(afterPromotion.find((m) => m.userId === "user_viewer")?.role).toBe(
       "admin",
@@ -183,11 +199,19 @@ describe("MembershipRepository — read and invite methods", () => {
     // member -- since the target never leaves the admin tier, this must
     // succeed even though only one admin exists.
     await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.updateRole("user_admin", "user_viewer", "viewer"),
+      repositories.memberships.updateRole(
+        "user_admin",
+        "user_viewer",
+        "viewer",
+      ),
     );
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
-        repositories.memberships.updateRole("user_viewer", "user_admin", "admin"),
+        repositories.memberships.updateRole(
+          "user_viewer",
+          "user_admin",
+          "admin",
+        ),
       ),
     ).resolves.toBeUndefined();
   });
@@ -228,7 +252,11 @@ describe("MembershipRepository — read and invite methods", () => {
     );
     await expect(
       forWorkspace(database, workspaceId, (repositories) =>
-        repositories.memberships.updateRole("user_admin", "user_owner", "admin"),
+        repositories.memberships.updateRole(
+          "user_admin",
+          "user_owner",
+          "admin",
+        ),
       ),
     ).rejects.toThrow(/owner's role is not managed/i);
     await expect(

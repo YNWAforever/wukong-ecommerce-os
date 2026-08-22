@@ -13,7 +13,11 @@ const appUrl =
 const testKey = "A".repeat(43) + "="; // 32 zero bytes, base64 -- matches token-vault's expected shape
 
 describe("ShoplineConnectionRepository.create/update", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: () => undefined, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: () => undefined,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
   const workspaceId = "ws_connection_test";
 
@@ -37,7 +41,9 @@ describe("ShoplineConnectionRepository.create/update", () => {
   });
 
   beforeEach(async () => {
-    await admin.unsafe("TRUNCATE TABLE shopline_connections, workspaces CASCADE");
+    await admin.unsafe(
+      "TRUNCATE TABLE shopline_connections, workspaces CASCADE",
+    );
     await admin.unsafe(
       `INSERT INTO workspaces (id, name, profile) VALUES ($1, 'Test', '{}')`,
       [workspaceId],

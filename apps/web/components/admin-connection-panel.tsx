@@ -34,7 +34,11 @@ export function AdminConnectionPanel() {
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load the connection."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load the connection.",
+      ),
     );
   }, [load]);
 
@@ -48,7 +52,11 @@ export function AdminConnectionPanel() {
         await load();
         setMessage(success);
       } catch (runError) {
-        setError(runError instanceof Error ? runError.message : "Unable to complete request.");
+        setError(
+          runError instanceof Error
+            ? runError.message
+            : "Unable to complete request.",
+        );
       } finally {
         setBusy(false);
       }
@@ -97,7 +105,10 @@ export function AdminConnectionPanel() {
           <p>
             商店網域 Shop domain: <strong>{connection.shopDomain}</strong>
           </p>
-          <p>連線起始 Connected since: {new Date(connection.connectedAt).toLocaleDateString()}</p>
+          <p>
+            連線起始 Connected since:{" "}
+            {new Date(connection.connectedAt).toLocaleDateString()}
+          </p>
           {rotating ? (
             <form
               onSubmit={(event) => {
@@ -114,7 +125,11 @@ export function AdminConnectionPanel() {
                 disabled={busy}
                 onChange={(event) => setAccessToken(event.target.value)}
               />
-              <button type="submit" className="primary-button" disabled={busy || !accessToken}>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={busy || !accessToken}
+              >
                 更新權杖 Rotate token
               </button>
             </form>

@@ -2,11 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type Member = { userId: string; email: string; role: string; createdAt: string };
+type Member = {
+  userId: string;
+  email: string;
+  role: string;
+  createdAt: string;
+};
 type Invite = { id: string; email: string; role: string; createdAt: string };
 type AssignableRole = "viewer" | "operator" | "reviewer" | "admin";
 
-const ROLE_OPTIONS: AssignableRole[] = ["viewer", "operator", "reviewer", "admin"];
+const ROLE_OPTIONS: AssignableRole[] = [
+  "viewer",
+  "operator",
+  "reviewer",
+  "admin",
+];
 
 async function responseError(response: Response): Promise<Error> {
   const fallback = `Request failed (${response.status})`;
@@ -30,14 +40,21 @@ export function AdminMembersPanel() {
   const load = useCallback(async () => {
     const response = await fetch("/api/workspace/members");
     if (!response.ok) throw await responseError(response);
-    const body = (await response.json()) as { members: Member[]; invites: Invite[] };
+    const body = (await response.json()) as {
+      members: Member[];
+      invites: Invite[];
+    };
     setMembers(body.members);
     setInvites(body.invites);
   }, []);
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load members."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load members.",
+      ),
     );
   }, [load]);
 
@@ -51,7 +68,11 @@ export function AdminMembersPanel() {
         await load();
         setMessage(success);
       } catch (runError) {
-        setError(runError instanceof Error ? runError.message : "Unable to complete request.");
+        setError(
+          runError instanceof Error
+            ? runError.message
+            : "Unable to complete request.",
+        );
       } finally {
         setBusy(false);
       }
@@ -82,13 +103,17 @@ export function AdminMembersPanel() {
 
   const removeMember = (userId: string) =>
     run(async () => {
-      const response = await fetch(`/api/workspace/members/${userId}`, { method: "DELETE" });
+      const response = await fetch(`/api/workspace/members/${userId}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw await responseError(response);
     }, "成員已移除 Member removed");
 
   const revokeInvite = (inviteId: string) =>
     run(async () => {
-      const response = await fetch(`/api/workspace/invites/${inviteId}`, { method: "DELETE" });
+      const response = await fetch(`/api/workspace/invites/${inviteId}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw await responseError(response);
     }, "邀請已撤銷 Invite revoked");
 
@@ -127,7 +152,10 @@ export function AdminMembersPanel() {
                     disabled={busy}
                     aria-label={`變更 ${member.email} 的角色 Change role for ${member.email}`}
                     onChange={(event) =>
-                      changeRole(member.userId, event.target.value as AssignableRole)
+                      changeRole(
+                        member.userId,
+                        event.target.value as AssignableRole,
+                      )
                     }
                   >
                     {ROLE_OPTIONS.map((role) => (
@@ -193,7 +221,9 @@ export function AdminMembersPanel() {
           value={inviteRole}
           disabled={busy}
           aria-label="新成員的角色 Role for new member"
-          onChange={(event) => setInviteRole(event.target.value as AssignableRole)}
+          onChange={(event) =>
+            setInviteRole(event.target.value as AssignableRole)
+          }
         >
           {ROLE_OPTIONS.map((role) => (
             <option key={role} value={role}>
@@ -201,7 +231,11 @@ export function AdminMembersPanel() {
             </option>
           ))}
         </select>
-        <button type="submit" className="primary-button" disabled={busy || !inviteEmail}>
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={busy || !inviteEmail}
+        >
           邀請成員 Invite member
         </button>
       </form>

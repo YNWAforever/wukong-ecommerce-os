@@ -230,9 +230,9 @@ describe("AdminConnectionPanel", () => {
 
     const { container } = await mountPanel();
 
-    const rotateButton = Array.from(
-      container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("更新權杖 Rotate token"));
+    const rotateButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("更新權杖 Rotate token"),
+    );
     expect(rotateButton).not.toBeUndefined();
 
     await act(async () => {
@@ -272,9 +272,9 @@ describe("AdminConnectionPanel", () => {
     );
     expect(patchCall).not.toBeUndefined();
     expect(patchCall?.[0]).toBe("/api/workspace/connection");
-    expect(JSON.parse((patchCall?.[1] as RequestInit).body as string)).toEqual(
-      { accessToken: "v1.ROTATED-token-xyz" },
-    );
+    expect(JSON.parse((patchCall?.[1] as RequestInit).body as string)).toEqual({
+      accessToken: "v1.ROTATED-token-xyz",
+    });
 
     expect(
       container.querySelector(

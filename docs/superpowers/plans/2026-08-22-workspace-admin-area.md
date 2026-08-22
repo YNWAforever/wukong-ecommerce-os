@@ -22,6 +22,7 @@
 ### Task 1: Migration — CHECK constraints for `memberships.role` and `workspace_invites.role`/`status`
 
 **Files:**
+
 - Create: `packages/db/drizzle/0008_workspace_admin_area.sql`
 - Modify: `packages/db/src/schema.ts` (add `check(...)` entries to the `memberships` and `workspaceInvites` table definitions — no column changes)
 
@@ -145,6 +146,7 @@ git commit -m "feat(db): constrain memberships and workspace_invites role/status
 ### Task 2: `memberships` repository — read + invite methods
 
 **Files:**
+
 - Create: `packages/db/src/repositories/memberships.ts`
 - Modify: `packages/db/src/client.ts` (register the new repository)
 - Create: `packages/db/src/repositories/memberships.integration.test.ts`
@@ -296,7 +298,8 @@ import { and, eq, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { memberships, users, workspaceInvites } from "../schema.js";
 
-export type AssignableWorkspaceRole = "viewer" | "operator" | "reviewer" | "admin";
+export type AssignableWorkspaceRole =
+  "viewer" | "operator" | "reviewer" | "admin";
 
 export type WorkspaceMember = {
   userId: string;
@@ -315,10 +318,7 @@ export type WorkspaceInvite = {
 export class MembershipGuardViolation extends Error {
   constructor(
     readonly reason:
-      | "self_action"
-      | "last_admin"
-      | "owner_immutable"
-      | "already_member",
+      "self_action" | "last_admin" | "owner_immutable" | "already_member",
   ) {
     super(
       reason === "self_action"
@@ -443,7 +443,10 @@ Note: `createInvite` upserts on the existing `(workspaceId, email)` unique index
 In `packages/db/src/client.ts`, add the import:
 
 ```ts
-import { createMembershipRepository, type MembershipRepository } from "./repositories/memberships.js";
+import {
+  createMembershipRepository,
+  type MembershipRepository,
+} from "./repositories/memberships.js";
 ```
 
 Add `memberships: MembershipRepository;` to the `WorkspaceRepositories` type (alongside the other repository fields, around line 60-71), and add `memberships: createMembershipRepository(transaction, workspaceId, scope),` to the object literal inside `runForWorkspace` (around line 145-179), alongside the other `create*Repository(transaction, workspaceId, scope)` calls.
@@ -470,6 +473,7 @@ git commit -m "feat(db): add memberships repository — list, invite, revoke"
 ### Task 3: `memberships` repository — guarded `updateRole` and `remove`
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/memberships.ts`
 - Modify: `packages/db/src/repositories/memberships.integration.test.ts`
 - Create: `packages/db/src/repositories/memberships.test.ts`
@@ -483,12 +487,18 @@ Append to `packages/db/src/repositories/memberships.integration.test.ts` (inside
 ```ts
 it("changes a non-admin member's role", async () => {
   await forWorkspace(database, workspaceId, (repositories) =>
-    repositories.memberships.updateRole("user_admin", "user_viewer", "operator"),
+    repositories.memberships.updateRole(
+      "user_admin",
+      "user_viewer",
+      "operator",
+    ),
   );
   const members = await forWorkspace(database, workspaceId, (repositories) =>
     repositories.memberships.listForWorkspace(),
   );
-  expect(members.find((m) => m.userId === "user_viewer")?.role).toBe("operator");
+  expect(members.find((m) => m.userId === "user_viewer")?.role).toBe(
+    "operator",
+  );
 });
 
 it("removes a non-admin member", async () => {
@@ -504,7 +514,11 @@ it("removes a non-admin member", async () => {
 it("rejects demoting the last admin", async () => {
   await expect(
     forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.updateRole("user_admin", "user_admin", "operator"),
+      repositories.memberships.updateRole(
+        "user_admin",
+        "user_admin",
+        "operator",
+      ),
     ),
   ).rejects.toThrow(/cannot change or remove your own/i);
   // self-action fires first; add a second admin to isolate the last-admin path
@@ -516,7 +530,11 @@ it("rejects demoting the last admin", async () => {
     [workspaceId],
   );
   await forWorkspace(database, workspaceId, (repositories) =>
-    repositories.memberships.updateRole("user_admin", "user_admin2", "operator"),
+    repositories.memberships.updateRole(
+      "user_admin",
+      "user_admin2",
+      "operator",
+    ),
   );
   // now only user_admin is left at admin tier -- demoting them (acting as a
   // *different* admin) must fail with last_admin, not self_action
@@ -529,7 +547,11 @@ it("rejects demoting the last admin", async () => {
   );
   await expect(
     forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.updateRole("user_admin3", "user_admin", "operator"),
+      repositories.memberships.updateRole(
+        "user_admin3",
+        "user_admin",
+        "operator",
+      ),
     ),
   ).resolves.toBeUndefined(); // two admins remain (admin3, admin) before this call -> allowed
 });
@@ -581,7 +603,7 @@ it("rejects changing or removing the owner role", async () => {
 });
 ```
 
-Re-read this test block once written and simplify the "rejects demoting the last admin" test if the intermediate self-action assertion makes it confusing — the essential property to prove is: with exactly one `admin`-or-`owner` member left, a *different* user attempting to demote or remove that last one is rejected with `last_admin`, and this must be distinguishable from the `self_action` rejection (which fires on a totally different condition — acting on your own id, regardless of admin count). Feel free to restructure into two cleanly separate tests if that reads better than the combined one above.
+Re-read this test block once written and simplify the "rejects demoting the last admin" test if the intermediate self-action assertion makes it confusing — the essential property to prove is: with exactly one `admin`-or-`owner` member left, a _different_ user attempting to demote or remove that last one is rejected with `last_admin`, and this must be distinguishable from the `self_action` rejection (which fires on a totally different condition — acting on your own id, regardless of admin count). Feel free to restructure into two cleanly separate tests if that reads better than the combined one above.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -590,7 +612,7 @@ Expected: FAIL — `updateRole`/`remove` don't exist on the repository yet.
 
 - [ ] **Step 3: Write the unit test for the guard logic**
 
-Create `packages/db/src/repositories/memberships.test.ts` — this tests the guard *decisions* against a lightweight fake transaction, faster than spinning up Postgres for every edge case:
+Create `packages/db/src/repositories/memberships.test.ts` — this tests the guard _decisions_ against a lightweight fake transaction, faster than spinning up Postgres for every edge case:
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -643,7 +665,9 @@ describe("createMembershipRepository guard logic", () => {
   it("rejects self-action on remove regardless of role counts", async () => {
     const { transaction } = fakeTransaction([{ userId: "u1", role: "admin" }]);
     const repo = createMembershipRepository(transaction, "ws1", openScope);
-    await expect(repo.remove("u1", "u1")).rejects.toThrow(MembershipGuardViolation);
+    await expect(repo.remove("u1", "u1")).rejects.toThrow(
+      MembershipGuardViolation,
+    );
   });
 });
 ```
@@ -790,10 +814,12 @@ git commit -m "feat(db): guard memberships.updateRole/remove against lockout and
 ### Task 4: `shopline-connections` repository — `create`/`update`
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/shopline-connections.ts`
 - Create: `packages/db/src/repositories/shopline-connections.integration.test.ts`
 
 **Files:**
+
 - Modify: `packages/shopline/src/index.ts` (only if `encryptShoplineToken`/`decryptShoplineToken` aren't already exported from the package root — check first)
 
 - [ ] **Step 1: Read the current file and its dependencies in full**
@@ -819,7 +845,11 @@ const appUrl =
 const testKey = "A".repeat(43) + "="; // 32 zero bytes, base64 -- matches token-vault's expected shape
 
 describe("ShoplineConnectionRepository.create/update", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: () => undefined, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: () => undefined,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
   const workspaceId = "ws_connection_test";
 
@@ -843,7 +873,9 @@ describe("ShoplineConnectionRepository.create/update", () => {
   });
 
   beforeEach(async () => {
-    await admin.unsafe("TRUNCATE TABLE shopline_connections, workspaces CASCADE");
+    await admin.unsafe(
+      "TRUNCATE TABLE shopline_connections, workspaces CASCADE",
+    );
     await admin.unsafe(
       `INSERT INTO workspaces (id, name, profile) VALUES ($1, 'Test', '{}')`,
       [workspaceId],
@@ -1056,6 +1088,7 @@ git commit -m "feat(db): add create/update to the SHOPLINE connection repository
 ### Task 5: Member routes — list, invite, revoke invite
 
 **Files:**
+
 - Create: `apps/web/app/api/workspace/members/route.ts`
 - Create: `apps/web/app/api/workspace/members/route.test.ts`
 - Create: `apps/web/app/api/workspace/members/invite/route.ts`
@@ -1078,10 +1111,20 @@ import { createMembersListHandler } from "./route.js";
 
 function harness(role: string) {
   const listForWorkspace = vi.fn(async () => [
-    { userId: "u1", email: "admin@opak.test", role: "admin", createdAt: new Date("2026-01-01") },
+    {
+      userId: "u1",
+      email: "admin@opak.test",
+      role: "admin",
+      createdAt: new Date("2026-01-01"),
+    },
   ]);
   const listInvites = vi.fn(async () => [
-    { id: "inv1", email: "new@opak.test", role: "operator", createdAt: new Date("2026-01-02") },
+    {
+      id: "inv1",
+      email: "new@opak.test",
+      role: "operator",
+      createdAt: new Date("2026-01-02"),
+    },
   ]);
   const handler = createMembersListHandler({
     sessionContext: {
@@ -1154,11 +1197,17 @@ type MembersListRouteDeps = {
 };
 
 export function createMembersListHandler(deps: MembersListRouteDeps) {
-  return async function membersListHandler(_request: Request): Promise<Response> {
+  return async function membersListHandler(
+    _request: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const result = await deps
         .getDatabase()
@@ -1212,13 +1261,21 @@ type InviteRouteDeps = {
 };
 
 export function createMemberInviteHandler(deps: InviteRouteDeps) {
-  return async function memberInviteHandler(request: Request): Promise<Response> {
+  return async function memberInviteHandler(
+    request: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
-      const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+      const parsed = bodySchema.safeParse(
+        await request.json().catch(() => null),
+      );
       if (!parsed.success) {
         throw new ApiError(400, "invalid_body", "Invalid invite payload.");
       }
@@ -1288,7 +1345,11 @@ export function createInviteRevokeHandler(deps: InviteRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const { inviteId } = await context.params;
       await deps
@@ -1338,6 +1399,7 @@ git commit -m "feat(web): add member list, invite, and invite-revoke routes"
 ### Task 6: Member routes — role change, removal
 
 **Files:**
+
 - Create: `apps/web/app/api/workspace/members/[userId]/route.ts`
 - Create: `apps/web/app/api/workspace/members/[userId]/route.test.ts`
 
@@ -1350,7 +1412,10 @@ import { MembershipGuardViolation } from "@wukong/db";
 
 import { createMemberHandler } from "./route.js";
 
-function harness(role: string, overrides: { updateRole?: any; remove?: any } = {}) {
+function harness(
+  role: string,
+  overrides: { updateRole?: any; remove?: any } = {},
+) {
   const updateRole = overrides.updateRole ?? vi.fn(async () => undefined);
   const remove = overrides.remove ?? vi.fn(async () => undefined);
   const auditWrite = vi.fn(async () => undefined);
@@ -1362,7 +1427,10 @@ function harness(role: string, overrides: { updateRole?: any; remove?: any } = {
     },
     getDatabase: () => ({
       forWorkspace: async (_id: string, work: any) =>
-        work({ memberships: { updateRole, remove }, audit: { write: auditWrite } }),
+        work({
+          memberships: { updateRole, remove },
+          audit: { write: auditWrite },
+        }),
     }),
   });
   return { handler, updateRole, remove, auditWrite };
@@ -1374,7 +1442,10 @@ describe("PATCH /api/workspace/members/[userId]", () => {
   it("rejects a sub-admin role", async () => {
     const { handler } = harness("reviewer");
     const response = await handler(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ role: "operator" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "operator" }),
+      }),
       context,
     );
     expect(response.status).toBe(403);
@@ -1383,11 +1454,18 @@ describe("PATCH /api/workspace/members/[userId]", () => {
   it("changes the target's role for an admin", async () => {
     const { handler, updateRole, auditWrite } = harness("admin");
     const response = await handler(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ role: "operator" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "operator" }),
+      }),
       context,
     );
     expect(response.status).toBe(200);
-    expect(updateRole).toHaveBeenCalledWith("acting_user", "target_user", "operator");
+    expect(updateRole).toHaveBeenCalledWith(
+      "acting_user",
+      "target_user",
+      "operator",
+    );
     expect(auditWrite).toHaveBeenCalledWith(
       expect.objectContaining({ action: "workspace.member_role_changed" }),
     );
@@ -1400,7 +1478,10 @@ describe("PATCH /api/workspace/members/[userId]", () => {
       }),
     });
     const response = await handler(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ role: "operator" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "operator" }),
+      }),
       context,
     );
     expect(response.status).toBe(409);
@@ -1411,7 +1492,10 @@ describe("PATCH /api/workspace/members/[userId]", () => {
   it("rejects an invalid role value with 400", async () => {
     const { handler } = harness("admin");
     const response = await handler(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ role: "owner" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ role: "owner" }),
+      }),
       context,
     );
     expect(response.status).toBe(400);
@@ -1421,13 +1505,19 @@ describe("PATCH /api/workspace/members/[userId]", () => {
 describe("DELETE /api/workspace/members/[userId]", () => {
   it("rejects a sub-admin role", async () => {
     const { handler } = harness("reviewer");
-    const response = await handler(new Request("http://localhost", { method: "DELETE" }), context);
+    const response = await handler(
+      new Request("http://localhost", { method: "DELETE" }),
+      context,
+    );
     expect(response.status).toBe(403);
   });
 
   it("removes the target for an admin", async () => {
     const { handler, remove, auditWrite } = harness("admin");
-    const response = await handler(new Request("http://localhost", { method: "DELETE" }), context);
+    const response = await handler(
+      new Request("http://localhost", { method: "DELETE" }),
+      context,
+    );
     expect(response.status).toBe(200);
     expect(remove).toHaveBeenCalledWith("acting_user", "target_user");
     expect(auditWrite).toHaveBeenCalledWith(
@@ -1441,7 +1531,10 @@ describe("DELETE /api/workspace/members/[userId]", () => {
         throw new MembershipGuardViolation("self_action");
       }),
     });
-    const response = await handler(new Request("http://localhost", { method: "DELETE" }), context);
+    const response = await handler(
+      new Request("http://localhost", { method: "DELETE" }),
+      context,
+    );
     expect(response.status).toBe(409);
   });
 });
@@ -1499,7 +1592,9 @@ export function createMemberHandler(deps: MemberRouteDeps) {
       return withRouteErrors(async () => {
         const session = await requireAdmin(deps);
         const { userId } = await context.params;
-        const parsed = roleBodySchema.safeParse(await request.json().catch(() => null));
+        const parsed = roleBodySchema.safeParse(
+          await request.json().catch(() => null),
+        );
         if (!parsed.success) {
           throw new ApiError(400, "invalid_body", "Invalid role payload.");
         }
@@ -1592,6 +1687,7 @@ git commit -m "feat(web): add member role-change and removal routes"
 ### Task 7: SHOPLINE connection routes
 
 **Files:**
+
 - Create: `apps/web/app/api/workspace/connection/route.ts`
 - Create: `apps/web/app/api/workspace/connection/route.test.ts`
 
@@ -1606,9 +1702,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createConnectionHandler } from "./route.js";
 
-function harness(role: string, overrides: { getDefault?: any; create?: any; update?: any } = {}) {
+function harness(
+  role: string,
+  overrides: { getDefault?: any; create?: any; update?: any } = {},
+) {
   const getDefault = overrides.getDefault ?? vi.fn(async () => null);
-  const create = overrides.create ?? vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", createdAt: new Date("2026-01-01") }));
+  const create =
+    overrides.create ??
+    vi.fn(async () => ({
+      id: "conn1",
+      shopDomain: "opak.myshopline.com",
+      createdAt: new Date("2026-01-01"),
+    }));
   const update = overrides.update ?? vi.fn(async () => undefined);
   const auditWrite = vi.fn(async () => undefined);
   const handler = createConnectionHandler({
@@ -1619,7 +1724,10 @@ function harness(role: string, overrides: { getDefault?: any; create?: any; upda
     },
     getDatabase: () => ({
       forWorkspace: async (_id: string, work: any) =>
-        work({ shoplineConnections: { getDefault, create, update }, audit: { write: auditWrite } }),
+        work({
+          shoplineConnections: { getDefault, create, update },
+          audit: { write: auditWrite },
+        }),
     }),
     getEncryptionKey: () => "A".repeat(43) + "=",
   });
@@ -1636,7 +1744,11 @@ describe("GET /api/workspace/connection", () => {
 
   it("returns shopDomain but never the token", async () => {
     const { handler } = harness("admin", {
-      getDefault: vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", encryptedAccessToken: "v1.abc.def" })),
+      getDefault: vi.fn(async () => ({
+        id: "conn1",
+        shopDomain: "opak.myshopline.com",
+        encryptedAccessToken: "v1.abc.def",
+      })),
     });
     const response = await handler.GET(new Request("http://localhost"));
     const body = await response.json();
@@ -1650,7 +1762,13 @@ describe("POST /api/workspace/connection", () => {
   it("rejects a sub-admin role", async () => {
     const { handler } = harness("reviewer");
     const response = await handler.POST(
-      new Request("http://localhost", { method: "POST", body: JSON.stringify({ shopDomain: "opak.myshopline.com", accessToken: "tok" }) }),
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          shopDomain: "opak.myshopline.com",
+          accessToken: "tok",
+        }),
+      }),
     );
     expect(response.status).toBe(403);
   });
@@ -1658,7 +1776,13 @@ describe("POST /api/workspace/connection", () => {
   it("creates a connection for an admin", async () => {
     const { handler, create, auditWrite } = harness("admin");
     const response = await handler.POST(
-      new Request("http://localhost", { method: "POST", body: JSON.stringify({ shopDomain: "opak.myshopline.com", accessToken: "tok" }) }),
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          shopDomain: "opak.myshopline.com",
+          accessToken: "tok",
+        }),
+      }),
     );
     expect(response.status).toBe(200);
     expect(create).toHaveBeenCalledWith({
@@ -1675,13 +1799,23 @@ describe("POST /api/workspace/connection", () => {
 describe("PATCH /api/workspace/connection", () => {
   it("rotates the token for an admin", async () => {
     const { handler, update, auditWrite } = harness("admin", {
-      getDefault: vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", encryptedAccessToken: "v1.a.b" })),
+      getDefault: vi.fn(async () => ({
+        id: "conn1",
+        shopDomain: "opak.myshopline.com",
+        encryptedAccessToken: "v1.a.b",
+      })),
     });
     const response = await handler.PATCH(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ accessToken: "new-tok" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ accessToken: "new-tok" }),
+      }),
     );
     expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith("conn1", { accessToken: "new-tok", base64Key: "A".repeat(43) + "=" });
+    expect(update).toHaveBeenCalledWith("conn1", {
+      accessToken: "new-tok",
+      base64Key: "A".repeat(43) + "=",
+    });
     expect(auditWrite).toHaveBeenCalledWith(
       expect.objectContaining({ action: "workspace.connection_rotated" }),
     );
@@ -1690,7 +1824,10 @@ describe("PATCH /api/workspace/connection", () => {
   it("returns 404 when rotating with no existing connection", async () => {
     const { handler } = harness("admin");
     const response = await handler.PATCH(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ accessToken: "new-tok" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ accessToken: "new-tok" }),
+      }),
     );
     expect(response.status).toBe(404);
   });
@@ -1753,7 +1890,10 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
           );
         return jsonResponse(200, {
           connection: connection
-            ? { shopDomain: connection.shopDomain, connectedAt: connection.createdAt ?? null }
+            ? {
+                shopDomain: connection.shopDomain,
+                connectedAt: connection.createdAt ?? null,
+              }
             : null,
         });
       });
@@ -1762,9 +1902,15 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
     async POST(request: Request): Promise<Response> {
       return withRouteErrors(async () => {
         const session = await requireAdmin(deps);
-        const parsed = createBodySchema.safeParse(await request.json().catch(() => null));
+        const parsed = createBodySchema.safeParse(
+          await request.json().catch(() => null),
+        );
         if (!parsed.success) {
-          throw new ApiError(400, "invalid_body", "Invalid connection payload.");
+          throw new ApiError(
+            400,
+            "invalid_body",
+            "Invalid connection payload.",
+          );
         }
         const created = await deps
           .getDatabase()
@@ -1790,16 +1936,27 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
     async PATCH(request: Request): Promise<Response> {
       return withRouteErrors(async () => {
         const session = await requireAdmin(deps);
-        const parsed = rotateBodySchema.safeParse(await request.json().catch(() => null));
+        const parsed = rotateBodySchema.safeParse(
+          await request.json().catch(() => null),
+        );
         if (!parsed.success) {
-          throw new ApiError(400, "invalid_body", "Invalid connection payload.");
+          throw new ApiError(
+            400,
+            "invalid_body",
+            "Invalid connection payload.",
+          );
         }
         await deps
           .getDatabase()
           .forWorkspace(session.workspaceId, async (repositories) => {
-            const existing = await repositories.shoplineConnections.getDefault();
+            const existing =
+              await repositories.shoplineConnections.getDefault();
             if (!existing) {
-              throw new ApiError(404, "not_found", "No SHOPLINE connection exists yet.");
+              throw new ApiError(
+                404,
+                "not_found",
+                "No SHOPLINE connection exists yet.",
+              );
             }
             await repositories.shoplineConnections.update(existing.id, {
               accessToken: parsed.data.accessToken,
@@ -1825,7 +1982,11 @@ const handlers = createConnectionHandler({
   getEncryptionKey: () => {
     const key = process.env.SHOPLINE_TOKEN_ENCRYPTION_KEY;
     if (!key) {
-      throw new ApiError(503, "runtime_unavailable", "SHOPLINE credential storage is not configured.");
+      throw new ApiError(
+        503,
+        "runtime_unavailable",
+        "SHOPLINE credential storage is not configured.",
+      );
     }
     return key;
   },
@@ -1862,6 +2023,7 @@ git commit -m "feat(web): add SHOPLINE connection create/rotate/read routes"
 ### Task 8: Admin page shell — nav link, page, tab switcher
 
 **Files:**
+
 - Modify: `apps/web/app/(app)/layout.tsx`
 - Create: `apps/web/app/(app)/admin/page.tsx`
 - Create: `apps/web/components/admin-tabs.tsx`
@@ -1894,7 +2056,11 @@ export default async function AppLayout({
       </a>
       <header className="topbar">
         <div className="brand-lockup">
-          <Link className="brand-mark" href="/dashboard" aria-label="Wukong home">
+          <Link
+            className="brand-mark"
+            href="/dashboard"
+            aria-label="Wukong home"
+          >
             W
           </Link>
           <div>
@@ -2070,6 +2236,7 @@ git commit -m "feat(web): add the admin page shell, role-gated nav link, and tab
 ### Task 9: `admin-members-panel.tsx`
 
 **Files:**
+
 - Create: `apps/web/components/admin-members-panel.tsx`
 - Create: `apps/web/components/admin-members-panel.test.tsx`
 - Modify: `apps/web/components/admin-tabs.tsx` (only if Task 8 stubbed this component — replace the stub import, no other change needed)
@@ -2088,14 +2255,29 @@ import { AdminMembersPanel } from "./admin-members-panel.js";
 
 describe("AdminMembersPanel", () => {
   it("renders active members and pending invites with a status badge", () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          members: [{ userId: "u1", email: "admin@opak.test", role: "admin", createdAt: "2026-01-01T00:00:00.000Z" }],
-          invites: [{ id: "inv1", email: "new@opak.test", role: "operator", createdAt: "2026-01-02T00:00:00.000Z" }],
-        }),
-        { status: 200 },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            members: [
+              {
+                userId: "u1",
+                email: "admin@opak.test",
+                role: "admin",
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            invites: [
+              {
+                id: "inv1",
+                email: "new@opak.test",
+                role: "operator",
+                createdAt: "2026-01-02T00:00:00.000Z",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const markup = renderToStaticMarkup(<AdminMembersPanel />);
@@ -2121,11 +2303,21 @@ Expected: FAIL — the component doesn't exist yet.
 
 import { useCallback, useEffect, useState } from "react";
 
-type Member = { userId: string; email: string; role: string; createdAt: string };
+type Member = {
+  userId: string;
+  email: string;
+  role: string;
+  createdAt: string;
+};
 type Invite = { id: string; email: string; role: string; createdAt: string };
 type AssignableRole = "viewer" | "operator" | "reviewer" | "admin";
 
-const ROLE_OPTIONS: AssignableRole[] = ["viewer", "operator", "reviewer", "admin"];
+const ROLE_OPTIONS: AssignableRole[] = [
+  "viewer",
+  "operator",
+  "reviewer",
+  "admin",
+];
 
 async function responseError(response: Response): Promise<Error> {
   const fallback = `Request failed (${response.status})`;
@@ -2149,14 +2341,21 @@ export function AdminMembersPanel() {
   const load = useCallback(async () => {
     const response = await fetch("/api/workspace/members");
     if (!response.ok) throw await responseError(response);
-    const body = (await response.json()) as { members: Member[]; invites: Invite[] };
+    const body = (await response.json()) as {
+      members: Member[];
+      invites: Invite[];
+    };
     setMembers(body.members);
     setInvites(body.invites);
   }, []);
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load members."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load members.",
+      ),
     );
   }, [load]);
 
@@ -2170,7 +2369,11 @@ export function AdminMembersPanel() {
         await load();
         setMessage(success);
       } catch (runError) {
-        setError(runError instanceof Error ? runError.message : "Unable to complete request.");
+        setError(
+          runError instanceof Error
+            ? runError.message
+            : "Unable to complete request.",
+        );
       } finally {
         setBusy(false);
       }
@@ -2201,20 +2404,32 @@ export function AdminMembersPanel() {
 
   const removeMember = (userId: string) =>
     run(async () => {
-      const response = await fetch(`/api/workspace/members/${userId}`, { method: "DELETE" });
+      const response = await fetch(`/api/workspace/members/${userId}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw await responseError(response);
     }, "成員已移除 Member removed");
 
   const revokeInvite = (inviteId: string) =>
     run(async () => {
-      const response = await fetch(`/api/workspace/invites/${inviteId}`, { method: "DELETE" });
+      const response = await fetch(`/api/workspace/invites/${inviteId}`, {
+        method: "DELETE",
+      });
       if (!response.ok) throw await responseError(response);
     }, "邀請已撤銷 Invite revoked");
 
   return (
     <section className="members-panel" aria-busy={busy}>
-      {error ? <p className="inline-warning" role="alert">{error}</p> : null}
-      {message ? <p className="success-note" role="status">{message}</p> : null}
+      {error ? (
+        <p className="inline-warning" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="success-note" role="status">
+          {message}
+        </p>
+      ) : null}
 
       <table className="members-table">
         <thead>
@@ -2237,7 +2452,10 @@ export function AdminMembersPanel() {
                     value={member.role}
                     disabled={busy}
                     onChange={(event) =>
-                      changeRole(member.userId, event.target.value as AssignableRole)
+                      changeRole(
+                        member.userId,
+                        event.target.value as AssignableRole,
+                      )
                     }
                   >
                     {ROLE_OPTIONS.map((role) => (
@@ -2301,7 +2519,9 @@ export function AdminMembersPanel() {
         <select
           value={inviteRole}
           disabled={busy}
-          onChange={(event) => setInviteRole(event.target.value as AssignableRole)}
+          onChange={(event) =>
+            setInviteRole(event.target.value as AssignableRole)
+          }
         >
           {ROLE_OPTIONS.map((role) => (
             <option key={role} value={role}>
@@ -2309,7 +2529,11 @@ export function AdminMembersPanel() {
             </option>
           ))}
         </select>
-        <button type="submit" className="primary-button" disabled={busy || !inviteEmail}>
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={busy || !inviteEmail}
+        >
           邀請成員 Invite member
         </button>
       </form>
@@ -2346,6 +2570,7 @@ git commit -m "feat(web): add the admin members panel"
 ### Task 10: `admin-connection-panel.tsx` and `admin-settings-panel.tsx`
 
 **Files:**
+
 - Create: `apps/web/components/admin-connection-panel.tsx`
 - Create: `apps/web/components/admin-connection-panel.test.tsx`
 - Create: `apps/web/components/admin-settings-panel.tsx`
@@ -2403,7 +2628,11 @@ export function AdminConnectionPanel() {
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load the connection."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load the connection.",
+      ),
     );
   }, [load]);
 
@@ -2417,7 +2646,11 @@ export function AdminConnectionPanel() {
         await load();
         setMessage(success);
       } catch (runError) {
-        setError(runError instanceof Error ? runError.message : "Unable to complete request.");
+        setError(
+          runError instanceof Error
+            ? runError.message
+            : "Unable to complete request.",
+        );
       } finally {
         setBusy(false);
       }
@@ -2452,15 +2685,26 @@ export function AdminConnectionPanel() {
 
   return (
     <section className="connection-panel" aria-busy={busy}>
-      {error ? <p className="inline-warning" role="alert">{error}</p> : null}
-      {message ? <p className="success-note" role="status">{message}</p> : null}
+      {error ? (
+        <p className="inline-warning" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="success-note" role="status">
+          {message}
+        </p>
+      ) : null}
 
       {connection ? (
         <div className="connection-summary">
           <p>
             商店網域 Shop domain: <strong>{connection.shopDomain}</strong>
           </p>
-          <p>連線起始 Connected since: {new Date(connection.connectedAt).toLocaleDateString()}</p>
+          <p>
+            連線起始 Connected since:{" "}
+            {new Date(connection.connectedAt).toLocaleDateString()}
+          </p>
           {rotating ? (
             <form
               onSubmit={(event) => {
@@ -2476,7 +2720,11 @@ export function AdminConnectionPanel() {
                 disabled={busy}
                 onChange={(event) => setAccessToken(event.target.value)}
               />
-              <button type="submit" className="primary-button" disabled={busy || !accessToken}>
+              <button
+                type="submit"
+                className="primary-button"
+                disabled={busy || !accessToken}
+              >
                 更新權杖 Rotate token
               </button>
             </form>
@@ -2539,8 +2787,16 @@ Create `apps/web/app/api/workspace/settings/route.test.ts`'s sibling GET coverag
 describe("GET /api/workspace/settings", () => {
   it("rejects a sub-admin role", async () => {
     const handler = createSettingsGetHandler({
-      sessionContext: { async resolve() { return { workspaceId: "ws1", actorId: "u1", role: "reviewer" }; } },
-      getDatabase: () => ({ forWorkspace: async () => { throw new Error("should not be called"); } }),
+      sessionContext: {
+        async resolve() {
+          return { workspaceId: "ws1", actorId: "u1", role: "reviewer" };
+        },
+      },
+      getDatabase: () => ({
+        forWorkspace: async () => {
+          throw new Error("should not be called");
+        },
+      }),
     });
     const response = await handler(new Request("http://localhost"));
     expect(response.status).toBe(403);
@@ -2557,8 +2813,15 @@ describe("GET /api/workspace/settings", () => {
       brandBackgroundColor: "#112233",
     }));
     const handler = createSettingsGetHandler({
-      sessionContext: { async resolve() { return { workspaceId: "ws1", actorId: "u1", role: "admin" }; } },
-      getDatabase: () => ({ forWorkspace: async (_id: string, work: any) => work({ workspaces: { requireProfile } }) }),
+      sessionContext: {
+        async resolve() {
+          return { workspaceId: "ws1", actorId: "u1", role: "admin" };
+        },
+      },
+      getDatabase: () => ({
+        forWorkspace: async (_id: string, work: any) =>
+          work({ workspaces: { requireProfile } }),
+      }),
     });
     const response = await handler(new Request("http://localhost"));
     expect(response.status).toBe(200);
@@ -2578,18 +2841,26 @@ type SettingsGetRouteDeps = {
 };
 
 export function createSettingsGetHandler(deps: SettingsGetRouteDeps) {
-  return async function settingsGetHandler(_request: Request): Promise<Response> {
+  return async function settingsGetHandler(
+    _request: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const profile = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, (repositories) =>
           repositories.workspaces.requireProfile(),
         );
-      return jsonResponse(200, { brandBackgroundColor: profile.brandBackgroundColor });
+      return jsonResponse(200, {
+        brandBackgroundColor: profile.brandBackgroundColor,
+      });
     });
   };
 }
@@ -2620,7 +2891,9 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export function AdminSettingsPanel() {
-  const [brandBackgroundColor, setBrandBackgroundColor] = useState<string | null>(null);
+  const [brandBackgroundColor, setBrandBackgroundColor] = useState<
+    string | null
+  >(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2629,14 +2902,20 @@ export function AdminSettingsPanel() {
   const load = useCallback(async () => {
     const response = await fetch("/api/workspace/settings");
     if (!response.ok) throw await responseError(response);
-    const body = (await response.json()) as { brandBackgroundColor: string | null };
+    const body = (await response.json()) as {
+      brandBackgroundColor: string | null;
+    };
     setBrandBackgroundColor(body.brandBackgroundColor);
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load settings."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load settings.",
+      ),
     );
   }, [load]);
 
@@ -2654,7 +2933,11 @@ export function AdminSettingsPanel() {
         if (!response.ok) throw await responseError(response);
         setMessage("設定已儲存 Settings saved");
       } catch (saveError) {
-        setError(saveError instanceof Error ? saveError.message : "Unable to save settings.");
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Unable to save settings.",
+        );
       } finally {
         setBusy(false);
       }
@@ -2664,8 +2947,16 @@ export function AdminSettingsPanel() {
 
   return (
     <section className="settings-panel" aria-busy={busy}>
-      {error ? <p className="inline-warning" role="alert">{error}</p> : null}
-      {message ? <p className="success-note" role="status">{message}</p> : null}
+      {error ? (
+        <p className="inline-warning" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="success-note" role="status">
+          {message}
+        </p>
+      ) : null}
       <label>
         品牌背景色 Brand background color
         <input
@@ -2675,7 +2966,12 @@ export function AdminSettingsPanel() {
           onChange={(event) => setBrandBackgroundColor(event.target.value)}
         />
       </label>
-      <button type="button" className="primary-button" disabled={busy} onClick={save}>
+      <button
+        type="button"
+        className="primary-button"
+        disabled={busy}
+        onClick={save}
+      >
         儲存 Save
       </button>
     </section>
@@ -2705,6 +3001,7 @@ git commit -m "feat(web): add the admin connection panel, settings panel, and GE
 ### Task 11: Docs and full verification
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 - Modify: `CONTEXT.md`
 

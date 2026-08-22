@@ -2,7 +2,6 @@ import { sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { cache } from "react";
 
-
 import {
   SessionContextUnavailableError,
   type SessionContext,
@@ -24,7 +23,10 @@ export type MembershipRecord = {
 };
 
 export interface MembershipRepository {
-  findActiveByUserId(userId: string, workspaceId?: string | null): Promise<MembershipRecord | null>;
+  findActiveByUserId(
+    userId: string,
+    workspaceId?: string | null,
+  ): Promise<MembershipRecord | null>;
 }
 
 export type AuthSession = {
@@ -63,42 +65,51 @@ export async function sessionContext(
 export function createAuthSessionContextPort(
   options: AuthSessionContextOptions = {},
 ): SessionContextPort {
-  const resolveAuth = options.resolveAuth ?? (async () => {
-    if (
-      !process.env.AUTH_SMTP_URL ||
-      !process.env.AUTH_EMAIL_FROM ||
-      !process.env.AUTH_SECRET ||
-      !process.env.DATABASE_URL
-    ) {
-      throw new SessionContextUnavailableError();
-    }
-    try {
-      const { auth } = await import("../auth");
-      return (await auth.api.getSession({
-        headers: await headers(),
-      })) as AuthSession;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AuthConfigurationUnavailableError") {
+  const resolveAuth =
+    options.resolveAuth ??
+    (async () => {
+      if (
+        !process.env.AUTH_SMTP_URL ||
+        !process.env.AUTH_EMAIL_FROM ||
+        !process.env.AUTH_SECRET ||
+        !process.env.DATABASE_URL
+      ) {
         throw new SessionContextUnavailableError();
       }
-      throw error;
-    }
-  });
-  const membershipLookup = options.membershipLookup ?? (async (userId: string) => {
-    const { getAuthDatabase } = await import("../auth");
-    const rows = await getAuthDatabase().execute<{
-      workspace_id: string;
-      actor_id: string;
-      role: string;
-    }>(sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId})`);
-    const row = rows[0];
-    if (!row || !(row.role in roleOrder)) return null;
-    return {
-      workspaceId: row.workspace_id,
-      actorId: row.actor_id,
-      role: row.role as WorkspaceRole,
-    };
-  });
+      try {
+        const { auth } = await import("../auth");
+        return (await auth.api.getSession({
+          headers: await headers(),
+        })) as AuthSession;
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name === "AuthConfigurationUnavailableError"
+        ) {
+          throw new SessionContextUnavailableError();
+        }
+        throw error;
+      }
+    });
+  const membershipLookup =
+    options.membershipLookup ??
+    (async (userId: string) => {
+      const { getAuthDatabase } = await import("../auth");
+      const rows = await getAuthDatabase().execute<{
+        workspace_id: string;
+        actor_id: string;
+        role: string;
+      }>(
+        sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId})`,
+      );
+      const row = rows[0];
+      if (!row || !(row.role in roleOrder)) return null;
+      return {
+        workspaceId: row.workspace_id,
+        actorId: row.actor_id,
+        role: row.role as WorkspaceRole,
+      };
+    });
 
   // Wrapped with React's cache() so that multiple `.resolve()` calls within
   // the same request/render pass (e.g. the (app) layout and a page both
@@ -107,12 +118,14 @@ export function createAuthSessionContextPort(
   // a single request's render pass, so it never leaks a session across
   // different requests; it also has no effect inside Route Handlers, which
   // fall outside the React render tree, so behavior there is unchanged.
-  const resolveSessionContext = cache(async (): Promise<SessionContext | null> => {
-    const session = await resolveAuth();
-    const userId = session?.user?.id;
-    if (!userId) return null;
-    return membershipLookup(userId);
-  });
+  const resolveSessionContext = cache(
+    async (): Promise<SessionContext | null> => {
+      const session = await resolveAuth();
+      const userId = session?.user?.id;
+      if (!userId) return null;
+      return membershipLookup(userId);
+    },
+  );
 
   return {
     resolve: resolveSessionContext,
@@ -121,8 +134,13 @@ export function createAuthSessionContextPort(
 
 export const authSessionContext = createAuthSessionContextPort();
 
-export function requireWorkspaceRole(required: WorkspaceRole, actual: WorkspaceRole): boolean;
-export function requireWorkspaceRole(required: WorkspaceRole): (context: SessionContext) => SessionContext;
+export function requireWorkspaceRole(
+  required: WorkspaceRole,
+  actual: WorkspaceRole,
+): boolean;
+export function requireWorkspaceRole(
+  required: WorkspaceRole,
+): (context: SessionContext) => SessionContext;
 export function requireWorkspaceRole(
   required: WorkspaceRole,
   actual?: WorkspaceRole,

@@ -18,7 +18,11 @@ export default async function AppLayout({
       </a>
       <header className="topbar">
         <div className="brand-lockup">
-          <Link className="brand-mark" href="/dashboard" aria-label="Wukong home">
+          <Link
+            className="brand-mark"
+            href="/dashboard"
+            aria-label="Wukong home"
+          >
             W
           </Link>
           <div>

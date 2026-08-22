@@ -13,7 +13,9 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export function AdminSettingsPanel() {
-  const [brandBackgroundColor, setBrandBackgroundColor] = useState<string | null>(null);
+  const [brandBackgroundColor, setBrandBackgroundColor] = useState<
+    string | null
+  >(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,14 +24,20 @@ export function AdminSettingsPanel() {
   const load = useCallback(async () => {
     const response = await fetch("/api/workspace/settings");
     if (!response.ok) throw await responseError(response);
-    const body = (await response.json()) as { brandBackgroundColor: string | null };
+    const body = (await response.json()) as {
+      brandBackgroundColor: string | null;
+    };
     setBrandBackgroundColor(body.brandBackgroundColor);
     setLoaded(true);
   }, []);
 
   useEffect(() => {
     load().catch((loadError) =>
-      setError(loadError instanceof Error ? loadError.message : "Unable to load settings."),
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load settings.",
+      ),
     );
   }, [load]);
 
@@ -47,7 +55,11 @@ export function AdminSettingsPanel() {
         if (!response.ok) throw await responseError(response);
         setMessage("設定已儲存 Settings saved");
       } catch (saveError) {
-        setError(saveError instanceof Error ? saveError.message : "Unable to save settings.");
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Unable to save settings.",
+        );
       } finally {
         setBusy(false);
       }
@@ -76,7 +88,12 @@ export function AdminSettingsPanel() {
               onChange={(event) => setBrandBackgroundColor(event.target.value)}
             />
           </label>
-          <button type="button" className="primary-button" disabled={busy} onClick={save}>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={busy}
+            onClick={save}
+          >
             儲存 Save
           </button>
         </>

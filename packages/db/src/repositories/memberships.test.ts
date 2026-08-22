@@ -48,6 +48,8 @@ describe("createMembershipRepository guard logic", () => {
   it("rejects self-action on remove regardless of role counts", async () => {
     const { transaction } = fakeTransaction([{ userId: "u1", role: "admin" }]);
     const repo = createMembershipRepository(transaction, "ws1", openScope);
-    await expect(repo.remove("u1", "u1")).rejects.toThrow(MembershipGuardViolation);
+    await expect(repo.remove("u1", "u1")).rejects.toThrow(
+      MembershipGuardViolation,
+    );
   });
 });

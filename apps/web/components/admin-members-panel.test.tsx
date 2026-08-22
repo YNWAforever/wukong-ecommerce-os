@@ -114,13 +114,19 @@ describe("AdminMembersPanel", () => {
     const { container } = await mountPanel();
 
     expect(
-      container.querySelector('select[aria-label*="Change role for admin@opak.test"]'),
+      container.querySelector(
+        'select[aria-label*="Change role for admin@opak.test"]',
+      ),
     ).not.toBeNull();
     expect(
-      container.querySelector('input[aria-label="邀請成員的電子郵件 Invite email address"]'),
+      container.querySelector(
+        'input[aria-label="邀請成員的電子郵件 Invite email address"]',
+      ),
     ).not.toBeNull();
     expect(
-      container.querySelector('select[aria-label="新成員的角色 Role for new member"]'),
+      container.querySelector(
+        'select[aria-label="新成員的角色 Role for new member"]',
+      ),
     ).not.toBeNull();
   });
 

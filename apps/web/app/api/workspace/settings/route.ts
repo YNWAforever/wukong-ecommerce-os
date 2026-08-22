@@ -78,18 +78,26 @@ type SettingsGetRouteDeps = {
 };
 
 export function createSettingsGetHandler(deps: SettingsGetRouteDeps) {
-  return async function settingsGetHandler(_request: Request): Promise<Response> {
+  return async function settingsGetHandler(
+    _request: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("admin", session.role)) {
-        throw new ApiError(403, "insufficient_role", "Admin access is required.");
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Admin access is required.",
+        );
       }
       const profile = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, (repositories) =>
           repositories.workspaces.requireProfile(),
         );
-      return jsonResponse(200, { brandBackgroundColor: profile.brandBackgroundColor });
+      return jsonResponse(200, {
+        brandBackgroundColor: profile.brandBackgroundColor,
+      });
     });
   };
 }

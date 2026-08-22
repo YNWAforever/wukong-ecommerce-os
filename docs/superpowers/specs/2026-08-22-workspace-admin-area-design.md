@@ -41,6 +41,7 @@ A tabbed single page (rather than three separate routes, or one long scrolling p
 Two new/extended repository files in `packages/db/src/repositories/`:
 
 **`memberships.ts`** (new):
+
 - `listForWorkspace()` — joins `memberships` → `users` for email, returns `{userId, email, role, createdAt}[]`.
 - `listInvites()` — pending rows from `workspace_invites`, returns `{id, email, role, createdAt}[]`.
 - `createInvite(email, role)` — inserts into `workspace_invites`. Rejects (at the repository level, via a pre-check plus reliance on the existing unique index) if the email is already an active member OR already has a pending invite.
@@ -49,10 +50,12 @@ Two new/extended repository files in `packages/db/src/repositories/`:
 - `remove(userId)` — deletes the membership row. Enforces both guard rails below.
 
 **Guard rails**, enforced in the repository (not just the route, so they hold regardless of caller):
-1. **Last-admin protection**: `updateRole`/`remove` reject with a typed error if the target is the only remaining `admin`-or-`owner` among *active* memberships in the workspace — pending invites (even ones inviting a new admin) don't count toward this, since they aren't a real admin yet.
+
+1. **Last-admin protection**: `updateRole`/`remove` reject with a typed error if the target is the only remaining `admin`-or-`owner` among _active_ memberships in the workspace — pending invites (even ones inviting a new admin) don't count toward this, since they aren't a real admin yet.
 2. **No self-service demotion/removal**: `updateRole`/`remove` reject if `userId` matches the acting admin's own user id. This is deliberately stricter than "block only if you're the last admin" — losing access to the page you're standing on mid-action is confusing regardless of whether someone else could theoretically restore you.
 
 **`shopline-connections.ts`** (extended): two new methods alongside the existing `getDefault`/`getById`:
+
 - `create({shopDomain, accessToken})` — encrypts `accessToken` via the existing token-vault helper (`packages/shopline`, the same one `seed-shopline-connection.ts` already uses) before insert. Rejects if a connection already exists for the workspace (single-connection-per-workspace model, matching `getDefault()`'s existing assumption).
 - `update(id, {accessToken})` — encrypts and replaces the token on the existing connection. Shop domain is not editable this way — changing it means connecting to a different store, which is a `create` after removing the old connection, not a field update.
 
@@ -60,22 +63,23 @@ Two new/extended repository files in `packages/db/src/repositories/`:
 
 New, under `apps/web/app/api/workspace/`, all wrapped in `withRouteErrors`, all gated with `requireWorkspaceRole("admin", session.role)`, all writing an audit event on success:
 
-| Route | Method | Behavior | Audit event |
-|---|---|---|---|
-| `/api/workspace/members` | GET | Merged list: active members + pending invites, each tagged `status: "active" \| "pending"` | — (read) |
-| `/api/workspace/members/invite` | POST | `{email, role}` → creates invite | `workspace.member_invited` |
-| `/api/workspace/members/[userId]` | PATCH | `{role}` → updates role, guard rails apply | `workspace.member_role_changed` |
-| `/api/workspace/members/[userId]` | DELETE | Removes member, guard rails apply | `workspace.member_removed` |
-| `/api/workspace/invites/[inviteId]` | DELETE | Revokes a pending invite | `workspace.invite_revoked` |
-| `/api/workspace/connection` | GET | Returns `{shopDomain, connectedAt} \| null` — **never** the token | — (read) |
-| `/api/workspace/connection` | POST | `{shopDomain, accessToken}` → creates connection | `workspace.connection_created` |
-| `/api/workspace/connection` | PATCH | `{accessToken}` → rotates token | `workspace.connection_rotated` |
+| Route                               | Method | Behavior                                                                                   | Audit event                     |
+| ----------------------------------- | ------ | ------------------------------------------------------------------------------------------ | ------------------------------- |
+| `/api/workspace/members`            | GET    | Merged list: active members + pending invites, each tagged `status: "active" \| "pending"` | — (read)                        |
+| `/api/workspace/members/invite`     | POST   | `{email, role}` → creates invite                                                           | `workspace.member_invited`      |
+| `/api/workspace/members/[userId]`   | PATCH  | `{role}` → updates role, guard rails apply                                                 | `workspace.member_role_changed` |
+| `/api/workspace/members/[userId]`   | DELETE | Removes member, guard rails apply                                                          | `workspace.member_removed`      |
+| `/api/workspace/invites/[inviteId]` | DELETE | Revokes a pending invite                                                                   | `workspace.invite_revoked`      |
+| `/api/workspace/connection`         | GET    | Returns `{shopDomain, connectedAt} \| null` — **never** the token                          | — (read)                        |
+| `/api/workspace/connection`         | POST   | `{shopDomain, accessToken}` → creates connection                                           | `workspace.connection_created`  |
+| `/api/workspace/connection`         | PATCH  | `{accessToken}` → rotates token                                                            | `workspace.connection_rotated`  |
 
 The **Settings tab reuses the existing `POST /api/workspace/settings` route** unchanged — this spec adds no new route there, only a UI that calls it.
 
 ### Error handling
 
 Standard `ApiError(status, code, message)`, no new pattern:
+
 - `403 forbidden` — sub-admin on any of these routes.
 - `409 conflict` — duplicate invite/member email, connection already exists, last-admin or self-removal/demotion violation.
 - `400 validation_failed` — malformed email, invalid role enum value, malformed connection payload (zod `.strict()` schemas, matching the settings route's existing style).
