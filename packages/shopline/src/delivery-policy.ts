@@ -48,6 +48,13 @@ export type DeliveryPolicyInput = {
   imageUrls: readonly string[];
   connection: DeliveryConnectionSnapshot | null;
   job: DeliveryJobSnapshot | null;
+  /**
+   * The listing's known SHOPLINE remote product link, if any -- from
+   * `platform_products.getByListingId`. Null means this delivery will
+   * create a new remote product; present means it will update the one
+   * already linked. Only read for `method === "shopline_api"`.
+   */
+  platformProductLink: { remoteProductId: string } | null;
 };
 
 export type DeliveryAuditFacts = {
@@ -70,6 +77,8 @@ export type DeliveryPlan = {
   payloadDigest: string;
   connectionId?: string;
   idempotencyKey?: string;
+  action?: "create" | "update";
+  remoteProductId?: string;
   auditFacts: DeliveryAuditFacts;
 };
 
@@ -125,6 +134,14 @@ function validationIssue(message: string): ShoplineValidationIssue[] {
 /** Preserves the legacy SHA-256 digest of JSON.stringify(canonical listing). */
 export function hashCanonicalListing(listing: CanonicalListing): string {
   return createHash("sha256").update(JSON.stringify(listing), "utf8").digest("hex");
+}
+
+export function shoplinePublishIdempotencyKey(
+  workspaceId: string,
+  versionId: string,
+  action: "create" | "update",
+): string {
+  return `${workspaceId}:${versionId}:shopline:${action}`;
 }
 
 /**
@@ -211,7 +228,8 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
         auditFacts: auditFacts(input, "disconnected", versionId, payloadDigest),
       };
     }
-    const idempotencyKey = `${listing.workspaceId}:${versionId}:shopline:create`;
+    const action: "create" | "update" = input.platformProductLink ? "update" : "create";
+    const idempotencyKey = shoplinePublishIdempotencyKey(listing.workspaceId, versionId, action);
     return {
       kind: "ready",
       plan: {
@@ -223,6 +241,10 @@ export function evaluateDeliveryPolicy(input: DeliveryPolicyInput): DeliveryPoli
         payloadDigest,
         connectionId: input.connection.id,
         idempotencyKey,
+        action,
+        ...(input.platformProductLink
+          ? { remoteProductId: input.platformProductLink.remoteProductId }
+          : {}),
         auditFacts: auditFacts(input, "ready", versionId, payloadDigest),
       },
     };

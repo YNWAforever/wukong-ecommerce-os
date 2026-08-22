@@ -6,6 +6,7 @@ import {
   evaluateDeliveryPolicy,
   hashCanonicalListing,
   projectToShopline,
+  shoplinePublishIdempotencyKey,
   type DeliveryPolicyInput,
 } from "./index.js";
 
@@ -32,6 +33,7 @@ function input(overrides: Partial<DeliveryPolicyInput> = {}): DeliveryPolicyInpu
     imageUrls,
     connection: { id: connectionId, workspaceId, verified: true },
     job: null,
+    platformProductLink: null,
     ...overrides,
   };
 }
@@ -286,5 +288,47 @@ describe("Shopline delivery policy", () => {
 
     expect(serialized).toEqual(result);
     expect(JSON.stringify(result)).not.toContain("function");
+  });
+
+  it("builds a create-action idempotency key when no platform product link exists", () => {
+    const result = evaluateDeliveryPolicy({ ...input(), platformProductLink: null });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      plan: {
+        action: "create",
+        idempotencyKey: shoplinePublishIdempotencyKey(workspaceId, versionId, "create"),
+      },
+    });
+  });
+
+  it("builds an update-action idempotency key and carries the target remote id when a platform product link exists", () => {
+    const result = evaluateDeliveryPolicy({
+      ...input(),
+      platformProductLink: { remoteProductId: "remote_existing_1" },
+    });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      plan: {
+        action: "update",
+        remoteProductId: "remote_existing_1",
+        idempotencyKey: shoplinePublishIdempotencyKey(workspaceId, versionId, "update"),
+      },
+    });
+  });
+
+  it("does not set action/remoteProductId on the csv method's plan", () => {
+    const result = evaluateDeliveryPolicy({
+      ...input(),
+      method: "csv",
+      platformProductLink: { remoteProductId: "remote_existing_1" },
+    });
+
+    expect(result.kind).toBe("ready");
+    if (result.kind === "ready") {
+      expect(result.plan.action).toBeUndefined();
+      expect(result.plan.idempotencyKey).toBeUndefined();
+    }
   });
 });
