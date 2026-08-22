@@ -44,7 +44,10 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
           );
         return jsonResponse(200, {
           connection: connection
-            ? { shopDomain: connection.shopDomain, connectedAt: connection.createdAt ?? null }
+            ? {
+                shopDomain: connection.shopDomain,
+                connectedAt: connection.createdAt ?? null,
+              }
             : null,
         });
       });
@@ -53,27 +56,55 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
     async POST(request: Request): Promise<Response> {
       return withRouteErrors(async () => {
         const session = await requireAdmin(deps);
-        const parsed = createBodySchema.safeParse(await request.json().catch(() => null));
+        const parsed = createBodySchema.safeParse(
+          await request.json().catch(() => null),
+        );
         if (!parsed.success) {
-          throw new ApiError(400, "invalid_body", "Invalid connection payload.");
+          throw new ApiError(
+            400,
+            "invalid_body",
+            "Invalid connection payload.",
+          );
         }
-        const created = await deps
-          .getDatabase()
-          .forWorkspace(session.workspaceId, async (repositories) => {
-            const connection = await repositories.shoplineConnections.create({
-              shopDomain: parsed.data.shopDomain,
-              accessToken: parsed.data.accessToken,
-              base64Key: deps.getEncryptionKey(),
+        let created;
+        try {
+          created = await deps
+            .getDatabase()
+            .forWorkspace(session.workspaceId, async (repositories) => {
+              const connection = await repositories.shoplineConnections.create({
+                shopDomain: parsed.data.shopDomain,
+                accessToken: parsed.data.accessToken,
+                base64Key: deps.getEncryptionKey(),
+              });
+              await repositories.audit.write({
+                workspaceId: session.workspaceId,
+                actorId: session.actorId,
+                entityId: connection.id,
+                action: "workspace.connection_created",
+                metadata: { shopDomain: connection.shopDomain },
+              });
+              return connection;
             });
-            await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: connection.id,
-              action: "workspace.connection_created",
-              metadata: { shopDomain: connection.shopDomain },
-            });
-            return connection;
-          });
+        } catch (error) {
+          // The repository throws a plain Error (single call site, not worth
+          // a centralized route-support mapping) when a connection already
+          // exists for this workspace. Map that common case to a clear 409
+          // instead of letting it fall through to the generic 500. The rare
+          // concurrent-insert race still hits the DB's UNIQUE(workspace_id)
+          // constraint and is handled by withRouteErrors's existing 23505
+          // mapping.
+          if (
+            error instanceof Error &&
+            error.message.includes("already exists")
+          ) {
+            throw new ApiError(
+              409,
+              "already_exists",
+              "A SHOPLINE connection already exists for this workspace.",
+            );
+          }
+          throw error;
+        }
         return jsonResponse(200, { shopDomain: created.shopDomain });
       });
     },
@@ -81,16 +112,27 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
     async PATCH(request: Request): Promise<Response> {
       return withRouteErrors(async () => {
         const session = await requireAdmin(deps);
-        const parsed = rotateBodySchema.safeParse(await request.json().catch(() => null));
+        const parsed = rotateBodySchema.safeParse(
+          await request.json().catch(() => null),
+        );
         if (!parsed.success) {
-          throw new ApiError(400, "invalid_body", "Invalid connection payload.");
+          throw new ApiError(
+            400,
+            "invalid_body",
+            "Invalid connection payload.",
+          );
         }
         await deps
           .getDatabase()
           .forWorkspace(session.workspaceId, async (repositories) => {
-            const existing = await repositories.shoplineConnections.getDefault();
+            const existing =
+              await repositories.shoplineConnections.getDefault();
             if (!existing) {
-              throw new ApiError(404, "not_found", "No SHOPLINE connection exists yet.");
+              throw new ApiError(
+                404,
+                "not_found",
+                "No SHOPLINE connection exists yet.",
+              );
             }
             await repositories.shoplineConnections.update(existing.id, {
               accessToken: parsed.data.accessToken,
@@ -116,7 +158,11 @@ const handlers = createConnectionHandler({
   getEncryptionKey: () => {
     const key = process.env.SHOPLINE_TOKEN_ENCRYPTION_KEY;
     if (!key) {
-      throw new ApiError(503, "runtime_unavailable", "SHOPLINE credential storage is not configured.");
+      throw new ApiError(
+        503,
+        "runtime_unavailable",
+        "SHOPLINE credential storage is not configured.",
+      );
     }
     return key;
   },

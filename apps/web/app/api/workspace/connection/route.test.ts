@@ -2,9 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createConnectionHandler } from "./route.js";
 
-function harness(role: string, overrides: { getDefault?: any; create?: any; update?: any } = {}) {
+function harness(
+  role: string,
+  overrides: { getDefault?: any; create?: any; update?: any } = {},
+) {
   const getDefault = overrides.getDefault ?? vi.fn(async () => null);
-  const create = overrides.create ?? vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", createdAt: new Date("2026-01-01") }));
+  const create =
+    overrides.create ??
+    vi.fn(async () => ({
+      id: "conn1",
+      shopDomain: "opak.myshopline.com",
+      createdAt: new Date("2026-01-01"),
+    }));
   const update = overrides.update ?? vi.fn(async () => undefined);
   const auditWrite = vi.fn(async () => undefined);
   const handler = createConnectionHandler({
@@ -15,7 +24,10 @@ function harness(role: string, overrides: { getDefault?: any; create?: any; upda
     },
     getDatabase: () => ({
       forWorkspace: async (_id: string, work: any) =>
-        work({ shoplineConnections: { getDefault, create, update }, audit: { write: auditWrite } }),
+        work({
+          shoplineConnections: { getDefault, create, update },
+          audit: { write: auditWrite },
+        }),
     }),
     getEncryptionKey: () => "A".repeat(43) + "=",
   } as any);
@@ -32,7 +44,11 @@ describe("GET /api/workspace/connection", () => {
 
   it("returns shopDomain but never the token", async () => {
     const { handler } = harness("admin", {
-      getDefault: vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", encryptedAccessToken: "v1.abc.def" })),
+      getDefault: vi.fn(async () => ({
+        id: "conn1",
+        shopDomain: "opak.myshopline.com",
+        encryptedAccessToken: "v1.abc.def",
+      })),
     });
     const response = await handler.GET(new Request("http://localhost"));
     const body = await response.json();
@@ -46,7 +62,13 @@ describe("POST /api/workspace/connection", () => {
   it("rejects a sub-admin role", async () => {
     const { handler } = harness("reviewer");
     const response = await handler.POST(
-      new Request("http://localhost", { method: "POST", body: JSON.stringify({ shopDomain: "opak.myshopline.com", accessToken: "tok" }) }),
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          shopDomain: "opak.myshopline.com",
+          accessToken: "tok",
+        }),
+      }),
     );
     expect(response.status).toBe(403);
   });
@@ -54,7 +76,13 @@ describe("POST /api/workspace/connection", () => {
   it("creates a connection for an admin", async () => {
     const { handler, create, auditWrite } = harness("admin");
     const response = await handler.POST(
-      new Request("http://localhost", { method: "POST", body: JSON.stringify({ shopDomain: "opak.myshopline.com", accessToken: "tok" }) }),
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          shopDomain: "opak.myshopline.com",
+          accessToken: "tok",
+        }),
+      }),
     );
     expect(response.status).toBe(200);
     expect(create).toHaveBeenCalledWith({
@@ -66,18 +94,52 @@ describe("POST /api/workspace/connection", () => {
       expect.objectContaining({ action: "workspace.connection_created" }),
     );
   });
+
+  it("returns 409 when a connection already exists", async () => {
+    const { handler } = harness("admin", {
+      create: vi.fn(async () => {
+        throw new Error(
+          "a SHOPLINE connection already exists for this workspace",
+        );
+      }),
+    });
+    const response = await handler.POST(
+      new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({
+          shopDomain: "opak.myshopline.com",
+          accessToken: "tok",
+        }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "already_exists",
+      message: "A SHOPLINE connection already exists for this workspace.",
+    });
+  });
 });
 
 describe("PATCH /api/workspace/connection", () => {
   it("rotates the token for an admin", async () => {
     const { handler, update, auditWrite } = harness("admin", {
-      getDefault: vi.fn(async () => ({ id: "conn1", shopDomain: "opak.myshopline.com", encryptedAccessToken: "v1.a.b" })),
+      getDefault: vi.fn(async () => ({
+        id: "conn1",
+        shopDomain: "opak.myshopline.com",
+        encryptedAccessToken: "v1.a.b",
+      })),
     });
     const response = await handler.PATCH(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ accessToken: "new-tok" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ accessToken: "new-tok" }),
+      }),
     );
     expect(response.status).toBe(200);
-    expect(update).toHaveBeenCalledWith("conn1", { accessToken: "new-tok", base64Key: "A".repeat(43) + "=" });
+    expect(update).toHaveBeenCalledWith("conn1", {
+      accessToken: "new-tok",
+      base64Key: "A".repeat(43) + "=",
+    });
     expect(auditWrite).toHaveBeenCalledWith(
       expect.objectContaining({ action: "workspace.connection_rotated" }),
     );
@@ -86,7 +148,10 @@ describe("PATCH /api/workspace/connection", () => {
   it("returns 404 when rotating with no existing connection", async () => {
     const { handler } = harness("admin");
     const response = await handler.PATCH(
-      new Request("http://localhost", { method: "PATCH", body: JSON.stringify({ accessToken: "new-tok" }) }),
+      new Request("http://localhost", {
+        method: "PATCH",
+        body: JSON.stringify({ accessToken: "new-tok" }),
+      }),
     );
     expect(response.status).toBe(404);
   });
