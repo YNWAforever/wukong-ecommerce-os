@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { MembershipGuardViolation } from "@wukong/db";
-
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -46,30 +44,23 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
       if (!parsed.success) {
         throw new ApiError(400, "invalid_body", "Invalid invite payload.");
       }
-      try {
-        const invite = await deps
-          .getDatabase()
-          .forWorkspace(session.workspaceId, async (repositories) => {
-            const created = await repositories.memberships.createInvite(
-              parsed.data.email,
-              parsed.data.role,
-            );
-            await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: created.id,
-              action: "workspace.member_invited",
-              metadata: { email: created.email, role: created.role },
-            });
-            return created;
+      const invite = await deps
+        .getDatabase()
+        .forWorkspace(session.workspaceId, async (repositories) => {
+          const created = await repositories.memberships.createInvite(
+            parsed.data.email,
+            parsed.data.role,
+          );
+          await repositories.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: created.id,
+            action: "workspace.member_invited",
+            metadata: { email: created.email, role: created.role },
           });
-        return jsonResponse(200, invite);
-      } catch (error) {
-        if (error instanceof MembershipGuardViolation) {
-          throw new ApiError(409, error.reason, error.message);
-        }
-        throw error;
-      }
+          return created;
+        });
+      return jsonResponse(200, invite);
     });
   };
 }

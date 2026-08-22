@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { MembershipGuardViolation } from "@wukong/db";
-
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -46,29 +44,22 @@ async function handleRoleChange(
   if (!parsed.success) {
     throw new ApiError(400, "invalid_body", "Invalid role payload.");
   }
-  try {
-    await deps
-      .getDatabase()
-      .forWorkspace(session.workspaceId, async (repositories) => {
-        await repositories.memberships.updateRole(
-          session.actorId,
-          userId,
-          parsed.data.role,
-        );
-        await repositories.audit.write({
-          workspaceId: session.workspaceId,
-          actorId: session.actorId,
-          entityId: userId,
-          action: "workspace.member_role_changed",
-          metadata: { role: parsed.data.role },
-        });
+  await deps
+    .getDatabase()
+    .forWorkspace(session.workspaceId, async (repositories) => {
+      await repositories.memberships.updateRole(
+        session.actorId,
+        userId,
+        parsed.data.role,
+      );
+      await repositories.audit.write({
+        workspaceId: session.workspaceId,
+        actorId: session.actorId,
+        entityId: userId,
+        action: "workspace.member_role_changed",
+        metadata: { role: parsed.data.role },
       });
-  } catch (error) {
-    if (error instanceof MembershipGuardViolation) {
-      throw new ApiError(409, error.reason, error.message);
-    }
-    throw error;
-  }
+    });
   return jsonResponse(200, { ok: true });
 }
 
@@ -79,25 +70,18 @@ async function handleRemove(
 ): Promise<Response> {
   const session = await requireAdmin(deps);
   const { userId } = await context.params;
-  try {
-    await deps
-      .getDatabase()
-      .forWorkspace(session.workspaceId, async (repositories) => {
-        await repositories.memberships.remove(session.actorId, userId);
-        await repositories.audit.write({
-          workspaceId: session.workspaceId,
-          actorId: session.actorId,
-          entityId: userId,
-          action: "workspace.member_removed",
-          metadata: {},
-        });
+  await deps
+    .getDatabase()
+    .forWorkspace(session.workspaceId, async (repositories) => {
+      await repositories.memberships.remove(session.actorId, userId);
+      await repositories.audit.write({
+        workspaceId: session.workspaceId,
+        actorId: session.actorId,
+        entityId: userId,
+        action: "workspace.member_removed",
+        metadata: {},
       });
-  } catch (error) {
-    if (error instanceof MembershipGuardViolation) {
-      throw new ApiError(409, error.reason, error.message);
-    }
-    throw error;
-  }
+    });
   return jsonResponse(200, { ok: true });
 }
 
@@ -107,10 +91,13 @@ export function createMemberHandler(deps: MemberRouteDeps) {
     context: RouteContext,
   ): Promise<Response> {
     return withRouteErrors(async () => {
+      if (request.method === "PATCH") {
+        return handleRoleChange(deps, request, context);
+      }
       if (request.method === "DELETE") {
         return handleRemove(deps, request, context);
       }
-      return handleRoleChange(deps, request, context);
+      throw new ApiError(405, "method_not_allowed", "Method not allowed.");
     });
   };
 }

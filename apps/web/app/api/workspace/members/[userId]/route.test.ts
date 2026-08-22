@@ -130,3 +130,18 @@ describe("DELETE /api/workspace/members/[userId]", () => {
     expect(response.status).toBe(409);
   });
 });
+
+describe("unsupported methods on /api/workspace/members/[userId]", () => {
+  it("rejects a GET with 405 instead of silently running role-change handling", async () => {
+    const { handler, updateRole, remove } = harness("admin");
+    const response = await handler(
+      new Request("http://localhost", { method: "GET" }),
+      context,
+    );
+    expect(response.status).toBe(405);
+    const body = await response.json();
+    expect(body.code).toBe("method_not_allowed");
+    expect(updateRole).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+});

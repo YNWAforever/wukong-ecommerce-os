@@ -111,4 +111,31 @@ describe("withRouteErrors", () => {
 
     expect(response.status).toBe(500);
   });
+
+  it("maps a MembershipGuardViolation-shaped error to 409 with its reason as the code", async () => {
+    const error = new Error(
+      "A workspace must keep at least one admin or owner.",
+    );
+    error.name = "MembershipGuardViolation";
+    const { response, lines } = await captureErrorLogs(() => {
+      throw Object.assign(error, { reason: "last_admin" });
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      code: "last_admin",
+      message: "A workspace must keep at least one admin or owner.",
+    });
+    expect(lines).toEqual([]);
+  });
+
+  it("does not mistake an ordinary error for a MembershipGuardViolation", async () => {
+    const impostor = new Error("nope");
+    impostor.name = "MembershipGuardViolation";
+    const { response } = await captureErrorLogs(() => {
+      throw impostor;
+    });
+
+    expect(response.status).toBe(500);
+  });
 });
