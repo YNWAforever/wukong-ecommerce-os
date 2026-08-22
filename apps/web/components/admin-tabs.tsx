@@ -23,9 +23,11 @@ export function AdminTabs() {
         {TABS.map((tab) => (
           <button
             key={tab.id}
+            id={`admin-tab-${tab.id}`}
             type="button"
             role="tab"
             aria-selected={active === tab.id}
+            aria-controls="admin-tab-panel"
             className={active === tab.id ? "admin-tab active" : "admin-tab"}
             onClick={() => setActive(tab.id)}
           >
@@ -33,7 +35,12 @@ export function AdminTabs() {
           </button>
         ))}
       </div>
-      <div className="admin-tab-panel" role="tabpanel">
+      <div
+        id="admin-tab-panel"
+        className="admin-tab-panel"
+        role="tabpanel"
+        aria-labelledby={`admin-tab-${active}`}
+      >
         {active === "members" ? <AdminMembersPanel /> : null}
         {active === "connection" ? <AdminConnectionPanel /> : null}
         {active === "settings" ? <AdminSettingsPanel /> : null}

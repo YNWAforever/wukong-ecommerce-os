@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { headers } from "next/headers";
+import { cache } from "react";
 
 
 import {
@@ -99,13 +100,22 @@ export function createAuthSessionContextPort(
     };
   });
 
+  // Wrapped with React's cache() so that multiple `.resolve()` calls within
+  // the same request/render pass (e.g. the (app) layout and a page both
+  // resolving the session) share one result instead of re-querying the
+  // database. React (via Next.js's per-request storage) scopes this cache to
+  // a single request's render pass, so it never leaks a session across
+  // different requests; it also has no effect inside Route Handlers, which
+  // fall outside the React render tree, so behavior there is unchanged.
+  const resolveSessionContext = cache(async (): Promise<SessionContext | null> => {
+    const session = await resolveAuth();
+    const userId = session?.user?.id;
+    if (!userId) return null;
+    return membershipLookup(userId);
+  });
+
   return {
-    async resolve() {
-      const session = await resolveAuth();
-      const userId = session?.user?.id;
-      if (!userId) return null;
-      return membershipLookup(userId);
-    },
+    resolve: resolveSessionContext,
   };
 }
 
