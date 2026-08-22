@@ -1210,9 +1210,15 @@ Expected: FAIL — the key is always `:shopline:create` regardless of any link, 
 
 In `apps/web/lib/delivery-service.ts`, widen the existing `platformProducts`
 field on `DeliveryDeps` (currently typed narrowly for `deliverBulkForm`'s use)
-to also serve this task's need — it already returns enough
-(`remoteProductId`), so only the doc comment needs updating to reflect the
-new caller:
+to also serve this task's need. This is a real type change, not just a doc
+update: Task 2 made `platform_products.rawRow` nullable at the repository
+level (`Record<string, string | null> | null`, not just nullable values
+inside an always-present record), so this field's type must gain that same
+`| null` on the whole `rawRow` property, or `apps/web/app/api/listings/[id]/deliver/route.ts`'s
+existing `platformProducts: repositories.platformProducts` wiring (which
+passes the real, now-widened `@wukong/db` repository straight through) stops
+type-checking. Getting this exactly right in this task is what keeps that
+route file compiling without needing a change of its own:
 
 ```ts
   /**
