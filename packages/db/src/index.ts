@@ -31,6 +31,13 @@ export type {
   AppendAiRunInput,
 } from "./repositories/ai-runs.js";
 export type { WorkspaceRepository } from "./repositories/workspaces.js";
+export {
+  MembershipGuardViolation,
+  type AssignableWorkspaceRole,
+  type MembershipRepository,
+  type WorkspaceInvite,
+  type WorkspaceMember,
+} from "./repositories/memberships.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";
 export type {
