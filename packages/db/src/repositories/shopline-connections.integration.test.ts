@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { decryptShoplineToken } from "@wukong/shopline";
 
 import { createDatabase, forWorkspace } from "../index.js";
 
@@ -58,6 +59,12 @@ describe("ShoplineConnectionRepository.create/update", () => {
     );
     expect(row?.encrypted_access_token).not.toContain("shptok_abc123");
     expect(row?.encrypted_access_token).toMatch(/^v1\./);
+    // Round-trip through real decryption, not just an obfuscation check: a bug
+    // that merely mangled the token some other way could still pass the two
+    // assertions above without ever having encrypted anything.
+    await expect(
+      decryptShoplineToken(row?.encrypted_access_token ?? "", testKey),
+    ).resolves.toBe("shptok_abc123");
   });
 
   it("rejects creating a second connection for the same workspace", async () => {
@@ -77,6 +84,27 @@ describe("ShoplineConnectionRepository.create/update", () => {
         }),
       ),
     ).rejects.toThrow(/already exists/i);
+  });
+
+  it("rejects a second raw insert for the same workspace at the database level", async () => {
+    // Proves the new UNIQUE (workspace_id) constraint itself does real work,
+    // independent of the app-level select()-then-check race the repository's
+    // create() method performs. A raw admin insert bypasses that app-level
+    // check entirely, so only the DB constraint can stop this.
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.shoplineConnections.create({
+        shopDomain: "opak.myshopline.com",
+        accessToken: "shptok_abc123",
+        base64Key: testKey,
+      }),
+    );
+    await expect(
+      admin.unsafe(
+        `INSERT INTO shopline_connections (workspace_id, shop_domain, encrypted_access_token)
+         VALUES ($1, $2, $3)`,
+        [workspaceId, "another.myshopline.com", "v1.raw.raw"],
+      ),
+    ).rejects.toMatchObject({ code: "23505" });
   });
 
   it("rotates the token on an existing connection without changing the shop domain", async () => {

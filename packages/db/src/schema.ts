@@ -630,6 +630,14 @@ export const shoplineConnections = pgTable(
       table.workspaceId,
       table.shopDomain,
     ),
+    // Closes a TOCTOU race: two concurrent create() calls with different shop
+    // domains for the same workspace could both pass the app-level
+    // "does a connection already exist" check before either insert commits.
+    // This constraint enforces at most one connection row per workspace at
+    // the database level, regardless of shop domain.
+    uniqueIndex("shopline_connections_one_per_workspace_uq").on(
+      table.workspaceId,
+    ),
   ],
 );
 
