@@ -12,6 +12,7 @@ import {
 import {
   PublishDeliveryError,
   SHOPLINE_MAX_REMOTE_CALLS_PER_ATTEMPT,
+  type PublishPlatformProductLink,
 } from "./publish-product.js";
 import {
   consumeShoplineMessage,
@@ -26,6 +27,7 @@ const draftId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
 const connectionId = "00000000-0000-4000-8000-000000000301";
 const key = `${workspaceId}:${versionId}:shopline:create`;
+const updateKey = `${workspaceId}:${versionId}:shopline:update`;
 const payload = { workspaceId, draftId, versionId, connectionId };
 const now = new Date("2026-07-22T00:00:00.000Z");
 
@@ -41,9 +43,17 @@ function makeHarness(
     leaseExpiresAt?: Date | null;
     attemptCount?: number;
     missingConnection?: boolean;
+    existingLink?: PublishPlatformProductLink | null;
   } = {},
 ) {
   const audits: any[] = [];
+  // When a platform-product link is supplied, the job this harness tracks
+  // lives under the "update" idempotency key -- mirroring what
+  // shopline-consumer.ts is expected to claim under once it looks the link
+  // up before claim(). Every other test omits `existingLink`, so `jobKey`
+  // resolves to the original `key` (shopline:create) and that behavior is
+  // unchanged.
+  const jobKey = options.existingLink ? updateKey : key;
   const listing: any = {
     id: draftId,
     target: "shopline",
@@ -57,7 +67,7 @@ function makeHarness(
     versionId: options.jobVersionId ?? versionId,
     connectionId,
     status: options.status ?? "pending_enqueue",
-    idempotencyKey: key,
+    idempotencyKey: jobKey,
     payloadDigest: hashCanonicalListing(canonicalListing),
     remoteProductId: null,
     error: options.error ?? null,
@@ -127,7 +137,7 @@ function makeHarness(
     },
     publishJobs: {
       async getByIdempotencyKey(inputKey: string) {
-        return inputKey === key && !options.missingJob ? job : null;
+        return inputKey === jobKey && !options.missingJob ? job : null;
       },
       async claim(input: {
         key: string;
@@ -147,7 +157,7 @@ function makeHarness(
             job.leaseExpiresAt instanceof Date &&
             job.leaseExpiresAt.getTime() <= input.now.getTime());
         if (
-          input.key !== key ||
+          input.key !== jobKey ||
           input.expectedVersionId !== job.versionId ||
           !reclaimable
         ) {
@@ -168,7 +178,7 @@ function makeHarness(
         leaseToken: string,
         remoteProductId: string,
       ) {
-        if (inputKey !== key) throw new Error("wrong publish key");
+        if (inputKey !== jobKey) throw new Error("wrong publish key");
         activeLease(leaseToken);
         // Mirrors the repository: the job stays `running` and keeps its lease,
         // so only the remote id lands.
@@ -180,7 +190,7 @@ function makeHarness(
         remoteProductId: string,
         payloadDigest: string,
       ) {
-        if (inputKey !== key) throw new Error("wrong publish key");
+        if (inputKey !== jobKey) throw new Error("wrong publish key");
         activeLease(leaseToken);
         Object.assign(job, {
           status: "published",
@@ -196,7 +206,7 @@ function makeHarness(
         leaseToken: string,
         errorCode: string,
       ) {
-        if (inputKey !== key) throw new Error("wrong publish key");
+        if (inputKey !== jobKey) throw new Error("wrong publish key");
         activeLease(leaseToken);
         Object.assign(job, {
           status: "failed",
@@ -218,12 +228,8 @@ function makeHarness(
       },
     },
     platformProducts: {
-      // No test in this file asserts on platform_products rows -- the
-      // stubbed `existingLink: null` in shopline-consumer.ts means every
-      // delivery here takes the create path, and this fake just has to
-      // satisfy the widened `PublishRepositories.platformProducts` shape.
       async getByListingId() {
-        return null;
+        return options.existingLink ?? null;
       },
       async upsert() {},
     },
@@ -268,6 +274,42 @@ function makeHarness(
 }
 
 describe("consumeShoplineMessage", () => {
+  it("claims the update key and passes the existing link when platform_products has one", async () => {
+    const link: PublishPlatformProductLink = {
+      remoteProductId: "remote_existing_1",
+      origin: "import",
+      sku: "SKU-1",
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
+      factsPrefill: null,
+      contentDigest: "e".repeat(64),
+    };
+    const harness = makeHarness({ existingLink: link });
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
+    ).resolves.toBe("ack");
+
+    expect(harness.connector.updateProduct).toHaveBeenCalledWith(
+      link.remoteProductId,
+      expect.anything(),
+      updateKey,
+    );
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    expect(harness.job).toMatchObject({
+      idempotencyKey: updateKey,
+      status: "published",
+      remoteProductId: link.remoteProductId,
+    });
+
+    await expect(
+      harness.repositories.publishJobs.getByIdempotencyKey(updateKey),
+    ).resolves.not.toBeNull();
+    await expect(
+      harness.repositories.publishJobs.getByIdempotencyKey(key),
+    ).resolves.toBeNull();
+  });
+
   it("claims concurrent duplicates once and reschedules the active duplicate", async () => {
     const harness = makeHarness();
 
