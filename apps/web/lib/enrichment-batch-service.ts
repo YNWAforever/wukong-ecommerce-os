@@ -1,4 +1,4 @@
-import type { Database } from "@wukong/db";
+import type { Database, PlatformProduct } from "@wukong/db";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
@@ -60,6 +60,20 @@ const FAILED_STATUSES = ["failed", "publish_failed"] as const;
 const includes = (statuses: readonly string[], value: string | undefined) =>
   value !== undefined && statuses.includes(value);
 
+/**
+ * A create-origin product (published to SHOPLINE directly, never imported
+ * through the bulk form) has no imported row and so `rawRow` is `null` — it
+ * has nothing for `bulkFormGaps` to read. Narrowing on `origin` here, rather
+ * than on `rawRow !== null`, keeps the filter's meaning aligned with *why*
+ * the row is excluded and lets the compiler carry the non-null `rawRow`
+ * forward to the `bulkFormGaps` call below.
+ */
+const isImportOrigin = (
+  product: PlatformProduct,
+): product is PlatformProduct & {
+  rawRow: NonNullable<PlatformProduct["rawRow"]>;
+} => product.origin === "import";
+
 export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
   async function createBatch(
     input: CreateBatchInput,
@@ -93,6 +107,7 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         // list.
         const listingIds = products
           .filter((product) => product.listingId !== null)
+          .filter(isImportOrigin)
           .filter((product) => bulkFormGaps(product.rawRow)[input.gap])
           .map((product) => product.listingId as string);
 

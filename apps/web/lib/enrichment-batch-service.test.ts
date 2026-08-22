@@ -5,22 +5,34 @@ import { createEnrichmentBatchService } from "./enrichment-batch-service";
 const untranslated = {
   remoteProductId: "remote_1",
   listingId: "draft_1",
+  origin: "import" as const,
   rawRow: { nameEn: "Demo Estate Riesling", nameZh: "Demo Estate Riesling" },
 };
 const translated = {
   remoteProductId: "remote_2",
   listingId: "draft_2",
+  origin: "import" as const,
   rawRow: { nameEn: "Demo Estate Riesling", nameZh: "示範酒莊麗絲玲" },
 };
 const unlinked = {
   remoteProductId: "remote_3",
   listingId: null,
+  origin: "import" as const,
   rawRow: { nameEn: "Never imported", nameZh: "Never imported" },
 };
 
 type AuditRecord = { action: string; entityId: string; metadata: unknown };
 
-function serviceWith(products = [untranslated, translated, unlinked]) {
+type FakePlatformProduct = {
+  remoteProductId: string;
+  listingId: string | null;
+  origin: "import" | "created";
+  rawRow: Record<string, string | null> | null;
+};
+
+function serviceWith(
+  products: FakePlatformProduct[] = [untranslated, translated, unlinked],
+) {
   const recorded: { created: unknown[]; audits: AuditRecord[] } = {
     created: [],
     audits: [],
@@ -132,6 +144,43 @@ describe("enrichment batch creation", () => {
       }),
     ).rejects.toThrow(/no products match/i);
     expect(recorded.created).toEqual([]);
+  });
+
+  it("excludes a created-origin product from gap-based cohort selection", async () => {
+    const { service, recorded } = serviceWith([
+      {
+        remoteProductId: "remote_import_1",
+        listingId: "listing-1",
+        origin: "import",
+        rawRow: {
+          nameEn: "Demo Estate Riesling",
+          nameZh: "Demo Estate Riesling",
+        },
+      },
+      {
+        remoteProductId: "remote_created_1",
+        listingId: "listing-2",
+        origin: "created",
+        rawRow: null,
+      },
+    ]);
+
+    const result = await service.createBatch({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      label: "zh names",
+      gap: "untranslatedName",
+      budgetUsd: 10,
+      waveSize: 5,
+    });
+
+    // Only the import-origin listing is eligible. If the created-origin
+    // row's null rawRow reached bulkFormGaps unfiltered, this call would
+    // throw instead of returning cleanly with just the import-origin draft.
+    expect(result.selected).toBe(1);
+    expect(
+      (recorded.created[0] as { listingIds: string[] }).listingIds,
+    ).toEqual(["listing-1"]);
   });
 
   it("refuses a non-positive budget", async () => {
