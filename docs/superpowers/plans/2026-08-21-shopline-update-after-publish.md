@@ -956,6 +956,37 @@ test (each pre-existing test's harness/input construction will need
 `existingLink: null` added wherever it builds a `PublishProductInput` — fix
 each one this way, since none of them were exercising an update scenario).
 
+- [ ] **Step 5.5: Stub-wire `shopline-consumer.ts` so the worker package still compiles**
+
+`PublishRepositories.platformProducts` and `PublishProductInput.existingLink`
+are both required fields (Step 4), and `apps/worker/src/shopline-consumer.ts`
+is the only caller of `publishApprovedProduct` in this package — Task 5
+cannot ship a green `pnpm --filter @wukong/worker lint` without also touching
+it, even though Task 6 owns the REAL lookup-before-claim logic. Add the
+minimal stub, nothing more:
+
+In `publishRepositories()` (the small mapper near the top of the file), add
+`platformProducts: repositories.platformProducts,` to its returned object,
+alongside the existing `listings`/`publishJobs`/`shoplineConnections`/`audit`
+entries — `WorkspaceRepositories` (from `@wukong/db`) already exposes a real
+`platformProducts` repository that structurally satisfies the narrow type
+Task 5 defined.
+
+At the `publishApprovedProduct(...)` call site, add `existingLink: null,` to
+the input object literal, with this comment directly above it:
+
+```ts
+        // Stub: always "create" for now. Task 6 replaces this with a real
+        // platformProducts.getByListingId lookup, done before claim() so the
+        // same lookup result decides both the claimed idempotency key and
+        // this input.
+        existingLink: null,
+```
+
+No other logic changes in this file — no `getByListingId` call, no
+idempotency-key changes. This preserves today's create-only behavior exactly
+until Task 6 lands.
+
 - [ ] **Step 6: Full package verification**
 
 Run: `pnpm --filter @wukong/worker test && pnpm --filter @wukong/worker lint`
@@ -964,13 +995,19 @@ Expected: all pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add apps/worker/src/publish-product.ts apps/worker/src/publish-product.test.ts
+git add apps/worker/src/publish-product.ts apps/worker/src/publish-product.test.ts apps/worker/src/shopline-consumer.ts
 git commit -m "feat(worker): call updateProduct instead of createProduct when a platform product link exists"
 ```
 
 ---
 
 ### Task 6: `shopline-consumer.ts` — look up the link before claiming
+
+Task 5 added a stub (`existingLink: null`, always "create") to keep the
+worker package compiling. This task replaces that stub with the real lookup
+— read `publishRepositories()` and the `publishApprovedProduct(...)` call
+site fresh (don't assume the stub's exact current line numbers) before
+editing.
 
 **Files:**
 
