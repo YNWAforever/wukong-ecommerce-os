@@ -43,3 +43,22 @@ single-listing approval logic, once per listing, in its own transaction, so
 one listing's stale flag cannot roll back another's legitimate approval.
 There is no field-level or partial-within-a-listing approval anywhere in the
 system; approval is still whole-listing, all-or-nothing.
+
+## Workspace roles
+
+A workspace membership has one of five ranked roles: `viewer` < `operator` <
+`reviewer` < `admin` < `owner`, enforced by
+`apps/web/lib/session-context.ts`'s `roleOrder` and, at the database layer,
+by CHECK constraints on `memberships.role` and `workspace_invites.role`.
+`owner` is a bootstrap-only role — it is assigned once per workspace outside
+of any UI, and no route in the admin area can grant it, change a member into
+it, or change an `owner` member's role away from it; it is simply not one of
+the roles the invite and role-change routes accept.
+
+The rule that a workspace can never end up with zero `admin`-or-`owner`
+memberships, and that an admin can never change or remove their own
+membership, is enforced in the `memberships` repository itself
+(`packages/db/src/repositories/memberships.ts`'s `updateRole`/`remove`,
+via `MembershipGuardViolation`) — not only at the
+`apps/web/app/api/workspace/members/[userId]/route.ts` route layer — so the
+guarantee holds for any caller of the repository, not just the current UI.
