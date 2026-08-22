@@ -34,6 +34,16 @@ non-enriched column in an exported row is exactly what the last import saw,
 not SHOPLINE's current state, so a merchant-side change since import is
 silently reverted on re-upload unless the catalog is re-imported first.
 
+`platform_products` is no longer an import-only mirror: it is the one place
+any listing's known SHOPLINE remote-product link lives. A row's `origin` is
+either `import` (written by the bulk-form importer) or `created` (written the
+first time a `shopline_api` delivery successfully creates a remote product for
+a listing that had no prior link). Either origin means the listing has a known
+remote product, so a later `shopline_api` delivery calls `updateProduct`
+against it instead of creating a duplicate. Only `import`-origin rows carry a
+SKU, spec version, raw row, and content digest — a `created`-origin row has
+none of that, since there was no imported sheet to derive it from.
+
 ## Bulk approve
 
 Bulk approve lets a reviewer select several `in_review` listings with no open
