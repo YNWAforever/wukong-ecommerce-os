@@ -11,9 +11,11 @@ describe("AdminTabs", () => {
     expect(markup).toContain("SHOPLINE 連線");
     expect(markup).toContain("設定");
 
-    // Extract every <button ...>...</button> tag and confirm exactly one is
-    // selected, and that it's the Members tab.
-    const buttonPattern = /<button[^>]*>[^<]*<\/button>/g;
+    // Extract every tab-role <button ...>...</button> tag (scoped to
+    // role="tab" so this doesn't also pick up buttons rendered inside the
+    // active panel, e.g. AdminMembersPanel's "Invite member" submit button)
+    // and confirm exactly one is selected, and that it's the Members tab.
+    const buttonPattern = /<button[^>]*role="tab"[^>]*>[^<]*<\/button>/g;
     const buttons = markup.match(buttonPattern) ?? [];
     expect(buttons).toHaveLength(3);
 
