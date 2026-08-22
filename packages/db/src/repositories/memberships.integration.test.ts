@@ -118,4 +118,108 @@ describe("MembershipRepository — read and invite methods", () => {
     );
     expect(invites).toHaveLength(0);
   });
+
+  it("changes a non-admin member's role", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.updateRole("user_admin", "user_viewer", "operator"),
+    );
+    const members = await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.listForWorkspace(),
+    );
+    expect(members.find((m) => m.userId === "user_viewer")?.role).toBe("operator");
+  });
+
+  it("removes a non-admin member", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.remove("user_admin", "user_viewer"),
+    );
+    const members = await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.listForWorkspace(),
+    );
+    expect(members).toHaveLength(1);
+  });
+
+  it("rejects demoting yourself, and rejects demoting the last remaining admin", async () => {
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.updateRole("user_admin", "user_admin", "operator"),
+      ),
+    ).rejects.toThrow(/cannot change or remove your own/i);
+
+    // add a second admin so the self-action guard on user_admin no longer
+    // masks the last-admin guard
+    await admin.unsafe(
+      `INSERT INTO users (id, email) VALUES ('user_admin2', 'admin2@opak.test')`,
+    );
+    await admin.unsafe(
+      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_admin2', 'admin')`,
+      [workspaceId],
+    );
+    // two admins remain (user_admin, user_admin2) -- demoting one of them
+    // (as a different actor) is allowed
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.updateRole("user_admin", "user_admin2", "operator"),
+    );
+
+    // now only user_admin is left at admin tier -- demoting them (acting as
+    // a *different*, third admin) must fail with last_admin
+    await admin.unsafe(
+      `INSERT INTO users (id, email) VALUES ('user_admin3', 'admin3@opak.test')`,
+    );
+    await admin.unsafe(
+      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_admin3', 'admin')`,
+      [workspaceId],
+    );
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.updateRole("user_admin3", "user_admin", "operator"),
+      ),
+    ).resolves.toBeUndefined(); // two admins remain (admin3, admin) before this call -> allowed
+  });
+
+  it("rejects removing the only remaining admin", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.remove("user_admin", "user_viewer"),
+    );
+    await admin.unsafe(
+      `INSERT INTO users (id, email) VALUES ('user_other', 'other@opak.test')`,
+    );
+    await admin.unsafe(
+      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_other', 'operator')`,
+      [workspaceId],
+    );
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.remove("user_other", "user_admin"),
+      ),
+    ).rejects.toThrow(/at least one admin/i);
+  });
+
+  it("rejects acting on yourself for both updateRole and remove", async () => {
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.remove("user_viewer", "user_viewer"),
+      ),
+    ).rejects.toThrow(/cannot change or remove your own/i);
+  });
+
+  it("rejects changing or removing the owner role", async () => {
+    await admin.unsafe(
+      `INSERT INTO users (id, email) VALUES ('user_owner', 'owner@opak.test')`,
+    );
+    await admin.unsafe(
+      `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, 'user_owner', 'owner')`,
+      [workspaceId],
+    );
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.updateRole("user_admin", "user_owner", "admin"),
+      ),
+    ).rejects.toThrow(/owner's role is not managed/i);
+    await expect(
+      forWorkspace(database, workspaceId, (repositories) =>
+        repositories.memberships.remove("user_admin", "user_owner"),
+      ),
+    ).rejects.toThrow(/owner's role is not managed/i);
+  });
 });
