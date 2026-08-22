@@ -8,6 +8,7 @@ export type ShoplineConnection = {
   id: string;
   shopDomain: string;
   encryptedAccessToken: string;
+  createdAt: Date;
 };
 
 export type ShoplineConnectionSummary = {
@@ -42,6 +43,7 @@ export function createShoplineConnectionRepository(
         id: shoplineConnections.id,
         shopDomain: shoplineConnections.shopDomain,
         encryptedAccessToken: shoplineConnections.encryptedAccessToken,
+        createdAt: shoplineConnections.createdAt,
       })
       .from(shoplineConnections)
       .where(
