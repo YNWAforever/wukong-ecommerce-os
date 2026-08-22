@@ -3,29 +3,27 @@ import { and, eq, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { memberships, users, workspaceInvites } from "../schema.js";
 
-export type AssignableWorkspaceRole = "viewer" | "operator" | "reviewer" | "admin";
+export type AssignableWorkspaceRole =
+  "viewer" | "operator" | "reviewer" | "admin";
 
 export type WorkspaceMember = {
   userId: string;
   email: string;
-  role: string;
+  role: AssignableWorkspaceRole | "owner";
   createdAt: Date;
 };
 
 export type WorkspaceInvite = {
   id: string;
   email: string;
-  role: string;
+  role: AssignableWorkspaceRole;
   createdAt: Date;
 };
 
 export class MembershipGuardViolation extends Error {
   constructor(
     readonly reason:
-      | "self_action"
-      | "last_admin"
-      | "owner_immutable"
-      | "already_member",
+      "self_action" | "last_admin" | "owner_immutable" | "already_member",
   ) {
     super(
       reason === "self_action"
@@ -58,7 +56,7 @@ export function createMembershipRepository(
   return {
     async listForWorkspace() {
       scope.assertOpen();
-      return transaction
+      const rows = await transaction
         .select({
           userId: memberships.userId,
           email: users.email,
@@ -69,11 +67,18 @@ export function createMembershipRepository(
         .innerJoin(users, eq(users.id, memberships.userId))
         .where(eq(memberships.workspaceId, workspaceId))
         .orderBy(memberships.createdAt);
+      // `memberships.role` is `text` at the Drizzle-column level; only the
+      // runtime CHECK constraint narrows it, so the cast happens here, once,
+      // at the query boundary.
+      return rows.map((row) => ({
+        ...row,
+        role: row.role as AssignableWorkspaceRole | "owner",
+      }));
     },
 
     async listInvites() {
       scope.assertOpen();
-      return transaction
+      const rows = await transaction
         .select({
           id: workspaceInvites.id,
           email: workspaceInvites.email,
@@ -88,6 +93,10 @@ export function createMembershipRepository(
           ),
         )
         .orderBy(workspaceInvites.createdAt);
+      return rows.map((row) => ({
+        ...row,
+        role: row.role as AssignableWorkspaceRole,
+      }));
     },
 
     async createInvite(email, role) {
@@ -116,7 +125,7 @@ export function createMembershipRepository(
         })
         .onConflictDoUpdate({
           target: [workspaceInvites.workspaceId, workspaceInvites.email],
-          set: { role, status: "pending", createdAt: new Date() },
+          set: { role, status: "pending", createdAt: sql`now()` },
         })
         .returning({
           id: workspaceInvites.id,
@@ -125,7 +134,7 @@ export function createMembershipRepository(
           createdAt: workspaceInvites.createdAt,
         });
       if (!invite) throw new Error("failed to create invite");
-      return invite;
+      return { ...invite, role: invite.role as AssignableWorkspaceRole };
     },
 
     async revokeInvite(inviteId) {
