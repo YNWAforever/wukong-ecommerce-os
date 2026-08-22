@@ -820,7 +820,7 @@ describe("request-phase platform product link resolution", () => {
         return { remoteProductId: "remote_1", rawRow: null };
       },
     };
-    const existingDelivery = vi.fn(async () => null);
+    const existingDelivery = vi.fn(async (_idempotencyKey: string) => null);
     harness.existingDelivery = existingDelivery;
     harness.publishJobs = {
       async ensure(input: any) {
