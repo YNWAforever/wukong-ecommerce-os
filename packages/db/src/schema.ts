@@ -268,7 +268,7 @@ export const workspaceInvites = pgTable(
     ),
     check(
       "workspace_invites_status_check",
-      sql`${table.status} IN ('pending', 'accepted')`,
+      sql`${table.status} IN ('pending', 'accepted', 'revoked')`,
     ),
   ],
 );
