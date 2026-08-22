@@ -67,6 +67,12 @@ const includes = (statuses: readonly string[], value: string | undefined) =>
  * than on `rawRow !== null`, keeps the filter's meaning aligned with *why*
  * the row is excluded and lets the compiler carry the non-null `rawRow`
  * forward to the `bulkFormGaps` call below.
+ *
+ * This is the only call site of `bulkFormGaps`, so today a create-origin
+ * listing is invisible to gap-based enrichment entirely — there is no
+ * imported sheet row (or any other data source) to measure gaps against.
+ * A future gap detector for create-origin listings would need its own
+ * facts-based comparison, not a relaxation of this filter.
  */
 const isImportOrigin = (
   product: PlatformProduct,
