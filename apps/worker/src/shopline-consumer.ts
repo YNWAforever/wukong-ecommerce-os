@@ -75,6 +75,7 @@ function publishRepositories(
           : null;
       },
     },
+    platformProducts: repositories.platformProducts,
     audit: repositories.audit as AuditWriter,
   };
 }
@@ -212,6 +213,11 @@ export async function consumeShoplineMessage(
         connectionId: parsed.data.connectionId,
         leaseToken: claimed.claim.leaseToken,
         persistRetryableFailure: true,
+        // Stub: always "create" for now. Task 6 replaces this with a real
+        // platformProducts.getByListingId lookup, done before claim() so the
+        // same lookup result decides both the claimed idempotency key and
+        // this input -- see docs/superpowers/plans/2026-08-21-shopline-update-after-publish.md, Task 6.
+        existingLink: null,
       },
       {
         connector,

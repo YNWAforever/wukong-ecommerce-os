@@ -217,6 +217,16 @@ function makeHarness(
           : null;
       },
     },
+    platformProducts: {
+      // No test in this file asserts on platform_products rows -- the
+      // stubbed `existingLink: null` in shopline-consumer.ts means every
+      // delivery here takes the create path, and this fake just has to
+      // satisfy the widened `PublishRepositories.platformProducts` shape.
+      async getByListingId() {
+        return null;
+      },
+      async upsert() {},
+    },
     audit: {
       async write(event: any) {
         audits.push(event);

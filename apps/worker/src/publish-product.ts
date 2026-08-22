@@ -3,10 +3,12 @@ import type {
   AuditWriter,
   CanonicalListing,
   ComplianceFlag,
+  ListingFacts,
   ListingStatus,
 } from "@wukong/core";
 import {
   evaluateDeliveryPolicy,
+  shoplinePublishIdempotencyKey,
   type CommerceConnector,
   type ConnectorErrorCode,
   type DeliveryConnectionSnapshot,
@@ -14,11 +16,28 @@ import {
   type ShoplineProductPayload,
 } from "@wukong/shopline";
 
+/**
+ * The narrow slice of `platform_products` this file needs to decide
+ * create-vs-update and to refresh the row on success -- not the full
+ * `PlatformProduct` shape from `@wukong/db`. A real repository row is a
+ * structural superset of this, so callers can pass it straight through.
+ */
+export type PublishPlatformProductLink = {
+  remoteProductId: string;
+  origin: "import" | "created";
+  sku: string | null;
+  specVersion: string | null;
+  rawRow: Record<string, string | null> | null;
+  factsPrefill: ListingFacts | null;
+  contentDigest: string | null;
+};
+
 export type PublishProductInput = {
   workspaceId: string;
   draftId: string;
   expectedVersionId: string;
   leaseToken: string;
+  existingLink: PublishPlatformProductLink | null;
   connectionId?: string;
   persistRetryableFailure?: boolean;
 };
@@ -96,6 +115,24 @@ export type PublishRepositories = {
   };
   shoplineConnections: {
     getById(id: string): Promise<DeliveryConnectionSnapshot | null>;
+  };
+  platformProducts: {
+    getByListingId(listingId: string): Promise<PublishPlatformProductLink | null>;
+    // Returns `Promise<unknown>`, not `Promise<void>`: the real `@wukong/db`
+    // repository resolves the upserted row, and this file deliberately does
+    // not import that type just to narrow this signature. `complete()` below
+    // never reads the result.
+    upsert(input: {
+      connectionId: string;
+      remoteProductId: string;
+      origin: "import" | "created";
+      listingId: string;
+      sku: string | null;
+      specVersion: string | null;
+      rawRow: Record<string, string | null> | null;
+      factsPrefill: ListingFacts | null;
+      contentDigest: string | null;
+    }): Promise<unknown>;
   };
   audit: AuditWriter;
 };
@@ -247,7 +284,23 @@ export async function publishApprovedProduct(
     );
   }
 
-  const idempotencyKey = `${input.workspaceId}:${input.expectedVersionId}:shopline:create`;
+  // Computed here, ahead of `withWorkspace`, because the idempotency key is
+  // needed to look up the existing `publish_jobs` row for the FIRST
+  // `evaluateDeliveryPolicy` call below -- so it can't be sourced from that
+  // call's own `plan.action`/`plan.idempotencyKey`, which only exist once a
+  // "ready" outcome is reached. `evaluateDeliveryPolicy` derives its
+  // `plan.action`/`plan.idempotencyKey`/`plan.remoteProductId` the same way,
+  // from the same `platformProductLink` input, via the same
+  // `shoplinePublishIdempotencyKey` helper -- these two derivations are two
+  // independent sources of truth for one decision. If either derivation ever
+  // changes, the other must change with it, or the two calls below and this
+  // top-level key will silently desync.
+  const action: "create" | "update" = input.existingLink ? "update" : "create";
+  const idempotencyKey = shoplinePublishIdempotencyKey(
+    input.workspaceId,
+    input.expectedVersionId,
+    action,
+  );
   const prepared = await dependencies.withWorkspace(
     input.workspaceId,
     async (repositories) => {
@@ -270,6 +323,9 @@ export async function publishApprovedProduct(
         imageUrls: [],
         connection: null,
         job: existing,
+        platformProductLink: input.existingLink
+          ? { remoteProductId: input.existingLink.remoteProductId }
+          : null,
       });
       if (bindingOutcome.kind === "stale_plan") {
         const error = errorFromPolicy(bindingOutcome);
@@ -348,6 +404,9 @@ export async function publishApprovedProduct(
         imageUrls,
         connection,
         job: existing,
+        platformProductLink: input.existingLink
+          ? { remoteProductId: input.existingLink.remoteProductId }
+          : null,
       });
       if (outcome.kind !== "ready") {
         const error = errorFromPolicy(outcome);
@@ -423,6 +482,17 @@ export async function publishApprovedProduct(
           auditContext,
           repositories.audit,
         );
+        await repositories.platformProducts.upsert({
+          connectionId,
+          remoteProductId,
+          origin: input.existingLink?.origin ?? "created",
+          listingId: listing.id,
+          sku: input.existingLink?.sku ?? null,
+          specVersion: input.existingLink?.specVersion ?? null,
+          rawRow: input.existingLink?.rawRow ?? null,
+          factsPrefill: input.existingLink?.factsPrefill ?? null,
+          contentDigest: input.existingLink?.contentDigest ?? null,
+        });
       },
     );
     return {
@@ -486,13 +556,22 @@ export async function publishApprovedProduct(
     try {
       // Only the connector call belongs in this try. Anything else in here gets
       // laundered by normalizeConnectorError into `remote_unavailable`, which
-      // does not break the loop -- so a failed database write after a successful
-      // create would POST /products a second time.
-      const created = await dependencies.connector.createProduct(
-        payload,
-        idempotencyKey,
-      );
-      deliveredRemoteProductId = created.remoteProductId;
+      // does not break the loop -- so a failed database write after a
+      // successful create/update would call the connector a second time.
+      if (action === "update") {
+        await dependencies.connector.updateProduct(
+          input.existingLink!.remoteProductId,
+          payload,
+          idempotencyKey,
+        );
+        deliveredRemoteProductId = input.existingLink!.remoteProductId;
+      } else {
+        const created = await dependencies.connector.createProduct(
+          payload,
+          idempotencyKey,
+        );
+        deliveredRemoteProductId = created.remoteProductId;
+      }
       break;
     } catch (error) {
       createError = normalizeConnectorError(error);
