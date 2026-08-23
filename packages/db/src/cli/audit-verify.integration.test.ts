@@ -63,9 +63,9 @@ describe.skipIf(!adminUrl || !runtimeUrl)("audit foreign-table probe", () => {
           await transaction`insert into shopline_connections (workspace_id, shop_domain, encrypted_access_token) values (${workspaceId}, 'audit-probe.test', 'not-a-token') returning id`;
         await transaction`
           insert into platform_products
-            (workspace_id, connection_id, remote_product_id, sku, listing_id, spec_version, raw_row, facts_prefill, content_digest)
+            (workspace_id, connection_id, remote_product_id, sku, listing_id, spec_version, raw_row, facts_prefill, content_digest, origin)
           values
-            (${workspaceId}, ${String(connection?.id)}, 'audit_probe_1', 'AUDIT-PROBE-1', ${draftId}, 'audit-probe', '{}'::jsonb, '{}'::jsonb, 'audit-probe-digest')
+            (${workspaceId}, ${String(connection?.id)}, 'audit_probe_1', 'AUDIT-PROBE-1', ${draftId}, 'audit-probe', '{}'::jsonb, '{}'::jsonb, 'audit-probe-digest', 'import')
         `;
         const [batch] = await transaction`
           insert into enrichment_batches (workspace_id, label, budget_usd, wave_size, created_by)

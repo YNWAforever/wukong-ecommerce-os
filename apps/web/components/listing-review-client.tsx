@@ -52,6 +52,7 @@ export type ListingViewResponse = {
     error: string | null;
   } | null;
   queueStatus: string | null;
+  shoplineLink: { remoteProductId: string } | null;
   permissions: ListingPermissions;
 };
 
@@ -308,6 +309,7 @@ export function mapListingView(
       canReview: response.permissions.canDeliver,
       remoteProductUrl: null,
       remoteProductId: response.delivery?.remoteProductId ?? null,
+      shoplineLink: response.shoplineLink,
     },
     permissions: response.permissions,
     evidence: response.evidence.map((entry) => ({
@@ -676,6 +678,7 @@ export function ListingReviewClient({
           />
           <DeliveryPanel
             model={{ ...delivery, canReview: delivery.canReview && !busy }}
+            sku={content?.sku ?? null}
             onCsv={exportCsv}
             onPublish={publish}
           />

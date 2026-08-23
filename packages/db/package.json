@@ -25,7 +25,8 @@
     "@wukong/core": "workspace:*",
     "@wukong/shopline": "workspace:*",
     "drizzle-orm": "^0.44.7",
-    "postgres": "^3.4.7"
+    "postgres": "^3.4.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "latest",

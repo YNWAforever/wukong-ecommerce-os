@@ -57,6 +57,7 @@ export { renderBulkFormSource } from "./bulk-form-source.js";
 export {
   evaluateDeliveryPolicy,
   hashCanonicalListing,
+  shoplinePublishIdempotencyKey,
 } from "./delivery-policy.js";
 export type {
   DeliveryAuditFacts,

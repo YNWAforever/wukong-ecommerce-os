@@ -6,6 +6,7 @@ import {
   evaluateDeliveryPolicy,
   hashCanonicalListing,
   projectToShopline,
+  shoplinePublishIdempotencyKey,
   type DeliveryPolicyInput,
 } from "./index.js";
 
@@ -15,7 +16,9 @@ const versionId = "version-1";
 const connectionId = "connection-1";
 const imageUrls = ["https://cdn.example.test/assets/asset_demo_1.jpg"];
 
-function input(overrides: Partial<DeliveryPolicyInput> = {}): DeliveryPolicyInput {
+function input(
+  overrides: Partial<DeliveryPolicyInput> = {},
+): DeliveryPolicyInput {
   return {
     workspaceId,
     draftId,
@@ -32,6 +35,7 @@ function input(overrides: Partial<DeliveryPolicyInput> = {}): DeliveryPolicyInpu
     imageUrls,
     connection: { id: connectionId, workspaceId, verified: true },
     job: null,
+    platformProductLink: null,
     ...overrides,
   };
 }
@@ -82,7 +86,9 @@ describe("Shopline delivery policy", () => {
 
   it("returns a CSV plan from the same canonical projection and digest as the API plan", () => {
     const api = evaluateDeliveryPolicy(input());
-    const csv = evaluateDeliveryPolicy(input({ method: "csv", connection: null }));
+    const csv = evaluateDeliveryPolicy(
+      input({ method: "csv", connection: null }),
+    );
 
     expect(api.kind).toBe("ready");
     expect(csv.kind).toBe("ready");
@@ -96,14 +102,33 @@ describe("Shopline delivery policy", () => {
 
   it.each([
     ["missing listing", input({ listing: null }), "not_found"],
-    ["unsupported method", input({ method: "unsupported" as never }), "approval_required"],
-    ["wrong target", input({ listing: { ...input().listing!, target: "other" } }), "approval_required"],
-    ["missing active version", input({ listing: { ...input().listing!, activeVersion: null } }), "approval_required"],
-    ["request non-approved status", input({ listing: { ...input().listing!, status: "review" } }), "approval_required"],
-  ] as const)("returns %s as %s without throwing", (_case, policyInput, kind) => {
-    expect(() => evaluateDeliveryPolicy(policyInput)).not.toThrow();
-    expect(evaluateDeliveryPolicy(policyInput)).toMatchObject({ kind });
-  });
+    [
+      "unsupported method",
+      input({ method: "unsupported" as never }),
+      "approval_required",
+    ],
+    [
+      "wrong target",
+      input({ listing: { ...input().listing!, target: "other" } }),
+      "approval_required",
+    ],
+    [
+      "missing active version",
+      input({ listing: { ...input().listing!, activeVersion: null } }),
+      "approval_required",
+    ],
+    [
+      "request non-approved status",
+      input({ listing: { ...input().listing!, status: "review" } }),
+      "approval_required",
+    ],
+  ] as const)(
+    "returns %s as %s without throwing",
+    (_case, policyInput, kind) => {
+      expect(() => evaluateDeliveryPolicy(policyInput)).not.toThrow();
+      expect(evaluateDeliveryPolicy(policyInput)).toMatchObject({ kind });
+    },
+  );
 
   it("returns open blocking flags and permits resolved flags", () => {
     const blocking = {
@@ -114,31 +139,71 @@ describe("Shopline delivery policy", () => {
       status: "open" as const,
       resolutionReason: null,
     };
-    const blocked = evaluateDeliveryPolicy(input({ listing: { ...input().listing!, flags: [blocking] } }));
+    const blocked = evaluateDeliveryPolicy(
+      input({ listing: { ...input().listing!, flags: [blocking] } }),
+    );
     const resolved = evaluateDeliveryPolicy(
-      input({ listing: { ...input().listing!, flags: [{ ...blocking, status: "resolved", resolutionReason: "Reviewed and approved" }] } }),
+      input({
+        listing: {
+          ...input().listing!,
+          flags: [
+            {
+              ...blocking,
+              status: "resolved",
+              resolutionReason: "Reviewed and approved",
+            },
+          ],
+        },
+      }),
     );
 
-    expect(blocked).toMatchObject({ kind: "blocking_flags", flags: [blocking] });
+    expect(blocked).toMatchObject({
+      kind: "blocking_flags",
+      flags: [blocking],
+    });
     expect(resolved).toMatchObject({ kind: "ready" });
   });
 
   it.each([
-    ["an unsupported-method outcome", input({ method: "unsupported" as never })],
-    ["a wrong-target outcome", input({ listing: { ...input().listing!, target: "other" } })],
-    ["a status outcome", input({ listing: { ...input().listing!, status: "review" } })],
+    [
+      "an unsupported-method outcome",
+      input({ method: "unsupported" as never }),
+    ],
+    [
+      "a wrong-target outcome",
+      input({ listing: { ...input().listing!, target: "other" } }),
+    ],
+    [
+      "a status outcome",
+      input({ listing: { ...input().listing!, status: "review" } }),
+    ],
     [
       "a blocking outcome",
       input({
         listing: {
           ...input().listing!,
-          flags: [{ id: "flag-1", field: "description", rule: "unsupported_claim", severity: "blocking", status: "open", resolutionReason: null }],
+          flags: [
+            {
+              id: "flag-1",
+              field: "description",
+              rule: "unsupported_claim",
+              severity: "blocking",
+              status: "open",
+              resolutionReason: null,
+            },
+          ],
         },
       }),
     ],
     [
       "a disconnected outcome",
-      input({ connection: { id: connectionId, workspaceId: "other-workspace", verified: true } }),
+      input({
+        connection: {
+          id: connectionId,
+          workspaceId: "other-workspace",
+          verified: true,
+        },
+      }),
     ],
   ] as const)("includes complete audit facts for %s", (_case, policyInput) => {
     const result = evaluateDeliveryPolicy(policyInput);
@@ -158,7 +223,15 @@ describe("Shopline delivery policy", () => {
 
   it("returns structured validation issues instead of a plan when projection fails", () => {
     const result = evaluateDeliveryPolicy(
-      input({ listing: { ...input().listing!, activeVersion: { id: versionId, content: { ...fixture.canonicalListing, priceHkd: null } as never } } }),
+      input({
+        listing: {
+          ...input().listing!,
+          activeVersion: {
+            id: versionId,
+            content: { ...fixture.canonicalListing, priceHkd: null } as never,
+          },
+        },
+      }),
     );
 
     expect(result).toMatchObject({ kind: "validation_error" });
@@ -173,7 +246,10 @@ describe("Shopline delivery policy", () => {
 
       expect(result).toMatchObject({
         kind: "disconnected",
-        csvFallback: { method: "csv", path: `/api/listings/${draftId}/deliver` },
+        csvFallback: {
+          method: "csv",
+          path: `/api/listings/${draftId}/deliver`,
+        },
         auditFacts: { reason: "disconnected" },
       });
     },
@@ -195,7 +271,13 @@ describe("Shopline delivery policy", () => {
 
   it("returns disconnected for a verified connection from another workspace", () => {
     const result = evaluateDeliveryPolicy(
-      input({ connection: { id: connectionId, workspaceId: "other-workspace", verified: true } }),
+      input({
+        connection: {
+          id: connectionId,
+          workspaceId: "other-workspace",
+          verified: true,
+        },
+      }),
     );
 
     expect(result).toMatchObject({
@@ -212,30 +294,76 @@ describe("Shopline delivery policy", () => {
         input({
           phase: "worker",
           listing: { ...input().listing!, status },
-          job: { id: "job-1", versionId, payloadDigest: digest, idempotencyKey: `${workspaceId}:${versionId}:shopline:create`, connectionId, status: "running" },
+          job: {
+            id: "job-1",
+            versionId,
+            payloadDigest: digest,
+            idempotencyKey: `${workspaceId}:${versionId}:shopline:create`,
+            connectionId,
+            status: "running",
+          },
         }),
       );
 
-      expect(result).toMatchObject({ kind: "ready", plan: { versionId, payloadDigest: digest } });
+      expect(result).toMatchObject({
+        kind: "ready",
+        plan: { versionId, payloadDigest: digest },
+      });
     },
   );
 
   it.each([
     [null, versionId, null],
-    [{ id: "job-1", versionId: "version-0", payloadDigest: "current-digest", idempotencyKey: "key", connectionId, status: "running" }, "versionId", "version-0"],
-    [{ id: "job-1", versionId, payloadDigest: null, idempotencyKey: "key", connectionId, status: "running" }, "payloadDigest", null],
-    [{ id: "job-1", versionId, payloadDigest: "stale-digest", idempotencyKey: "key", connectionId, status: "running" }, "payloadDigest", "stale-digest"],
-  ] as const)("returns stale_plan with expected and observed binding facts", (job, expectedKey, observed) => {
-    const result = evaluateDeliveryPolicy(input({ phase: "worker", job }));
+    [
+      {
+        id: "job-1",
+        versionId: "version-0",
+        payloadDigest: "current-digest",
+        idempotencyKey: "key",
+        connectionId,
+        status: "running",
+      },
+      "versionId",
+      "version-0",
+    ],
+    [
+      {
+        id: "job-1",
+        versionId,
+        payloadDigest: null,
+        idempotencyKey: "key",
+        connectionId,
+        status: "running",
+      },
+      "payloadDigest",
+      null,
+    ],
+    [
+      {
+        id: "job-1",
+        versionId,
+        payloadDigest: "stale-digest",
+        idempotencyKey: "key",
+        connectionId,
+        status: "running",
+      },
+      "payloadDigest",
+      "stale-digest",
+    ],
+  ] as const)(
+    "returns stale_plan with expected and observed binding facts",
+    (job, expectedKey, observed) => {
+      const result = evaluateDeliveryPolicy(input({ phase: "worker", job }));
 
-    expect(result).toMatchObject({
-      kind: "stale_plan",
-      expected: expect.any(Object),
-      observed: expect.any(Object),
-    });
-    expect(JSON.stringify(result)).toContain(expectedKey);
-    expect(JSON.stringify(result)).toContain(JSON.stringify(observed));
-  });
+      expect(result).toMatchObject({
+        kind: "stale_plan",
+        expected: expect.any(Object),
+        observed: expect.any(Object),
+      });
+      expect(JSON.stringify(result)).toContain(expectedKey);
+      expect(JSON.stringify(result)).toContain(JSON.stringify(observed));
+    },
+  );
 
   it.each([
     [
@@ -282,9 +410,65 @@ describe("Shopline delivery policy", () => {
 
   it("returns serializable outcomes with no executable or secret-bearing values", () => {
     const result = evaluateDeliveryPolicy(input());
-    const serialized = JSON.parse(JSON.stringify(result)) as Record<string, unknown>;
+    const serialized = JSON.parse(JSON.stringify(result)) as Record<
+      string,
+      unknown
+    >;
 
     expect(serialized).toEqual(result);
     expect(JSON.stringify(result)).not.toContain("function");
+  });
+
+  it("builds a create-action idempotency key when no platform product link exists", () => {
+    const result = evaluateDeliveryPolicy({
+      ...input(),
+      platformProductLink: null,
+    });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      plan: {
+        action: "create",
+        idempotencyKey: shoplinePublishIdempotencyKey(
+          workspaceId,
+          versionId,
+          "create",
+        ),
+      },
+    });
+  });
+
+  it("builds an update-action idempotency key and carries the target remote id when a platform product link exists", () => {
+    const result = evaluateDeliveryPolicy({
+      ...input(),
+      platformProductLink: { remoteProductId: "remote_existing_1" },
+    });
+
+    expect(result).toMatchObject({
+      kind: "ready",
+      plan: {
+        action: "update",
+        remoteProductId: "remote_existing_1",
+        idempotencyKey: shoplinePublishIdempotencyKey(
+          workspaceId,
+          versionId,
+          "update",
+        ),
+      },
+    });
+  });
+
+  it("does not set action/remoteProductId on the csv method's plan", () => {
+    const result = evaluateDeliveryPolicy({
+      ...input(),
+      method: "csv",
+      platformProductLink: { remoteProductId: "remote_existing_1" },
+    });
+
+    expect(result.kind).toBe("ready");
+    if (result.kind === "ready") {
+      expect(result.plan.action).toBeUndefined();
+      expect(result.plan.idempotencyKey).toBeUndefined();
+    }
   });
 });

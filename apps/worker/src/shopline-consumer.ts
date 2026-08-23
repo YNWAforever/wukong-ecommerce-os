@@ -3,6 +3,7 @@ import type { WorkspaceRepositories } from "@wukong/db";
 import { shoplinePublishJobSchema } from "@wukong/jobs";
 import {
   SHOPLINE_REQUEST_TIMEOUT_MS,
+  shoplinePublishIdempotencyKey,
   type CommerceConnector,
 } from "@wukong/shopline";
 
@@ -75,6 +76,7 @@ function publishRepositories(
           : null;
       },
     },
+    platformProducts: repositories.platformProducts,
     audit: repositories.audit as AuditWriter,
   };
 }
@@ -125,12 +127,20 @@ export async function consumeShoplineMessage(
     return { retryAfterSeconds: RETRY_AFTER_SECONDS };
   }
 
-  const idempotencyKey = `${parsed.data.workspaceId}:${parsed.data.versionId}:shopline:create`;
   const claimNow = (dependencies.now ?? (() => new Date()))();
   try {
     const claimed = await runtime.database.forWorkspace(
       parsed.data.workspaceId,
       async (repositories) => {
+        const existingLink = await repositories.platformProducts.getByListingId(
+          parsed.data.draftId,
+        );
+        const action: "create" | "update" = existingLink ? "update" : "create";
+        const idempotencyKey = shoplinePublishIdempotencyKey(
+          parsed.data.workspaceId,
+          parsed.data.versionId,
+          action,
+        );
         const claim = await repositories.publishJobs.claim({
           key: idempotencyKey,
           expectedVersionId: parsed.data.versionId,
@@ -152,6 +162,8 @@ export async function consumeShoplineMessage(
             connection: null,
             terminalConnectionFailure: false,
             busyLeaseExpiresAt,
+            idempotencyKey,
+            existingLink,
           };
         }
         if (claim.job?.connectionId !== parsed.data.connectionId) {
@@ -165,6 +177,8 @@ export async function consumeShoplineMessage(
             connection: null,
             terminalConnectionFailure: true,
             busyLeaseExpiresAt: null,
+            idempotencyKey,
+            existingLink,
           };
         }
         const connection = await repositories.shoplineConnections.getById(
@@ -175,6 +189,8 @@ export async function consumeShoplineMessage(
           connection,
           terminalConnectionFailure: false,
           busyLeaseExpiresAt: null,
+          idempotencyKey,
+          existingLink,
         };
       },
     );
@@ -212,6 +228,7 @@ export async function consumeShoplineMessage(
         connectionId: parsed.data.connectionId,
         leaseToken: claimed.claim.leaseToken,
         persistRetryableFailure: true,
+        existingLink: claimed.existingLink,
       },
       {
         connector,

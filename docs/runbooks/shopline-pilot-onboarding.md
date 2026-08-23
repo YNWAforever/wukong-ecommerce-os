@@ -195,3 +195,20 @@ connection date.
 **Changing the brand background color.** From the Settings tab, pick a color
 and save. It takes effect immediately for the workspace's branding — no
 deploy or code change required.
+## 9. Re-delivering a published listing via SHOPLINE API
+
+When a reviewer delivers a listing via `shopline_api` and that listing already
+has a known remote product, delivery now calls `updateProduct` against that
+same remote product instead of creating a duplicate. This applies whether the
+link came from a catalog import or from an earlier `shopline_api` delivery
+that Wukong made itself — either origin is enough to be recognized as an
+existing product.
+
+The delivery panel shows which action will happen — create or update — before
+the reviewer confirms, so there is no need to inspect `platform_products` by
+hand to know what a click will do.
+
+No operator action changes: request delivery via `shopline_api` exactly as
+before. The create-vs-update decision is made automatically from the listing's
+recorded remote-product link, both when the request is made and again by the
+worker immediately before it calls SHOPLINE.

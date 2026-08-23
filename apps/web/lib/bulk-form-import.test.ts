@@ -32,6 +32,7 @@ type Recorded = {
     remoteProductId: string;
     listingId: string | null;
     contentDigest: string;
+    origin?: string;
   }[];
   audits: { action: string; entityId: string }[];
   notes: { listingId: string; note: string }[];
@@ -120,6 +121,10 @@ describe("bulk form importer", () => {
       "draft_1",
       "draft_2",
     ]);
+    expect(recorded.upserts.map((upsert) => upsert.origin)).toEqual([
+      "import",
+      "import",
+    ]);
   });
 
   it("writes an audit event per created draft", async () => {
@@ -154,6 +159,7 @@ describe("bulk form importer", () => {
     expect(result.refreshedProducts).toBe(1);
     expect(recorded.created).toEqual([]);
     expect(recorded.upserts[0]?.listingId).toBe("draft_existing");
+    expect(recorded.upserts[0]?.origin).toBe("import");
   });
 
   it("does not count an unchanged re-import as a refresh", async () => {

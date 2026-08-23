@@ -8,6 +8,7 @@ import {
   createShoplineCsv,
   evaluateDeliveryPolicy,
   isBulkFormRawRow,
+  shoplinePublishIdempotencyKey,
   ShoplineBulkFormError,
   SHOPLINE_CSV_SPEC_VERSION,
   type BulkFormExportRow,
@@ -90,16 +91,18 @@ export type DeliveryDeps = {
     remoteProductId: string | null;
   } | null>;
   /**
-   * Only read by the `bulk_form` method. Optional so every existing csv and
-   * shopline_api test — which never touches this — keeps compiling unchanged.
-   * A caller that reaches the bulk_form branch without supplying it has a
-   * wiring bug, not a business outcome, so that path throws rather than
-   * returning a DeliveryResult variant for it.
+   * Read by both the `bulk_form` method (to build the export row) and, as of
+   * this task, the `shopline_api` method's request-phase snapshot (to decide
+   * create-vs-update and build the matching idempotency key). Optional so
+   * every existing csv-only test that never touches this keeps compiling
+   * unchanged. A caller that reaches the bulk_form branch without supplying
+   * it has a wiring bug, not a business outcome, so that path throws rather
+   * than returning a DeliveryResult variant for it.
    */
   platformProducts?: {
     getByListingId(listingId: string): Promise<{
       remoteProductId: string;
-      rawRow: Record<string, string | null>;
+      rawRow: Record<string, string | null> | null;
     } | null>;
   };
 };
@@ -115,6 +118,7 @@ export type DeliveryPolicySnapshot = {
   imageUrls: readonly string[];
   connection: DeliveryConnectionSnapshot | null;
   job: DeliveryJobSnapshot | null;
+  platformProductLink: { remoteProductId: string } | null;
   existingDelivery: Awaited<
     ReturnType<NonNullable<DeliveryDeps["existingDelivery"]>>
   >;
@@ -123,7 +127,11 @@ export type DeliveryPolicySnapshot = {
 export function createDeliverySnapshotReader(
   deps: Pick<
     DeliveryDeps,
-    "listings" | "imageUrls" | "connection" | "existingDelivery"
+    | "listings"
+    | "imageUrls"
+    | "connection"
+    | "existingDelivery"
+    | "platformProducts"
   >,
   options: { deferImageUrls?: boolean } = {},
 ): DeliverySnapshotReader {
@@ -145,12 +153,23 @@ export function createDeliverySnapshotReader(
     const connection = configuredConnection
       ? { ...configuredConnection, workspaceId: input.workspaceId }
       : null;
+    const platformProductLink =
+      input.method === "shopline_api" && deps.platformProducts
+        ? await deps.platformProducts.getByListingId(input.draftId)
+        : null;
+    const publishAction: "create" | "update" = platformProductLink
+      ? "update"
+      : "create";
     const existingDelivery =
       input.method === "shopline_api" &&
       listing.activeVersion &&
       deps.existingDelivery
         ? await deps.existingDelivery(
-            `${input.workspaceId}:${listing.activeVersion.id}:shopline:create`,
+            shoplinePublishIdempotencyKey(
+              input.workspaceId,
+              listing.activeVersion.id,
+              publishAction,
+            ),
           )
         : null;
     const job =
@@ -174,7 +193,14 @@ export function createDeliverySnapshotReader(
             listing.activeVersion.content.imageAssetIds,
           )
         : [];
-    return { listing, imageUrls, connection, job, existingDelivery };
+    return {
+      listing,
+      imageUrls,
+      connection,
+      job,
+      platformProductLink,
+      existingDelivery,
+    };
   }
 
   return { read };
@@ -492,7 +518,7 @@ async function deliverBulkForm(
   }
   const link = await deps.platformProducts.getByListingId(input.draftId);
   if (!link) return { kind: "no_remote_link" };
-  if (!isBulkFormRawRow(link.rawRow)) {
+  if (!link.rawRow || !isBulkFormRawRow(link.rawRow)) {
     return {
       kind: "validation_error",
       issues: ["stored bulk-form row is missing one or more columns"],

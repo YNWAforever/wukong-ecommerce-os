@@ -651,13 +651,17 @@ export const platformProducts = pgTable(
     connectionId: uuid("connection_id").notNull(),
     /** The platform's own product ID — the join key a listing has never carried. */
     remoteProductId: text("remote_product_id").notNull(),
-    sku: text("sku").notNull(),
+    /** "import": from the bulk-form catalog importer. "created": from a
+     * successful shopline_api createProduct for a listing Wukong made itself. */
+    origin: text("origin").notNull(),
+    /** Null for a "created"-origin row — there is no imported sheet row. */
+    sku: text("sku"),
     /** Null until a draft is created for this product. */
     listingId: uuid("listing_id"),
-    specVersion: text("spec_version").notNull(),
-    rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
-    factsPrefill: jsonb("facts_prefill").$type<ListingFacts>().notNull(),
-    contentDigest: text("content_digest").notNull(),
+    specVersion: text("spec_version"),
+    rawRow: jsonb("raw_row").$type<Record<string, string | null>>(),
+    factsPrefill: jsonb("facts_prefill").$type<ListingFacts>(),
+    contentDigest: text("content_digest"),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -675,6 +679,10 @@ export const platformProducts = pgTable(
       table.workspaceId,
       table.listingId,
     ),
+    check(
+      "platform_products_origin_check",
+      sql`origin IN ('import', 'created')`,
+    ),
     foreignKey({
       name: "platform_products_workspace_connection_fkey",
       columns: [table.workspaceId, table.connectionId],
@@ -682,7 +690,8 @@ export const platformProducts = pgTable(
     }).onDelete("cascade"),
     // Restrict, not cascade: this row mirrors a product that exists on the
     // platform whether or not Wukong keeps a draft for it, and its digest is the
-    // only thing that tells an unchanged re-import from a real catalog change.
+    // only thing that tells an unchanged re-import from a real catalog change
+    // (for import-origin rows; created-origin rows have no digest at all).
     // Deleting a draft must unlink the mirror deliberately, not destroy it.
     foreignKey({
       name: "platform_products_workspace_listing_fkey",
