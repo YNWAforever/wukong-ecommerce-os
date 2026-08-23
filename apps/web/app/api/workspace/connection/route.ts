@@ -95,6 +95,13 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
           // through to the generic 500. The rare concurrent-insert race
           // still hits the DB's UNIQUE(workspace_id) constraint and is
           // handled by withRouteErrors's existing 23505 mapping.
+          //
+          // instanceof (not route-support.ts's name-matching convention)
+          // is safe here: this route already imports @wukong/db directly
+          // for getDatabase, so there's no dependency-hygiene reason to
+          // avoid it, and AssetInputError/ShoplineBulkFormError already
+          // establish this exact single-route, direct-import, instanceof
+          // pattern elsewhere in this codebase.
           if (error instanceof ShoplineConnectionExistsError) {
             throw new ApiError(
               409,
