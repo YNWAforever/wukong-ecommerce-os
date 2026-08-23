@@ -135,6 +135,15 @@ jobs:
           # Playwright process keeps using the job-level plain-HTTP MinIO
           # endpoint -- it has no CA loaded and does not need one. Setting it at
           # this level forces both onto HTTPS and breaks the test harness.
+          # playwright.config.ts's webServer (PLAYWRIGHT_E2E=1 branch) runs its
+          # own `pnpm build` and only spreads `...process.env` -- it has no
+          # fallback defaults for these, unlike the local-dev branch -- so they
+          # must be set here too, the same as the "Production build" step.
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://localhost:1025
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
       - name: Verify the completed Opak audit by draft
         run: |
