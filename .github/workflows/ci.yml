@@ -119,7 +119,7 @@ jobs:
           AUTH_SECRET: ci-test-secret-at-least-32-characters-long
           BETTER_AUTH_URL: http://localhost:3000
           AUTH_EMAIL_FROM: ci@example.com
-          AUTH_SMTP_URL: smtp://localhost:1025
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: pnpm build
       - name: Verify sharp's native library is bundled
@@ -142,7 +142,7 @@ jobs:
           AUTH_SECRET: ci-test-secret-at-least-32-characters-long
           BETTER_AUTH_URL: http://localhost:3000
           AUTH_EMAIL_FROM: ci@example.com
-          AUTH_SMTP_URL: smtp://localhost:1025
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
       - name: Verify the completed Opak audit by draft
