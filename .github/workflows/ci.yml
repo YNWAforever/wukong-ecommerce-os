@@ -39,6 +39,11 @@ jobs:
       AI_PROVIDER: fake
       SHOPLINE_ADAPTER: mock
       RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+      BETTER_AUTH_URL: http://localhost:3000
+      AUTH_EMAIL_FROM: ci@example.com
+      AUTH_SMTP_URL: smtp://localhost:1025
+      SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v4
         with:
