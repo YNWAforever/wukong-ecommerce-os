@@ -195,6 +195,7 @@ connection date.
 **Changing the brand background color.** From the Settings tab, pick a color
 and save. It takes effect immediately for the workspace's branding — no
 deploy or code change required.
+
 ## 9. Re-delivering a published listing via SHOPLINE API
 
 When a reviewer delivers a listing via `shopline_api` and that listing already
