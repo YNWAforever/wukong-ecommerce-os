@@ -39,11 +39,6 @@ jobs:
       AI_PROVIDER: fake
       SHOPLINE_ADAPTER: mock
       RELEASE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-      AUTH_SECRET: ci-test-secret-at-least-32-characters-long
-      BETTER_AUTH_URL: http://localhost:3000
-      AUTH_EMAIL_FROM: ci@example.com
-      AUTH_SMTP_URL: smtp://localhost:1025
-      SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,6 +108,19 @@ jobs:
       - name: Integration tests
         run: pnpm test:integration
       - name: Production build
+        # Scoped to this step, not the job-level env block: two unit tests
+        # (app/api/route-auth.test.ts, app/api/auth/auth-route.test.ts)
+        # deliberately assert the fail-closed behavior when auth/encryption
+        # secrets are ABSENT. Setting these at the job level made auth look
+        # configured for every step, including "Unit tests", and broke that
+        # premise. next build's static prerender of /listings/new is the
+        # only thing that actually needs them.
+        env:
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://localhost:1025
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: pnpm build
       - name: Verify sharp's native library is bundled
         run: node --test tests/sharp-native-bundling.test.mjs
