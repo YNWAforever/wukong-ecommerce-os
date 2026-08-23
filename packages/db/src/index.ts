@@ -46,10 +46,11 @@ export type {
   PublishJobStatus,
   EnsurePublishJobInput,
 } from "./repositories/publish-jobs.js";
-export type {
-  ShoplineConnection,
-  ShoplineConnectionRepository,
-  ShoplineConnectionSummary,
+export {
+  ShoplineConnectionExistsError,
+  type ShoplineConnection,
+  type ShoplineConnectionRepository,
+  type ShoplineConnectionSummary,
 } from "./repositories/shopline-connections.js";
 export type {
   PlatformProduct,

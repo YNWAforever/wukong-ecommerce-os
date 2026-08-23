@@ -17,6 +17,13 @@ export type ShoplineConnectionSummary = {
   createdAt: Date;
 };
 
+export class ShoplineConnectionExistsError extends Error {
+  constructor() {
+    super("a SHOPLINE connection already exists for this workspace");
+    this.name = "ShoplineConnectionExistsError";
+  }
+}
+
 export type ShoplineConnectionRepository = {
   getDefault(): Promise<ShoplineConnection | null>;
   getById(id: string): Promise<ShoplineConnection | null>;
@@ -66,9 +73,7 @@ export function createShoplineConnectionRepository(
       scope.assertOpen();
       const existing = await select();
       if (existing) {
-        throw new Error(
-          "a SHOPLINE connection already exists for this workspace",
-        );
+        throw new ShoplineConnectionExistsError();
       }
       const encryptedAccessToken = await encryptShoplineToken(
         accessToken,

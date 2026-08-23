@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ShoplineConnectionExistsError } from "@wukong/db";
+
 import { createConnectionHandler } from "./route.js";
 
 function harness(
@@ -98,9 +100,7 @@ describe("POST /api/workspace/connection", () => {
   it("returns 409 when a connection already exists", async () => {
     const { handler } = harness("admin", {
       create: vi.fn(async () => {
-        throw new Error(
-          "a SHOPLINE connection already exists for this workspace",
-        );
+        throw new ShoplineConnectionExistsError();
       }),
     });
     const response = await handler.POST(

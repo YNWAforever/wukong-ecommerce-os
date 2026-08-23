@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ShoplineConnectionExistsError } from "@wukong/db";
+
 import { getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -86,17 +88,14 @@ export function createConnectionHandler(deps: ConnectionRouteDeps) {
               return connection;
             });
         } catch (error) {
-          // The repository throws a plain Error (single call site, not worth
-          // a centralized route-support mapping) when a connection already
-          // exists for this workspace. Map that common case to a clear 409
-          // instead of letting it fall through to the generic 500. The rare
-          // concurrent-insert race still hits the DB's UNIQUE(workspace_id)
-          // constraint and is handled by withRouteErrors's existing 23505
-          // mapping.
-          if (
-            error instanceof Error &&
-            error.message.includes("already exists")
-          ) {
+          // The repository throws a typed ShoplineConnectionExistsError
+          // (single call site, not worth a centralized route-support
+          // mapping) when a connection already exists for this workspace.
+          // Map that common case to a clear 409 instead of letting it fall
+          // through to the generic 500. The rare concurrent-insert race
+          // still hits the DB's UNIQUE(workspace_id) constraint and is
+          // handled by withRouteErrors's existing 23505 mapping.
+          if (error instanceof ShoplineConnectionExistsError) {
             throw new ApiError(
               409,
               "already_exists",
