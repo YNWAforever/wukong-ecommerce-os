@@ -51,7 +51,7 @@ function handlerFor(
               },
             },
             publishJobs: {
-              async getByIdempotencyKey() {
+              async getByVersionId() {
                 return null;
               },
             },
