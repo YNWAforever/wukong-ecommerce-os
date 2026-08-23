@@ -13,6 +13,7 @@ vi.mock("@wukong/shopline", async (importOriginal) => {
 import {
   BULK_FORM_COLUMNS,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
+  shoplinePublishIdempotencyKey,
 } from "@wukong/shopline";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import {
@@ -742,6 +743,112 @@ describe("delivery audit and queue context", () => {
       },
     });
     expect(imageUrls).toHaveBeenCalledOnce();
+  });
+});
+
+describe("request-phase platform product link resolution", () => {
+  it("computes an update idempotency key when the platform product link is present", async () => {
+    const harness = deps([], []);
+    harness.platformProducts = {
+      async getByListingId() {
+        return { remoteProductId: "remote_1", rawRow: null };
+      },
+    };
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return { ...input, id: "job_db_1", status: "pending_enqueue" };
+      },
+      async markQueued() {
+        return true;
+      },
+    };
+
+    const prepared = await prepareShoplineDelivery(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "shopline_api",
+      },
+      harness,
+    );
+
+    if (prepared.kind !== "publish_request")
+      throw new Error("expected publish request");
+    expect(prepared.idempotencyKey).toBe(
+      shoplinePublishIdempotencyKey("ws_opak", "version_1", "update"),
+    );
+  });
+
+  it("computes a create idempotency key when the platform product link is absent", async () => {
+    const harness = deps([], []);
+    harness.platformProducts = {
+      async getByListingId() {
+        return null;
+      },
+    };
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return { ...input, id: "job_db_1", status: "pending_enqueue" };
+      },
+      async markQueued() {
+        return true;
+      },
+    };
+
+    const prepared = await prepareShoplineDelivery(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "shopline_api",
+      },
+      harness,
+    );
+
+    if (prepared.kind !== "publish_request")
+      throw new Error("expected publish request");
+    expect(prepared.idempotencyKey).toBe(
+      shoplinePublishIdempotencyKey("ws_opak", "version_1", "create"),
+    );
+  });
+
+  it("looks up the existing delivery with the update idempotency key when the platform product link is present", async () => {
+    const harness = deps([], []);
+    harness.platformProducts = {
+      async getByListingId() {
+        return { remoteProductId: "remote_1", rawRow: null };
+      },
+    };
+    const existingDelivery = vi.fn(async (_idempotencyKey: string) => null);
+    harness.existingDelivery = existingDelivery;
+    harness.publishJobs = {
+      async ensure(input: any) {
+        return { ...input, id: "job_db_1", status: "pending_enqueue" };
+      },
+      async markQueued() {
+        return true;
+      },
+    };
+
+    const prepared = await prepareShoplineDelivery(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "shopline_api",
+      },
+      harness,
+    );
+
+    if (prepared.kind !== "publish_request")
+      throw new Error("expected publish request");
+    expect(existingDelivery).toHaveBeenCalledTimes(1);
+    const calledKey = existingDelivery.mock.calls[0]?.[0];
+    expect(calledKey).toBe(
+      shoplinePublishIdempotencyKey("ws_opak", "version_1", "update"),
+    );
+    expect(calledKey).toMatch(/:shopline:update$/);
   });
 });
 

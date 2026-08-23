@@ -62,10 +62,18 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           if (!snapshot)
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           const versionId = snapshot.activeVersion?.id ?? null;
+          const platformProductLink =
+            await repositories.platformProducts.getByListingId(id);
+          // Looked up by versionId, not by reconstructing the job's
+          // idempotency key from current state: that key was "create" or
+          // "update" depending on whether platformProductLink existed *at
+          // enqueue time*, but a successful "create" job is exactly what
+          // makes that link start existing. Re-deriving the key here from
+          // the link's current existence flips it out from under the very
+          // job whose result this is trying to read, and the lookup misses
+          // right when the job finishes.
           const job = versionId
-            ? await repositories.publishJobs.getByIdempotencyKey(
-                `${session.workspaceId}:${versionId}:shopline:create`,
-              )
+            ? await repositories.publishJobs.getByVersionId(versionId)
             : null;
           let connection: "connected" | "disconnected" | "error";
           try {
@@ -123,6 +131,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
                 }
               : null,
             queueStatus: job?.status ?? null,
+            shoplineLink: platformProductLink
+              ? { remoteProductId: platformProductLink.remoteProductId }
+              : null,
             permissions: listingPermissions(session.role),
           };
         });

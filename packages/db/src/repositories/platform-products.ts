@@ -1,43 +1,59 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { listingFactsSchema, type ListingFacts } from "@wukong/core";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { platformProducts } from "../schema.js";
 
+export type PlatformProductOrigin = "import" | "created";
+
+/**
+ * `origin` is a plain `text()` column with only an app-level CHECK
+ * constraint, not a Postgres enum, so Drizzle infers bare `string` for it —
+ * unlike `listing_drafts.status`, which is a real `pgEnum` and gets a narrow
+ * literal-union type for free. Parse it at the same seam `factsPrefill` is
+ * parsed at, rather than casting a wide type away unchecked.
+ */
+const platformProductOriginSchema = z.enum(["import", "created"]);
+
 export type PlatformProduct = {
   id: string;
   connectionId: string;
   remoteProductId: string;
-  sku: string;
+  origin: PlatformProductOrigin;
+  sku: string | null;
   listingId: string | null;
-  specVersion: string;
-  rawRow: Record<string, string | null>;
-  factsPrefill: ListingFacts;
-  contentDigest: string;
+  specVersion: string | null;
+  rawRow: Record<string, string | null> | null;
+  factsPrefill: ListingFacts | null;
+  contentDigest: string | null;
 };
 
 export type UpsertPlatformProductInput = {
   connectionId: string;
   remoteProductId: string;
-  sku: string;
+  origin: PlatformProductOrigin;
+  sku: string | null;
   /**
    * The caller supplies the draft this product is linked to, including when it
    * is re-supplying an existing one. An upsert that passed null here would
    * unlink a product that already has a draft.
    */
   listingId: string | null;
-  specVersion: string;
-  rawRow: Record<string, string | null>;
-  factsPrefill: ListingFacts;
+  specVersion: string | null;
+  rawRow: Record<string, string | null> | null;
+  factsPrefill: ListingFacts | null;
   /**
-   * MUST be `hashBulkFormRow(rawRow)`. A digest that disagrees with its row
-   * reads as "unchanged" on the next import, which is a silent false negative
-   * in the only mechanism that detects a real catalog change. The repository
-   * cannot derive it here without coupling `@wukong/db` to a specific
-   * connector's row type, so the importer owns the invariant.
+   * MUST be `hashBulkFormRow(rawRow)` for an "import"-origin row — a digest
+   * that disagrees with its row reads as "unchanged" on the next import,
+   * which is a silent false negative in the only mechanism that detects a
+   * real catalog change. Null for a "created"-origin row, which has no
+   * imported row to hash. The repository cannot derive it here without
+   * coupling `@wukong/db` to a specific connector's row type, so the caller
+   * owns the invariant.
    */
-  contentDigest: string;
+  contentDigest: string | null;
 };
 
 export type PlatformProductRepository = {
@@ -73,6 +89,7 @@ const COLUMNS = {
   id: platformProducts.id,
   connectionId: platformProducts.connectionId,
   remoteProductId: platformProducts.remoteProductId,
+  origin: platformProducts.origin,
   sku: platformProducts.sku,
   listingId: platformProducts.listingId,
   specVersion: platformProducts.specVersion,
@@ -81,8 +98,11 @@ const COLUMNS = {
   contentDigest: platformProducts.contentDigest,
 };
 
-type PlatformProductRow = Omit<PlatformProduct, "factsPrefill"> & {
+type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
   factsPrefill: unknown;
+  // `origin` is a plain `text()` column with no `$type` cast, so Drizzle
+  // infers `string` for it, not the narrower union.
+  origin: string;
 };
 
 /**
@@ -92,7 +112,11 @@ type PlatformProductRow = Omit<PlatformProduct, "factsPrefill"> & {
  */
 const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => ({
   ...row,
-  factsPrefill: listingFactsSchema.parse(row.factsPrefill),
+  origin: platformProductOriginSchema.parse(row.origin),
+  factsPrefill:
+    row.factsPrefill === null
+      ? null
+      : listingFactsSchema.parse(row.factsPrefill),
 });
 
 const validatedValues = (
@@ -100,7 +124,10 @@ const validatedValues = (
   workspaceId: string,
 ) => ({
   ...input,
-  factsPrefill: listingFactsSchema.parse(input.factsPrefill),
+  factsPrefill:
+    input.factsPrefill === null
+      ? null
+      : listingFactsSchema.parse(input.factsPrefill),
   workspaceId,
 });
 
@@ -125,6 +152,7 @@ export function createPlatformProductRepository(
             platformProducts.remoteProductId,
           ],
           set: {
+            origin: input.origin,
             sku: input.sku,
             listingId: input.listingId,
             specVersion: input.specVersion,
@@ -154,6 +182,7 @@ export function createPlatformProductRepository(
             platformProducts.remoteProductId,
           ],
           set: {
+            origin: sql`excluded.origin`,
             sku: sql`excluded.sku`,
             listingId: sql`excluded.listing_id`,
             specVersion: sql`excluded.spec_version`,

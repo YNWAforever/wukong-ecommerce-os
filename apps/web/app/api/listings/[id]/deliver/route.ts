@@ -233,6 +233,7 @@ export function defaultDelivery(
             },
             existingDelivery: (key) =>
               repositories.publishJobs.getByIdempotencyKey(key),
+            platformProducts: repositories.platformProducts,
           });
         },
       );

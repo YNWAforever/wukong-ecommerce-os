@@ -6,6 +6,7 @@ export type { DeliveryModel } from "./listing-view-models";
 
 type DeliveryPanelProps = {
   model: DeliveryModel;
+  sku?: string | null;
   onCsv?: () => void;
   onPublish?: () => void;
 };
@@ -34,7 +35,12 @@ const connectionCopy: Record<
   },
 };
 
-export function DeliveryPanel({ model, onCsv, onPublish }: DeliveryPanelProps) {
+export function DeliveryPanel({
+  model,
+  sku = null,
+  onCsv,
+  onPublish,
+}: DeliveryPanelProps) {
   const connection = connectionCopy[model.connection];
   const approved = model.status === "approved" || model.status === "published";
   const canDeliver = approved && model.canReview;
@@ -89,6 +95,22 @@ export function DeliveryPanel({ model, onCsv, onPublish }: DeliveryPanelProps) {
           需要審核員或管理員權限才能交付。{" "}
           <span>Reviewer access required.</span>
         </p>
+      ) : null}
+      {canApiPublish ? (
+        model.shoplineLink ? (
+          <p className="helper-copy">
+            此操作將更新現有 SHOPLINE 商品{sku ? `「${sku}」` : ""}。{" "}
+            <span>
+              This will update the existing SHOPLINE product
+              {sku ? ` for ${sku}` : ""}.
+            </span>
+          </p>
+        ) : (
+          <p className="helper-copy">
+            此操作將建立新的 SHOPLINE 商品。{" "}
+            <span>This will create a new SHOPLINE product.</span>
+          </p>
+        )
       ) : null}
       {model.remoteProductId ? (
         <p className="remote-link">

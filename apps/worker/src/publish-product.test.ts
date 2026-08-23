@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  hashCanonicalListing,
-  type CommerceConnector,
-} from "@wukong/shopline";
+import type { ListingFacts } from "@wukong/core";
+import { hashCanonicalListing, type CommerceConnector } from "@wukong/shopline";
 import {
   listing as canonicalListing,
   workspaceId,
@@ -27,6 +25,7 @@ function publishInput(overrides: Record<string, unknown> = {}) {
     draftId,
     expectedVersionId: versionId,
     leaseToken: LEASE_TOKEN,
+    existingLink: null,
     ...overrides,
   };
 }
@@ -84,6 +83,7 @@ function makeHarness(
       leaseToken: LEASE_TOKEN,
       ...job,
     })),
+    platformProducts: new Map<string, Record<string, unknown>>(),
   };
   const repos = makeRepos(state, audits);
   const deps = {
@@ -129,7 +129,11 @@ function makeTransactionAwareHarness(
 }
 
 function makeRepos(
-  input: { listing: PublishListingSnapshot; jobs: Array<any> },
+  input: {
+    listing: PublishListingSnapshot;
+    jobs: Array<any>;
+    platformProducts: Map<string, Record<string, unknown>>;
+  },
   audits: Array<{ action: string; metadata: Record<string, unknown> }>,
 ): PublishRepositories {
   return {
@@ -210,6 +214,14 @@ function makeRepos(
         return id === VALID_CONNECTION_ID
           ? { id, workspaceId, verified: true }
           : null;
+      },
+    },
+    platformProducts: {
+      async getByListingId(listingId) {
+        return (input.platformProducts.get(listingId) as never) ?? null;
+      },
+      async upsert(record) {
+        input.platformProducts.set(record.listingId, { ...record });
       },
     },
     audit: {
@@ -293,13 +305,16 @@ describe("publishApprovedProduct", () => {
 
   it("marks a current-version mismatch as stale_plan with binding audit facts before connector work", async () => {
     const harness = makeHarness();
-    if (!harness.state.listing.activeVersion) throw new Error("missing version");
+    if (!harness.state.listing.activeVersion)
+      throw new Error("missing version");
     harness.state.listing.activeVersion = {
       ...harness.state.listing.activeVersion,
       id: "version_current",
     };
 
-    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({
       code: "stale_plan",
     });
 
@@ -322,27 +337,29 @@ describe("publishApprovedProduct", () => {
   it.each([null, "d".repeat(64)])(
     "marks persisted digest %j as stale_plan before connector work",
     async (persistedDigest) => {
-    const harness = makeHarness();
-    harness.state.jobs[0].payloadDigest = persistedDigest;
+      const harness = makeHarness();
+      harness.state.jobs[0].payloadDigest = persistedDigest;
 
-    await expect(publishApprovedProduct(publishInput(), harness)).rejects.toMatchObject({
-      code: "stale_plan",
-    });
+      await expect(
+        publishApprovedProduct(publishInput(), harness),
+      ).rejects.toMatchObject({
+        code: "stale_plan",
+      });
 
-    expect(harness.state.jobs[0]).toMatchObject({
-      status: "failed",
-      error: "stale_plan",
-    });
-    expect(harness.audits).toContainEqual(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          reason: "stale_plan",
-          expectedPayloadDigest: hashCanonicalListing(canonicalListing),
-          observedPayloadDigest: persistedDigest,
+      expect(harness.state.jobs[0]).toMatchObject({
+        status: "failed",
+        error: "stale_plan",
+      });
+      expect(harness.audits).toContainEqual(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            reason: "stale_plan",
+            expectedPayloadDigest: hashCanonicalListing(canonicalListing),
+            observedPayloadDigest: persistedDigest,
+          }),
         }),
-      }),
-    );
-    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+      );
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
     },
   );
 
@@ -424,6 +441,7 @@ describe("publishApprovedProduct", () => {
           draftId,
           expectedVersionId: staleVersionId,
           leaseToken: LEASE_TOKEN,
+          existingLink: null,
         } as never,
         harness,
       ),
@@ -448,6 +466,7 @@ describe("publishApprovedProduct", () => {
           draftId,
           expectedVersionId: versionId,
           leaseToken: LEASE_TOKEN,
+          existingLink: null,
         } as never,
         harness,
       ),
@@ -804,5 +823,111 @@ describe("publishApprovedProduct", () => {
       publishApprovedProduct(publishInput(), harness),
     ).rejects.toThrow("Only the active approved version can be delivered");
     expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("calls createProduct and records a created-origin platform_products row when no link exists", async () => {
+    const harness = makeHarness();
+    const connector = makeConnector({
+      createProduct: vi.fn(async () => ({ remoteProductId: "remote_new_1" })),
+    });
+
+    const result = await publishApprovedProduct(publishInput(), {
+      ...harness,
+      connector,
+    });
+
+    expect(result.remoteProductId).toBe("remote_new_1");
+    expect(connector.createProduct).toHaveBeenCalledOnce();
+    expect(connector.updateProduct).not.toHaveBeenCalled();
+    const link = await harness.repos.platformProducts.getByListingId(draftId);
+    expect(link).toMatchObject({
+      origin: "created",
+      remoteProductId: "remote_new_1",
+      sku: null,
+      rawRow: null,
+    });
+  });
+
+  it("calls updateProduct, not createProduct, and preserves import fields when a link already exists", async () => {
+    const key = `${workspaceId}:${versionId}:shopline:update`;
+    const harness = makeHarness(
+      "approved",
+      [],
+      [
+        {
+          id: "job_1",
+          idempotencyKey: key,
+          status: "running",
+          remoteProductId: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
+          error: null,
+        },
+      ],
+    );
+    // A distinct, non-null fixture (not the `canonicalListing`/`facts` fixture
+    // used elsewhere in this file, which has its own producer/region/grape
+    // values) so the final assertion can tell "correctly preserved" apart
+    // from "correctly defaulted" or "accidentally sourced from elsewhere".
+    const existingFactsPrefill: ListingFacts = {
+      sku: "SKU-1",
+      producer: "Imported Producer Co",
+      productType: "wine",
+      country: "Portugal",
+      region: "Douro",
+      vintage: 2018,
+      grapeVarieties: ["Touriga Nacional"],
+      volumeMl: 750,
+      abvPercent: 14,
+      packQuantity: 1,
+      priceHkd: 320,
+      stockQuantity: 7,
+      criticScores: [],
+      awards: [],
+    };
+    await harness.repos.platformProducts.upsert({
+      connectionId: VALID_CONNECTION_ID,
+      remoteProductId: "remote_existing_1",
+      origin: "import",
+      sku: "SKU-1",
+      listingId: draftId,
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
+      factsPrefill: existingFactsPrefill,
+      contentDigest: "d".repeat(64),
+    });
+    const existingLink = {
+      remoteProductId: "remote_existing_1",
+      origin: "import" as const,
+      sku: "SKU-1",
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
+      factsPrefill: existingFactsPrefill,
+      contentDigest: "d".repeat(64),
+    };
+    const connector = makeConnector({
+      updateProduct: vi.fn(async () => undefined),
+    });
+
+    const result = await publishApprovedProduct(
+      publishInput({ existingLink }),
+      { ...harness, connector },
+    );
+
+    expect(result.remoteProductId).toBe("remote_existing_1");
+    expect(connector.updateProduct).toHaveBeenCalledWith(
+      "remote_existing_1",
+      expect.anything(),
+      expect.stringContaining(":shopline:update"),
+    );
+    expect(connector.createProduct).not.toHaveBeenCalled();
+    const link = await harness.repos.platformProducts.getByListingId(draftId);
+    expect(link).toMatchObject({
+      origin: "import",
+      sku: "SKU-1",
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
+      factsPrefill: existingFactsPrefill,
+      contentDigest: "d".repeat(64),
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { publishJobs } from "../schema.js";
@@ -77,6 +77,18 @@ export type ClaimPublishJobResult = {
 
 export type PublishJobRepository = {
   getByIdempotencyKey(key: string): Promise<PublishJob | null>;
+  /**
+   * Looks up the job by `versionId` rather than reconstructing its
+   * idempotency key from current state. The key encodes "create" or
+   * "update" based on whether a `platform_products` link existed *at
+   * enqueue time* -- but a successful "create" job is exactly what makes
+   * that link start existing, so re-deriving the key from current state
+   * (e.g. for a status poll) flips it out from under the very job that's
+   * still running or just finished, and the lookup misses. `versionId` is
+   * stable for the job's whole lifetime, so it's the correct handle for
+   * "the publish job for this version" regardless of which action it used.
+   */
+  getByVersionId(versionId: string): Promise<PublishJob | null>;
   ensure(input: EnsurePublishJobInput): Promise<PublishJob>;
   markQueued(key: string): Promise<boolean>;
   claim(input: ClaimPublishJobInput): Promise<ClaimPublishJobResult>;
@@ -143,6 +155,22 @@ export function createPublishJobRepository(
 
   return {
     getByIdempotencyKey: selectByKey,
+
+    async getByVersionId(versionId) {
+      scope.assertOpen();
+      const [row] = await transaction
+        .select()
+        .from(publishJobs)
+        .where(
+          and(
+            eq(publishJobs.workspaceId, workspaceId),
+            eq(publishJobs.versionId, versionId),
+          ),
+        )
+        .orderBy(desc(publishJobs.createdAt))
+        .limit(1);
+      return toPublishJob(row);
+    },
 
     async ensure(input) {
       scope.assertOpen();
