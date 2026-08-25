@@ -50,9 +50,9 @@ const items: CatalogItem[] = [
 
 describe("catalog view models", () => {
   it("filters by workflow cohort", () => {
-    expect(filterCatalogItems(items, "", "review").map((item) => item.id)).toEqual([
-      "product-1",
-    ]);
+    expect(
+      filterCatalogItems(items, "", "review").map((item) => item.id),
+    ).toEqual(["product-1"]);
     expect(
       filterCatalogItems(items, "", "unlinked").map((item) => item.id),
     ).toEqual(["product-2"]);

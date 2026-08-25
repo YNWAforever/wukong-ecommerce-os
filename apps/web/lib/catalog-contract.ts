@@ -39,6 +39,7 @@ export function summarizeCatalog(
     unlinked: items.filter((item) => item.listingId === null).length,
     needsReview: items.filter((item) => item.needsReview).length,
     needsAttention: items.filter((item) => item.needsAttention).length,
-    published: items.filter((item) => item.listingStatus === "published").length,
+    published: items.filter((item) => item.listingStatus === "published")
+      .length,
   };
 }

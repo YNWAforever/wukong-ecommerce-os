@@ -12,7 +12,8 @@ export default function CatalogPage() {
           </p>
           <h1>由平台商品到可發佈草稿，一頁掌握營運狀態。</h1>
           <p className="lede">
-            查看 SHOPLINE 商品鏡像、草稿連結、審核進度與阻塞項目，優先處理最接近發佈的商品。
+            查看 SHOPLINE
+            商品鏡像、草稿連結、審核進度與阻塞項目，優先處理最接近發佈的商品。
           </p>
         </div>
         <Link className="primary-button" href="/listings/new">

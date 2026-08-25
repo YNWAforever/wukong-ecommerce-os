@@ -3,11 +3,7 @@ import type { ListingStatus } from "@wukong/core";
 import type { CatalogItem } from "../lib/catalog-contract";
 
 export type CatalogFilter =
-  | "all"
-  | "attention"
-  | "review"
-  | "unlinked"
-  | "published";
+  "all" | "attention" | "review" | "unlinked" | "published";
 
 export const CATALOG_FILTERS: ReadonlyArray<{
   value: CatalogFilter;

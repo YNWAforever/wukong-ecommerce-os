@@ -42,7 +42,8 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
                 .filter((id): id is string => id !== null),
             ),
           ];
-          const statuses = await repositories.listings.statusesByIds(listingIds);
+          const statuses =
+            await repositories.listings.statusesByIds(listingIds);
           const recentListings = await repositories.listings.listRecent(100);
           const recentListingById = new Map(
             recentListings.map((listing) => [listing.id, listing]),

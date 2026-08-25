@@ -147,10 +147,7 @@ describe("GET /api/catalog", () => {
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
       ["platformProducts.listRecent", 100],
-      [
-        "listings.statusesByIds",
-        ["00000000-0000-4000-8000-000000000301"],
-      ],
+      ["listings.statusesByIds", ["00000000-0000-4000-8000-000000000301"]],
       ["listings.listRecent", 100],
     ]);
   });
