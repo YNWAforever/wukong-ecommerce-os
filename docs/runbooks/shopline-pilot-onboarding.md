@@ -168,7 +168,35 @@ listings succeeded and which didn't, and why.
 Nothing about single-listing review changes: this is a faster way to approve
 many already-eligible listings, not a new kind of approval.
 
-## 8. Re-delivering a published listing via SHOPLINE API
+## 8. Workspace admin area
+
+The `/admin` page (visible to `admin` and `owner` roles only) replaces three
+manual steps this runbook used to require: inviting a teammate, connecting or
+rotating the SHOPLINE credential, and setting the brand background color.
+
+**Inviting a teammate.** From the Members tab, enter their email, pick a role
+(`viewer`, `operator`, `reviewer`, or `admin` — `owner` is not assignable
+here), and submit. This creates a pending invite row; Wukong does not send an
+invitation email itself. Share the app's `/register` URL with the teammate
+manually (Slack, a ticket comment, etc.) and have them submit the exact email
+address that was invited there — the register flow checks it against the
+pending invite and, if eligible, sends them an enrollment email; setting a
+password on that email's link is what actually completes enrollment. Revoke
+a pending invite from the same tab if it's no longer needed.
+
+**Connecting or rotating the SHOPLINE credential.** From the Connection tab,
+enter the shop domain and access token once to connect a workspace that has
+none, or click "Rotate token" and submit a new token to replace an existing
+connection's credential — no manual DB write required. The token is encrypted
+at rest with the same token-vault used elsewhere in this repo, and the API
+never returns it; the panel only ever shows the shop domain and the
+connection date.
+
+**Changing the brand background color.** From the Settings tab, pick a color
+and save. It takes effect immediately for the workspace's branding — no
+deploy or code change required.
+
+## 9. Re-delivering a published listing via SHOPLINE API
 
 When a reviewer delivers a listing via `shopline_api` and that listing already
 has a known remote product, delivery now calls `updateProduct` against that

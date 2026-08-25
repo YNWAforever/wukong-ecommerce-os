@@ -40,6 +40,23 @@ export function queueIngressReason(error: unknown): string | null {
   return asQueueIngressError(error)?.reason ?? null;
 }
 
+type MembershipGuardFailure = Error & { reason: string };
+
+// Matched by name rather than instanceof, for the same reason as
+// asRuntimeConfigurationError/asQueueIngressError above: this helper is
+// imported by every membership route, so it should not pull in @wukong/db
+// just to own a class identity, and that identity does not survive every
+// bundling boundary.
+function asMembershipGuardViolation(
+  error: unknown,
+): MembershipGuardFailure | null {
+  if (!(error instanceof Error) || error.name !== "MembershipGuardViolation") {
+    return null;
+  }
+  const { reason } = error as { reason?: unknown };
+  return typeof reason === "string" ? (error as MembershipGuardFailure) : null;
+}
+
 function report(reason: string, detail: Record<string, string>): void {
   console.error(
     JSON.stringify({
@@ -112,6 +129,13 @@ export async function withRouteErrors(
       return jsonResponse(409, {
         code: "conflict",
         message: "The resource already exists.",
+      });
+    }
+    const membershipGuardFailure = asMembershipGuardViolation(error);
+    if (membershipGuardFailure) {
+      return jsonResponse(409, {
+        code: membershipGuardFailure.reason,
+        message: membershipGuardFailure.message,
       });
     }
     const configurationFailure = asRuntimeConfigurationError(error);

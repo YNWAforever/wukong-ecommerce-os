@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createSettingsHandler } from "./route.js";
+import { createSettingsGetHandler, createSettingsHandler } from "./route.js";
 
 function makeRequest(body: unknown) {
   return new Request("http://localhost/api/workspace/settings", {
@@ -108,5 +108,52 @@ describe("POST /api/workspace/settings", () => {
       makeRequest({ brandBackgroundColor: "red" }),
     );
     expect(response.status).toBe(400);
+  });
+});
+
+describe("GET /api/workspace/settings", () => {
+  it("rejects a sub-admin role", async () => {
+    const handler = createSettingsGetHandler({
+      sessionContext: {
+        async resolve() {
+          return { workspaceId: "ws1", actorId: "u1", role: "reviewer" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          forWorkspace: async () => {
+            throw new Error("should not be called");
+          },
+        }) as any,
+    });
+    const response = await handler(new Request("http://localhost"));
+    expect(response.status).toBe(403);
+  });
+
+  it("returns the current brandBackgroundColor for an admin", async () => {
+    const requireProfile = vi.fn(async () => ({
+      name: "Opak",
+      currency: "HKD" as const,
+      locales: ["en", "zh-Hant"] as const,
+      tone: "warm",
+      claimPolicy: [],
+      requiredFields: [],
+      brandBackgroundColor: "#112233",
+    }));
+    const handler = createSettingsGetHandler({
+      sessionContext: {
+        async resolve() {
+          return { workspaceId: "ws1", actorId: "u1", role: "admin" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          forWorkspace: async (_id: string, work: any) =>
+            work({ workspaces: { requireProfile } }),
+        }) as any,
+    });
+    const response = await handler(new Request("http://localhost"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ brandBackgroundColor: "#112233" });
   });
 });

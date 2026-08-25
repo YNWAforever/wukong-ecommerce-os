@@ -44,6 +44,10 @@ import {
   createEnrichmentBatchRepository,
   type EnrichmentBatchRepository,
 } from "./repositories/enrichment-batches.js";
+import {
+  createMembershipRepository,
+  type MembershipRepository,
+} from "./repositories/memberships.js";
 import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
@@ -67,6 +71,7 @@ export type WorkspaceRepositories = {
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
+  memberships: MembershipRepository;
   audit: WorkspaceAuditWriter;
 };
 
@@ -176,6 +181,11 @@ export function createDatabase(
         ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
+        memberships: createMembershipRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         audit: createAuditWriter(transaction, workspaceId, scope),
       };
       try {

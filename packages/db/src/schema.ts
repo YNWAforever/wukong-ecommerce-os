@@ -234,6 +234,10 @@ export const memberships = pgTable(
       table.userId,
     ),
     index("memberships_user_id_idx").on(table.userId),
+    check(
+      "memberships_role_check",
+      sql`${table.role} IN ('viewer', 'operator', 'reviewer', 'admin', 'owner')`,
+    ),
   ],
 );
 
@@ -257,6 +261,14 @@ export const workspaceInvites = pgTable(
     index("workspace_invites_workspace_status_idx").on(
       table.workspaceId,
       table.status,
+    ),
+    check(
+      "workspace_invites_role_check",
+      sql`${table.role} IN ('viewer', 'operator', 'reviewer', 'admin')`,
+    ),
+    check(
+      "workspace_invites_status_check",
+      sql`${table.status} IN ('pending', 'accepted', 'revoked')`,
     ),
   ],
 );
@@ -617,6 +629,14 @@ export const shoplineConnections = pgTable(
     uniqueIndex("shopline_connections_workspace_domain_uq").on(
       table.workspaceId,
       table.shopDomain,
+    ),
+    // Closes a TOCTOU race: two concurrent create() calls with different shop
+    // domains for the same workspace could both pass the app-level
+    // "does a connection already exist" check before either insert commits.
+    // This constraint enforces at most one connection row per workspace at
+    // the database level, regardless of shop domain.
+    uniqueIndex("shopline_connections_one_per_workspace_uq").on(
+      table.workspaceId,
     ),
   ],
 );
