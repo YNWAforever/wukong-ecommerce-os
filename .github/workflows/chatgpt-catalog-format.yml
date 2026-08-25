@@ -1,0 +1,42 @@
+name: One-time catalog formatter
+
+on:
+  push:
+    branches:
+      - chatgpt/catalog-control-center
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/catalog-control-center
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format catalog files and remove this one-time workflow
+        run: |
+          pnpm exec prettier --write \
+            'apps/web/app/(app)/catalog/page.tsx' \
+            apps/web/app/api/catalog/route.test.ts \
+            apps/web/app/api/catalog/route.ts \
+            apps/web/components/catalog-view-models.test.ts \
+            apps/web/components/catalog-view-models.ts \
+            apps/web/lib/catalog-contract.ts
+          rm .github/workflows/chatgpt-catalog-format.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'style(catalog): apply prettier'
+          git push origin HEAD:chatgpt/catalog-control-center
