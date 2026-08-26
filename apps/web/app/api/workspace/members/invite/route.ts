@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  createRuntimeAuthFlow,
+  type AuthFlow,
+} from "../../../../../lib/auth-flow";
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -23,6 +27,7 @@ const bodySchema = z
 type InviteRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase: typeof getDatabase;
+  requestEnrollment: AuthFlow["requestEnrollment"];
 };
 
 export function createMemberInviteHandler(deps: InviteRouteDeps) {
@@ -60,6 +65,21 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
           });
           return created;
         });
+      // Best-effort: the invite row is the source of truth and has already
+      // committed. A failure to send the enrollment email (SMTP down, a
+      // future bug in requestEnrollment) must not turn a real invite into
+      // an error response -- the admin can always re-invite the same email
+      // to resend, since createInvite upserts by (workspaceId, email).
+      try {
+        await deps.requestEnrollment({ email: invite.email });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            event: "member_invite_enrollment_email_failed",
+            errorName: error instanceof Error ? error.name : "UnknownError",
+          }),
+        );
+      }
       return jsonResponse(200, invite);
     });
   };
@@ -68,4 +88,11 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
 export const POST = createMemberInviteHandler({
   sessionContext: authSessionContext,
   getDatabase,
+  // Constructed lazily, once per call, not at module scope: building the
+  // runtime auth flow reads the auth environment and throws if it's
+  // unconfigured (see withRuntimeAuthFlow in lib/auth-route.ts for the same
+  // reasoning) -- evaluating it at import time would crash the whole route
+  // module instead of just this one request.
+  requestEnrollment: (input) =>
+    createRuntimeAuthFlow().requestEnrollment(input),
 });
