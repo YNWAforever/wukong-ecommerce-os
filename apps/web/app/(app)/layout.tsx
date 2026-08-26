@@ -36,6 +36,9 @@ export default async function AppLayout({
           <Link href="/dashboard">
             工作台 <span>Workspace</span>
           </Link>
+          <Link href="/catalog">
+            商品中心 <span>Catalog</span>
+          </Link>
           <Link href="/listings/new">
             建立草稿 <span>New listing</span>
           </Link>
