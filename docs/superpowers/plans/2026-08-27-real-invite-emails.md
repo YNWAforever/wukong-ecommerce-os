@@ -46,6 +46,7 @@ pnpm --filter @wukong/db db:migrate
 ### Task 1: Provision a `users` row when creating an invite
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/memberships.ts:169-205` (the `createInvite` method)
 - Test: `packages/db/src/repositories/memberships.integration.test.ts`
 
@@ -78,48 +79,48 @@ three `it` blocks immediately after the existing `"creates a pending invite
 and lists it"` test (which ends around line 103):
 
 ```ts
-  it("provisions a users row for a brand-new invited email", async () => {
-    await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.createInvite("brandnew@opak.test", "operator"),
-    );
-    const [row] = await admin.unsafe(
-      "SELECT id, email FROM users WHERE email = $1",
-      ["brandnew@opak.test"],
-    );
-    expect(row).toBeDefined();
-    expect(row.email).toBe("brandnew@opak.test");
-  });
+it("provisions a users row for a brand-new invited email", async () => {
+  await forWorkspace(database, workspaceId, (repositories) =>
+    repositories.memberships.createInvite("brandnew@opak.test", "operator"),
+  );
+  const [row] = await admin.unsafe(
+    "SELECT id, email FROM users WHERE email = $1",
+    ["brandnew@opak.test"],
+  );
+  expect(row).toBeDefined();
+  expect(row.email).toBe("brandnew@opak.test");
+});
 
-  it("leaves an existing users row untouched when inviting an already-known email", async () => {
-    await admin.unsafe(
-      "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
-      ["user_preexisting", "known@opak.test", "Preexisting Name"],
-    );
-    await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.createInvite("known@opak.test", "operator"),
-    );
-    const [row] = await admin.unsafe(
-      "SELECT id, email, name FROM users WHERE email = $1",
-      ["known@opak.test"],
-    );
-    expect(row.id).toBe("user_preexisting");
-    expect(row.name).toBe("Preexisting Name");
-  });
+it("leaves an existing users row untouched when inviting an already-known email", async () => {
+  await admin.unsafe(
+    "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+    ["user_preexisting", "known@opak.test", "Preexisting Name"],
+  );
+  await forWorkspace(database, workspaceId, (repositories) =>
+    repositories.memberships.createInvite("known@opak.test", "operator"),
+  );
+  const [row] = await admin.unsafe(
+    "SELECT id, email, name FROM users WHERE email = $1",
+    ["known@opak.test"],
+  );
+  expect(row.id).toBe("user_preexisting");
+  expect(row.name).toBe("Preexisting Name");
+});
 
-  it("makes a brand-new invitee findable as an eligible user", async () => {
-    await forWorkspace(database, workspaceId, (repositories) =>
-      repositories.memberships.createInvite("eligible@opak.test", "operator"),
-    );
-    const authDb = createAuthDatabase(appUrl);
-    const authAccess = createAuthAccessRepository(authDb);
-    try {
-      const eligible = await authAccess.findEligibleUser("eligible@opak.test");
-      expect(eligible).not.toBeNull();
-      expect(eligible?.email).toBe("eligible@opak.test");
-    } finally {
-      await authDb.close();
-    }
-  });
+it("makes a brand-new invitee findable as an eligible user", async () => {
+  await forWorkspace(database, workspaceId, (repositories) =>
+    repositories.memberships.createInvite("eligible@opak.test", "operator"),
+  );
+  const authDb = createAuthDatabase(appUrl);
+  const authAccess = createAuthAccessRepository(authDb);
+  try {
+    const eligible = await authAccess.findEligibleUser("eligible@opak.test");
+    expect(eligible).not.toBeNull();
+    expect(eligible?.email).toBe("eligible@opak.test");
+  } finally {
+    await authDb.close();
+  }
+});
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
@@ -231,6 +232,7 @@ git commit -m "feat(db): provision a users row when creating a workspace invite"
 ### Task 2: Send a real enrollment email when an invite is created
 
 **Files:**
+
 - Modify: `apps/web/app/api/workspace/members/invite/route.ts`
 - Test: `apps/web/app/api/workspace/members/invite/route.test.ts`
 
@@ -281,42 +283,42 @@ Then update the `"rejects a sub-admin role"` test (currently lines 46-53) to
 also assert `requestEnrollment` is never called:
 
 ```ts
-  it("rejects a sub-admin role", async () => {
-    const { handler, createInvite, requestEnrollment } = harness("reviewer");
-    const response = await handler(
-      makeRequest({ email: "new@opak.test", role: "operator" }),
-    );
-    expect(response.status).toBe(403);
-    expect(createInvite).not.toHaveBeenCalled();
-    expect(requestEnrollment).not.toHaveBeenCalled();
-  });
+it("rejects a sub-admin role", async () => {
+  const { handler, createInvite, requestEnrollment } = harness("reviewer");
+  const response = await handler(
+    makeRequest({ email: "new@opak.test", role: "operator" }),
+  );
+  expect(response.status).toBe(403);
+  expect(createInvite).not.toHaveBeenCalled();
+  expect(requestEnrollment).not.toHaveBeenCalled();
+});
 ```
 
 Then add these two new tests at the end of the `describe` block, after the
 existing `"maps a MembershipGuardViolation to a 409"` test:
 
 ```ts
-  it("sends a real enrollment email after creating the invite", async () => {
-    const { handler, requestEnrollment } = harness("admin");
-    const response = await handler(
-      makeRequest({ email: "new@opak.test", role: "operator" }),
-    );
-    expect(response.status).toBe(200);
-    expect(requestEnrollment).toHaveBeenCalledWith({ email: "new@opak.test" });
-  });
+it("sends a real enrollment email after creating the invite", async () => {
+  const { handler, requestEnrollment } = harness("admin");
+  const response = await handler(
+    makeRequest({ email: "new@opak.test", role: "operator" }),
+  );
+  expect(response.status).toBe(200);
+  expect(requestEnrollment).toHaveBeenCalledWith({ email: "new@opak.test" });
+});
 
-  it("still returns success when the enrollment email fails to send", async () => {
-    const requestEnrollment = vi.fn(async () => {
-      throw new Error("smtp unreachable");
-    });
-    const { handler } = harness("admin", { requestEnrollment });
-    const response = await handler(
-      makeRequest({ email: "new@opak.test", role: "operator" }),
-    );
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.email).toBe("new@opak.test");
+it("still returns success when the enrollment email fails to send", async () => {
+  const requestEnrollment = vi.fn(async () => {
+    throw new Error("smtp unreachable");
   });
+  const { handler } = harness("admin", { requestEnrollment });
+  const response = await handler(
+    makeRequest({ email: "new@opak.test", role: "operator" }),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.email).toBe("new@opak.test");
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**

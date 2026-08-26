@@ -36,7 +36,7 @@ workspace-admin-area spec already called out as not blocking, but natural.
 - Creating an invite immediately sends the invitee a real, working
   enrollment email — no manual link-sharing step required.
 - Re-inviting the same email (already-supported upsert-by-`(workspaceId,
-  email)` behavior) doubles as "resend" without any new UI.
+email)` behavior) doubles as "resend" without any new UI.
 - Email delivery failure (SMTP down, misconfigured) never blocks invite
   creation from succeeding.
 
@@ -45,9 +45,9 @@ workspace-admin-area spec already called out as not blocking, but natural.
 - A dedicated invite-token system (separate table, custom accept page, its
   own expiry). The existing password-reset/enrollment mechanism already does
   everything an invite needs — token generation, expiry, the `/register/set-
-  password` page, and audit logging. Building a parallel system would
+password` page, and audit logging. Building a parallel system would
   duplicate all of that for a small pilot team with no need for it.
-- Notifying an *already-enrolled* user (someone with a working credential
+- Notifying an _already-enrolled_ user (someone with a working credential
   elsewhere) that they've been added to a new workspace. `requestEnrollment`
   already no-ops for a user who has a credential and completed enrollment,
   so inviting such a person sends no email at all under this design. Nobody
@@ -110,7 +110,7 @@ provisions the user) commits successfully, the handler calls:
 await deps.requestEnrollment({ email: parsed.data.email });
 ```
 
-This is the *same* function `POST /api/auth/register` already calls when an
+This is the _same_ function `POST /api/auth/register` already calls when an
 invitee manually visits `/register` and types their email — same
 eligibility check, same password-reset-token generation, same redirect to
 `/register/set-password`, same audit events
