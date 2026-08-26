@@ -14,7 +14,10 @@ function makeRequest(body: unknown) {
 
 function harness(
   role: string,
-  options: { createInvite?: ReturnType<typeof vi.fn> } = {},
+  options: {
+    createInvite?: ReturnType<typeof vi.fn>;
+    requestEnrollment?: ReturnType<typeof vi.fn>;
+  } = {},
 ) {
   const createInvite =
     options.createInvite ??
@@ -24,6 +27,8 @@ function harness(
       role: inviteRole,
       createdAt: new Date("2026-01-01"),
     }));
+  const requestEnrollment =
+    options.requestEnrollment ?? vi.fn(async () => ({ accepted: true }));
   const auditWrite = vi.fn(async () => {});
   const handler = createMemberInviteHandler({
     sessionContext: {
@@ -38,18 +43,20 @@ function harness(
           audit: { write: auditWrite },
         }),
     }),
+    requestEnrollment,
   } as any);
-  return { handler, createInvite, auditWrite };
+  return { handler, createInvite, auditWrite, requestEnrollment };
 }
 
 describe("POST /api/workspace/members/invite", () => {
   it("rejects a sub-admin role", async () => {
-    const { handler, createInvite } = harness("reviewer");
+    const { handler, createInvite, requestEnrollment } = harness("reviewer");
     const response = await handler(
       makeRequest({ email: "new@opak.test", role: "operator" }),
     );
     expect(response.status).toBe(403);
     expect(createInvite).not.toHaveBeenCalled();
+    expect(requestEnrollment).not.toHaveBeenCalled();
   });
 
   it("creates the invite for an admin", async () => {
@@ -93,5 +100,27 @@ describe("POST /api/workspace/members/invite", () => {
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.code).toBe("already_member");
+  });
+
+  it("sends a real enrollment email after creating the invite", async () => {
+    const { handler, requestEnrollment } = harness("admin");
+    const response = await handler(
+      makeRequest({ email: "new@opak.test", role: "operator" }),
+    );
+    expect(response.status).toBe(200);
+    expect(requestEnrollment).toHaveBeenCalledWith({ email: "new@opak.test" });
+  });
+
+  it("still returns success when the enrollment email fails to send", async () => {
+    const requestEnrollment = vi.fn(async () => {
+      throw new Error("smtp unreachable");
+    });
+    const { handler } = harness("admin", { requestEnrollment });
+    const response = await handler(
+      makeRequest({ email: "new@opak.test", role: "operator" }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.email).toBe("new@opak.test");
   });
 });

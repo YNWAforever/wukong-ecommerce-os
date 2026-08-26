@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { and, eq, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
@@ -181,6 +183,19 @@ export function createMembershipRepository(
         )
         .limit(1);
       if (existingMember) throw new MembershipGuardViolation("already_member");
+
+      // An invite is worthless without an account to redeem it -- self-
+      // service signup is disabled, so nothing else in this codebase ever
+      // creates a `users` row for a brand-new email. Provisioning one here,
+      // in the same transaction as the invite, is what makes the invite
+      // actually redeemable. `onConflictDoNothing` leaves an existing row
+      // (a returning teammate, or someone already known from another
+      // workspace) completely untouched -- no name, credential, or
+      // verification state is touched.
+      await transaction
+        .insert(users)
+        .values({ id: randomUUID(), email: normalizedEmail })
+        .onConflictDoNothing();
 
       const [invite] = await transaction
         .insert(workspaceInvites)
