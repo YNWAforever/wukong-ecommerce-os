@@ -1,6 +1,7 @@
 import {
   approveListing as domainApprove,
   type AuditContext,
+  type CanonicalListing,
 } from "@wukong/core";
 import type {
   AuditWriter,
@@ -170,6 +171,11 @@ export async function approveOne(
       action: "asset.product_shot_final_created",
       metadata: { assetId: finalAsset.id, storageKey },
     });
+    // getReviewSnapshot's content is only as complete as review has gotten
+    // so far (see ReviewableListing) -- this cast preserves this function's
+    // prior behavior of trusting it's publish-ready, not a new guarantee.
+    // Nothing here re-validates completeness; requireForPublish still does,
+    // at actual delivery time.
     const newContent = {
       ...snapshot.activeVersion.content,
       imageAssetIds: [
@@ -178,7 +184,7 @@ export async function approveOne(
         ),
         finalAsset.id,
       ],
-    };
+    } as CanonicalListing;
     const newVersion = await repositories.listings.appendVersion(
       id,
       newContent,

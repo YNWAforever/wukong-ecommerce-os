@@ -5,6 +5,7 @@ import type {
   ComplianceFlag,
   FieldEvidence,
   ListingStatus,
+  ReviewableListing,
 } from "@wukong/core";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -37,7 +38,7 @@ export type ListingViewResponse = {
   activeVersion: {
     id: string;
     sequence: number;
-    content: CanonicalListing;
+    content: ReviewableListing;
   } | null;
   evidence: FieldEvidence[];
   flags: ComplianceFlag[];
@@ -343,7 +344,7 @@ function optionalNumber(fields: ListingField[], key: string): number | null {
 }
 
 export function applyListingFields(
-  current: CanonicalListing,
+  current: ReviewableListing,
   fields: ListingField[],
 ): CanonicalListing {
   return {

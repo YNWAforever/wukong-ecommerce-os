@@ -3,14 +3,16 @@ export {
   fieldEvidenceSchema,
   listingFactsSchema,
   localizedTextSchema,
-  workspaceProfileSchema
+  reviewableListingSchema,
+  workspaceProfileSchema,
 } from "./listing-schema.js";
 
 export type {
   CanonicalListing,
   FieldEvidence,
   ListingFacts,
-  WorkspaceProfile
+  ReviewableListing,
+  WorkspaceProfile,
 } from "./listing-schema.js";
 
 export type { AuditContext, AuditWriter, DomainAuditEvent } from "./audit.js";

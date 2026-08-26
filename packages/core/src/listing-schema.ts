@@ -68,7 +68,27 @@ export const workspaceProfileSchema = z.object({
     .transform((value) => value ?? null),
 });
 
+// Same structural shape as canonicalListingSchema (title/description/seo/
+// tags/imageAssetIds required), but without re-tightening the commercial
+// facts back to non-null. A listing under active review normally still has
+// some facts null -- pending AI enrichment or manual entry -- and that's a
+// completely different situation from "ready to publish", which is what
+// canonicalListingSchema actually gates. Reusing the strict schema for a
+// read-only "view this listing" path turned routine, in-progress review
+// data into a hard error.
+export const reviewableListingSchema = listingFactsSchema.extend({
+  title: localizedTextSchema,
+  description: localizedTextSchema,
+  seo: z.object({
+    title: localizedTextSchema,
+    description: localizedTextSchema,
+  }),
+  tags: z.array(z.string().trim().min(1)),
+  imageAssetIds: z.array(z.string().min(1)),
+});
+
 export type CanonicalListing = z.infer<typeof canonicalListingSchema>;
+export type ReviewableListing = z.infer<typeof reviewableListingSchema>;
 export type ListingFacts = z.infer<typeof listingFactsSchema>;
 export type FieldEvidence = z.infer<typeof fieldEvidenceSchema>;
 export type WorkspaceProfile = z.infer<typeof workspaceProfileSchema>;
