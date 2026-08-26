@@ -1,7 +1,12 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createDatabase, forWorkspace } from "../index.js";
+import {
+  createAuthAccessRepository,
+  createAuthDatabase,
+  createDatabase,
+  forWorkspace,
+} from "../index.js";
 import { MembershipGuardViolation } from "./memberships.js";
 
 /**
@@ -100,6 +105,49 @@ describe("MembershipRepository — read and invite methods", () => {
       email: "new@opak.test",
       role: "operator",
     });
+  });
+
+  it("provisions a users row for a brand-new invited email", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("brandnew@opak.test", "operator"),
+    );
+    const [row] = await admin.unsafe(
+      "SELECT id, email FROM users WHERE email = $1",
+      ["brandnew@opak.test"],
+    );
+    expect(row).toBeDefined();
+    expect(row.email).toBe("brandnew@opak.test");
+  });
+
+  it("leaves an existing users row untouched when inviting an already-known email", async () => {
+    await admin.unsafe(
+      "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+      ["user_preexisting", "known@opak.test", "Preexisting Name"],
+    );
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("known@opak.test", "operator"),
+    );
+    const [row] = await admin.unsafe(
+      "SELECT id, email, name FROM users WHERE email = $1",
+      ["known@opak.test"],
+    );
+    expect(row.id).toBe("user_preexisting");
+    expect(row.name).toBe("Preexisting Name");
+  });
+
+  it("makes a brand-new invitee findable as an eligible user", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("eligible@opak.test", "operator"),
+    );
+    const authDb = createAuthDatabase(appUrl);
+    const authAccess = createAuthAccessRepository(authDb);
+    try {
+      const eligible = await authAccess.findEligibleUser("eligible@opak.test");
+      expect(eligible).not.toBeNull();
+      expect(eligible?.email).toBe("eligible@opak.test");
+    } finally {
+      await authDb.close();
+    }
   });
 
   it("rejects an invite for an email that's already an active member", async () => {
