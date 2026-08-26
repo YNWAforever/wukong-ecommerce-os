@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { canonicalListingSchema } from "@wukong/core";
+import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
 import type {
   AuditContext,
   AuditWriter,
@@ -9,6 +9,7 @@ import type {
   FieldEvidence,
   ListingAction,
   ListingStatus,
+  ReviewableListing,
 } from "@wukong/core";
 import { transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
@@ -41,7 +42,7 @@ export type ReviewSnapshot = {
   activeVersion: {
     id: string;
     sequence: number;
-    content: CanonicalListing;
+    content: ReviewableListing;
   } | null;
   evidence: FieldEvidence[];
   flags: ComplianceFlag[];
@@ -160,6 +161,103 @@ export function createListingRepository(
     throw new Error("workspaceId must not be empty");
   const byId = (id: string) =>
     and(eq(listingDrafts.workspaceId, workspaceId), eq(listingDrafts.id, id));
+
+  // Shared by requireForPublish (strict: throws when the active version's
+  // content isn't publish-ready) and getReviewSnapshot (permissive: a
+  // listing under active review normally still has incomplete facts, and
+  // merely viewing it should never fail just because review isn't
+  // finished). Returns the active version's content unparsed -- each
+  // caller validates it against the schema appropriate to what it's about
+  // to do with it.
+  const loadListingWithFlags = async (
+    id: string,
+  ): Promise<{
+    listing: Listing;
+    activeVersion: { id: string; sequence: number; content: unknown } | null;
+    flags: ComplianceFlag[];
+  }> => {
+    const [listing] = await transaction
+      .select()
+      .from(listingDrafts)
+      .where(byId(id))
+      .limit(1);
+    if (!listing) throw new Error("listing not found");
+    const activeVersion = listing.activeVersionId
+      ? ((
+          await transaction
+            .select({
+              id: listingVersions.id,
+              sequence: listingVersions.sequence,
+              content: listingVersions.content,
+            })
+            .from(listingVersions)
+            .where(
+              and(
+                eq(listingVersions.workspaceId, workspaceId),
+                eq(listingVersions.id, listing.activeVersionId),
+              ),
+            )
+            .limit(1)
+        )[0] ?? null)
+      : null;
+    const rows = activeVersion
+      ? await transaction
+          .select({
+            code: complianceFlags.code,
+            severity: complianceFlags.severity,
+            status: complianceFlags.status,
+            details: complianceFlags.details,
+          })
+          .from(complianceFlags)
+          .where(
+            and(
+              eq(complianceFlags.workspaceId, workspaceId),
+              eq(complianceFlags.listingVersionId, activeVersion.id),
+            ),
+          )
+      : [];
+    const flags: ComplianceFlag[] = rows.flatMap((row): ComplianceFlag[] => {
+      const details = (row.details ?? {}) as Record<string, unknown>;
+      if (
+        (row.severity !== "blocking" && row.severity !== "warning") ||
+        (row.status !== "open" && row.status !== "resolved")
+      )
+        return [];
+      const idValue =
+        typeof details.id === "string"
+          ? details.id
+          : `${row.code}:${String(details.field ?? "unknown")}`;
+      const field =
+        typeof details.field === "string" ? details.field : "unknown";
+      if (row.status === "resolved") {
+        const reason =
+          typeof details.resolutionReason === "string"
+            ? details.resolutionReason
+            : "";
+        return [
+          {
+            id: idValue,
+            field,
+            rule: row.code as ComplianceFlag["rule"],
+            severity: row.severity as "blocking" | "warning",
+            status: "resolved",
+            resolutionReason: reason,
+          },
+        ];
+      }
+      return [
+        {
+          id: idValue,
+          field,
+          rule: row.code as ComplianceFlag["rule"],
+          severity: row.severity as "blocking" | "warning",
+          status: "open",
+          resolutionReason: null,
+        },
+      ];
+    });
+    return { listing, activeVersion, flags };
+  };
 
   return {
     async create(input) {
@@ -307,81 +405,7 @@ export function createListingRepository(
 
     async requireForPublish(id) {
       scope.assertOpen();
-      const listing = await this.requireById(id);
-      const activeVersion = listing.activeVersionId
-        ? ((
-            await transaction
-              .select({
-                id: listingVersions.id,
-                sequence: listingVersions.sequence,
-                content: listingVersions.content,
-              })
-              .from(listingVersions)
-              .where(
-                and(
-                  eq(listingVersions.workspaceId, workspaceId),
-                  eq(listingVersions.id, listing.activeVersionId),
-                ),
-              )
-              .limit(1)
-          )[0] ?? null)
-        : null;
-      const rows = activeVersion
-        ? await transaction
-            .select({
-              code: complianceFlags.code,
-              severity: complianceFlags.severity,
-              status: complianceFlags.status,
-              details: complianceFlags.details,
-            })
-            .from(complianceFlags)
-            .where(
-              and(
-                eq(complianceFlags.workspaceId, workspaceId),
-                eq(complianceFlags.listingVersionId, activeVersion.id),
-              ),
-            )
-        : [];
-      const flags: ComplianceFlag[] = rows.flatMap((row): ComplianceFlag[] => {
-        const details = (row.details ?? {}) as Record<string, unknown>;
-        if (
-          (row.severity !== "blocking" && row.severity !== "warning") ||
-          (row.status !== "open" && row.status !== "resolved")
-        )
-          return [];
-        const idValue =
-          typeof details.id === "string"
-            ? details.id
-            : `${row.code}:${String(details.field ?? "unknown")}`;
-        const field =
-          typeof details.field === "string" ? details.field : "unknown";
-        if (row.status === "resolved") {
-          const reason =
-            typeof details.resolutionReason === "string"
-              ? details.resolutionReason
-              : "";
-          return [
-            {
-              id: idValue,
-              field,
-              rule: row.code as ComplianceFlag["rule"],
-              severity: row.severity as "blocking" | "warning",
-              status: "resolved",
-              resolutionReason: reason,
-            },
-          ];
-        }
-        return [
-          {
-            id: idValue,
-            field,
-            rule: row.code as ComplianceFlag["rule"],
-            severity: row.severity as "blocking" | "warning",
-            status: "open",
-            resolutionReason: null,
-          },
-        ];
-      });
+      const { listing, activeVersion, flags } = await loadListingWithFlags(id);
       const parsedContent = activeVersion
         ? canonicalListingSchema.safeParse(activeVersion.content)
         : null;
@@ -407,8 +431,8 @@ export function createListingRepository(
       scope.assertOpen();
       const listing = await this.getById(id);
       if (!listing) return null;
-      const published = await this.requireForPublish(id);
-      const evidenceRows = published.activeVersion
+      const { activeVersion, flags } = await loadListingWithFlags(id);
+      const evidenceRows = activeVersion
         ? await transaction
             .select({
               sourceAssetId: fieldEvidence.sourceAssetId,
@@ -419,7 +443,7 @@ export function createListingRepository(
             .where(
               and(
                 eq(fieldEvidence.workspaceId, workspaceId),
-                eq(fieldEvidence.listingVersionId, published.activeVersion.id),
+                eq(fieldEvidence.listingVersionId, activeVersion.id),
               ),
             )
         : [];
@@ -440,11 +464,29 @@ export function createListingRepository(
           },
         ];
       });
+      // Permissive, unlike requireForPublish: a listing under active
+      // review normally still has incomplete facts, and this is a
+      // read-only view, not a publish gate. Only a genuinely malformed
+      // version (missing title, broken localized text, etc.) fails this
+      // and surfaces as an error -- that's real data corruption, not
+      // "review isn't finished yet".
+      const parsedContent = activeVersion
+        ? reviewableListingSchema.safeParse(activeVersion.content)
+        : null;
+      if (activeVersion && !parsedContent?.success)
+        throw new Error("active listing version content is invalid");
       return {
         listing,
-        activeVersion: published.activeVersion,
+        activeVersion:
+          activeVersion && parsedContent?.success
+            ? {
+                id: activeVersion.id,
+                sequence: activeVersion.sequence,
+                content: parsedContent.data,
+              }
+            : null,
         evidence,
-        flags: published.flags,
+        flags,
       };
     },
 

@@ -3,6 +3,7 @@ export {
   fieldEvidenceSchema,
   listingFactsSchema,
   localizedTextSchema,
+  reviewableListingSchema,
   workspaceProfileSchema
 } from "./listing-schema.js";
 
@@ -10,6 +11,7 @@ export type {
   CanonicalListing,
   FieldEvidence,
   ListingFacts,
+  ReviewableListing,
   WorkspaceProfile
 } from "./listing-schema.js";
 
