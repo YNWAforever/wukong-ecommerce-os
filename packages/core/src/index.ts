@@ -4,7 +4,7 @@ export {
   listingFactsSchema,
   localizedTextSchema,
   reviewableListingSchema,
-  workspaceProfileSchema
+  workspaceProfileSchema,
 } from "./listing-schema.js";
 
 export type {
@@ -12,7 +12,7 @@ export type {
   FieldEvidence,
   ListingFacts,
   ReviewableListing,
-  WorkspaceProfile
+  WorkspaceProfile,
 } from "./listing-schema.js";
 
 export type { AuditContext, AuditWriter, DomainAuditEvent } from "./audit.js";
