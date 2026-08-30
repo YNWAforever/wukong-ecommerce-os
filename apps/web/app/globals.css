@@ -1178,3 +1178,34 @@ button:disabled {
     width: 100%;
   }
 }
+.admin-tabs {
+  display: grid;
+  gap: 20px;
+}
+.admin-tab-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  background: var(--stone);
+  border-radius: var(--radius);
+}
+.admin-tab {
+  min-height: 44px;
+  padding: 8px 16px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.admin-tab.active {
+  color: var(--navy);
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 2px 8px rgb(24 36 50 / 6%);
+}
+.admin-tab-panel {
+  color: var(--ink);
+}

@@ -42,6 +42,9 @@ export default async function AppLayout({
           <Link href="/listings/new">
             建立草稿 <span>New listing</span>
           </Link>
+          <Link href="/listings/import">
+            SHOPLINE 匯入 <span>Bulk import</span>
+          </Link>
           {isAdmin ? (
             <Link href="/admin">
               管理 <span>Admin</span>

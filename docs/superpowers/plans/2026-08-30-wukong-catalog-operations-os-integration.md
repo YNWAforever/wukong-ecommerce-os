@@ -13,7 +13,7 @@ Every material claim below is labeled **Observed** (code/test/log evidence cited
 
 **Verdict: Blocked — not implementation-ready for the Opak Bulk Update pilot as currently scoped.** This is not the workbook-unavailable fallback verdict (the real workbook was supplied and profiled, §2) — it is a verdict driven by concrete, resolvable gaps found by direct code inspection (§7 has the full list; the top five are):
 
-1. **[Observed]** The runtime's listing review/approval UI and the Opak 71-column Bulk Update contract are two entirely disconnected systems today. The review screen (`apps/web/components/listing-review-client.tsx`) edits a 16-field wine-listing domain model (`title`, `producer`, `vintage`, `abvPercent`, …); none of the eight Opak-writable fields (`nameZh`, `summaryEn`, `summaryZh`, `seoTitleEn`, `seoTitleZh`, `seoDescriptionEn`, `seoDescriptionZh`, `seoKeywords`) appear in it. There is no review/approval surface at all for a Bulk-Update draft's eight fields — `deliverBulkForm` (`apps/web/lib/delivery-service.ts:540-556`) writes them directly from whatever enrichment produced them, with no human gate of the kind that exists for the wine-listing workflow.
+1. **[Observed, corrected from an earlier draft of this plan]** `deliverBulkForm` (`apps/web/lib/delivery-service.ts:494-566`) maps the eight Opak fields directly from the existing `CanonicalListing` reviewed by `listing-review-client.tsx`: `nameZh ← content.title["zh-Hant"]`, `summaryEn/Zh ← content.description.{en,zh-Hant}`, `seoTitleEn/Zh ← content.seo.title.{en,zh-Hant}`, `seoDescriptionEn/Zh ← content.seo.description.{en,zh-Hant}`, `seoKeywords ← content.tags.join(", ")`. Since `title`/`description` are among the 16 fields the review UI already edits, **three of the eight Opak fields (`nameZh`, `summaryEn`, `summaryZh`) are already human-reviewed today**, just under different display labels — the systems are connected, not disconnected. The real gap is narrower: `content.seo`/`content.tags` pass through the review UI unmodified (confirmed: neither is rendered or edited anywhere in `listing-fields-form.tsx`), so the remaining **five fields (`seoTitleEn`, `seoTitleZh`, `seoDescriptionEn`, `seoDescriptionZh`, `seoKeywords`) are exported straight from AI output with no human review gate at all**. The fix is extending the existing review UI's SEO/tags handling, not building a fully parallel review mode.
 2. **[Observed]** The generated XLSX names its worksheet `"Sheet1"` (`packages/shopline/src/bulk-form-xlsx.ts:316`, hardcoded), not `"Default"` — the real export's actual sheet name (confirmed in this plan's own workbook inspection, §2). No test or design doc anywhere in the repo checks or even mentions the sheet name. Whether SHOPLINE's own bulk-update re-import rejects a mismatched sheet name is genuinely unknown from this codebase alone.
 3. **[Observed]** Five of the Site's routes have no runtime equivalent at all: `/queue`, `/jobs`, `/quality`, `/system-map`, and a list/detail read model for `/batches` (the create/advance write path exists; there is no way to see a batch after creating it).
 4. **[Observed]** The master instruction's assumed "immutable source-import and freshness gate" (durable record binding export to `sourceImportId + remoteProductId + sourceRowDigest + activeVersionId`, blocking export unless several conditions hold) has its data half built — `platform_products.contentDigest`/`updatedAt` exist — but no export-time gate function enforcing those conditions was found anywhere in scope. `updatedAt` bumps on every upsert call regardless of whether content actually changed, so it cannot serve as a freshness signal on its own.
@@ -200,13 +200,13 @@ Rendered as one structured entry per route rather than a single wide table — t
 
 - **Goal:** import a fresh SHOPLINE export and start the Bulk Update flow; new-product creation kept separate.
 - **Site:** 3-tab intake (Existing products = primary/confirmed, Supporting evidence, New products = explicitly "Blocked — separate Create template required").
-- **Runtime:** `apps/web/app/(app)/listings/new/page.tsx` exists; `apps/web/lib/bulk-form-import.ts` (the actual XLSX-import logic, confirmed present and functioning per §11) exists as a library function, but **no research subagent directly confirmed this page invokes it** — the page's content/wiring to Bulk Update import specifically is **[Unverified]**, not Observed; per the master instruction's own framing this route was "primarily new-listing intake" historically (per `docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md`'s original scope) and may still carry that legacy shape.
-- **Parity:** Unverified pending direct page inspection — do not assume Exact or Missing.
-- **Missing contract:** confirm current wiring; if the page still targets new-listing intake rather than the Bulk-Update importer, an ADR is needed on route ownership (ADR-2, §9).
-- **Disposition:** requires investigation before disposition can be assigned — this is a stop-relevant unknown, not a decided "extend."
+- **Runtime, [Observed, resolving the prior Unverified item]:** `apps/web/app/(app)/listings/new/page.tsx` renders `ListingIntakeClient` exclusively — this is the original photo/PDF wine-listing intake flow (breadcrumb "建立草稿"/"Create Draft", copy about uploading bottle photos and supplier data for AI extraction), i.e. exactly the flow the master instruction says should become the pilot's _blocked_ "New products" tab. `POST /api/listings/import` (`apps/web/app/api/listings/import/route.ts`, backed by `apps/web/lib/bulk-form-import.ts`'s `createBulkFormImporter`) is a complete, tested, operator-role-gated Bulk Update import endpoint — but **zero UI anywhere calls it**. So the route isn't ambiguously wired; it's unambiguously wired to the wrong flow for this pilot, with the right flow's backend built but entirely unreachable from any page.
+- **Parity:** visual — Site-only concept (Site's 3-tab layout has no runtime analogue at all today). Interaction — Missing (Bulk Update import has no UI path). Real capability — Runtime-only-partial (the import API itself is fully functional and tested; only its UI entry point is missing).
+- **Missing contract:** restructure this route into the Site's 3-tab IA (Existing products primary / Supporting evidence / New products blocked), with the "Existing products" tab calling the existing `POST /api/listings/import`, and the current `ListingIntakeClient` flow moving to the disabled "New products" tab (ADR-2, §9).
+- **Disposition:** extend — build a new primary tab wired to the already-working import API; move (don't discard) the existing intake flow into the blocked tab.
 - **Priority:** high (this is the entry point for the entire Opak flow).
-- **Dependencies:** blocks nothing else, but nothing else should proceed confidently until this is confirmed.
-- **Acceptance evidence:** none yet; add a task to Package E to resolve this before any UI work on this route.
+- **Dependencies:** none — the backend it needs already exists and is tested.
+- **Acceptance evidence:** existing `app/api/listings/import/route.test.ts` (6 tests, already passing) covers the backend; new UI-level acceptance test needed once the tab is built.
 
 ### `/batches` — Attended enrichment cohorts/waves
 
@@ -223,10 +223,10 @@ Rendered as one structured entry per route rather than a single wide table — t
 
 - **Goal:** review AI-proposed changes against evidence, approve or request more info.
 - **Site:** 8-field AI-diff UI (evidence panel with confidence%, current-vs-proposed diff, locked-field integrity panel), sampled `sample-0013` (ready) and `sample-stale-0088` (a distinct "blocked by stale sample" banner) — both trivially reachable via different sample IDs, no backend manipulation needed.
-- **Runtime:** `apps/web/components/listing-review-client.tsx`, `listing-fields-form.tsx`, `evidence-panel.tsx`. **CONFIRMED gap** (§1, §7): this UI reviews a 16-field wine-listing model, not the 8 Opak fields — there is no Bulk-Update review surface here at all today. The version-id optimistic-concurrency protection and the whole-listing approval mechanics (§3) are solid and directly reusable once the right fields are wired in.
-- **Parity:** visual — Site-only concept for the specific 8-field diff layout (nothing to compare against on the runtime side yet). Interaction — Missing (no review path for these fields exists). Real capability — Missing.
-- **Missing contract:** the entire eight-field review/diff/evidence surface, bound to `platform_products`'s `contentDigest`/`activeVersionId` (§10, §11) — this is the single largest build item in this plan.
-- **Disposition:** extend the existing review-workflow machinery (version-concurrency, audit, approval gating) with a new field set and evidence source; do not replace the underlying workflow engine. **Priority:** highest (this is the pilot's core value surface).
+- **Runtime:** `apps/web/components/listing-review-client.tsx`, `listing-fields-form.tsx`, `evidence-panel.tsx`. **CONFIRMED, corrected from an earlier draft of this plan** (§1, §7 G5): three of the eight Opak fields (`nameZh`, `summaryEn`, `summaryZh`) are already reviewed today via the existing `title`/`description` fields (`deliverBulkForm`, `apps/web/lib/delivery-service.ts:494-566`, maps them directly from `content.title`/`content.description`). The other five (`seoTitleEn`, `seoTitleZh`, `seoDescriptionEn`, `seoDescriptionZh`, `seoKeywords`) come from `content.seo`/`content.tags`, which pass through the review UI unmodified — those five are exported straight from AI output with no human review gate. The version-id optimistic-concurrency protection and the whole-listing approval mechanics (§3) are solid and directly reusable.
+- **Parity:** visual — Partial (the Site's 8-field diff layout has a runtime analogue for 3 of 8 fields already; the other 5 need surfacing). Interaction — Partial (3 of 8 fields reviewable; 5 are not). Real capability — Partial.
+- **Missing contract:** exposing and evidence-backing `content.seo.title`, `content.seo.description`, and `content.tags` in the review UI, plus binding the whole review/approval flow to `platform_products`'s `contentDigest`/`activeVersionId` (§10, §11) — smaller than originally scoped, but still the single largest build item in this plan.
+- **Disposition:** extend the existing review-workflow machinery and the existing field-review UI with the 5 missing fields' evidence/diff display; do not replace the underlying workflow engine or build a fully parallel review mode. **Priority:** highest (this is the pilot's core value surface).
 - **Dependencies:** Package E (freshness gate) must land first so review/approval can bind to it correctly (§11's confirmation-ledger requirement).
 - **Acceptance evidence:** none yet; this is the centerpiece of Package G (§16).
 
@@ -337,13 +337,13 @@ Each entry: conflicting claims → evidence for each side → operational/securi
 - **Resolution:** build an explicit attended freshness attestation (a human confirms "this export is based on a SHOPLINE export taken today") rather than any hard-coded time window, per the master instruction's own directive. [**Proposed**]
 - **Decision owner:** Opak product owner (must approve the attestation UX and, eventually, any time-based policy). **Stop until decided:** **Yes** — production rollout must not proceed without this gate; see §18/§19.
 
-### G5. Eight-field review breadth: "partial" (assumed) vs. "entirely absent" (confirmed)
+### G5. Eight-field review breadth: "partial" (assumed and confirmed, but narrower than an earlier draft of this plan claimed)
 
-- **Claims:** Master instruction's own hypothesis: "the inspected runtime review UI does not expose every SEO/keyword field written by export" (implying partial coverage). Confirmed finding: **zero** of the eight fields are exposed anywhere in the review UI — it is a completely separate 16-field wine-listing model.
-- **Evidence:** §1, §5 (`/listings/[id]`), §7 raw citations (subagent 3).
-- **Consequence:** this is larger and more central than the master instruction assumed — it's not a UI-completeness gap, it's a missing subsystem. Scope and estimate for Package G (§16) should reflect "build a new review mode," not "add missing fields to an existing form."
-- **Resolution:** extend the existing review/approval/version machinery with a second review mode targeting the 8 fields, sourced from `platform_products`/evidence rather than `CanonicalListing` (§9 ADR-8, §11). [**Proposed**]
-- **Decision owner:** runtime tech lead. **Stop until decided:** No, but re-scope estimates in any downstream planning to reflect this correction.
+- **Claims:** Master instruction's own hypothesis: "the inspected runtime review UI does not expose every SEO/keyword field written by export" (implying partial coverage). An earlier draft of this plan over-corrected to "zero of the eight fields are exposed anywhere in the review UI... a completely separate model" — that was wrong. Direct inspection of `deliverBulkForm` (`apps/web/lib/delivery-service.ts:494-566`) shows it maps `nameZh`/`summaryEn`/`summaryZh` straight from `content.title`/`content.description`, which **are** among the 16 fields the review UI already edits. Only `content.seo.title`, `content.seo.description`, and `content.tags` (backing the other 5 fields: `seoTitleEn`, `seoTitleZh`, `seoDescriptionEn`, `seoDescriptionZh`, `seoKeywords`) pass through unreviewed.
+- **Evidence:** §1, §5 (`/listings/[id]`), §7 raw citations (subagent 3), and this correction's own direct read of `delivery-service.ts:494-566`.
+- **Consequence:** smaller than either the master instruction's hypothesis or this plan's own earlier draft assumed. This is a UI-completeness gap — expose and evidence-back 3 fields (`seo.title`, `seo.description`, `tags`) — not a missing subsystem requiring a parallel review mode.
+- **Resolution:** extend the existing `listing-fields-form.tsx`/`listing-review-client.tsx` with SEO-title, SEO-description, and keywords fields sourced from `content.seo`/`content.tags`, reusing the exact same version-concurrency/audit/approval machinery already in place (§9 ADR-8, §11). [**Proposed**]
+- **Decision owner:** runtime tech lead. **Stop until decided:** No, but re-scope estimates in any downstream planning to reflect this correction — Package G is materially smaller than originally drafted.
 
 ### G6. Workbook format: inline-string worry (assumed) vs. sheet-name mismatch (confirmed)
 
@@ -380,9 +380,10 @@ Each entry: conflicting claims → evidence for each side → operational/securi
 - **Resolution:** verify Better Auth's actual defaults directly (read the installed package version's source, or its changelog/docs for the pinned version) as a Package C task, and add explicit `trustedOrigins`/cookie-attribute configuration if the defaults are insufficient. [**Proposed**]
 - **Decision owner:** runtime tech lead. **Stop until decided:** **Yes for production** — this must be confirmed, not assumed, before the auth work in Package C is called complete.
 
-### G11. `/listings/new` wiring to Bulk Update import is unconfirmed
+### G11. `/listings/new` wiring to Bulk Update import — resolved
 
-- Covered in §5. **Decision owner:** runtime tech lead. **Stop until decided:** **Yes** — resolve before any UI work on this route (Package E), since building on top of an unconfirmed wiring risks building on the wrong foundation.
+- **Confirmed** (§5): the route renders only the original photo/PDF intake flow; the Bulk Update import API exists, is tested, and is wired to no UI at all. No longer a stop condition — the fix is additive (new tab + move existing flow to a disabled tab), not a foundation risk.
+- **Decision owner:** runtime tech lead. **Stop until decided:** No — proceed directly to building it in Package E.
 
 ### G12. Batch wave-size cap (1–5) enforcement location unconfirmed
 
@@ -509,10 +510,10 @@ All twelve marked **Proposed**. Decision owners are roles (runtime tech lead / O
 
 ### ADR-8: Bulk Update import-session, digest, diff, review and export architecture
 
-- **Context:** the core architectural decision of this whole plan — how the eight-field review (§7 G5) and the freshness gate (§7 G4) get built.
-- **Decision:** add a second review "mode"/component parallel to the existing wine-listing review UI, sourced from `platform_products` + a new evidence/diff structure for the 8 fields, reusing the existing version-concurrency and audit machinery (§6) rather than building parallel concurrency logic.
-- **Alternatives:** retrofit the existing 16-field review UI to also handle the 8 Bulk-Update fields in one unified form (rejected — the two field sets, sources, and domain models are unrelated; forcing them into one UI risks confusing operators about which fields belong to which SHOPLINE artifact); build an entirely separate app/service (rejected — unnecessary duplication of auth/RLS/audit machinery that already works).
-- **Consequences:** a genuinely new UI surface, the single largest build item in this plan (§16 Package G).
+- **Context:** the core architectural decision of this whole plan — how the eight-field review (§7 G5) and the freshness gate (§7 G4) get built. Corrected from an earlier draft: `nameZh`/`summaryEn`/`summaryZh` are already reviewed via the existing `title`/`description` fields; only `seo.title`, `seo.description`, and `tags` need new review surface.
+- **Decision:** extend the existing `listing-fields-form.tsx`/`listing-review-client.tsx` with SEO-title, SEO-description, and keywords fields (sourced from `content.seo`/`content.tags`, with evidence), rather than building a second, parallel review mode — reusing the exact same version-concurrency and audit machinery already in place (§6).
+- **Alternatives:** build a fully separate review mode/component for all 8 fields, duplicating the 3 already-reviewed ones (rejected — unnecessary duplication now that the actual mapping is confirmed; would confuse operators with two places to edit the same title/description content); build an entirely separate app/service (rejected — unnecessary duplication of auth/RLS/audit machinery that already works).
+- **Consequences:** a targeted extension of the existing review UI — three new fields plus evidence/diff display for them — not a new UI surface. Materially smaller than this plan originally estimated; re-scope Package G's size accordingly (§16).
 - **Compatibility:** additive — existing wine-listing review is untouched.
 - **Security effect:** must inherit the same RLS/role/audit guarantees as the existing review UI — no new security model to invent.
 - **Migration path:** Package G, gated on Package E (freshness gate).
@@ -804,11 +805,11 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Rollback:** revert; read-only changes carry no data risk.
 - **Size:** M.
 
-### Package E — Bulk Update contract fixes and freshness gate
+### Package E — Bulk Update contract fixes, `/listings/new` UI, and freshness gate
 
-- **Outcome:** the four highest-severity, must-fix-before-anything-else items land: sheet-name fix (§7 G6), Variant ID hard block (§7 G7), `/listings/new` wiring confirmed/resolved (§7 G11), and the source-import/freshness-gate function built (§11).
+- **Outcome:** the four highest-severity items land: sheet-name fix (§7 G6, **done**, PR #51), Variant ID hard block (§7 G7, **done**, PR #51), `/listings/new` restructured into the Site's 3-tab IA with the "Existing products" tab wired to the already-working `POST /api/listings/import` (§7 G11, resolved-and-scoped, not yet built), and the source-import/freshness-gate function (§11, not yet built).
 - **Dependencies:** Package A only — this can start immediately and should be prioritized ahead of B–D if resourcing is constrained, since it's the highest-risk area.
-- **Files:** `packages/shopline/src/bulk-form-xlsx.ts` (sheet name), `packages/shopline/src/bulk-form.ts` (`parseRow`'s Variant ID handling), `apps/web/app/(app)/listings/new/page.tsx` (confirm/fix wiring), new `sourceImportId` entity + `assertExportFreshness` service (§11), `apps/web/lib/bulk-form-import.ts` (call the new freshness assertion).
+- **Files:** `packages/shopline/src/bulk-form-xlsx.ts` (sheet name, done), `packages/shopline/src/bulk-form.ts` (Variant ID, done), `apps/web/app/(app)/listings/new/page.tsx` (add 3-tab layout; move existing `ListingIntakeClient` into the disabled "New products" tab; new "Existing products" tab component calling `POST /api/listings/import`), new `sourceImportId` entity + `assertExportFreshness` service (§11), `apps/web/lib/bulk-form-import.ts` (call the new freshness assertion).
 - **Reuse disposition:** extend, narrow fixes (§6) — this package touches the strongest-built code in the repo and should change as little as possible beyond the specific defects named.
 - **API/data/migration impact:** possible new table/columns for the explicit `sourceImportId` entity if one doesn't already exist under another name (**verify first**, §11) — full expand/contract migration discipline required if so (§10).
 - **Feature flag:** none — these are correctness fixes, not experimental features.
@@ -834,20 +835,20 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Rollback:** revert.
 - **Size:** M.
 
-### Package G — Eight-field evidence review, confirmation ledger, approval binding
+### Package G — SEO/keywords review fields, confirmation ledger, approval binding
 
-- **Outcome:** the centerpiece of this plan — a new review mode for the 8 Opak-writable fields, bound to the freshness gate, with a full confirmation ledger (§9 ADR-8, §11).
+- **Outcome:** the centerpiece of this plan, but smaller than an earlier draft scoped it — extend the _existing_ review UI with the 3 fields not already reviewed (`seo.title`, `seo.description`, `tags`, backing `seoTitleEn/Zh`, `seoDescriptionEn/Zh`, `seoKeywords`), and bind the whole approval flow (not just these 3 fields) to the freshness gate with a full confirmation ledger (§9 ADR-8, §11). `nameZh`/`summaryEn`/`summaryZh` already flow through `title`/`description` review today and need no new UI.
 - **Dependencies:** Package E (freshness gate must exist first).
-- **Files:** new components parallel to (not replacing) `listing-review-client.tsx`/`listing-fields-form.tsx`/`evidence-panel.tsx`, reusing `packages/core/src/workflow.ts`/`review.ts` and `packages/db/src/repositories/listings.ts`'s version-concurrency pattern (§6), new confirmation-ledger schema/repository, new approval-binding fields (`expectedVersionId`, `sourceImportId`, `expectedSourceRowDigest`, `confirmationLedgerRevision`, §11).
-- **Reuse disposition:** extend (§6) — explicitly not a replacement of the existing review UI.
-- **API/data/migration impact:** new confirmation-ledger table (full migration discipline, §10); extended approval request schema (additive fields, backward-compatible for the existing wine-listing approval path since this is a parallel mode, not a shared one).
-- **Feature flag:** **Proposed** — gate this new review mode behind a capability flag (feeds ADR-11's registry) so it can ship dark and be enabled per-workspace once UAT (§18) passes.
+- **Files:** extend `listing-fields-form.tsx`/`listing-review-client.tsx`/`evidence-panel.tsx` with 3 new fields and their evidence/diff display, reusing `packages/core/src/workflow.ts`/`review.ts` and `packages/db/src/repositories/listings.ts`'s version-concurrency pattern (§6) unchanged, new confirmation-ledger schema/repository, new approval-binding fields (`expectedVersionId`, `sourceImportId`, `expectedSourceRowDigest`, `confirmationLedgerRevision`, §11).
+- **Reuse disposition:** extend (§6) — no parallel review mode.
+- **API/data/migration impact:** new confirmation-ledger table (full migration discipline, §10); extended approval request schema (additive fields, applies to the same review/approval path already in use, not a separate one).
+- **Feature flag:** **Proposed** — gate the 3 new fields and the freshness-bound approval behind a capability flag (feeds ADR-11's registry) so they can ship dark and be enabled per-workspace once UAT (§18) passes.
 - **Auth/audit/idempotency:** reuse existing role/RLS/audit/version-concurrency mechanisms exactly (§6, §10) — no new security model.
-- **Tests/commands:** new tests for all 8 fields' review/edit/approval, expected-version/source-digest conflict rejection, approval invalidation on content/evidence/source change.
+- **Tests/commands:** new tests for the 3 new fields' review/edit/approval, expected-version/source-digest conflict rejection, approval invalidation on content/evidence/source change.
 - **Observability:** approval invalidation events visible in `/jobs`/`/quality` (Packages F/I).
-- **Acceptance evidence:** a full review→approve cycle for a synthetic 5-product batch, including one deliberately-staled item that correctly gets rejected.
-- **Rollback:** disable the feature flag; underlying data model additions are additive and don't affect the existing wine-listing path.
-- **Size:** L.
+- **Acceptance evidence:** a full review→approve cycle for a synthetic 5-product batch (exercising all 8 fields, only 3 of which are new UI), including one deliberately-staled item that correctly gets rejected.
+- **Rollback:** disable the feature flag; underlying data model additions are additive.
+- **Size:** M (down from an earlier L estimate, now that 3 of the 8 fields need no new UI).
 
 ### Package H — Multi-product changed-row XLSX and manifest
 
