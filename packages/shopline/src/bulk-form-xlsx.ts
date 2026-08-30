@@ -270,11 +270,20 @@ export function readBulkFormSheetName(bytes: Uint8Array): string {
     throw new BulkFormWorkbookError("workbook contains no xl/workbook.xml");
   }
   const xml = new TextDecoder().decode(workbookXml);
-  const match = /<sheet\s[^>]*\bname="([^"]*)"/.exec(xml);
-  if (match?.[1] === undefined) {
+  // Match the first `<sheet ...>` tag as a bounded substring first, then look
+  // for `name=` only within it — `[^>]*` cannot cross a `>`, so anchoring this
+  // way (rather than searching for `<sheet\s[^>]*name="..."` directly) keeps a
+  // later sheet's name from being picked up when the first tag's own `name`
+  // attribute is missing or malformed.
+  const firstSheetTag = /<sheet\b[^>]*>/.exec(xml);
+  if (firstSheetTag === null) {
+    throw new BulkFormWorkbookError("workbook declares no worksheet");
+  }
+  const nameMatch = /\bname="([^"]*)"/.exec(firstSheetTag[0]);
+  if (nameMatch?.[1] === undefined) {
     throw new BulkFormWorkbookError("workbook declares no worksheet name");
   }
-  return match[1];
+  return decodeXmlText(nameMatch[1]);
 }
 
 let crcTable: Uint32Array | null = null;

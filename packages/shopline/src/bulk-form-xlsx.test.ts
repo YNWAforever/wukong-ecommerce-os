@@ -151,6 +151,38 @@ describe("bulk form xlsx adapter", () => {
     expect(readBulkFormSheetName(bytes)).toBe("Default");
   });
 
+  it("decodes XML entities in the declared worksheet name", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/workbook.xml",
+        text: '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Q3 &amp; Q4" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      },
+    ]);
+
+    expect(readBulkFormSheetName(bytes)).toBe("Q3 & Q4");
+  });
+
+  it("rejects a workbook missing xl/workbook.xml", () => {
+    expect(() => readBulkFormSheetName(zipOf(MINIMAL_PARTS))).toThrow(
+      /no xl\/workbook\.xml/,
+    );
+  });
+
+  it("rejects a workbook whose first sheet tag declares no name", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/workbook.xml",
+        text: '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet sheetId="1" r:id="rId1"/><sheet name="Second" sheetId="2" r:id="rId2"/></sheets></workbook>',
+      },
+    ]);
+
+    expect(() => readBulkFormSheetName(bytes)).toThrow(
+      /declares no worksheet name/,
+    );
+  });
+
   it("reads a workbook that stores its text in sharedStrings", () => {
     const bytes = zipOf([
       ...MINIMAL_PARTS,
