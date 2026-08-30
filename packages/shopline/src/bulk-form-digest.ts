@@ -18,3 +18,18 @@ export function hashBulkFormRow(raw: BulkFormRawRow): string {
   ]);
   return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
 }
+
+/**
+ * Stable digest of the *current* column contract — key, English header, and
+ * Chinese header for every column, in contract order. Used by the freshness
+ * gate to detect that the runtime's column contract has drifted since a
+ * given import, independent of any one row's content.
+ */
+export function hashBulkFormHeaderContract(): string {
+  const ordered = BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.en,
+    column.zh,
+  ]);
+  return createHash("sha256").update(JSON.stringify(ordered)).digest("hex");
+}

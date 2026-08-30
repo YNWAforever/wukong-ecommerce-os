@@ -5,7 +5,10 @@ import {
   parseBulkForm,
   type BulkFormColumnKey,
 } from "./bulk-form.js";
-import { hashBulkFormRow } from "./bulk-form-digest.js";
+import {
+  hashBulkFormHeaderContract,
+  hashBulkFormRow,
+} from "./bulk-form-digest.js";
 
 const HEADER_EN = BULK_FORM_COLUMNS.map((column) => column.en);
 const HEADER_ZH = BULK_FORM_COLUMNS.map((column) => column.zh);
@@ -63,5 +66,15 @@ describe("hashBulkFormRow", () => {
 
   it("emits a hex sha-256", () => {
     expect(hashBulkFormRow(rawRowFor())).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("hashBulkFormHeaderContract", () => {
+  it("returns a stable sha256 hex digest", () => {
+    const first = hashBulkFormHeaderContract();
+    const second = hashBulkFormHeaderContract();
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
   });
 });
