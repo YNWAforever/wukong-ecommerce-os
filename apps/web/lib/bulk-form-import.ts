@@ -95,6 +95,12 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
       );
     }
 
+    // Both hashes are what a later freshness-gate check compares against, not
+    // just an audit nicety: workbookSha256 identifies the exact file bytes
+    // that were imported, so re-importing the same export twice is
+    // detectable, and headerContractSha256 identifies the column contract
+    // this runtime parsed it with, so a form imported before a contract
+    // change can be told apart from one imported after.
     const workbookSha256 = createHash("sha256")
       .update(input.rawBytes)
       .digest("hex");
@@ -112,6 +118,11 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           );
         }
 
+        // One row per import batch, not per product row: it records
+        // provenance for the file as a whole (which bytes, which contract,
+        // how many rows), and every mirror upserted below is stamped with
+        // this same id, so a per-row call here would multiply an identical
+        // record once per product for no benefit.
         const sourceImport = await repositories.sourceImports.create({
           connectionId: connection.id,
           filename: input.filename,

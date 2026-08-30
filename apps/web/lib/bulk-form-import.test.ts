@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, type BulkFormColumnKey } from "@wukong/shopline";
@@ -42,6 +44,17 @@ type Recorded = {
   }[];
   audits: { action: string; entityId: string }[];
   notes: { listingId: string; note: string }[];
+  sourceImportCreates: {
+    connectionId: string;
+    filename: string;
+    workbookSha256: string;
+    headerContractSha256: string;
+    sheetName: string;
+    rowCount: number;
+    merchantAttestedExportAt: Date;
+    importerId: string;
+    specVersion: string;
+  }[];
 };
 
 function importerWith(
@@ -52,6 +65,7 @@ function importerWith(
     upserts: [],
     audits: [],
     notes: [],
+    sourceImportCreates: [],
   };
   let nextDraft = 0;
 
@@ -69,7 +83,8 @@ function importerWith(
               },
             },
             sourceImports: {
-              async create(input: Record<string, unknown>) {
+              async create(input: Recorded["sourceImportCreates"][number]) {
+                recorded.sourceImportCreates.push(input);
                 return { id: "source_import_1", ...input };
               },
             },
@@ -455,19 +470,31 @@ describe("bulk form importer", () => {
 
   it("creates a source_imports row and stamps its id on every upserted mirror", async () => {
     const { importBulkForm, recorded } = importerWith();
+    const rawBytes = new Uint8Array([1, 2, 3]);
 
     await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
-      rawBytes: new Uint8Array([1, 2, 3]),
+      rawBytes,
       merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
       filename: "opak-export.xlsx",
       sheetName: "Default",
       sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
     });
 
-    expect(recorded.upserts.every((u) => u.sourceImportId === "source_import_1")).toBe(
-      true,
+    // Exactly one row per import batch, not one per product row — a per-row
+    // call would mean every product in a catalog import gets its own
+    // "which file was this from" record instead of one shared for the batch.
+    expect(recorded.sourceImportCreates).toHaveLength(1);
+    // Hashed directly from the same bytes the caller passed in, so a bug that
+    // hashes the parsed sheet (or anything else) instead of the raw upload
+    // would change this value and fail the assertion.
+    expect(recorded.sourceImportCreates[0]?.workbookSha256).toBe(
+      createHash("sha256").update(rawBytes).digest("hex"),
     );
+
+    expect(
+      recorded.upserts.every((u) => u.sourceImportId === "source_import_1"),
+    ).toBe(true);
   });
 });
