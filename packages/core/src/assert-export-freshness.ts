@@ -13,9 +13,19 @@ export type AssertExportFreshnessDeps = {
 };
 
 export type AssertExportFreshnessInput = {
+  /**
+   * Not read by this function — every `deps` lookup is keyed by
+   * `listingId`/`sourceImportId` alone. Carried on the input for interface
+   * fidelity with the caller that will wire real deps in later: tenancy
+   * scoping happens entirely by how that caller closes over a
+   * workspace-bound transaction when constructing `AssertExportFreshnessDeps`
+   * (the same pattern every `packages/db` repository uses), not by this
+   * pure function checking the id itself.
+   */
   workspaceId: string;
   listingId: string;
   expectedSourceImportId: string;
+  /** Compared against `PlatformProductLink.contentDigest` — same value, named from the caller's point of expectation rather than the port's point of storage. */
   expectedRowDigest: string;
   expectedVersionId: string;
   /**
