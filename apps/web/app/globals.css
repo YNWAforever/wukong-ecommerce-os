@@ -1206,3 +1206,6 @@ button:disabled {
   border-color: var(--line);
   box-shadow: 0 2px 8px rgb(24 36 50 / 6%);
 }
+.admin-tab-panel {
+  color: var(--ink);
+}
