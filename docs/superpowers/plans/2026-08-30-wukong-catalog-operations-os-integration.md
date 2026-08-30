@@ -251,3 +251,325 @@ Rendered as one structured entry per route rather than a single wide table — t
 | Site (`wukonggpt`) design tokens, IA, component layout | **Extend into existing plain-CSS system** | Adopt confirmed tokens/layout into the runtime's existing CSS-custom-property approach (§4); do not introduce Tailwind/shadcn into the runtime to match the Site's stack — the Site's own stack is irrelevant to the runtime's implementation (master instruction §6). |
 | Site's own auth/data-fetching code | **Retire (do not port)** | The Site has no working backend of any kind — nothing here to reuse beyond visual reference; porting its "prototype" states or copy into the connected runtime would be a regression (§1, §4). |
 | `/pilot`, `/queue`, `/batches` (read), `/jobs`, `/quality`, `/system-map`, admin's 4th tab | **New** (Proposed) | No existing runtime artifact to reuse beyond named components noted above; build per §5's per-route contract. |
+
+---
+
+## 7. Confirmed gaps, contradictions and blockers
+
+Each entry: conflicting claims → evidence for each side → operational/security consequences → recommended resolution → decision owner → stop-until-decided?
+
+### G1. Auth: "prototype" (Site) vs. real (runtime)
+- **Claims:** Site labels every auth screen unconnected/prototype (§4). Runtime has a fully functional, server-side-enforced auth system (§3).
+- **Evidence:** Site `auth-preview.tsx:214-220,288`; runtime `auth-flow.ts`, `auth.ts`, `0002_auth_access_rls.sql`.
+- **Consequence if mishandled:** copying the Site's "not available in prototype" messaging into the connected runtime would present real, working functionality as broken — a direct regression, explicitly forbidden by the master instruction.
+- **Resolution:** adopt the Site's layout/copy/IA verbatim except the disabled-state and prototype-banner elements; keep the runtime's real submit behavior. [**Proposed**]
+- **Decision owner:** runtime tech lead. **Stop until decided:** No — resolution is unambiguous from the master instruction's own rules.
+
+### G2. Five routes missing entirely from the runtime
+- **Claims:** Site defines `/queue`, `/jobs`, `/quality`, `/system-map`, and a `/batches` read view; master instruction's own hypothesis table already predicted these as Missing.
+- **Evidence:** §5, all five entries.
+- **Consequence:** none of these are security-relevant gaps (they're read-model absences), but `/dashboard`'s "gaps/risk/UAT overview" framing (master instruction §9) cannot be honest without at least `/quality` and `/jobs` feeding it.
+- **Resolution:** build per §5's individual contracts, in the order given in §16 (Packages D, F, I). [**Proposed**]
+- **Decision owner:** runtime tech lead. **Stop until decided:** No.
+
+### G3. Single-listing export (runtime) vs. batch changed-row export (Site)
+- **Claims:** Site depicts multi-product changed-row XLSX delivery from `/batches`/`/jobs`. Runtime's `deliverBulkForm` (`delivery-service.ts:540-556`) only ever writes one listing's row into one workbook per call.
+- **Evidence:** §3, §6.
+- **Consequence:** without a batch export, the Opak pilot cannot deliver a wave of enriched products in one file — the workflow language in §11 explicitly requires this.
+- **Resolution:** build the multi-product export as an additive capability on top of the existing single-row `createBulkFormUpdate` (§11 has the full spec), not a replacement. [**Proposed**]
+- **Decision owner:** Opak product owner + runtime tech lead (joint — this changes operator workflow). **Stop until decided:** No, but this is Package H and gates go-live.
+
+### G4. Freshness-gate depth: Site's hard 24/72h thresholds vs. runtime's absence of any explicit gate
+- **Claims:** Site shows source-freshness/fingerprint gates as a settled feature. Runtime has the raw data (`contentDigest`, `updatedAt`) but no function enforcing any threshold, hard-coded or attested.
+- **Evidence:** §3, §6; master instruction §11 explicitly says "Do not hard-code the Site's 24/72-hour thresholds until Opak approves them."
+- **Consequence:** shipping the batch/review/export features without this gate risks reviewing or exporting against a stale, superseded source row — the single highest-severity risk in the whole plan (data correctness against a live merchant catalog).
+- **Resolution:** build an explicit attended freshness attestation (a human confirms "this export is based on a SHOPLINE export taken today") rather than any hard-coded time window, per the master instruction's own directive. [**Proposed**]
+- **Decision owner:** Opak product owner (must approve the attestation UX and, eventually, any time-based policy). **Stop until decided:** **Yes** — production rollout must not proceed without this gate; see §18/§19.
+
+### G5. Eight-field review breadth: "partial" (assumed) vs. "entirely absent" (confirmed)
+- **Claims:** Master instruction's own hypothesis: "the inspected runtime review UI does not expose every SEO/keyword field written by export" (implying partial coverage). Confirmed finding: **zero** of the eight fields are exposed anywhere in the review UI — it is a completely separate 16-field wine-listing model.
+- **Evidence:** §1, §5 (`/listings/[id]`), §7 raw citations (subagent 3).
+- **Consequence:** this is larger and more central than the master instruction assumed — it's not a UI-completeness gap, it's a missing subsystem. Scope and estimate for Package G (§16) should reflect "build a new review mode," not "add missing fields to an existing form."
+- **Resolution:** extend the existing review/approval/version machinery with a second review mode targeting the 8 fields, sourced from `platform_products`/evidence rather than `CanonicalListing` (§9 ADR-8, §11). [**Proposed**]
+- **Decision owner:** runtime tech lead. **Stop until decided:** No, but re-scope estimates in any downstream planning to reflect this correction.
+
+### G6. Workbook format: inline-string worry (assumed) vs. sheet-name mismatch (confirmed)
+- **Claims:** Master instruction worried the runtime's inline-string XLSX writer might not match a genuine SHOPLINE export. Confirmed: the real export **also** uses inline strings with no shared-strings table — that part matches. What does **not** match is the sheet name: the writer hardcodes `"Sheet1"` (`bulk-form-xlsx.ts:316`) while the real export's sheet is named `"Default"`.
+- **Evidence:** §1, §2, §11.
+- **Consequence:** if SHOPLINE's own bulk-update importer validates the sheet name (unknown — genuinely unverifiable from this codebase), every generated export would fail re-import silently or loudly, with zero existing test coverage to catch it.
+- **Resolution:** change the hardcoded literal to `"Default"` (a one-line, low-risk fix) and add a UAT step (§18) that specifically verifies SHOPLINE accepts a generated file's sheet name. [**Proposed**]
+- **Decision owner:** runtime tech lead (the code fix); Opak product owner (confirms UAT passes). **Stop until decided:** **Yes for production export** — do not ship the export feature until this is UAT-verified; the code fix itself can land immediately as a no-risk change.
+
+### G7. Variant ID gating: assumed blocker vs. confirmed non-blocking warning
+- **Claims:** Master instruction: "A non-empty Variant ID must block this Opak pilot until a real variant contract and round trip are validated." Confirmed: `parseRow` treats a non-empty Variant ID as a warning only; the row is processed normally, and no downstream file gates on it at all.
+- **Evidence:** §1, §11.
+- **Consequence:** any product row with a variant currently flows through the full pipeline (enrichment, review, export) with no real block — directly contradicting an explicit pilot-safety requirement in the master instruction.
+- **Resolution:** add an explicit hard block (not just a warning) wherever a non-empty Variant ID is detected, until variant support is separately validated. [**Proposed**, urgent]
+- **Decision owner:** runtime tech lead. **Stop until decided:** **Yes** — this must be fixed before any real Opak data (which may contain variant rows) is processed in a live pilot.
+
+### G8. Two overlapping master-instruction documents on the same repo
+- **Claims:** This plan fulfills the Catalog Operations OS master instruction (adopt Site IA). A separate, still-live Frontend Revamp master instruction (v2.0, `docs/product/Wukong_Ecommerce_OS_Product_Frontend_Revamp_ChatGPT_Master_Instruction.md`, dated 26 Aug 2026) targets overlapping surface (auth layout, dashboard, review UI) with its own 25 findings and its own required baseline artifacts.
+- **Evidence:** §2, §7 (subagent 5).
+- **Consequence:** if both are executed independently without coordination, they could produce conflicting ADRs or duplicate work on the same components (e.g., both touch the review UI's "background choice" defect and the dashboard's hard-coded-identity finding).
+- **Resolution:** before Package B (§16) begins, reconcile the two documents' overlapping scope explicitly — likely by treating the Frontend Revamp instruction's 25 findings as additional inputs to this plan's §7/§19 rather than a fully separate execution track. [**Proposed**]
+- **Decision owner:** whoever owns both documents (**Unverified** — likely the same person who authored both, but not confirmable from repo evidence alone). **Stop until decided:** **Yes**, before any implementation PR that touches auth layout, dashboard, or review UI — to avoid two uncoordinated efforts colliding.
+
+### G9. Dual role-enforcement mechanisms
+- Covered fully in §3/§6 (Refactor-in-place disposition). **Decision owner:** runtime tech lead. **Stop until decided:** No — low-risk mechanical fix, not a blocker.
+
+### G10. CSRF/secure-cookie configuration unverifiable
+- **Claims:** No explicit CSRF/secure-cookie configuration exists in application code; behavior depends entirely on Better Auth's defaults, which are not inspectable from this repo (package not present in a resolvable `node_modules`).
+- **Consequence:** cannot state with confidence that CSRF protection or secure-cookie attributes meet the master instruction's explicit security requirements (§9's authentication list).
+- **Resolution:** verify Better Auth's actual defaults directly (read the installed package version's source, or its changelog/docs for the pinned version) as a Package C task, and add explicit `trustedOrigins`/cookie-attribute configuration if the defaults are insufficient. [**Proposed**]
+- **Decision owner:** runtime tech lead. **Stop until decided:** **Yes for production** — this must be confirmed, not assumed, before the auth work in Package C is called complete.
+
+### G11. `/listings/new` wiring to Bulk Update import is unconfirmed
+- Covered in §5. **Decision owner:** runtime tech lead. **Stop until decided:** **Yes** — resolve before any UI work on this route (Package E), since building on top of an unconfirmed wiring risks building on the wrong foundation.
+
+### G12. Batch wave-size cap (1–5) enforcement location unconfirmed
+- Covered in §5 (`/batches`). **Decision owner:** runtime tech lead. **Stop until decided:** **Yes for production** — the master instruction explicitly requires backend enforcement, not UI-only; must be confirmed or added before Opak UAT (§18).
+
+### G13. `/admin` Site-side stuck-loading anomaly
+- **Claims:** the live Site's `/admin` route never rendered its content during this audit's crawl session.
+- **Consequence:** none for the runtime (this is purely a Site-side observation) — but it means this plan's "Site inventory" for `/admin`'s 4th tab concept rests on inspecting inert markup, not a live render.
+- **Resolution:** a human should interactively re-check the Site's `/admin` route before this plan's "System Truth" tab concept (§9 ADR-11) is treated as fully understood. [**Proposed**]
+- **Decision owner:** whoever owns the Site repo. **Stop until decided:** No — doesn't block runtime work, only refines the Site-side reference.
+
+---
+
+## 8. Target information architecture and component ownership
+
+**Tokens and ownership (extends existing plain CSS, §4, §6):** add the confirmed Site custom properties (`--canvas: #f6f4ef`, `--navy: #17324d`, `--text: #182432`, `--border: #dfe2e1`, `--muted: #5f6e7b`, plus the CTA/hover/active-accent trio, currently inline Tailwind-style in the Site but which should become real CSS custom properties in the runtime's own `globals.css` rather than inline literals) to the existing CSS-custom-property system already in `apps/web/app/globals.css`. Card radius should be a single named token (e.g. `--radius-card: 16px`) rather than inherited from an unrelated framework default, since the runtime has no Tailwind dependency to inherit it from in the first place.
+
+**Shared page shell / route layout boundaries:** `apps/web/app/(app)/layout.tsx` already exists as the authenticated shell and already performs role-aware nav gating (§3) — extend it with the Site's confirmed nav structure (7 items + admin + system-map) rather than creating a second shell.
+
+**Role-aware navigation:** the shell should hide/show nav entries based on `roleOrder`, consistent with the existing `requireWorkspaceRole` mechanism — not a new, separate visibility system.
+
+**Session-derived workspace/operator identity:** already correctly server-derived (§3) — no change needed to the mechanism, only to what's rendered (avoid hard-coding "Opak Cellar" anywhere in shared shell copy; the Frontend Revamp master instruction's finding #1 already flags this exact issue, corroborating this independently, §7 G8).
+
+**Workspace-specific Opak/pilot labels from configuration:** extend `workspaces.profile`/settings (already a jsonb column per §3) rather than hard-coding merchant-specific copy into shared components.
+
+**Loading/empty/error/stale/conflict/retry states:** none of the new routes (`/queue`, `/jobs`, `/quality`, `/batches` read, `/system-map`) currently have any state handling to reuse — each must be built with all six states from the start, following the pattern already used correctly in the existing review UI's stale-version 409 handling (§3) as the template for "conflict" states specifically.
+
+**Accessible drawer/dialog/table/card patterns:** the Site's confirmed mobile pattern (sidebar → bottom-nav collapse at the `lg` breakpoint, plus a hamburger drawer revealing the full nav) should be adopted as the responsive pattern; the runtime has no existing drawer component to reuse, so this is new, plain-CSS-based work (§9 ADR-3).
+
+**Desktop/375px acceptance captures and visual-regression scope:** every route in §5 needs both viewports captured at minimum; routes marked Partial or Missing need before/after captures once built.
+
+**Skip link:** **[Unverified]** whether the current authenticated shell (`apps/web/app/(app)/layout.tsx`) has a skip link — no subagent was asked to check this specifically. Add one if confirmed missing, per master instruction §7's explicit accessibility requirement.
+
+---
+
+## 9. Proposed ADRs
+
+All twelve marked **Proposed**. Decision owners are roles (runtime tech lead / Opak product owner), not named individuals, per this plan's own constraint against inventing personnel.
+
+### ADR-1: Site-to-runtime adoption and anti-rewrite strategy
+- **Context:** the Site is UX/IA reference only, with no working backend (§4); the runtime has a mature, mostly-correct backend (§3) but a stale/incomplete frontend relative to the Site's IA.
+- **Decision:** adopt the Site's layout, IA, copy, and design tokens into the existing Next.js/plain-CSS runtime; never port the Site's own code, never introduce Tailwind/shadcn into the runtime.
+- **Alternatives considered:** rebuild the frontend from the Site's codebase directly (rejected — would require introducing Tailwind/shadcn and abandoning working, tested runtime components); leave the frontend as-is and only fix backend gaps (rejected — the master instruction explicitly requires IA adoption).
+- **Consequences:** more translation work up front (manually re-implementing Site layouts in plain CSS) but zero risk of regressing working backend logic.
+- **Compatibility:** fully backward compatible — existing routes keep working throughout.
+- **Security effect:** none directly; indirectly reduces risk by not introducing a second styling framework's attack surface (e.g. Tailwind's arbitrary-value class injection surface, however small).
+- **Migration path:** route-by-route, per §16's package sequence.
+- **Reversal trigger:** if plain-CSS translation of the Site's more complex components (e.g. the review diff layout) proves substantially more expensive than expected, revisit component-by-component (not wholesale) adoption of a scoped CSS utility layer — but this would be a narrow, evidenced exception, not a default.
+- **Decision owner:** runtime tech lead.
+
+### ADR-2: Route ownership and backward-compatible IA
+- **Context:** `/listings/new`'s current wiring is unconfirmed (§5, §7 G11); the Site's IA implies it should primarily serve Bulk Update import, with new-product creation split out.
+- **Decision:** confirm current wiring first (Package E task); if it still targets new-listing intake, split into `/listings/new` (Bulk Update import, primary) and a separate route for new-product creation (blocked for this pilot per master instruction §9), preserving existing deep links via redirect rather than breaking them.
+- **Alternatives:** tab the two flows within one route (rejected — the Site's IA already shows them as separate tabs within intake, which this decision's "split" language should actually match — see note below); leave as-is (rejected if wiring is confirmed wrong).
+- **Note:** re-reading the Site's own IA (§5 `/listings/new`), it actually uses a 3-tab layout (Existing products / Supporting evidence / New products) within **one** route, not separate routes. This ADR's decision should therefore default to matching that: one route, tabbed, New-products tab disabled/blocked — not a route split — unless the wiring-confirmation task reveals a technical reason a split is required.
+- **Consequences:** matches the Site's already-designed IA with minimal structural change.
+- **Compatibility:** depends on confirmed current wiring (§7 G11) — must be resolved before this ADR can be finalized.
+- **Security effect:** none.
+- **Migration path:** Package E.
+- **Reversal trigger:** if the wiring-confirmation task reveals `/listings/new` already serves a different, incompatible purpose that can't be safely tabbed.
+- **Decision owner:** runtime tech lead.
+
+### ADR-3: Plain-CSS design tokens and component reuse
+- **Context:** §8.
+- **Decision:** add the confirmed Site tokens as real CSS custom properties in `apps/web/app/globals.css`; build new responsive/drawer patterns in plain CSS, matching the runtime's existing approach.
+- **Alternatives:** a scoped CSS-in-JS or utility-class layer (rejected — deviates from the existing, working plain-CSS convention for no functional benefit).
+- **Consequences:** consistent styling approach repo-wide; some manual translation effort for the Site's more complex responsive patterns.
+- **Compatibility:** additive, no breaking change to existing pages.
+- **Security effect:** none.
+- **Migration path:** Package B.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-4: zh-HK/English localisation architecture
+- **Context:** the Site's i18n is a stateless, non-persistent, in-memory locale toggle with inline `t(zh,en)` call sites (§4) — genuinely reasonable for a design-reference Site, but not adequate for a real product (no persistence, reverts on every navigation).
+- **Decision:** the runtime should implement locale persistence via an approved cookie/user preference (master instruction §12), keeping the Site's simple `t(zh,en)` inline-call-site pattern for translation itself (it's not wrong, just needs a persistence layer added) rather than introducing a full i18n framework/library.
+- **Alternatives:** adopt a full i18n library (e.g. next-intl) with message catalogs (rejected as unnecessary complexity for a two-locale, inline-string-based system that already works acceptably at the Site-reference level); keep the Site's exact non-persistent behavior (rejected — master instruction explicitly requires persistence).
+- **Consequences:** modest new code (a cookie-backed locale preference + provider), no new dependency.
+- **Compatibility:** additive.
+- **Security effect:** cookie must be validated/sanitized (only two valid values) to avoid any injection surface, however minor.
+- **Migration path:** Package B.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-5: Public landing/auth/protected-app boundary
+- **Context:** `/`, `/signin`, `/pilot` boundary is explicitly called out in the master instruction as needing an explicit decision, particularly to avoid duplicating the separate `wukong-ops-suite` public marketing app (§2, §5 `/pilot`).
+- **Decision:** `/` and `/signin` remain part of this runtime (already functional, low risk, §5); `/pilot` ownership is **not decided in this plan** — it requires the decision owner named in §21 to confirm whether `wukong-ops-suite` already covers this content before any `/pilot` route is built here.
+- **Alternatives:** build `/pilot` here regardless (rejected until ownership is confirmed — risk of duplicating a marketing surface).
+- **Consequences:** `/pilot` work is blocked, not merely deprioritized, until this is resolved.
+- **Compatibility:** N/A (new route).
+- **Security effect:** none.
+- **Migration path:** blocked, see §21.
+- **Reversal trigger:** N/A.
+- **Decision owner:** product/marketing owner (outside this plan's scope to name more specifically).
+
+### ADR-6: Workspace-derived identity and tenant-specific Opak policy
+- **Context:** shared shell copy risks hard-coding "Opak Cellar" (§8, corroborated independently by the separate Frontend Revamp instruction's finding #1, §7 G8).
+- **Decision:** all merchant-specific copy (workspace name, Opak-specific labels, claim-policy rules) must be read from `workspaces.profile`/settings, never hard-coded in shared shell/nav components.
+- **Alternatives:** leave Opak-specific copy hard-coded since Opak is currently the only tenant (rejected — directly contradicted by an already-identified defect in a sibling planning document).
+- **Consequences:** small refactor of any currently-hard-coded shell copy.
+- **Compatibility:** additive/refactor, no behavior change for the existing single tenant.
+- **Security effect:** none.
+- **Migration path:** Package B.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-7: Page view models and API contracts
+- **Context:** several existing endpoints (catalog, listings list) return data shapes that omit fields the DB actually has (`createdAt`/`updatedAt`/`contentDigest` omitted from `CatalogItem`, §3, §5).
+- **Decision:** extend existing view-model types rather than replacing them; add fields additively so existing consumers don't break.
+- **Alternatives:** introduce a new, parallel API version (rejected — unnecessary given additive extension is safe here).
+- **Consequences:** minor type changes across `catalog-contract.ts` and its consumers.
+- **Compatibility:** additive.
+- **Security effect:** ensure no newly-exposed field leaks cross-workspace data — covered by existing RLS regardless (§3).
+- **Migration path:** Package D.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-8: Bulk Update import-session, digest, diff, review and export architecture
+- **Context:** the core architectural decision of this whole plan — how the eight-field review (§7 G5) and the freshness gate (§7 G4) get built.
+- **Decision:** add a second review "mode"/component parallel to the existing wine-listing review UI, sourced from `platform_products` + a new evidence/diff structure for the 8 fields, reusing the existing version-concurrency and audit machinery (§6) rather than building parallel concurrency logic.
+- **Alternatives:** retrofit the existing 16-field review UI to also handle the 8 Bulk-Update fields in one unified form (rejected — the two field sets, sources, and domain models are unrelated; forcing them into one UI risks confusing operators about which fields belong to which SHOPLINE artifact); build an entirely separate app/service (rejected — unnecessary duplication of auth/RLS/audit machinery that already works).
+- **Consequences:** a genuinely new UI surface, the single largest build item in this plan (§16 Package G).
+- **Compatibility:** additive — existing wine-listing review is untouched.
+- **Security effect:** must inherit the same RLS/role/audit guarantees as the existing review UI — no new security model to invent.
+- **Migration path:** Package G, gated on Package E (freshness gate).
+- **Reversal trigger:** none anticipated (this is core scope, not an experiment).
+- **Decision owner:** runtime tech lead + Opak product owner (joint — this defines the operator's actual workflow).
+
+### ADR-9: Workbook preservation versus minimal XLSX generation
+- **Context:** master instruction §11 requires comparing (1) patching the fresh `Default` workbook in place, preserving its package structure/styles/validations, vs. (2) continuing deterministic minimal generation (the current approach) only after real SHOPLINE UAT proves zero identifier/numeric-format damage.
+- **Decision (Proposed, pending UAT evidence, §18):** continue with deterministic minimal generation for now (fix the sheet-name bug, §7 G6), since the current generator already demonstrates strong correctness guarantees (no numeric coercion, exact header match, §11) — but this decision is explicitly conditional on the sheet-name-fixed version passing real SHOPLINE UAT (§18). If UAT reveals SHOPLINE rejects the minimal-generation approach for reasons beyond the sheet name, switch to workbook-patching as the fallback.
+- **Alternatives:** patch the real workbook now, before UAT (rejected — significantly more complex, unjustified without evidence the minimal approach fails).
+- **Consequences:** UAT (§18) becomes the actual gating decision point, not this document.
+- **Compatibility:** N/A until UAT.
+- **Security effect:** workbook-patching would need to defend against formula-injection in preserved cells (§15) if ever adopted — noted as a future consideration, not applicable to the current minimal-generation approach (which never preserves formulas).
+- **Migration path:** contingent on §18.
+- **Reversal trigger:** SHOPLINE UAT failure on the minimal-generation approach for reasons other than the sheet name.
+- **Decision owner:** Opak product owner (owns the UAT go/no-go).
+
+### ADR-10: Batch/job/quality read models
+- **Context:** three missing read models (§5 `/batches`, `/jobs`, `/quality`) share a common shape (list + detail over an operational entity).
+- **Decision:** build a shared "operational ledger" read-model pattern (paginated list + detail, consistent status vocabulary) once, and instantiate it three times, rather than three bespoke implementations.
+- **Alternatives:** three independent implementations (rejected — unnecessary duplication given the shared shape).
+- **Consequences:** slightly more upfront design work, less duplicated code.
+- **Compatibility:** additive.
+- **Security effect:** each instantiation must independently apply workspace-scoped RLS — the shared pattern must not weaken this per-entity.
+- **Migration path:** Package F/I.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-11: Capability registry, feature flags and truthful states
+- **Context:** `/admin`'s proposed 4th tab and `/system-map` both need a single source of truth for Live/Pilot/Planned/Blocked capability state (§5, §8); the Site's own `/system-map` claims should not be trusted as that source (§5).
+- **Decision:** build one capability-registry data source (could be as simple as a small config table or a typed constant list reviewed alongside code changes) consumed by both `/admin`'s tab and `/system-map`, keeping `SHOPLINE_PUBLISH_ENABLED=false` visible and enforced as one of its entries.
+- **Alternatives:** two independent implementations (rejected, duplicated truth-source risk); a fully dynamic runtime-introspection system (rejected as overkill for the current scale).
+- **Consequences:** a new, small, shared module.
+- **Compatibility:** additive.
+- **Security effect:** must not leak infrastructure details (e.g. real Cloudflare resource names, §15) through this registry — capability state only, no configuration values.
+- **Migration path:** Package I.
+- **Reversal trigger:** none anticipated.
+- **Decision owner:** runtime tech lead.
+
+### ADR-12: Rollout, reconciliation and rollback
+- **Context:** the master instruction's UAT staging (1–5 → 30–50 → 50–100 → catalog-scale, §11, §18) needs an explicit rollback story at each stage.
+- **Decision:** every stage's rollback is "stop importing/enriching, existing approved-and-delivered listings remain untouched, no automatic reversal of already-completed SHOPLINE writes" — consistent with the existing production-readiness runbook's rollback philosophy (§3, subagent 5 findings on `production-readiness.md`).
+- **Alternatives:** an automated rollback that reverts already-written SHOPLINE products (rejected — SHOPLINE writes require separate authorization and reversing them automatically is out of scope and risky).
+- **Consequences:** rollback is operationally simple (stop the pipeline) but does not undo committed merchant-facing changes — this must be communicated clearly to Opak.
+- **Compatibility:** N/A.
+- **Security effect:** none.
+- **Migration path:** applies at every stage of §18.
+- **Reversal trigger:** N/A (this is the reversal plan itself).
+- **Decision owner:** Opak product owner (must accept this rollback model before UAT begins).
+
+---
+
+## 10. Data model, API, RLS and audit contracts
+
+Chain: `UI → endpoint/method → minimum role → Zod request/response → domain service → repository → queue (if any) → audit event → idempotency/version key`.
+
+**Existing endpoints inventoried (reuse before proposing anything new):**
+| Action | Endpoint | Role | Service/Repo | Audit | Idempotency |
+|---|---|---|---|---|---|
+| Presign/finalize asset | `POST /api/assets/presign`, `/finalize` | operator+ | asset store + `source_assets` repo | `asset.finalized` | workspace-prefixed storage key |
+| Auth (password/magic-link/invite/recovery) | `/api/auth/*` | public/none | Better Auth + `auth-flow.ts` | auth events | eligibility-function-gated, generic responses |
+| Catalog read | `GET /api/catalog` | viewer+ | `platform-products.ts:listRecent` | none (read-only) | N/A |
+| Listing list/create/read | `/api/listings`, `/api/listings/[id]` | viewer+/operator+ | `listings.ts` | `listing.created` etc. | version-id keyed |
+| Listing process | `/api/listings/[id]/process` | operator+ | pipeline | pipeline audit | queue lease `listing:<ws>:<draft>:<seq>` |
+| Listing review (edit) | `PUT /api/listings/[id]/review` | operator+/reviewer+ (array-allowlist, §7 G9) | `editReview` | `listing.edited` ×2 | `baseVersionId` optimistic concurrency |
+| Flag resolve | `POST /api/listings/[id]/flags/resolve` | reviewer+ (array-allowlist) | `resolveFlag` | `compliance.flag_resolved` | `versionId` optimistic concurrency |
+| Approve / bulk-approve | `/api/listings/[id]/approve`, `/api/listings/bulk-approve` | reviewer+ (array-allowlist) | `approveOne`/`promoteAndApprove` | `listing.approved` ×3, `listing.transition` | version-id, double-checked |
+| Deliver (CSV/API/bulk-form) | `/api/listings/[id]/deliver` | reviewer+ (array-allowlist) | `delivery-service.ts` | delivery audit | publish-job idempotency key |
+| XLSX import | `bulk-form-import.ts` (invocation route **unconfirmed**, §7 G11) | operator+ (assumed) | `bulk-form.ts`/`bulk-form-import.ts` | import audit (on refresh only, §3) | `contentDigest` comparison |
+| Enrichment batch create/advance | (route names not directly captured by subagents; confirmed to exist per `enrichment-batch-service.ts` and its design docs) | operator+ (assumed) | `enrichment-batch-service.ts` | **[Unverified]** | **[Unverified]** |
+| Compliance resolution | see flag resolve above | — | — | — | — |
+| Workspace members/invites/settings/connection | `/api/workspace/*` | admin (consistently `requireWorkspaceRole("admin", ...)`) | `memberships.ts`, connection/settings repos | membership audit | N/A |
+
+**Gaps to close (new contracts, per master instruction §10):**
+- `GET /api/catalog` — add pagination (`cursor`/`limit`), `q` search param, cohort filter, and source-freshness/eligibility fields in the response (§7 G-none directly, but §5/§6 `/catalog`).
+- `GET /api/batches`, `GET /api/batches/[id]` — list/detail read contract (§5/§9 ADR-10).
+- `GET /api/jobs` — ledger read contract spanning import/batch/export/manual-SHOPLINE-confirmation (§5/§9 ADR-10).
+- `GET /api/quality` — read contract over `ai_runs`/`field_evidence`/edit-distance (§5/§9 ADR-10).
+- `POST /api/listings/bulk-export` (name Proposed) — multi-product changed-row XLSX (§11).
+- `POST /api/listings/[id]/shopline-import-result` (name Proposed) — manual SHOPLINE import-result recording/reconciliation (§11, §18).
+- Source-import freshness/fingerprint enforcement — a new domain-service function (name Proposed: `assertExportFreshness`) called from the export endpoint before any file is generated (§11).
+
+**Schema-change discipline (per any of the above that need new columns/tables):** expand/contract migration strategy, explicit indexes/uniqueness, RLS policy + cross-workspace negative test, backfill/default semantics, compatibility window, audit behavior, rollback — each new table (e.g. a `batches`/`jobs` read-model table if not already covered by existing schema) must specify all of these in its own implementation PR, not deferred to "later."
+
+---
+
+## 11. Opak 71-column Bulk Update contract
+
+**Confirmed workflow language (per master instruction, now cross-checked against real code, §7 G3–G7):** Fresh SHOPLINE export → import immutable snapshot → choose content-gap cohort → attended AI enrichment → evidence/diff review → approval → changed-row XLSX → manual SHOPLINE import → import confirmation and reconciliation. **Never label XLSX generation as "published"** — the runtime already keeps these conceptually separate (no code path conflates them), but no UI currently surfaces either state distinctly since the `/jobs` ledger doesn't exist yet (§7 G2).
+
+**Field classification — fully confirmed against the real workbook, exact match, zero discrepancies:**
+- **10 locked fields**, echoed verbatim: `productId, quantity, variantId, variantEn, variantZh, variantQuantity, slStockId, warehouse, slKey0, slKey1` — `BULK_FORM_LOCKED_COLUMNS`, `packages/shopline/src/bulk-form.ts:251-262`.
+- **8 AI-writable fields**: `nameZh, summaryEn, summaryZh, seoTitleEn, seoTitleZh, seoDescriptionEn, seoDescriptionZh, seoKeywords` — `BULK_FORM_ENRICHABLE_COLUMNS`, `bulk-form.ts:270-279`. `nameEn` correctly excluded (Opak identity/search handle, per code comment).
+- **2 neutral-only stock deltas**: `updateQuantity, updateVariantQuantity` — `QUANTITY_DELTA_COLUMNS`, `bulk-form.ts:292-295` (module-private).
+- **51 pass-through fields** — everything else, correctly never AI-written (confirmed: no code path writes to any of the 51 outside the export echo).
+
+**Important nuance not previously documented anywhere in the repo:** the locked/pass-through distinction is not separately enforced at runtime — both classes are treated identically (echo original value, reject any write attempt with the same error code). This is functionally correct (locked fields are never writable either way) but means `BULK_FORM_LOCKED_COLUMNS` is presently vestigial — exported but unused outside its own test. **[Proposed]** no code change is required (behavior is already correct), but this should be documented in code as intentional, not left to look like dead code.
+
+**Workbook invariants — status against master instruction's checklist:**
+- Full ordered bilingual header contract: **Confirmed exact match** (§2, §11 above).
+- Sheet identity/header rows/data start row/cell types: **Confirmed structure matches** (`Default`, rows 1-2 headers, row 3+ data, inline strings) — **except** the generated file's sheet name (`"Sheet1"`, §7 G6), which is the one confirmed, previously-unflagged mismatch.
+- Identifiers preserved as strings (leading-zero SKU/Barcode, alphanumeric/blank Barcode): **Confirmed** — structural guarantee, no `Number()`/`parseInt` anywhere in the read/write path.
+- Blank/null/`0`/`0.0`/`+0` preserved as distinct raw states: **Confirmed for 61 of 71 columns** (locked + pass-through); **the 2 delta columns are a deliberate, documented exception** — any non-null value collapses to literal `"+0"` on export (§7's raw findings, subagent 4 finding #11).
+- Sale Price `0`/`0.0` treated as "no sale," raw cell preserved on pass-through: **[Unverified]** — no subagent traced this specific downstream interpretation logic; flag as a task-11 verification item.
+- Raw inventory `-1` and literal `無限數量` preserved, normalized interpretation shown separately, never export normalized `0` over raw source: **[Unverified]** — not directly traced by any subagent; `unlimitedQuantity` is read as a flag (`parseRow:694`) but whether the raw pass-through preserves `無限數量` verbatim on export specifically (vs. just being covered by the general blank/pass-through preservation rule) needs direct confirmation.
+- Multi-path category cells and in-cell newlines preserved: **[Inferred]** — `onlineStoreCategories` is parsed (`parseRow:745-757`) and is a pass-through column, so it should be preserved verbatim by the same general rule as other pass-through columns, but this specific case (multi-path with `>` delimiter and possible embedded newlines) was not separately spot-tested by any subagent.
+- Cost fields excluded from AI prompts: **Confirmed** — `bulk-form-source.ts:19-22`'s `SourceColumn` type explicitly excludes `productCost`/`variantCost` and all 8 enrichable columns from the AI-facing source render.
+- Product Summary ≠ full Product Description: **Confirmed by field naming and scope** — `summaryEn`/`summaryZh` are the only summary-adjacent enrichable fields; no separate "description" field exists in the Bulk-Update contract at all (consistent with the master instruction's own framing).
+- No Images field in the Bulk Update form: **Confirmed** — no image-related column exists anywhere in the 71-column contract, and subagent 7's live crawl confirmed the Site's own `/listings/[id]` review UI shows "no image change exists in this Bulk Update file" as an explicit confirmation-ledger item.
+- Non-empty Variant ID must block: **NOT currently true** (§7 G7) — this is the plan's most urgent code-level fix.
+- Listing must have a `platform_products` remote Product ID link to be Bulk-Update-eligible: **Confirmed as the data model's actual shape** (§3) — `platform_products.origin` distinguishes `import` vs `created`, and only `import`-origin rows carry the SKU/spec-version/raw-row/digest data the Bulk Update flow needs.
+
+**Immutable source-import and freshness gate — status: data model exists, enforcement function does not (§1, §7 G4).** The durable record (`platform_products`: `specVersion`, `rawRow`, `contentDigest`, timestamps) has everything except an explicit merchant-attested SHOPLINE export timestamp and importer/import-timestamp fields as distinct concepts (currently conflated with `createdAt`/`updatedAt`). **Proposed:** add an explicit `sourceImportId` entity (a new table or a repurposed existing one — **Unverified** whether one already exists under a different name; a direct schema-wide search for "import" in `schema.ts` beyond `platform_products` was not performed by any subagent and should be a Package E task before assuming a new table is needed) binding `workspaceId + shoplineConnectionId + filename + workbookSha256 + headerContractSha256 + sheetName + rowCount + merchantAttestedExportTimestamp + importerUserId + importTimestamp + specVersion + ordered row digests`. Bind every batch item/version/review/approval/export manifest to `sourceImportId + remoteProductId + sourceRowDigest + activeVersionId`. At export, block unless: source freshness satisfies an attended attestation (not a hard-coded threshold, §7 G4); active version equals reviewed version; stored digest equals reviewed digest; header fingerprint/spec version match; workspace/connection/source-contract compatibility; a fresh SHOPLINE export was imported immediately before UAT generation specifically (a UAT-only rule, not a production rule).
+
+**Review confirmation and invalidation — status: version-concurrency exists, field-specific confirmation ledger does not (§1, §7 G5).** Proposed atomic approval request: `{expectedVersionId, sourceImportId, expectedSourceRowDigest, confirmationLedgerRevision}` — directly extends the existing `versionId`-checked approval pattern (§3, §10) with two more required-match fields. The confirmation ledger itself must cover, per field, before/after/evidence for each of the 8 fields, plus the negative confirmations (prices/membership/category/status/supplier/stock unchanged, both deltas neutral, no image change) — the Site's `/listings/[id]` review UI already demonstrates the intended shape of most of these confirmations visually (§5), giving a concrete UI target. Invalidate approval on any content/evidence/AI-output/version/digest change; a same-digest re-import may preserve approval only with a fresh freshness attestation recorded.
+
+**Multi-product changed-row XLSX — status: does not exist (§7 G3).** Must: emit the same 2 header rows; include only products with ≥1 approved change; include all 71 cells per included product; restrict differences to the 8 whitelisted cells; prove the 10 locked + 51 pass-through cells are byte-identical to the fresh source; neutralize the 2 delta cells (already implemented correctly for single-row export, §11 above — reuse the same neutralization logic); exclude and report no-op products; reject mixed source contracts/stores/stale rows; produce a manifest (product count, changed-cell counts per field, excluded rows, neutralized deltas, source/output digests, version IDs); reparse the generated workbook before download and assert every invariant. **ADR-9 governs whether this patches the fresh workbook or continues minimal generation** — recommend minimal generation (matching the existing single-row approach) pending UAT evidence either way.
+
+**Opak UAT and go/no-go (per master instruction §11, unchanged — backend enforcement required, not UI-only):**
+1. Attended contract UAT: 1–5 products — **this is the first real-world test of the sheet-name fix (§7 G6) and the Variant ID hard-block (§7 G7); both must land before this stage begins.**
+2. Golden set: 30–50 products.
+3. Shadow pilot: 50–100 products, two weeks, manual import only.
+4. Catalog-scale rollout only after written Opak sign-off.
+
+Acceptance requires (unchanged from master instruction, restated for completeness): 100% header/workbook acceptance; 100% intended-row import success with any partial success explicitly reconciled; zero identifier coercion; zero locked/pass-through changes; zero unintended stock/price/status/category/supplier changes; exactly the approved 8-field changes; complete audit evidence; a tested rollback source file. Production remains **No-Go** if any source/workbook/digest/approval/locked-field/delta/identifier/variant/compliance/partial-import/rollback/authorization gate is unresolved — and per this audit, several of those gates (freshness, Variant ID, sheet name) are currently unresolved, confirming the §1 verdict.
+
+Keep preview on `SHOPLINE_ADAPTER=mock` and production on `SHOPLINE_ADAPTER=disabled`/`SHOPLINE_PUBLISH_ENABLED=false` throughout — confirmed already enforced and unoverridable by the renderer (§3, subagent 5's `production-ai-runtime.md` finding). Real SHOPLINE writes require separate written authorization outside this plan, unchanged.
