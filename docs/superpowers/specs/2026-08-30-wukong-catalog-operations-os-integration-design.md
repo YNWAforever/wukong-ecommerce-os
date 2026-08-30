@@ -27,7 +27,7 @@ This document exists because that target is too large and too easy to get subtly
   - Dimension: `A1:BS502` → 71 columns (A–BS) × 502 rows → 2 header rows (English row 1, Traditional Chinese row 2) + 500 data rows
   - Header row 1/2 text fully extracted and matches the 71 field names named in the master instruction (`Product ID (DO NOT EDIT)` … `SL_KEY1(DO NOT EDIT)`)
   - First data row confirms: SKU stored as string with leading zero preserved (`0013`), delta column carries literal `+0` string, multi-path category stored as `Red Wine>Italy>Sicily` in one cell, numeric price/cost cells typed `t="n"`.
-  - **Reconciliation note for the plan:** the master instruction worried the runtime's XLSX writer using inline strings might not match a genuine SHOPLINE export. This real reference export *also* uses inline strings with no shared-strings table — so "inline strings" alone is not the risk signal. The actual risk to re-examine is the runtime rebuilding a bare `Sheet1` (wrong sheet name/minimal structure) rather than string-encoding choice. State this precisely in the contradiction-reconciliation section rather than repeating the original framing verbatim.
+  - **Reconciliation note for the plan:** the master instruction worried the runtime's XLSX writer using inline strings might not match a genuine SHOPLINE export. This real reference export _also_ uses inline strings with no shared-strings table — so "inline strings" alone is not the risk signal. The actual risk to re-examine is the runtime rebuilding a bare `Sheet1` (wrong sheet name/minimal structure) rather than string-encoding choice. State this precisely in the contradiction-reconciliation section rather than repeating the original framing verbatim.
   - This workbook file itself must never be committed, copied into the repo, or included in any code/config generated as part of this task.
 
 ## 3. Research fan-out
@@ -68,5 +68,6 @@ After all seven reports return, I reconcile them personally rather than concaten
 ## 7. Checkpoints
 
 Two pauses for user review are built into execution, not just a final one:
+
 1. After the seven research subagents return, before drafting begins.
 2. After the full 22-section draft exists, before the final self-review/quality-gate pass.

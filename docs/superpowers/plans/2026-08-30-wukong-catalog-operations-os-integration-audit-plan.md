@@ -21,6 +21,7 @@
 Use `subagent_type: general-purpose` for all seven (need Bash for git-clone and Browser tools for the live crawl; Explore's tool restrictions are too narrow for the cross-referencing agents 4 and 5 need to do). Every prompt below ends with the same three constraints — read-only, cite everything, flag rather than guess — do not drop them when dispatching.
 
 **Subagent 1 — Auth & workspace identity**
+
 ```
 Investigate authentication and workspace-identity code in the wukong-ecommerce-os repo at
 C:\Users\laich\Documents\WukongEommerce (git ref: main @ 765c616). Read and cite exact
@@ -51,6 +52,7 @@ conclusions beyond what the code shows — flag anything ambiguous instead of gu
 ```
 
 **Subagent 2 — Dashboard / Catalog / Admin**
+
 ```
 Investigate the dashboard, catalog, and admin surfaces in the wukong-ecommerce-os repo at
 C:\Users\laich\Documents\WukongEommerce (git ref: main @ 765c616). Read and cite exact
@@ -81,6 +83,7 @@ conclusions beyond what the code shows — flag anything ambiguous instead of gu
 ```
 
 **Subagent 3 — Listing review/approval workflow**
+
 ```
 Investigate the listing review and approval workflow in the wukong-ecommerce-os repo at
 C:\Users\laich\Documents\WukongEommerce (git ref: main @ 765c616). Read and cite exact
@@ -113,6 +116,7 @@ conclusions beyond what the code shows — flag anything ambiguous instead of gu
 ```
 
 **Subagent 4 — Opak Bulk Update contract code**
+
 ```
 Investigate the Opak SHOPLINE Bulk Update contract implementation in the wukong-ecommerce-os
 repo at C:\Users\laich\Documents\WukongEommerce (git ref: main @ 765c616). Read and cite exact
@@ -172,6 +176,7 @@ conclusions beyond what the code shows — flag ambiguity instead of guessing.
 ```
 
 **Subagent 5 — Docs, CI, tests**
+
 ```
 Investigate the documentation, CI, and test surface of the wukong-ecommerce-os repo at
 C:\Users\laich\Documents\WukongEommerce (git ref: main @ 765c616). Read and summarize with
@@ -201,6 +206,7 @@ of guessing.
 ```
 
 **Subagent 6 — Site (wukonggpt) code structure**
+
 ```
 Clone https://github.com/YNWAforever/wukonggpt read-only into
 C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\wukonggpt-site-src
@@ -228,6 +234,7 @@ Read-only after the clone: do not edit or push anything. Return a structured lis
 ```
 
 **Subagent 7 — Live Site crawl**
+
 ```
 Using the Browser tool, crawl https://wukong-catalog-ops.laichiwillyjp.chatgpt.site. For each
 of these routes — /, /signin, /register, /register/set-password, /forgot-password,
@@ -292,6 +299,7 @@ then re-summarize and wait again.
 ## Task 3: Draft Target Deliverable — Sections 1–6
 
 **Files:**
+
 - Create: `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Confirm the target file does not already exist**
@@ -354,6 +362,7 @@ git commit -m "docs: draft sections 1-6 of catalog operations os integration pla
 ## Task 4: Draft Target Deliverable — Sections 7–11
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Write Section 7 — Confirmed gaps, contradictions and blockers**
@@ -403,6 +412,7 @@ git commit -m "docs: draft sections 7-11 of catalog operations os integration pl
 ## Task 5: Draft Target Deliverable — Sections 12–17
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Write Section 12 — Authentication and public-entry plan**
@@ -451,6 +461,7 @@ git commit -m "docs: draft sections 12-17 of catalog operations os integration p
 ## Task 6: Draft Target Deliverable — Sections 18–22 and Closing Statement
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Write Section 18 — Rollout, Opak UAT, go/no-go and rollback**
@@ -496,6 +507,7 @@ git commit -m "docs: draft sections 18-22 and closing statement of catalog opera
 ## Task 7: Self-Review Against the Master Instruction's Own Quality Gates
 
 **Files:**
+
 - Modify (if fixes needed): `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Run the §19 plan-quality-gate checklist literally**
@@ -545,6 +557,7 @@ parts of Task 7's checklist before returning to this checkpoint.
 ## Task 9: Final Polish
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-08-30-wukong-catalog-operations-os-integration.md`
 
 - [ ] **Step 1: Apply any changes requested at Checkpoint 2**
