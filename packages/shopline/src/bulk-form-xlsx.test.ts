@@ -130,6 +130,14 @@ describe("bulk form xlsx adapter", () => {
     expect(read[0]).toEqual(["a", null, "c"]);
   });
 
+  it('names the generated worksheet "Default", matching a real SHOPLINE bulk-update export', () => {
+    const bytes = writeBulkFormWorkbook([["Product ID (DO NOT EDIT)"], ["001"]]);
+    const raw = Buffer.from(bytes).toString("latin1");
+    const sheetName = raw.match(/<sheet name="([^"]*)"/)?.[1];
+
+    expect(sheetName).toBe("Default");
+  });
+
   it("reads a workbook that stores its text in sharedStrings", () => {
     const bytes = zipOf([
       ...MINIMAL_PARTS,

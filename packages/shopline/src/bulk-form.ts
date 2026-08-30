@@ -356,7 +356,7 @@ export type BulkFormIssueCode =
   | "number_not_numeric"
   | "flag_not_recognized"
   | "categories_missing"
-  | "variant_row_ignored"
+  | "variant_row_blocked"
   | "quantity_delta_not_neutral";
 
 export type BulkFormIssue = {
@@ -627,14 +627,15 @@ function parseRow(
   if (raw.variantId !== null) {
     issues.push(
       issue(
-        "variant_row_ignored",
-        "warning",
+        "variant_row_blocked",
+        "error",
         rowNumber,
         "variantId",
         raw.variantId,
-        "variant columns are echoed but never enriched",
+        "row has a Variant ID; variant support is not yet validated for the Opak Bulk Update pilot",
       ),
     );
+    return null;
   }
 
   for (const column of QUANTITY_DELTA_COLUMNS) {
