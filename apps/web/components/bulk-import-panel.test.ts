@@ -1,6 +1,10 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BulkImportPanel,
   MAX_BULK_IMPORT_BYTES,
   submitBulkImport,
   validateBulkImportFile,
@@ -205,5 +209,56 @@ describe("submitBulkImport", () => {
       code: "unknown_error",
       message: "The import failed.",
     });
+  });
+});
+
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("BulkImportPanel", () => {
+  it("renders the real parsed/created/refreshed counts after a successful import", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          specVersion: "opak-2026-05",
+          parsedRows: 2,
+          createdDrafts: 2,
+          refreshedProducts: 0,
+          issues: [],
+        },
+        { status: 201 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    );
+    expect(input).not.toBeNull();
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.xlsx", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    // submitBulkImport awaits one fetch + one .json() call, so flush once more.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("2");
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
   });
 });
