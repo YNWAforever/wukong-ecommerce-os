@@ -573,3 +573,295 @@ Chain: `UI → endpoint/method → minimum role → Zod request/response → dom
 Acceptance requires (unchanged from master instruction, restated for completeness): 100% header/workbook acceptance; 100% intended-row import success with any partial success explicitly reconciled; zero identifier coercion; zero locked/pass-through changes; zero unintended stock/price/status/category/supplier changes; exactly the approved 8-field changes; complete audit evidence; a tested rollback source file. Production remains **No-Go** if any source/workbook/digest/approval/locked-field/delta/identifier/variant/compliance/partial-import/rollback/authorization gate is unresolved — and per this audit, several of those gates (freshness, Variant ID, sheet name) are currently unresolved, confirming the §1 verdict.
 
 Keep preview on `SHOPLINE_ADAPTER=mock` and production on `SHOPLINE_ADAPTER=disabled`/`SHOPLINE_PUBLISH_ENABLED=false` throughout — confirmed already enforced and unoverridable by the renderer (§3, subagent 5's `production-ai-runtime.md` finding). Real SHOPLINE writes require separate written authorization outside this plan, unchanged.
+
+---
+
+## 12. Authentication and public-entry plan
+
+**Ownership (ADR-5):** `/` and `/signin` stay owned by this runtime — both are already functional and low-risk to restyle (§5). `/pilot` is **blocked** pending the decision owner in §21 confirming it doesn't duplicate `wukong-ops-suite`.
+
+**Reuse:** Better Auth configuration, invite-only eligibility (`auth_get_eligible_user`), mailer, and membership logic are all already correct and require no behavioral change (§3, §6) — only the surrounding layout/copy adopts the Site's two-panel design (§4), and only after stripping the Site's "prototype unavailable" banner and disabled-submit state, which must never reach the connected runtime (§7 G1).
+
+**Security items, current state and required action:**
+- Rate limiting: reuse existing (Better Auth default + custom 5-attempt/15-minute lockout, §3). No change needed.
+- Redirect allowlisting: reuse existing `safeCallbackPath` (§3). No change needed.
+- Session fixation/revocation: reuse existing revoke-on-reset and revoke-on-post-auth-failure paths (§3). No change needed.
+- CSRF/origin protection and secure-cookie attributes: **must be verified, not assumed** (§7 G10) — a Package C task to read the pinned Better Auth version's actual defaults and add explicit `trustedOrigins`/cookie-attribute configuration if insufficient.
+- Invitation-only enforcement: reuse existing server-side SQL-function gate (§3). No change needed.
+
+**Never show fake success states** (login/registration/reset-email/pilot-submission) — the connected runtime already returns real, generic (enumeration-safe) responses for all of these (§3); adopting the Site's layout must not regress this into a decorative fake-success state.
+
+---
+
+## 13. Internationalisation plan
+
+**Default locale:** `zh-HK`, matching both the Site's default and the master instruction's requirement.
+
+**Mechanism (ADR-4):** add a cookie-backed locale preference read server-side on every request (so `html lang` and initial render are correct without a flash of the wrong locale), keeping the Site's simple inline `t(zh, en)` call-site pattern for the translations themselves rather than introducing a message-catalog library — the pattern already works and this plan found no defect in it beyond non-persistence.
+
+**Set correctly on every route:** `html lang`, page metadata/titles, nav labels, actions, error/validation copy, empty states, live regions, ARIA labels. This applies to every route in §5, not just the ones being newly built — the existing `/signin`/`/dashboard`/`/catalog` pages' current locale behavior was **not directly verified** by any research subagent (§5 flags this per-route) and must be confirmed as part of Package B/C, not assumed correct because the Site's reference pages happen to be bilingual.
+
+**Keep untranslated (never localize):** SHOPLINE headers, Product ID, SKU, Barcode, API paths, status keys, raw merchant evidence — already the pattern the Site itself follows for the review UI's field labels (§5 `/listings/[id]` — literal SHOPLINE column header kept in ZH with English description beneath, "by design, not a bug" per the live-crawl finding); replicate this exact pattern in the new eight-field review UI (§9 ADR-8).
+
+**Avoid side-by-side duplicated bilingual UI copy** except where the product field itself is genuinely bilingual (e.g. the workbook's own paired EN/ZH header cells).
+
+**Number/currency/date/time/timezone formatting:** not directly inspected by any subagent; add explicit formatting utilities (HKD currency, HK timezone for timestamps) as part of Package B rather than leaving this to ad-hoc per-component formatting.
+
+**Testing:** missing-key fallback, content-expansion (Chinese text is often shorter than English — verify layouts don't break in the longer-English direction), and locale-persistence across navigation and reload.
+
+**Revalidate the Site's locale-switch behavior claim precisely:** the master instruction's audit hypothesis said the Site's locale switch has "inconsistent" per-route behavior. This plan's own live crawl found something more specific: the switch is **consistently non-persistent** (a stateless in-memory toggle that reverts to `zh-HK` on every fresh navigation) rather than inconsistent between routes — every route behaved the same way. Use this more precise finding, not the original hypothesis, when scoping Package B's persistence work.
+
+---
+
+## 14. Accessibility, responsive and performance plan
+
+**Target:** WCAG 2.2 AA, per master instruction §13.
+
+**Landmarks, heading hierarchy, skip link:** **[Unverified]** across all existing routes — no subagent was tasked with an accessibility-tree audit of the current authenticated shell. This is a Package J task: audit `apps/web/app/(app)/layout.tsx` and every existing page for one logical H1, landmark regions, and a skip link; add what's missing (§8 already flags the skip link specifically as a likely gap per the master instruction's own suspicion).
+
+**Keyboard navigation, visible focus, focus trapping/restoration:** the runtime has no existing drawer/dialog components to audit (none were found in scope) — this only becomes relevant once the new mobile drawer nav (§8, matching the Site's confirmed hamburger-drawer pattern) is built; build it with focus-trap/restoration from the start rather than retrofitting.
+
+**Accessible tables/cards and selection controls:** `catalog-control-center.tsx`'s existing table/card responsive behavior was not accessibility-audited by any subagent; audit as part of Package D's catalog pagination work (touching the component anyway).
+
+**Form instructions and associated inline errors:** existing auth forms (§3) already have real validation — confirm their error messages are properly associated (`aria-describedby` or equivalent) as part of Package C; not previously verified.
+
+**Status live regions:** the review UI's existing stale-version 409 handling (§3) is a natural candidate for an `aria-live` region if it doesn't already have one — **[Unverified]**, check as part of Package G (already touching this component). Avoid excessive announcements — one live region per meaningfully distinct status change, not per keystroke.
+
+**Contrast, reduced motion, 44px touch targets:** Site's confirmed design tokens (§4) appear high-contrast on inspection (navy-on-canvas, white cards on `#f6f4ef`) but were not formally contrast-ratio-tested by any subagent; touch-target sizing was not measured. Both are Package J verification tasks, not assumed-passing.
+
+**Mobile safe areas, no horizontal overflow:** the Site's confirmed responsive pattern (sidebar → bottom-nav at `lg` breakpoint, §4) is a reasonable target; verify the runtime's plain-CSS implementation doesn't introduce horizontal scroll on any new route, especially the wide parity-matrix-style tables if any are rendered as tables rather than cards on mobile.
+
+**Screen-reader names for icon-only actions:** the Site's hamburger/nav-toggle icons — **[Unverified]** whether they have accessible names in the Site source (not specifically checked); ensure the runtime's equivalent does, regardless of the Site's own state.
+
+**Route loading/navigation feedback:** every new route (§5's Missing entries) needs an explicit loading state from the start (§8) — Next.js App Router's built-in loading/streaming conventions should be used consistently rather than ad-hoc per-page spinners.
+
+**Performance budgets:** app shell, catalog (100+ row rendering once pagination is added), and the new eight-field review UI (likely the heaviest single page given evidence panels + diffs) should each have an explicit budget defined during their respective package's implementation, not retrofitted after the fact.
+
+**Visual-regression scope:** every route in §5 needs desktop + 375px captures at minimum, both locales where the route renders locale-dependent content; routes changing disposition (extend/new) need explicit before/after captures.
+
+---
+
+## 15. Security, privacy, observability and audit plan
+
+**Per-mutation treatment (already the runtime's existing pattern, §3/§10 — apply identically to every new mutation this plan proposes):** server-side role check via `requireWorkspaceRole` (not the array-allowlist pattern, per §6/§7 G9's refactor), workspace resolution via `forWorkspace`/RLS, Zod request/response validation, an audit event inside the same transaction as the mutation, and a version-id or idempotency-key check as appropriate. This applies specifically to: the new multi-product export endpoint (§10, §11 — needs its own idempotency key per export attempt, since re-running an export must not double-neutralize or double-charge anything), the manual-SHOPLINE-import-result recording endpoint (§10 — needs to be safely re-runnable if a merchant reports the same import result twice), and the freshness-gate check itself (a read-time assertion, not a mutation, but must run inside the same transaction as whatever it's gating to avoid a race between the check and the gated action).
+
+**Cross-workspace/RLS negative tests:** the existing pattern (`repositories/memberships.integration.test.ts`'s cross-workspace assertion style, §3) should be replicated for every new tenant-scoped entity this plan introduces (batches read model, jobs ledger, quality read model, source-import records) — do not add a new table without an accompanying cross-workspace-denial test.
+
+**XLSX MIME/signature/size/row validation:** already confirmed to exist for the import path (`upload_not_a_workbook` 400, `bulk_form_unreadable` 422, `bulk_form_too_many_rows` 413 at a 5,000-row cap — §3, `shopline-pilot-onboarding.md`). **[Unverified]** whether an explicit decompression-bounds/zip-bomb defense exists beyond the row cap — a Package E verification task, since the row cap alone doesn't necessarily bound decompressed memory use before the row count is even known.
+
+**Formula-injection defence:** not currently applicable — the minimal-generation XLSX writer never preserves or writes formulas (§11). This becomes relevant **only if** ADR-9 is later revisited toward workbook-patching; note it there as a future requirement, not a current gap.
+
+**Safe private-asset/presigned-URL handling:** already confirmed correct — workspace-prefixed storage keys, presign/finalize workspace-ownership checks (§3's asset intake pattern, referenced from the original file-map). No change needed.
+
+**Log redaction:** `CLAUDE.md` states no credentials/signed-URLs/prompts/model-output/customer-content may appear in logs, enforced by a readiness gate (§3, subagent 5) — this must extend to any new logging added in Packages D–I (e.g. don't log full row contents when logging an import/export failure; log the digest/row-index instead).
+
+**Correlation IDs:** propose a single correlation ID generated at import time and threaded through batch → review → export → manual-SHOPLINE-confirmation, surfaced in the new `/jobs` ledger (§10) — this is what makes "file generated" vs. "SHOPLINE import confirmed" distinguishable end-to-end, per master instruction §11's explicit requirement.
+
+**Metrics:** stale-source rejections, version conflicts, partial-import counts, and retry counts should all be recorded (not necessarily a full observability platform — even structured audit-event counts suffice) as part of Package E/H, so the go/no-go criteria in §18 can be measured rather than eyeballed.
+
+**Capability-truth telemetry:** the registry in ADR-11 must expose capability state only (Live/Pilot/Planned/Blocked) — never customer content, never raw configuration values.
+
+---
+
+## 16. File-level PR sequence and dependency graph
+
+Ten packages, lettered to match the master instruction's own A–K skeleton (I is folded into the ledger/quality/admin work; there is no separate lettered package beyond what's listed — J and K remain distinct as hardening and rollout).
+
+### Package A — Baseline and Opak contract freeze
+- **Outcome:** repo state pinned and verified (already substantially done by this plan itself); fix the CI formatting failure (§2) as a trivial first commit.
+- **Dependencies:** none.
+- **Files:** none beyond a `prettier --write` pass on the newly-uploaded master-instruction Markdown file (or excluding it from the formatting check if that's the intended handling — **decision needed**, §21).
+- **Reuse disposition:** N/A (process, not code).
+- **API/data/migration impact:** none.
+- **Feature flag:** none.
+- **Auth/audit/idempotency:** N/A.
+- **Tests/commands:** `pnpm format:runtime:check`.
+- **Observability:** CI goes green.
+- **Acceptance evidence:** CI run succeeds on the resulting commit.
+- **Rollback:** revert the formatting commit.
+- **Size:** S.
+
+### Package B — Shared tokens, shell, i18n (no domain behavior change)
+- **Outcome:** confirmed Site design tokens and locale-persistence land with zero behavior change to any existing feature.
+- **Dependencies:** Package A.
+- **Files:** `apps/web/app/globals.css` (add tokens, §8), `apps/web/app/(app)/layout.tsx` (nav structure only, no auth logic change), a new locale-cookie utility + provider (§13), workspace-profile-sourced label reads (ADR-6).
+- **Reuse disposition:** extend (§6).
+- **API/data/migration impact:** none (locale cookie is client-set, no schema change).
+- **Feature flag:** none needed — purely additive/visual.
+- **Auth/audit/idempotency:** N/A.
+- **Tests/commands:** `pnpm --filter @wukong/web test`, `pnpm typecheck`, new locale-persistence test.
+- **Observability:** N/A.
+- **Acceptance evidence:** visual-regression capture of the shell in both locales/viewports (§14).
+- **Rollback:** revert; no data implications.
+- **Size:** M.
+
+### Package C — Public entry and auth layout
+- **Outcome:** `/`, `/signin`, `/register*`, `/forgot-password`, `/reset-password` adopt the Site's layout/copy; CSRF/secure-cookie defaults verified and hardened if needed (§7 G10, §12).
+- **Dependencies:** Package B (tokens).
+- **Files:** `apps/web/components/auth-form.tsx`, the five auth page files (§5), `apps/web/auth.ts` (only if CSRF/cookie hardening is needed).
+- **Reuse disposition:** extend, visual layer only (§6) — plus a possible small auth-config addition.
+- **API/data/migration impact:** none, unless CSRF hardening requires a new `trustedOrigins` config value (an env var addition, not a schema change).
+- **Feature flag:** none.
+- **Auth/audit/idempotency:** unchanged — existing mechanisms reused (§3).
+- **Tests/commands:** existing `auth.test.ts`, `auth-flow.test.ts`, `flow-routes.test.ts` must stay green; add a CSRF-specific test if hardening is added.
+- **Observability:** N/A.
+- **Acceptance evidence:** existing tests green + visual capture, both locales/viewports.
+- **Rollback:** revert.
+- **Size:** M.
+
+### Package D — Read-only dashboard, catalog, queue
+- **Outcome:** `/catalog` gets real server-side pagination/search; `/dashboard` gets accurate (not 100-row-capped) counts where feasible; `/queue` gets built, wiring the existing `listing-queue.tsx` component.
+- **Dependencies:** Package B.
+- **Files:** `apps/web/app/api/catalog/route.ts`, `packages/db/src/repositories/platform-products.ts` (`listRecent` → paginated query), `apps/web/lib/catalog-contract.ts` (add fields, ADR-7), new `apps/web/app/(app)/queue/page.tsx`.
+- **Reuse disposition:** extend (§6).
+- **API/data/migration impact:** `GET /api/catalog` gains query params (additive, backward compatible); no schema migration needed if existing `createdAt`/`updatedAt`/`contentDigest` columns are simply surfaced (they already exist, §3).
+- **Feature flag:** none needed.
+- **Auth/audit/idempotency:** read-only, no audit events needed beyond existing access logging.
+- **Tests/commands:** new integration test for >100-row workspaces; existing `catalog-control-center.test.ts`-style tests extended.
+- **Observability:** N/A.
+- **Acceptance evidence:** pagination test passes; `/queue` renders real data laned correctly.
+- **Rollback:** revert; read-only changes carry no data risk.
+- **Size:** M.
+
+### Package E — Bulk Update contract fixes and freshness gate
+- **Outcome:** the four highest-severity, must-fix-before-anything-else items land: sheet-name fix (§7 G6), Variant ID hard block (§7 G7), `/listings/new` wiring confirmed/resolved (§7 G11), and the source-import/freshness-gate function built (§11).
+- **Dependencies:** Package A only — this can start immediately and should be prioritized ahead of B–D if resourcing is constrained, since it's the highest-risk area.
+- **Files:** `packages/shopline/src/bulk-form-xlsx.ts` (sheet name), `packages/shopline/src/bulk-form.ts` (`parseRow`'s Variant ID handling), `apps/web/app/(app)/listings/new/page.tsx` (confirm/fix wiring), new `sourceImportId` entity + `assertExportFreshness` service (§11), `apps/web/lib/bulk-form-import.ts` (call the new freshness assertion).
+- **Reuse disposition:** extend, narrow fixes (§6) — this package touches the strongest-built code in the repo and should change as little as possible beyond the specific defects named.
+- **API/data/migration impact:** possible new table/columns for the explicit `sourceImportId` entity if one doesn't already exist under another name (**verify first**, §11) — full expand/contract migration discipline required if so (§10).
+- **Feature flag:** none — these are correctness fixes, not experimental features.
+- **Auth/audit/idempotency:** the freshness gate itself becomes a new audit-relevant check point; log its pass/fail outcome.
+- **Tests/commands:** extend `bulk-form.test.ts`, `bulk-form-xlsx.test.ts` with sheet-name and Variant-ID-block assertions; new tests for the freshness gate (stale-source rejection, digest-mismatch rejection).
+- **Observability:** freshness-gate rejection reasons should be visible (feeds the `/jobs` ledger later, Package I).
+- **Acceptance evidence:** golden-workbook round-trip test passes with sheet name `Default`; a synthetic Variant-ID row is confirmed blocked, not merely warned.
+- **Rollback:** revert; these are additive/corrective, not replacing working behavior.
+- **Size:** L.
+
+### Package F — Attended batches read persistence
+- **Outcome:** `/batches` gets a real list/detail view; the 1–5 wave-size cap is confirmed or added as a backend enforcement (§7 G12).
+- **Dependencies:** Package E (batches must bind to the new `sourceImportId`/digest model).
+- **Files:** new `GET /api/batches`, `/api/batches/[id]` routes, `apps/web/lib/enrichment-batch-service.ts` (add/confirm the wave-size cap check), new `apps/web/app/(app)/batches/page.tsx` read view (the create/advance UI may already exist — confirm before assuming a full rebuild is needed).
+- **Reuse disposition:** extend (§6, §9 ADR-10).
+- **API/data/migration impact:** likely additive read endpoints only, unless no persisted batch/wave table currently exists in a form that supports listing (verify against `packages/db/src/schema.ts` directly before assuming a new table is needed).
+- **Feature flag:** none needed.
+- **Auth/audit/idempotency:** reuse existing batch create/advance idempotency if present; add audit events for batch state transitions if not already covered.
+- **Tests/commands:** new tests for the wave-size cap (reject a wave outside 1–5 server-side, not just via UI), list/detail read tests.
+- **Observability:** batch state visible in the `/jobs` ledger (Package I).
+- **Acceptance evidence:** a 6-item wave creation attempt is rejected by the API itself, confirmed by test.
+- **Rollback:** revert.
+- **Size:** M.
+
+### Package G — Eight-field evidence review, confirmation ledger, approval binding
+- **Outcome:** the centerpiece of this plan — a new review mode for the 8 Opak-writable fields, bound to the freshness gate, with a full confirmation ledger (§9 ADR-8, §11).
+- **Dependencies:** Package E (freshness gate must exist first).
+- **Files:** new components parallel to (not replacing) `listing-review-client.tsx`/`listing-fields-form.tsx`/`evidence-panel.tsx`, reusing `packages/core/src/workflow.ts`/`review.ts` and `packages/db/src/repositories/listings.ts`'s version-concurrency pattern (§6), new confirmation-ledger schema/repository, new approval-binding fields (`expectedVersionId`, `sourceImportId`, `expectedSourceRowDigest`, `confirmationLedgerRevision`, §11).
+- **Reuse disposition:** extend (§6) — explicitly not a replacement of the existing review UI.
+- **API/data/migration impact:** new confirmation-ledger table (full migration discipline, §10); extended approval request schema (additive fields, backward-compatible for the existing wine-listing approval path since this is a parallel mode, not a shared one).
+- **Feature flag:** **Proposed** — gate this new review mode behind a capability flag (feeds ADR-11's registry) so it can ship dark and be enabled per-workspace once UAT (§18) passes.
+- **Auth/audit/idempotency:** reuse existing role/RLS/audit/version-concurrency mechanisms exactly (§6, §10) — no new security model.
+- **Tests/commands:** new tests for all 8 fields' review/edit/approval, expected-version/source-digest conflict rejection, approval invalidation on content/evidence/source change.
+- **Observability:** approval invalidation events visible in `/jobs`/`/quality` (Packages F/I).
+- **Acceptance evidence:** a full review→approve cycle for a synthetic 5-product batch, including one deliberately-staled item that correctly gets rejected.
+- **Rollback:** disable the feature flag; underlying data model additions are additive and don't affect the existing wine-listing path.
+- **Size:** L.
+
+### Package H — Multi-product changed-row XLSX and manifest
+- **Outcome:** batch export capability built per §11's full spec.
+- **Dependencies:** Package G (needs approved multi-field reviews to export).
+- **Files:** new export endpoint (§10), extends `createBulkFormUpdate`/`bulk-form-xlsx.ts` for multi-row generation reusing the existing single-row neutralization/echo logic, new manifest generation + reparse-and-assert step.
+- **Reuse disposition:** extend (§6) — reuses the single-row export logic as its per-row building block rather than reimplementing it.
+- **API/data/migration impact:** new endpoint, additive; manifest could be a response payload rather than a new table if no durable manifest-history requirement exists — **[Proposed]** store it durably in the `/jobs` ledger (Package I) so past exports remain auditable.
+- **Feature flag:** gate behind the same capability flag as Package G until UAT (§18) validates it.
+- **Auth/audit/idempotency:** export attempt gets its own idempotency key (re-running an identical export must not double-neutralize deltas); full audit trail of what was exported.
+- **Tests/commands:** golden multi-product round-trip test (byte/semantic equivalence of locked+pass-through cells vs. fresh source), no-op-product exclusion test, mixed-source-rejection test.
+- **Observability:** manifest surfaced in `/jobs`.
+- **Acceptance evidence:** a synthetic 3-product batch (one no-op, one changed, one from a mismatched source) produces exactly the correct 1-row export with a correct manifest.
+- **Rollback:** disable feature flag.
+- **Size:** L.
+
+### Package I — Jobs, manual import proof, quality, admin capability truth
+- **Outcome:** `/jobs`, `/quality`, `/system-map`, and `/admin`'s 4th tab all land, backed by the shared capability-registry and ledger patterns (§9 ADR-10, ADR-11).
+- **Dependencies:** Package H (jobs ledger needs export events to show).
+- **Files:** new `/api/jobs`, `/api/quality` read endpoints, new pages for all four routes, new capability-registry module consumed by both `/admin` and `/system-map`.
+- **Reuse disposition:** new, following the shared read-model pattern from ADR-10 (§6).
+- **API/data/migration impact:** additive read endpoints; capability registry can likely be a typed constant module rather than a new table (no dynamic runtime state needed beyond what other tables already track).
+- **Feature flag:** the registry itself should show whether Packages G/H's features are enabled per-workspace.
+- **Auth/audit/idempotency:** read-only for jobs/quality/system-map views; admin's existing role-gating (§3) extends to the new tab.
+- **Tests/commands:** new tests per read endpoint; capability-registry consistency test (both surfaces show the same state).
+- **Observability:** this package *is* the observability surface for everything built in D–H.
+- **Acceptance evidence:** each route renders real data (or a correct empty state) for a test workspace with no batches/exports yet.
+- **Rollback:** revert; purely additive read surfaces.
+- **Size:** L.
+
+### Package J — Accessibility, responsive, security and performance hardening
+- **Outcome:** close the gaps named in §14/§15 that weren't already fixed incidentally by earlier packages.
+- **Dependencies:** all of B–I (this audits what they built, plus the pre-existing surface).
+- **Files:** varies — this is an audit-and-fix pass, not a single feature.
+- **Reuse disposition:** refactor in place where gaps are found.
+- **API/data/migration impact:** none expected beyond minor fixes.
+- **Feature flag:** none.
+- **Auth/audit/idempotency:** N/A directly, though the CSRF/cookie item from Package C should be re-verified here as a final check.
+- **Tests/commands:** accessibility-tree assertions, contrast checks, visual-regression suite across every route in §5.
+- **Observability:** N/A.
+- **Acceptance evidence:** WCAG 2.2 AA checklist passes for every affected route.
+- **Rollback:** revert individual fixes as needed.
+- **Size:** M.
+
+### Package K — Controlled Opak UAT and staged rollout
+- **Outcome:** the four-stage UAT sequence from §11/§18 executed and signed off.
+- **Dependencies:** all of A–J.
+- **Files:** none (process, not code) beyond whatever fixes UAT itself surfaces.
+- **Reuse disposition:** N/A.
+- **API/data/migration impact:** none from this package directly; UAT may surface defects requiring small follow-up PRs against earlier packages.
+- **Feature flag:** the Package G/H flag gets enabled per-stage (1–5 → 30–50 → 50–100 → catalog-scale).
+- **Auth/audit/idempotency:** N/A (process).
+- **Tests/commands:** the full UAT coverage list in §17.
+- **Observability:** UAT metrics (§15) must show clean numbers at each stage before advancing.
+- **Acceptance evidence:** written Opak sign-off at each stage boundary.
+- **Rollback:** per ADR-12 — stop the pipeline; no automatic reversal of completed SHOPLINE writes.
+- **Size:** L (spans calendar time, not just engineering effort).
+
+**Dependency graph (textual):** A → B → {C, D} (parallel); A → E (can run parallel to B/C/D); E → F → G → H → I; {C, D, E, F, G, H, I} → J → K.
+
+**Recommended first PR:** see §20 (Package A, immediately followed by starting Package E in parallel with B/C/D).
+
+---
+
+## 17. Test strategy and commands
+
+**Exact commands (all confirmed to exist verbatim at this commit, §3):**
+```bash
+pnpm format:runtime:check
+pnpm runtime:forbidden:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:integration
+pnpm build
+pnpm test:e2e
+pnpm runtime:doctor <env>
+pnpm --filter @wukong/db audit:verify
+```
+
+**Coverage plan, mapped to this document's findings:**
+- **Route/function parity:** one acceptance test per §5 entry once built — start with §5's flagged unknowns (`/listings/new` wiring, `/batches` wave-cap) since those need confirmation before their disposition is even settled.
+- **Public/protected boundaries:** verify every route in §5 enforces the role listed; add a negative test for each protected route confirming a lower-role session is rejected.
+- **Both locales, desktop and 375px mobile:** per §14's visual-regression scope, every route.
+- **Auth invitation/reset and role matrix:** extend existing `auth.test.ts`/`flow-routes.test.ts` coverage to the CSRF/cookie hardening from Package C once landed.
+- **Cross-workspace/RLS denial:** replicate the existing `memberships.integration.test.ts` pattern for every new tenant-scoped table (§15).
+- **Catalog pagination/search/cohorts:** new integration test for the >100-row case (§16 Package D).
+- **Batch persistence, 1–5 backend cap, idempotent advancement:** §16 Package F.
+- **Eight-field review/edit/approval:** §16 Package G.
+- **Expected-version and source-digest conflict:** extend the existing stale-version-409 test pattern to the new confirmation-ledger fields (§11, §16 Package G).
+- **Approval invalidation after content/evidence/source changes:** §16 Package G.
+- **Exact 71-column golden round trip and workbook/cell types:** extend existing `bulk-form.test.ts`/`bulk-form-xlsx.test.ts` with the sheet-name fix (§16 Package E) — this test suite already exists and is strong; add to it rather than writing from scratch.
+- **Leading-zero/alphanumeric/blank identifiers:** already covered by existing tests per §11's confirmed structural guarantees — verify existing test fixtures include a blank-Barcode case; add one if missing.
+- **Blank, zero, negative and unlimited raw values:** extend existing `parseRow` tests with an explicit `無限數量` round-trip case (§11's flagged Unverified item).
+- **Locked/pass-through equality and neutral deltas:** already tested for single-row export; extend to the new multi-row export (§16 Package H).
+- **Multi-product changed-row export and manifest:** §16 Package H.
+- **Partial SHOPLINE import recording and reconciliation:** new tests for the manual-import-result endpoint (§10, §16 Package I).
+- **Queue redelivery/idempotency and audit completeness:** existing publish-job idempotency pattern (§3) should be extended to cover the new export endpoint's idempotency key (§16 Package H).
+- **Keyboard, screen reader, focus, contrast, reduced motion:** §16 Package J.
+- **Visual regression and capability-truth states:** §16 Packages I and J.
+
+**Important caveat, restated from the master instruction:** the current CI (`AI_PROVIDER=fake`, `SHOPLINE_ADAPTER=mock`) proves only a synthetic runtime path. It is not evidence of real SHOPLINE workbook acceptance (that requires §18's UAT) or production readiness more broadly.
