@@ -102,15 +102,45 @@ Rendered as one structured entry per route rather than a single wide table — t
 - **Dependencies:** ADR-5 (public/auth boundary).
 - **Acceptance evidence:** existing `apps/web/auth.test.ts`, `auth-flow.test.ts`; add visual-regression capture per §14.
 
-### `/register`, `/register/set-password`, `/forgot-password`, `/reset-password` — functional flows
-- **Goal:** invite-token enrollment, password set, enumeration-safe recovery, token-validated reset.
-- **Public/protected:** public routes, server-side eligibility/token validation gates the actual mutation.
-- **Site:** all four confirmed reachable, bilingual, both viewports, all with disabled submit + "prototype" labeling; `/register/set-password` and `/reset-password` show no different state even with a `?token=...` query param tried.
-- **Runtime:** all four routes exist and are backed by real API routes (`forgot-password/route.ts`, `magic-link/route.ts`, `password/route.ts`, `register/route.ts`), all routed through the same server-side `safeCallbackPath`/eligibility/lockout machinery as `/signin`.
+### `/register` — Invite-only enrolment
+- **Goal:** an invited user creates their account.
+- **Public/protected:** public route, server-side invite-eligibility gates the actual mutation.
+- **Site:** reachable, bilingual, both viewports, disabled submit + "prototype" labeling ("Invited accounts only" copy).
+- **Runtime:** `apps/web/app/register/page.tsx`, backed by `apps/web/app/api/auth/register/route.ts` — real, server-side eligibility-gated, generic response regardless of outcome (§3).
 - **Parity:** interaction/real-capability — Runtime-only (functional) vs Site (decorative). Visual — Partial, same layout-adoption note as `/signin`.
-- **Disposition:** extend (visual layer only) for all four. **Priority:** high.
+- **Disposition:** extend (visual layer only). **Priority:** high.
 - **Dependencies:** ADR-5.
-- **Acceptance evidence:** existing `flow-routes.test.ts`; token-specific UI states (e.g. expired-token messaging) should be explicitly acceptance-tested since neither the Site nor this audit observed a distinct token-context render.
+- **Acceptance evidence:** existing `flow-routes.test.ts`.
+
+### `/register/set-password` — Invite-token password setup
+- **Goal:** complete enrollment by setting a password after an invite token is validated.
+- **Public/protected:** public route, token validation gates the actual mutation.
+- **Site:** reachable both locales/viewports; showed no distinct state even when a `?token=invalidtoken123` query param was tried (still a generic form).
+- **Runtime:** `apps/web/app/register/set-password/page.tsx`, backed by `apps/web/app/api/auth/password/route.ts` (§3).
+- **Parity:** interaction/real-capability — Runtime-only vs Site (decorative). Visual — Partial.
+- **Disposition:** extend (visual layer only). **Priority:** high.
+- **Dependencies:** ADR-5.
+- **Acceptance evidence:** existing `flow-routes.test.ts`; a distinct expired/invalid-token UI state should be explicitly acceptance-tested, since neither the Site nor this audit observed one.
+
+### `/forgot-password` — Enumeration-safe recovery
+- **Goal:** request a password reset without revealing whether an email exists.
+- **Public/protected:** public route.
+- **Site:** reachable both locales/viewports, single work-email field, disabled submit.
+- **Runtime:** `apps/web/app/forgot-password/page.tsx`, backed by `apps/web/app/api/auth/forgot-password/route.ts`, using the same generic-response, enumeration-safe pattern as `/register` (§3).
+- **Parity:** interaction/real-capability — Runtime-only vs Site (decorative). Visual — Partial.
+- **Disposition:** extend (visual layer only). **Priority:** high.
+- **Dependencies:** ADR-5.
+- **Acceptance evidence:** existing `flow-routes.test.ts`.
+
+### `/reset-password` — Token-validated reset
+- **Goal:** complete a password reset after a valid reset token.
+- **Public/protected:** public route, token validation gates the mutation.
+- **Site:** reachable both locales/viewports; like `/register/set-password`, showed no distinct state for a tried token param.
+- **Runtime:** `apps/web/app/reset-password/page.tsx`, backed by `apps/web/app/api/auth/password/route.ts`; on success, triggers the confirmed session-revocation behavior (`revokeSessionsOnPasswordReset: true`, §3).
+- **Parity:** interaction/real-capability — Runtime-only vs Site (decorative). Visual — Partial.
+- **Disposition:** extend (visual layer only). **Priority:** high.
+- **Dependencies:** ADR-5.
+- **Acceptance evidence:** existing `flow-routes.test.ts`; a distinct expired/invalid-token UI state should be explicitly acceptance-tested, same caveat as `/register/set-password`.
 
 ### `/pilot` — Public positioning and pilot intake
 - **Goal:** public marketing/lead-intake, no workspace access.
@@ -375,10 +405,9 @@ All twelve marked **Proposed**. Decision owners are roles (runtime tech lead / O
 - **Decision owner:** runtime tech lead.
 
 ### ADR-2: Route ownership and backward-compatible IA
-- **Context:** `/listings/new`'s current wiring is unconfirmed (§5, §7 G11); the Site's IA implies it should primarily serve Bulk Update import, with new-product creation split out.
-- **Decision:** confirm current wiring first (Package E task); if it still targets new-listing intake, split into `/listings/new` (Bulk Update import, primary) and a separate route for new-product creation (blocked for this pilot per master instruction §9), preserving existing deep links via redirect rather than breaking them.
-- **Alternatives:** tab the two flows within one route (rejected — the Site's IA already shows them as separate tabs within intake, which this decision's "split" language should actually match — see note below); leave as-is (rejected if wiring is confirmed wrong).
-- **Note:** re-reading the Site's own IA (§5 `/listings/new`), it actually uses a 3-tab layout (Existing products / Supporting evidence / New products) within **one** route, not separate routes. This ADR's decision should therefore default to matching that: one route, tabbed, New-products tab disabled/blocked — not a route split — unless the wiring-confirmation task reveals a technical reason a split is required.
+- **Context:** `/listings/new`'s current wiring is unconfirmed (§5, §7 G11). The Site's own IA (§5) uses a single route with a 3-tab layout — Existing products (primary, confirmed) / Supporting evidence / New products (explicitly "Blocked — separate Create template required") — rather than separate routes per flow.
+- **Decision:** confirm current wiring first (Package E task); adopt the Site's one-route/3-tab IA as-is, keeping the New-products tab disabled/blocked for this pilot per master instruction §9. Preserve any existing deep links via redirect if the confirmation task finds the current page already serves a different, incompatible shape.
+- **Alternatives:** split into two separate routes, one for Bulk Update import and one for new-product creation (rejected — the Site's own design deliberately keeps them as tabs within one route, and there's no evidence a split serves the pilot better).
 - **Consequences:** matches the Site's already-designed IA with minimal structural change.
 - **Compatibility:** depends on confirmed current wiring (§7 G11) — must be resolved before this ADR can be finalized.
 - **Security effect:** none.
