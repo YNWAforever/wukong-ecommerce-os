@@ -266,4 +266,108 @@ describe("BulkImportPanel", () => {
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
   });
+
+  it("renders the validation message for a non-.xlsx file without calling fetch", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.csv", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      "Choose an .xlsx SHOPLINE Bulk Update workbook.",
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the mapped message for a known API error", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ code: "insufficient_role" }, { status: 403 }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.xlsx", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Operator access is required.");
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the network-error message when the fetcher throws", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.xlsx", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      "Could not reach the server. Try again.",
+    );
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
 });
