@@ -24,3 +24,12 @@ export { approveListing, reopenListing } from "./review.js";
 
 export { transitionListing } from "./workflow.js";
 export type { ListingAction, ListingStatus } from "./workflow.js";
+
+export { assertExportFreshness } from "./assert-export-freshness.js";
+export type {
+  AssertExportFreshnessDeps,
+  AssertExportFreshnessInput,
+  FreshnessFailureReason,
+  FreshnessResult,
+  PlatformProductLink,
+} from "./assert-export-freshness.js";
