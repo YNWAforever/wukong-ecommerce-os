@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+
 import type { Database, UpsertPlatformProductInput } from "@wukong/db";
 import {
+  hashBulkFormHeaderContract,
   hashBulkFormRow,
   parseBulkForm,
   renderBulkFormSource,
@@ -22,6 +25,10 @@ export type BulkFormImportInput = {
   workspaceId: string;
   actorId: string;
   sheet: BulkFormSheet;
+  rawBytes: Uint8Array;
+  merchantAttestedExportAt: Date;
+  filename: string;
+  sheetName: string;
 };
 
 export type BulkFormImportResult = {
@@ -88,6 +95,11 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
       );
     }
 
+    const workbookSha256 = createHash("sha256")
+      .update(input.rawBytes)
+      .digest("hex");
+    const headerContractSha256 = hashBulkFormHeaderContract();
+
     return deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
@@ -99,6 +111,18 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             "Connect a SHOPLINE store before importing a catalog.",
           );
         }
+
+        const sourceImport = await repositories.sourceImports.create({
+          connectionId: connection.id,
+          filename: input.filename,
+          workbookSha256,
+          headerContractSha256,
+          sheetName: input.sheetName,
+          rowCount: parsed.rows.length,
+          merchantAttestedExportAt: input.merchantAttestedExportAt,
+          importerId: input.actorId,
+          specVersion: parsed.specVersion,
+        });
 
         const known =
           await repositories.platformProducts.listByRemoteProductIds(
@@ -181,6 +205,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             // Every row this importer writes came from a bulk update form, never
             // from the direct-create-publish path.
             origin: "import",
+            sourceImportId: sourceImport.id,
           });
         }
 
