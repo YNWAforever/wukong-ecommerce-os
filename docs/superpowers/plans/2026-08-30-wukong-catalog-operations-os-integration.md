@@ -865,3 +865,108 @@ pnpm --filter @wukong/db audit:verify
 - **Visual regression and capability-truth states:** §16 Packages I and J.
 
 **Important caveat, restated from the master instruction:** the current CI (`AI_PROVIDER=fake`, `SHOPLINE_ADAPTER=mock`) proves only a synthetic runtime path. It is not evidence of real SHOPLINE workbook acceptance (that requires §18's UAT) or production readiness more broadly.
+
+---
+
+## 18. Rollout, Opak UAT, go/no-go and rollback
+
+**Staged rollout (unchanged from master instruction, cross-checked against actual repo state):**
+
+| Stage | Scope | Gate to advance | Current readiness |
+|---|---|---|---|
+| 1. Attended contract UAT | 1–5 products | Sheet-name fix + Variant-ID hard block (Package E) land and pass; manual SHOPLINE re-import of a generated file succeeds | **Not ready** — both fixes are Proposed, not yet implemented (§7 G6, G7) |
+| 2. Golden set | 30–50 products | Stage 1 passes; freshness gate (Package E) and eight-field review (Package G) are live | **Not ready** — both are Proposed |
+| 3. Shadow pilot | 50–100 products, 2 weeks, manual import only | Stage 2 passes; multi-product export (Package H) is live; `/jobs` ledger (Package I) shows clean reconciliation | **Not ready** |
+| 4. Catalog-scale rollout | Full catalog | Written Opak sign-off after Stage 3; all of Packages A–J complete | **Not ready** |
+
+**Go/No-Go criteria per stage (restated from master instruction, unchanged):** 100% header/workbook acceptance; 100% intended-row import success with partial success explicitly reconciled; zero identifier coercion; zero locked/pass-through changes; zero unintended stock/price/status/category/supplier changes; exactly the approved eight-field changes; complete audit evidence; a tested rollback source file available at every stage.
+
+**Rollback (ADR-12):** at every stage, rollback means *stop the pipeline* — no new imports/enrichment/exports proceed. Already-approved-and-delivered listings are **not** automatically reverted; any correction to an already-written SHOPLINE product requires a separate, explicitly-authorized manual action, consistent with the existing `production-readiness.md` runbook's philosophy (§3). This must be communicated to and accepted by Opak before Stage 1 begins (§9 ADR-12's decision-owner requirement).
+
+**Current overall readiness: No-Go.** Per master instruction §11's own rule, production remains No-Go while any source/workbook/digest/approval/locked-field/delta/identifier/variant/compliance/partial-import/rollback/authorization gate is unresolved — and this audit found several unresolved: the freshness gate (§7 G4), the Variant-ID block (§7 G7), the sheet-name mismatch pending UAT confirmation (§7 G6), and the wave-size cap enforcement location (§7 G12). None of these are difficult to resolve (§16's packages are appropriately scoped), but none are resolved today.
+
+---
+
+## 19. Risks, decisions, assumptions and stop conditions
+
+**Open risks (consolidated from §7, ranked by severity):**
+1. Freshness gate absence (G4) — highest severity; risk of acting on stale merchant data.
+2. Variant ID non-blocking (G7) — high severity; risk of processing unvalidated variant rows in a live pilot.
+3. Sheet-name mismatch (G6) — high severity but cheap to fix; risk is entirely in the *unknown* SHOPLINE-side acceptance behavior, not the fix itself.
+4. Review-UI/Bulk-Update disconnect (G5) — largest *scope* risk (biggest single build item), not a safety risk per se.
+5. Two overlapping master instructions (G8) — coordination risk, not a technical risk.
+6. CSRF/secure-cookie unverifiable (G10) — moderate security risk, currently unknown rather than confirmed-bad.
+7. `/listings/new` wiring unconfirmed (G11) — risk of building Package E/G on a misunderstood foundation.
+8. Batch wave-cap enforcement location unconfirmed (G12) — moderate risk of UI-only limits being bypassable via direct API calls.
+
+**Assumptions this plan makes, flagged explicitly:**
+- That `platform_products` is the only place a durable source-import concept could live, and that no separately-named "import session" table already exists elsewhere in the schema (§11 — flagged as needing direct verification before Package E begins).
+- That the Frontend Revamp master instruction (§2, §7 G8) and this plan's master instruction are meant to be reconciled rather than treated as sequential/independent — **this is an assumption, not a confirmed fact**, and the decision owner in §21 should confirm it explicitly.
+- That Better Auth's actual pinned-version defaults are adequate for CSRF/cookie security once verified (§7 G10) — if verification reveals otherwise, Package C's scope grows.
+
+**Stop conditions from the master instruction's own §20, checked against this audit's findings:**
+- Repository/instructions/Site/workbook could not be inspected sufficiently → **Does not apply** — all four were inspected (§2).
+- Source versions cannot be pinned → **Does not apply** — pinned exactly (§2).
+- Workbook headers/digest conflict with repository fixtures with no resolvable owner → **Does not apply** — they match exactly (§2, §11).
+- Working tree contains overlapping uncommitted changes → **Did apply at the start of this task** (local `main` was 422 commits stale) — **resolved** via the fast-forward pull the user explicitly approved (§2). The ~30 untracked scratch files were confirmed harmless/historical, not overlapping in-progress work.
+- The plan file already exists → **Does not apply** — confirmed absent before writing (§16 Package A's predecessor check, and the original pre-flight check in this session).
+- Site behavior materially conflicts with runtime security/business rules with no decision owner → **Partially applies** — see G8 (two master instructions) and ADR-5 (`/pilot` ownership), both flagged with a required decision owner in §21.
+- A proposal would weaken workspace scoping/RLS/audit/workflow validation/approval binding/queue idempotency → **Does not apply** — every proposal in this plan explicitly reuses and extends the existing mechanisms rather than weakening them (§6, §10, §15).
+- Completion would require credentials/production data/SHOPLINE writes/deployment/migration → **Does not apply to this planning document** — no such action was taken (see closing statement); several *proposed* packages will eventually require a schema migration, but that is future implementation work, correctly deferred per §10's discipline, not a defect in this plan.
+- A real variant is present but variant handling remains unvalidated → **Applies, and is exactly why G7 is flagged as urgent** — real Opak data may contain variant rows, and the pipeline currently only warns rather than blocks on them.
+- Production readiness/merchant authorization is being assumed rather than evidenced → **Does not apply** — this plan's verdict (§1) is explicitly Blocked, not an assumed Go.
+
+---
+
+## 20. Recommended first PR
+
+**Package A alone: fix the CI formatting failure.**
+
+- **Why first:** it is the only fully risk-free item in this entire plan — a one-file Prettier/line-ending fix with no behavioral change, and it is what's currently keeping CI red on `main` (§2).
+- **Files:** `docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md` (reformat to satisfy `pnpm format:runtime:check` — likely just normalizing line endings) — **or**, if the intent is that user-uploaded reference documents shouldn't be subject to the runtime-formatting gate at all, add an explicit exclusion for this path in the formatting script instead of reformatting a document the user uploaded verbatim. **This choice is itself a small decision — see §21.**
+- **Size:** S.
+- **Acceptance evidence:** `pnpm format:runtime:check` passes; the next CI run on `main` goes green.
+- **Immediately followed by (as its own second PR, still very small and low-risk):** the two Package E code fixes that need no design discussion — the `bulk-form-xlsx.ts` sheet-name literal (`"Sheet1"` → `"Default"`) and the `bulk-form.ts` `parseRow` Variant-ID handling (warning → hard block). Both are narrow, single-purpose, easily reviewed, and address this audit's two highest-severity confirmed defects (§7 G6, G7) without waiting on any of the larger, decision-dependent packages.
+
+---
+
+## 21. Decisions required before the first PR
+
+**Before Package A specifically:** one small decision — whether to reformat the uploaded master-instruction document to satisfy `format:runtime:check`, or exclude user-uploaded reference documents from that check entirely. Either is low-risk; pick one and move on. **Decision owner:** runtime tech lead.
+
+**Before the broader Package B–K sequence begins (not blocking Package A/the sheet-name/Variant-ID fixes):**
+- **G8 — reconcile the two overlapping master instructions.** Decision owner: whoever owns both `docs/product/Wukong_Ecommerce_OS_Product_Frontend_Revamp_ChatGPT_Master_Instruction.md` and this plan's source document.
+- **ADR-5 — `/pilot` ownership**, to avoid duplicating `wukong-ops-suite`. Decision owner: product/marketing owner.
+- **G10 — confirm Better Auth's actual CSRF/cookie defaults** for the pinned version, before Package C is called complete. Decision owner: runtime tech lead.
+- **G11 — confirm `/listings/new`'s actual current wiring** before any UI work proceeds on it. Decision owner: runtime tech lead.
+- **G12 — confirm or add backend enforcement of the 1–5 batch wave-size cap** before Package F is called complete. Decision owner: runtime tech lead.
+- **ADR-8/ADR-9 — confirm the review-mode and workbook-generation approach** with the Opak product owner before Package G/H begin in earnest, since these define the operator's actual day-to-day workflow.
+- **ADR-12 — Opak's explicit acceptance of the stop-the-pipeline rollback model** before Stage 1 UAT begins (§18).
+
+---
+
+## 22. Implementation-ready checklist
+
+Checking this plan document itself against the master instruction's own plan-quality gates:
+
+- [x] Every discovered Site and runtime route appears exactly once in the parity matrix — §5.
+- [x] Every current-state claim has evidence — file:line or route/locale/viewport citations throughout §2–§11.
+- [x] Every Site action maps to a real or explicitly proposed contract — §5, §10.
+- [x] Prototype/no-op states are not copied as production behavior — explicitly addressed, §7 G1, §12.
+- [x] Working auth/security/runtime behavior is not downgraded — every disposition in §6 is reuse/extend, never a security-relevant replace.
+- [x] Every reused artifact and every replacement is named and justified — §6 (no runtime artifact was disposed "replace" or "retire"; only the Site's own non-functional code is "retire," which is not a runtime artifact).
+- [~] Every database change includes RLS, migration, compatibility and rollback — the *discipline* is established (§10) and applied per-package (§16), but the exact migration scripts themselves are implementation-time work, correctly deferred by this plan rather than a gap in it.
+- [x] Every mutation includes role, validation, audit and idempotency/version treatment — pattern stated once (§10, §15) and applied consistently to every new mutation proposed.
+- [~] The eight writable, ten locked, 51 pass-through and two neutral-delta fields are tested — **already true today** for the existing single-row path (§11); new tests for the sheet-name/Variant-ID fixes and the multi-row path are specified (§17) but not yet written, since this is a plan, not an implementation.
+- [~] Review and export bind to the exact source import, row digest and version — fully specified (§11, §9 ADR-8) but not yet built.
+- [x] File generation and SHOPLINE import confirmation remain separate — already true in current code and explicitly preserved as an invariant (§11).
+- [~] zh-HK/English, accessibility, responsive, loading, empty, error, stale, conflict, forbidden and retry states cover every affected route — fully specified per-route (§5, §8, §14) but not yet built for the Missing routes.
+- [x] Rollout and rollback are executable — §18, ADR-12.
+- [x] No phase enables production SHOPLINE writes — confirmed enforced and unoverridable today (§3), and no package in §16 proposes changing this.
+- [x] Unknown, Inferred and Proposed items are never presented as shipped capability — labeling discipline (Observed/Inferred/Proposed/Unverified) applied throughout this document.
+
+`[~]` marks items that are fully specified by this plan but correctly deferred to implementation (schema migrations, new tests, new UI) — this is expected for a planning-only deliverable and is not a gap in the plan itself.
+
+---
+
+> No application code, infrastructure, database, deployment or production SHOPLINE state was changed while preparing this plan.
