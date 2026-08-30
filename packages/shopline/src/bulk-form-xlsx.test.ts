@@ -10,6 +10,7 @@ import {
 import {
   BulkFormWorkbookError,
   readBulkFormSheet,
+  readBulkFormSheetName,
   writeBulkFormWorkbook,
 } from "./bulk-form-xlsx.js";
 
@@ -139,6 +140,15 @@ describe("bulk form xlsx adapter", () => {
     const sheetName = raw.match(/<sheet name="([^"]*)"/)?.[1];
 
     expect(sheetName).toBe("Default");
+  });
+
+  it("reads back the worksheet name it wrote", () => {
+    const bytes = writeBulkFormWorkbook([
+      ["Product ID (DO NOT EDIT)"],
+      ["001"],
+    ]);
+
+    expect(readBulkFormSheetName(bytes)).toBe("Default");
   });
 
   it("reads a workbook that stores its text in sharedStrings", () => {

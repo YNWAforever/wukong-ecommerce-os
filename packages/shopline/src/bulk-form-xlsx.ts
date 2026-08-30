@@ -257,6 +257,26 @@ export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
   return rows;
 }
 
+/**
+ * Reads the workbook's declared worksheet name from `xl/workbook.xml` — a
+ * different string from the zip entry path `firstWorksheetName` resolves
+ * internally. Opak's real exports and this reader's own writer both produce
+ * exactly one worksheet, so the first declared name is unambiguous.
+ */
+export function readBulkFormSheetName(bytes: Uint8Array): string {
+  const entries = readZipEntries(bytes);
+  const workbookXml = entries.get("xl/workbook.xml");
+  if (workbookXml === undefined) {
+    throw new BulkFormWorkbookError("workbook contains no xl/workbook.xml");
+  }
+  const xml = new TextDecoder().decode(workbookXml);
+  const match = /<sheet\s[^>]*\bname="([^"]*)"/.exec(xml);
+  if (match?.[1] === undefined) {
+    throw new BulkFormWorkbookError("workbook declares no worksheet name");
+  }
+  return match[1];
+}
+
 let crcTable: Uint32Array | null = null;
 
 function crc32(bytes: Uint8Array): number {
