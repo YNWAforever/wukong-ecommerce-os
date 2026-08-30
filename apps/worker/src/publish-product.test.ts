@@ -894,6 +894,7 @@ describe("publishApprovedProduct", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: existingFactsPrefill,
       contentDigest: "d".repeat(64),
+      sourceImportId: null,
     });
     const existingLink = {
       remoteProductId: "remote_existing_1",
