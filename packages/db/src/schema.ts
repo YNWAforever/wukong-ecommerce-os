@@ -680,6 +680,10 @@ export const platformProducts = pgTable(
       table.workspaceId,
       table.listingId,
     ),
+    index("platform_products_workspace_source_import_idx").on(
+      table.workspaceId,
+      table.sourceImportId,
+    ),
     check(
       "platform_products_origin_check",
       sql`origin IN ('import', 'created')`,
@@ -699,6 +703,10 @@ export const platformProducts = pgTable(
       columns: [table.workspaceId, table.listingId],
       foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
     }).onDelete("restrict"),
+    // Restrict, not cascade: source_imports is meant to be an immutable audit
+    // trail of each bulk-catalog-import event. An accidental delete of an
+    // import row must not silently orphan or cascade-null the attribution on
+    // platform_products rows that still reference it.
     foreignKey({
       name: "platform_products_workspace_source_import_fkey",
       columns: [table.workspaceId, table.sourceImportId],

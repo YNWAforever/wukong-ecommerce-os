@@ -34,6 +34,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE source_imports TO wukong_app;
 
 ALTER TABLE platform_products ADD COLUMN IF NOT EXISTS source_import_id uuid;
 
+CREATE INDEX IF NOT EXISTS platform_products_workspace_source_import_idx
+  ON platform_products (workspace_id, source_import_id);
+
 DO $platform_products_source_import_fkey$
 BEGIN
   IF NOT EXISTS (
