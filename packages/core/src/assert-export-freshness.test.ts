@@ -56,7 +56,11 @@ describe("assertExportFreshness", () => {
   it("rejects when the listing has no remote product link", async () => {
     const result = await assertExportFreshness(
       BASE_INPUT,
-      depsWith({ async getPlatformProductLink() { return null; } }),
+      depsWith({
+        async getPlatformProductLink() {
+          return null;
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "no_remote_link" });
   });
@@ -66,7 +70,10 @@ describe("assertExportFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_other", contentDigest: "digest_1" };
+          return {
+            sourceImportId: "source_import_other",
+            contentDigest: "digest_1",
+          };
         },
       }),
     );
@@ -78,7 +85,10 @@ describe("assertExportFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_1", contentDigest: "stale_digest" };
+          return {
+            sourceImportId: "source_import_1",
+            contentDigest: "stale_digest",
+          };
         },
       }),
     );
@@ -88,7 +98,11 @@ describe("assertExportFreshness", () => {
   it("rejects when the listing's active version has moved on", async () => {
     const result = await assertExportFreshness(
       BASE_INPUT,
-      depsWith({ async getActiveVersionId() { return "version_other"; } }),
+      depsWith({
+        async getActiveVersionId() {
+          return "version_other";
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "version_mismatch" });
   });

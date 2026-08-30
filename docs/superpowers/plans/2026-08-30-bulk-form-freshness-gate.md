@@ -7,8 +7,9 @@
 **Architecture:** Backend-only, no UI. A new `source_imports` table (RLS-protected like every other tenant table) gets one row per call to `createBulkFormImporter`; every `platform_products` row upserted in that batch is stamped with the new row's id. `assertExportFreshness` is a pure function in `packages/core` with injected deps, matching `transitionListing`'s ports-and-adapters style — it never touches Postgres directly.
 
 **Explicit resolutions to two ambiguities the design left for the plan:**
+
 - **`importerId`** is the existing `actorId` already passed into `createBulkFormImporter` — no new input is added for it.
-- **`merchantAttestedExportAt` and `filename` transport:** `POST /api/listings/import`'s body is raw xlsx bytes with no JSON/multipart wrapper, and today's `BulkImportPanel` sends nothing else. This plan adds them as two **required** query-string parameters (`?merchantAttestedExportAt=<ISO8601>&filename=<name>`). **Named consequence:** once this ships, the *existing, already-shipped* `BulkImportPanel` "Import" button will get a 400 (`merchant_attested_export_at_missing`) on every real import, because it does not send these params yet. That UI fix is a small, separate follow-up task, out of scope here by the design's own boundary — flag it to the user when this plan finishes, don't silently leave it. `sheetName` is **not** taken from the client; it is derived server-side from the uploaded bytes via a new `readBulkFormSheetName` helper, since the client has no reason to be trusted for it.
+- **`merchantAttestedExportAt` and `filename` transport:** `POST /api/listings/import`'s body is raw xlsx bytes with no JSON/multipart wrapper, and today's `BulkImportPanel` sends nothing else. This plan adds them as two **required** query-string parameters (`?merchantAttestedExportAt=<ISO8601>&filename=<name>`). **Named consequence:** once this ships, the _existing, already-shipped_ `BulkImportPanel` "Import" button will get a 400 (`merchant_attested_export_at_missing`) on every real import, because it does not send these params yet. That UI fix is a small, separate follow-up task, out of scope here by the design's own boundary — flag it to the user when this plan finishes, don't silently leave it. `sheetName` is **not** taken from the client; it is derived server-side from the uploaded bytes via a new `readBulkFormSheetName` helper, since the client has no reason to be trusted for it.
 
 **Tech Stack:** Drizzle ORM raw SQL migrations, Postgres RLS, Vitest, `node:crypto` sha256.
 
@@ -29,6 +30,7 @@ The integration test in Task 2 needs live Postgres (`docker compose up -d postgr
 ### Task 1: `source_imports` table and `platform_products.source_import_id` column
 
 **Files:**
+
 - Create: `packages/db/drizzle/0010_source_imports.sql`
 - Modify: `packages/db/src/schema.ts` (add `sourceImports` table; add one column to `platformProducts`)
 
@@ -152,10 +154,12 @@ $platform_products_source_import_fkey$;
 - [ ] **Step 3: Verify the package still typechecks**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/db typecheck
 ```
+
 Expected: PASS (the new table/column compile; nothing references `sourceImports` yet so nothing else should break).
 
 - [ ] **Step 4: Commit**
@@ -170,6 +174,7 @@ git commit -m "feat: add source_imports table and platform_products.source_impor
 ### Task 2: `source_imports` repository, wiring, and its RLS integration test
 
 **Files:**
+
 - Create: `packages/db/src/repositories/source-imports.ts`
 - Create: `packages/db/src/repositories/source-imports.integration.test.ts`
 - Modify: `packages/db/src/client.ts`
@@ -277,11 +282,13 @@ describe("source import repository", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 docker compose up -d postgres
 pnpm test:integration -- source-imports.integration.test.ts
 ```
+
 Expected: FAIL — `repositories.sourceImports` is `undefined` (the repository does not exist yet). If Postgres is unavailable in this environment, state that plainly and continue to Step 3 without having run it; come back to Step 4's verification once the stack is reachable.
 
 - [ ] **Step 3: Implement the repository**
@@ -361,7 +368,10 @@ export function createSourceImportRepository(
         .select(COLUMNS)
         .from(sourceImports)
         .where(
-          and(eq(sourceImports.workspaceId, workspaceId), eq(sourceImports.id, id)),
+          and(
+            eq(sourceImports.workspaceId, workspaceId),
+            eq(sourceImports.id, id),
+          ),
         )
         .limit(1);
       return row ?? null;
@@ -373,18 +383,24 @@ export function createSourceImportRepository(
 - [ ] **Step 4: Register the repository and run tests to verify they pass**
 
 In `packages/db/src/client.ts`:
+
 - Add the import (after the `platform-products.js` import block, line 42):
+
 ```ts
 import {
   createSourceImportRepository,
   type SourceImportRepository,
 } from "./repositories/source-imports.js";
 ```
+
 - Add to `WorkspaceRepositories` (after `platformProducts: PlatformProductRepository;`, line 69):
+
 ```ts
-  sourceImports: SourceImportRepository;
+sourceImports: SourceImportRepository;
 ```
+
 - Add to the `repositories` object built inside `runForWorkspace` (after the `platformProducts: createPlatformProductRepository(...)` block, line 171):
+
 ```ts
         sourceImports: createSourceImportRepository(
           transaction,
@@ -394,6 +410,7 @@ import {
 ```
 
 In `packages/db/src/index.ts`, add an export block (after the `platform-products.js` export block):
+
 ```ts
 export type {
   CreateSourceImportInput,
@@ -403,10 +420,12 @@ export type {
 ```
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test:integration -- source-imports.integration.test.ts
 ```
+
 Expected: PASS (2/2). If Postgres was unavailable at Step 2, run this once it is, and note explicitly if it still cannot be run.
 
 - [ ] **Step 5: Commit**
@@ -421,6 +440,7 @@ git commit -m "feat: add source imports repository with workspace-scoped RLS"
 ### Task 3: Stamp `sourceImportId` on `platform_products`
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/platform-products.ts`
 - Modify: `packages/db/src/repositories/platform-products.integration.test.ts`
 
@@ -429,49 +449,51 @@ git commit -m "feat: add source imports repository with workspace-scoped RLS"
 In `packages/db/src/repositories/platform-products.integration.test.ts`, add this test after the existing `"writes a whole batch in one statement"` test (after line 190, before `"rejects a facts prefill..."`):
 
 ```ts
-  it("stamps and round-trips a source import id through upsert", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const sourceImport = await repositories.sourceImports.create({
-        connectionId,
-        filename: "opak-export.xlsx",
-        workbookSha256: "d".repeat(64),
-        headerContractSha256: "e".repeat(64),
-        sheetName: "Default",
-        rowCount: 1,
-        merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
-        importerId: "user_1",
-        specVersion: "opak-2026-05",
-      });
-
-      await repositories.platformProducts.upsert({
-        connectionId,
-        remoteProductId: "aaaaaaaaaaaaaaaaaaaaaa09",
-        origin: "import",
-        sku: "0009",
-        listingId: null,
-        specVersion: "opak-2026-05",
-        rawRow: { productId: "aaaaaaaaaaaaaaaaaaaaaa09" },
-        factsPrefill: null,
-        contentDigest: "f".repeat(64),
-        sourceImportId: sourceImport.id,
-      });
-
-      const found = await repositories.platformProducts.listByRemoteProductIds(
-        connectionId,
-        ["aaaaaaaaaaaaaaaaaaaaaa09"],
-      );
-      expect(found[0]?.sourceImportId).toBe(sourceImport.id);
+it("stamps and round-trips a source import id through upsert", async () => {
+  await database.forWorkspace(workspaceId, async (repositories) => {
+    const sourceImport = await repositories.sourceImports.create({
+      connectionId,
+      filename: "opak-export.xlsx",
+      workbookSha256: "d".repeat(64),
+      headerContractSha256: "e".repeat(64),
+      sheetName: "Default",
+      rowCount: 1,
+      merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
+      importerId: "user_1",
+      specVersion: "opak-2026-05",
     });
+
+    await repositories.platformProducts.upsert({
+      connectionId,
+      remoteProductId: "aaaaaaaaaaaaaaaaaaaaaa09",
+      origin: "import",
+      sku: "0009",
+      listingId: null,
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "aaaaaaaaaaaaaaaaaaaaaa09" },
+      factsPrefill: null,
+      contentDigest: "f".repeat(64),
+      sourceImportId: sourceImport.id,
+    });
+
+    const found = await repositories.platformProducts.listByRemoteProductIds(
+      connectionId,
+      ["aaaaaaaaaaaaaaaaaaaaaa09"],
+    );
+    expect(found[0]?.sourceImportId).toBe(sourceImport.id);
   });
+});
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test:integration -- platform-products.integration.test.ts
 ```
+
 Expected: FAIL — TypeScript error, `sourceImportId` does not exist on `UpsertPlatformProductInput`.
 
 - [ ] **Step 3: Extend the repository**
@@ -481,16 +503,19 @@ In `packages/db/src/repositories/platform-products.ts`:
 Add `sourceImportId: string | null;` to `PlatformProduct` (after `contentDigest: string | null;`, line 30) and to `UpsertPlatformProductInput` (after `contentDigest: string | null;`, line 56).
 
 Add to `COLUMNS` (after `contentDigest: platformProducts.contentDigest,`, line 98):
+
 ```ts
   sourceImportId: platformProducts.sourceImportId,
 ```
 
 In `upsert`'s `.onConflictDoUpdate({ set: {...} })` (line 154-163), add:
+
 ```ts
             sourceImportId: input.sourceImportId,
 ```
 
 In `upsertMany`'s `.onConflictDoUpdate({ set: {...} })` (line 184-193), add:
+
 ```ts
             sourceImportId: sql`excluded.source_import_id`,
 ```
@@ -498,10 +523,12 @@ In `upsertMany`'s `.onConflictDoUpdate({ set: {...} })` (line 184-193), add:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test:integration -- platform-products.integration.test.ts
 ```
+
 Expected: PASS, including the new test. Note the existing tests in this file construct `UpsertPlatformProductInput` object literals without `sourceImportId` (e.g. line 80-90) — since it's now a required field on the type, add `sourceImportId: null,` to every existing literal in this file that constructs an `UpsertPlatformProductInput` (search the file for `contentDigest:` to find each one; there are 8 such literals as of this writing).
 
 - [ ] **Step 5: Commit**
@@ -516,6 +543,7 @@ git commit -m "feat: stamp platform_products with the source import that produce
 ### Task 4: Read the real worksheet name from an uploaded workbook
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form-xlsx.ts`
 - Modify: `packages/shopline/src/bulk-form-xlsx.test.ts`
 
@@ -526,17 +554,15 @@ git commit -m "feat: stamp platform_products with the source import that produce
 In `packages/shopline/src/bulk-form-xlsx.test.ts`, add this test after the existing `'names the generated worksheet "Default"...'` test (after line 142):
 
 ```ts
-  it("reads back the worksheet name it wrote", () => {
-    const bytes = writeBulkFormWorkbook([
-      ["Product ID (DO NOT EDIT)"],
-      ["001"],
-    ]);
+it("reads back the worksheet name it wrote", () => {
+  const bytes = writeBulkFormWorkbook([["Product ID (DO NOT EDIT)"], ["001"]]);
 
-    expect(readBulkFormSheetName(bytes)).toBe("Default");
-  });
+  expect(readBulkFormSheetName(bytes)).toBe("Default");
+});
 ```
 
 And add `readBulkFormSheetName` to the existing import from `./bulk-form-xlsx.js` (line 10-14):
+
 ```ts
 import {
   BulkFormWorkbookError,
@@ -549,10 +575,12 @@ import {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/shopline test -- bulk-form-xlsx.test.ts
 ```
+
 Expected: FAIL — `readBulkFormSheetName` is not exported.
 
 - [ ] **Step 3: Implement it**
@@ -584,10 +612,12 @@ export function readBulkFormSheetName(bytes: Uint8Array): string {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/shopline test -- bulk-form-xlsx.test.ts
 ```
+
 Expected: PASS, all tests in the file.
 
 - [ ] **Step 5: Commit**
@@ -602,6 +632,7 @@ git commit -m "feat: read a workbook's declared worksheet name"
 ### Task 5: Hash the current header contract
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form-digest.ts`
 - Create: `packages/shopline/src/bulk-form-digest.test.ts`
 - Modify: `packages/shopline/src/index.ts`
@@ -629,10 +660,12 @@ describe("hashBulkFormHeaderContract", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/shopline test -- bulk-form-digest.test.ts
 ```
+
 Expected: FAIL — `hashBulkFormHeaderContract` is not exported.
 
 - [ ] **Step 3: Implement it**
@@ -659,10 +692,13 @@ export function hashBulkFormHeaderContract(): string {
 - [ ] **Step 4: Export it and run tests to verify they pass**
 
 In `packages/shopline/src/index.ts`, change line 55 from:
+
 ```ts
 export { hashBulkFormRow } from "./bulk-form-digest.js";
 ```
+
 to:
+
 ```ts
 export {
   hashBulkFormHeaderContract,
@@ -671,10 +707,12 @@ export {
 ```
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/shopline test -- bulk-form-digest.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -689,6 +727,7 @@ git commit -m "feat: hash the current bulk form header contract"
 ### Task 6: Wire `source_imports` creation into `createBulkFormImporter`
 
 **Files:**
+
 - Modify: `apps/web/lib/bulk-form-import.ts`
 - Modify: `apps/web/lib/bulk-form-import.test.ts`
 
@@ -707,32 +746,34 @@ In `apps/web/lib/bulk-form-import.test.ts`, add a `sourceImports` fake to `impor
 Then add this new test at the end of the `describe("bulk form importer", ...)` block (after the last existing test, before the closing `});` on line 376):
 
 ```ts
-  it("creates a source_imports row and stamps its id on every upserted mirror", async () => {
-    const { importBulkForm, recorded } = importerWith();
+it("creates a source_imports row and stamps its id on every upserted mirror", async () => {
+  const { importBulkForm, recorded } = importerWith();
 
-    await importBulkForm({
-      workspaceId: "ws_opak",
-      actorId: "user_1",
-      rawBytes: new Uint8Array([1, 2, 3]),
-      merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
-      filename: "opak-export.xlsx",
-      sheetName: "Default",
-      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
-    });
-
-    expect(recorded.upserts.every((u) => u.sourceImportId === "source_import_1")).toBe(
-      true,
-    );
+  await importBulkForm({
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    rawBytes: new Uint8Array([1, 2, 3]),
+    merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
+    filename: "opak-export.xlsx",
+    sheetName: "Default",
+    sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
   });
+
+  expect(
+    recorded.upserts.every((u) => u.sourceImportId === "source_import_1"),
+  ).toBe(true);
+});
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- bulk-form-import.test.ts
 ```
+
 Expected: FAIL — TypeScript error, the new call passes `rawBytes`/`merchantAttestedExportAt`/`filename`/`sheetName` which don't exist on `BulkFormImportInput` yet (excess property error on the object literal).
 
 - [ ] **Step 3: Implement it**
@@ -740,11 +781,13 @@ Expected: FAIL — TypeScript error, the new call passes `rawBytes`/`merchantAtt
 In `apps/web/lib/bulk-form-import.ts`:
 
 Add the import (top of file, after the `@wukong/shopline` import block):
+
 ```ts
 import { createHash } from "node:crypto";
 ```
 
 Change the `@wukong/shopline` import (line 2-9) to also pull in the new hasher:
+
 ```ts
 import {
   hashBulkFormHeaderContract,
@@ -758,6 +801,7 @@ import {
 ```
 
 Extend `BulkFormImportInput` (lines 21-25):
+
 ```ts
 export type BulkFormImportInput = {
   workspaceId: string;
@@ -773,42 +817,43 @@ export type BulkFormImportInput = {
 Inside `importBulkForm`, right after the `parsed.rows.length > MAX_IMPORT_ROWS` guard (line 89, before the `return deps.getDatabase()...` call), compute the two hashes once:
 
 ```ts
-    const workbookSha256 = createHash("sha256")
-      .update(input.rawBytes)
-      .digest("hex");
-    const headerContractSha256 = hashBulkFormHeaderContract();
+const workbookSha256 = createHash("sha256")
+  .update(input.rawBytes)
+  .digest("hex");
+const headerContractSha256 = hashBulkFormHeaderContract();
 ```
 
 Inside the `forWorkspace` callback, right after the `connection` null-check (line 101, before `const known = ...`), create the source import row:
 
 ```ts
-        const sourceImport = await repositories.sourceImports.create({
-          connectionId: connection.id,
-          filename: input.filename,
-          workbookSha256,
-          headerContractSha256,
-          sheetName: input.sheetName,
-          rowCount: parsed.rows.length,
-          merchantAttestedExportAt: input.merchantAttestedExportAt,
-          importerId: input.actorId,
-          specVersion: parsed.specVersion,
-        });
+const sourceImport = await repositories.sourceImports.create({
+  connectionId: connection.id,
+  filename: input.filename,
+  workbookSha256,
+  headerContractSha256,
+  sheetName: input.sheetName,
+  rowCount: parsed.rows.length,
+  merchantAttestedExportAt: input.merchantAttestedExportAt,
+  importerId: input.actorId,
+  specVersion: parsed.specVersion,
+});
 ```
 
 In the `mirrors.push({...})` call (line 172-184), add one field:
+
 ```ts
-          mirrors.push({
-            connectionId: connection.id,
-            remoteProductId: row.productId,
-            sku: row.sku,
-            listingId,
-            specVersion: parsed.specVersion,
-            rawRow,
-            factsPrefill: row.facts,
-            contentDigest,
-            origin: "import",
-            sourceImportId: sourceImport.id,
-          });
+mirrors.push({
+  connectionId: connection.id,
+  remoteProductId: row.productId,
+  sku: row.sku,
+  listingId,
+  specVersion: parsed.specVersion,
+  rawRow,
+  factsPrefill: row.facts,
+  contentDigest,
+  origin: "import",
+  sourceImportId: sourceImport.id,
+});
 ```
 
 - [ ] **Step 4: Fix up the other existing test calls**
@@ -834,10 +879,12 @@ Then, in every existing `importBulkForm({ workspaceId: "ws_opak", actorId: "user
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- bulk-form-import.test.ts
 ```
+
 Expected: PASS, all tests including the new one.
 
 - [ ] **Step 6: Commit**
@@ -852,6 +899,7 @@ git commit -m "feat: attribute every imported product to its source import"
 ### Task 7: Collect the merchant-attested export timestamp and filename at the route
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/import/route.ts`
 - Modify: `apps/web/app/api/listings/import/route.test.ts`
 
@@ -889,73 +937,75 @@ Update every existing `requestWith(...)` call in this file to rely on the new de
 Add four new tests at the end of the `describe(...)` block (after the `"caps the number of issues it echoes back"` test, before the closing `});`):
 
 ```ts
-  it("rejects a request with no merchantAttestedExportAt", async () => {
-    const response = await handlerFor("operator")(
-      requestWith(
-        new Uint8Array([1]),
-        "http://localhost/api/listings/import?filename=opak-export.xlsx",
-      ),
-    );
+it("rejects a request with no merchantAttestedExportAt", async () => {
+  const response = await handlerFor("operator")(
+    requestWith(
+      new Uint8Array([1]),
+      "http://localhost/api/listings/import?filename=opak-export.xlsx",
+    ),
+  );
 
-    expect(response.status).toBe(400);
-    expect((await response.json()).code).toBe(
-      "merchant_attested_export_at_missing",
-    );
+  expect(response.status).toBe(400);
+  expect((await response.json()).code).toBe(
+    "merchant_attested_export_at_missing",
+  );
+});
+
+it("rejects a request with an unparseable merchantAttestedExportAt", async () => {
+  const response = await handlerFor("operator")(
+    requestWith(
+      new Uint8Array([1]),
+      "http://localhost/api/listings/import?merchantAttestedExportAt=not-a-date&filename=opak-export.xlsx",
+    ),
+  );
+
+  expect(response.status).toBe(400);
+  expect((await response.json()).code).toBe(
+    "merchant_attested_export_at_invalid",
+  );
+});
+
+it("rejects a request with no filename", async () => {
+  const response = await handlerFor("operator")(
+    requestWith(
+      new Uint8Array([1]),
+      "http://localhost/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00Z",
+    ),
+  );
+
+  expect(response.status).toBe(400);
+  expect((await response.json()).code).toBe("filename_missing");
+});
+
+it("passes the parsed timestamp, filename, and sheet name through to the importer", async () => {
+  let received: Record<string, unknown> | undefined;
+  const handler = handlerFor("operator", {
+    importBulkForm: async (input) => {
+      received = input as unknown as Record<string, unknown>;
+      return okResult;
+    },
   });
 
-  it("rejects a request with an unparseable merchantAttestedExportAt", async () => {
-    const response = await handlerFor("operator")(
-      requestWith(
-        new Uint8Array([1]),
-        "http://localhost/api/listings/import?merchantAttestedExportAt=not-a-date&filename=opak-export.xlsx",
-      ),
-    );
+  await handler(requestWith(new Uint8Array([1, 2, 3])));
 
-    expect(response.status).toBe(400);
-    expect((await response.json()).code).toBe(
-      "merchant_attested_export_at_invalid",
-    );
-  });
-
-  it("rejects a request with no filename", async () => {
-    const response = await handlerFor("operator")(
-      requestWith(
-        new Uint8Array([1]),
-        "http://localhost/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00Z",
-      ),
-    );
-
-    expect(response.status).toBe(400);
-    expect((await response.json()).code).toBe("filename_missing");
-  });
-
-  it("passes the parsed timestamp, filename, and sheet name through to the importer", async () => {
-    let received: Record<string, unknown> | undefined;
-    const handler = handlerFor("operator", {
-      importBulkForm: async (input) => {
-        received = input as unknown as Record<string, unknown>;
-        return okResult;
-      },
-    });
-
-    await handler(requestWith(new Uint8Array([1, 2, 3])));
-
-    expect(received?.filename).toBe("opak-export.xlsx");
-    expect(received?.sheetName).toBe("Default");
-    expect((received?.merchantAttestedExportAt as Date).toISOString()).toBe(
-      "2026-08-01T00:00:00.000Z",
-    );
-    expect(received?.rawBytes).toEqual(new Uint8Array([1, 2, 3]));
-  });
+  expect(received?.filename).toBe("opak-export.xlsx");
+  expect(received?.sheetName).toBe("Default");
+  expect((received?.merchantAttestedExportAt as Date).toISOString()).toBe(
+    "2026-08-01T00:00:00.000Z",
+  );
+  expect(received?.rawBytes).toEqual(new Uint8Array([1, 2, 3]));
+});
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- apps/web/app/api/listings/import/route.test.ts
 ```
+
 Expected: FAIL — `readSheetName` doesn't exist on `BulkFormImportRouteDeps`, and the route doesn't parse the new query params yet.
 
 - [ ] **Step 3: Implement it**
@@ -963,11 +1013,16 @@ Expected: FAIL — `readSheetName` doesn't exist on `BulkFormImportRouteDeps`, a
 In `apps/web/app/api/listings/import/route.ts`:
 
 Change the import from `@wukong/shopline/bulk-form-xlsx` (line 2):
+
 ```ts
-import { readBulkFormSheet, readBulkFormSheetName } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  readBulkFormSheet,
+  readBulkFormSheetName,
+} from "@wukong/shopline/bulk-form-xlsx";
 ```
 
 Extend `BulkFormImportRouteDeps` (lines 37-41):
+
 ```ts
 export type BulkFormImportRouteDeps = {
   sessionContext: SessionContextPort;
@@ -980,49 +1035,51 @@ export type BulkFormImportRouteDeps = {
 Right after the `upload_not_a_workbook` catch block (line 74-85, before `const result = await deps.importBulkForm({...})`), add the query-param parsing:
 
 ```ts
-      const url = new URL(request.url);
-      const merchantAttestedExportAtRaw = url.searchParams.get(
-        "merchantAttestedExportAt",
-      );
-      if (merchantAttestedExportAtRaw === null) {
-        throw new ApiError(
-          400,
-          "merchant_attested_export_at_missing",
-          "Provide the date this SHOPLINE export was generated.",
-        );
-      }
-      const merchantAttestedExportAt = new Date(merchantAttestedExportAtRaw);
-      if (Number.isNaN(merchantAttestedExportAt.getTime())) {
-        throw new ApiError(
-          400,
-          "merchant_attested_export_at_invalid",
-          "merchantAttestedExportAt must be a valid ISO 8601 date.",
-        );
-      }
-      const filename = url.searchParams.get("filename");
-      if (filename === null || filename.trim().length === 0) {
-        throw new ApiError(
-          400,
-          "filename_missing",
-          "Provide the original filename of the uploaded workbook.",
-        );
-      }
+const url = new URL(request.url);
+const merchantAttestedExportAtRaw = url.searchParams.get(
+  "merchantAttestedExportAt",
+);
+if (merchantAttestedExportAtRaw === null) {
+  throw new ApiError(
+    400,
+    "merchant_attested_export_at_missing",
+    "Provide the date this SHOPLINE export was generated.",
+  );
+}
+const merchantAttestedExportAt = new Date(merchantAttestedExportAtRaw);
+if (Number.isNaN(merchantAttestedExportAt.getTime())) {
+  throw new ApiError(
+    400,
+    "merchant_attested_export_at_invalid",
+    "merchantAttestedExportAt must be a valid ISO 8601 date.",
+  );
+}
+const filename = url.searchParams.get("filename");
+if (filename === null || filename.trim().length === 0) {
+  throw new ApiError(
+    400,
+    "filename_missing",
+    "Provide the original filename of the uploaded workbook.",
+  );
+}
 ```
 
 Change the `deps.importBulkForm({...})` call (line 87-91) to:
+
 ```ts
-      const result = await deps.importBulkForm({
-        workspaceId: context.workspaceId,
-        actorId: context.actorId,
-        sheet,
-        rawBytes: body,
-        merchantAttestedExportAt,
-        filename,
-        sheetName: deps.readSheetName(body),
-      });
+const result = await deps.importBulkForm({
+  workspaceId: context.workspaceId,
+  actorId: context.actorId,
+  sheet,
+  rawBytes: body,
+  merchantAttestedExportAt,
+  filename,
+  sheetName: deps.readSheetName(body),
+});
 ```
 
 Change the production wiring at the bottom of the file (line 116-120):
+
 ```ts
 export const POST = createBulkFormImportHandler({
   sessionContext: authSessionContext,
@@ -1035,10 +1092,12 @@ export const POST = createBulkFormImportHandler({
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- apps/web/app/api/listings/import/route.test.ts
 ```
+
 Expected: PASS, all tests including the 4 new ones.
 
 - [ ] **Step 5: Commit**
@@ -1053,6 +1112,7 @@ git commit -m "feat: require a merchant-attested export timestamp and filename o
 ### Task 8: `assertExportFreshness` pure gate function
 
 **Files:**
+
 - Create: `packages/core/src/assert-export-freshness.ts`
 - Create: `packages/core/src/assert-export-freshness.test.ts`
 - Modify: `packages/core/src/index.ts`
@@ -1120,7 +1180,11 @@ describe("assertExportFreshness", () => {
   it("rejects when the listing has no remote product link", async () => {
     const result = await assertExportFreshness(
       BASE_INPUT,
-      depsWith({ async getPlatformProductLink() { return null; } }),
+      depsWith({
+        async getPlatformProductLink() {
+          return null;
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "no_remote_link" });
   });
@@ -1130,7 +1194,10 @@ describe("assertExportFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_other", contentDigest: "digest_1" };
+          return {
+            sourceImportId: "source_import_other",
+            contentDigest: "digest_1",
+          };
         },
       }),
     );
@@ -1142,7 +1209,10 @@ describe("assertExportFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_1", contentDigest: "stale_digest" };
+          return {
+            sourceImportId: "source_import_1",
+            contentDigest: "stale_digest",
+          };
         },
       }),
     );
@@ -1152,7 +1222,11 @@ describe("assertExportFreshness", () => {
   it("rejects when the listing's active version has moved on", async () => {
     const result = await assertExportFreshness(
       BASE_INPUT,
-      depsWith({ async getActiveVersionId() { return "version_other"; } }),
+      depsWith({
+        async getActiveVersionId() {
+          return "version_other";
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "version_mismatch" });
   });
@@ -1170,10 +1244,12 @@ describe("assertExportFreshness", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/core test -- assert-export-freshness.test.ts
 ```
+
 Expected: FAIL — the module does not exist.
 
 - [ ] **Step 3: Implement it**
@@ -1187,7 +1263,9 @@ export type PlatformProductLink = {
 };
 
 export type AssertExportFreshnessDeps = {
-  getPlatformProductLink(listingId: string): Promise<PlatformProductLink | null>;
+  getPlatformProductLink(
+    listingId: string,
+  ): Promise<PlatformProductLink | null>;
   getActiveVersionId(listingId: string): Promise<string | null>;
   getSourceImportHeaderContractSha256(
     sourceImportId: string,
@@ -1218,8 +1296,7 @@ export type FreshnessFailureReason =
   | "header_contract_stale";
 
 export type FreshnessResult =
-  | { ok: true }
-  | { ok: false; reason: FreshnessFailureReason };
+  { ok: true } | { ok: false; reason: FreshnessFailureReason };
 
 /**
  * Gate a listing's SHOPLINE export against everything that must still be
@@ -1265,6 +1342,7 @@ export async function assertExportFreshness(
 - [ ] **Step 4: Export it and run tests to verify they pass**
 
 In `packages/core/src/index.ts`, add (after the `transitionListing`/`workflow.js` export block, lines 25-26):
+
 ```ts
 export { assertExportFreshness } from "./assert-export-freshness.js";
 export type {
@@ -1277,10 +1355,12 @@ export type {
 ```
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/core test -- assert-export-freshness.test.ts
 ```
+
 Expected: PASS, all 7 tests.
 
 - [ ] **Step 5: Commit**
@@ -1299,38 +1379,46 @@ git commit -m "feat: add the assertExportFreshness gate function"
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm format:runtime:check
 ```
+
 Expected: PASS. If it fails only on files this plan touched, run the repo's format-write command and re-check, then re-run Step 1.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 docker compose up -d postgres
 pnpm test:integration
 ```
+
 Expected: PASS, all packages, including the two `source_imports.integration.test.ts` cases and the extended `platform-products.integration.test.ts`. If Postgres is genuinely unreachable in this environment, state that explicitly in your final report rather than reporting this step as passed.
 
 - [ ] **Step 5: Report the known UI gap**

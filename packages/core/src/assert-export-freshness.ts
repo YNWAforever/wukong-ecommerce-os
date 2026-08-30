@@ -4,7 +4,9 @@ export type PlatformProductLink = {
 };
 
 export type AssertExportFreshnessDeps = {
-  getPlatformProductLink(listingId: string): Promise<PlatformProductLink | null>;
+  getPlatformProductLink(
+    listingId: string,
+  ): Promise<PlatformProductLink | null>;
   getActiveVersionId(listingId: string): Promise<string | null>;
   getSourceImportHeaderContractSha256(
     sourceImportId: string,
@@ -45,8 +47,7 @@ export type FreshnessFailureReason =
   | "header_contract_stale";
 
 export type FreshnessResult =
-  | { ok: true }
-  | { ok: false; reason: FreshnessFailureReason };
+  { ok: true } | { ok: false; reason: FreshnessFailureReason };
 
 /**
  * Gate a listing's SHOPLINE export against everything that must still be

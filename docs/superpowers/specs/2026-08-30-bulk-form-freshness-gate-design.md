@@ -6,7 +6,7 @@
 
 ## 1. What this builds
 
-Today, `platform_products` stores each imported product's raw row and content digest, but there is no durable record of the *import event itself* (which file, whose export, when), and no function enforcing the master instruction's freshness/identity conditions before an export is allowed to proceed. This package builds that missing entity and gate function — not the export flow that will eventually call it (that's Package H, not yet built).
+Today, `platform_products` stores each imported product's raw row and content digest, but there is no durable record of the _import event itself_ (which file, whose export, when), and no function enforcing the master instruction's freshness/identity conditions before an export is allowed to proceed. This package builds that missing entity and gate function — not the export flow that will eventually call it (that's Package H, not yet built).
 
 Confirmed via direct schema inspection: no `sourceImportId`-like entity exists anywhere in `packages/db/src/schema.ts` today.
 
@@ -15,20 +15,37 @@ Confirmed via direct schema inspection: no `sourceImportId`-like entity exists a
 **New table `source_imports`:**
 
 ```ts
-export const sourceImports = pgTable("source_imports", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: text("workspace_id").references(() => workspaces.id).notNull(),
-  connectionId: uuid("connection_id").references(() => shoplineConnections.id).notNull(),
-  filename: text("filename").notNull(),
-  workbookSha256: text("workbook_sha256").notNull(),
-  headerContractSha256: text("header_contract_sha256").notNull(),
-  sheetName: text("sheet_name").notNull(),
-  rowCount: integer("row_count").notNull(),
-  merchantAttestedExportAt: timestamp("merchant_attested_export_at", { withTimezone: true }).notNull(),
-  importerId: text("importer_id").notNull(),
-  specVersion: text("spec_version").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => [index("source_imports_workspace_idx").on(table.workspaceId, table.createdAt)]);
+export const sourceImports = pgTable(
+  "source_imports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    connectionId: uuid("connection_id")
+      .references(() => shoplineConnections.id)
+      .notNull(),
+    filename: text("filename").notNull(),
+    workbookSha256: text("workbook_sha256").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    sheetName: text("sheet_name").notNull(),
+    rowCount: integer("row_count").notNull(),
+    merchantAttestedExportAt: timestamp("merchant_attested_export_at", {
+      withTimezone: true,
+    }).notNull(),
+    importerId: text("importer_id").notNull(),
+    specVersion: text("spec_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("source_imports_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  ],
+);
 ```
 
 RLS: same `FORCE ROW LEVEL SECURITY` + workspace policy pattern already applied to every other tenant table (`packages/db/drizzle/0000_initial.sql`'s loop) — this table is added to that loop, not a new pattern.
@@ -65,11 +82,12 @@ type FreshnessResult = { ok: true } | FreshnessFailure;
 ```
 
 Checks, in order (fail fast, one reason per call — matches the existing `ApiError` single-code convention elsewhere in this codebase):
+
 1. `freshnessAttested` must be `true` — **no timestamp/threshold comparison of any kind**, per the master instruction's explicit directive not to hard-code 24/72h until Opak approves a policy. This is the whole "gate": a human must have explicitly confirmed freshness before calling this function with `true`.
 2. The listing's `platform_products` link exists and its `sourceImportId` equals `expectedSourceImportId`.
 3. Its `contentDigest` equals `expectedRowDigest`.
 4. The listing's `activeVersionId` equals `expectedVersionId`.
-5. The `source_imports` row's `headerContractSha256` equals a freshly-computed hash of the *current* `BULK_FORM_COLUMNS` contract (catches the case where the runtime's column contract changed since import — a code-level drift check, not a data-freshness check).
+5. The `source_imports` row's `headerContractSha256` equals a freshly-computed hash of the _current_ `BULK_FORM_COLUMNS` contract (catches the case where the runtime's column contract changed since import — a code-level drift check, not a data-freshness check).
 
 ## 5. Testing
 
