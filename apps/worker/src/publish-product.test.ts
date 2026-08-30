@@ -896,6 +896,11 @@ describe("publishApprovedProduct", () => {
       contentDigest: "d".repeat(64),
       sourceImportId: null,
     });
+    // A real, non-null source import id -- distinct from the seed upsert's
+    // `sourceImportId: null` above -- so the final assertion can tell
+    // "correctly preserved from `existingLink`" apart from "accidentally
+    // read back from the seeded row" or "defaulted to null".
+    const existingSourceImportId = "00000000-0000-4000-8000-000000000099";
     const existingLink = {
       remoteProductId: "remote_existing_1",
       origin: "import" as const,
@@ -904,6 +909,7 @@ describe("publishApprovedProduct", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: existingFactsPrefill,
       contentDigest: "d".repeat(64),
+      sourceImportId: existingSourceImportId,
     };
     const connector = makeConnector({
       updateProduct: vi.fn(async () => undefined),
@@ -929,6 +935,7 @@ describe("publishApprovedProduct", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: existingFactsPrefill,
       contentDigest: "d".repeat(64),
+      sourceImportId: existingSourceImportId,
     });
   });
 });
