@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ListingIntakeClient } from "../../../../components/listing-intake-client";
+import { ListingIntakeTabs } from "../../../../components/listing-intake-tabs";
 
 export default function NewListingPage() {
   return (
@@ -31,7 +31,7 @@ export default function NewListingPage() {
           <span>交付</span>
         </div>
       </div>
-      <ListingIntakeClient />
+      <ListingIntakeTabs />
     </div>
   );
 }
