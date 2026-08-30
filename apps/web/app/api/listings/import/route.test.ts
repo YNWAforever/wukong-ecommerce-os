@@ -106,6 +106,28 @@ describe("POST /api/listings/import", () => {
     expect((await response.json()).code).toBe("upload_not_a_workbook");
   });
 
+  it("rejects an upload whose sheet name cannot be read, without importing anything", async () => {
+    // readBulkFormSheetName can throw on bytes that pass readSheet fine but
+    // lack xl/workbook.xml or a valid sheet-name attribute. That must surface
+    // as a 400 (client-input problem), not fall through to a generic 500.
+    let imported = 0;
+    const handler = handlerFor("operator", {
+      readSheetName: () => {
+        throw new Error("workbook contains no xl/workbook.xml");
+      },
+      importBulkForm: async () => {
+        imported += 1;
+        return okResult;
+      },
+    });
+
+    const response = await handler(requestWith(new Uint8Array([1, 2, 3])));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("upload_sheet_name_unreadable");
+    expect(imported).toBe(0);
+  });
+
   it("caps the number of issues it echoes back", async () => {
     const handler = handlerFor("operator", {
       importBulkForm: async () => ({
@@ -152,6 +174,45 @@ describe("POST /api/listings/import", () => {
     expect((await response.json()).code).toBe(
       "merchant_attested_export_at_invalid",
     );
+  });
+
+  it("rejects a merchantAttestedExportAt that Date can parse loosely but is not ISO 8601", async () => {
+    // "08/01/2026" is not rejected by `new Date(...)` -- it silently parses to
+    // SOME date with engine-dependent, ambiguous month/day order. A freshness
+    // gate that compares this exact timestamp must not accept it.
+    const response = await handlerFor("operator")(
+      requestWith(
+        new Uint8Array([1]),
+        `http://localhost/api/listings/import?merchantAttestedExportAt=${encodeURIComponent("08/01/2026")}&filename=opak-export.xlsx`,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe(
+      "merchant_attested_export_at_invalid",
+    );
+  });
+
+  it("rejects a request with no merchantAttestedExportAt before parsing the upload", async () => {
+    // Proves the query-param checks run before the (potentially expensive)
+    // workbook parse, not after: readSheet must never be reached.
+    let parsed = 0;
+    const handler = handlerFor("operator", {
+      readSheet: () => {
+        parsed += 1;
+        return [["a"]];
+      },
+    });
+
+    const response = await handler(
+      requestWith(
+        new Uint8Array([1]),
+        "http://localhost/api/listings/import?filename=opak-export.xlsx",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(parsed).toBe(0);
   });
 
   it("rejects a request with no filename", async () => {
