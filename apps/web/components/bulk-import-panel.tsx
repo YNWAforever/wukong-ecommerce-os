@@ -38,8 +38,7 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   upload_not_a_workbook: "The upload is not a readable xlsx workbook.",
   bulk_form_unreadable:
     "No product rows could be read from this bulk update form.",
-  bulk_form_too_many_rows:
-    "This form holds too many products for one import.",
+  bulk_form_too_many_rows: "This form holds too many products for one import.",
   shopline_connection_missing:
     "Connect a SHOPLINE store before importing a catalog.",
   insufficient_role: "Operator access is required.",
@@ -127,9 +126,7 @@ export function BulkImportPanel() {
     <div className="intake-form">
       <div className="upload-dropzone">
         <label htmlFor="bulk-import-file" className="upload-label">
-          <span className="upload-title">
-            匯入 SHOPLINE Bulk Update 匯出檔
-          </span>
+          <span className="upload-title">匯入 SHOPLINE Bulk Update 匯出檔</span>
           <span className="upload-subtitle">
             上載最新匯出的 .xlsx 檔案 · 最多 4 MiB
           </span>

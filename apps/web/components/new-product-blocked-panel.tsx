@@ -13,8 +13,8 @@ export function NewProductBlockedPanel() {
       <p>
         新商品建立為獨立、另行驗證的流程，本頁面不會提供。
         <br />
-        New product creation is a separate, independently-validated flow and
-        is not offered from this page.
+        New product creation is a separate, independently-validated flow and is
+        not offered from this page.
       </p>
     </div>
   );

@@ -64,7 +64,9 @@ describe("submitBulkImport", () => {
   });
 
   it("returns a network_error when the fetcher throws", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("Failed to fetch"));
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
     const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
       fetcher,
     });
@@ -77,7 +79,9 @@ describe("submitBulkImport", () => {
   it("returns a network_error when the response body is not valid JSON", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(new Response("<html>gateway timeout</html>", { status: 504 }));
+      .mockResolvedValue(
+        new Response("<html>gateway timeout</html>", { status: 504 }),
+      );
     const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
       fetcher,
     });
@@ -165,12 +169,14 @@ describe("submitBulkImport", () => {
   });
 
   it("falls back to the server's message for an unrecognized error code", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json(
-        { code: "some_future_code", message: "server-provided detail" },
-        { status: 400 },
-      ),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code: "some_future_code", message: "server-provided detail" },
+          { status: 400 },
+        ),
+      );
     const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
       fetcher,
     });
@@ -239,9 +245,8 @@ describe("BulkImportPanel", () => {
       root.render(createElement(BulkImportPanel));
     });
 
-    const input = container.querySelector<HTMLInputElement>(
-      'input[type="file"]',
-    );
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     Object.defineProperty(input!, "files", {
       configurable: true,

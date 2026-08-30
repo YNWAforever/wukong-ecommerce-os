@@ -207,6 +207,15 @@ describe("parseBulkForm", () => {
     expect(codes(result.issues)).toEqual(["product_id_missing", "sku_missing"]);
   });
 
+  it("blocks a row that carries a non-empty Variant ID, pending variant support", () => {
+    const result = parseBulkForm(
+      sheetOf(dataRow({ variantId: "eeeeeeeeeeeeeeeeeeeeee01" })),
+    );
+
+    expect(result.rows).toHaveLength(0);
+    expect(codes(result.issues)).toEqual(["variant_row_blocked"]);
+  });
+
   it("drops a duplicate Product ID and keeps the first occurrence", () => {
     const result = parseBulkForm(
       sheetOf(dataRow({ nameEn: "first" }), dataRow({ nameEn: "second" })),
