@@ -1,5 +1,8 @@
 import type { BulkFormSheet } from "@wukong/shopline";
-import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  readBulkFormSheet,
+  readBulkFormSheetName,
+} from "@wukong/shopline/bulk-form-xlsx";
 
 import {
   createBulkFormImporter,
@@ -37,6 +40,7 @@ const MAX_ECHOED_ISSUES = 100;
 export type BulkFormImportRouteDeps = {
   sessionContext: SessionContextPort;
   readSheet(bytes: Uint8Array): BulkFormSheet;
+  readSheetName(bytes: Uint8Array): string;
   importBulkForm(input: BulkFormImportInput): Promise<BulkFormImportResult>;
 };
 
@@ -84,10 +88,42 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         );
       }
 
+      const url = new URL(request.url);
+      const merchantAttestedExportAtRaw = url.searchParams.get(
+        "merchantAttestedExportAt",
+      );
+      if (merchantAttestedExportAtRaw === null) {
+        throw new ApiError(
+          400,
+          "merchant_attested_export_at_missing",
+          "Provide the date this SHOPLINE export was generated.",
+        );
+      }
+      const merchantAttestedExportAt = new Date(merchantAttestedExportAtRaw);
+      if (Number.isNaN(merchantAttestedExportAt.getTime())) {
+        throw new ApiError(
+          400,
+          "merchant_attested_export_at_invalid",
+          "merchantAttestedExportAt must be a valid ISO 8601 date.",
+        );
+      }
+      const filename = url.searchParams.get("filename");
+      if (filename === null || filename.trim().length === 0) {
+        throw new ApiError(
+          400,
+          "filename_missing",
+          "Provide the original filename of the uploaded workbook.",
+        );
+      }
+
       const result = await deps.importBulkForm({
         workspaceId: context.workspaceId,
         actorId: context.actorId,
         sheet,
+        rawBytes: body,
+        merchantAttestedExportAt,
+        filename,
+        sheetName: deps.readSheetName(body),
       });
 
       console.info(
@@ -116,5 +152,6 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
 export const POST = createBulkFormImportHandler({
   sessionContext: authSessionContext,
   readSheet: readBulkFormSheet,
+  readSheetName: readBulkFormSheetName,
   importBulkForm: createBulkFormImporter({ getDatabase }),
 });
