@@ -77,7 +77,20 @@ export async function submitBulkImport(
     };
   }
 
-  const body = (await response.json()) as Record<string, unknown>;
+  let body: Record<string, unknown>;
+  try {
+    body = (await response.json()) as Record<string, unknown>;
+  } catch {
+    // A non-JSON body reaches here from a platform-level failure (e.g. a
+    // 502/504/524 gateway page) rather than the application itself, but the
+    // caller cannot tell the difference and does not need to: either way we
+    // could not get something usable back from the server.
+    return {
+      kind: "network_error",
+      message: "Could not reach the server. Try again.",
+    };
+  }
+
   if (!response.ok) {
     const code = typeof body.code === "string" ? body.code : "unknown_error";
     const message =

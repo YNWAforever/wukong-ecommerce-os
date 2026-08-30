@@ -70,6 +70,19 @@ describe("submitBulkImport", () => {
     });
   });
 
+  it("returns a network_error when the response body is not valid JSON", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("<html>gateway timeout</html>", { status: 504 }));
+    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
+      fetcher,
+    });
+    expect(result).toEqual({
+      kind: "network_error",
+      message: "Could not reach the server. Try again.",
+    });
+  });
+
   it("returns a success outcome with the real response fields", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json(
@@ -145,5 +158,52 @@ describe("submitBulkImport", () => {
       fetcher,
     });
     expect(result).toEqual({ kind: "api_error", code, message });
+  });
+
+  it("falls back to the server's message for an unrecognized error code", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        { code: "some_future_code", message: "server-provided detail" },
+        { status: 400 },
+      ),
+    );
+    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
+      fetcher,
+    });
+    expect(result).toEqual({
+      kind: "api_error",
+      code: "some_future_code",
+      message: "server-provided detail",
+    });
+  });
+
+  it("falls back to unknown_error when the response has no code", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ message: "server-provided detail" }, { status: 500 }),
+      );
+    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
+      fetcher,
+    });
+    expect(result).toEqual({
+      kind: "api_error",
+      code: "unknown_error",
+      message: "server-provided detail",
+    });
+  });
+
+  it("falls back to a generic message when the response has neither a known code nor a message", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({}, { status: 500 }));
+    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
+      fetcher,
+    });
+    expect(result).toEqual({
+      kind: "api_error",
+      code: "unknown_error",
+      message: "The import failed.",
+    });
   });
 });
