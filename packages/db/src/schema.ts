@@ -744,6 +744,13 @@ export const sourceImports = pgTable(
       table.workspaceId,
       table.createdAt,
     ),
+    // Backs source_imports_workspace_connection_fkey: without a leading index
+    // on these two columns, deleting a shopline_connections row would force a
+    // full scan of source_imports to enforce the FK.
+    index("source_imports_workspace_connection_idx").on(
+      table.workspaceId,
+      table.connectionId,
+    ),
     foreignKey({
       name: "source_imports_workspace_connection_fkey",
       columns: [table.workspaceId, table.connectionId],
