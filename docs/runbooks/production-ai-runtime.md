@@ -193,7 +193,6 @@ The release formatter temporarily waives only the exact canonical LF content bel
 | `apps/web/app/api/assets/presign/route.ts`                      | `7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea` |
 | `apps/worker/src/listing-consumer.test.ts`                      | `004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f` |
 | `packages/db/src/publish-jobs-schema.test.ts`                   | `8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8` |
-| `packages/db/src/repositories/publish-jobs.integration.test.ts` | `60f109af4c944409f7cfe348c697299a3f34a83a008b1c3478581d43f6e36c7c` |
 | `packages/jobs/src/cloudflare-queue.ts`                         | `1f17ed387564268afbdf82c4354a04d7e27b0525d0d2a5dfc613c925796f1b43` |
 
 ## Rollback
