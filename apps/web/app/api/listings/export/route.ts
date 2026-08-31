@@ -97,7 +97,21 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
       const body = bodySchema.parse(await request.json());
 
       try {
-        const attempt = await deps
+        // The callback only returns identifiers and DB-durable data
+        // (`attempt`) plus the pure-function output (`body`) -- the actual
+        // asset-store write happens AFTER this resolves, once the
+        // transaction has committed. Doing it inside the callback would let
+        // a later failure in the same callback (e.g. the audit insert
+        // hitting a transient error) roll back the `ensure()`d row while the
+        // already-written object survives, orphaned under a key nothing will
+        // ever reference again (a retry recomputes the same idempotency key
+        // but `ensure()` does a fresh INSERT with a new random id). Writing
+        // only after commit makes the one remaining failure direction the
+        // safe one: a committed attempt whose object isn't written yet,
+        // which a retry with the same idempotency key self-heals, since
+        // `createBulkExport` is pure over its deps and the same inputs
+        // deterministically produce the same bytes.
+        const { attempt, body: workbookBody } = await deps
           .getDatabase()
           .forWorkspace(session.workspaceId, async (repositories) => {
             const exportDeps: CreateBulkExportDeps = {
@@ -149,48 +163,53 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               specVersion: exported.specVersion,
             });
 
-            // Always write the workbook, even on a repeat request that hit
-            // the same idempotency key. This is an intentional idempotent
-            // overwrite, not wasted work: `createBulkExport` is pure over
-            // its deps, so the same inputs deterministically produce the
-            // same bytes, and re-writing guarantees the object exists even
-            // if an earlier attempt's write never completed after its
-            // `exportAttempts` row was already persisted.
-            await deps.getAssetStore().writeObject(
-              session.workspaceId,
-              createExportAssetKey({
+            // Only a genuinely new attempt gets its own audit event --
+            // `ensure()` returning an existing row (a pure repeat/
+            // double-click) must not duplicate it. Mirrors how
+            // `deliverListing`'s publish path only audits after
+            // `publishJobs.ensure()` reports a freshly created job
+            // (apps/web/lib/delivery-service.ts).
+            if (ensured.wasCreated) {
+              await repositories.audit.write({
                 workspaceId: session.workspaceId,
-                exportAttemptId: ensured.id,
-                fileName: `export-${ensured.id}.xlsx`,
-              }),
-              exported.body,
-              BULK_FORM_XLSX_MIME_TYPE,
-            );
+                actorId: session.actorId,
+                entityId: ensured.id,
+                action: "listing.bulk_export_created",
+                metadata: {
+                  exportAttemptId: ensured.id,
+                  includedListingIds: ensured.manifest
+                    .filter(
+                      (entry: ExportManifestEntry) =>
+                        entry.outcome === "included",
+                    )
+                    .map((entry: ExportManifestEntry) => entry.listingId),
+                  excludedListingIds: ensured.manifest
+                    .filter(
+                      (entry: ExportManifestEntry) =>
+                        entry.outcome !== "included",
+                    )
+                    .map((entry: ExportManifestEntry) => entry.listingId),
+                },
+              });
+            }
 
-            await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: ensured.id,
-              action: "listing.bulk_export_created",
-              metadata: {
-                exportAttemptId: ensured.id,
-                includedListingIds: ensured.manifest
-                  .filter(
-                    (entry: ExportManifestEntry) =>
-                      entry.outcome === "included",
-                  )
-                  .map((entry: ExportManifestEntry) => entry.listingId),
-                excludedListingIds: ensured.manifest
-                  .filter(
-                    (entry: ExportManifestEntry) =>
-                      entry.outcome !== "included",
-                  )
-                  .map((entry: ExportManifestEntry) => entry.listingId),
-              },
-            });
-
-            return ensured;
+            return { attempt: ensured, body: exported.body };
           });
+
+        // Always write the workbook, even on a repeat request that hit the
+        // same idempotency key -- see the comment above on why this is an
+        // intentional, self-healing idempotent overwrite rather than wasted
+        // work.
+        await deps.getAssetStore().writeObject(
+          session.workspaceId,
+          createExportAssetKey({
+            workspaceId: session.workspaceId,
+            exportAttemptId: attempt.id,
+            fileName: `export-${attempt.id}.xlsx`,
+          }),
+          workbookBody,
+          BULK_FORM_XLSX_MIME_TYPE,
+        );
 
         return jsonResponse(200, {
           exportAttemptId: attempt.id,

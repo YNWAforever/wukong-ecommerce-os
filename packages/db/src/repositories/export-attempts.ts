@@ -42,6 +42,20 @@ export type ExportAttempt = {
   createdAt: Date;
 };
 
+export type EnsuredExportAttempt = ExportAttempt & {
+  /**
+   * `true` exactly when this call's own INSERT won the race (a genuinely new
+   * attempt) -- `false` when it found an existing row under the same
+   * idempotency key (a pure repeat/double-click). Callers that write a
+   * side effect keyed off "this export attempt happened" (an audit event,
+   * a notification, ...) must gate on this, or a harmless repeat request
+   * duplicates that side effect. Mirrors how `deliverListing`'s publish path
+   * branches on `publishJobs.ensure()`'s returned job status before writing
+   * its own audit event (`apps/web/lib/delivery-service.ts`).
+   */
+  wasCreated: boolean;
+};
+
 export type ExportAttemptRepository = {
   /**
    * `idempotencyKey` must be fully deterministic from everything that
@@ -72,7 +86,7 @@ export type ExportAttemptRepository = {
    * defense-in-depth across independently-computed fields, not one check
    * standing in for another.
    */
-  ensure(input: EnsureExportAttemptInput): Promise<ExportAttempt>;
+  ensure(input: EnsureExportAttemptInput): Promise<EnsuredExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
 };
 
@@ -123,7 +137,12 @@ export function createExportAttemptRepository(
   return {
     async ensure(input) {
       scope.assertOpen();
-      await transaction
+      // `.returning()` on an `onConflictDoNothing()` insert yields a row
+      // only when THIS call's insert actually won -- a conflicting repeat
+      // gets back an empty array, not the existing row. That is what lets
+      // `wasCreated` distinguish "freshly inserted" from "found existing"
+      // without a second round trip beyond the fallback select below.
+      const [insertedRow] = await transaction
         .insert(exportAttempts)
         .values({
           workspaceId,
@@ -133,8 +152,10 @@ export function createExportAttemptRepository(
           rowCount: input.rowCount,
           specVersion: input.specVersion,
         })
-        .onConflictDoNothing();
-      const row = await selectByKey(input.idempotencyKey);
+        .onConflictDoNothing()
+        .returning(COLUMNS);
+      const wasCreated = insertedRow !== undefined;
+      const row = insertedRow ?? (await selectByKey(input.idempotencyKey));
       if (!row) throw new Error("export attempt insert did not return a row");
       if (
         row.rowCount !== input.rowCount ||
@@ -148,7 +169,7 @@ export function createExportAttemptRepository(
           "export attempt idempotency key does not match the stored row",
         );
       }
-      return row;
+      return { ...row, wasCreated };
     },
 
     async getById(id) {

@@ -87,6 +87,33 @@ describe("export attempts repository", () => {
     });
   });
 
+  it("reports wasCreated: true on the first insert and wasCreated: false on a repeat with the same idempotency key", async () => {
+    // A caller (the export route) gates a one-time side effect -- writing an
+    // audit event -- on this flag, so it must actually distinguish "this
+    // call's own INSERT won" from "this call found an existing row", not
+    // just always report true.
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const created = await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_was_created",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+      expect(created.wasCreated).toBe(true);
+
+      const repeat = await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_was_created",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+      expect(repeat.id).toBe(created.id);
+      expect(repeat.wasCreated).toBe(false);
+    });
+  });
+
   it("throws instead of silently returning a stale row when a repeat call's idempotency key collides with a different request", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
       await repositories.exportAttempts.ensure({

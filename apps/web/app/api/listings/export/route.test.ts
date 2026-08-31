@@ -170,7 +170,10 @@ function makeExportAttempts() {
             "export attempt idempotency key does not match the stored row",
           );
         }
-        return existing;
+        // Mirrors the real repository's `.onConflictDoNothing().returning()`
+        // semantics (packages/db/src/repositories/export-attempts.ts): a
+        // repeat call that finds an existing row reports `wasCreated: false`.
+        return { ...existing, wasCreated: false };
       }
       counter += 1;
       const id = `00000000-0000-4000-8000-${String(counter).padStart(12, "0")}`;
@@ -183,7 +186,7 @@ function makeExportAttempts() {
         createdAt: new Date(),
       };
       store.set(input.idempotencyKey, created);
-      return created;
+      return { ...created, wasCreated: true };
     },
     async getById(id: string) {
       for (const value of store.values()) {
@@ -199,6 +202,11 @@ function makeRepositories(
     reviewSnapshots?: Record<string, ReviewSnapshotFixture>;
     platformProducts?: Record<string, PlatformProductFixture>;
     headerContractSha256?: string;
+    // Simulates an ordinary transient failure (connection drop, pool
+    // exhaustion, ...) between `exportAttempts.ensure()` and the callback's
+    // return -- i.e. still inside the transaction, so it must roll back
+    // whatever `ensure()` just inserted.
+    auditWriteThrows?: boolean;
   } = {},
 ) {
   const reviewSnapshots = options.reviewSnapshots ?? defaultReviewSnapshots;
@@ -241,6 +249,9 @@ function makeRepositories(
     exportAttempts,
     audit: {
       async write(entry: any) {
+        if (options.auditWriteThrows) {
+          throw new Error("connection reset");
+        }
         audits.push(entry);
       },
     },
@@ -271,6 +282,7 @@ function makeHandler(
     reviewSnapshots?: Record<string, ReviewSnapshotFixture>;
     platformProducts?: Record<string, PlatformProductFixture>;
     headerContractSha256?: string;
+    auditWriteThrows?: boolean;
   } = {},
 ) {
   const { repositories, audits, exportAttempts } = makeRepositories(options);
@@ -372,8 +384,8 @@ describe("POST /api/listings/export", () => {
     expect(response.status).toBe(400);
   });
 
-  it("returns the same exportAttemptId for two identical requests", async () => {
-    const { handler } = makeHandler();
+  it("returns the same exportAttemptId for two identical requests, and writes only one audit event across both", async () => {
+    const { handler, audits } = makeHandler();
     const body = {
       listingIds: ["listing_changed", "listing_noop"],
       freshnessAttested: true,
@@ -383,6 +395,10 @@ describe("POST /api/listings/export", () => {
     expect(second.exportAttemptId).toBe(first.exportAttemptId);
     expect(second.manifest).toEqual(first.manifest);
     expect(second.rowCount).toBe(first.rowCount);
+    // The second call's `ensure()` found the existing row (wasCreated:
+    // false) rather than inserting a new one, so it must not duplicate the
+    // audit event for an export attempt that only genuinely happened once.
+    expect(audits).toHaveLength(1);
   });
 
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
@@ -492,5 +508,24 @@ describe("POST /api/listings/export", () => {
         outcome: "included",
       },
     ]);
+  });
+
+  it("never writes the export asset when a failure occurs after ensure() but before the transaction resolves", async () => {
+    // Simulates an ordinary transient failure (e.g. the audit insert hitting
+    // a dropped connection) between `exportAttempts.ensure()` succeeding and
+    // the `forWorkspace` callback returning. That failure rolls back the
+    // whole transaction, including the row `ensure()` just inserted -- so
+    // the asset-store write (which only happens after `forWorkspace`
+    // resolves) must never fire. Firing it anyway would orphan an object
+    // under a key nothing will ever reference again, since a client retry
+    // recomputes the same idempotency key but gets a fresh INSERT (and thus
+    // a new export attempt id, and a new asset key) rather than resurrecting
+    // the rolled-back row.
+    const { handler, assetStore } = makeHandler({ auditWriteThrows: true });
+    const response = await handler(
+      request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+    );
+    expect(response.status).toBe(500);
+    expect(assetStore.calls).toHaveLength(0);
   });
 });

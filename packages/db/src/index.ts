@@ -68,6 +68,7 @@ export type {
   UpsertReviewConfirmationInput,
 } from "./repositories/review-confirmations.js";
 export type {
+  EnsuredExportAttempt,
   EnsureExportAttemptInput,
   ExportAttempt,
   ExportAttemptRepository,
