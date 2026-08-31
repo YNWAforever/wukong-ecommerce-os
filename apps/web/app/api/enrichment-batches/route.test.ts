@@ -6,7 +6,7 @@ const okResult = {
   batchId: "batch_1",
   selected: 42,
   budgetUsd: 5,
-  waveSize: 10,
+  waveSize: 3,
 };
 
 function handlerFor(
