@@ -138,6 +138,8 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
+          maxLength={200}
+          disabled={busy}
           required
         />
       </label>
@@ -146,6 +148,7 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
         <select
           value={gap}
           onChange={(e) => setGap(e.target.value as EnrichmentGap)}
+          disabled={busy}
         >
           {Object.entries(GAP_LABELS).map(([value, text]) => (
             <option key={value} value={value}>
@@ -159,8 +162,11 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
         <input
           type="number"
           step="0.01"
+          min={0.01}
+          max={10000}
           value={budgetUsd}
           onChange={(e) => setBudgetUsd(e.target.value)}
+          disabled={busy}
           required
         />
       </label>
@@ -172,6 +178,7 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
           max={5}
           value={waveSize}
           onChange={(e) => setWaveSize(e.target.value)}
+          disabled={busy}
           required
         />
       </label>
