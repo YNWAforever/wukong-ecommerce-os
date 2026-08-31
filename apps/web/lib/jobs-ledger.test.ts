@@ -1,3 +1,4 @@
+import type { PipelineRunSummary, PublishJob } from "@wukong/db";
 import { describe, expect, it } from "vitest";
 
 import { buildJobsLedger } from "./jobs-ledger.js";
@@ -177,5 +178,131 @@ describe("buildJobsLedger", () => {
     expect(batch?.summary).toContain("My batch");
     expect(exportEntry?.listingId).toBeNull();
     expect(exportEntry?.summary).toMatch(/1.*row/i);
+  });
+
+  it("breaks a createdAt tie by descending id, matching Task 1's listForWorkspace convention", () => {
+    const tiedCreatedAt = new Date("2026-08-31T10:00:00Z");
+    const entries = buildJobsLedger(
+      {
+        batches: [
+          {
+            id: "b1",
+            label: "A",
+            budgetUsd: 1,
+            waveSize: 1,
+            status: "open",
+            createdBy: "u",
+            createdAt: tiedCreatedAt,
+          },
+          {
+            id: "b2",
+            label: "B",
+            budgetUsd: 1,
+            waveSize: 1,
+            status: "open",
+            createdBy: "u",
+            createdAt: tiedCreatedAt,
+          },
+        ],
+        publishJobs: [],
+        pipelineRuns: [],
+        exports: [],
+      },
+      10,
+    );
+    // desc(createdAt), desc(id): same timestamp, so "b2" (the greater id)
+    // sorts first.
+    expect(entries.map((e) => e.id)).toEqual(["b2", "b1"]);
+  });
+
+  it("falls back to a 'failed' normalizedStatus for a publish job or pipeline run status outside the known union", () => {
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [
+          {
+            id: "p1",
+            listingId: "l1",
+            versionId: "v1",
+            connectionId: "c1",
+            // Simulates a row holding a value the TS union doesn't cover --
+            // the repository layer only narrows this via an `as` cast over a
+            // plain `text()` column, so this is reachable at runtime.
+            status: "archived" as unknown as PublishJob["status"],
+            idempotencyKey: "k1",
+            payloadDigest: null,
+            remoteProductId: null,
+            error: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
+            attemptCount: 1,
+            createdAt: new Date("2026-08-31T10:00:00Z"),
+          },
+        ],
+        pipelineRuns: [
+          {
+            id: "pr1",
+            listingId: "l2",
+            versionId: null,
+            status: "archived" as unknown as PipelineRunSummary["status"],
+            errorCode: null,
+            createdAt: new Date("2026-08-31T09:00:00Z"),
+          },
+        ],
+        exports: [],
+      },
+      10,
+    );
+    const publishJobEntry = entries.find((e) => e.kind === "publish_job");
+    const pipelineRunEntry = entries.find((e) => e.kind === "pipeline_run");
+    expect(publishJobEntry?.normalizedStatus).toBe("failed");
+    expect(pipelineRunEntry?.normalizedStatus).toBe("failed");
+  });
+
+  it("summarizes a pending_enqueue/queued publish job as queued, not as actively publishing", () => {
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [
+          {
+            id: "p1",
+            listingId: "l1",
+            versionId: "v1",
+            connectionId: "c1",
+            status: "pending_enqueue",
+            idempotencyKey: "k1",
+            payloadDigest: null,
+            remoteProductId: null,
+            error: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
+            attemptCount: 0,
+            createdAt: new Date("2026-08-31T10:00:00Z"),
+          },
+          {
+            id: "p2",
+            listingId: "l2",
+            versionId: "v2",
+            connectionId: "c1",
+            status: "queued",
+            idempotencyKey: "k2",
+            payloadDigest: null,
+            remoteProductId: null,
+            error: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
+            attemptCount: 0,
+            createdAt: new Date("2026-08-31T09:00:00Z"),
+          },
+        ],
+        pipelineRuns: [],
+        exports: [],
+      },
+      10,
+    );
+    for (const entry of entries) {
+      expect(entry.summary).not.toBe("Publishing");
+      expect(entry.summary).toBe("Queued for publish");
+    }
   });
 });

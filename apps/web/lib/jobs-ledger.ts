@@ -51,10 +51,57 @@ const PIPELINE_RUN_STATUS: Record<
   failed: "failed",
 };
 
+// `publish_jobs.status` and `listing_pipeline_runs.status` are plain `text()`
+// columns, not real Postgres enums like `enrichment_batches.status` -- their
+// narrowed types only exist via an `as` cast in the repository layer. A row
+// holding a value outside that union (a manual DB fix, a retired status, an
+// incident-response patch) makes the lookups above return `undefined` at
+// runtime with no compile error. Falling back to "failed" instead of letting
+// `normalizedStatus` silently become `undefined` means an unrecognized status
+// reads as "something's wrong" -- the honest answer -- rather than as a
+// broken-looking blank on a page whose whole purpose is spotting problems.
+const FALLBACK_STATUS: NormalizedStatus = "failed";
+
+// Driven by `job.status` rather than just `remoteProductId`/`error`, so a
+// freshly-created job sitting in `pending_enqueue` or `queued` (neither has
+// started any real work, and both fields are still null) doesn't fall
+// through to the "Publishing" branch and read as active progress. This page
+// exists for "why is this stuck" investigations, where that distinction is
+// the whole point.
+function publishJobSummary(job: PublishJob): string {
+  switch (job.status) {
+    case "pending_enqueue":
+    case "queued":
+      return "Queued for publish";
+    case "running":
+      return "Publishing";
+    case "published":
+      return job.remoteProductId
+        ? `Published as ${job.remoteProductId}`
+        : "Published";
+    case "failed":
+      return job.error ? `Error: ${job.error}` : "Publish failed";
+    default:
+      // Unmapped status -- see FALLBACK_STATUS above for why this can happen
+      // despite the exhaustive-looking union.
+      return `Unrecognized status: ${job.status as string}`;
+  }
+}
+
 export function buildJobsLedger(
   sources: JobsLedgerSources,
   limit: number,
 ): LedgerEntry[] {
+  // Matches the bounds every sibling `listForWorkspace(limit?)` repository
+  // enforces (see enrichment-batches.ts, publish-jobs.ts, pipeline-runs.ts,
+  // export-attempts.ts). Without this, a negative limit would silently hit
+  // `Array.prototype.slice`'s negative-index semantics -- "all but the last
+  // N" -- instead of throwing, which is exactly the kind of surprise a route
+  // that parses a query-string limit could hand this function by accident.
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("jobs ledger limit must be between 1 and 100");
+  }
+
   const entries: LedgerEntry[] = [
     ...sources.batches.map((batch): LedgerEntry => ({
       kind: "batch",
@@ -69,20 +116,16 @@ export function buildJobsLedger(
       kind: "publish_job",
       id: job.id,
       listingId: job.listingId,
-      normalizedStatus: PUBLISH_JOB_STATUS[job.status],
+      normalizedStatus: PUBLISH_JOB_STATUS[job.status] ?? FALLBACK_STATUS,
       rawStatus: job.status,
       createdAt: job.createdAt,
-      summary: job.remoteProductId
-        ? `Published as ${job.remoteProductId}`
-        : job.error
-          ? `Error: ${job.error}`
-          : "Publishing",
+      summary: publishJobSummary(job),
     })),
     ...sources.pipelineRuns.map((run): LedgerEntry => ({
       kind: "pipeline_run",
       id: run.id,
       listingId: run.listingId,
-      normalizedStatus: PIPELINE_RUN_STATUS[run.status],
+      normalizedStatus: PIPELINE_RUN_STATUS[run.status] ?? FALLBACK_STATUS,
       rawStatus: run.status,
       createdAt: run.createdAt,
       summary: run.errorCode ? `Error: ${run.errorCode}` : "AI pipeline run",
