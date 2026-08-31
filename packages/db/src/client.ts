@@ -56,6 +56,10 @@ import {
   createReviewConfirmationRepository,
   type ReviewConfirmationRepository,
 } from "./repositories/review-confirmations.js";
+import {
+  createExportAttemptRepository,
+  type ExportAttemptRepository,
+} from "./repositories/export-attempts.js";
 import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
@@ -77,6 +81,7 @@ export type WorkspaceRepositories = {
   platformProducts: PlatformProductRepository;
   sourceImports: SourceImportRepository;
   reviewConfirmations: ReviewConfirmationRepository;
+  exportAttempts: ExportAttemptRepository;
   enrichmentBatches: EnrichmentBatchRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
@@ -185,6 +190,11 @@ export function createDatabase(
           scope,
         ),
         reviewConfirmations: createReviewConfirmationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        exportAttempts: createExportAttemptRepository(
           transaction,
           workspaceId,
           scope,

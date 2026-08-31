@@ -68,6 +68,13 @@ export type {
   UpsertReviewConfirmationInput,
 } from "./repositories/review-confirmations.js";
 export type {
+  EnsureExportAttemptInput,
+  ExportAttempt,
+  ExportAttemptRepository,
+  ExportManifestEntry,
+  ExportManifestOutcome,
+} from "./repositories/export-attempts.js";
+export type {
   CreateEnrichmentBatchInput,
   EnrichmentBatch,
   EnrichmentBatchCounts,
