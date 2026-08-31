@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { and, eq } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
@@ -44,11 +46,17 @@ export type ExportAttemptRepository = {
    * silently gets back whichever one landed first.
    *
    * This method cannot know what the key is derived from, so it cannot
-   * detect that kind of collision in general. What it does do is a cheap
-   * sanity check on repeat calls -- if `rowCount` or `specVersion` disagree
-   * with the row already stored under this key, something in the caller's
-   * key construction missed an input that matters, and this throws instead
-   * of quietly handing back stale data from an unrelated request.
+   * detect that kind of collision in general. What it does do is a sanity
+   * check on repeat calls: it compares the full `manifest` array already
+   * stored under this key against the input's `manifest`, entry by entry.
+   * `rowCount` and `specVersion` alone are not enough -- two requests can
+   * agree on both while every manifest entry disagrees on *why* a listing
+   * was included or excluded (e.g. all excluded as `not_attested` in one
+   * request, all excluded as `excluded_no_op` in another, same row count,
+   * same spec version). If the stored manifest disagrees with the input,
+   * something in the caller's key construction missed an input that
+   * matters, and this throws instead of quietly handing back stale data
+   * from an unrelated request.
    */
   ensure(input: EnsureExportAttemptInput): Promise<ExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
@@ -101,7 +109,8 @@ export function createExportAttemptRepository(
       if (!row) throw new Error("export attempt insert did not return a row");
       if (
         row.rowCount !== input.rowCount ||
-        row.specVersion !== input.specVersion
+        row.specVersion !== input.specVersion ||
+        !isDeepStrictEqual(row.manifest, input.manifest)
       ) {
         throw new Error(
           "export attempt idempotency key does not match the stored row",

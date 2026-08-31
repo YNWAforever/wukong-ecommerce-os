@@ -119,6 +119,53 @@ describe("export attempts repository", () => {
     });
   });
 
+  it("throws when a repeat call's manifest disagrees entry-by-entry even though rowCount and specVersion both match", async () => {
+    // Reproduces the exact scenario a rowCount/specVersion-only check would
+    // miss: a reviewer resubmits the same listing/version set after fixing
+    // freshnessAttested. If content was already in sync, every listing is
+    // excluded both times -- attempt 1 as "not_attested" (freshness check
+    // failed), attempt 2 as "excluded_no_op" (freshness check passed, but
+    // there was nothing to write). Same rowCount (0), same specVersion, but
+    // the stored manifest and the new one disagree on why each listing was
+    // excluded -- that disagreement must still be caught.
+    const notAttestedManifest = [
+      {
+        listingId: "11111111-1111-4111-8111-111111111111",
+        versionId: "22222222-2222-4222-8222-222222222222",
+        outcome: "excluded_stale" as const,
+        reason: "not_attested",
+      },
+    ];
+    const noOpManifest = [
+      {
+        listingId: "11111111-1111-4111-8111-111111111111",
+        versionId: "22222222-2222-4222-8222-222222222222",
+        outcome: "excluded_no_op" as const,
+        reason: "excluded_no_op",
+      },
+    ];
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_manifest_collision",
+        requestedBy: "user_1",
+        manifest: notAttestedManifest,
+        rowCount: 0,
+        specVersion: "bulk-form-v1",
+      });
+
+      await expect(
+        repositories.exportAttempts.ensure({
+          idempotencyKey: "key_manifest_collision",
+          requestedBy: "user_1",
+          manifest: noOpManifest,
+          rowCount: 0,
+          specVersion: "bulk-form-v1",
+        }),
+      ).rejects.toThrow(/idempotency key does not match/i);
+    });
+  });
+
   it("never exposes an export attempt to another workspace", async () => {
     const created = await database.forWorkspace(workspaceId, (repositories) =>
       repositories.exportAttempts.ensure({
