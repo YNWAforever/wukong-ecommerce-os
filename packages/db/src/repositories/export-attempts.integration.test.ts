@@ -296,4 +296,45 @@ describe("export attempts repository", () => {
       ).rejects.toThrow(/limit must be between 1 and 100/i);
     });
   });
+
+  it("breaks a created_at tie deterministically by id when several export attempts share one transaction's now()", async () => {
+    // database.forWorkspace wraps every call in one Postgres transaction, and
+    // Postgres's now() is fixed for the whole transaction (transaction-start
+    // time, not per-statement) -- so all three attempts created below get the
+    // exact same created_at with no backdating involved. This is the real
+    // production shape (e.g. one export request that ensures several
+    // attempts in a single call), not a test artifact: without an id
+    // tiebreaker, ORDER BY created_at DESC alone would leave these three in
+    // an arbitrary order.
+    const created = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const attempts = [];
+        for (let index = 0; index < 3; index += 1) {
+          attempts.push(
+            await repositories.exportAttempts.ensure({
+              idempotencyKey: `tie_order_${index}`,
+              requestedBy: "user_1",
+              manifest,
+              rowCount: 1,
+              specVersion: "bulk-form-v1",
+            }),
+          );
+        }
+        return attempts;
+      },
+    );
+    expect(
+      new Set(created.map((attempt) => attempt.createdAt.getTime())).size,
+    ).toBe(1);
+    const ids = created.map((attempt) => attempt.id);
+
+    const listed = await database.forWorkspace(workspaceId, (repositories) =>
+      repositories.exportAttempts.listForWorkspace(),
+    );
+    const tied = listed.filter((attempt) => ids.includes(attempt.id));
+    expect(tied.map((attempt) => attempt.id)).toEqual(
+      [...ids].sort().reverse(),
+    );
+  });
 });

@@ -316,4 +316,42 @@ describe("enrichment batch repository", () => {
       ).rejects.toThrow(/limit must be between 1 and 100/i);
     });
   });
+
+  it("breaks a created_at tie deterministically by id when several batches share one transaction's now()", async () => {
+    // database.forWorkspace wraps every call in one Postgres transaction, and
+    // Postgres's now() is fixed for the whole transaction (transaction-start
+    // time, not per-statement) -- so all three batches created below get the
+    // exact same created_at with no backdating involved. This is the real
+    // production shape (e.g. one admin action creating several batches),
+    // not a test artifact: without an id tiebreaker, ORDER BY created_at DESC
+    // alone would leave these three in an arbitrary order.
+    const created = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const batches = [];
+        for (let index = 0; index < 3; index += 1) {
+          batches.push(
+            await repositories.enrichmentBatches.create({
+              label: `tie order ${index}`,
+              budgetUsd: 1,
+              waveSize: 1,
+              createdBy: "operator@example.com",
+              listingIds: [],
+            }),
+          );
+        }
+        return batches;
+      },
+    );
+    expect(new Set(created.map((batch) => batch.createdAt.getTime())).size).toBe(
+      1,
+    );
+    const ids = created.map((batch) => batch.id);
+
+    const listed = await database.forWorkspace(workspaceId, (repositories) =>
+      repositories.enrichmentBatches.listForWorkspace(),
+    );
+    const tied = listed.filter((batch) => ids.includes(batch.id));
+    expect(tied.map((batch) => batch.id)).toEqual([...ids].sort().reverse());
+  });
 });

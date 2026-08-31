@@ -186,7 +186,11 @@ export function createPublishJobRepository(
         .select()
         .from(publishJobs)
         .where(eq(publishJobs.workspaceId, workspaceId))
-        .orderBy(desc(publishJobs.createdAt))
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(publishJobs.createdAt), desc(publishJobs.id))
         .limit(limit);
       // `toPublishJob` returns null only when `versionId` is missing, which
       // cannot happen for a row this repository created -- `ensure()` is the

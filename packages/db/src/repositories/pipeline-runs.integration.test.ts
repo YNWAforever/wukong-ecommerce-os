@@ -254,4 +254,48 @@ describe("listing pipeline run repository", () => {
       forWorkspace(database, "ws_pipeline_list", (repos) => repos.pipelineRuns.listForWorkspace(101)),
     ).rejects.toThrow(/limit must be between 1 and 100/i);
   });
+
+  it("breaks a created_at tie deterministically by id when several pipeline runs share one transaction's now()", async () => {
+    // db.forWorkspace wraps every call in one Postgres transaction, and
+    // Postgres's now() is fixed for the whole transaction (transaction-start
+    // time, not per-statement) -- so all three runs created below get the
+    // exact same created_at with no backdating involved. This is the real
+    // production shape (e.g. a queue consumer draining several pipeline
+    // steps in one call), not a test artifact: without an id tiebreaker,
+    // ORDER BY created_at DESC alone would leave these three in an
+    // arbitrary order. listForWorkspace is called inside the same
+    // transaction so its result reflects the genuinely-tied rows, not rows
+    // whose timestamps happened to drift apart across separate calls.
+    const { listingIds, listed } = await forWorkspace(database, "ws_pipeline_tie", async (repos) => {
+      const ids: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const listing = await repos.listings.create({ target: "shopline" });
+        const input = {
+          idempotencyKey: `listing:ws_pipeline_tie:${listing.id}:0`,
+          listingId: listing.id,
+          activeVersionSequence: 0,
+        };
+        const claim = await repos.pipelineRuns.claimStep({ ...input, step: "started" });
+        await repos.pipelineRuns.complete({
+          ...input,
+          step: "started",
+          leaseToken: claim.leaseToken!,
+          status: "needs_info",
+          versionId: null,
+        });
+        ids.push(listing.id);
+      }
+      return { listingIds: ids, listed: await repos.pipelineRuns.listForWorkspace() };
+    });
+
+    const tied = listed.filter((run) => listingIds.includes(run.listingId));
+    expect(tied).toHaveLength(3);
+    expect(new Set(tied.map((run) => run.createdAt.getTime())).size).toBe(1);
+    // The run's own id is only discoverable through listForWorkspace itself
+    // (claimStep/complete never return it), so this checks the returned
+    // order is already sorted descending by id -- exactly what the id
+    // tiebreak is supposed to guarantee among tied timestamps.
+    const tiedIds = tied.map((run) => run.id);
+    expect(tiedIds).toEqual([...tiedIds].sort().reverse());
+  });
 });

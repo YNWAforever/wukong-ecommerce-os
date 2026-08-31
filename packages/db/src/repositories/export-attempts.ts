@@ -199,7 +199,11 @@ export function createExportAttemptRepository(
         .select(COLUMNS)
         .from(exportAttempts)
         .where(eq(exportAttempts.workspaceId, workspaceId))
-        .orderBy(desc(exportAttempts.createdAt))
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(exportAttempts.createdAt), desc(exportAttempts.id))
         .limit(limit);
       return rows;
     },

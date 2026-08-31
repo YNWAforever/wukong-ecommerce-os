@@ -221,4 +221,35 @@ describe("publish job repository", () => {
       forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.listForWorkspace(101)),
     ).rejects.toThrow(/limit must be between 1 and 100/i);
   });
+
+  it("breaks a created_at tie deterministically by id when several publish jobs share one transaction's now()", async () => {
+    // forWorkspace wraps every call in one Postgres transaction, and
+    // Postgres's now() is fixed for the whole transaction (transaction-start
+    // time, not per-statement) -- so all three jobs created below get the
+    // exact same created_at with no backdating involved. This is the real
+    // production shape (e.g. a bulk-publish action enqueuing several jobs in
+    // one call), not a test artifact: without an id tiebreaker, ORDER BY
+    // created_at DESC alone would leave these three in an arbitrary order.
+    const created = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      const jobs = [];
+      for (let index = 0; index < 3; index += 1) {
+        jobs.push(
+          await repos.publishJobs.ensure({
+            listingId,
+            versionId,
+            connectionId,
+            idempotencyKey: `ws_publish_repo:tie_order:${index}`,
+            payloadDigest: "3".repeat(64),
+          }),
+        );
+      }
+      return jobs;
+    });
+    expect(new Set(created.map((job) => job.createdAt.getTime())).size).toBe(1);
+    const ids = created.map((job) => job.id);
+
+    const listed = await forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.listForWorkspace());
+    const tied = listed.filter((job) => ids.includes(job.id));
+    expect(tied.map((job) => job.id)).toEqual([...ids].sort().reverse());
+  });
 });
