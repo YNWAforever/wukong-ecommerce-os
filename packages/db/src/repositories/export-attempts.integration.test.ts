@@ -280,13 +280,11 @@ describe("export attempts repository", () => {
 
     await database.forWorkspace(workspaceId, async (repositories) => {
       const listed = await repositories.exportAttempts.listForWorkspace();
-      expect(listed.map((attempt) => attempt.id)).toEqual(
-        [...ids].reverse(),
-      );
+      expect(listed.map((attempt) => attempt.id)).toEqual([...ids].reverse());
       expect(listed.map((attempt) => attempt.id)).not.toContain(otherId);
-      expect(
-        listed.every((attempt) => attempt.createdAt instanceof Date),
-      ).toBe(true);
+      expect(listed.every((attempt) => attempt.createdAt instanceof Date)).toBe(
+        true,
+      );
 
       await expect(
         repositories.exportAttempts.listForWorkspace(0),

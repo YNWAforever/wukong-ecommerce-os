@@ -39,11 +39,12 @@ A pure function, `buildJobsLedger(sources: {batches, publishJobs, pipelineRuns, 
    type LedgerEntry = {
      kind: "batch" | "publish_job" | "pipeline_run" | "export";
      id: string;
-     listingId: string | null;       // null for batch/export (multi-listing)
-     normalizedStatus: "pending" | "running" | "succeeded" | "failed" | "cancelled";
-     rawStatus: string;               // the untranslated origin status, always shown alongside
+     listingId: string | null; // null for batch/export (multi-listing)
+     normalizedStatus:
+       "pending" | "running" | "succeeded" | "failed" | "cancelled";
+     rawStatus: string; // the untranslated origin status, always shown alongside
      createdAt: Date;
-     summary: string;                 // one-line, kind-specific (e.g. "3 of 5 listings enriched", "Export: 4 rows, 1 excluded")
+     summary: string; // one-line, kind-specific (e.g. "3 of 5 listings enriched", "Export: 4 rows, 1 excluded")
    };
    ```
 2. Normalizes each source's status vocabulary into the shared 5 values via a small per-kind lookup table (not a generic mapper — each kind's mapping is different enough that a shared function would just be a switch inside a switch):

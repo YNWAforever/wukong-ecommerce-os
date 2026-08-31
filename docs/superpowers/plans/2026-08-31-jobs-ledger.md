@@ -28,6 +28,7 @@ Integration tests need live Postgres (`docker compose up -d postgres`). Docker h
 ### Task 1: `listForWorkspace` on all 4 repositories
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/enrichment-batches.ts`
 - Modify: `packages/db/src/repositories/enrichment-batches.integration.test.ts`
 - Modify: `packages/db/src/repositories/publish-jobs.ts`
@@ -54,27 +55,34 @@ For each of the 4 repositories, add a test to its integration test file proving:
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run (once for each of the 4, or all together):
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration -- enrichment-batches.integration.test.ts publish-jobs.integration.test.ts pipeline-runs.integration.test.ts export-attempts.integration.test.ts
 ```
+
 Expected: FAIL — `listForWorkspace` does not exist on any of the 4. If Docker/Postgres is unreachable, state that explicitly and proceed to Step 4 anyway; verification happens once Postgres is reachable.
 
 - [ ] **Step 4: Implement it**
 
 **`enrichment-batches.ts`**: add `createdAt: Date` to the `EnrichmentBatch` type, add `enrichmentBatches.createdAt` to the `COLUMNS` constant, update `toEnrichmentBatch` if needed (it currently just spreads `row` and overrides `budgetUsd`, so the new field flows through automatically once it's in `COLUMNS`/`EnrichmentBatchRow`). Add to `EnrichmentBatchRepository`:
+
 ```ts
 listForWorkspace(limit?: number): Promise<EnrichmentBatch[]>;
 ```
+
 Implementation mirrors `listRecent`'s validation, `SELECT ... WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?`, mapped through `toEnrichmentBatch`.
 
 **`publish-jobs.ts`**: add `createdAt: Date` to `PublishJob`, add `createdAt: row.createdAt` to `toPublishJob`'s return (the underlying `.select()` calls in this file already select `*`, so `row.createdAt` is already available — confirm this by re-reading the file, since some call sites might use an explicit column list instead of `.select()`). Add:
+
 ```ts
 listForWorkspace(limit?: number): Promise<PublishJob[]>;
 ```
+
 Same validation/query/limit shape, `orderBy(desc(publishJobs.createdAt))`, mapped through `toPublishJob` (filter out any `null` result the way other methods do, or confirm `toPublishJob` never returns `null` for a real row from this query specifically — check its `if (!row?.versionId) return null` guard against whether `versionId` can genuinely be null on a real row before assuming this filter is unreachable here).
 
 **`pipeline-runs.ts`**: this repository has NO existing list capability — add a new type:
+
 ```ts
 export type PipelineRunSummary = {
   id: string;
@@ -85,16 +93,21 @@ export type PipelineRunSummary = {
   createdAt: Date;
 };
 ```
+
 and to `PipelineRunRepository`:
+
 ```ts
 listForWorkspace(limit?: number): Promise<PipelineRunSummary[]>;
 ```
+
 Query `listingPipelineRuns` directly (not through `listingPipelineSteps`), same validation/ordering/limit shape as the others.
 
 **`export-attempts.ts`**: add to `ExportAttemptRepository`:
+
 ```ts
 listForWorkspace(limit?: number): Promise<ExportAttempt[]>;
 ```
+
 Same validation/ordering/limit shape (`orderBy(desc(exportAttempts.createdAt))`), using the existing `COLUMNS` constant this file already has.
 
 - [ ] **Step 5: Register nothing new — these are additions to existing repository interfaces already wired into `client.ts`**
@@ -102,9 +115,11 @@ Same validation/ordering/limit shape (`orderBy(desc(exportAttempts.createdAt))`)
 No changes needed to `packages/db/src/client.ts` (the repositories are already constructed there) — only `packages/db/src/index.ts` needs a check: if `PipelineRunSummary` is new, export it alongside the repository's existing type exports (read the file first to find where `PipelineRunRepository`'s other types are exported, if at all — this repository's types may not currently be re-exported from `index.ts` at all, in which case add exactly the new type, not a wholesale new export block for types that were previously intentionally internal).
 
 Run:
+
 ```powershell
 corepack pnpm test:integration -- enrichment-batches.integration.test.ts publish-jobs.integration.test.ts pipeline-runs.integration.test.ts export-attempts.integration.test.ts
 ```
+
 Expected: PASS, or explicitly reported as blocked if Postgres is unreachable. Also run `corepack pnpm --filter @wukong/db exec tsc --noEmit` (works without Postgres) as the fallback correctness signal.
 
 - [ ] **Step 6: Commit**
@@ -119,6 +134,7 @@ git commit -m "feat: add listForWorkspace to the 4 jobs-ledger source repositori
 ### Task 2: `buildJobsLedger` — the pure merge function
 
 **Files:**
+
 - Create: `apps/web/lib/jobs-ledger.ts`
 - Create: `apps/web/lib/jobs-ledger.test.ts`
 
@@ -140,36 +156,123 @@ describe("buildJobsLedger", () => {
     const entries = buildJobsLedger(
       {
         batches: [
-          { id: "b1", label: "Batch 1", budgetUsd: 5, waveSize: 3, status: "open", createdBy: "u1", createdAt: new Date("2026-08-31T10:00:00Z") },
-          { id: "b2", label: "Batch 2", budgetUsd: 5, waveSize: 3, status: "budget_exhausted", createdBy: "u1", createdAt: new Date("2026-08-31T08:00:00Z") },
+          {
+            id: "b1",
+            label: "Batch 1",
+            budgetUsd: 5,
+            waveSize: 3,
+            status: "open",
+            createdBy: "u1",
+            createdAt: new Date("2026-08-31T10:00:00Z"),
+          },
+          {
+            id: "b2",
+            label: "Batch 2",
+            budgetUsd: 5,
+            waveSize: 3,
+            status: "budget_exhausted",
+            createdBy: "u1",
+            createdAt: new Date("2026-08-31T08:00:00Z"),
+          },
         ],
         publishJobs: [
-          { id: "p1", listingId: "l1", versionId: "v1", connectionId: "c1", status: "published", idempotencyKey: "k1", payloadDigest: null, remoteProductId: "r1", error: null, leaseToken: null, leaseExpiresAt: null, attemptCount: 1, createdAt: new Date("2026-08-31T09:00:00Z") },
+          {
+            id: "p1",
+            listingId: "l1",
+            versionId: "v1",
+            connectionId: "c1",
+            status: "published",
+            idempotencyKey: "k1",
+            payloadDigest: null,
+            remoteProductId: "r1",
+            error: null,
+            leaseToken: null,
+            leaseExpiresAt: null,
+            attemptCount: 1,
+            createdAt: new Date("2026-08-31T09:00:00Z"),
+          },
         ],
         pipelineRuns: [
-          { id: "pr1", listingId: "l2", versionId: null, status: "started", errorCode: null, createdAt: new Date("2026-08-31T11:00:00Z") },
+          {
+            id: "pr1",
+            listingId: "l2",
+            versionId: null,
+            status: "started",
+            errorCode: null,
+            createdAt: new Date("2026-08-31T11:00:00Z"),
+          },
         ],
         exports: [
-          { id: "e1", requestedBy: "u1", manifest: [{ listingId: "l3", versionId: "v3", outcome: "included" }], rowCount: 1, specVersion: "opak-2026-05", createdAt: new Date("2026-08-31T07:00:00Z") },
+          {
+            id: "e1",
+            requestedBy: "u1",
+            manifest: [
+              { listingId: "l3", versionId: "v3", outcome: "included" },
+            ],
+            rowCount: 1,
+            specVersion: "opak-2026-05",
+            createdAt: new Date("2026-08-31T07:00:00Z"),
+          },
         ],
       },
       10,
     );
 
     expect(entries.map((e) => e.id)).toEqual(["pr1", "b1", "p1", "b2", "e1"]);
-    expect(entries[0]).toMatchObject({ kind: "pipeline_run", normalizedStatus: "running", rawStatus: "started", listingId: "l2" });
-    expect(entries[1]).toMatchObject({ kind: "batch", normalizedStatus: "pending", rawStatus: "open", listingId: null });
-    expect(entries[2]).toMatchObject({ kind: "publish_job", normalizedStatus: "succeeded", rawStatus: "published", listingId: "l1" });
-    expect(entries[3]).toMatchObject({ kind: "batch", normalizedStatus: "cancelled", rawStatus: "budget_exhausted", listingId: null });
-    expect(entries[4]).toMatchObject({ kind: "export", normalizedStatus: "succeeded", rawStatus: "export_attempts", listingId: null });
+    expect(entries[0]).toMatchObject({
+      kind: "pipeline_run",
+      normalizedStatus: "running",
+      rawStatus: "started",
+      listingId: "l2",
+    });
+    expect(entries[1]).toMatchObject({
+      kind: "batch",
+      normalizedStatus: "pending",
+      rawStatus: "open",
+      listingId: null,
+    });
+    expect(entries[2]).toMatchObject({
+      kind: "publish_job",
+      normalizedStatus: "succeeded",
+      rawStatus: "published",
+      listingId: "l1",
+    });
+    expect(entries[3]).toMatchObject({
+      kind: "batch",
+      normalizedStatus: "cancelled",
+      rawStatus: "budget_exhausted",
+      listingId: null,
+    });
+    expect(entries[4]).toMatchObject({
+      kind: "export",
+      normalizedStatus: "succeeded",
+      rawStatus: "export_attempts",
+      listingId: null,
+    });
   });
 
   it("truncates to limit after merging, not per-source", () => {
     const entries = buildJobsLedger(
       {
         batches: [
-          { id: "b1", label: "A", budgetUsd: 1, waveSize: 1, status: "open", createdBy: "u", createdAt: new Date("2026-08-31T12:00:00Z") },
-          { id: "b2", label: "B", budgetUsd: 1, waveSize: 1, status: "open", createdBy: "u", createdAt: new Date("2026-08-31T11:00:00Z") },
+          {
+            id: "b1",
+            label: "A",
+            budgetUsd: 1,
+            waveSize: 1,
+            status: "open",
+            createdBy: "u",
+            createdAt: new Date("2026-08-31T12:00:00Z"),
+          },
+          {
+            id: "b2",
+            label: "B",
+            budgetUsd: 1,
+            waveSize: 1,
+            status: "open",
+            createdBy: "u",
+            createdAt: new Date("2026-08-31T11:00:00Z"),
+          },
         ],
         publishJobs: [],
         pipelineRuns: [],
@@ -184,10 +287,36 @@ describe("buildJobsLedger", () => {
   it("produces the correct summary and null listingId for each kind", () => {
     const entries = buildJobsLedger(
       {
-        batches: [{ id: "b1", label: "My batch", budgetUsd: 5, waveSize: 3, status: "completed", createdBy: "u", createdAt: new Date() }],
+        batches: [
+          {
+            id: "b1",
+            label: "My batch",
+            budgetUsd: 5,
+            waveSize: 3,
+            status: "completed",
+            createdBy: "u",
+            createdAt: new Date(),
+          },
+        ],
         publishJobs: [],
         pipelineRuns: [],
-        exports: [{ id: "e1", requestedBy: "u", manifest: [{ listingId: "l1", versionId: "v1", outcome: "included" }, { listingId: "l2", versionId: null, outcome: "listing_not_found" }], rowCount: 1, specVersion: "opak-2026-05", createdAt: new Date() }],
+        exports: [
+          {
+            id: "e1",
+            requestedBy: "u",
+            manifest: [
+              { listingId: "l1", versionId: "v1", outcome: "included" },
+              {
+                listingId: "l2",
+                versionId: null,
+                outcome: "listing_not_found",
+              },
+            ],
+            rowCount: 1,
+            specVersion: "opak-2026-05",
+            createdAt: new Date(),
+          },
+        ],
       },
       10,
     );
@@ -204,9 +333,11 @@ describe("buildJobsLedger", () => {
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- jobs-ledger.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -221,11 +352,7 @@ import type { ExportAttempt } from "@wukong/db";
 
 export type LedgerKind = "batch" | "publish_job" | "pipeline_run" | "export";
 export type NormalizedStatus =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
 export type LedgerEntry = {
   kind: LedgerKind;
@@ -335,9 +462,11 @@ Adjust the exact `@wukong/db` import paths/type names to match what Task 1 actua
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- jobs-ledger.test.ts
 ```
+
 Expected: PASS, all 3 tests.
 
 - [ ] **Step 6: Commit**
@@ -352,6 +481,7 @@ git commit -m "feat: add buildJobsLedger, the pure ledger-merge function"
 ### Task 3: `GET /api/jobs` route
 
 **Files:**
+
 - Create: `apps/web/app/api/jobs/route.ts`
 - Create: `apps/web/app/api/jobs/route.test.ts`
 
@@ -362,6 +492,7 @@ Read `apps/web/app/api/catalog/route.ts` in full (a `GET`-only route, no `[id]` 
 - [ ] **Step 2: Write the failing test**
 
 Create `apps/web/app/api/jobs/route.test.ts`, mirroring `catalog/route.test.ts`'s fixture style (fake `db.forWorkspace`). Cover:
+
 - Any authenticated member (viewer included) gets `200 { entries: [...] }` with entries from all 4 fake repositories merged.
 - An unauthenticated request gets `401` (matching `requireSessionContext`'s standard behavior — check the exact status/shape against the catalog route's own test for this case).
 - Each of the 4 repositories' `listForWorkspace` is called exactly once per request.
@@ -369,14 +500,17 @@ Create `apps/web/app/api/jobs/route.test.ts`, mirroring `catalog/route.test.ts`'
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/jobs/route.test.ts"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
 
 Create `apps/web/app/api/jobs/route.ts`. The handler:
+
 1. `requireSessionContext(deps.sessionContext)` — no role gate (viewer+, matching the catalog route).
 2. Inside `db.forWorkspace(session.workspaceId, async (repositories) => { ... })`, calls all 4 `listForWorkspace(100)` methods (fetch generously from each source — 100 each — since the final truncation to the page's actual display limit happens after the merge in `buildJobsLedger`, not per-source; fetching fewer than the display limit from any one source could wrongly under-represent a source that happens to have more recent activity than the others).
 3. Calls `buildJobsLedger({batches, publishJobs, pipelineRuns, exports}, 50)` (50 is the fixed display limit — matches the design's stated default).
@@ -385,9 +519,11 @@ Create `apps/web/app/api/jobs/route.ts`. The handler:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/jobs/route.test.ts"
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -402,6 +538,7 @@ git commit -m "feat: add GET /api/jobs"
 ### Task 4: `/jobs` page, client component, and nav link
 
 **Files:**
+
 - Create: `apps/web/app/(app)/jobs/page.tsx`
 - Create: `apps/web/components/jobs-ledger-client.tsx`
 - Create: `apps/web/components/jobs-ledger-client.test.tsx`
@@ -418,9 +555,11 @@ Create `apps/web/components/jobs-ledger-client.test.tsx`. Cover: renders a list 
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- jobs-ledger-client.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -430,6 +569,7 @@ Create `apps/web/components/jobs-ledger-client.tsx`: `"use client"`, `useState` 
 Create `apps/web/app/(app)/jobs/page.tsx`: server component, no role gate (matches `/catalog`), renders `<JobsLedgerClient />` inside the page's heading/layout wrapper (mirror `catalog/page.tsx`'s exact wrapper markup).
 
 In `apps/web/app/(app)/layout.tsx`, add a nav link between the existing `/listings/import` link and the `isAdmin` conditional block, matching the exact bilingual pattern already used by every other link:
+
 ```tsx
 <Link href="/jobs">
   內部作業 <span>Jobs</span>
@@ -439,9 +579,11 @@ In `apps/web/app/(app)/layout.tsx`, add a nav link between the existing `/listin
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- jobs-ledger-client.test.tsx
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -460,42 +602,52 @@ git commit -m "feat: add the /jobs ledger page and nav link"
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 Expected: PASS, all packages, including the new/extended integration tests from Task 1. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 ---
