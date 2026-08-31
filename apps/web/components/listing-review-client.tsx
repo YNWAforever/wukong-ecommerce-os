@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { ComplianceFlags } from "./compliance-flags";
+import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { ListingFieldsForm } from "./listing-fields-form";
@@ -646,6 +647,28 @@ export function ListingReviewClient({
     }, "合規提示已處理 · Compliance flag resolved");
   }
 
+  async function saveConfirmations(
+    nextFieldConfirmations: Record<string, boolean>,
+    nextNegativeConfirmations: Record<string, boolean>,
+  ) {
+    await run(async () => {
+      const response = await fetch(
+        `/api/listings/${listingId}/review-confirmations`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            versionId: model.versionId,
+            fieldConfirmations: nextFieldConfirmations,
+            negativeConfirmations: nextNegativeConfirmations,
+          }),
+        },
+      );
+      if (!response.ok) throw await responseError(response);
+      await load();
+    }, "確認狀態已更新 · Confirmation updated");
+  }
+
   async function exportCsv() {
     await run(async () => {
       const response = await fetch(`/api/listings/${listingId}/deliver`, {
@@ -727,8 +750,22 @@ export function ListingReviewClient({
             model={model}
             canApprove={permissions.canApprove && !busy}
             canEdit={permissions.canEdit && !busy}
+            fieldConfirmations={snapshot.reviewConfirmation?.fieldConfirmations}
+            negativeConfirmations={
+              snapshot.reviewConfirmation?.negativeConfirmations
+            }
             onApprove={approve}
             onSave={save}
+          />
+          <ConfirmationChecklist
+            fieldConfirmations={
+              snapshot.reviewConfirmation?.fieldConfirmations ?? {}
+            }
+            negativeConfirmations={
+              snapshot.reviewConfirmation?.negativeConfirmations ?? {}
+            }
+            canConfirm={permissions.canEdit && !busy}
+            onChange={saveConfirmations}
           />
           <ComplianceFlags
             flags={model.blockingFlags}

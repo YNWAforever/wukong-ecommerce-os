@@ -3,9 +3,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "./confirmation-checklist";
+import {
   ListingFieldsForm,
   type ListingReviewModel,
 } from "./listing-fields-form";
+
+const completeFieldConfirmations: Record<string, boolean> = Object.fromEntries(
+  CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+);
+const completeNegativeConfirmations: Record<string, boolean> =
+  Object.fromEntries(CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]));
 
 const model: ListingReviewModel = {
   id: "listing-1",
@@ -120,5 +130,33 @@ describe("ListingFieldsForm", () => {
     expect(markup).toContain("SEO 描述（繁中）");
     expect(markup).toContain("SEO 關鍵字");
     expect(markup).toContain("wine, riesling");
+  });
+
+  it("disables approval when the review confirmation checklist is incomplete, even with no blocking flags", () => {
+    const readyModel: ListingReviewModel = { ...model, blockingFlags: [] };
+
+    const markup = renderToStaticMarkup(
+      <ListingFieldsForm
+        model={readyModel}
+        fieldConfirmations={{}}
+        negativeConfirmations={{}}
+      />,
+    );
+
+    expect(markup).toContain('disabled=""');
+  });
+
+  it("enables approval once every field and negative confirmation is checked and no flags block it", () => {
+    const readyModel: ListingReviewModel = { ...model, blockingFlags: [] };
+
+    const markup = renderToStaticMarkup(
+      <ListingFieldsForm
+        model={readyModel}
+        fieldConfirmations={completeFieldConfirmations}
+        negativeConfirmations={completeNegativeConfirmations}
+      />,
+    );
+
+    expect(markup).not.toContain('disabled=""');
   });
 });
