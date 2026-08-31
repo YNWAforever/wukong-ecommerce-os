@@ -599,7 +599,8 @@ button:disabled {
   align-items: center;
 }
 .review-status,
-.connection-status {
+.connection-status,
+.batch-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
