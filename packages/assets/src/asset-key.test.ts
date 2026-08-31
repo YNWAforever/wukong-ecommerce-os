@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { assertAssetKey, assertExportAssetKey, createExportAssetKey } from "./asset-store.js";
+import {
+  assertAssetKey,
+  assertExportAssetKey,
+  createExportAssetKey,
+} from "./asset-store.js";
 
 it("rejects an owned key whose source segment is not a UUID", () => {
   expect(() =>
@@ -29,15 +33,19 @@ describe("createExportAssetKey / assertExportAssetKey", () => {
     expect(() => assertExportAssetKey("ws_2", key)).toThrow();
   });
 
-  it("rejects a sources/ key when asserting an export key, and vice versa", async () => {
+  it("rejects a sources/ key when asserting an export key, and vice versa", () => {
     const exportKey = createExportAssetKey({
       workspaceId: "ws_1",
       exportAttemptId: "11111111-1111-4111-8111-111111111111",
       fileName: "export.xlsx",
     });
-    // assertAssetKey (the existing, sources/-only check) must reject an
-    // exports/ key — the two namespaces stay validated independently.
-    const { assertAssetKey } = await import("./asset-store.js");
+    // The two namespaces validate independently in both directions.
     expect(() => assertAssetKey("ws_1", exportKey)).toThrow();
+    expect(() =>
+      assertExportAssetKey(
+        "ws_1",
+        "ws/ws_1/sources/11111111-1111-4111-8111-111111111111/file.pdf",
+      ),
+    ).toThrow();
   });
 });
