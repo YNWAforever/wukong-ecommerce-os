@@ -142,7 +142,11 @@ export function createEnrichmentBatchRepository(
         .select(COLUMNS)
         .from(enrichmentBatches)
         .where(eq(enrichmentBatches.workspaceId, workspaceId))
-        .orderBy(desc(enrichmentBatches.createdAt));
+        // `created_at` alone ties whenever two batches are created in the same
+        // transaction (Postgres's `now()` is the transaction start time, not
+        // wall-clock time) — `id` breaks the tie deterministically, the same
+        // fix `claimWave`'s raw SQL already applies below.
+        .orderBy(desc(enrichmentBatches.createdAt), desc(enrichmentBatches.id));
       return rows.map(toEnrichmentBatch);
     },
 

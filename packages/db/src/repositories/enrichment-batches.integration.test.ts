@@ -240,22 +240,31 @@ describe("enrichment batch repository", () => {
   });
 
   it("lists every batch for the workspace, newest first, and none from another", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const first = await repositories.enrichmentBatches.create({
+    // Separate transactions — matching one API request per batch in
+    // production — so each batch gets its own `now()` for `created_at`.
+    // Postgres's `now()` is the transaction start time, not wall-clock time,
+    // so creating both inside one shared transaction would give them an
+    // identical timestamp and make "newest first" pass only by accident.
+    const first = await database.forWorkspace(workspaceId, (repositories) =>
+      repositories.enrichmentBatches.create({
         label: "first",
         budgetUsd: 1,
         waveSize: 1,
         createdBy: "operator@example.com",
         listingIds: [],
-      });
-      const second = await repositories.enrichmentBatches.create({
+      }),
+    );
+    const second = await database.forWorkspace(workspaceId, (repositories) =>
+      repositories.enrichmentBatches.create({
         label: "second",
         budgetUsd: 1,
         waveSize: 1,
         createdBy: "operator@example.com",
         listingIds: [],
-      });
+      }),
+    );
 
+    await database.forWorkspace(workspaceId, async (repositories) => {
       const listed = await repositories.enrichmentBatches.listForWorkspace();
       const ids = listed.map((batch) => batch.id);
       expect(ids.indexOf(second.id)).toBeLessThan(ids.indexOf(first.id));
