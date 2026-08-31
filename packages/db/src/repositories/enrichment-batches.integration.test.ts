@@ -343,9 +343,9 @@ describe("enrichment batch repository", () => {
         return batches;
       },
     );
-    expect(new Set(created.map((batch) => batch.createdAt.getTime())).size).toBe(
-      1,
-    );
+    expect(
+      new Set(created.map((batch) => batch.createdAt.getTime())).size,
+    ).toBe(1);
     const ids = created.map((batch) => batch.id);
 
     const listed = await database.forWorkspace(workspaceId, (repositories) =>
