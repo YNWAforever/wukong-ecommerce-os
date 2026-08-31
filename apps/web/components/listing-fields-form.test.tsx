@@ -59,4 +59,66 @@ describe("ListingFieldsForm", () => {
     expect(markup).toContain('disabled=""');
     expect(markup).toContain("批准上架");
   });
+
+  it("renders the SEO & tags field group when SEO keys are present", () => {
+    const seoModel: ListingReviewModel = {
+      ...model,
+      fields: [
+        ...model.fields,
+        {
+          key: "seoTitleEn",
+          label: "SEO 標題（英文）",
+          englishLabel: "SEO title (English)",
+          value: "Opak Riesling",
+          confidence: null,
+          evidence: null,
+        },
+        {
+          key: "seoTitleZh",
+          label: "SEO 標題（繁中）",
+          englishLabel: "SEO title (Traditional Chinese)",
+          value: "Opak 雷司令",
+          confidence: null,
+          evidence: null,
+        },
+        {
+          key: "seoDescriptionEn",
+          label: "SEO 描述（英文）",
+          englishLabel: "SEO description (English)",
+          value: "Dry Mosel Riesling.",
+          confidence: null,
+          evidence: null,
+          kind: "textarea",
+        },
+        {
+          key: "seoDescriptionZh",
+          label: "SEO 描述（繁中）",
+          englishLabel: "SEO description (Traditional Chinese)",
+          value: "摩澤爾乾型雷司令。",
+          confidence: null,
+          evidence: null,
+          kind: "textarea",
+        },
+        {
+          key: "seoKeywords",
+          label: "SEO 關鍵字",
+          englishLabel: "SEO keywords",
+          value: "wine, riesling",
+          confidence: null,
+          evidence: null,
+        },
+      ],
+    };
+
+    const markup = renderToStaticMarkup(<ListingFieldsForm model={seoModel} />);
+
+    expect(markup).toContain("SEO 與標籤");
+    expect(markup).toContain("SEO &amp; tags");
+    expect(markup).toContain("SEO 標題（英文）");
+    expect(markup).toContain("SEO 標題（繁中）");
+    expect(markup).toContain("SEO 描述（英文）");
+    expect(markup).toContain("SEO 描述（繁中）");
+    expect(markup).toContain("SEO 關鍵字");
+    expect(markup).toContain("wine, riesling");
+  });
 });

@@ -291,6 +291,42 @@ export function mapListingView(
       evidenceKey: "description.en",
       kind: "textarea",
     }),
+    field(response.evidence, {
+      key: "seoTitleEn",
+      label: "SEO 標題（英文）",
+      englishLabel: "SEO title (English)",
+      value: content.seo.title.en,
+      evidenceKey: "seo.title.en",
+    }),
+    field(response.evidence, {
+      key: "seoTitleZh",
+      label: "SEO 標題（繁中）",
+      englishLabel: "SEO title (Traditional Chinese)",
+      value: content.seo.title["zh-Hant"],
+      evidenceKey: "seo.title.zh-Hant",
+    }),
+    field(response.evidence, {
+      key: "seoDescriptionEn",
+      label: "SEO 描述（英文）",
+      englishLabel: "SEO description (English)",
+      value: content.seo.description.en,
+      evidenceKey: "seo.description.en",
+      kind: "textarea",
+    }),
+    field(response.evidence, {
+      key: "seoDescriptionZh",
+      label: "SEO 描述（繁中）",
+      englishLabel: "SEO description (Traditional Chinese)",
+      value: content.seo.description["zh-Hant"],
+      evidenceKey: "seo.description.zh-Hant",
+      kind: "textarea",
+    }),
+    field(response.evidence, {
+      key: "seoKeywords",
+      label: "SEO 關鍵字",
+      englishLabel: "SEO keywords",
+      value: content.tags.join(", "),
+    }),
   ];
   const blockingFlags: BlockingFlag[] = response.flags.map((flag) => ({
     id: flag.id,
@@ -382,6 +418,20 @@ export function applyListingFields(
       en: valueOf(fields, "descriptionEn"),
       "zh-Hant": valueOf(fields, "descriptionZhHant"),
     },
+    seo: {
+      title: {
+        en: valueOf(fields, "seoTitleEn"),
+        "zh-Hant": valueOf(fields, "seoTitleZh"),
+      },
+      description: {
+        en: valueOf(fields, "seoDescriptionEn"),
+        "zh-Hant": valueOf(fields, "seoDescriptionZh"),
+      },
+    },
+    tags: valueOf(fields, "seoKeywords")
+      .split(/[,，]/)
+      .map((value) => value.trim())
+      .filter(Boolean),
   };
 }
 

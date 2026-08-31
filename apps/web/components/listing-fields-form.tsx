@@ -51,6 +51,17 @@ const groups: Array<{ label: string; englishLabel: string; keys: string[] }> = [
       "title",
     ],
   },
+  {
+    label: "SEO 與標籤",
+    englishLabel: "SEO & tags",
+    keys: [
+      "seoTitleEn",
+      "seoTitleZh",
+      "seoDescriptionEn",
+      "seoDescriptionZh",
+      "seoKeywords",
+    ],
+  },
 ];
 
 function inputValue(value: ListingField["value"]): string {
