@@ -199,8 +199,21 @@ export function assertAnyAssetKey(workspaceId: string, key: string): void {
   try {
     assertAssetKey(workspaceId, key);
     return;
-  } catch {
-    // fall through to the exports/ namespace check
+  } catch (error) {
+    // Only an expected validation failure falls through to the exports/
+    // check — anything else (a real bug in assertAssetKey) must propagate,
+    // not get silently masked behind a misleading exports/-namespace error.
+    if (!(error instanceof AssetInputError)) {
+      throw error;
+    }
+    if (key.startsWith(`ws/${workspaceId}/sources/`)) {
+      // The key was structurally within the sources/ namespace and failed
+      // sources/-specific validation (e.g. a malformed UUID segment).
+      // Surface that reason directly rather than re-validating against the
+      // unrelated exports/ namespace, which would otherwise replace it with
+      // a confusing "wrong namespace" message.
+      throw error;
+    }
   }
   assertExportAssetKey(workspaceId, key);
 }
