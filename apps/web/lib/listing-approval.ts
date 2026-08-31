@@ -96,18 +96,31 @@ export type ApproveOneDeps = {
    */
   confirmationLedgerRevision?: number;
   /**
-   * When both this and `expectedRowDigest` are supplied, `approveOne`
-   * re-reads `platformProducts.getByListingId` inside its own transaction and
-   * re-runs `assertApprovalFreshness` -- not just trusting phase 0's earlier
-   * read. Like `confirmationLedgerRevision`, a stable `expectedVersionId`
-   * does not imply the linked product's content is still fresh: a concurrent
-   * catalog re-import updates `platform_products.contentDigest`/
-   * `sourceImportId` via `upsertMany`'s `onConflictDoUpdate`, again without
-   * calling `appendVersion`. Per the design doc, "the content freshness check
-   * still runs at approval time regardless of when the confirmation itself
-   * was recorded" -- this is what makes that true, rather than phase 0's
-   * earlier read being the only check. Optional for the same reason as
-   * `expectedVersionId`/`confirmationLedgerRevision`.
+   * When `expectedVersionId` is supplied (bulk-approve never supplies it;
+   * see that field's doc), `approveOne` re-reads `platformProducts
+   * .getByListingId` inside its own transaction and re-derives whether the
+   * freshness gate applies at all (`link !== null && link.origin ===
+   * "import"`) -- it does NOT gate that re-derivation on whether this or
+   * `expectedRowDigest` were supplied. That matters because gate
+   * *applicability* itself can go stale, not just the values it checks once
+   * it applies: a create-origin listing's `platform_products` row can flip
+   * to `origin: "import"` via a concurrent catalog re-import matching the
+   * same connection/remote-product id (`bulk-form-import.ts`'s "existing
+   * link" refresh branch), without ever calling `appendVersion` -- so phase 0
+   * (the route's earlier, separate `forWorkspace` call) correctly saw no
+   * gate and the client never sent these fields, yet the gate now applies by
+   * commit time. If the freshly re-read link says the gate applies but
+   * this/`expectedRowDigest` are `undefined`, `approveOne` throws the same
+   * `400 source_freshness_required` phase 0 would have. If the gate applies
+   * and both are supplied, it re-runs `assertApprovalFreshness` against the
+   * freshly-read link -- not just trusting phase 0's earlier read of
+   * *values*, either: a concurrent re-import can also just update
+   * `contentDigest`/`sourceImportId` on a link that was already `origin:
+   * "import"` (`upsertMany`'s `onConflictDoUpdate`), again without calling
+   * `appendVersion`. Per the design doc, "the content freshness check still
+   * runs at approval time regardless of when the confirmation itself was
+   * recorded" -- this is what makes that true in full, not just for the
+   * values but for the gate itself.
    */
   sourceImportId?: string;
   /** Paired with `sourceImportId`; see that field's doc. */
@@ -256,34 +269,67 @@ export async function approveOne(
     }
   }
 
-  if (
-    deps.sourceImportId !== undefined &&
-    deps.expectedRowDigest !== undefined
-  ) {
-    const activeVersionId = snapshot.activeVersion.id;
-    const result = await assertApprovalFreshness(
-      {
-        workspaceId: auditContext.workspaceId,
-        listingId: id,
-        expectedSourceImportId: deps.sourceImportId,
-        expectedRowDigest: deps.expectedRowDigest,
-        expectedVersionId: activeVersionId,
-      },
-      {
-        async getPlatformProductLink() {
-          return repositories.platformProducts.getByListingId(id);
+  // Re-derive whether the freshness gate applies at all from a fresh read --
+  // NOT gated on `deps.sourceImportId`/`expectedRowDigest` being supplied.
+  // Those two only reflect what the CLIENT saw when phase 0 (the route's
+  // earlier, separate `forWorkspace` call) ran, which can itself be stale by
+  // commit time: a create-origin listing's `platform_products` row can flip
+  // to `origin: "import"` via a concurrent catalog re-import matching the
+  // same connection/remote-product id (`bulk-form-import.ts`'s "existing
+  // link" refresh branch), without ever calling `appendVersion` -- so the
+  // client never had freshness fields to send, yet the gate now applies.
+  // Trusting `deps.sourceImportId !== undefined` here would silently skip
+  // the check for exactly that listing.
+  //
+  // Gated on `deps.expectedVersionId !== undefined` instead -- the same
+  // signal the version-conflict check above uses -- because that is the
+  // caller's actual, stable opt-in for "run full phase-3 re-validation",
+  // supplied by the route handler itself rather than derived from anything
+  // that can go stale. Bulk approve never supplies `expectedVersionId` (it
+  // has no client-held review state to pin against at all, the same
+  // reasoning documented on `confirmationLedgerRevision` above) and so never
+  // re-derives this gate -- re-deriving it unconditionally for every
+  // `approveOne` caller would make bulk approve start 400-ing on every
+  // import-origin listing, which is out of this task's scope and would be a
+  // new regression, not a fix.
+  if (deps.expectedVersionId !== undefined) {
+    const link = await repositories.platformProducts.getByListingId(id);
+    if (link !== null && link.origin === "import") {
+      if (
+        deps.sourceImportId === undefined ||
+        deps.expectedRowDigest === undefined
+      ) {
+        throw new ApiError(
+          400,
+          "source_freshness_required",
+          "This listing is linked to an imported product and requires freshness fields.",
+        );
+      }
+      const activeVersionId = snapshot.activeVersion.id;
+      const result = await assertApprovalFreshness(
+        {
+          workspaceId: auditContext.workspaceId,
+          listingId: id,
+          expectedSourceImportId: deps.sourceImportId,
+          expectedRowDigest: deps.expectedRowDigest,
+          expectedVersionId: activeVersionId,
         },
-        async getActiveVersionId() {
-          return activeVersionId;
+        {
+          async getPlatformProductLink() {
+            return link;
+          },
+          async getActiveVersionId() {
+            return activeVersionId;
+          },
         },
-      },
-    );
-    if (!result.ok) {
-      throw new ApiError(
-        409,
-        result.reason,
-        "This listing's source data no longer matches what was reviewed.",
       );
+      if (!result.ok) {
+        throw new ApiError(
+          409,
+          result.reason,
+          "This listing's source data no longer matches what was reviewed.",
+        );
+      }
     }
   }
 

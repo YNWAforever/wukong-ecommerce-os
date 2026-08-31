@@ -1185,4 +1185,110 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
     expect(linkCallCount).toBe(2);
   });
+
+  it("rejects with 400 source_freshness_required instead of silently approving when a create-origin listing's platform_products link flips to import-origin between phase 0's checks and the approval transaction", async () => {
+    // Simulates the gate-applicability race: phase 0 sees no link at all (a
+    // create-origin listing, same as a listing that was never published), so
+    // it correctly does not require sourceImportId/expectedRowDigest and the
+    // client never sends them. Before phase 3 runs, a concurrent catalog
+    // re-import matches this listing's platform_products row (same
+    // connection/remote-product id) and flips it to `origin: "import"` with
+    // a real digest -- again without ever calling `appendVersion`, so the
+    // active version never changes. `approveOne` must re-derive that the
+    // gate now applies and reject for missing freshness fields, rather than
+    // trusting that `deps.sourceImportId === undefined` means the gate still
+    // doesn't apply.
+    const calls: unknown[] = [];
+    let linkCallCount = 0;
+    const handler = createApproveListingHandler({
+      sessionContext: {
+        async resolve() {
+          return { ...context, role: "reviewer" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repos: any) => Promise<T>,
+          ) {
+            return work({
+              listings: {
+                async getReviewSnapshot(id: string) {
+                  return {
+                    listing: {
+                      id,
+                      target: "shopline",
+                      status: "in_review",
+                    },
+                    activeVersion: {
+                      id: versionId,
+                      sequence: 3,
+                      content: { sku: "OPAK-001", imageAssetIds: [] },
+                    },
+                    evidence: [],
+                    flags: [],
+                  };
+                },
+                async approve(
+                  id: string,
+                  version: string,
+                  auditContext: unknown,
+                ) {
+                  calls.push(["approve-should-not-be-called", id, version]);
+                },
+              },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId(id: string) {
+                  linkCallCount += 1;
+                  calls.push([
+                    "platformProducts.getByListingId",
+                    id,
+                    linkCallCount,
+                  ]);
+                  if (linkCallCount === 1) return null;
+                  return {
+                    origin: "import" as const,
+                    sourceImportId: "import_1",
+                    contentDigest: "digest_1",
+                  };
+                },
+              },
+              audit: {
+                async write(event: unknown) {
+                  calls.push(["audit", event]);
+                },
+              },
+            });
+          },
+        }) as never,
+      approve: async () => {
+        calls.push(["domainApprove-should-not-be-called"]);
+        return { versionId, status: "approved" as const };
+      },
+    });
+
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: "source_freshness_required",
+    });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["approve-should-not-be-called"]),
+    );
+    expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
+    expect(linkCallCount).toBe(2);
+  });
 });
