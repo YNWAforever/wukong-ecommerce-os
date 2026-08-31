@@ -30,10 +30,11 @@ Integration tests need live Postgres (`docker compose up -d postgres`). Docker h
 ### Task 1: Extend `packages/assets` to store generated export files
 
 **Files:**
+
 - Modify: `packages/assets/src/asset-store.ts`
 - Modify: `packages/assets/src/asset-key.test.ts`
 
-**Why this task exists:** `packages/assets`'s `AssetStore` (`writeObject`/`readObject`, backed by `S3AssetStore` in production, `MemoryAssetStore` in tests) is the only R2/S3-backed binary store in this codebase, and the approved design explicitly reuses it for the generated XLSX. But every method calls `assertAssetKey`, which today hardcodes a `ws/{workspaceId}/sources/{uuid}/{filename}` key shape meant for user-*uploaded* source evidence (photos/PDFs), and `SUPPORTED_ASSET_MIME_TYPES` only lists `image/jpeg`, `image/png`, `image/webp`, `application/pdf` — no spreadsheet MIME type. This task makes the smallest possible extension: a second, parallel key-and-kind concept for generated exports, without loosening validation for the existing upload path.
+**Why this task exists:** `packages/assets`'s `AssetStore` (`writeObject`/`readObject`, backed by `S3AssetStore` in production, `MemoryAssetStore` in tests) is the only R2/S3-backed binary store in this codebase, and the approved design explicitly reuses it for the generated XLSX. But every method calls `assertAssetKey`, which today hardcodes a `ws/{workspaceId}/sources/{uuid}/{filename}` key shape meant for user-_uploaded_ source evidence (photos/PDFs), and `SUPPORTED_ASSET_MIME_TYPES` only lists `image/jpeg`, `image/png`, `image/webp`, `application/pdf` — no spreadsheet MIME type. This task makes the smallest possible extension: a second, parallel key-and-kind concept for generated exports, without loosening validation for the existing upload path.
 
 - [ ] **Step 1: Read the current file first**
 
@@ -86,14 +87,16 @@ describe("createExportAssetKey / assertExportAssetKey", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/assets test -- asset-key.test.ts
 ```
+
 Expected: FAIL — `assertExportAssetKey`/`createExportAssetKey` do not exist yet.
 
 - [ ] **Step 4: Implement it**
 
-In `packages/assets/src/asset-store.ts`, add a spreadsheet MIME constant (kept separate from `SUPPORTED_ASSET_MIME_TYPES`, which stays exactly what it is today — a user-*upload* allowlist that this task must not loosen) and the two new functions, placed near `createAssetKey`/`assertAssetKey`:
+In `packages/assets/src/asset-store.ts`, add a spreadsheet MIME constant (kept separate from `SUPPORTED_ASSET_MIME_TYPES`, which stays exactly what it is today — a user-_upload_ allowlist that this task must not loosen) and the two new functions, placed near `createAssetKey`/`assertAssetKey`:
 
 ```ts
 export const BULK_FORM_XLSX_MIME_TYPE =
@@ -154,7 +157,7 @@ export function assertExportAssetKey(workspaceId: string, key: string): void {
 }
 ```
 
-`AssetStore.writeObject`/`readObject` take a `key`/`mimeType` already. During this step, re-read `s3-asset-store.ts`'s `writeObject`/`readObject` bodies and confirm whether `assertAssetKey` is called *inside* those two methods specifically (not just `createReadUrl`/`head`). If it is (expected, per Step 1's read), this task must ALSO loosen exactly those two call sites to accept either `assertAssetKey` or `assertExportAssetKey` — add a small internal helper:
+`AssetStore.writeObject`/`readObject` take a `key`/`mimeType` already. During this step, re-read `s3-asset-store.ts`'s `writeObject`/`readObject` bodies and confirm whether `assertAssetKey` is called _inside_ those two methods specifically (not just `createReadUrl`/`head`). If it is (expected, per Step 1's read), this task must ALSO loosen exactly those two call sites to accept either `assertAssetKey` or `assertExportAssetKey` — add a small internal helper:
 
 ```ts
 function assertAnyAssetKey(workspaceId: string, key: string): void {
@@ -175,9 +178,11 @@ Export `BULK_FORM_XLSX_MIME_TYPE`, `createExportAssetKey`, and `assertExportAsse
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/assets test
 ```
+
 Expected: PASS, all files (including every pre-existing `sources/`-path test, unmodified and still green).
 
 - [ ] **Step 6: Commit**
@@ -192,6 +197,7 @@ git commit -m "feat: add an exports/ asset-key namespace for generated deliverab
 ### Task 2: `export_attempts` schema, migration, and repository
 
 **Files:**
+
 - Modify: `packages/db/src/schema.ts`
 - Create: `packages/db/drizzle/0014_export_attempts.sql`
 - Create: `packages/db/src/repositories/export-attempts.ts`
@@ -226,7 +232,11 @@ const workspaceId = "ws_export_attempts";
 const otherWorkspaceId = "ws_export_attempts_other";
 
 describe("export attempts repository", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -255,8 +265,17 @@ describe("export attempts repository", () => {
   });
 
   const manifest = [
-    { listingId: "11111111-1111-4111-8111-111111111111", versionId: "22222222-2222-4222-8222-222222222222", outcome: "included" as const },
-    { listingId: "33333333-3333-4333-8333-333333333333", versionId: null, outcome: "excluded_no_op" as const, reason: "no_op" },
+    {
+      listingId: "11111111-1111-4111-8111-111111111111",
+      versionId: "22222222-2222-4222-8222-222222222222",
+      outcome: "included" as const,
+    },
+    {
+      listingId: "33333333-3333-4333-8333-333333333333",
+      versionId: null,
+      outcome: "excluded_no_op" as const,
+      reason: "no_op",
+    },
   ];
 
   it("creates an export attempt, and a repeat with the same idempotency key returns the same row", async () => {
@@ -306,10 +325,12 @@ describe("export attempts repository", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration -- export-attempts.integration.test.ts
 ```
+
 Expected: FAIL — `repositories.exportAttempts` is undefined. If Docker/Postgres is unreachable, state that explicitly and skip to Step 4 anyway (schema/repository code still needs writing; verification happens once Postgres is reachable).
 
 - [ ] **Step 4: Implement schema, migration, and repository**
@@ -326,20 +347,22 @@ export const exportAttempts = pgTable(
       .notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     requestedBy: text("requested_by").notNull(),
-    manifest: jsonb("manifest").$type<
-      Array<{
-        listingId: string;
-        versionId: string | null;
-        outcome:
-          | "included"
-          | "excluded_no_op"
-          | "excluded_stale"
-          | "not_import_origin"
-          | "raw_row_invalid"
-          | "listing_not_found";
-        reason?: string;
-      }>
-    >().notNull(),
+    manifest: jsonb("manifest")
+      .$type<
+        Array<{
+          listingId: string;
+          versionId: string | null;
+          outcome:
+            | "included"
+            | "excluded_no_op"
+            | "excluded_stale"
+            | "not_import_origin"
+            | "raw_row_invalid"
+            | "listing_not_found";
+          reason?: string;
+        }>
+      >()
+      .notNull(),
     rowCount: integer("row_count").notNull(),
     specVersion: text("spec_version").notNull(),
     createdAt: timestamps.createdAt,
@@ -481,7 +504,12 @@ export function createExportAttemptRepository(
       const [row] = await transaction
         .select(COLUMNS)
         .from(exportAttempts)
-        .where(and(eq(exportAttempts.workspaceId, workspaceId), eq(exportAttempts.id, id)))
+        .where(
+          and(
+            eq(exportAttempts.workspaceId, workspaceId),
+            eq(exportAttempts.id, id),
+          ),
+        )
         .limit(1);
       return row ?? null;
     },
@@ -496,6 +524,7 @@ export function createExportAttemptRepository(
 In `packages/db/src/client.ts`, add the import, add `exportAttempts: ExportAttemptRepository;` to `WorkspaceRepositories`, and construct it inside `runForWorkspace` alongside the other repositories — read the file first to place these correctly (same pattern as every other repository registration, e.g. `reviewConfirmations`).
 
 In `packages/db/src/index.ts`, add:
+
 ```ts
 export type {
   EnsureExportAttemptInput,
@@ -507,14 +536,17 @@ export type {
 ```
 
 Run:
+
 ```powershell
 corepack pnpm test:integration -- export-attempts.integration.test.ts
 ```
+
 Expected: PASS (2/2), or explicitly reported as blocked if Postgres is unreachable.
 
 - [ ] **Step 6: Add this table to the tenant-table release gate**
 
 Per the pattern established in this session's `9579912` and Package G's Task 2: add `"export_attempts"` to `TENANT_TABLES` in `packages/db/src/cli/audit-verify.ts`. This table has no composite FK (see Step 4's note), so it does **not** need an entry in `listings.integration.test.ts`'s composite-FK inventory — confirm this by reading that test's current list and matching its pattern for any other FK-less tenant table (if none exists as a precedent, note that explicitly rather than guessing). Run:
+
 ```powershell
 corepack pnpm test:integration -- audit-verify.integration.test.ts
 ```
@@ -531,6 +563,7 @@ git commit -m "feat: add the export_attempts table and repository"
 ### Task 3: `bulk-export-service.ts` — the core orchestration
 
 **Files:**
+
 - Create: `apps/web/lib/bulk-export-service.ts`
 - Create: `apps/web/lib/bulk-export-service.test.ts`
 
@@ -583,16 +616,54 @@ function rawRowFor(overrides: Partial<Record<string, string>> = {}) {
   };
 }
 
-function depsWith(overrides: Partial<Parameters<typeof createBulkExport>[1]> = {}) {
-  const links: Record<string, { remoteProductId: string; rawRow: Record<string, string | null> | null; origin: "import" | "created"; sourceImportId: string | null; contentDigest: string | null }> = {
-    listing_changed: { remoteProductId: "prod-changed", rawRow: rawRowFor(), origin: "import", sourceImportId: "import_1", contentDigest: "digest_1" },
-    listing_noop: { remoteProductId: "prod-noop", rawRow: rawRowFor({ nameZh: "標題" }), origin: "import", sourceImportId: "import_1", contentDigest: "digest_1" },
-    listing_stale: { remoteProductId: "prod-stale", rawRow: rawRowFor(), origin: "import", sourceImportId: "import_1", contentDigest: "digest_1" },
+function depsWith(
+  overrides: Partial<Parameters<typeof createBulkExport>[1]> = {},
+) {
+  const links: Record<
+    string,
+    {
+      remoteProductId: string;
+      rawRow: Record<string, string | null> | null;
+      origin: "import" | "created";
+      sourceImportId: string | null;
+      contentDigest: string | null;
+    }
+  > = {
+    listing_changed: {
+      remoteProductId: "prod-changed",
+      rawRow: rawRowFor(),
+      origin: "import",
+      sourceImportId: "import_1",
+      contentDigest: "digest_1",
+    },
+    listing_noop: {
+      remoteProductId: "prod-noop",
+      rawRow: rawRowFor({ nameZh: "標題" }),
+      origin: "import",
+      sourceImportId: "import_1",
+      contentDigest: "digest_1",
+    },
+    listing_stale: {
+      remoteProductId: "prod-stale",
+      rawRow: rawRowFor(),
+      origin: "import",
+      sourceImportId: "import_1",
+      contentDigest: "digest_1",
+    },
   };
-  const versions: Record<string, { id: string; content: ReturnType<typeof contentFor> }> = {
-    listing_changed: { id: "version_changed", content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }) },
+  const versions: Record<
+    string,
+    { id: string; content: ReturnType<typeof contentFor> }
+  > = {
+    listing_changed: {
+      id: "version_changed",
+      content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+    },
     listing_noop: { id: "version_noop", content: contentFor() },
-    listing_stale: { id: "version_stale", content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }) },
+    listing_stale: {
+      id: "version_stale",
+      content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+    },
   };
   return {
     async getPlatformProductLink(listingId: string) {
@@ -633,9 +704,22 @@ describe("createBulkExport", () => {
     );
     expect(result.rowCount).toBe(1);
     expect(result.manifest).toEqual([
-      { listingId: "listing_changed", versionId: "version_changed", outcome: "included" },
-      { listingId: "listing_noop", versionId: "version_noop", outcome: "excluded_no_op" },
-      { listingId: "listing_stale", versionId: "version_stale", outcome: "excluded_stale", reason: "row_digest_mismatch" },
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "included",
+      },
+      {
+        listingId: "listing_noop",
+        versionId: "version_noop",
+        outcome: "excluded_no_op",
+      },
+      {
+        listingId: "listing_stale",
+        versionId: "version_stale",
+        outcome: "excluded_stale",
+        reason: "row_digest_mismatch",
+      },
     ]);
   });
 
@@ -651,32 +735,57 @@ describe("createBulkExport", () => {
     );
     expect(result.rowCount).toBe(0);
     expect(result.manifest).toEqual([
-      { listingId: "listing_changed", versionId: "version_changed", outcome: "excluded_stale", reason: "not_attested" },
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
     ]);
   });
 
   it("excludes a create-origin listing with not_import_origin, without calling assertExportFreshness for it", async () => {
     const deps = depsWith({
       async getPlatformProductLink() {
-        return { remoteProductId: "prod-created", rawRow: null, origin: "created" as const, sourceImportId: null, contentDigest: null };
+        return {
+          remoteProductId: "prod-created",
+          rawRow: null,
+          origin: "created" as const,
+          sourceImportId: null,
+          contentDigest: null,
+        };
       },
       async getActiveVersion() {
         return { id: "version_created", content: contentFor() };
       },
     });
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_created"], freshnessAttested: true },
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_created"],
+        freshnessAttested: true,
+      },
       deps,
     );
     expect(result.manifest).toEqual([
-      { listingId: "listing_created", versionId: "version_created", outcome: "not_import_origin" },
+      {
+        listingId: "listing_created",
+        versionId: "version_created",
+        outcome: "not_import_origin",
+      },
     ]);
     expect(result.rowCount).toBe(0);
   });
 
   it("produces rowCount 0 with a full manifest, not an error, when every listing is excluded", async () => {
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_noop"], freshnessAttested: true },
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_noop"],
+        freshnessAttested: true,
+      },
       depsWith(),
     );
     expect(result.rowCount).toBe(0);
@@ -685,11 +794,24 @@ describe("createBulkExport", () => {
 
   it("excludes an unknown listing id with listing_not_found", async () => {
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_missing"], freshnessAttested: true },
-      depsWith({ async getActiveVersion() { return null; } }),
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_missing"],
+        freshnessAttested: true,
+      },
+      depsWith({
+        async getActiveVersion() {
+          return null;
+        },
+      }),
     );
     expect(result.manifest).toEqual([
-      { listingId: "listing_missing", versionId: null, outcome: "listing_not_found" },
+      {
+        listingId: "listing_missing",
+        versionId: null,
+        outcome: "listing_not_found",
+      },
     ]);
   });
 });
@@ -698,9 +820,11 @@ describe("createBulkExport", () => {
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- bulk-export-service.test.ts
 ```
+
 Expected: FAIL — the module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -744,9 +868,10 @@ export type CreateBulkExportInput = {
 };
 
 export type CreateBulkExportDeps = AssertExportFreshnessDeps & {
-  getActiveVersion(
-    listingId: string,
-  ): Promise<{ id: string; content: import("@wukong/core").CanonicalListing } | null>;
+  getActiveVersion(listingId: string): Promise<{
+    id: string;
+    content: import("@wukong/core").CanonicalListing;
+  } | null>;
 };
 
 export type CreateBulkExportResult = {
@@ -768,13 +893,21 @@ export async function createBulkExport(
   for (const listingId of input.listingIds) {
     const activeVersion = await deps.getActiveVersion(listingId);
     if (!activeVersion) {
-      manifest.push({ listingId, versionId: null, outcome: "listing_not_found" });
+      manifest.push({
+        listingId,
+        versionId: null,
+        outcome: "listing_not_found",
+      });
       continue;
     }
 
     const link = await deps.getPlatformProductLink(listingId);
     if (!link || link.origin !== "import") {
-      manifest.push({ listingId, versionId: activeVersion.id, outcome: "not_import_origin" });
+      manifest.push({
+        listingId,
+        versionId: activeVersion.id,
+        outcome: "not_import_origin",
+      });
       continue;
     }
 
@@ -800,12 +933,20 @@ export async function createBulkExport(
     }
 
     if (!link.rawRow || !isBulkFormRawRow(link.rawRow)) {
-      manifest.push({ listingId, versionId: activeVersion.id, outcome: "raw_row_invalid" });
+      manifest.push({
+        listingId,
+        versionId: activeVersion.id,
+        outcome: "raw_row_invalid",
+      });
       continue;
     }
 
     const { content } = activeVersion;
-    rows.push({ productId: link.remoteProductId, raw: link.rawRow, rowNumber: rows.length + 1 });
+    rows.push({
+      productId: link.remoteProductId,
+      raw: link.rawRow,
+      rowNumber: rows.length + 1,
+    });
     enrichments.push({
       productId: link.remoteProductId,
       values: {
@@ -822,7 +963,11 @@ export async function createBulkExport(
     survivorListingIds.push(listingId);
     // Placeholder outcome, corrected below once we know which survivors
     // actually produced a changed row versus a no-op.
-    manifest.push({ listingId, versionId: activeVersion.id, outcome: "excluded_no_op" });
+    manifest.push({
+      listingId,
+      versionId: activeVersion.id,
+      outcome: "excluded_no_op",
+    });
   }
 
   let update: ReturnType<typeof createBulkFormUpdate> | null = null;
@@ -842,7 +987,9 @@ export async function createBulkExport(
     }
   }
 
-  const changedProductIds = new Set((update?.changes ?? []).map((change) => change.productId));
+  const changedProductIds = new Set(
+    (update?.changes ?? []).map((change) => change.productId),
+  );
   for (const entry of manifest) {
     if (survivorListingIds.includes(entry.listingId)) {
       const link = await deps.getPlatformProductLink(entry.listingId);
@@ -864,9 +1011,11 @@ Re-derive the "which survivor actually got included" logic in Step 1's re-read r
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- bulk-export-service.test.ts
 ```
+
 Expected: PASS, all 5 tests.
 
 - [ ] **Step 6: Commit**
@@ -881,6 +1030,7 @@ git commit -m "feat: add createBulkExport, the multi-product export orchestratio
 ### Task 4: `POST /api/listings/export` route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/export/route.ts`
 - Create: `apps/web/app/api/listings/export/route.test.ts`
 
@@ -891,6 +1041,7 @@ Read `apps/web/app/api/listings/[id]/deliver/route.ts` in full (already known: `
 - [ ] **Step 2: Write the failing test**
 
 Create `apps/web/app/api/listings/export/route.test.ts`, mirroring the structure read in Step 1 (fake `db.forWorkspace`, fake `assetStore`, fake `audit`). Cover:
+
 - A reviewer's request with 3 listing ids (one changed, one no-op, one stale) returns `200 { exportAttemptId, manifest, rowCount: 1 }`, and the fake `assetStore.writeObject` was called once with the generated bytes.
 - A viewer/operator gets `403 insufficient_role`.
 - An empty `listingIds` array is rejected `400`.
@@ -900,29 +1051,34 @@ Create `apps/web/app/api/listings/export/route.test.ts`, mirroring the structure
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/listings/export/route.test.ts"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
 
 Create `apps/web/app/api/listings/export/route.ts`. The handler:
+
 1. Requires `reviewer`/`admin`/`owner` (reuse `assertReviewer` if it's exported from the deliver route already, or a local copy of the exact same check if it's private there — check during Step 1 which).
 2. Parses the body: `{ listingIds: z.array(z.string().min(1)).min(1), freshnessAttested: z.boolean() }.strict()`.
 3. Inside `db.forWorkspace(session.workspaceId, async (repositories) => { ... })`, wires `CreateBulkExportDeps` from real repositories: `getActiveVersion` from `repositories.listings.getReviewSnapshot`, `getPlatformProductLink` from `repositories.platformProducts.getByListingId`, `getSourceImportHeaderContractSha256` from `repositories.sourceImports.getById(...).then(r => r?.headerContractSha256 ?? null)`, `currentHeaderContractSha256` from `hashBulkFormHeaderContract` (imported from `@wukong/shopline`).
 4. Calls `createBulkExport(...)`, computes the idempotency key as `sha256(workspaceId + ":" + sorted "listingId:versionId" pairs joined)` — build this from the manifest's `listingId`/`versionId` pairs (using `null` versionId entries, e.g. `listing_not_found`, as their own stable string so they still participate in the key), using Node's `crypto.createHash("sha256")`.
 5. Calls `repositories.exportAttempts.ensure({ idempotencyKey, requestedBy: session.userId, manifest, rowCount, specVersion })`.
-6. Always calls `getAssetStore().writeObject(workspaceId, createExportAssetKey({workspaceId, exportAttemptId: attempt.id, fileName: \`export-${attempt.id}.xlsx\`}), body, BULK_FORM_XLSX_MIME_TYPE)` (both imported from `@wukong/assets`) with the bytes `createBulkExport` produced — this is an idempotent overwrite even on a repeat request with the same idempotency key, since the same inputs deterministically produce the same bytes; note this choice inline in the route rather than adding extra state-tracking to detect "was this a new attempt."
+6. Always calls `getAssetStore().writeObject(workspaceId, createExportAssetKey({workspaceId, exportAttemptId: attempt.id, fileName: \`export-${attempt.id}.xlsx\`}), body, BULK_FORM_XLSX_MIME_TYPE)`(both imported from`@wukong/assets`) with the bytes `createBulkExport` produced — this is an idempotent overwrite even on a repeat request with the same idempotency key, since the same inputs deterministically produce the same bytes; note this choice inline in the route rather than adding extra state-tracking to detect "was this a new attempt."
 7. Writes one audit event `listing.bulk_export_created`, metadata `{ exportAttemptId: attempt.id, includedListingIds: manifest.filter(e => e.outcome === "included").map(e => e.listingId), excludedListingIds: manifest.filter(e => e.outcome !== "included").map(e => e.listingId) }`.
 8. Returns `jsonResponse(200, { exportAttemptId: attempt.id, manifest: attempt.manifest, rowCount: attempt.rowCount })`.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/listings/export/route.test.ts"
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -937,6 +1093,7 @@ git commit -m "feat: add POST /api/listings/export"
 ### Task 5: `GET /api/listings/export/[id]/download` route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/export/[id]/download/route.ts`
 - Create: `apps/web/app/api/listings/export/[id]/download/route.test.ts`
 
@@ -947,6 +1104,7 @@ Already known (from Task 4's Step 1 read): the exact `content-type`/`content-dis
 - [ ] **Step 2: Write the failing test**
 
 Create `apps/web/app/api/listings/export/[id]/download/route.test.ts`. Cover:
+
 - A reviewer downloading an existing export attempt gets `200`, the exact bytes the fake `assetStore.readObject` returns, correct `content-type`/`content-disposition` (filename includes the export attempt id and `specVersion`).
 - A viewer/operator gets `403`.
 - An unknown or cross-workspace export attempt id returns `404`.
@@ -955,14 +1113,17 @@ Create `apps/web/app/api/listings/export/[id]/download/route.test.ts`. Cover:
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/listings/export/[id]/download/route.test.ts"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
 
 Create `apps/web/app/api/listings/export/[id]/download/route.ts`. The handler:
+
 1. Requires `reviewer`/`admin`/`owner` (same gate as Task 4).
 2. Awaits `context.params` for `id`.
 3. Inside `db.forWorkspace(session.workspaceId, repositories => repositories.exportAttempts.getById(id))` — `404 export_attempt_not_found` if `null` (RLS + the explicit workspace-scoped query together mean a cross-workspace id is indistinguishable from a missing one, matching this codebase's existing convention elsewhere).
@@ -972,9 +1133,11 @@ Create `apps/web/app/api/listings/export/[id]/download/route.ts`. The handler:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/listings/export/[id]/download/route.test.ts"
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -993,42 +1156,52 @@ git commit -m "feat: add GET /api/listings/export/[id]/download"
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 Expected: PASS, all packages, including the new `export-attempts.integration.test.ts`. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 ---
