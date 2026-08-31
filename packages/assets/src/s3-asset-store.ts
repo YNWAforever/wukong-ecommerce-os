@@ -172,6 +172,9 @@ export class S3AssetStore implements AssetStore {
       Body?: { transformToByteArray(): Promise<Uint8Array> };
     };
     if (!response.Body) {
+      // apps/web/app/api/listings/export/[id]/download/route.ts matches this
+      // exact message to distinguish "object never written" from any other
+      // read failure -- keep the two in sync if this text changes.
       throw new Error("Asset object has no stored body");
     }
     return response.Body.transformToByteArray();

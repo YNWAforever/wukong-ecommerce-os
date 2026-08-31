@@ -90,14 +90,17 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
           .readObject(session.workspaceId, assetKey);
       } catch (error) {
         // Narrowed to the EXACT message MemoryAssetStore/S3AssetStore throw
-        // for "row exists, but no body was ever written under this key"
-        // (packages/assets/src/asset-store.ts, packages/assets/src/s3-asset-store.ts).
-        // Anything else -- a transient R2/S3 outage, a network failure, a
-        // credential misconfiguration -- is NOT that case: rethrowing lets
-        // withRouteErrors's normal catch-all handle it (500 + a
-        // report("internal_error", ...) trace for on-call), instead of this
-        // route silently telling the caller to "resubmit the export" for a
-        // problem resubmitting can't fix.
+        // for "row exists, but no body was ever written under this key" --
+        // see the matching comment above each throw site in
+        // packages/assets/src/asset-store.ts and
+        // packages/assets/src/s3-asset-store.ts; if that message text ever
+        // changes, update it there too, or this narrowing silently stops
+        // matching. Anything else -- a transient R2/S3 outage, a network
+        // failure, a credential misconfiguration -- is NOT that case:
+        // rethrowing lets withRouteErrors's normal catch-all handle it (500
+        // + a report("internal_error", ...) trace for on-call), instead of
+        // this route silently telling the caller to "resubmit the export"
+        // for a problem resubmitting can't fix.
         if (
           !(error instanceof Error) ||
           error.message !== "Asset object has no stored body"
@@ -108,14 +111,13 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
         // committed but the asset-store write after it (see the comment
         // above the write in apps/web/app/api/listings/export/route.ts)
         // never landed. Still worth a server-side trace, so on-call can
-        // distinguish this from the outage case above by grepping for this
-        // event -- mirrors the shape of route-support.ts's private
-        // `report()` helper, which this file can't import (not exported).
+        // distinguish this from the outage case above -- a distinct event
+        // name, not route-support.ts's "route_error"/"outcome" shape, so
+        // this expected, already-handled 409 is never confused with
+        // something that hit the generic catch-all.
         console.error(
           JSON.stringify({
-            event: "route_error",
-            outcome: "failure",
-            reason: "export_object_missing",
+            event: "export.object_missing",
             exportAttemptId: attempt.id,
             workspaceId: session.workspaceId,
           }),
