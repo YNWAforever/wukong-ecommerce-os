@@ -49,19 +49,40 @@ export type FreshnessFailureReason =
 export type FreshnessResult =
   { ok: true } | { ok: false; reason: FreshnessFailureReason };
 
-/**
- * Gate a listing's SHOPLINE export against everything that must still be
- * true since it was imported. Deliberately does not touch Postgres directly
- * — a future export flow (not part of this package) supplies real deps.
- */
-export async function assertExportFreshness(
-  input: AssertExportFreshnessInput,
-  deps: AssertExportFreshnessDeps,
-): Promise<FreshnessResult> {
-  if (!input.freshnessAttested) {
-    return { ok: false, reason: "not_attested" };
-  }
+export type ContentFreshnessInput = {
+  listingId: string;
+  expectedSourceImportId: string;
+  expectedRowDigest: string;
+  expectedVersionId: string;
+};
 
+export type ContentFreshnessDeps = {
+  getPlatformProductLink(
+    listingId: string,
+  ): Promise<PlatformProductLink | null>;
+  getActiveVersionId(listingId: string): Promise<string | null>;
+};
+
+export type ContentFreshnessFailureReason =
+  | "no_remote_link"
+  | "source_import_mismatch"
+  | "row_digest_mismatch"
+  | "version_mismatch";
+
+export type ContentFreshnessResult =
+  { ok: true } | { ok: false; reason: ContentFreshnessFailureReason };
+
+/**
+ * The four checks shared by `assertExportFreshness` (which adds an
+ * attestation gate and a header-contract check on top, for the export
+ * moment) and `assertApprovalFreshness` (which uses only this core, for the
+ * approval moment) — kept in one place so the two gates can never silently
+ * drift on what "the content still matches" means.
+ */
+export async function assertContentFreshness(
+  input: ContentFreshnessInput,
+  deps: ContentFreshnessDeps,
+): Promise<ContentFreshnessResult> {
   const link = await deps.getPlatformProductLink(input.listingId);
   if (link === null) {
     return { ok: false, reason: "no_remote_link" };
@@ -76,6 +97,27 @@ export async function assertExportFreshness(
   const activeVersionId = await deps.getActiveVersionId(input.listingId);
   if (activeVersionId !== input.expectedVersionId) {
     return { ok: false, reason: "version_mismatch" };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Gate a listing's SHOPLINE export against everything that must still be
+ * true since it was imported. Deliberately does not touch Postgres directly
+ * — a future export flow (not part of this package) supplies real deps.
+ */
+export async function assertExportFreshness(
+  input: AssertExportFreshnessInput,
+  deps: AssertExportFreshnessDeps,
+): Promise<FreshnessResult> {
+  if (!input.freshnessAttested) {
+    return { ok: false, reason: "not_attested" };
+  }
+
+  const contentFreshness = await assertContentFreshness(input, deps);
+  if (!contentFreshness.ok) {
+    return contentFreshness;
   }
 
   const storedHeaderContractSha256 =
