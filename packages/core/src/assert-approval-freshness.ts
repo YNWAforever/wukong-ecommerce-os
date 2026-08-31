@@ -2,16 +2,22 @@ import {
   assertContentFreshness,
   type ContentFreshnessDeps,
   type ContentFreshnessFailureReason,
-} from "./assert-export-freshness.js";
+  type ContentFreshnessInput,
+} from "./content-freshness.js";
 
 export type AssertApprovalFreshnessDeps = ContentFreshnessDeps;
 
-export type AssertApprovalFreshnessInput = {
+export type AssertApprovalFreshnessInput = ContentFreshnessInput & {
+  /**
+   * Not read by this function — every `deps` lookup is keyed by
+   * `listingId`/`sourceImportId` alone. Carried on the input for interface
+   * fidelity with the caller that will wire real deps in later: tenancy
+   * scoping happens entirely by how that caller closes over a
+   * workspace-bound transaction when constructing `AssertApprovalFreshnessDeps`
+   * (the same pattern every `packages/db` repository uses), not by this
+   * pure function checking the id itself.
+   */
   workspaceId: string;
-  listingId: string;
-  expectedSourceImportId: string;
-  expectedRowDigest: string;
-  expectedVersionId: string;
 };
 
 export type ApprovalFreshnessFailureReason = ContentFreshnessFailureReason;
