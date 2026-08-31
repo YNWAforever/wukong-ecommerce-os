@@ -190,4 +190,42 @@ describe("JobsLedgerClient", () => {
       "network down",
     );
   });
+
+  it("aborts the in-flight fetch's signal when the component unmounts", async () => {
+    // Capture the AbortSignal the component actually passes to fetch, then
+    // assert it's aborted once the component unmounts -- this exercises the
+    // effect's cleanup directly, rather than inferring it indirectly (React
+    // 18+ no longer warns on a state update after unmount, so a "no console
+    // warning fired" assertion would pass even with no cleanup at all).
+    let capturedSignal: AbortSignal | undefined;
+    const pending = new Promise<Response>(() => {
+      // Deliberately never resolves -- the component should still be safe
+      // to unmount while this is in flight.
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init?: RequestInit) => {
+        capturedSignal = init?.signal ?? undefined;
+        return pending;
+      }) as unknown as typeof fetch,
+    );
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(JobsLedgerClient));
+    });
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    expect(capturedSignal?.aborted).toBe(true);
+
+    document.body.innerHTML = "";
+  });
 });
