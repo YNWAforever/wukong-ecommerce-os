@@ -36,6 +36,20 @@ export type ExportAttempt = {
 };
 
 export type ExportAttemptRepository = {
+  /**
+   * `idempotencyKey` must be fully deterministic from everything that
+   * affects `manifest` -- every input that can change which listings are
+   * included or why one was excluded has to feed the key, or two requests
+   * that mean different things collide on the same row and the caller
+   * silently gets back whichever one landed first.
+   *
+   * This method cannot know what the key is derived from, so it cannot
+   * detect that kind of collision in general. What it does do is a cheap
+   * sanity check on repeat calls -- if `rowCount` or `specVersion` disagree
+   * with the row already stored under this key, something in the caller's
+   * key construction missed an input that matters, and this throws instead
+   * of quietly handing back stale data from an unrelated request.
+   */
   ensure(input: EnsureExportAttemptInput): Promise<ExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
 };
@@ -85,6 +99,14 @@ export function createExportAttemptRepository(
         .onConflictDoNothing();
       const row = await selectByKey(input.idempotencyKey);
       if (!row) throw new Error("export attempt insert did not return a row");
+      if (
+        row.rowCount !== input.rowCount ||
+        row.specVersion !== input.specVersion
+      ) {
+        throw new Error(
+          "export attempt idempotency key does not match the stored row",
+        );
+      }
       return row;
     },
 

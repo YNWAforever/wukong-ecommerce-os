@@ -87,6 +87,38 @@ describe("export attempts repository", () => {
     });
   });
 
+  it("throws instead of silently returning a stale row when a repeat call's idempotency key collides with a different request", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_collision",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+
+      await expect(
+        repositories.exportAttempts.ensure({
+          idempotencyKey: "key_collision",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 2,
+          specVersion: "bulk-form-v1",
+        }),
+      ).rejects.toThrow(/idempotency key does not match/i);
+
+      await expect(
+        repositories.exportAttempts.ensure({
+          idempotencyKey: "key_collision",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v2",
+        }),
+      ).rejects.toThrow(/idempotency key does not match/i);
+    });
+  });
+
   it("never exposes an export attempt to another workspace", async () => {
     const created = await database.forWorkspace(workspaceId, (repositories) =>
       repositories.exportAttempts.ensure({
