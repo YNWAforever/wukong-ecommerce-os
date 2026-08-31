@@ -46,4 +46,14 @@ describe("CAPABILITY_REGISTRY", () => {
     );
     expect(entry?.state).toBe("blocked");
   });
+
+  it("is frozen, so a consumer can't silently mutate the shared singleton", () => {
+    expect(Object.isFrozen(CAPABILITY_REGISTRY)).toBe(true);
+    expect(() => {
+      "use strict";
+      // @ts-expect-error -- readonly at the type level; this proves the
+      // runtime backstop actually rejects the mutation too, not just TS.
+      CAPABILITY_REGISTRY[0].state = "live";
+    }).toThrow(TypeError);
+  });
 });

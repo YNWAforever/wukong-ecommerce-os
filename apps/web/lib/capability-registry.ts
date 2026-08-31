@@ -14,13 +14,13 @@
 export type CapabilityState = "live" | "pilot" | "planned" | "blocked";
 
 export type CapabilityEntry = {
-  id: string;
-  label: string;
-  description: string;
-  state: CapabilityState;
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly state: CapabilityState;
 };
 
-export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
+const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
   {
     id: "shopline-real-publish",
     label: "SHOPLINE 正式發佈 / Real SHOPLINE publishing",
@@ -64,3 +64,15 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
     state: "pilot",
   },
 ];
+
+// A runtime backstop alongside the type-level `readonly` above --
+// `readonly CapabilityEntry[]` and per-field `readonly` are compile-time
+// only, so without this a consumer could still write
+// `CAPABILITY_REGISTRY[0].state = "live"` (or `.push(...)`) and silently
+// mutate the shared singleton every future consumer imports. Object.freeze
+// is shallow, so each entry is frozen individually before the array itself
+// is frozen -- freezing only the array would leave the nested entry
+// objects mutable.
+export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = Object.freeze(
+  CAPABILITY_ENTRIES.map((entry) => Object.freeze({ ...entry })),
+);
