@@ -1,4 +1,9 @@
-import type { Database, PlatformProduct } from "@wukong/db";
+import type {
+  Database,
+  EnrichmentBatch,
+  EnrichmentBatchCounts,
+  PlatformProduct,
+} from "@wukong/db";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
@@ -42,6 +47,15 @@ export type AdvanceBatchResult = {
   enqueued: number;
   spentUsd: number;
   budgetUsd: number;
+};
+
+export type ListBatchesInput = { workspaceId: string };
+
+export type GetBatchInput = { workspaceId: string; batchId: string };
+
+export type GetBatchResult = {
+  batch: EnrichmentBatch;
+  counts: EnrichmentBatchCounts;
 };
 
 /**
@@ -315,5 +329,36 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     };
   }
 
-  return { createBatch, advanceBatch };
+  async function listBatches(
+    input: ListBatchesInput,
+  ): Promise<EnrichmentBatch[]> {
+    return deps
+      .getDatabase()
+      .forWorkspace(input.workspaceId, (repositories) =>
+        repositories.enrichmentBatches.listForWorkspace(),
+      );
+  }
+
+  async function getBatch(input: GetBatchInput): Promise<GetBatchResult> {
+    return deps
+      .getDatabase()
+      .forWorkspace(input.workspaceId, async (repositories) => {
+        const batch = await repositories.enrichmentBatches.getById(
+          input.batchId,
+        );
+        if (!batch) {
+          throw new ApiError(
+            404,
+            "batch_not_found",
+            "No such enrichment batch.",
+          );
+        }
+        const counts = await repositories.enrichmentBatches.countByStatus(
+          input.batchId,
+        );
+        return { batch, counts };
+      });
+  }
+
+  return { createBatch, advanceBatch, listBatches, getBatch };
 }
