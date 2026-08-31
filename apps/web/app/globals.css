@@ -612,7 +612,8 @@ button:disabled {
   white-space: nowrap;
 }
 .review-status > span:first-child,
-.connection-status > span:first-child {
+.connection-status > span:first-child,
+.batch-status > span:first-child {
   width: 8px;
   height: 8px;
   border-radius: 50%;
