@@ -31,7 +31,7 @@ const bodySchema = z
       "summaryMissing",
     ]),
     budgetUsd: z.number().positive().max(10_000),
-    waveSize: z.number().int().min(1).max(500),
+    waveSize: z.number().int().min(1).max(5),
   })
   .strict();
 

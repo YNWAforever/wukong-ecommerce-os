@@ -33,7 +33,7 @@ const validBody = {
   label: "zh names",
   gap: "untranslatedName",
   budgetUsd: 5,
-  waveSize: 10,
+  waveSize: 3,
 };
 
 describe("POST /api/enrichment-batches", () => {
@@ -61,6 +61,14 @@ describe("POST /api/enrichment-batches", () => {
   it("rejects an unknown gap", async () => {
     const response = await handlerFor("operator")(
       post({ ...validBody, gap: "notAGap" }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a wave size above the 1-5 cap", async () => {
+    const response = await handlerFor("operator")(
+      post({ ...validBody, waveSize: 6 }),
     );
 
     expect(response.status).toBe(400);

@@ -94,11 +94,15 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         "A batch needs a budget greater than zero.",
       );
     }
-    if (!Number.isInteger(input.waveSize) || input.waveSize < 1) {
+    if (
+      !Number.isInteger(input.waveSize) ||
+      input.waveSize < 1 ||
+      input.waveSize > 5
+    ) {
       throw new ApiError(
         400,
         "invalid_wave_size",
-        "Wave size must be a positive whole number.",
+        "Wave size must be a whole number from 1 to 5.",
       );
     }
 
