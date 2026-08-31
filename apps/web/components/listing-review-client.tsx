@@ -54,6 +54,13 @@ export type ListingViewResponse = {
   } | null;
   queueStatus: string | null;
   shoplineLink: { remoteProductId: string } | null;
+  reviewConfirmation: {
+    revision: number;
+    fieldConfirmations: Record<string, boolean>;
+    negativeConfirmations: Record<string, boolean>;
+  } | null;
+  sourceImportId: string | null;
+  contentDigest: string | null;
   permissions: ListingPermissions;
 };
 

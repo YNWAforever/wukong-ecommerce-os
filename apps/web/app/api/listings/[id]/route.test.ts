@@ -22,6 +22,7 @@ function handlerFor(
     workspaces?: { requireProfile: () => Promise<any> };
     assetStore?: { createReadUrl: (...args: any[]) => Promise<any> };
     platformProducts?: { getByListingId: (id: string) => Promise<any> };
+    reviewConfirmations?: { getByVersionId: (versionId: string) => Promise<any> };
   } = {},
 ) {
   return createListingViewHandler({
@@ -72,6 +73,11 @@ function handlerFor(
             },
             platformProducts: overrides.platformProducts ?? {
               async getByListingId() {
+                return null;
+              },
+            },
+            reviewConfirmations: overrides.reviewConfirmations ?? {
+              async getByVersionId() {
                 return null;
               },
             },
@@ -260,4 +266,80 @@ it("resolves shoplineLink as null when no platform product link exists", async (
 
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ shoplineLink: null });
+});
+
+it("returns null reviewConfirmation when no confirmation row exists for the active version", async () => {
+  const response = await handlerFor("reviewer", true)(
+    new Request("http://localhost"),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ reviewConfirmation: null });
+});
+
+it("returns the confirmation ledger state when one exists for the active version", async () => {
+  const getByVersionId = vi.fn(async (versionId: string) => {
+    expect(versionId).toBe("version_1");
+    return {
+      id: "confirmation_1",
+      listingId,
+      versionId: "version_1",
+      revision: 3,
+      fieldConfirmations: { title: true },
+      negativeConfirmations: { allergens: false },
+      sourceImportId: "import_1",
+      rowDigest: "digest_1",
+    };
+  });
+  const response = await handlerFor("reviewer", true, {
+    reviewConfirmations: { getByVersionId },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(getByVersionId).toHaveBeenCalledWith("version_1");
+  expect(await response.json()).toMatchObject({
+    reviewConfirmation: {
+      revision: 3,
+      fieldConfirmations: { title: true },
+      negativeConfirmations: { allergens: false },
+    },
+  });
+});
+
+it("returns sourceImportId and contentDigest from the platform product link for import-origin listings", async () => {
+  const response = await handlerFor("reviewer", true, {
+    platformProducts: {
+      async getByListingId() {
+        return {
+          remoteProductId: "remote_existing_1",
+          sourceImportId: "import_42",
+          contentDigest: "digest_42",
+        };
+      },
+    },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    sourceImportId: "import_42",
+    contentDigest: "digest_42",
+  });
+});
+
+it("returns null sourceImportId and contentDigest when no platform product link exists", async () => {
+  const response = await handlerFor("reviewer", true)(
+    new Request("http://localhost"),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    sourceImportId: null,
+    contentDigest: null,
+  });
 });
