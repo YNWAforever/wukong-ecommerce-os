@@ -25,6 +25,7 @@ Do **not** use an `$env:PATH = "...scratchpad\bin..."` prefix — that shim dire
 ### Task 1: `capability-registry.ts` — the registry module
 
 **Files:**
+
 - Create: `apps/web/lib/capability-registry.ts`
 - Create: `apps/web/lib/capability-registry.test.ts`
 
@@ -91,9 +92,11 @@ describe("CAPABILITY_REGISTRY", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -172,9 +175,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry.test.ts
 ```
+
 Expected: PASS, all 4 tests.
 
 - [ ] **Step 6: Commit**
@@ -189,6 +194,7 @@ git commit -m "feat: add the capability registry"
 ### Task 2: `CapabilityRegistryPanel` component and the `/admin` 4th tab
 
 **Files:**
+
 - Create: `apps/web/components/capability-registry-panel.tsx`
 - Create: `apps/web/components/capability-registry-panel.test.tsx`
 - Modify: `apps/web/components/admin-tabs.tsx`
@@ -205,9 +211,11 @@ Create `apps/web/components/capability-registry-panel.test.tsx`. Cover: renders 
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry-panel.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -215,7 +223,10 @@ Expected: FAIL — module does not exist.
 Create `apps/web/components/capability-registry-panel.tsx`:
 
 ```tsx
-import { CAPABILITY_REGISTRY, type CapabilityState } from "../lib/capability-registry.js";
+import {
+  CAPABILITY_REGISTRY,
+  type CapabilityState,
+} from "../lib/capability-registry.js";
 
 const STATE_LABEL: Record<CapabilityState, string> = {
   live: "已上線 Live",
@@ -261,9 +272,11 @@ In `apps/web/components/admin-tabs.tsx`: extend `AdminTab` to `"members" | "conn
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry-panel.test.tsx
 ```
+
 Expected: PASS, all tests. Also run the existing `admin-tabs.test.tsx` (if one exists — check during Step 1) to confirm the 4th tab doesn't break existing tab-switching tests.
 
 - [ ] **Step 6: Commit**
@@ -278,6 +291,7 @@ git commit -m "feat: add the CapabilityRegistryPanel and admin's 4th tab"
 ### Task 3: `/system-map` page and nav link
 
 **Files:**
+
 - Create: `apps/web/app/(app)/system-map/page.tsx`
 - Create: `apps/web/app/(app)/system-map/page.test.tsx` (or colocated per whatever this codebase's convention for page-level tests actually is — check `apps/web/app/(app)/jobs/page.tsx` for whether it has its own test file at all before assuming one is needed; if the `/jobs` page itself has no dedicated test, matching that precedent for `/system-map` is acceptable — the underlying `CapabilityRegistryPanel` is already tested in Task 2)
 - Create: `apps/web/lib/capability-registry-consistency.test.ts` (the design's explicit "both surfaces show the same state" acceptance criterion)
@@ -301,7 +315,10 @@ import { describe, expect, it } from "vitest";
 // detail: if either surface is ever changed to use a different or forked
 // component, the shared import line disappears and this test fails.
 function readSource(relativePath: string): string {
-  return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
+  return readFileSync(
+    fileURLToPath(new URL(relativePath, import.meta.url)),
+    "utf8",
+  );
 }
 
 describe("capability registry consistency", () => {
@@ -321,9 +338,11 @@ Also create `apps/web/app/(app)/system-map/page.test.tsx` (or skip per Step 1's 
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry-consistency.test.ts
 ```
+
 Expected: FAIL — `/system-map`'s page module does not exist yet.
 
 - [ ] **Step 4: Implement it**
@@ -343,8 +362,8 @@ export default function SystemMapPage() {
           </p>
           <h1>系統能力現況，公開透明。</h1>
           <p className="lede">
-            每項功能的真實狀態 -- 已上線、試行中、規劃中或已封鎖 --
-            與 /admin 的「系統真相」分頁完全一致，同一份資料來源。
+            每項功能的真實狀態 -- 已上線、試行中、規劃中或已封鎖 -- 與 /admin
+            的「系統真相」分頁完全一致，同一份資料來源。
           </p>
         </div>
       </div>
@@ -355,6 +374,7 @@ export default function SystemMapPage() {
 ```
 
 In `apps/web/app/(app)/layout.tsx`, add a new unconditional nav link (NOT inside the `isAdmin ? ... : null` block, since `/system-map` has no role gate) between `/jobs` and the `isAdmin` conditional:
+
 ```tsx
 <Link href="/system-map">
   系統地圖 <span>System map</span>
@@ -364,9 +384,11 @@ In `apps/web/app/(app)/layout.tsx`, add a new unconditional nav link (NOT inside
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- capability-registry-consistency.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -385,42 +407,52 @@ git commit -m "feat: add the /system-map page and nav link"
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 This package adds no database tables and no repository changes — no new integration tests are expected. Run this step anyway to confirm no regression in the existing integration suite. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 ---

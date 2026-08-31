@@ -25,24 +25,25 @@ export type CapabilityEntry = {
 export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [ ... ];
 ```
 
-**Why not a live env-var check:** the most safety-critical entry this registry must carry — real SHOPLINE publishing — is gated by `SHOPLINE_PUBLISH_ENABLED`, which is read *only* in `apps/worker` (a separate Cloudflare Workers deployment). It is never an environment variable in `apps/web`'s Vercel deployment. Making the registry "live" would require introducing a second copy of that flag into Vercel's env purely so `apps/web` could read it — creating exactly the two-sources-of-truth drift risk ADR-11 exists to prevent, and doing so for the one entry where drift matters most. The registry is instead a plain, hand-maintained array, updated in the same PR that changes a capability's real state — which is what the master plan's own text proposes ("a small config table or a typed constant list reviewed alongside code changes"), not a deviation from it.
+**Why not a live env-var check:** the most safety-critical entry this registry must carry — real SHOPLINE publishing — is gated by `SHOPLINE_PUBLISH_ENABLED`, which is read _only_ in `apps/worker` (a separate Cloudflare Workers deployment). It is never an environment variable in `apps/web`'s Vercel deployment. Making the registry "live" would require introducing a second copy of that flag into Vercel's env purely so `apps/web` could read it — creating exactly the two-sources-of-truth drift risk ADR-11 exists to prevent, and doing so for the one entry where drift matters most. The registry is instead a plain, hand-maintained array, updated in the same PR that changes a capability's real state — which is what the master plan's own text proposes ("a small config table or a typed constant list reviewed alongside code changes"), not a deviation from it.
 
 **Initial entries**, grounded in this session's own research into real gated behavior (not invented):
 
-| id | label | state | grounding |
-|---|---|---|---|
-| `shopline-real-publish` | SHOPLINE 正式發佈 / Real SHOPLINE publishing | `blocked` | `SHOPLINE_ADAPTER=disabled`, `SHOPLINE_PUBLISH_ENABLED=false` in production (`apps/worker/src/shopline-runtime.ts:59-65`); enabling requires separate written authorization per the production runbook. |
-| `ai-listing-generation` | AI 商品資訊生成 / AI-assisted listing generation | `live` | `AI_PROVIDER=openai` in production, real `OpenAIListingProvider`. |
-| `bulk-form-import-freshness-gate` | 批次匯入與新鮮度檢查 / Bulk-form import + freshness gate | `live` | Package E, merged to `main` via PR #53. |
-| `attended-enrichment-batches` | AI 批次強化 / Attended AI-enrichment batches | `pilot` | Write path (create/advance) already on `main`; list/detail read UI (Package F) built this session, not yet merged. |
-| `multi-product-export` | 多商品匯出 / Multi-product export | `pilot` | Package H, built this session, not yet merged. |
-| `jobs-ledger` | 作業總覽 / Jobs ledger | `pilot` | This session's own prior slice of Package I, not yet merged. |
+| id                                | label                                                    | state     | grounding                                                                                                                                                                                               |
+| --------------------------------- | -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shopline-real-publish`           | SHOPLINE 正式發佈 / Real SHOPLINE publishing             | `blocked` | `SHOPLINE_ADAPTER=disabled`, `SHOPLINE_PUBLISH_ENABLED=false` in production (`apps/worker/src/shopline-runtime.ts:59-65`); enabling requires separate written authorization per the production runbook. |
+| `ai-listing-generation`           | AI 商品資訊生成 / AI-assisted listing generation         | `live`    | `AI_PROVIDER=openai` in production, real `OpenAIListingProvider`.                                                                                                                                       |
+| `bulk-form-import-freshness-gate` | 批次匯入與新鮮度檢查 / Bulk-form import + freshness gate | `live`    | Package E, merged to `main` via PR #53.                                                                                                                                                                 |
+| `attended-enrichment-batches`     | AI 批次強化 / Attended AI-enrichment batches             | `pilot`   | Write path (create/advance) already on `main`; list/detail read UI (Package F) built this session, not yet merged.                                                                                      |
+| `multi-product-export`            | 多商品匯出 / Multi-product export                        | `pilot`   | Package H, built this session, not yet merged.                                                                                                                                                          |
+| `jobs-ledger`                     | 作業總覽 / Jobs ledger                                   | `pilot`   | This session's own prior slice of Package I, not yet merged.                                                                                                                                            |
 
 Each entry's `description` (omitted from the table above for brevity, written out in full in the actual module) states in one sentence what the state means for an operator reading it — not just the label.
 
 ## 3. `/admin`'s 4th tab
 
 Mechanical, consistent extension of the existing 3-tab component:
+
 - `apps/web/components/admin-tabs.tsx`: extend `AdminTab` to `"members" | "connection" | "settings" | "capabilities"`, add one entry to the tab list, one more conditional line in the existing tabpanel chain.
 - New `apps/web/components/admin-capability-panel.tsx`: reads `CAPABILITY_REGISTRY` directly (a static import, not a fetch — there's no API route needed since this is build-time-static data, not per-workspace runtime state) and renders one row per entry with a state-colored badge (reusing this session's own `.status-pending`/`.status-running`/`.status-succeeded`/`.status-failed`/`.status-cancelled` classes from the `/jobs` work — needs a mapping from the 4 capability states to those 5 existing visual tones, not new CSS).
 - Admin-gated, matching the other 3 tabs and the page's existing `requireWorkspaceRole("admin", ...)` redirect.
