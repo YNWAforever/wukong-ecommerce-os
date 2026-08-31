@@ -25,6 +25,7 @@ Integration tests need live Postgres (`docker compose up -d postgres`). Docker/P
 ### Task 1: Extract a shared freshness-check core and add `assertApprovalFreshness`
 
 **Files:**
+
 - Modify: `packages/core/src/assert-export-freshness.ts`
 - Modify: `packages/core/src/assert-export-freshness.test.ts`
 - Create: `packages/core/src/assert-approval-freshness.ts`
@@ -79,7 +80,11 @@ describe("assertApprovalFreshness", () => {
   it("rejects when the listing has no remote product link", async () => {
     const result = await assertApprovalFreshness(
       BASE_INPUT,
-      depsWith({ async getPlatformProductLink() { return null; } }),
+      depsWith({
+        async getPlatformProductLink() {
+          return null;
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "no_remote_link" });
   });
@@ -89,7 +94,10 @@ describe("assertApprovalFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_other", contentDigest: "digest_1" };
+          return {
+            sourceImportId: "source_import_other",
+            contentDigest: "digest_1",
+          };
         },
       }),
     );
@@ -101,7 +109,10 @@ describe("assertApprovalFreshness", () => {
       BASE_INPUT,
       depsWith({
         async getPlatformProductLink() {
-          return { sourceImportId: "source_import_1", contentDigest: "stale_digest" };
+          return {
+            sourceImportId: "source_import_1",
+            contentDigest: "stale_digest",
+          };
         },
       }),
     );
@@ -111,7 +122,11 @@ describe("assertApprovalFreshness", () => {
   it("rejects when the listing's active version has moved on", async () => {
     const result = await assertApprovalFreshness(
       BASE_INPUT,
-      depsWith({ async getActiveVersionId() { return "version_other"; } }),
+      depsWith({
+        async getActiveVersionId() {
+          return "version_other";
+        },
+      }),
     );
     expect(result).toEqual({ ok: false, reason: "version_mismatch" });
   });
@@ -121,10 +136,12 @@ describe("assertApprovalFreshness", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/core test -- assert-approval-freshness.test.ts
 ```
+
 Expected: FAIL — the module does not exist.
 
 - [ ] **Step 4: Extract the shared core and implement**
@@ -140,7 +157,9 @@ export type ContentFreshnessInput = {
 };
 
 export type ContentFreshnessDeps = {
-  getPlatformProductLink(listingId: string): Promise<PlatformProductLink | null>;
+  getPlatformProductLink(
+    listingId: string,
+  ): Promise<PlatformProductLink | null>;
   getActiveVersionId(listingId: string): Promise<string | null>;
 };
 
@@ -151,8 +170,7 @@ export type ContentFreshnessFailureReason =
   | "version_mismatch";
 
 export type ContentFreshnessResult =
-  | { ok: true }
-  | { ok: false; reason: ContentFreshnessFailureReason };
+  { ok: true } | { ok: false; reason: ContentFreshnessFailureReason };
 
 /**
  * The four checks shared by `assertExportFreshness` (which adds an
@@ -209,8 +227,7 @@ export type AssertApprovalFreshnessInput = {
 export type ApprovalFreshnessFailureReason = ContentFreshnessFailureReason;
 
 export type ApprovalFreshnessResult =
-  | { ok: true }
-  | { ok: false; reason: ApprovalFreshnessFailureReason };
+  { ok: true } | { ok: false; reason: ApprovalFreshnessFailureReason };
 
 /**
  * Gate an approval against the listing's source content having drifted
@@ -231,6 +248,7 @@ export async function assertApprovalFreshness(
 - [ ] **Step 5: Export the new symbols and run tests to verify they pass**
 
 In `packages/core/src/index.ts`, add:
+
 ```ts
 export { assertApprovalFreshness } from "./assert-approval-freshness.js";
 export type {
@@ -249,10 +267,12 @@ export type {
 ```
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/core test
 ```
+
 Expected: PASS — all `assert-export-freshness.test.ts` tests (unchanged) plus all new `assert-approval-freshness.test.ts` tests.
 
 - [ ] **Step 6: Commit**
@@ -267,6 +287,7 @@ git commit -m "refactor: share a content-freshness core between export and appro
 ### Task 2: `review_confirmations` schema and repository
 
 **Files:**
+
 - Modify: `packages/db/src/schema.ts`
 - Create: `packages/db/drizzle/0012_review_confirmations.sql`
 - Create: `packages/db/src/repositories/review-confirmations.ts`
@@ -300,7 +321,11 @@ const workspaceId = "ws_review_confirmations";
 const otherWorkspaceId = "ws_review_confirmations_other";
 
 describe("review confirmations repository", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -343,14 +368,20 @@ describe("review confirmations repository", () => {
         upsertInputFor("22222222-2222-4222-8222-222222222222"),
       );
       expect(created.revision).toBe(0);
-      expect(created.fieldConfirmations).toEqual({ nameZh: true, seoTitleEn: false });
+      expect(created.fieldConfirmations).toEqual({
+        nameZh: true,
+        seoTitleEn: false,
+      });
 
       const updated = await repositories.reviewConfirmations.upsert({
         ...upsertInputFor("22222222-2222-4222-8222-222222222222"),
         fieldConfirmations: { nameZh: true, seoTitleEn: true },
       });
       expect(updated.revision).toBe(1);
-      expect(updated.fieldConfirmations).toEqual({ nameZh: true, seoTitleEn: true });
+      expect(updated.fieldConfirmations).toEqual({
+        nameZh: true,
+        seoTitleEn: true,
+      });
 
       const found = await repositories.reviewConfirmations.getByVersionId(
         "22222222-2222-4222-8222-222222222222",
@@ -380,11 +411,13 @@ describe("review confirmations repository", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 docker compose up -d postgres
 pnpm test:integration -- review-confirmations.integration.test.ts
 ```
+
 Expected: FAIL — `repositories.reviewConfirmations` is undefined.
 
 - [ ] **Step 4: Implement schema, migration, and repository**
@@ -544,7 +577,8 @@ export function createReviewConfirmationRepository(
           },
         })
         .returning(COLUMNS);
-      if (!row) throw new Error("review confirmation upsert did not return a row");
+      if (!row)
+        throw new Error("review confirmation upsert did not return a row");
       return row;
     },
 
@@ -571,6 +605,7 @@ export function createReviewConfirmationRepository(
 In `packages/db/src/client.ts`, add the import, add `reviewConfirmations: ReviewConfirmationRepository;` to `WorkspaceRepositories`, and construct it inside `runForWorkspace` alongside the other repositories — read the file first to place these correctly (same three-part pattern as every other repository registration).
 
 In `packages/db/src/index.ts`, add:
+
 ```ts
 export type {
   ReviewConfirmation,
@@ -580,10 +615,12 @@ export type {
 ```
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test:integration -- review-confirmations.integration.test.ts
 ```
+
 Expected: PASS (2/2).
 
 - [ ] **Step 6: Add this new table to the tenant-table and composite-FK release gates**
@@ -602,6 +639,7 @@ git commit -m "feat: add the review_confirmations ledger table and repository"
 ### Task 3: `PATCH /api/listings/[id]/review-confirmations` route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/[id]/review-confirmations/route.ts`
 - Create: `apps/web/app/api/listings/[id]/review-confirmations/route.test.ts`
 
@@ -616,15 +654,18 @@ Create `apps/web/app/api/listings/[id]/review-confirmations/route.test.ts`, mirr
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/review-confirmations/route.test.ts"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
 
 Create `apps/web/app/api/listings/[id]/review-confirmations/route.ts` mirroring the flags/resolve route's structure exactly (same imports, same `assertReviewer`-equivalent role gate — reuse the actual helper from that file if it's exported, or copy its inline check if it's private). The handler:
+
 1. Requires a reviewer role.
 2. Awaits `context.params` for `id` (the listing id).
 3. Parses the body with a Zod schema: `{ versionId: z.string().min(1), fieldConfirmations: z.record(z.string(), z.boolean()), negativeConfirmations: z.record(z.string(), z.boolean()) }`.
@@ -634,10 +675,12 @@ Create `apps/web/app/api/listings/[id]/review-confirmations/route.ts` mirroring 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/review-confirmations/route.test.ts"
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -652,6 +695,7 @@ git commit -m "feat: add PATCH /api/listings/[id]/review-confirmations"
 ### Task 4: Extend the listing snapshot route with the confirmation state
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/[id]/route.ts`
 - Modify: `apps/web/app/api/listings/[id]/route.test.ts`
 - Modify: `apps/web/components/listing-review-client.tsx` (the `ListingViewResponse` type only, in this task — UI wiring is Task 6)
@@ -667,15 +711,18 @@ Extend the existing test file with a case proving the response includes a `revie
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/route.test.ts"
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Implement it**
 
 Add a call to `repositories.reviewConfirmations.getByVersionId(activeVersion.id)` (only when `activeVersion` is non-null) and `repositories.platformProducts.getByListingId(id)`, alongside the route's existing reads. Include `reviewConfirmation` (or `null`), `sourceImportId` (or `null`), and `contentDigest` (or `null`) in the JSON response. Extend `ListingViewResponse` in `apps/web/components/listing-review-client.tsx` with:
+
 ```ts
   reviewConfirmation: {
     revision: number;
@@ -689,10 +736,12 @@ Add a call to `repositories.reviewConfirmations.getByVersionId(activeVersion.id)
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/route.test.ts"
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -707,6 +756,7 @@ git commit -m "feat: include review confirmation and source-import state in the 
 ### Task 5: SEO review fields
 
 **Files:**
+
 - Modify: `apps/web/components/listing-review-client.tsx`
 - Modify: `apps/web/components/listing-review-client.test.ts`
 - Modify: `apps/web/components/listing-fields-form.tsx`
@@ -725,15 +775,18 @@ In `listing-fields-form.test.tsx`, extend with a test asserting the new "SEO 與
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- listing-review-client.test.ts listing-fields-form.test.tsx
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Implement it**
 
 In `apps/web/components/listing-review-client.tsx`'s `mapListingView`, add 5 new `field(...)` entries after the existing `descriptionEn` entry, mirroring the `titleEn`/`titleZhHant` pattern exactly:
+
 ```ts
     field(response.evidence, {
       key: "seoTitleEn",
@@ -774,6 +827,7 @@ In `apps/web/components/listing-review-client.tsx`'s `mapListingView`, add 5 new
 ```
 
 In `applyListingFields`, add after the existing `description` entry:
+
 ```ts
     seo: {
       title: {
@@ -792,6 +846,7 @@ In `applyListingFields`, add after the existing `description` entry:
 ```
 
 In `apps/web/components/listing-fields-form.tsx`, add a 4th entry to the `groups` array:
+
 ```ts
   {
     label: "SEO 與標籤",
@@ -809,10 +864,12 @@ In `apps/web/components/listing-fields-form.tsx`, add a 4th entry to the `groups
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- listing-review-client.test.ts listing-fields-form.test.tsx
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -827,6 +884,7 @@ git commit -m "feat: add the 5 unreviewed SEO fields to the review UI"
 ### Task 6: `ConfirmationChecklist` component
 
 **Files:**
+
 - Create: `apps/web/components/confirmation-checklist.tsx`
 - Create: `apps/web/components/confirmation-checklist.test.tsx`
 - Modify: `apps/web/components/listing-review-client.tsx` (wire it in)
@@ -843,10 +901,12 @@ Create `apps/web/components/confirmation-checklist.test.tsx`. Cover: all 15 item
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- confirmation-checklist.test.tsx
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Implement it**
@@ -884,7 +944,9 @@ export function allConfirmed(
 ): boolean {
   return (
     CONFIRMATION_FIELD_KEYS.every((key) => fieldConfirmations[key] === true) &&
-    CONFIRMATION_NEGATIVE_KEYS.every((key) => negativeConfirmations[key] === true)
+    CONFIRMATION_NEGATIVE_KEYS.every(
+      (key) => negativeConfirmations[key] === true,
+    )
   );
 }
 ```
@@ -898,10 +960,12 @@ In `apps/web/components/listing-review-client.tsx`, render `<ConfirmationCheckli
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- confirmation-checklist.test.tsx listing-fields-form.test.tsx listing-review-client.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -916,6 +980,7 @@ git commit -m "feat: add the confirmation checklist and gate approval on it"
 ### Task 7: Bind `POST /api/listings/[id]/approve` to the freshness gate
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/[id]/approve/route.ts`
 - Modify: `apps/web/app/api/listings/[id]/approve/route.test.ts`
 - Modify: `apps/web/lib/listing-approval.ts`
@@ -932,15 +997,18 @@ Extend `apps/web/app/api/listings/[id]/approve/route.test.ts` (read it first to 
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/approve/route.test.ts"
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Implement it**
 
 Extend `bodySchema`:
+
 ```ts
 const bodySchema = z
   .object({
@@ -954,57 +1022,88 @@ const bodySchema = z
 ```
 
 Right after parsing the body (before the product-shot phase), add a new read-only `forWorkspace` call:
+
 ```ts
-      await db.forWorkspace(session.workspaceId, async (repositories) => {
-        const snapshot = await repositories.listings.getReviewSnapshot(id);
-        if (!snapshot?.activeVersion) {
-          throw new ApiError(404, "listing_not_found", "Listing not found.");
-        }
-        if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
-          throw new ApiError(409, "version_conflict", "This listing has changed since you started reviewing it.");
-        }
+await db.forWorkspace(session.workspaceId, async (repositories) => {
+  const snapshot = await repositories.listings.getReviewSnapshot(id);
+  if (!snapshot?.activeVersion) {
+    throw new ApiError(404, "listing_not_found", "Listing not found.");
+  }
+  if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+    throw new ApiError(
+      409,
+      "version_conflict",
+      "This listing has changed since you started reviewing it.",
+    );
+  }
 
-        const confirmation = await repositories.reviewConfirmations.getByVersionId(
-          snapshot.activeVersion.id,
-        );
-        if ((confirmation?.revision ?? -1) !== parsedBody.confirmationLedgerRevision) {
-          throw new ApiError(409, "confirmation_ledger_stale", "The confirmation checklist has changed since you loaded it.");
-        }
-        if (!confirmation || !allConfirmed(confirmation.fieldConfirmations, confirmation.negativeConfirmations)) {
-          throw new ApiError(422, "confirmation_incomplete", "Complete the confirmation checklist before approving.");
-        }
+  const confirmation = await repositories.reviewConfirmations.getByVersionId(
+    snapshot.activeVersion.id,
+  );
+  if (
+    (confirmation?.revision ?? -1) !== parsedBody.confirmationLedgerRevision
+  ) {
+    throw new ApiError(
+      409,
+      "confirmation_ledger_stale",
+      "The confirmation checklist has changed since you loaded it.",
+    );
+  }
+  if (
+    !confirmation ||
+    !allConfirmed(
+      confirmation.fieldConfirmations,
+      confirmation.negativeConfirmations,
+    )
+  ) {
+    throw new ApiError(
+      422,
+      "confirmation_incomplete",
+      "Complete the confirmation checklist before approving.",
+    );
+  }
 
-        const link = await repositories.platformProducts.getByListingId(id);
-        if (link !== null) {
-          if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
-            throw new ApiError(400, "source_freshness_required", "This listing is linked to an imported product and requires freshness fields.");
-          }
-          const result = await assertApprovalFreshness(
-            {
-              workspaceId: session.workspaceId,
-              listingId: id,
-              expectedSourceImportId: parsedBody.sourceImportId,
-              expectedRowDigest: parsedBody.expectedRowDigest,
-              expectedVersionId: parsedBody.expectedVersionId,
-            },
-            {
-              async getPlatformProductLink() {
-                return link;
-              },
-              async getActiveVersionId() {
-                return snapshot.activeVersion?.id ?? null;
-              },
-            },
-          );
-          if (!result.ok) {
-            throw new ApiError(409, result.reason, "This listing's source data no longer matches what was reviewed.");
-          }
-        }
-      });
+  const link = await repositories.platformProducts.getByListingId(id);
+  if (link !== null) {
+    if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
+      throw new ApiError(
+        400,
+        "source_freshness_required",
+        "This listing is linked to an imported product and requires freshness fields.",
+      );
+    }
+    const result = await assertApprovalFreshness(
+      {
+        workspaceId: session.workspaceId,
+        listingId: id,
+        expectedSourceImportId: parsedBody.sourceImportId,
+        expectedRowDigest: parsedBody.expectedRowDigest,
+        expectedVersionId: parsedBody.expectedVersionId,
+      },
+      {
+        async getPlatformProductLink() {
+          return link;
+        },
+        async getActiveVersionId() {
+          return snapshot.activeVersion?.id ?? null;
+        },
+      },
+    );
+    if (!result.ok) {
+      throw new ApiError(
+        409,
+        result.reason,
+        "This listing's source data no longer matches what was reviewed.",
+      );
+    }
+  }
+});
 ```
+
 Adjust field/method names above to match what `getReviewSnapshot`/`platformProducts.getByListingId`/`ApiError` actually look like once you've read them in Step 1 — this sketch is illustrative of the check order and fail-fast placement, not necessarily byte-exact. Import `assertApprovalFreshness` from `@wukong/core` and `allConfirmed` from `../../../../../components/confirmation-checklist` (adjust the relative path to the actual route file depth). If importing a component file into a route file feels wrong once you see the real directory structure, move `allConfirmed`/`CONFIRMATION_FIELD_KEYS`/`CONFIRMATION_NEGATIVE_KEYS` into a small shared module (e.g. `apps/web/lib/review-confirmation-keys.ts`) that both the route and the component import from instead, and update Task 6's component to import from there too — note this deviation explicitly in your report.
 
 In `apps/web/components/listing-review-client.tsx`'s `approve()` function, extend the POST body using the `sourceImportId`/`contentDigest`/`reviewConfirmation` fields Task 4 already added to `ListingViewResponse`:
+
 ```ts
         body: JSON.stringify({
           expectedVersionId: model.versionId,
@@ -1018,10 +1117,12 @@ In `apps/web/components/listing-review-client.tsx`'s `approve()` function, exten
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm --filter @wukong/web test -- "apps/web/app/api/listings/[id]/approve/route.test.ts" listing-review-client.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1040,47 +1141,57 @@ git commit -m "feat: bind listing approval to the confirmation ledger and freshn
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `pnpm exec prettier --write` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 docker compose up -d postgres
 pnpm test:integration
 ```
+
 Expected: PASS, all packages, including the new `review-confirmations.integration.test.ts`. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 $env:PATH = "C:\Users\laich\AppData\Local\Temp\claude\C--Users-laich-Documents-WukongEommerce\8854911c-9fc7-4f55-82c2-24ba7d846561\scratchpad\bin;" + $env:PATH
 pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 ---

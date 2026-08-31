@@ -21,11 +21,17 @@ export const reviewConfirmations = pgTable(
   "review_confirmations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }).notNull(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
     listingId: uuid("listing_id").notNull(),
     versionId: uuid("version_id").notNull(),
-    fieldConfirmations: jsonb("field_confirmations").$type<Record<string, boolean>>().notNull(),
-    negativeConfirmations: jsonb("negative_confirmations").$type<Record<string, boolean>>().notNull(),
+    fieldConfirmations: jsonb("field_confirmations")
+      .$type<Record<string, boolean>>()
+      .notNull(),
+    negativeConfirmations: jsonb("negative_confirmations")
+      .$type<Record<string, boolean>>()
+      .notNull(),
     revision: integer("revision").notNull().default(0),
     sourceImportId: uuid("source_import_id"),
     rowDigest: text("row_digest"),
@@ -33,7 +39,10 @@ export const reviewConfirmations = pgTable(
     updatedAt: timestamps.updatedAt,
   },
   (table) => [
-    uniqueIndex("review_confirmations_workspace_version_uq").on(table.workspaceId, table.versionId),
+    uniqueIndex("review_confirmations_workspace_version_uq").on(
+      table.workspaceId,
+      table.versionId,
+    ),
     foreignKey({
       name: "review_confirmations_workspace_listing_fkey",
       columns: [table.workspaceId, table.listingId],
@@ -49,11 +58,11 @@ export const reviewConfirmations = pgTable(
 
 ## 4. Approval binding to the freshness gate
 
-`assertExportFreshness` (Package E)'s first check is `freshnessAttested` — an explicit human attestation meant for the *export* moment (Package H), not approval; passing `freshnessAttested: true` here would misuse that flag. Instead, extract checks 2–4 (remote-link exists, `sourceImportId` matches, content digest matches, active version matches) from `packages/core/src/assert-export-freshness.ts` into a shared internal helper, and add a new exported `assertApprovalFreshness(input, deps)` that calls only that shared core (no attestation check, no header-contract check — those are export-time-only concerns). `assertExportFreshness` itself is refactored to call the same shared helper before its own attestation/header-contract checks, so the two functions can never drift apart on what "the content still matches" means.
+`assertExportFreshness` (Package E)'s first check is `freshnessAttested` — an explicit human attestation meant for the _export_ moment (Package H), not approval; passing `freshnessAttested: true` here would misuse that flag. Instead, extract checks 2–4 (remote-link exists, `sourceImportId` matches, content digest matches, active version matches) from `packages/core/src/assert-export-freshness.ts` into a shared internal helper, and add a new exported `assertApprovalFreshness(input, deps)` that calls only that shared core (no attestation check, no header-contract check — those are export-time-only concerns). `assertExportFreshness` itself is refactored to call the same shared helper before its own attestation/header-contract checks, so the two functions can never drift apart on what "the content still matches" means.
 
 `POST /api/listings/[id]/approve`'s body schema grows: `expectedVersionId` (required, must equal `snapshot.activeVersion.id` or 409 `version_conflict`), `confirmationLedgerRevision` (required, must equal the ledger's current `revision` or 409 `confirmation_ledger_stale`), and — only for import-origin listings (checked via `platformProducts.getByListingId`) — `sourceImportId`/`expectedRowDigest` (required for those listings only; create-origin listings have no `platform_products` link to check against, so they skip `assertApprovalFreshness` entirely, matching how `deliverBulkForm`'s existing origin-based branching already treats the two kinds of listings differently). `ListingReviewClient`'s `approve()` function grows its request body accordingly, reading `model.versionId` and the ledger snapshot already present in the loaded `ListingViewResponse`.
 
-**Invalidation:** any successful `PUT /api/listings/[id]/review` (draft save) already creates a new version via `appendVersion`; since `review_confirmations` is keyed by `versionId`, a new version simply has no confirmation row yet — the checklist resets to unconfirmed automatically, no explicit invalidation logic needed beyond what version-scoping already provides. A same-digest re-import (an unchanged bulk-form row re-imported) does not create a new listing version, so an existing confirmation survives it, matching §11's "a same-digest re-import may preserve approval only with a fresh freshness attestation" — the *content* freshness check still runs at approval time regardless of when the confirmation itself was recorded.
+**Invalidation:** any successful `PUT /api/listings/[id]/review` (draft save) already creates a new version via `appendVersion`; since `review_confirmations` is keyed by `versionId`, a new version simply has no confirmation row yet — the checklist resets to unconfirmed automatically, no explicit invalidation logic needed beyond what version-scoping already provides. A same-digest re-import (an unchanged bulk-form row re-imported) does not create a new listing version, so an existing confirmation survives it, matching §11's "a same-digest re-import may preserve approval only with a fresh freshness attestation" — the _content_ freshness check still runs at approval time regardless of when the confirmation itself was recorded.
 
 ## 5. Testing
 

@@ -134,7 +134,10 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
 
   it("upserts a confirmation and returns the new revision", async () => {
     const { handler, calls } = makeHandler({
-      platformProduct: { sourceImportId: "import_1", contentDigest: "digest_1" },
+      platformProduct: {
+        sourceImportId: "import_1",
+        contentDigest: "digest_1",
+      },
     });
     const response = await handler(
       request({

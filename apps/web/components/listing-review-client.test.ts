@@ -191,7 +191,8 @@ describe("listing review client mapping", () => {
     const edited = model.fields.map((field) => {
       if (field.key === "seoTitleEn")
         return { ...field, value: "Opak Riesling — Dry Mosel" };
-      if (field.key === "seoTitleZh") return { ...field, value: "Opak 精選雷司令" };
+      if (field.key === "seoTitleZh")
+        return { ...field, value: "Opak 精選雷司令" };
       if (field.key === "seoDescriptionEn")
         return { ...field, value: "A crisp, dry Mosel Riesling." };
       if (field.key === "seoDescriptionZh")
