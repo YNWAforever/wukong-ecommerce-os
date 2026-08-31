@@ -620,7 +620,8 @@ button:disabled {
   background: currentColor;
 }
 .review-status small,
-.connection-status small {
+.connection-status small,
+.batch-status small {
   color: inherit;
   font-size: 10px;
   font-weight: 500;
