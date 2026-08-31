@@ -326,6 +326,7 @@ export function mapListingView(
       label: "SEO 關鍵字",
       englishLabel: "SEO keywords",
       value: content.tags.join(", "),
+      evidenceKey: "tags",
     }),
   ];
   const blockingFlags: BlockingFlag[] = response.flags.map((flag) => ({
