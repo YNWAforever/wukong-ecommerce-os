@@ -9,6 +9,8 @@ import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 import type { ListingPublisher } from "./listing-queue-runtime.js";
 import { ApiError } from "./route-support";
 
+export type { EnrichmentBatch };
+
 export type EnrichmentGap = keyof BulkFormContentGaps;
 
 export type EnrichmentBatchServiceDeps = {
