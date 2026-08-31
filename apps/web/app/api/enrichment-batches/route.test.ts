@@ -16,9 +16,6 @@ const okResult = {
 function handlerFor(
   role: "viewer" | "operator" | "reviewer" | "admin" | "owner",
   createBatch = async () => okResult,
-  listBatches: (input: {
-    workspaceId: string;
-  }) => Promise<EnrichmentBatch[]> = async () => [],
 ) {
   return createEnrichmentBatchHandler({
     sessionContext: {
@@ -27,7 +24,6 @@ function handlerFor(
       },
     },
     createBatch,
-    listBatches,
   });
 }
 
@@ -98,7 +94,6 @@ function listHandlerFor(
         return { workspaceId: "ws_opak", actorId: "user_1", role };
       },
     },
-    createBatch: async () => okResult,
     listBatches,
   });
 }

@@ -39,7 +39,6 @@ const bodySchema = z
 export type EnrichmentBatchRouteDeps = {
   sessionContext: SessionContextPort;
   createBatch(input: CreateBatchInput): Promise<CreateBatchResult>;
-  listBatches(input: { workspaceId: string }): Promise<EnrichmentBatch[]>;
 };
 
 export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
@@ -71,8 +70,13 @@ export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
   };
 }
 
+export type ListEnrichmentBatchesRouteDeps = {
+  sessionContext: SessionContextPort;
+  listBatches(input: { workspaceId: string }): Promise<EnrichmentBatch[]>;
+};
+
 export function createListEnrichmentBatchesHandler(
-  deps: EnrichmentBatchRouteDeps,
+  deps: ListEnrichmentBatchesRouteDeps,
 ) {
   return async function listEnrichmentBatches(): Promise<Response> {
     return withRouteErrors(async () => {
@@ -107,11 +111,9 @@ const service = createEnrichmentBatchService({
 export const POST = createEnrichmentBatchHandler({
   sessionContext: authSessionContext,
   createBatch: service.createBatch,
-  listBatches: service.listBatches,
 });
 
 export const GET = createListEnrichmentBatchesHandler({
   sessionContext: authSessionContext,
-  createBatch: service.createBatch,
   listBatches: service.listBatches,
 });
