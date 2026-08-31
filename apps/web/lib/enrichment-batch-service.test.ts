@@ -487,7 +487,11 @@ describe("enrichment batch listing", () => {
             });
           },
         }) as never,
-      publisher: { async enqueue() { return { id: "job_1" }; } },
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
     });
 
     const result = await service.listBatches({ workspaceId: "ws_opak" });
@@ -531,7 +535,11 @@ describe("enrichment batch detail", () => {
             });
           },
         }) as never,
-      publisher: { async enqueue() { return { id: "job_1" }; } },
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
     });
 
     const result = await service.getBatch({
@@ -551,11 +559,19 @@ describe("enrichment batch detail", () => {
             work: (repositories: any) => Promise<T>,
           ) {
             return work({
-              enrichmentBatches: { async getById() { return null; } },
+              enrichmentBatches: {
+                async getById() {
+                  return null;
+                },
+              },
             });
           },
         }) as never,
-      publisher: { async enqueue() { return { id: "job_1" }; } },
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
     });
 
     await expect(

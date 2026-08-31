@@ -40,10 +40,9 @@ function handlerFor(
   });
 }
 
-const request = new Request(
-  "http://localhost/api/enrichment-batches/batch_1",
-  { method: "GET" },
-);
+const request = new Request("http://localhost/api/enrichment-batches/batch_1", {
+  method: "GET",
+});
 const context = { params: Promise.resolve({ id: "batch_1" }) };
 
 describe("GET /api/enrichment-batches/[id]", () => {

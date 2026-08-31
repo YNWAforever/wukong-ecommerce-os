@@ -47,30 +47,36 @@ export type EnrichmentBatchRepository = {
 ## 4. Backend: two new GET routes
 
 **`GET /api/enrichment-batches`** (added to the existing `apps/web/app/api/enrichment-batches/route.ts`, alongside its current `POST`):
+
 - Same `operator`-role gate as the existing `POST` handler.
 - Calls a new `listBatches()` function added to `createEnrichmentBatchService`, which just calls `repositories.enrichmentBatches.listForWorkspace()` inside `forWorkspace` — no new validation, this is a straight read.
 - Returns `{ batches: EnrichmentBatch[] }` (serializing `createdAt` to ISO string, matching how every other route in this codebase serializes dates via `jsonResponse`).
 
 **`GET /api/enrichment-batches/[id]`** (new file, `apps/web/app/api/enrichment-batches/[id]/route.ts`, sibling to the existing `[id]/advance/route.ts`):
+
 - Same role gate and `RouteContext = { params: Promise<{ id: string }> }` convention as `[id]/advance/route.ts`.
 - Calls a new `getBatch(input: { workspaceId: string; batchId: string })` function added to the service: fetches `getById`, throws `404 batch_not_found` if absent (matching `advanceBatch`'s existing not-found handling), then calls `countByStatus` and returns `{ batch, counts }`.
 
 ## 5. Frontend
 
 **`apps/web/app/(app)/batches/page.tsx`** (new page):
+
 - Server component, mirrors `apps/web/app/(app)/catalog/page.tsx`'s shell (breadcrumb, `page-header`, then a client island).
 - Renders `<CreateBatchForm />` (new client component) above `<BatchList />` (new client component, fetches `GET /api/enrichment-batches` on mount and lists label/status-badge/wave-size/budget-vs-spent-placeholder/created-date, each row linking to `/batches/[id]`).
 - Status badges reuse the existing `.review-status`/`.status-<name>` CSS pattern in `globals.css` (the same one `catalog`/listing statuses use). `open`/`running` map to `.status-neutral`, `completed` maps to `.status-success`, `budget_exhausted`/`cancelled` map to `.status-danger` — no new modifier classes needed, since the existing three cover all five batch statuses semantically.
 
 **`apps/web/app/(app)/batches/[id]/page.tsx`** (new page):
+
 - Server component shell, same pattern, renders `<BatchDetail batchId={id} />` (new client component: fetches `GET /api/enrichment-batches/[id]` on mount, shows the batch's label/status/budget/wave-size and the 5-way item-status count breakdown, plus an `<AdvanceBatchButton batchId={id} />`).
 
 **`apps/web/components/create-batch-form.tsx`** (new, pure-logic + thin component, mirrors `bulk-import-panel.tsx`'s split):
+
 - Form fields: label (text), gap (`<select>` over the 6 real `EnrichmentGap` values), budget USD (number), wave size (number, 1–5).
 - `submitCreateBatch(input, deps)` POSTs JSON to `/api/enrichment-batches`, mirrors `submitBulkImport`'s typed outcome shape (`{kind: "success", ...} | {kind: "validation_error"|"api_error"|"network_error", ...}`), maps the route's real error codes (`invalid_budget`, `invalid_wave_size`, `empty_cohort`, `insufficient_role`) to messages the same way `API_ERROR_MESSAGES` does today.
 - On success, the list component re-fetches (simplest correct approach — no cache invalidation machinery needed at this pilot's scale).
 
 **`apps/web/components/advance-batch-button.tsx`** (new, pure-logic + thin component):
+
 - `submitAdvanceBatch(batchId, deps)` POSTs to `/api/enrichment-batches/${batchId}/advance`, same typed-outcome convention.
 - On success, re-fetches the detail view (`GET /api/enrichment-batches/[id]`) so updated counts/status show immediately — the operator clicks "Advance" once per wave, same as calling the API directly today, just with visible feedback instead of a blind curl.
 
