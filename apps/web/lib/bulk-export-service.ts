@@ -224,8 +224,11 @@ export async function createBulkExport(
       // batch, and swallowing them here would silently report every
       // survivor — including unrelated, genuinely-changed ones — as
       // excluded_no_op with rowCount 0. Only the all-no-op case is treated
-      // as a non-error; anything else rethrows, matching deliverBulkForm's
-      // existing behavior of surfacing error.issues as a real error.
+      // as a non-error; anything else rethrows. Unlike deliverBulkForm
+      // (which catches this and returns a typed validation_error result),
+      // this function lets it propagate raw — the caller (the export route)
+      // is responsible for catching ShoplineBulkFormError and mapping
+      // error.issues to a real HTTP error response.
       if (
         error instanceof ShoplineBulkFormError &&
         error.issues.every((issue) => issue.code === "enrichment_no_changes")
