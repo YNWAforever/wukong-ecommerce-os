@@ -47,7 +47,9 @@ function rawRowFor(overrides: Partial<Record<string, string>> = {}) {
   };
 }
 
-function depsWith(overrides: Partial<Parameters<typeof createBulkExport>[1]> = {}) {
+function depsWith(
+  overrides: Partial<Parameters<typeof createBulkExport>[1]> = {},
+) {
   const links: Record<
     string,
     {
@@ -92,10 +94,19 @@ function depsWith(overrides: Partial<Parameters<typeof createBulkExport>[1]> = {
       contentDigest: "digest_1",
     },
   };
-  const versions: Record<string, { id: string; content: ReturnType<typeof contentFor> }> = {
-    listing_changed: { id: "version_changed", content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }) },
+  const versions: Record<
+    string,
+    { id: string; content: ReturnType<typeof contentFor> }
+  > = {
+    listing_changed: {
+      id: "version_changed",
+      content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+    },
     listing_noop: { id: "version_noop", content: contentFor() },
-    listing_stale: { id: "version_stale", content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }) },
+    listing_stale: {
+      id: "version_stale",
+      content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+    },
   };
   return {
     async getPlatformProductLink(listingId: string) {
@@ -150,9 +161,22 @@ describe("createBulkExport", () => {
     );
     expect(result.rowCount).toBe(1);
     expect(result.manifest).toEqual([
-      { listingId: "listing_changed", versionId: "version_changed", outcome: "included" },
-      { listingId: "listing_noop", versionId: "version_noop", outcome: "excluded_no_op" },
-      { listingId: "listing_stale", versionId: "version_stale", outcome: "excluded_stale", reason: "row_digest_mismatch" },
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "included",
+      },
+      {
+        listingId: "listing_noop",
+        versionId: "version_noop",
+        outcome: "excluded_no_op",
+      },
+      {
+        listingId: "listing_stale",
+        versionId: "version_stale",
+        outcome: "excluded_stale",
+        reason: "row_digest_mismatch",
+      },
     ]);
   });
 
@@ -168,32 +192,57 @@ describe("createBulkExport", () => {
     );
     expect(result.rowCount).toBe(0);
     expect(result.manifest).toEqual([
-      { listingId: "listing_changed", versionId: "version_changed", outcome: "excluded_stale", reason: "not_attested" },
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
     ]);
   });
 
   it("excludes a create-origin listing with not_import_origin, without calling assertExportFreshness for it", async () => {
     const deps = depsWith({
       async getPlatformProductLink() {
-        return { remoteProductId: "prod-created", rawRow: null, origin: "created" as const, sourceImportId: null, contentDigest: null };
+        return {
+          remoteProductId: "prod-created",
+          rawRow: null,
+          origin: "created" as const,
+          sourceImportId: null,
+          contentDigest: null,
+        };
       },
       async getActiveVersion() {
         return { id: "version_created", content: contentFor() };
       },
     });
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_created"], freshnessAttested: true },
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_created"],
+        freshnessAttested: true,
+      },
       deps,
     );
     expect(result.manifest).toEqual([
-      { listingId: "listing_created", versionId: "version_created", outcome: "not_import_origin" },
+      {
+        listingId: "listing_created",
+        versionId: "version_created",
+        outcome: "not_import_origin",
+      },
     ]);
     expect(result.rowCount).toBe(0);
   });
 
   it("produces rowCount 0 with a full manifest, not an error, when every listing is excluded", async () => {
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_noop"], freshnessAttested: true },
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_noop"],
+        freshnessAttested: true,
+      },
       depsWith(),
     );
     expect(result.rowCount).toBe(0);
@@ -202,11 +251,24 @@ describe("createBulkExport", () => {
 
   it("excludes an unknown listing id with listing_not_found", async () => {
     const result = await createBulkExport(
-      { workspaceId: "ws_1", requestedBy: "user_1", listingIds: ["listing_missing"], freshnessAttested: true },
-      depsWith({ async getActiveVersion() { return null; } }),
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_missing"],
+        freshnessAttested: true,
+      },
+      depsWith({
+        async getActiveVersion() {
+          return null;
+        },
+      }),
     );
     expect(result.manifest).toEqual([
-      { listingId: "listing_missing", versionId: null, outcome: "listing_not_found" },
+      {
+        listingId: "listing_missing",
+        versionId: null,
+        outcome: "listing_not_found",
+      },
     ]);
   });
 });

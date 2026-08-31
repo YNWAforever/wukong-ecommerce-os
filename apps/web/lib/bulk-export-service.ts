@@ -237,7 +237,9 @@ export async function createBulkExport(
 
   const specVersion = update?.specVersion ?? SHOPLINE_BULK_FORM_SPEC_VERSION;
   const body = update ? writeBulkFormWorkbook(update.sheet) : new Uint8Array(0);
-  const rowCount = manifest.filter((entry) => entry.outcome === "included").length;
+  const rowCount = manifest.filter(
+    (entry) => entry.outcome === "included",
+  ).length;
 
   return { manifest, rowCount, specVersion, body };
 }
