@@ -94,4 +94,43 @@ describe("BatchList", () => {
 
     await unmount(root);
   });
+
+  it("renders an error message instead of crashing when the response is not ok", async () => {
+    // Regression: a viewer-role user's GET 403s with {code, message}. The
+    // body still parses as JSON, so without a response.ok check the old code
+    // did `setBatches(undefined)` and then crashed on `batches.length`.
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          code: "insufficient_role",
+          message: "server detail",
+        },
+        { status: 403 },
+      ),
+    );
+
+    const { container, root } = await mount(fetcher);
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toBe("Operator access is required.");
+    expect(container.querySelector("a")).toBeNull();
+
+    await unmount(root);
+  });
+
+  it("renders an error message instead of hanging on a network failure", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+
+    const { container, root } = await mount(fetcher);
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toBe("Could not reach the server. Try again.");
+    expect(container.textContent).not.toContain("載入中");
+
+    await unmount(root);
+  });
 });

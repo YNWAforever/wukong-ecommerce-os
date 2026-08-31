@@ -1,5 +1,4 @@
-import { BatchList } from "../../../components/batch-list";
-import { CreateBatchForm } from "../../../components/create-batch-form";
+import { BatchesClient } from "../../../components/batches-client";
 
 export default function BatchesPage() {
   return (
@@ -15,8 +14,7 @@ export default function BatchesPage() {
           </p>
         </div>
       </div>
-      <CreateBatchForm />
-      <BatchList />
+      <BatchesClient />
     </div>
   );
 }
