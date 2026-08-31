@@ -25,7 +25,7 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     id: "shopline-real-publish",
     label: "SHOPLINE 正式發佈 / Real SHOPLINE publishing",
     description:
-      "Production runs with SHOPLINE_ADAPTER=disabled and SHOPLINE_PUBLISH_ENABLED=false. Enabling real writes requires separate written authorization outside this plan.",
+      "Production runs with real SHOPLINE writes disabled by configuration. Enabling them requires separate written authorization outside this plan.",
     state: "blocked",
   },
   {
