@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS } from "@wukong/shopline";
+import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
 
 import { createBulkExport } from "./bulk-export-service.js";
 
@@ -270,5 +270,103 @@ describe("createBulkExport", () => {
         outcome: "listing_not_found",
       },
     ]);
+  });
+
+  it("marks a listing whose stored raw row fails isBulkFormRawRow as raw_row_invalid", async () => {
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_invalid_row") {
+          return {
+            remoteProductId: "prod-invalid",
+            // Missing almost all of the 71 required columns —
+            // isBulkFormRawRow rejects this.
+            rawRow: { productId: "prod-invalid" },
+            origin: "import" as const,
+            sourceImportId: "import_1",
+            contentDigest: "digest_1",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_invalid_row") {
+          return { id: "version_invalid", content: contentFor() };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_invalid_row"],
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.manifest).toEqual([
+      {
+        listingId: "listing_invalid_row",
+        versionId: "version_invalid",
+        outcome: "raw_row_invalid",
+      },
+    ]);
+    expect(result.rowCount).toBe(0);
+  });
+
+  it("rethrows a ShoplineBulkFormError instead of silently reporting excluded_no_op when two survivors collide on the same remote product id", async () => {
+    // Nothing upstream of this function rejects duplicate listing ids (the
+    // planned bulk-export route's zod schema doesn't either), so two
+    // requested listings can resolve to the same remoteProductId.
+    // createBulkFormUpdate's own validateEnrichments throws
+    // ShoplineBulkFormError({ code: "enrichment_duplicate" }) for the whole
+    // batch call in that case — a real validation failure, not "nothing
+    // changed" — so it must propagate rather than being swallowed as
+    // excluded_no_op with a silently-dropped rowCount.
+    const sharedLink = {
+      remoteProductId: "prod-shared",
+      rawRow: rawRowFor(),
+      origin: "import" as const,
+      sourceImportId: "import_1",
+      contentDigest: "digest_1",
+    };
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_dup_a" || listingId === "listing_dup_b") {
+          return sharedLink;
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_dup_a") {
+          return {
+            id: "version_dup_a",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        if (listingId === "listing_dup_b") {
+          return {
+            id: "version_dup_b",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+    await expect(
+      createBulkExport(
+        {
+          workspaceId: "ws_1",
+          requestedBy: "user_1",
+          listingIds: ["listing_dup_a", "listing_dup_b"],
+          freshnessAttested: true,
+        },
+        deps,
+      ),
+    ).rejects.toBeInstanceOf(ShoplineBulkFormError);
   });
 });

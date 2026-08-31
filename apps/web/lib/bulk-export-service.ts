@@ -21,6 +21,16 @@ import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
  * `deliverBulkForm` in `delivery-service.ts` builds a single-listing export
  * row (same field mapping, same `isBulkFormRawRow` gate), scaled to many
  * listings behind one freshness-and-origin gate per listing.
+ *
+ * Known limitation (not fixable in this pure function): each survivor's
+ * freshness check happens once, at that listing's own turn in the loop, but
+ * `createBulkFormUpdate` runs once at the end for the whole batch. An early
+ * survivor's platform-product row could change again while the rest of the
+ * batch is still being read (each remaining listing does 2+ further awaited
+ * reads), and nothing re-verifies it immediately before the final write.
+ * Closing that gap needs a transaction or a final re-check at the caller's
+ * I/O boundary — left for whoever wires the route/persistence layer around
+ * this function.
  */
 export type ExportManifestOutcome =
   | "included"
@@ -206,7 +216,20 @@ export async function createBulkExport(
     try {
       update = createBulkFormUpdate(rows, enrichments, { include: "changed" });
     } catch (error) {
-      if (error instanceof ShoplineBulkFormError) {
+      // ShoplineBulkFormError covers 8 distinct issue codes (see
+      // bulk-form.ts's BulkFormEnrichmentIssueCode) — only
+      // "enrichment_no_changes" actually means "nothing changed". The rest
+      // (duplicate product id, a value too long, blank, or containing
+      // control characters) mean something is genuinely wrong with the
+      // batch, and swallowing them here would silently report every
+      // survivor — including unrelated, genuinely-changed ones — as
+      // excluded_no_op with rowCount 0. Only the all-no-op case is treated
+      // as a non-error; anything else rethrows, matching deliverBulkForm's
+      // existing behavior of surfacing error.issues as a real error.
+      if (
+        error instanceof ShoplineBulkFormError &&
+        error.issues.every((issue) => issue.code === "enrichment_no_changes")
+      ) {
         // Every survivor was a no-op after all (createBulkFormUpdate's own
         // "zero net changes" guard fires when nothing in the whole batch
         // changed) — every survivor's manifest entry stays excluded_no_op,
