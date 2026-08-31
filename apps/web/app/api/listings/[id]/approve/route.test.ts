@@ -982,4 +982,207 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
     expect(snapshotCallCount).toBe(2);
   });
+
+  it("rejects with 409 confirmation_ledger_stale instead of silently approving when the checklist changes on the SAME version between phase 0's checks and the approval transaction", async () => {
+    // Simulates the narrower race: the active version never changes (stays
+    // `versionId` the whole time), so the `expectedVersionId` re-check alone
+    // would pass. A second reviewer PATCHes
+    // /api/listings/[id]/review-confirmations for that same version, which
+    // bumps the ledger's revision without ever calling `appendVersion`.
+    // `approveOne` must re-read the ledger itself and reject the stale
+    // revision, rather than trusting phase 0's earlier read.
+    const calls: unknown[] = [];
+    let confirmationCallCount = 0;
+    const handler = createApproveListingHandler({
+      sessionContext: {
+        async resolve() {
+          return { ...context, role: "reviewer" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repos: any) => Promise<T>,
+          ) {
+            return work({
+              listings: {
+                async getReviewSnapshot(id: string) {
+                  return {
+                    listing: {
+                      id,
+                      target: "shopline",
+                      status: "in_review",
+                    },
+                    activeVersion: {
+                      id: versionId,
+                      sequence: 3,
+                      content: { sku: "OPAK-001", imageAssetIds: [] },
+                    },
+                    evidence: [],
+                    flags: [],
+                  };
+                },
+                async approve(
+                  id: string,
+                  version: string,
+                  auditContext: unknown,
+                ) {
+                  calls.push(["approve-should-not-be-called", id, version]);
+                },
+              },
+              reviewConfirmations: {
+                async getByVersionId(id: string) {
+                  confirmationCallCount += 1;
+                  const revision = confirmationCallCount === 1 ? 2 : 3;
+                  calls.push([
+                    "reviewConfirmations.getByVersionId",
+                    id,
+                    revision,
+                  ]);
+                  return { ...fullyConfirmed!, revision };
+                },
+              },
+              platformProducts: {
+                async getByListingId() {
+                  return null;
+                },
+              },
+              audit: {
+                async write(event: unknown) {
+                  calls.push(["audit", event]);
+                },
+              },
+            });
+          },
+        }) as never,
+      approve: async () => {
+        calls.push(["domainApprove-should-not-be-called"]);
+        return { versionId, status: "approved" as const };
+      },
+    });
+
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 2,
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "confirmation_ledger_stale",
+    });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["approve-should-not-be-called"]),
+    );
+    expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
+    expect(confirmationCallCount).toBe(2);
+  });
+
+  it("rejects with 409 and the freshness failure reason instead of silently approving when an import-origin listing's content digest changes on the SAME version between phase 0's checks and the approval transaction", async () => {
+    // Simulates the narrower race: the active version never changes (stays
+    // `versionId` the whole time), so the `expectedVersionId` re-check alone
+    // would pass. A concurrent catalog re-import updates the linked
+    // `platform_products` row's `contentDigest` via `upsertMany`'s
+    // `onConflictDoUpdate`, again without ever calling `appendVersion`.
+    // `approveOne` must re-read the link and re-run the freshness check
+    // itself, rather than trusting phase 0's earlier read.
+    const calls: unknown[] = [];
+    let linkCallCount = 0;
+    const handler = createApproveListingHandler({
+      sessionContext: {
+        async resolve() {
+          return { ...context, role: "reviewer" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repos: any) => Promise<T>,
+          ) {
+            return work({
+              listings: {
+                async getReviewSnapshot(id: string) {
+                  return {
+                    listing: {
+                      id,
+                      target: "shopline",
+                      status: "in_review",
+                    },
+                    activeVersion: {
+                      id: versionId,
+                      sequence: 3,
+                      content: { sku: "OPAK-001", imageAssetIds: [] },
+                    },
+                    evidence: [],
+                    flags: [],
+                  };
+                },
+                async approve(
+                  id: string,
+                  version: string,
+                  auditContext: unknown,
+                ) {
+                  calls.push(["approve-should-not-be-called", id, version]);
+                },
+              },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId(id: string) {
+                  linkCallCount += 1;
+                  const contentDigest =
+                    linkCallCount === 1 ? "digest_1" : "digest_2";
+                  calls.push([
+                    "platformProducts.getByListingId",
+                    id,
+                    contentDigest,
+                  ]);
+                  return {
+                    origin: "import" as const,
+                    sourceImportId: "import_1",
+                    contentDigest,
+                  };
+                },
+              },
+              audit: {
+                async write(event: unknown) {
+                  calls.push(["audit", event]);
+                },
+              },
+            });
+          },
+        }) as never,
+      approve: async () => {
+        calls.push(["domainApprove-should-not-be-called"]);
+        return { versionId, status: "approved" as const };
+      },
+    });
+
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import_1",
+        expectedRowDigest: "digest_1",
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "row_digest_mismatch",
+    });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["approve-should-not-be-called"]),
+    );
+    expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
+    expect(linkCallCount).toBe(2);
+  });
 });

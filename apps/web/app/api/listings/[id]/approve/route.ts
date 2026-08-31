@@ -247,12 +247,19 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
       // re-reads a fresh `getReviewSnapshot` here rather than reusing phase
       // 0's/1's -- `promoteAndApprove`'s optimistic-concurrency check is what
       // guards against the listing changing during phase 2's external I/O.
-      // Passing `expectedVersionId` through makes `approveOne` re-assert that
-      // this fresh read still agrees with what phase 0 validated (the
-      // confirmation ledger, the freshness check) -- otherwise a concurrent
-      // edit landing between phase 0 and here (e.g. a `PUT
-      // /api/listings/[id]/review` promoting a new version) would approve
-      // that new, never-checked version instead of rejecting.
+      // Passing `expectedVersionId`/`confirmationLedgerRevision`/
+      // `sourceImportId`+`expectedRowDigest` through makes `approveOne`
+      // re-read and re-verify each of them itself, inside this transaction --
+      // phase 0 above is only a fast fail-fast pre-check (so a doomed request
+      // rejects before phase 1/2's product-shot I/O runs), not the actual
+      // source of truth. Without this, a concurrent edit landing between
+      // phase 0 and here -- a new version promoted via `PUT
+      // /api/listings/[id]/review`, a checklist edit via `PATCH
+      // .../review-confirmations` bumping the ledger revision on the SAME
+      // version, or a catalog re-import updating `platform_products` on the
+      // SAME version -- would each silently approve against stale state
+      // instead of rejecting, since none of those edits changes the active
+      // version id on its own.
       const result = await db.forWorkspace(
         session.workspaceId,
         (repositories) =>
@@ -260,6 +267,9 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
             approve: deps.approve,
             precomputedFinalAsset,
             expectedVersionId: parsedBody.expectedVersionId,
+            confirmationLedgerRevision: parsedBody.confirmationLedgerRevision,
+            sourceImportId: parsedBody.sourceImportId,
+            expectedRowDigest: parsedBody.expectedRowDigest,
           }),
       );
       return jsonResponse(200, result);

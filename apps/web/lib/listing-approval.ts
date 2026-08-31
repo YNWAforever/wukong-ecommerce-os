@@ -1,14 +1,18 @@
 import {
   approveListing as domainApprove,
+  assertApprovalFreshness,
   type AuditContext,
   type CanonicalListing,
 } from "@wukong/core";
 import type {
   AuditWriter,
   ListingRepository,
+  PlatformProductRepository,
+  ReviewConfirmationRepository,
   SourceAssetRepository,
 } from "@wukong/db";
 
+import { allConfirmed } from "./review-confirmation-keys";
 import { ApiError } from "./route-support";
 
 /**
@@ -35,6 +39,8 @@ export type ApproveOneRepositories = {
     SourceAssetRepository,
     "listForListing" | "create" | "attachToListing"
   >;
+  reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
+  platformProducts: Pick<PlatformProductRepository, "getByListingId">;
   audit: AuditWriter;
 };
 
@@ -74,6 +80,38 @@ export type ApproveOneDeps = {
    * approves whatever is currently active.
    */
   expectedVersionId?: string;
+  /**
+   * When supplied, `approveOne` re-reads `reviewConfirmations.getByVersionId`
+   * inside its own transaction and re-verifies both that the revision still
+   * matches and that the checklist is still fully confirmed -- not just that
+   * phase 0 (the route's separate, earlier `forWorkspace` call) saw a
+   * matching, complete checklist. `expectedVersionId` staying the same does
+   * NOT imply this is still true: `PATCH
+   * /api/listings/[id]/review-confirmations` bumps the ledger's revision for
+   * the *same* version without ever calling `appendVersion`, so a second
+   * reviewer can edit the checklist for the version being approved without
+   * the active version changing at all. Optional for the same reason as
+   * `expectedVersionId` -- bulk-approve has no client-held ledger revision to
+   * pin against.
+   */
+  confirmationLedgerRevision?: number;
+  /**
+   * When both this and `expectedRowDigest` are supplied, `approveOne`
+   * re-reads `platformProducts.getByListingId` inside its own transaction and
+   * re-runs `assertApprovalFreshness` -- not just trusting phase 0's earlier
+   * read. Like `confirmationLedgerRevision`, a stable `expectedVersionId`
+   * does not imply the linked product's content is still fresh: a concurrent
+   * catalog re-import updates `platform_products.contentDigest`/
+   * `sourceImportId` via `upsertMany`'s `onConflictDoUpdate`, again without
+   * calling `appendVersion`. Per the design doc, "the content freshness check
+   * still runs at approval time regardless of when the confirmation itself
+   * was recorded" -- this is what makes that true, rather than phase 0's
+   * earlier read being the only check. Optional for the same reason as
+   * `expectedVersionId`/`confirmationLedgerRevision`.
+   */
+  sourceImportId?: string;
+  /** Paired with `sourceImportId`; see that field's doc. */
+  expectedRowDigest?: string;
   /**
    * Set by the route handler once it has already flattened a chosen
    * background onto a cutout and stored the result. `approveOne` itself
@@ -154,6 +192,19 @@ export async function findProductShotAssets(
  * `promoteAndApprove` instead of the existing active version. Bulk approve
  * never supplies this, and today no real listing has a cutout asset, so this
  * branch is presently a no-op for every real approval.
+ *
+ * When `deps.expectedVersionId`/`confirmationLedgerRevision`/
+ * `sourceImportId`+`expectedRowDigest` are supplied, this function re-checks
+ * each of them against a fresh read taken inside its own transaction, rather
+ * than trusting whatever an earlier, separate read (the approve route's own
+ * "phase 0" pre-check) already validated. This is what actually closes the
+ * race window between that earlier read and this function's write: the
+ * active version, the confirmation ledger, and the linked product's content
+ * digest can each go stale independently of one another, since a checklist
+ * edit or a catalog re-import updates its own row without ever calling
+ * `appendVersion`. The earlier, separate read exists only to fail fast
+ * before the (potentially expensive) product-shot I/O above runs -- this
+ * function's own re-checks are the actual source of truth.
  */
 export async function approveOne(
   id: string,
@@ -177,6 +228,63 @@ export async function approveOne(
       "version_conflict",
       "This listing has changed since you started reviewing it.",
     );
+  }
+
+  if (deps.confirmationLedgerRevision !== undefined) {
+    const confirmation = await repositories.reviewConfirmations.getByVersionId(
+      snapshot.activeVersion.id,
+    );
+    if ((confirmation?.revision ?? -1) !== deps.confirmationLedgerRevision) {
+      throw new ApiError(
+        409,
+        "confirmation_ledger_stale",
+        "The confirmation checklist has changed since you loaded it.",
+      );
+    }
+    if (
+      !confirmation ||
+      !allConfirmed(
+        confirmation.fieldConfirmations,
+        confirmation.negativeConfirmations,
+      )
+    ) {
+      throw new ApiError(
+        422,
+        "confirmation_incomplete",
+        "Complete the confirmation checklist before approving.",
+      );
+    }
+  }
+
+  if (
+    deps.sourceImportId !== undefined &&
+    deps.expectedRowDigest !== undefined
+  ) {
+    const activeVersionId = snapshot.activeVersion.id;
+    const result = await assertApprovalFreshness(
+      {
+        workspaceId: auditContext.workspaceId,
+        listingId: id,
+        expectedSourceImportId: deps.sourceImportId,
+        expectedRowDigest: deps.expectedRowDigest,
+        expectedVersionId: activeVersionId,
+      },
+      {
+        async getPlatformProductLink() {
+          return repositories.platformProducts.getByListingId(id);
+        },
+        async getActiveVersionId() {
+          return activeVersionId;
+        },
+      },
+    );
+    if (!result.ok) {
+      throw new ApiError(
+        409,
+        result.reason,
+        "This listing's source data no longer matches what was reviewed.",
+      );
+    }
   }
 
   let versionIdToApprove: string = snapshot.activeVersion.id;
