@@ -17,6 +17,11 @@ export type ExportManifestEntry = {
   listingId: string;
   versionId: string | null;
   outcome: ExportManifestOutcome;
+  // Always omit this key entirely when there is no reason -- never set it to
+  // `undefined` explicitly. jsonb silently drops `undefined`-valued keys on
+  // write, so a manifest built with `reason: undefined` would read back
+  // without the key at all, which would then read as a false mismatch
+  // against an input that omitted it from the start.
   reason?: string;
 };
 
@@ -48,19 +53,43 @@ export type ExportAttemptRepository = {
    * This method cannot know what the key is derived from, so it cannot
    * detect that kind of collision in general. What it does do is a sanity
    * check on repeat calls: it compares the full `manifest` array already
-   * stored under this key against the input's `manifest`, entry by entry.
-   * `rowCount` and `specVersion` alone are not enough -- two requests can
-   * agree on both while every manifest entry disagrees on *why* a listing
-   * was included or excluded (e.g. all excluded as `not_attested` in one
-   * request, all excluded as `excluded_no_op` in another, same row count,
-   * same spec version). If the stored manifest disagrees with the input,
+   * stored under this key against the input's `manifest`, entry by entry
+   * (order-independent -- both sides are sorted by `listingId:versionId`
+   * before comparing, since the key is itself derived from the sorted
+   * listing/version set and two calls with the same set in a different
+   * array order are the same request by the key's own definition). If the
+   * stored manifest disagrees with the input once order is normalized,
    * something in the caller's key construction missed an input that
    * matters, and this throws instead of quietly handing back stale data
    * from an unrelated request.
+   *
+   * `rowCount` and `specVersion` are checked too, and deliberately not
+   * dropped as "redundant" with the manifest check: `rowCount` is computed
+   * by the caller through a separate code path (a count of changed
+   * spreadsheet columns, not a tally of the manifest's `included` entries),
+   * so a caller bug that produces a correct manifest but a wrong `rowCount`
+   * would only be caught here, not by comparing manifests. This is
+   * defense-in-depth across independently-computed fields, not one check
+   * standing in for another.
    */
   ensure(input: EnsureExportAttemptInput): Promise<ExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
 };
+
+// Mirrors the listingId:versionId normalization the idempotency key itself
+// is derived from (sha256 of the sorted "listingId:versionId" pair set), so
+// a repeat call whose manifest entries arrive in a different array order --
+// e.g. reconstructed from a Set/Map, or from a UI re-render -- compares
+// equal instead of being mistaken for a genuine key collision.
+const manifestSortKey = (entry: ExportManifestEntry): string =>
+  `${entry.listingId}:${entry.versionId ?? "null"}`;
+
+const sortedManifest = (
+  manifest: ExportManifestEntry[],
+): ExportManifestEntry[] =>
+  [...manifest].sort((a, b) =>
+    manifestSortKey(a).localeCompare(manifestSortKey(b)),
+  );
 
 const COLUMNS = {
   id: exportAttempts.id,
@@ -110,7 +139,10 @@ export function createExportAttemptRepository(
       if (
         row.rowCount !== input.rowCount ||
         row.specVersion !== input.specVersion ||
-        !isDeepStrictEqual(row.manifest, input.manifest)
+        !isDeepStrictEqual(
+          sortedManifest(row.manifest),
+          sortedManifest(input.manifest),
+        )
       ) {
         throw new Error(
           "export attempt idempotency key does not match the stored row",

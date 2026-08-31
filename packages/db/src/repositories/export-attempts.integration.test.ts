@@ -166,6 +166,36 @@ describe("export attempts repository", () => {
     });
   });
 
+  it("does not throw when a repeat call's manifest has the same entries in a different array order", async () => {
+    // The idempotency key is derived from the sorted listing/version set, so
+    // two calls naming the same set in a different array order -- e.g. one
+    // reconstructed from a Set/Map, or a UI re-render -- hash to the same
+    // key and are the same request by the key's own definition. The
+    // comparison must normalize order before comparing, or this legitimate
+    // retry path would incorrectly throw a false idempotency-key mismatch.
+    const forward = manifest;
+    const reversed = [...manifest].reverse();
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const created = await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_reordered",
+        requestedBy: "user_1",
+        manifest: forward,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+
+      const repeat = await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_reordered",
+        requestedBy: "user_1",
+        manifest: reversed,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+      expect(repeat.id).toBe(created.id);
+    });
+  });
+
   it("never exposes an export attempt to another workspace", async () => {
     const created = await database.forWorkspace(workspaceId, (repositories) =>
       repositories.exportAttempts.ensure({
