@@ -130,6 +130,81 @@ export function createAssetKey(input: CreateUploadInput): string {
   return `ws/${input.workspaceId}/sources/${randomUUID()}/${safeFileName(input.fileName)}`;
 }
 
+export const BULK_FORM_XLSX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+export type CreateExportAssetKeyInput = {
+  workspaceId: string;
+  exportAttemptId: string;
+  fileName: string;
+};
+
+/**
+ * A second, parallel key namespace to `sources/` (user-uploaded evidence).
+ * `exports/` holds server-*generated* deliverables — today just the
+ * multi-product XLSX — keyed by the export attempt that produced them, not
+ * by a random upload id. Kept separate from `assertAssetKey` rather than
+ * generalizing it, so a bug in one namespace's validation can't silently
+ * admit the other's keys.
+ */
+export function createExportAssetKey(input: CreateExportAssetKeyInput): string {
+  assertWorkspaceId(input.workspaceId);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      input.exportAttemptId,
+    )
+  ) {
+    throw new AssetInputError("Invalid export attempt id");
+  }
+  return `ws/${input.workspaceId}/exports/${input.exportAttemptId}/${safeFileName(input.fileName)}`;
+}
+
+export function assertExportAssetKey(workspaceId: string, key: string): void {
+  assertWorkspaceId(workspaceId);
+  const prefix = `ws/${workspaceId}/exports/`;
+  if (!key.startsWith(prefix) || key.includes("..") || key.includes("\\")) {
+    throw new AssetInputError("Asset key does not belong to workspace");
+  }
+  const remainder = key.slice(prefix.length);
+  const segments = remainder.split("/");
+  if (
+    segments.length !== 2 ||
+    segments.some((segment) => segment.length === 0) ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      segments[0] ?? "",
+    )
+  ) {
+    throw new AssetInputError("Invalid asset key");
+  }
+  let canonicalFileName: string;
+  try {
+    canonicalFileName = safeFileName(segments[1] ?? "");
+  } catch {
+    throw new AssetInputError("Invalid asset key");
+  }
+  if (canonicalFileName !== segments[1]) {
+    throw new AssetInputError("Invalid asset key");
+  }
+}
+
+/**
+ * Accepts either the `sources/` (user-upload) or `exports/`
+ * (server-generated) key namespace. Used only by `writeObject`/`readObject`,
+ * which are the two methods this package's new export flow needs — every
+ * other `AssetStore` method (`createUpload`, `createReadUrl`, `head`,
+ * `exists`) stays on the plain `assertAssetKey` check because exports are
+ * never uploaded-to or presign-read.
+ */
+export function assertAnyAssetKey(workspaceId: string, key: string): void {
+  try {
+    assertAssetKey(workspaceId, key);
+    return;
+  } catch {
+    // fall through to the exports/ namespace check
+  }
+  assertExportAssetKey(workspaceId, key);
+}
+
 export class MemoryAssetStore implements AssetStore {
   readonly #objects = new Map<
     string,
@@ -173,14 +248,14 @@ export class MemoryAssetStore implements AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     const metadata: AssetObjectMetadata = { size: body.byteLength, mimeType };
     this.#objects.set(key, { metadata, body });
     return metadata;
   }
 
   async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     const entry = this.#objects.get(key);
     if (!entry?.body) {
       throw new Error("Asset object has no stored body");

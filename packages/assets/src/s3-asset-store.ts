@@ -10,6 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
   ASSET_UPLOAD_TTL_MS,
+  assertAnyAssetKey,
   assertAssetKey,
   createAssetKey,
   type AssetObjectMetadata,
@@ -147,7 +148,7 @@ export class S3AssetStore implements AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     await this.#transport.send(
       new PutObjectCommand({
         Bucket: this.#bucket,
@@ -161,7 +162,7 @@ export class S3AssetStore implements AssetStore {
   }
 
   async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     const response = (await this.#transport.send(
       new GetObjectCommand({
         Bucket: this.#bucket,
