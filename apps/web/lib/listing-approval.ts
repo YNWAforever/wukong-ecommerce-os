@@ -57,6 +57,24 @@ export type ApproveOneAssetStore = {
 export type ApproveOneDeps = {
   approve?: typeof domainApprove;
   /**
+   * When supplied, `approveOne` re-asserts that the version it is about to
+   * approve is still the one the caller validated (confirmation checklist,
+   * source-freshness check, etc.) — not just whatever happens to be active
+   * by the time this function's own `getReviewSnapshot` read runs.
+   *
+   * `POST /api/listings/[id]/approve` reads and validates a snapshot in its
+   * own earlier, separate `forWorkspace` call (its "phase 0"), then this
+   * function reads a second, fresh snapshot in its own transaction. Without
+   * this check, a concurrent edit landing between those two reads (e.g. a
+   * `PUT /api/listings/[id]/review` promoting a new version) would make
+   * `approveOne` silently approve that new version instead — one with no
+   * confirmation-ledger row and no freshness check against it. Optional
+   * because bulk-approve (`POST /api/listings/bulk-approve`) has no
+   * client-held "version I reviewed" to pin against; it intentionally
+   * approves whatever is currently active.
+   */
+  expectedVersionId?: string;
+  /**
    * Set by the route handler once it has already flattened a chosen
    * background onto a cutout and stored the result. `approveOne` itself
    * never does that I/O (no `AssetStore`, no `flattenProductShot`) — it only
@@ -149,6 +167,16 @@ export async function approveOne(
   }
   if (snapshot.listing.target !== "shopline" || !snapshot.activeVersion) {
     throw new ApiError(409, "approval_required", "可批准的版本不存在。");
+  }
+  if (
+    deps.expectedVersionId !== undefined &&
+    snapshot.activeVersion.id !== deps.expectedVersionId
+  ) {
+    throw new ApiError(
+      409,
+      "version_conflict",
+      "This listing has changed since you started reviewing it.",
+    );
   }
 
   let versionIdToApprove: string = snapshot.activeVersion.id;

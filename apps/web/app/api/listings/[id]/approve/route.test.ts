@@ -83,6 +83,7 @@ function makeHandler(options: {
   }>;
   confirmation?: ReviewConfirmationFixture;
   platformProduct?: {
+    origin: "import" | "created";
     sourceImportId: string | null;
     contentDigest: string | null;
   } | null;
@@ -793,6 +794,7 @@ describe("POST /api/listings/[id]/approve", () => {
   it("returns 400 source_freshness_required for an import-origin listing approved without sourceImportId/expectedRowDigest", async () => {
     const { handler } = makeHandler({
       platformProduct: {
+        origin: "import",
         sourceImportId: "import_1",
         contentDigest: "digest_1",
       },
@@ -813,6 +815,7 @@ describe("POST /api/listings/[id]/approve", () => {
   it("returns 409 with the freshness failure reason as the error code when an import-origin listing's row digest no longer matches", async () => {
     const { handler } = makeHandler({
       platformProduct: {
+        origin: "import",
         sourceImportId: "import_1",
         contentDigest: "digest_1",
       },
@@ -851,5 +854,132 @@ describe("POST /api/listings/[id]/approve", () => {
       "platformProducts.getByListingId",
       listingId,
     ]);
+  });
+
+  it("approves a create-origin listing with a 'created'-origin platform_products link without requiring sourceImportId/expectedRowDigest", async () => {
+    // A listing created directly in Wukong (never imported) still gets a
+    // `platform_products` row after its first publish -- see
+    // `apps/worker/src/publish-product.ts` -- but with `origin: "created"`
+    // and both `sourceImportId`/`contentDigest` null. The client can never
+    // populate the freshness fields for such a listing, so the gate must not
+    // require them just because *a* link exists.
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "created",
+        sourceImportId: null,
+        contentDigest: null,
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      listingId,
+      versionId,
+      status: "approved",
+    });
+    expect(calls).toContainEqual([
+      "platformProducts.getByListingId",
+      listingId,
+    ]);
+  });
+
+  it("rejects with 409 version_conflict instead of silently approving a different version when the active version changes between phase 0's checks and the approval transaction", async () => {
+    // Simulates the race: phase 0's `forWorkspace` call reads and validates
+    // the listing at `versionId` (the version the reviewer's confirmation
+    // checklist was filled out against). Before phase 3's own `forWorkspace`
+    // call runs, a concurrent `PUT /api/listings/[id]/review` promotes a new
+    // version -- `raceVersionId` -- to active. `approveOne` must reject
+    // rather than approve `raceVersionId`, which has no confirmation-ledger
+    // row and was never freshness-checked.
+    const raceVersionId = "00000000-0000-4000-8000-000000000777";
+    const calls: unknown[] = [];
+    let snapshotCallCount = 0;
+    const handler = createApproveListingHandler({
+      sessionContext: {
+        async resolve() {
+          return { ...context, role: "reviewer" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repos: any) => Promise<T>,
+          ) {
+            return work({
+              listings: {
+                async getReviewSnapshot(id: string) {
+                  snapshotCallCount += 1;
+                  const activeId =
+                    snapshotCallCount === 1 ? versionId : raceVersionId;
+                  calls.push(["getReviewSnapshot", id, activeId]);
+                  return {
+                    listing: {
+                      id,
+                      target: "shopline",
+                      status: "in_review",
+                    },
+                    activeVersion: {
+                      id: activeId,
+                      sequence: snapshotCallCount === 1 ? 3 : 4,
+                      content: { sku: "OPAK-001", imageAssetIds: [] },
+                    },
+                    evidence: [],
+                    flags: [],
+                  };
+                },
+                async approve(
+                  id: string,
+                  version: string,
+                  auditContext: unknown,
+                ) {
+                  calls.push(["approve-should-not-be-called", id, version]);
+                },
+              },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId() {
+                  return null;
+                },
+              },
+              audit: {
+                async write(event: unknown) {
+                  calls.push(["audit", event]);
+                },
+              },
+            });
+          },
+        }) as never,
+      approve: async () => {
+        calls.push(["domainApprove-should-not-be-called"]);
+        return { versionId: raceVersionId, status: "approved" as const };
+      },
+    });
+
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "version_conflict" });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["approve-should-not-be-called"]),
+    );
+    expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
+    expect(snapshotCallCount).toBe(2);
   });
 });

@@ -131,7 +131,14 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
         }
 
         const link = await repositories.platformProducts.getByListingId(id);
-        if (link !== null) {
+        // A "created"-origin listing gets a `platform_products` row too,
+        // after its first publish (see `apps/worker/src/publish-product.ts`)
+        // -- but with `sourceImportId`/`contentDigest` always null, since it
+        // was never imported. The freshness check only makes sense for a row
+        // that came from an import; gating on `link !== null` alone would
+        // permanently 400 every re-approval of a create-origin listing (the
+        // client can never supply fields that don't exist for it).
+        if (link !== null && link.origin === "import") {
           if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
             throw new ApiError(
               400,
@@ -238,14 +245,21 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
 
       // Phase 3: the actual approval, in its own transaction. `approveOne`
       // re-reads a fresh `getReviewSnapshot` here rather than reusing phase
-      // 1's -- `promoteAndApprove`'s optimistic-concurrency check is what
+      // 0's/1's -- `promoteAndApprove`'s optimistic-concurrency check is what
       // guards against the listing changing during phase 2's external I/O.
+      // Passing `expectedVersionId` through makes `approveOne` re-assert that
+      // this fresh read still agrees with what phase 0 validated (the
+      // confirmation ledger, the freshness check) -- otherwise a concurrent
+      // edit landing between phase 0 and here (e.g. a `PUT
+      // /api/listings/[id]/review` promoting a new version) would approve
+      // that new, never-checked version instead of rejecting.
       const result = await db.forWorkspace(
         session.workspaceId,
         (repositories) =>
           approveOne(id, auditContext, repositories, {
             approve: deps.approve,
             precomputedFinalAsset,
+            expectedVersionId: parsedBody.expectedVersionId,
           }),
       );
       return jsonResponse(200, result);
