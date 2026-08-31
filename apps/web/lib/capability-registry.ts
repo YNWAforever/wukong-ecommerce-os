@@ -32,7 +32,7 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     id: "ai-listing-generation",
     label: "AI 商品資訊生成 / AI-assisted listing generation",
     description:
-      "Production runs AI_PROVIDER=openai against the real OpenAIListingProvider for listing content generation.",
+      "Production runs the real OpenAI-backed listing provider for listing content generation.",
     state: "live",
   },
   {
