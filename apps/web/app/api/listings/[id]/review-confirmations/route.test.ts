@@ -21,13 +21,15 @@ function request(body: Record<string, unknown>) {
   );
 }
 
-function routeContext() {
-  return { params: Promise.resolve({ id: listingId }) };
+function routeContext(id: string = listingId) {
+  return { params: Promise.resolve({ id }) };
 }
 
 function makeHandler(
   options: {
     role?: "viewer" | "operator" | "reviewer" | "admin";
+    activeVersionId?: string | null;
+    snapshotExists?: boolean;
     platformProduct?: {
       sourceImportId: string | null;
       contentDigest: string | null;
@@ -37,6 +39,7 @@ function makeHandler(
   const calls: unknown[] = [];
   const platformProduct =
     options.platformProduct === undefined ? null : options.platformProduct;
+  const snapshotExists = options.snapshotExists ?? true;
   const handler = createReviewConfirmationsHandler({
     sessionContext: {
       async resolve() {
@@ -51,6 +54,19 @@ function makeHandler(
         ) {
           calls.push(["forWorkspace", workspaceId]);
           return work({
+            listings: {
+              async getReviewSnapshot(id: string) {
+                calls.push(["getReviewSnapshot", id]);
+                if (!snapshotExists) return null;
+                return {
+                  listing: { id },
+                  activeVersion:
+                    options.activeVersionId === null
+                      ? null
+                      : { id: options.activeVersionId ?? versionId },
+                };
+              },
+            },
             platformProducts: {
               async getByListingId(id: string) {
                 calls.push(["getByListingId", id]);
@@ -177,5 +193,79 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
         rowDigest: null,
       }),
     ]);
+  });
+
+  it("rejects a versionId that isn't the listing's current active version", async () => {
+    const superseded = "00000000-0000-4000-8000-000000000299";
+    const { handler, calls } = makeHandler({
+      activeVersionId: "00000000-0000-4000-8000-000000000301",
+    });
+    const response = await handler(
+      request({
+        versionId: superseded,
+        fieldConfirmations: { title: true },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "stale_version" });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["upsert", expect.anything()]),
+    );
+  });
+
+  it("rejects a versionId that belongs to a completely different listing", async () => {
+    const otherListingsVersionId = "11111111-1111-4111-8111-111111111111";
+    const { handler, calls } = makeHandler();
+    const response = await handler(
+      request({
+        versionId: otherListingsVersionId,
+        fieldConfirmations: { title: true },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "stale_version" });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["upsert", expect.anything()]),
+    );
+  });
+
+  it("returns 404 (not 500) for a listing that no longer exists", async () => {
+    const { handler, calls } = makeHandler({ snapshotExists: false });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: true },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "listing_not_found" });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["upsert", expect.anything()]),
+    );
+  });
+
+  it("returns 404 (not 500) for a malformed listing id, without touching the database", async () => {
+    const { handler, calls } = makeHandler();
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: true },
+        negativeConfirmations: {},
+      }),
+      routeContext("not-a-listing-id"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "listing_not_found" });
+    expect(calls).toEqual([]);
   });
 });

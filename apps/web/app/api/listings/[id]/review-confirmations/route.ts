@@ -23,7 +23,7 @@ type ReviewConfirmationsRouteDeps = {
 
 const bodySchema = z
   .object({
-    versionId: z.string().min(1),
+    versionId: z.string().uuid(),
     fieldConfirmations: z.record(z.string(), z.boolean()),
     negativeConfirmations: z.record(z.string(), z.boolean()),
   })
@@ -50,11 +50,29 @@ export function createReviewConfirmationsHandler(
       const session = await requireSessionContext(deps.sessionContext);
       assertOperator(session.role);
       const { id } = await context.params;
+      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+        throw new ApiError(404, "listing_not_found", "Listing not found.");
+      }
       const body = bodySchema.parse(await request.json());
 
       const confirmation = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
+          const snapshot = await repositories.listings.getReviewSnapshot(id);
+          if (!snapshot) {
+            throw new ApiError(404, "listing_not_found", "Listing not found.");
+          }
+          if (
+            !snapshot.activeVersion ||
+            snapshot.activeVersion.id !== body.versionId
+          ) {
+            throw new ApiError(
+              409,
+              "stale_version",
+              "Listing changed; reload before confirming review fields.",
+            );
+          }
+
           // create-origin listings have no platform_products link, so the
           // digest and import id the ledger records for them are both null.
           const platformProduct =
