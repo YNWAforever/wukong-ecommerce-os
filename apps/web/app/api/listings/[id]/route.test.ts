@@ -22,7 +22,9 @@ function handlerFor(
     workspaces?: { requireProfile: () => Promise<any> };
     assetStore?: { createReadUrl: (...args: any[]) => Promise<any> };
     platformProducts?: { getByListingId: (id: string) => Promise<any> };
-    reviewConfirmations?: { getByVersionId: (versionId: string) => Promise<any> };
+    reviewConfirmations?: {
+      getByVersionId: (versionId: string) => Promise<any>;
+    };
   } = {},
 ) {
   return createListingViewHandler({
