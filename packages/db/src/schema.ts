@@ -759,6 +759,47 @@ export const sourceImports = pgTable(
   ],
 );
 
+export const reviewConfirmations = pgTable(
+  "review_confirmations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    fieldConfirmations: jsonb("field_confirmations")
+      .$type<Record<string, boolean>>()
+      .notNull(),
+    negativeConfirmations: jsonb("negative_confirmations")
+      .$type<Record<string, boolean>>()
+      .notNull(),
+    revision: integer("revision").notNull().default(0),
+    sourceImportId: uuid("source_import_id"),
+    rowDigest: text("row_digest"),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("review_confirmations_workspace_version_uq").on(
+      table.workspaceId,
+      table.versionId,
+    ),
+    // Backs review_confirmations_workspace_listing_fkey: without a leading
+    // index on these two columns, deleting a listing_drafts row would force a
+    // full scan of review_confirmations to enforce the FK.
+    index("review_confirmations_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    foreignKey({
+      name: "review_confirmations_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 export const enrichmentBatchStatus = pgEnum("enrichment_batch_status", [
   "open",
   "running",
