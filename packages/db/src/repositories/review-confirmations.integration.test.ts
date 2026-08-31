@@ -1,7 +1,9 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDatabase } from "../index.js";
+import type { AuditContext, CanonicalListing } from "@wukong/core";
+
+import { createDatabase, type WorkspaceRepositories } from "../index.js";
 
 const adminUrl =
   process.env.TEST_DATABASE_ADMIN_URL ??
@@ -13,6 +15,31 @@ const ignoreNotice = (): void => undefined;
 
 const workspaceId = "ws_review_confirmations";
 const otherWorkspaceId = "ws_review_confirmations_other";
+
+const listingContent: CanonicalListing = {
+  sku: "OPAK-001",
+  producer: "Opak",
+  productType: "wine",
+  country: "Germany",
+  region: "Mosel",
+  vintage: 2024,
+  grapeVarieties: ["Riesling"],
+  volumeMl: 750,
+  abvPercent: 12.5,
+  packQuantity: 1,
+  priceHkd: 288,
+  stockQuantity: null,
+  criticScores: [],
+  awards: [],
+  title: { en: "Opak Riesling", "zh-Hant": "Opak 雷司令" },
+  description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+  seo: {
+    title: { en: "Opak Riesling", "zh-Hant": "Opak 雷司令" },
+    description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+  },
+  tags: ["wine"],
+  imageAssetIds: [],
+};
 
 describe("review confirmations repository", () => {
   const admin = postgres(adminUrl, {
@@ -47,8 +74,33 @@ describe("review confirmations repository", () => {
     await admin.end();
   });
 
-  const upsertInputFor = (versionId: string) => ({
-    listingId: "11111111-1111-4111-8111-111111111111",
+  // review_confirmations has composite FKs to both listing_drafts and
+  // listing_versions, so a test row needs a real draft and a real version --
+  // a bare made-up UUID would raise a foreign-key violation on insert.
+  const createDraftAndVersion = async (
+    repositories: WorkspaceRepositories,
+    scopedWorkspaceId: string,
+  ) => {
+    const listing = await repositories.listings.create({
+      target: "shopline",
+      note: null,
+    });
+    const context: AuditContext = {
+      workspaceId: scopedWorkspaceId,
+      actorId: "test:review-confirmations",
+      entityId: listing.id,
+    };
+    const version = await repositories.listings.appendVersion(
+      listing.id,
+      listingContent,
+      context,
+      repositories.audit,
+    );
+    return { listingId: listing.id, versionId: version.id };
+  };
+
+  const upsertInputFor = (listingId: string, versionId: string) => ({
+    listingId,
     versionId,
     fieldConfirmations: { nameZh: true, seoTitleEn: false },
     negativeConfirmations: { priceUnchanged: true, noImageChange: false },
@@ -58,8 +110,13 @@ describe("review confirmations repository", () => {
 
   it("creates a confirmation, reads it back, and increments revision on upsert", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
+      const { listingId, versionId } = await createDraftAndVersion(
+        repositories,
+        workspaceId,
+      );
+
       const created = await repositories.reviewConfirmations.upsert(
-        upsertInputFor("22222222-2222-4222-8222-222222222222"),
+        upsertInputFor(listingId, versionId),
       );
       expect(created.revision).toBe(0);
       expect(created.fieldConfirmations).toEqual({
@@ -68,7 +125,7 @@ describe("review confirmations repository", () => {
       });
 
       const updated = await repositories.reviewConfirmations.upsert({
-        ...upsertInputFor("22222222-2222-4222-8222-222222222222"),
+        ...upsertInputFor(listingId, versionId),
         fieldConfirmations: { nameZh: true, seoTitleEn: true },
       });
       expect(updated.revision).toBe(1);
@@ -77,25 +134,30 @@ describe("review confirmations repository", () => {
         seoTitleEn: true,
       });
 
-      const found = await repositories.reviewConfirmations.getByVersionId(
-        "22222222-2222-4222-8222-222222222222",
-      );
+      const found =
+        await repositories.reviewConfirmations.getByVersionId(versionId);
       expect(found?.revision).toBe(1);
     });
   });
 
   it("never exposes a confirmation to another workspace", async () => {
-    await database.forWorkspace(workspaceId, (repositories) =>
-      repositories.reviewConfirmations.upsert(
-        upsertInputFor("33333333-3333-4333-8333-333333333333"),
-      ),
+    const { versionId } = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const { listingId, versionId } = await createDraftAndVersion(
+          repositories,
+          workspaceId,
+        );
+        await repositories.reviewConfirmations.upsert(
+          upsertInputFor(listingId, versionId),
+        );
+        return { versionId };
+      },
     );
 
     await database.forWorkspace(otherWorkspaceId, async (repositories) => {
       expect(
-        await repositories.reviewConfirmations.getByVersionId(
-          "33333333-3333-4333-8333-333333333333",
-        ),
+        await repositories.reviewConfirmations.getByVersionId(versionId),
       ).toBeNull();
     });
   });

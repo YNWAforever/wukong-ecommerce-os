@@ -797,6 +797,15 @@ export const reviewConfirmations = pgTable(
       columns: [table.workspaceId, table.listingId],
       foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
     }).onDelete("cascade"),
+    // No separate leading index needed: review_confirmations_workspace_version_uq
+    // above is already a 2-column unique index on exactly (workspace_id,
+    // version_id), in that order, so it backs this FK the same way a
+    // dedicated index would.
+    foreignKey({
+      name: "review_confirmations_workspace_version_fkey",
+      columns: [table.workspaceId, table.versionId],
+      foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+    }).onDelete("restrict"),
   ],
 );
 
