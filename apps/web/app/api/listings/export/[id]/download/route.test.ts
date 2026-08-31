@@ -68,7 +68,11 @@ function makeRepositories(options: { attempt?: unknown } = {}) {
 }
 
 function makeAssetStore(
-  options: { bytes?: Uint8Array; throwsOnRead?: boolean } = {},
+  options: {
+    bytes?: Uint8Array;
+    throwsOnRead?: boolean;
+    throwsUnrelatedError?: boolean;
+  } = {},
 ) {
   const bytes = options.bytes ?? new TextEncoder().encode("fake-xlsx-bytes");
   const calls: { workspaceId: string; key: string }[] = [];
@@ -83,6 +87,13 @@ function makeAssetStore(
         // packages/assets/src/s3-asset-store.ts).
         throw new Error("Asset object has no stored body");
       }
+      if (options.throwsUnrelatedError) {
+        // A DIFFERENT failure -- e.g. a transient R2/S3 outage, a network
+        // failure, a credential misconfiguration -- that happens to also
+        // throw out of readObject(), but is not "this object was never
+        // written." The route must not mistake this for that case.
+        throw new Error("S3: connection reset by peer");
+      }
       return bytes;
     },
   };
@@ -92,7 +103,11 @@ function makeHandler(
   options: {
     role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
     attempt?: unknown;
-    assetStoreOptions?: { bytes?: Uint8Array; throwsOnRead?: boolean };
+    assetStoreOptions?: {
+      bytes?: Uint8Array;
+      throwsOnRead?: boolean;
+      throwsUnrelatedError?: boolean;
+    };
   } = {},
 ) {
   const repositories = makeRepositories(
@@ -164,6 +179,15 @@ describe("GET /api/listings/export/[id]/download", () => {
     expect(body.code).toBe("export_attempt_not_found");
   });
 
+  it("rejects a malformed export attempt id with 404 before touching the database", async () => {
+    const { handler, getDatabaseCalls } = makeHandler();
+    const response = await handler(request(), routeContext("not-a-valid-uuid"));
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.code).toBe("export_attempt_not_found");
+    expect(getDatabaseCalls()).toBe(0);
+  });
+
   it("serves whatever bytes the asset store currently holds, unrelated to any other in-memory/live listing state", async () => {
     const { handler, assetStore } = makeHandler();
     const response = await handler(request(), routeContext(VALID_ATTEMPT_ID));
@@ -188,5 +212,20 @@ describe("GET /api/listings/export/[id]/download", () => {
     const body = await response.json();
     expect(body.code).toBe("export_object_missing");
     expect(body.code).not.toBe("export_attempt_not_found");
+  });
+
+  it("does not swallow an unrelated asset-store failure (e.g. a transient outage) as export_object_missing", async () => {
+    // Only the exact "no stored body" message is the genuinely expected
+    // case. Anything else reading out of readObject() -- an outage, a
+    // network error, a bad credential -- must propagate to
+    // withRouteErrors's normal catch-all (500 + a server-side trace),
+    // not get mapped to the misleading "resubmit the export" 409.
+    const { handler } = makeHandler({
+      assetStoreOptions: { throwsUnrelatedError: true },
+    });
+    const response = await handler(request(), routeContext(VALID_ATTEMPT_ID));
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.code).toBe("internal_error");
   });
 });

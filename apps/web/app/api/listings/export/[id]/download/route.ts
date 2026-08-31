@@ -73,23 +73,53 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
         );
       }
 
+      // Constructed outside the try/catch below: a throw here (malformed
+      // workspaceId/exportAttemptId) is a genuine bug, not "object missing",
+      // and must not be mischaracterized as the expected condition that
+      // catch handles.
+      const assetKey = createExportAssetKey({
+        workspaceId: session.workspaceId,
+        exportAttemptId: attempt.id,
+        fileName: `export-${attempt.id}.xlsx`,
+      });
+
       let bytes: Uint8Array;
       try {
-        bytes = await deps.getAssetStore().readObject(
-          session.workspaceId,
-          createExportAssetKey({
-            workspaceId: session.workspaceId,
+        bytes = await deps
+          .getAssetStore()
+          .readObject(session.workspaceId, assetKey);
+      } catch (error) {
+        // Narrowed to the EXACT message MemoryAssetStore/S3AssetStore throw
+        // for "row exists, but no body was ever written under this key"
+        // (packages/assets/src/asset-store.ts, packages/assets/src/s3-asset-store.ts).
+        // Anything else -- a transient R2/S3 outage, a network failure, a
+        // credential misconfiguration -- is NOT that case: rethrowing lets
+        // withRouteErrors's normal catch-all handle it (500 + a
+        // report("internal_error", ...) trace for on-call), instead of this
+        // route silently telling the caller to "resubmit the export" for a
+        // problem resubmitting can't fix.
+        if (
+          !(error instanceof Error) ||
+          error.message !== "Asset object has no stored body"
+        ) {
+          throw error;
+        }
+        // The one genuinely expected case: `export_attempts.ensure()`
+        // committed but the asset-store write after it (see the comment
+        // above the write in apps/web/app/api/listings/export/route.ts)
+        // never landed. Still worth a server-side trace, so on-call can
+        // distinguish this from the outage case above by grepping for this
+        // event -- mirrors the shape of route-support.ts's private
+        // `report()` helper, which this file can't import (not exported).
+        console.error(
+          JSON.stringify({
+            event: "route_error",
+            outcome: "failure",
+            reason: "export_object_missing",
             exportAttemptId: attempt.id,
-            fileName: `export-${attempt.id}.xlsx`,
+            workspaceId: session.workspaceId,
           }),
         );
-      } catch {
-        // A committed `export_attempts` row can exist with its object not
-        // yet written (or since failed) -- see the comment above the
-        // asset-store write in apps/web/app/api/listings/export/route.ts.
-        // That is a real, accepted state, not a bug, so it must not surface
-        // as a bare 500 or be confused with "this export id never existed"
-        // (the 404 above). Distinct code, distinct status.
         return jsonResponse(409, {
           code: "export_object_missing",
           message:
