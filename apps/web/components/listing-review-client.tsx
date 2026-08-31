@@ -624,11 +624,22 @@ export function ListingReviewClient({
   }
 
   async function approve() {
+    if (!snapshot) throw new Error("Listing is not ready for review");
+    const { reviewConfirmation, sourceImportId, contentDigest } = snapshot;
     await run(async () => {
       const response = await fetch(`/api/listings/${listingId}/approve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({
+          expectedVersionId: model.versionId,
+          confirmationLedgerRevision: reviewConfirmation?.revision ?? 0,
+          ...(sourceImportId && contentDigest
+            ? {
+                sourceImportId,
+                expectedRowDigest: contentDigest,
+              }
+            : {}),
+        }),
       });
       if (!response.ok) throw await responseError(response);
       await load();

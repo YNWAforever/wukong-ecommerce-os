@@ -1,5 +1,6 @@
 import {
   approveListing as domainApprove,
+  assertApprovalFreshness,
   type AuditContext,
 } from "@wukong/core";
 import { createAssetKey } from "@wukong/assets";
@@ -16,6 +17,7 @@ import {
   type ApproveOneAssetStore,
 } from "../../../../../lib/listing-approval";
 import { getAssetStore, getDatabase } from "../../../../../lib/intake-runtime";
+import { allConfirmed } from "../../../../../lib/review-confirmation-keys";
 import {
   ApiError,
   jsonResponse,
@@ -41,6 +43,10 @@ type ApprovalRouteDeps = {
 const bodySchema = z
   .object({
     background: z.enum(["white", "brand"]).optional(),
+    expectedVersionId: z.string().min(1),
+    confirmationLedgerRevision: z.number().int().nonnegative(),
+    sourceImportId: z.string().min(1).optional(),
+    expectedRowDigest: z.string().min(1).optional(),
   })
   .strip();
 
@@ -74,6 +80,91 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
         entityId: id,
       };
       const db = deps.getDatabase();
+
+      // Phase 0: cheap, read-only checks that must reject before any
+      // product-shot I/O (phase 1/2 below) or the approval transaction
+      // (phase 3) runs -- the same "cheap checks before expensive work"
+      // ordering already established for the role check above. This is a
+      // separate `forWorkspace` call from phase 3's rather than threading
+      // these reads through `approveOne`'s own transaction, precisely so a
+      // failed check here short-circuits before phase 1/2's external I/O
+      // (S3 reads, a `sharp` composite, S3 writes) ever starts.
+      await db.forWorkspace(session.workspaceId, async (repositories) => {
+        const snapshot = await repositories.listings.getReviewSnapshot(id);
+        if (!snapshot?.activeVersion) {
+          throw new ApiError(404, "listing_not_found", "Listing not found.");
+        }
+        if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+          throw new ApiError(
+            409,
+            "version_conflict",
+            "This listing has changed since you started reviewing it.",
+          );
+        }
+
+        const confirmation =
+          await repositories.reviewConfirmations.getByVersionId(
+            snapshot.activeVersion.id,
+          );
+        if (
+          (confirmation?.revision ?? -1) !==
+          parsedBody.confirmationLedgerRevision
+        ) {
+          throw new ApiError(
+            409,
+            "confirmation_ledger_stale",
+            "The confirmation checklist has changed since you loaded it.",
+          );
+        }
+        if (
+          !confirmation ||
+          !allConfirmed(
+            confirmation.fieldConfirmations,
+            confirmation.negativeConfirmations,
+          )
+        ) {
+          throw new ApiError(
+            422,
+            "confirmation_incomplete",
+            "Complete the confirmation checklist before approving.",
+          );
+        }
+
+        const link = await repositories.platformProducts.getByListingId(id);
+        if (link !== null) {
+          if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
+            throw new ApiError(
+              400,
+              "source_freshness_required",
+              "This listing is linked to an imported product and requires freshness fields.",
+            );
+          }
+          const result = await assertApprovalFreshness(
+            {
+              workspaceId: session.workspaceId,
+              listingId: id,
+              expectedSourceImportId: parsedBody.sourceImportId,
+              expectedRowDigest: parsedBody.expectedRowDigest,
+              expectedVersionId: parsedBody.expectedVersionId,
+            },
+            {
+              async getPlatformProductLink() {
+                return link;
+              },
+              async getActiveVersionId() {
+                return snapshot.activeVersion?.id ?? null;
+              },
+            },
+          );
+          if (!result.ok) {
+            throw new ApiError(
+              409,
+              result.reason,
+              "This listing's source data no longer matches what was reviewed.",
+            );
+          }
+        }
+      });
 
       let precomputedFinalAsset:
         { storageKey: string; priorFinalAssetIds: string[] } | undefined;

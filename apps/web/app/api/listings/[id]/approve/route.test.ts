@@ -13,6 +13,11 @@ vi.mock("@wukong/assets/product-shot-flatten", async (importOriginal) => {
 
 import { flattenProductShot } from "@wukong/assets/product-shot-flatten";
 
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "../../../../../lib/review-confirmation-keys";
+
 import { createApproveListingHandler } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
@@ -23,11 +28,36 @@ const context = {
   role: "reviewer" as const,
 };
 
+const fullFieldConfirmations: Record<string, boolean> = Object.fromEntries(
+  CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+);
+const fullNegativeConfirmations: Record<string, boolean> = Object.fromEntries(
+  CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+);
+
+type ReviewConfirmationFixture = {
+  revision: number;
+  fieldConfirmations: Record<string, boolean>;
+  negativeConfirmations: Record<string, boolean>;
+  sourceImportId: string | null;
+  rowDigest: string | null;
+} | null;
+
+const fullyConfirmed: ReviewConfirmationFixture = {
+  revision: 0,
+  fieldConfirmations: fullFieldConfirmations,
+  negativeConfirmations: fullNegativeConfirmations,
+  sourceImportId: null,
+  rowDigest: null,
+};
+
 const request = (
   body: Record<string, unknown> = {
     requestedStatus: "published",
     workspaceId: "ws_other",
     actorId: "attacker",
+    expectedVersionId: versionId,
+    confirmationLedgerRevision: 0,
   },
 ) =>
   new Request(`http://localhost/api/listings/${listingId}/approve`, {
@@ -51,8 +81,17 @@ function makeHandler(options: {
     status: "open" | "resolved";
     resolutionReason: string | null;
   }>;
+  confirmation?: ReviewConfirmationFixture;
+  platformProduct?: {
+    sourceImportId: string | null;
+    contentDigest: string | null;
+  } | null;
 }) {
   const calls: unknown[] = [];
+  const confirmation =
+    options.confirmation === undefined ? fullyConfirmed : options.confirmation;
+  const platformProduct =
+    options.platformProduct === undefined ? null : options.platformProduct;
   const handler = createApproveListingHandler({
     sessionContext: {
       async resolve() {
@@ -91,6 +130,18 @@ function makeHandler(options: {
                 _audit: unknown,
               ) {
                 calls.push(["approve", id, version, auditContext]);
+              },
+            },
+            reviewConfirmations: {
+              async getByVersionId(id: string) {
+                calls.push(["reviewConfirmations.getByVersionId", id]);
+                return confirmation;
+              },
+            },
+            platformProducts: {
+              async getByListingId(id: string) {
+                calls.push(["platformProducts.getByListingId", id]);
+                return platformProduct;
               },
             },
             audit: {
@@ -282,6 +333,16 @@ describe("POST /api/listings/[id]/approve", () => {
                   return { brandBackgroundColor: null };
                 },
               },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId() {
+                  return null;
+                },
+              },
               audit: {
                 async write(event: unknown) {
                   calls.push(["audit", event]);
@@ -318,7 +379,11 @@ describe("POST /api/listings/[id]/approve", () => {
     } as never);
 
     const response = await handler(
-      request({ background: "white" }),
+      request({
+        background: "white",
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
       routeContext(),
     );
 
@@ -461,6 +526,16 @@ describe("POST /api/listings/[id]/approve", () => {
                   return { brandBackgroundColor: null };
                 },
               },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId() {
+                  return null;
+                },
+              },
               audit: {
                 async write(event: unknown) {
                   calls.push(["audit", event]);
@@ -497,7 +572,11 @@ describe("POST /api/listings/[id]/approve", () => {
     } as never);
 
     const response = await handler(
-      request({ background: "brand" }),
+      request({
+        background: "brand",
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
       routeContext(),
     );
 
@@ -563,6 +642,16 @@ describe("POST /api/listings/[id]/approve", () => {
                   return [];
                 },
               },
+              reviewConfirmations: {
+                async getByVersionId() {
+                  return fullyConfirmed;
+                },
+              },
+              platformProducts: {
+                async getByListingId() {
+                  return null;
+                },
+              },
               audit: {
                 async write(event: unknown) {
                   calls.push(["audit", event]);
@@ -604,7 +693,11 @@ describe("POST /api/listings/[id]/approve", () => {
     } as never);
 
     const response = await handler(
-      request({ background: "white" }),
+      request({
+        background: "white",
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
       routeContext(),
     );
 
@@ -622,5 +715,141 @@ describe("POST /api/listings/[id]/approve", () => {
       expect.objectContaining({ workspaceId: "ws_opak" }),
     ]);
     expect(flattenProductShot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a body missing expectedVersionId with 400", async () => {
+    const { handler, calls } = makeHandler({});
+    const response = await handler(
+      request({ confirmationLedgerRevision: 0 }),
+      routeContext(),
+    );
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects a body missing confirmationLedgerRevision with 400", async () => {
+    const { handler, calls } = makeHandler({});
+    const response = await handler(
+      request({ expectedVersionId: versionId }),
+      routeContext(),
+    );
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("returns 409 version_conflict when expectedVersionId does not match the snapshot's active version", async () => {
+    const { handler } = makeHandler({});
+    const response = await handler(
+      request({
+        expectedVersionId: "00000000-0000-4000-8000-000000000999",
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "version_conflict" });
+  });
+
+  it("returns 409 confirmation_ledger_stale when confirmationLedgerRevision does not match the ledger's current revision", async () => {
+    const { handler } = makeHandler({
+      confirmation: { ...fullyConfirmed!, revision: 5 },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "confirmation_ledger_stale",
+    });
+  });
+
+  it("returns 422 confirmation_incomplete when the confirmation checklist is not fully checked", async () => {
+    const { handler } = makeHandler({
+      confirmation: {
+        revision: 0,
+        fieldConfirmations: {},
+        negativeConfirmations: {},
+        sourceImportId: null,
+        rowDigest: null,
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "confirmation_incomplete",
+    });
+  });
+
+  it("returns 400 source_freshness_required for an import-origin listing approved without sourceImportId/expectedRowDigest", async () => {
+    const { handler } = makeHandler({
+      platformProduct: {
+        sourceImportId: "import_1",
+        contentDigest: "digest_1",
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: "source_freshness_required",
+    });
+  });
+
+  it("returns 409 with the freshness failure reason as the error code when an import-origin listing's row digest no longer matches", async () => {
+    const { handler } = makeHandler({
+      platformProduct: {
+        sourceImportId: "import_1",
+        contentDigest: "digest_1",
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import_1",
+        expectedRowDigest: "stale_digest",
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "row_digest_mismatch",
+    });
+  });
+
+  it("approves a create-origin listing (no platform_products link) without requiring sourceImportId/expectedRowDigest", async () => {
+    const { handler, calls } = makeHandler({ platformProduct: null });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      listingId,
+      versionId,
+      status: "approved",
+    });
+    expect(calls).toContainEqual([
+      "platformProducts.getByListingId",
+      listingId,
+    ]);
   });
 });

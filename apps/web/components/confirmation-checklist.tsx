@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  allConfirmed,
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "../lib/review-confirmation-keys";
+
+export { allConfirmed, CONFIRMATION_FIELD_KEYS, CONFIRMATION_NEGATIVE_KEYS };
+
 const FIELD_LABELS: Record<string, { zh: string; en: string }> = {
   nameZh: { zh: "商品名稱（繁中）", en: "Name (zh)" },
   summaryEn: { zh: "摘要（英文）", en: "Summary (en)" },
@@ -20,21 +28,6 @@ const NEGATIVE_LABELS: Record<string, { zh: string; en: string }> = {
   quantityDeltaNeutral: { zh: "數量差額為中性", en: "Quantity delta neutral" },
   noImageChange: { zh: "圖片無變動", en: "No image change" },
 };
-
-export const CONFIRMATION_FIELD_KEYS = Object.keys(FIELD_LABELS);
-export const CONFIRMATION_NEGATIVE_KEYS = Object.keys(NEGATIVE_LABELS);
-
-export function allConfirmed(
-  fieldConfirmations: Record<string, boolean>,
-  negativeConfirmations: Record<string, boolean>,
-): boolean {
-  return (
-    CONFIRMATION_FIELD_KEYS.every((key) => fieldConfirmations[key] === true) &&
-    CONFIRMATION_NEGATIVE_KEYS.every(
-      (key) => negativeConfirmations[key] === true,
-    )
-  );
-}
 
 type ConfirmationChecklistProps = {
   fieldConfirmations: Record<string, boolean>;
