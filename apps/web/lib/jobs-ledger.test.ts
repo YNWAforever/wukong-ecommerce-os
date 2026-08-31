@@ -257,6 +257,9 @@ describe("buildJobsLedger", () => {
     const pipelineRunEntry = entries.find((e) => e.kind === "pipeline_run");
     expect(publishJobEntry?.normalizedStatus).toBe("failed");
     expect(pipelineRunEntry?.normalizedStatus).toBe("failed");
+    // The summary text must agree with normalizedStatus's "failed" framing --
+    // not just be a distinct, contradictory "we don't know" message.
+    expect(publishJobEntry?.summary).toContain("treated as failed");
   });
 
   it("summarizes a pending_enqueue/queued publish job as queued, not as actively publishing", () => {

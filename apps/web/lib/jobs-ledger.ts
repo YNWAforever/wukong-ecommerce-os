@@ -81,10 +81,14 @@ function publishJobSummary(job: PublishJob): string {
         : "Published";
     case "failed":
       return job.error ? `Error: ${job.error}` : "Publish failed";
-    default:
+    default: {
       // Unmapped status -- see FALLBACK_STATUS above for why this can happen
-      // despite the exhaustive-looking union.
-      return `Unrecognized status: ${job.status as string}`;
+      // despite the exhaustive-looking union. Wording matches
+      // FALLBACK_STATUS's "failed" framing so normalizedStatus and summary
+      // never disagree on the same row.
+      const _exhaustive: never = job.status;
+      return `Status unrecognized, treated as failed: ${_exhaustive as string}`;
+    }
   }
 }
 
