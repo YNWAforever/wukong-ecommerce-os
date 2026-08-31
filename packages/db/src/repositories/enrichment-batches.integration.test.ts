@@ -239,6 +239,38 @@ describe("enrichment batch repository", () => {
     });
   });
 
+  it("lists every batch for the workspace, newest first, and none from another", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const first = await repositories.enrichmentBatches.create({
+        label: "first",
+        budgetUsd: 1,
+        waveSize: 1,
+        createdBy: "operator@example.com",
+        listingIds: [],
+      });
+      const second = await repositories.enrichmentBatches.create({
+        label: "second",
+        budgetUsd: 1,
+        waveSize: 1,
+        createdBy: "operator@example.com",
+        listingIds: [],
+      });
+
+      const listed = await repositories.enrichmentBatches.listForWorkspace();
+      const ids = listed.map((batch) => batch.id);
+      expect(ids.indexOf(second.id)).toBeLessThan(ids.indexOf(first.id));
+      expect(
+        listed.find((batch) => batch.id === first.id)?.createdAt,
+      ).toBeInstanceOf(Date);
+    });
+
+    await database.forWorkspace(otherWorkspaceId, async (repositories) => {
+      expect(await repositories.enrichmentBatches.listForWorkspace()).toEqual(
+        [],
+      );
+    });
+  });
+
   it("round-trips the budget as a number, not the numeric column's string", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
       const created = await repositories.enrichmentBatches.create({

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { enrichmentBatchItems, enrichmentBatches } from "../schema.js";
@@ -16,6 +16,7 @@ export type EnrichmentBatch = {
   waveSize: number;
   status: EnrichmentBatchStatus;
   createdBy: string;
+  createdAt: Date;
 };
 
 export type CreateEnrichmentBatchInput = {
@@ -31,6 +32,7 @@ export type EnrichmentBatchCounts = Record<EnrichmentBatchItemStatus, number>;
 export type EnrichmentBatchRepository = {
   create(input: CreateEnrichmentBatchInput): Promise<EnrichmentBatch>;
   getById(id: string): Promise<EnrichmentBatch | null>;
+  listForWorkspace(): Promise<EnrichmentBatch[]>;
   listItemIds(batchId: string): Promise<string[]>;
   listItemsByStatus(
     batchId: string,
@@ -54,6 +56,7 @@ const COLUMNS = {
   waveSize: enrichmentBatches.waveSize,
   status: enrichmentBatches.status,
   createdBy: enrichmentBatches.createdBy,
+  createdAt: enrichmentBatches.createdAt,
 };
 
 type EnrichmentBatchRow = Omit<EnrichmentBatch, "budgetUsd"> & {
@@ -131,6 +134,16 @@ export function createEnrichmentBatchRepository(
         )
         .limit(1);
       return row ? toEnrichmentBatch(row) : null;
+    },
+
+    async listForWorkspace() {
+      scope.assertOpen();
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(enrichmentBatches)
+        .where(eq(enrichmentBatches.workspaceId, workspaceId))
+        .orderBy(desc(enrichmentBatches.createdAt));
+      return rows.map(toEnrichmentBatch);
     },
 
     async listItemIds(batchId) {
