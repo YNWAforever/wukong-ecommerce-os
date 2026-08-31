@@ -260,4 +260,60 @@ describe("enrichment batch repository", () => {
       ).toEqual([]);
     });
   });
+
+  it("lists workspace batches newest first, isolated per workspace, with limit bounds enforced", async () => {
+    const ids: string[] = [];
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      for (let index = 0; index < 3; index += 1) {
+        const batch = await repositories.enrichmentBatches.create({
+          label: `list order ${index}`,
+          budgetUsd: 1,
+          waveSize: 1,
+          createdBy: "operator@example.com",
+          listingIds: [],
+        });
+        ids.push(batch.id);
+      }
+    });
+    // All three rows were inserted inside one transaction, so they would
+    // otherwise share the exact same `now()` -- backdate them to distinct,
+    // known instants so newest-first ordering is unambiguous.
+    for (const [index, id] of ids.entries()) {
+      const backdated = new Date(Date.now() - (ids.length - index) * 60_000);
+      await admin.unsafe(
+        "UPDATE enrichment_batches SET created_at = $1 WHERE id = $2",
+        [backdated, id],
+      );
+    }
+
+    const otherId = await database.forWorkspace(
+      otherWorkspaceId,
+      async (repositories) => {
+        const batch = await repositories.enrichmentBatches.create({
+          label: "other workspace",
+          budgetUsd: 1,
+          waveSize: 1,
+          createdBy: "operator@example.com",
+          listingIds: [],
+        });
+        return batch.id;
+      },
+    );
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const listed = await repositories.enrichmentBatches.listForWorkspace();
+      expect(listed.map((batch) => batch.id)).toEqual([...ids].reverse());
+      expect(listed.map((batch) => batch.id)).not.toContain(otherId);
+      expect(listed.every((batch) => batch.createdAt instanceof Date)).toBe(
+        true,
+      );
+
+      await expect(
+        repositories.enrichmentBatches.listForWorkspace(0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.enrichmentBatches.listForWorkspace(101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+    });
+  });
 });

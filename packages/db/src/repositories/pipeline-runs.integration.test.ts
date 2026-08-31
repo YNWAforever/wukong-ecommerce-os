@@ -187,4 +187,71 @@ describe("listing pipeline run repository", () => {
     });
     expect(afterOwnerRelease?.steps.has("extracted")).toBe(false);
   });
+
+  it("lists workspace pipeline runs newest first, isolated per workspace, with limit bounds enforced", async () => {
+    // claimStep/complete is the only way to create a pipeline run row -- there
+    // is no direct create/insert helper on this repository.
+    const listingIds = await forWorkspace(database, "ws_pipeline_list", async (repos) => {
+      const ids: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const listing = await repos.listings.create({ target: "shopline" });
+        const input = {
+          idempotencyKey: `listing:ws_pipeline_list:${listing.id}:0`,
+          listingId: listing.id,
+          activeVersionSequence: 0,
+        };
+        const claim = await repos.pipelineRuns.claimStep({ ...input, step: "started" });
+        await repos.pipelineRuns.complete({
+          ...input,
+          step: "started",
+          leaseToken: claim.leaseToken!,
+          status: "needs_info",
+          versionId: null,
+        });
+        ids.push(listing.id);
+      }
+      return ids;
+    });
+    // All three runs were created inside one transaction, so they would
+    // otherwise share the exact same `now()` -- backdate them to distinct,
+    // known instants so newest-first ordering is unambiguous.
+    for (const [index, listingId] of listingIds.entries()) {
+      const backdated = new Date(Date.now() - (listingIds.length - index) * 60_000);
+      await admin.unsafe(
+        "UPDATE listing_pipeline_runs SET created_at = $1 WHERE workspace_id = $2 AND listing_id = $3",
+        [backdated, "ws_pipeline_list", listingId],
+      );
+    }
+
+    const otherListingId = await forWorkspace(database, "ws_pipeline_list_other", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const input = {
+        idempotencyKey: `listing:ws_pipeline_list_other:${listing.id}:0`,
+        listingId: listing.id,
+        activeVersionSequence: 0,
+      };
+      const claim = await repos.pipelineRuns.claimStep({ ...input, step: "started" });
+      await repos.pipelineRuns.complete({
+        ...input,
+        step: "started",
+        leaseToken: claim.leaseToken!,
+        status: "needs_info",
+        versionId: null,
+      });
+      return listing.id;
+    });
+
+    const listed = await forWorkspace(database, "ws_pipeline_list", (repos) => repos.pipelineRuns.listForWorkspace());
+    expect(listed.map((run) => run.listingId)).toEqual([...listingIds].reverse());
+    expect(listed.map((run) => run.listingId)).not.toContain(otherListingId);
+    expect(listed.every((run) => run.createdAt instanceof Date)).toBe(true);
+    expect(listed.every((run) => run.status === "succeeded")).toBe(true);
+
+    await expect(
+      forWorkspace(database, "ws_pipeline_list", (repos) => repos.pipelineRuns.listForWorkspace(0)),
+    ).rejects.toThrow(/limit must be between 1 and 100/i);
+    await expect(
+      forWorkspace(database, "ws_pipeline_list", (repos) => repos.pipelineRuns.listForWorkspace(101)),
+    ).rejects.toThrow(/limit must be between 1 and 100/i);
+  });
 });

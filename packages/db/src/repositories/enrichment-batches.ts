@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { enrichmentBatchItems, enrichmentBatches } from "../schema.js";
@@ -16,6 +16,7 @@ export type EnrichmentBatch = {
   waveSize: number;
   status: EnrichmentBatchStatus;
   createdBy: string;
+  createdAt: Date;
 };
 
 export type CreateEnrichmentBatchInput = {
@@ -37,6 +38,9 @@ export type EnrichmentBatchRepository = {
     status: EnrichmentBatchItemStatus,
   ): Promise<string[]>;
   countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
+  /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
+   * must be between 1 and 100. */
+  listForWorkspace(limit?: number): Promise<EnrichmentBatch[]>;
   /** Moves up to `limit` pending items to `queued` and returns their draft IDs. */
   claimWave(batchId: string, limit: number): Promise<string[]>;
   markItems(
@@ -54,6 +58,7 @@ const COLUMNS = {
   waveSize: enrichmentBatches.waveSize,
   status: enrichmentBatches.status,
   createdBy: enrichmentBatches.createdBy,
+  createdAt: enrichmentBatches.createdAt,
 };
 
 type EnrichmentBatchRow = Omit<EnrichmentBatch, "budgetUsd"> & {
@@ -172,6 +177,20 @@ export function createEnrichmentBatchRepository(
       ) as EnrichmentBatchCounts;
       for (const row of rows) counts[row.status] = Number(row.total);
       return counts;
+    },
+
+    async listForWorkspace(limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("enrichment batch limit must be between 1 and 100");
+      }
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(enrichmentBatches)
+        .where(eq(enrichmentBatches.workspaceId, workspaceId))
+        .orderBy(desc(enrichmentBatches.createdAt))
+        .limit(limit);
+      return rows.map(toEnrichmentBatch);
     },
 
     async claimWave(batchId, limit) {

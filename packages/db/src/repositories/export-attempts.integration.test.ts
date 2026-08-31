@@ -238,4 +238,62 @@ describe("export attempts repository", () => {
       expect(await repositories.exportAttempts.getById(created.id)).toBeNull();
     });
   });
+
+  it("lists workspace export attempts newest first, isolated per workspace, with limit bounds enforced", async () => {
+    const ids: string[] = [];
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      for (let index = 0; index < 3; index += 1) {
+        const attempt = await repositories.exportAttempts.ensure({
+          idempotencyKey: `list_order_${index}`,
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+        });
+        ids.push(attempt.id);
+      }
+    });
+    // All three rows were inserted inside one transaction, so they would
+    // otherwise share the exact same `now()` -- backdate them to distinct,
+    // known instants so newest-first ordering is unambiguous.
+    for (const [index, id] of ids.entries()) {
+      const backdated = new Date(Date.now() - (ids.length - index) * 60_000);
+      await admin.unsafe(
+        "UPDATE export_attempts SET created_at = $1 WHERE id = $2",
+        [backdated, id],
+      );
+    }
+
+    const otherId = await database.forWorkspace(
+      otherWorkspaceId,
+      async (repositories) =>
+        (
+          await repositories.exportAttempts.ensure({
+            idempotencyKey: "other_list_order",
+            requestedBy: "user_1",
+            manifest,
+            rowCount: 1,
+            specVersion: "bulk-form-v1",
+          })
+        ).id,
+    );
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const listed = await repositories.exportAttempts.listForWorkspace();
+      expect(listed.map((attempt) => attempt.id)).toEqual(
+        [...ids].reverse(),
+      );
+      expect(listed.map((attempt) => attempt.id)).not.toContain(otherId);
+      expect(
+        listed.every((attempt) => attempt.createdAt instanceof Date),
+      ).toBe(true);
+
+      await expect(
+        repositories.exportAttempts.listForWorkspace(0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.exportAttempts.listForWorkspace(101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+    });
+  });
 });

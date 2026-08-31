@@ -160,4 +160,65 @@ describe("publish job repository", () => {
     expect(snapshot.job).toMatchObject({ status: "published", remoteProductId: "remote_lifecycle" });
     const audits = await admin`select action from audit_events where workspace_id = 'ws_publish_repo' and entity_id = ${listingId} order by created_at`;
     expect(audits.map((row) => row.action)).toContain("listing.published");
-  });});
+  });
+
+  it("lists workspace publish jobs newest first, isolated per workspace, with limit bounds enforced", async () => {
+    const created = await forWorkspace(database, "ws_publish_repo", async (repos) => {
+      const ids: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        const job = await repos.publishJobs.ensure({
+          listingId,
+          versionId,
+          connectionId,
+          idempotencyKey: `ws_publish_repo:list_order:${index}`,
+          payloadDigest: "1".repeat(64),
+        });
+        ids.push(job.id);
+      }
+      return ids;
+    });
+    // All three rows were inserted inside one transaction, so they would
+    // otherwise share the exact same `now()` -- backdate them to distinct,
+    // known instants so newest-first ordering is unambiguous.
+    for (const [index, id] of created.entries()) {
+      const backdated = new Date(Date.now() - (created.length - index) * 60_000);
+      await admin.unsafe("UPDATE publish_jobs SET created_at = $1 WHERE id = $2", [backdated, id]);
+    }
+
+    // A second, fully independent workspace -- its own listing, version, and
+    // connection -- proves a publish job never leaks across the tenancy
+    // boundary, not merely that a query happens to filter on workspace_id.
+    const otherListingId = await forWorkspace(database, "ws_publish_repo_other", async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      return listing.id;
+    });
+    const otherContext: AuditContext = { workspaceId: "ws_publish_repo_other", actorId: "test:publish-other", entityId: otherListingId };
+    const otherVersionId = await forWorkspace(database, "ws_publish_repo_other", async (repos) => {
+      const version = await repos.listings.appendVersion(otherListingId, listingContent, otherContext, repos.audit);
+      return version.id;
+    });
+    const [otherConnection] = await admin`insert into shopline_connections (workspace_id, shop_domain, encrypted_access_token) values ('ws_publish_repo_other', 'other.example', 'encrypted-test-token-other') returning id`;
+    const otherJobId = await forWorkspace(database, "ws_publish_repo_other", async (repos) => {
+      const job = await repos.publishJobs.ensure({
+        listingId: otherListingId,
+        versionId: otherVersionId,
+        connectionId: otherConnection.id as string,
+        idempotencyKey: "ws_publish_repo_other:list_order:0",
+        payloadDigest: "2".repeat(64),
+      });
+      return job.id;
+    });
+
+    const listed = await forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.listForWorkspace());
+    expect(listed.map((job) => job.id)).toEqual([...created].reverse());
+    expect(listed.map((job) => job.id)).not.toContain(otherJobId);
+    expect(listed.every((job) => job.createdAt instanceof Date)).toBe(true);
+
+    await expect(
+      forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.listForWorkspace(0)),
+    ).rejects.toThrow(/limit must be between 1 and 100/i);
+    await expect(
+      forWorkspace(database, "ws_publish_repo", (repos) => repos.publishJobs.listForWorkspace(101)),
+    ).rejects.toThrow(/limit must be between 1 and 100/i);
+  });
+});
