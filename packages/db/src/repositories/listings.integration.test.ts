@@ -481,6 +481,11 @@ describe("workspace isolation", () => {
       ],
       ["platform_products", ["workspace_id", "listing_id"], "listing_drafts"],
       [
+        "platform_products",
+        ["workspace_id", "source_import_id"],
+        "source_imports",
+      ],
+      [
         "publish_jobs",
         ["workspace_id", "connection_id"],
         "shopline_connections",
@@ -489,6 +494,11 @@ describe("workspace isolation", () => {
       ["publish_jobs", ["workspace_id", "version_id"], "listing_versions"],
       ["review_events", ["workspace_id", "listing_id"], "listing_drafts"],
       ["source_assets", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
+        "source_imports",
+        ["workspace_id", "connection_id"],
+        "shopline_connections",
+      ],
     ];
     const rows = await admin`
       select

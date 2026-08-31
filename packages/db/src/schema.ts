@@ -662,6 +662,7 @@ export const platformProducts = pgTable(
     rawRow: jsonb("raw_row").$type<Record<string, string | null>>(),
     factsPrefill: jsonb("facts_prefill").$type<ListingFacts>(),
     contentDigest: text("content_digest"),
+    sourceImportId: uuid("source_import_id"),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -678,6 +679,10 @@ export const platformProducts = pgTable(
     index("platform_products_workspace_listing_idx").on(
       table.workspaceId,
       table.listingId,
+    ),
+    index("platform_products_workspace_source_import_idx").on(
+      table.workspaceId,
+      table.sourceImportId,
     ),
     check(
       "platform_products_origin_check",
@@ -698,6 +703,59 @@ export const platformProducts = pgTable(
       columns: [table.workspaceId, table.listingId],
       foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
     }).onDelete("restrict"),
+    // Restrict, not cascade: source_imports is meant to be an immutable audit
+    // trail of each bulk-catalog-import event. An accidental delete of an
+    // import row must not silently orphan or cascade-null the attribution on
+    // platform_products rows that still reference it.
+    foreignKey({
+      name: "platform_products_workspace_source_import_fkey",
+      columns: [table.workspaceId, table.sourceImportId],
+      foreignColumns: [sourceImports.workspaceId, sourceImports.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const sourceImports = pgTable(
+  "source_imports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    filename: text("filename").notNull(),
+    workbookSha256: text("workbook_sha256").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    sheetName: text("sheet_name").notNull(),
+    rowCount: integer("row_count").notNull(),
+    merchantAttestedExportAt: timestamp("merchant_attested_export_at", {
+      withTimezone: true,
+    }).notNull(),
+    importerId: text("importer_id").notNull(),
+    specVersion: text("spec_version").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("source_imports_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("source_imports_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    // Backs source_imports_workspace_connection_fkey: without a leading index
+    // on these two columns, deleting a shopline_connections row would force a
+    // full scan of source_imports to enforce the FK.
+    index("source_imports_workspace_connection_idx").on(
+      table.workspaceId,
+      table.connectionId,
+    ),
+    foreignKey({
+      name: "source_imports_workspace_connection_fkey",
+      columns: [table.workspaceId, table.connectionId],
+      foreignColumns: [shoplineConnections.workspaceId, shoplineConnections.id],
+    }).onDelete("cascade"),
   ],
 );
 

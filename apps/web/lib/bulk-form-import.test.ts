@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, type BulkFormColumnKey } from "@wukong/shopline";
@@ -26,6 +28,11 @@ const rowFor = (overrides: Partial<Record<BulkFormColumnKey, string>> = {}) =>
 
 const sheetOf = (...rows: string[][]) => [HEADER_EN, HEADER_ZH, ...rows];
 
+const RAW_BYTES = new Uint8Array([1, 2, 3]);
+const MERCHANT_ATTESTED_EXPORT_AT = new Date("2026-08-01T00:00:00Z");
+const FILENAME = "opak-export.xlsx";
+const SHEET_NAME = "Default";
+
 type Recorded = {
   created: { note: string | null }[];
   upserts: {
@@ -33,9 +40,21 @@ type Recorded = {
     listingId: string | null;
     contentDigest: string;
     origin?: string;
+    sourceImportId?: string;
   }[];
   audits: { action: string; entityId: string }[];
   notes: { listingId: string; note: string }[];
+  sourceImportCreates: {
+    connectionId: string;
+    filename: string;
+    workbookSha256: string;
+    headerContractSha256: string;
+    sheetName: string;
+    rowCount: number;
+    merchantAttestedExportAt: Date;
+    importerId: string;
+    specVersion: string;
+  }[];
 };
 
 function importerWith(
@@ -46,6 +65,7 @@ function importerWith(
     upserts: [],
     audits: [],
     notes: [],
+    sourceImportCreates: [],
   };
   let nextDraft = 0;
 
@@ -60,6 +80,12 @@ function importerWith(
             shoplineConnections: {
               async getDefault() {
                 return { id: "connection_1" };
+              },
+            },
+            sourceImports: {
+              async create(input: Recorded["sourceImportCreates"][number]) {
+                recorded.sourceImportCreates.push(input);
+                return { id: "source_import_1", ...input };
               },
             },
             platformProducts: {
@@ -110,6 +136,10 @@ describe("bulk form importer", () => {
     const result = await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
     });
 
@@ -133,6 +163,10 @@ describe("bulk form importer", () => {
     await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -152,6 +186,10 @@ describe("bulk form importer", () => {
     const result = await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -167,6 +205,10 @@ describe("bulk form importer", () => {
     await first.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
     const digest = first.recorded.upserts[0]?.contentDigest ?? "";
@@ -177,6 +219,10 @@ describe("bulk form importer", () => {
     const result = await second.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -190,6 +236,10 @@ describe("bulk form importer", () => {
     const result = await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor({ quantity: "-1" })),
     });
 
@@ -207,6 +257,10 @@ describe("bulk form importer", () => {
     await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -223,6 +277,10 @@ describe("bulk form importer", () => {
     await first.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
     const digest = first.recorded.upserts[0]?.contentDigest ?? "";
@@ -233,6 +291,10 @@ describe("bulk form importer", () => {
     await second.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -245,6 +307,10 @@ describe("bulk form importer", () => {
     await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -267,6 +333,10 @@ describe("bulk form importer", () => {
     await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor({ nameEn: "Renamed Estate Riesling 2024" })),
     });
 
@@ -285,6 +355,10 @@ describe("bulk form importer", () => {
     await first.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
     const digest = first.recorded.upserts[0]?.contentDigest ?? "";
@@ -295,6 +369,10 @@ describe("bulk form importer", () => {
     await second.importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(rowFor()),
     });
 
@@ -311,6 +389,10 @@ describe("bulk form importer", () => {
       importBulkForm({
         workspaceId: "ws_opak",
         actorId: "user_1",
+        rawBytes: RAW_BYTES,
+        merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+        filename: FILENAME,
+        sheetName: SHEET_NAME,
         sheet: sheetOf(...rows),
       }),
     ).rejects.toThrow(/imports are limited to/);
@@ -328,6 +410,10 @@ describe("bulk form importer", () => {
     const result = await importBulkForm({
       workspaceId: "ws_opak",
       actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
       sheet: sheetOf(...rows),
     });
 
@@ -341,6 +427,10 @@ describe("bulk form importer", () => {
       importBulkForm({
         workspaceId: "ws_opak",
         actorId: "user_1",
+        rawBytes: RAW_BYTES,
+        merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+        filename: FILENAME,
+        sheetName: SHEET_NAME,
         sheet: [["nonsense"]],
       }),
     ).rejects.toThrow(/No product rows/);
@@ -369,8 +459,42 @@ describe("bulk form importer", () => {
       importBulkForm({
         workspaceId: "ws_opak",
         actorId: "user_1",
+        rawBytes: RAW_BYTES,
+        merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+        filename: FILENAME,
+        sheetName: SHEET_NAME,
         sheet: sheetOf(rowFor()),
       }),
     ).rejects.toThrow(/Connect a SHOPLINE store/);
+  });
+
+  it("creates a source_imports row and stamps its id on every upserted mirror", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    const rawBytes = new Uint8Array([1, 2, 3]);
+
+    await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      rawBytes,
+      merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
+      filename: "opak-export.xlsx",
+      sheetName: "Default",
+      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+    });
+
+    // Exactly one row per import batch, not one per product row — a per-row
+    // call would mean every product in a catalog import gets its own
+    // "which file was this from" record instead of one shared for the batch.
+    expect(recorded.sourceImportCreates).toHaveLength(1);
+    // Hashed directly from the same bytes the caller passed in, so a bug that
+    // hashes the parsed sheet (or anything else) instead of the raw upload
+    // would change this value and fail the assertion.
+    expect(recorded.sourceImportCreates[0]?.workbookSha256).toBe(
+      createHash("sha256").update(rawBytes).digest("hex"),
+    );
+
+    expect(
+      recorded.upserts.every((u) => u.sourceImportId === "source_import_1"),
+    ).toBe(true);
   });
 });

@@ -58,6 +58,11 @@ export type {
   UpsertPlatformProductInput,
 } from "./repositories/platform-products.js";
 export type {
+  CreateSourceImportInput,
+  SourceImport,
+  SourceImportRepository,
+} from "./repositories/source-imports.js";
+export type {
   CreateEnrichmentBatchInput,
   EnrichmentBatch,
   EnrichmentBatchCounts,

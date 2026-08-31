@@ -87,6 +87,7 @@ describe("platform product repository", () => {
         rawRow: { productId: "aaaaaaaaaaaaaaaaaaaaaa01", sku: "0001" },
         factsPrefill: factsFixture,
         contentDigest: "a".repeat(64),
+        sourceImportId: null,
       });
 
       expect(upserted.remoteProductId).toBe("aaaaaaaaaaaaaaaaaaaaaa01");
@@ -116,6 +117,7 @@ describe("platform product repository", () => {
         listingId: draft.id,
         specVersion: "opak-2026-05",
         factsPrefill: factsFixture,
+        sourceImportId: null,
       };
 
       await repositories.platformProducts.upsert({
@@ -179,6 +181,7 @@ describe("platform product repository", () => {
             rawRow: { sku: `000${index}` },
             factsPrefill: factsFixture,
             contentDigest: "e".repeat(64),
+            sourceImportId: null,
           })),
         );
       },
@@ -186,6 +189,41 @@ describe("platform product repository", () => {
 
     expect(written).toHaveLength(25);
     expect(written.every((row) => row.listingId !== null)).toBe(true);
+  });
+
+  it("stamps and round-trips a source import id through upsert", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const sourceImport = await repositories.sourceImports.create({
+        connectionId,
+        filename: "opak-export.xlsx",
+        workbookSha256: "d".repeat(64),
+        headerContractSha256: "e".repeat(64),
+        sheetName: "Default",
+        rowCount: 1,
+        merchantAttestedExportAt: new Date("2026-08-01T00:00:00Z"),
+        importerId: "user_1",
+        specVersion: "opak-2026-05",
+      });
+
+      await repositories.platformProducts.upsert({
+        connectionId,
+        remoteProductId: "aaaaaaaaaaaaaaaaaaaaaa09",
+        origin: "import",
+        sku: "0009",
+        listingId: null,
+        specVersion: "opak-2026-05",
+        rawRow: { productId: "aaaaaaaaaaaaaaaaaaaaaa09" },
+        factsPrefill: null,
+        contentDigest: "f".repeat(64),
+        sourceImportId: sourceImport.id,
+      });
+
+      const found = await repositories.platformProducts.listByRemoteProductIds(
+        connectionId,
+        ["aaaaaaaaaaaaaaaaaaaaaa09"],
+      );
+      expect(found[0]?.sourceImportId).toBe(sourceImport.id);
+    });
   });
 
   it("rejects a facts prefill that is not valid canonical facts", async () => {
@@ -203,6 +241,7 @@ describe("platform product repository", () => {
           // would otherwise let it through unchecked.
           factsPrefill: { ...factsFixture, stockQuantity: -5 },
           contentDigest: "f".repeat(64),
+          sourceImportId: null,
         }),
       ).rejects.toThrow();
     });
@@ -227,6 +266,7 @@ describe("platform product repository", () => {
             rawRow: {},
             factsPrefill: factsFixture,
             contentDigest: "1".repeat(64),
+            sourceImportId: null,
           });
           return draft.id;
         },
@@ -283,6 +323,7 @@ describe("platform product repository", () => {
           rawRow: {},
           factsPrefill: factsFixture,
           contentDigest: "2".repeat(64),
+          sourceImportId: null,
         });
       });
 
@@ -309,6 +350,7 @@ describe("platform product repository", () => {
         rawRow: { productId: "remote_lookup_1", sku: "SKU-1" },
         factsPrefill: factsFixture,
         contentDigest: "b".repeat(64),
+        sourceImportId: null,
       });
 
       const found = await repositories.platformProducts.getByListingId(
@@ -349,6 +391,7 @@ describe("platform product repository", () => {
         rawRow: null,
         factsPrefill: null,
         contentDigest: null,
+        sourceImportId: null,
       });
 
       expect(created.origin).toBe("created");
@@ -382,6 +425,7 @@ describe("platform product repository", () => {
         rawRow: { productId: "remote_import_1", sku: "SKU-IMPORT-1" },
         factsPrefill: factsFixture,
         contentDigest: "c".repeat(64),
+        sourceImportId: null,
       };
       await repositories.platformProducts.upsert(importInput);
 
@@ -418,6 +462,7 @@ describe("platform product repository", () => {
         rawRow: { productId: "remote_flip_to_null_1", sku: "SKU-FLIP-1" },
         factsPrefill: factsFixture,
         contentDigest: "d".repeat(64),
+        sourceImportId: null,
       });
 
       // Re-upsert the SAME conflict key with the import-specific fields now
@@ -434,6 +479,7 @@ describe("platform product repository", () => {
         rawRow: null,
         factsPrefill: null,
         contentDigest: null,
+        sourceImportId: null,
       });
 
       expect(flipped.origin).toBe("created");
@@ -487,6 +533,7 @@ describe("platform product repository", () => {
           rawRow: { productId: "batch_conflict_1", sku: "SKU-BATCH-1-OLD" },
           factsPrefill: factsFixture,
           contentDigest: "e".repeat(64),
+          sourceImportId: null,
         },
         {
           connectionId,
@@ -498,6 +545,7 @@ describe("platform product repository", () => {
           rawRow: { productId: "batch_conflict_2", sku: "SKU-BATCH-2-OLD" },
           factsPrefill: factsFixture,
           contentDigest: "f".repeat(64),
+          sourceImportId: null,
         },
         {
           connectionId,
@@ -509,6 +557,7 @@ describe("platform product repository", () => {
           rawRow: { productId: "batch_conflict_3", sku: "SKU-BATCH-3-OLD" },
           factsPrefill: factsFixture,
           contentDigest: "1".repeat(64),
+          sourceImportId: null,
         },
       ]);
 
@@ -529,6 +578,7 @@ describe("platform product repository", () => {
           rawRow: null,
           factsPrefill: null,
           contentDigest: null,
+          sourceImportId: null,
         },
         {
           connectionId,
@@ -540,6 +590,7 @@ describe("platform product repository", () => {
           rawRow: { productId: "batch_conflict_2", sku: "SKU-BATCH-2-NEW" },
           factsPrefill: factsFixture,
           contentDigest: "2".repeat(64),
+          sourceImportId: null,
         },
         {
           connectionId,
@@ -551,6 +602,7 @@ describe("platform product repository", () => {
           rawRow: { productId: "batch_conflict_3", sku: "SKU-BATCH-3-OLD" },
           factsPrefill: factsFixture,
           contentDigest: "1".repeat(64),
+          sourceImportId: null,
         },
       ]);
 

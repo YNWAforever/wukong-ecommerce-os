@@ -283,6 +283,7 @@ describe("consumeShoplineMessage", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: null,
       contentDigest: "e".repeat(64),
+      sourceImportId: null,
     };
     const harness = makeHarness({ existingLink: link });
 

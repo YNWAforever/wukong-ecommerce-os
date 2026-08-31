@@ -1,5 +1,8 @@
 import type { BulkFormSheet } from "@wukong/shopline";
-import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  readBulkFormSheet,
+  readBulkFormSheetName,
+} from "@wukong/shopline/bulk-form-xlsx";
 
 import {
   createBulkFormImporter,
@@ -34,9 +37,18 @@ export const maxDuration = 300;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_ECHOED_ISSUES = 100;
 
+// `new Date(string)` falls back to a loose, engine-dependent parser for
+// anything that isn't a recognized ISO 8601 form (e.g. "08/01/2026" parses as
+// SOME date, with ambiguous month/day order, instead of throwing). This
+// feature compares the exact timestamp for a freshness decision, so a
+// misparsed-but-"valid" Date must be rejected before it ever reaches `Date`.
+const ISO_8601_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
 export type BulkFormImportRouteDeps = {
   sessionContext: SessionContextPort;
   readSheet(bytes: Uint8Array): BulkFormSheet;
+  readSheetName(bytes: Uint8Array): string;
   importBulkForm(input: BulkFormImportInput): Promise<BulkFormImportResult>;
 };
 
@@ -68,6 +80,44 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         );
       }
 
+      // Checked before the (potentially expensive) workbook parse below, so a
+      // request missing either param fails fast instead of paying for a parse
+      // whose result would just be discarded.
+      const url = new URL(request.url);
+      const merchantAttestedExportAtRaw = url.searchParams.get(
+        "merchantAttestedExportAt",
+      );
+      if (merchantAttestedExportAtRaw === null) {
+        throw new ApiError(
+          400,
+          "merchant_attested_export_at_missing",
+          "Provide the date this SHOPLINE export was generated.",
+        );
+      }
+      if (!ISO_8601_TIMESTAMP_PATTERN.test(merchantAttestedExportAtRaw)) {
+        throw new ApiError(
+          400,
+          "merchant_attested_export_at_invalid",
+          "merchantAttestedExportAt must be a valid ISO 8601 date.",
+        );
+      }
+      const merchantAttestedExportAt = new Date(merchantAttestedExportAtRaw);
+      if (Number.isNaN(merchantAttestedExportAt.getTime())) {
+        throw new ApiError(
+          400,
+          "merchant_attested_export_at_invalid",
+          "merchantAttestedExportAt must be a valid ISO 8601 date.",
+        );
+      }
+      const filename = url.searchParams.get("filename");
+      if (filename === null || filename.trim().length === 0) {
+        throw new ApiError(
+          400,
+          "filename_missing",
+          "Provide the original filename of the uploaded workbook.",
+        );
+      }
+
       let sheet: BulkFormSheet;
       try {
         sheet = deps.readSheet(body);
@@ -84,10 +134,29 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         );
       }
 
+      let sheetName: string;
+      try {
+        sheetName = deps.readSheetName(body);
+      } catch {
+        // Same reasoning as the readSheet catch above: bytes can pass
+        // readSheet but still lack xl/workbook.xml or a valid sheet-name
+        // attribute, and the reader's message can name internal container
+        // details, so it must not leak into the response.
+        throw new ApiError(
+          400,
+          "upload_sheet_name_unreadable",
+          "The upload's worksheet name could not be read.",
+        );
+      }
+
       const result = await deps.importBulkForm({
         workspaceId: context.workspaceId,
         actorId: context.actorId,
         sheet,
+        rawBytes: body,
+        merchantAttestedExportAt,
+        filename,
+        sheetName,
       });
 
       console.info(
@@ -116,5 +185,6 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
 export const POST = createBulkFormImportHandler({
   sessionContext: authSessionContext,
   readSheet: readBulkFormSheet,
+  readSheetName: readBulkFormSheetName,
   importBulkForm: createBulkFormImporter({ getDatabase }),
 });

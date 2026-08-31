@@ -257,6 +257,35 @@ export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
   return rows;
 }
 
+/**
+ * Reads the workbook's declared worksheet name from `xl/workbook.xml` — a
+ * different string from the zip entry path `firstWorksheetName` resolves
+ * internally. Opak's real exports and this reader's own writer both produce
+ * exactly one worksheet, so the first declared name is unambiguous.
+ */
+export function readBulkFormSheetName(bytes: Uint8Array): string {
+  const entries = readZipEntries(bytes);
+  const workbookXml = entries.get("xl/workbook.xml");
+  if (workbookXml === undefined) {
+    throw new BulkFormWorkbookError("workbook contains no xl/workbook.xml");
+  }
+  const xml = new TextDecoder().decode(workbookXml);
+  // Match the first `<sheet ...>` tag as a bounded substring first, then look
+  // for `name=` only within it — `[^>]*` cannot cross a `>`, so anchoring this
+  // way (rather than searching for `<sheet\s[^>]*name="..."` directly) keeps a
+  // later sheet's name from being picked up when the first tag's own `name`
+  // attribute is missing or malformed.
+  const firstSheetTag = /<sheet\b[^>]*>/.exec(xml);
+  if (firstSheetTag === null) {
+    throw new BulkFormWorkbookError("workbook declares no worksheet");
+  }
+  const nameMatch = /\bname="([^"]*)"/.exec(firstSheetTag[0]);
+  if (nameMatch?.[1] === undefined) {
+    throw new BulkFormWorkbookError("workbook declares no worksheet name");
+  }
+  return decodeXmlText(nameMatch[1]);
+}
+
 let crcTable: Uint32Array | null = null;
 
 function crc32(bytes: Uint8Array): number {

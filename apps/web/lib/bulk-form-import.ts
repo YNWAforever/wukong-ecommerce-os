@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+
 import type { Database, UpsertPlatformProductInput } from "@wukong/db";
 import {
+  hashBulkFormHeaderContract,
   hashBulkFormRow,
   parseBulkForm,
   renderBulkFormSource,
@@ -22,6 +25,10 @@ export type BulkFormImportInput = {
   workspaceId: string;
   actorId: string;
   sheet: BulkFormSheet;
+  rawBytes: Uint8Array;
+  merchantAttestedExportAt: Date;
+  filename: string;
+  sheetName: string;
 };
 
 export type BulkFormImportResult = {
@@ -88,6 +95,17 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
       );
     }
 
+    // Both hashes are what a later freshness-gate check compares against, not
+    // just an audit nicety: workbookSha256 identifies the exact file bytes
+    // that were imported, so re-importing the same export twice is
+    // detectable, and headerContractSha256 identifies the column contract
+    // this runtime parsed it with, so a form imported before a contract
+    // change can be told apart from one imported after.
+    const workbookSha256 = createHash("sha256")
+      .update(input.rawBytes)
+      .digest("hex");
+    const headerContractSha256 = hashBulkFormHeaderContract();
+
     return deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
@@ -99,6 +117,23 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             "Connect a SHOPLINE store before importing a catalog.",
           );
         }
+
+        // One row per import batch, not per product row: it records
+        // provenance for the file as a whole (which bytes, which contract,
+        // how many rows), and every mirror upserted below is stamped with
+        // this same id, so a per-row call here would multiply an identical
+        // record once per product for no benefit.
+        const sourceImport = await repositories.sourceImports.create({
+          connectionId: connection.id,
+          filename: input.filename,
+          workbookSha256,
+          headerContractSha256,
+          sheetName: input.sheetName,
+          rowCount: parsed.rows.length,
+          merchantAttestedExportAt: input.merchantAttestedExportAt,
+          importerId: input.actorId,
+          specVersion: parsed.specVersion,
+        });
 
         const known =
           await repositories.platformProducts.listByRemoteProductIds(
@@ -181,6 +216,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             // Every row this importer writes came from a bulk update form, never
             // from the direct-create-publish path.
             origin: "import",
+            sourceImportId: sourceImport.id,
           });
         }
 

@@ -30,6 +30,7 @@ export type PublishPlatformProductLink = {
   rawRow: Record<string, string | null> | null;
   factsPrefill: ListingFacts | null;
   contentDigest: string | null;
+  sourceImportId: string | null;
 };
 
 export type PublishProductInput = {
@@ -134,6 +135,7 @@ export type PublishRepositories = {
       rawRow: Record<string, string | null> | null;
       factsPrefill: ListingFacts | null;
       contentDigest: string | null;
+      sourceImportId: string | null;
     }): Promise<unknown>;
   };
   audit: AuditWriter;
@@ -493,6 +495,12 @@ export async function publishApprovedProduct(
           rawRow: input.existingLink?.rawRow ?? null,
           factsPrefill: input.existingLink?.factsPrefill ?? null,
           contentDigest: input.existingLink?.contentDigest ?? null,
+          // Same carry-forward pattern as every other field above: a fresh
+          // "created"-origin row has no source import, but refreshing an
+          // existing import-origin row must preserve its real
+          // `sourceImportId` rather than nulling out the provenance link
+          // that a freshness gate depends on.
+          sourceImportId: input.existingLink?.sourceImportId ?? null,
         });
       },
     );

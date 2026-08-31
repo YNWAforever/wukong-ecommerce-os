@@ -28,6 +28,7 @@ export type PlatformProduct = {
   rawRow: Record<string, string | null> | null;
   factsPrefill: ListingFacts | null;
   contentDigest: string | null;
+  sourceImportId: string | null;
 };
 
 export type UpsertPlatformProductInput = {
@@ -54,6 +55,7 @@ export type UpsertPlatformProductInput = {
    * owns the invariant.
    */
   contentDigest: string | null;
+  sourceImportId: string | null;
 };
 
 export type PlatformProductRepository = {
@@ -96,6 +98,7 @@ const COLUMNS = {
   rawRow: platformProducts.rawRow,
   factsPrefill: platformProducts.factsPrefill,
   contentDigest: platformProducts.contentDigest,
+  sourceImportId: platformProducts.sourceImportId,
 };
 
 type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
@@ -159,6 +162,7 @@ export function createPlatformProductRepository(
             rawRow: input.rawRow,
             factsPrefill: input.factsPrefill,
             contentDigest: input.contentDigest,
+            sourceImportId: input.sourceImportId,
             updatedAt: new Date(),
           },
         })
@@ -189,6 +193,7 @@ export function createPlatformProductRepository(
             rawRow: sql`excluded.raw_row`,
             factsPrefill: sql`excluded.facts_prefill`,
             contentDigest: sql`excluded.content_digest`,
+            sourceImportId: sql`excluded.source_import_id`,
             updatedAt: new Date(),
           },
         })

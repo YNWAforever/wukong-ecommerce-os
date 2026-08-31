@@ -41,6 +41,10 @@ import {
   type PlatformProductRepository,
 } from "./repositories/platform-products.js";
 import {
+  createSourceImportRepository,
+  type SourceImportRepository,
+} from "./repositories/source-imports.js";
+import {
   createEnrichmentBatchRepository,
   type EnrichmentBatchRepository,
 } from "./repositories/enrichment-batches.js";
@@ -67,6 +71,7 @@ export type WorkspaceRepositories = {
   publishJobs: PublishJobRepository;
   shoplineConnections: ShoplineConnectionRepository;
   platformProducts: PlatformProductRepository;
+  sourceImports: SourceImportRepository;
   enrichmentBatches: EnrichmentBatchRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
@@ -165,6 +170,11 @@ export function createDatabase(
           scope,
         ),
         platformProducts: createPlatformProductRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        sourceImports: createSourceImportRepository(
           transaction,
           workspaceId,
           scope,

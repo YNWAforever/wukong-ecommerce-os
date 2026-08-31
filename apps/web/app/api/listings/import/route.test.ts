@@ -21,14 +21,18 @@ function handlerFor(
       },
     },
     readSheet: () => [["a"]],
+    readSheetName: () => "Default",
     importBulkForm: async () => okResult,
     ...overrides,
   });
 }
 
+const IMPORT_URL =
+  "http://localhost/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00Z&filename=opak-export.xlsx";
+
 // `BodyInit` only accepts a view over a real ArrayBuffer, not `ArrayBufferLike`.
-const requestWith = (body: Uint8Array<ArrayBuffer>) =>
-  new Request("http://localhost/api/listings/import", { method: "POST", body });
+const requestWith = (body: Uint8Array<ArrayBuffer>, url = IMPORT_URL) =>
+  new Request(url, { method: "POST", body });
 
 describe("POST /api/listings/import", () => {
   it("imports for an operator and returns the counts", async () => {
@@ -102,6 +106,28 @@ describe("POST /api/listings/import", () => {
     expect((await response.json()).code).toBe("upload_not_a_workbook");
   });
 
+  it("rejects an upload whose sheet name cannot be read, without importing anything", async () => {
+    // readBulkFormSheetName can throw on bytes that pass readSheet fine but
+    // lack xl/workbook.xml or a valid sheet-name attribute. That must surface
+    // as a 400 (client-input problem), not fall through to a generic 500.
+    let imported = 0;
+    const handler = handlerFor("operator", {
+      readSheetName: () => {
+        throw new Error("workbook contains no xl/workbook.xml");
+      },
+      importBulkForm: async () => {
+        imported += 1;
+        return okResult;
+      },
+    });
+
+    const response = await handler(requestWith(new Uint8Array([1, 2, 3])));
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("upload_sheet_name_unreadable");
+    expect(imported).toBe(0);
+  });
+
   it("caps the number of issues it echoes back", async () => {
     const handler = handlerFor("operator", {
       importBulkForm: async () => ({
@@ -120,5 +146,103 @@ describe("POST /api/listings/import", () => {
     const response = await handler(requestWith(new Uint8Array([1])));
 
     expect((await response.json()).issues).toHaveLength(100);
+  });
+
+  it("rejects a request with no merchantAttestedExportAt", async () => {
+    const response = await handlerFor("operator")(
+      requestWith(
+        new Uint8Array([1]),
+        "http://localhost/api/listings/import?filename=opak-export.xlsx",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe(
+      "merchant_attested_export_at_missing",
+    );
+  });
+
+  it("rejects a request with an unparseable merchantAttestedExportAt", async () => {
+    const response = await handlerFor("operator")(
+      requestWith(
+        new Uint8Array([1]),
+        "http://localhost/api/listings/import?merchantAttestedExportAt=not-a-date&filename=opak-export.xlsx",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe(
+      "merchant_attested_export_at_invalid",
+    );
+  });
+
+  it("rejects a merchantAttestedExportAt that Date can parse loosely but is not ISO 8601", async () => {
+    // "08/01/2026" is not rejected by `new Date(...)` -- it silently parses to
+    // SOME date with engine-dependent, ambiguous month/day order. A freshness
+    // gate that compares this exact timestamp must not accept it.
+    const response = await handlerFor("operator")(
+      requestWith(
+        new Uint8Array([1]),
+        `http://localhost/api/listings/import?merchantAttestedExportAt=${encodeURIComponent("08/01/2026")}&filename=opak-export.xlsx`,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe(
+      "merchant_attested_export_at_invalid",
+    );
+  });
+
+  it("rejects a request with no merchantAttestedExportAt before parsing the upload", async () => {
+    // Proves the query-param checks run before the (potentially expensive)
+    // workbook parse, not after: readSheet must never be reached.
+    let parsed = 0;
+    const handler = handlerFor("operator", {
+      readSheet: () => {
+        parsed += 1;
+        return [["a"]];
+      },
+    });
+
+    const response = await handler(
+      requestWith(
+        new Uint8Array([1]),
+        "http://localhost/api/listings/import?filename=opak-export.xlsx",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(parsed).toBe(0);
+  });
+
+  it("rejects a request with no filename", async () => {
+    const response = await handlerFor("operator")(
+      requestWith(
+        new Uint8Array([1]),
+        "http://localhost/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00Z",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("filename_missing");
+  });
+
+  it("passes the parsed timestamp, filename, and sheet name through to the importer", async () => {
+    let received: Record<string, unknown> | undefined;
+    const handler = handlerFor("operator", {
+      importBulkForm: async (input) => {
+        received = input as unknown as Record<string, unknown>;
+        return okResult;
+      },
+    });
+
+    await handler(requestWith(new Uint8Array([1, 2, 3])));
+
+    expect(received?.filename).toBe("opak-export.xlsx");
+    expect(received?.sheetName).toBe("Default");
+    expect((received?.merchantAttestedExportAt as Date).toISOString()).toBe(
+      "2026-08-01T00:00:00.000Z",
+    );
+    expect(received?.rawBytes).toEqual(new Uint8Array([1, 2, 3]));
   });
 });
