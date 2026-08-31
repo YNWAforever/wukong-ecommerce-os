@@ -50,7 +50,66 @@ describe("BatchDetail", () => {
 
     expect(container.textContent).toContain("zh names");
     expect(container.textContent).toContain("succeeded");
-    expect(fetcher).toHaveBeenCalledWith("/api/enrichment-batches/batch_1");
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/enrichment-batches/batch_1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    await unmount(root);
+  });
+
+  it("aborts the in-flight request for the previous batchId when batchId changes", async () => {
+    // Regression: without an AbortController, a slow response for a stale
+    // batchId could resolve after a newer request and silently overwrite
+    // data/error with the wrong batch's content. Next.js App Router commonly
+    // reconciles the same BatchDetail instance across a back/forward
+    // navigation between two /batches/[id] URLs rather than remounting it,
+    // so this isn't just an unmount concern.
+    let firstSignal: AbortSignal | undefined;
+    const firstRequest = new Promise<Response>(() => {
+      // Never resolves on its own; only abort ends it.
+    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce((_input, init) => {
+        firstSignal = init?.signal ?? undefined;
+        return firstRequest;
+      })
+      .mockResolvedValueOnce(
+        Response.json({
+          batch: {
+            id: "batch_2",
+            label: "en descriptions",
+            budgetUsd: 8,
+            waveSize: 4,
+            status: "open",
+            createdBy: "user_1",
+            createdAt: "2026-08-03T00:00:00.000Z",
+          },
+          counts: {
+            pending: 4,
+            queued: 0,
+            succeeded: 0,
+            failed: 0,
+            skipped: 0,
+          },
+        }),
+      );
+
+    const { container, root } = await mount(fetcher, "batch_1");
+
+    expect(firstSignal).toBeInstanceOf(AbortSignal);
+    expect(firstSignal!.aborted).toBe(false);
+
+    await act(async () => {
+      root.render(createElement(BatchDetail, { batchId: "batch_2" }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(firstSignal!.aborted).toBe(true);
+    expect(container.textContent).toContain("en descriptions");
 
     await unmount(root);
   });

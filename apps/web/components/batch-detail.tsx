@@ -37,48 +37,70 @@ const API_ERROR_MESSAGES: Record<string, string> = {
 
 const UNREACHABLE = "Could not reach the server. Try again.";
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export function BatchDetail({ batchId }: { batchId: string }) {
   const [data, setData] = useState<BatchDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    let response: Response;
-    try {
-      response = await fetch(`/api/enrichment-batches/${batchId}`);
-    } catch {
-      setError(UNREACHABLE);
-      return;
-    }
+  // `signal` is only supplied by the effect below, which re-runs (aborting
+  // any still-in-flight request first) whenever `batchId` changes. Without
+  // it, a slow response for a stale batchId could resolve after a newer
+  // request and overwrite `data`/`error` with the wrong batch's content — a
+  // real race, since Next.js App Router commonly reuses this same component
+  // instance across client navigations between two /batches/[id] URLs
+  // instead of remounting it. The imperative call from AdvanceBatchButton's
+  // onAdvanced is a one-shot user-triggered refresh, not a re-render, so it
+  // intentionally omits the signal.
+  const reload = useCallback(
+    async (signal?: AbortSignal) => {
+      let response: Response;
+      try {
+        response = await fetch(`/api/enrichment-batches/${batchId}`, {
+          signal,
+        });
+      } catch (cause) {
+        if (isAbortError(cause)) return;
+        setError(UNREACHABLE);
+        return;
+      }
 
-    let body: Record<string, unknown>;
-    try {
-      body = (await response.json()) as Record<string, unknown>;
-    } catch {
-      // A non-JSON body reaches here from a platform-level failure (e.g. a
-      // 502/504/524 gateway page) rather than the application itself, same
-      // as batch-list.tsx/advance-batch-button.tsx.
-      setError(UNREACHABLE);
-      return;
-    }
+      let body: Record<string, unknown>;
+      try {
+        body = (await response.json()) as Record<string, unknown>;
+      } catch (cause) {
+        // A non-JSON body reaches here from a platform-level failure (e.g. a
+        // 502/504/524 gateway page) rather than the application itself, same
+        // as batch-list.tsx/advance-batch-button.tsx.
+        if (isAbortError(cause)) return;
+        setError(UNREACHABLE);
+        return;
+      }
 
-    if (!response.ok) {
-      const code =
-        typeof body.code === "string" ? body.code : "unknown_error";
-      const message =
-        API_ERROR_MESSAGES[code] ??
-        (typeof body.message === "string"
-          ? body.message
-          : "The batch could not be loaded.");
-      setError(message);
-      return;
-    }
+      if (!response.ok) {
+        const code =
+          typeof body.code === "string" ? body.code : "unknown_error";
+        const message =
+          API_ERROR_MESSAGES[code] ??
+          (typeof body.message === "string"
+            ? body.message
+            : "The batch could not be loaded.");
+        setError(message);
+        return;
+      }
 
-    setError(null);
-    setData(body as unknown as BatchDetailData);
-  }, [batchId]);
+      setError(null);
+      setData(body as unknown as BatchDetailData);
+    },
+    [batchId],
+  );
 
   useEffect(() => {
-    reload();
+    const controller = new AbortController();
+    reload(controller.signal);
+    return () => controller.abort();
   }, [reload]);
 
   if (error) {
