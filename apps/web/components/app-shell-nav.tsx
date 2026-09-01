@@ -146,7 +146,12 @@ export function AppShellNav({
           </div>
         </div>
 
-        <nav className="app-sidebar" aria-label="主要導覽">
+        <nav
+          className={
+            isAdmin ? "app-sidebar" : "app-sidebar app-sidebar--no-admin-footer"
+          }
+          aria-label="主要導覽"
+        >
           {navItems.map((item) => (
             <Link
               key={item.href}

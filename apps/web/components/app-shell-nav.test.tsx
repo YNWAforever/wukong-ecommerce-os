@@ -85,6 +85,42 @@ describe("AppShellNav", () => {
     expect(hrefs).not.toContain("/admin");
   });
 
+  it("adds the no-admin-footer modifier to the sidebar only when there is no admin row to reserve space for", () => {
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+    const sidebarNonAdmin = container.querySelector(".app-sidebar");
+    expect(sidebarNonAdmin!.className).toContain(
+      "app-sidebar--no-admin-footer",
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    root = createRoot(container);
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={true}
+        workspaceName="Opak Cellar"
+        roleLabelZh="操作員"
+        roleLabelEn="Operator"
+        initialLocale="zh-Hant"
+      />,
+    );
+    const sidebarAdmin = container.querySelector(".app-sidebar");
+    expect(sidebarAdmin!.className).not.toContain(
+      "app-sidebar--no-admin-footer",
+    );
+  });
+
   it("renders the workspace name from props, not a hard-coded string", () => {
     render(
       <AppShellNav
@@ -329,6 +365,38 @@ describe("AppShellNav", () => {
       '.app-bottom-nav a[href="/catalog"]',
     );
     expect(bottomNavActiveLink!.className).toContain("active");
+  });
+
+  it("marks exactly the current item active for every sidebar nav item, not just /catalog", () => {
+    for (const current of NAV_ITEMS) {
+      pathnameMock.mockReturnValue(current.href);
+      render(
+        <AppShellNav
+          navItems={NAV_ITEMS}
+          isAdmin={false}
+          workspaceName="Opak Cellar"
+          roleLabelZh="檢視者"
+          roleLabelEn="Viewer"
+          initialLocale="zh-Hant"
+        />,
+      );
+
+      for (const item of NAV_ITEMS) {
+        const link = container.querySelector<HTMLAnchorElement>(
+          `.app-sidebar a[href="${item.href}"]`,
+        );
+        if (item.href === current.href) {
+          expect(link!.className).toContain("active");
+        } else {
+          expect(link!.className).not.toContain("active");
+        }
+      }
+
+      act(() => {
+        root.unmount();
+      });
+      root = createRoot(container);
+    }
   });
 
   it("also marks a nested route active on its top-level nav item", () => {

@@ -237,16 +237,31 @@ button:disabled {
   border-right: 1px solid var(--line);
 }
 .topbar .app-sidebar a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-decoration: none;
   border-radius: var(--radius);
 }
 .topbar .app-sidebar a:hover,
 .topbar .app-sidebar a:focus-visible {
   background: var(--surface);
+  color: var(--navy);
 }
 .topbar .app-sidebar a.active {
   background: var(--nav-active-bg);
   color: var(--navy);
   font-weight: 600;
+}
+/* .app-sidebar-admin only renders (and only fills the bottom 64px it
+   reserves) when isAdmin is true; most pilot roles are non-admin, so the
+   sidebar must reclaim that space itself rather than leave a gap. */
+.topbar .app-sidebar.app-sidebar--no-admin-footer {
+  bottom: 0;
 }
 
 .topbar .app-sidebar-admin {
@@ -264,12 +279,24 @@ button:disabled {
   border-right: 1px solid var(--line);
 }
 .topbar .app-sidebar-admin a {
+  /* This link's parent is a <div>, not a <nav>, so the generic
+     `.topbar nav a` rule above never reaches it — it needs its own
+     complete base styling, copied to match every other sidebar item. */
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
+  padding: 8px 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-decoration: none;
   border-radius: var(--radius);
 }
 .topbar .app-sidebar-admin a:hover,
 .topbar .app-sidebar-admin a:focus-visible {
   background: var(--surface);
+  color: var(--navy);
 }
 .topbar .app-sidebar-admin a.active {
   background: var(--nav-active-bg);
@@ -365,11 +392,20 @@ button:disabled {
   box-shadow: var(--shadow);
 }
 .topbar .app-drawer > nav a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-decoration: none;
   border-radius: var(--radius);
 }
 .topbar .app-drawer > nav a:hover,
 .topbar .app-drawer > nav a:focus-visible {
   background: var(--stone);
+  color: var(--navy);
 }
 .topbar .app-drawer > nav a.active {
   background: var(--nav-active-bg);
