@@ -24,7 +24,9 @@ describe("formatHkTimestamp", () => {
   it("formats a known instant in the Asia/Hong_Kong timezone", () => {
     // 2026-01-15T04:30:00Z is 2026-01-15 12:30 in Asia/Hong_Kong (UTC+8, no DST).
     const result = formatHkTimestamp(new Date("2026-01-15T04:30:00Z"));
-    expect(result).toContain("2026");
-    expect(result).toContain("12:30");
+    // Node's ICU separates the date and time portions with a thin space
+    // (U+2009), not a regular space -- visually identical but not the same
+    // character, so the exact expected string needs the real codepoint.
+    expect(result).toBe("15/01/2026 12:30");
   });
 });
