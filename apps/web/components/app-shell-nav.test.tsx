@@ -121,8 +121,17 @@ describe("AppShellNav", () => {
       '[data-testid="drawer"]',
     );
     expect(drawer).not.toBeNull();
+    expect(drawer!.getAttribute("aria-label")).toBe("流動版完整導覽");
     expect(document.activeElement).not.toBe(document.body);
     expect(drawer!.contains(document.activeElement)).toBe(true);
+
+    // The rest of the shell (sidebar, locale toggle, bottom-nav, etc.) must
+    // be made inert while the drawer is the modal foreground, otherwise a
+    // pointer user can click straight through to a background link despite
+    // aria-modal="true" on the drawer.
+    const chrome = container.querySelector(".app-shell-nav-chrome");
+    expect(chrome).not.toBeNull();
+    expect(chrome!.hasAttribute("inert")).toBe(true);
 
     // Tab beyond the last focusable element inside the drawer must wrap back
     // to the first one, not escape the drawer. happy-dom does not natively
@@ -165,6 +174,104 @@ describe("AppShellNav", () => {
       closeButton!.click();
     });
     expect(document.activeElement).toBe(trigger);
+    expect(chrome!.hasAttribute("inert")).toBe(false);
+  });
+
+  it("closes the drawer and restores focus to the trigger on Escape", () => {
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="drawer-trigger"]',
+    );
+    act(() => {
+      trigger!.click();
+    });
+    const drawer = container.querySelector<HTMLElement>(
+      '[data-testid="drawer"]',
+    );
+    expect(drawer).not.toBeNull();
+
+    act(() => {
+      drawer!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    expect(container.querySelector('[data-testid="drawer"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes the drawer when a nav link inside it is clicked", () => {
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[data-testid="drawer-trigger"]',
+    );
+    act(() => {
+      trigger!.click();
+    });
+    const drawer = container.querySelector<HTMLElement>(
+      '[data-testid="drawer"]',
+    );
+    expect(drawer).not.toBeNull();
+    const navLink =
+      drawer!.querySelector<HTMLAnchorElement>('a[href="/catalog"]');
+    expect(navLink).not.toBeNull();
+
+    act(() => {
+      navLink!.click();
+    });
+
+    expect(container.querySelector('[data-testid="drawer"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("shows only the first MOBILE_NAV_COUNT items in the bottom nav, not the full list", () => {
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+    const bottomNav = container.querySelector(".app-bottom-nav");
+    expect(bottomNav).not.toBeNull();
+    const bottomNavHrefs = Array.from(
+      bottomNav!.querySelectorAll("a[href]"),
+    ).map((a) => a.getAttribute("href"));
+    expect(bottomNavHrefs).toEqual([
+      "/dashboard",
+      "/catalog",
+      "/listings/new",
+      "/listings/import",
+    ]);
+    expect(bottomNavHrefs).not.toContain("/batches");
+
+    // The desktop sidebar still renders every item, including the one the
+    // bottom nav truncated away.
+    const sidebarHrefs = Array.from(
+      container.querySelector(".app-sidebar")!.querySelectorAll("a[href]"),
+    ).map((a) => a.getAttribute("href"));
+    expect(sidebarHrefs).toContain("/batches");
   });
 
   it("sets the locale cookie and calls the onLocaleChange callback when the toggle is clicked", () => {

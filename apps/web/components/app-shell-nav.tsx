@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { LOCALE_COOKIE_NAME, type Locale } from "../lib/locale.js";
 
@@ -28,6 +28,7 @@ const ADMIN_ITEM: NavItem = {
   labelEn: "Admin",
 };
 const FOCUSABLE_SELECTOR = "a[href], button:not([disabled])";
+const DRAWER_LABEL = "流動版完整導覽";
 
 function setLocaleCookie(locale: Locale) {
   document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=31536000`;
@@ -70,10 +71,13 @@ export function AppShellNav({
 
   function closeDrawer() {
     setDrawerOpen(false);
-    triggerRef.current?.focus();
   }
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so initial focus moves into the drawer
+  // before paint, and so the cleanup below restores focus to the trigger
+  // only after the background content's `inert` attribute has already been
+  // cleared by the same commit (inert content cannot be focused).
+  useLayoutEffect(() => {
     if (!drawerOpen) return;
     const drawer = drawerRef.current;
     if (!drawer) return;
@@ -103,79 +107,106 @@ export function AppShellNav({
     }
 
     drawer.addEventListener("keydown", handleKeydown);
-    return () => drawer.removeEventListener("keydown", handleKeydown);
+    return () => {
+      drawer.removeEventListener("keydown", handleKeydown);
+      triggerRef.current?.focus();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawerOpen]);
 
   return (
     <>
-      <div className="brand-lockup">
-        <Link className="brand-mark" href="/dashboard" aria-label="Wukong home">
-          W
-        </Link>
-        <div>
-          <Link className="brand-name" href="/dashboard">
-            Wukong
+      {/* Everything the mobile drawer sits on top of. `inert` while the
+          drawer is open removes it from the focus order, the accessibility
+          tree, and pointer/touch hit-testing, so it can't be reached or
+          clicked through around the modal drawer — `aria-modal="true"` on
+          the drawer alone doesn't enforce that on its own. */}
+      <div className="app-shell-nav-chrome" inert={drawerOpen}>
+        <div className="brand-lockup">
+          <Link
+            className="brand-mark"
+            href="/dashboard"
+            aria-label="Wukong home"
+          >
+            W
           </Link>
-          <span className="brand-context">{workspaceName}</span>
+          <div>
+            <Link className="brand-name" href="/dashboard">
+              Wukong
+            </Link>
+            <span className="brand-context">{workspaceName}</span>
+          </div>
+        </div>
+
+        <nav className="app-sidebar" aria-label="主要導覽">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href}>
+              {label(item)}
+            </Link>
+          ))}
+        </nav>
+
+        {isAdmin ? (
+          <div className="app-sidebar-admin">
+            <Link href="/admin">{label(ADMIN_ITEM)}</Link>
+          </div>
+        ) : null}
+
+        <div className="locale-toggle" role="group" aria-label="介面語言">
+          <button
+            type="button"
+            data-testid="locale-toggle-zh"
+            aria-pressed={locale === "zh-Hant"}
+            onClick={() => changeLocale("zh-Hant")}
+          >
+            繁中
+          </button>
+          <button
+            type="button"
+            data-testid="locale-toggle-en"
+            aria-pressed={locale === "en"}
+            onClick={() => changeLocale("en")}
+          >
+            EN
+          </button>
+        </div>
+
+        <nav className="app-bottom-nav" aria-label="流動版主要導覽">
+          {mobileNav.map((item) => (
+            <Link key={item.href} href={item.href}>
+              {label(item)}
+            </Link>
+          ))}
+          <button
+            type="button"
+            ref={triggerRef}
+            data-testid="drawer-trigger"
+            aria-expanded={drawerOpen}
+            onClick={openDrawer}
+          >
+            {locale === "zh-Hant" ? (
+              <>
+                開啟導覽 <span>Open navigation</span>
+              </>
+            ) : (
+              "Open navigation"
+            )}
+          </button>
+        </nav>
+
+        <div className="topbar-meta">
+          <span className="pilot-badge">PILOT</span>
+          <span className="operator-name">
+            {locale === "zh-Hant" ? (
+              <>
+                {roleLabelZh} <span>{roleLabelEn}</span>
+              </>
+            ) : (
+              roleLabelEn
+            )}
+          </span>
         </div>
       </div>
-
-      <nav className="app-sidebar" aria-label="主要導覽">
-        {navItems.map((item) => (
-          <Link key={item.href} href={item.href}>
-            {label(item)}
-          </Link>
-        ))}
-      </nav>
-
-      {isAdmin ? (
-        <div className="app-sidebar-admin">
-          <Link href="/admin">{label(ADMIN_ITEM)}</Link>
-        </div>
-      ) : null}
-
-      <div className="locale-toggle" role="group" aria-label="介面語言">
-        <button
-          type="button"
-          data-testid="locale-toggle-zh"
-          aria-pressed={locale === "zh-Hant"}
-          onClick={() => changeLocale("zh-Hant")}
-        >
-          繁中
-        </button>
-        <button
-          type="button"
-          data-testid="locale-toggle-en"
-          aria-pressed={locale === "en"}
-          onClick={() => changeLocale("en")}
-        >
-          EN
-        </button>
-      </div>
-
-      <nav className="app-bottom-nav" aria-label="流動版主要導覽">
-        {mobileNav.map((item) => (
-          <Link key={item.href} href={item.href}>
-            {label(item)}
-          </Link>
-        ))}
-        <button
-          type="button"
-          ref={triggerRef}
-          data-testid="drawer-trigger"
-          aria-expanded={drawerOpen}
-          onClick={openDrawer}
-        >
-          {locale === "zh-Hant" ? (
-            <>
-              開啟導覽 <span>Open navigation</span>
-            </>
-          ) : (
-            "Open navigation"
-          )}
-        </button>
-      </nav>
 
       {drawerOpen ? (
         <div
@@ -184,6 +215,7 @@ export function AppShellNav({
           ref={drawerRef}
           role="dialog"
           aria-modal="true"
+          aria-label={DRAWER_LABEL}
         >
           <button
             type="button"
@@ -198,7 +230,7 @@ export function AppShellNav({
               "Close"
             )}
           </button>
-          <nav aria-label="流動版完整導覽">
+          <nav aria-label={DRAWER_LABEL}>
             {fullNav.map((item) => (
               <Link key={item.href} href={item.href} onClick={closeDrawer}>
                 {label(item)}
@@ -207,19 +239,6 @@ export function AppShellNav({
           </nav>
         </div>
       ) : null}
-
-      <div className="topbar-meta">
-        <span className="pilot-badge">PILOT</span>
-        <span className="operator-name">
-          {locale === "zh-Hant" ? (
-            <>
-              {roleLabelZh} <span>{roleLabelEn}</span>
-            </>
-          ) : (
-            roleLabelEn
-          )}
-        </span>
-      </div>
     </>
   );
 }
