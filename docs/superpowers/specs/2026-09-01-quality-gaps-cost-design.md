@@ -13,6 +13,7 @@ A read-only `/quality` page reporting two honestly-computable things: content ga
 `packages/shopline/src/bulk-form.ts`'s `bulkFormGaps` function already implements the exact 6 checks correctly (confirmed by reading it directly) — the problem isn't its logic, it's what it's fed. Today it's only ever called against `platform_products.rawRow`, a snapshot frozen at the moment of the last SHOPLINE import, never updated after enrichment or human review changes something — and `rawRow` is `null` for every create-origin listing, so those are silently excluded entirely.
 
 This package adds a small adapter, `canonicalListingToGapsInput(content: CanonicalListing): BulkFormGapsInput`, mapping `CanonicalListing`'s real shape onto the same input shape `bulkFormGaps` already expects:
+
 - `title.en` → `nameEn`, `title["zh-Hant"]` → `nameZh`
 - `seo.title.en` → `seoTitleEn`, `seo.title["zh-Hant"]` → `seoTitleZh`
 - `description.en` → `summaryEn`, `description["zh-Hant"]` → `summaryZh`
@@ -27,6 +28,7 @@ This package adds a small adapter, `canonicalListingToGapsInput(content: Canonic
 ## 4. Read model and page
 
 Mirrors the `/jobs` ledger's established shape exactly:
+
 - `repositories.listings.listRecent(limit)` (already returns each listing's active version `content` — no new repository method needed) feeds a new pure function, `computeQualitySummary(listings, totalCostUsd)`, in `apps/web/lib/quality-summary.ts`, computing: total listings assessed, count with zero gaps ("clean"), count with at least one gap, and a per-gap-signal count (one entry per of the 6 signals, how many listings currently exhibit it).
 - `GET /api/quality`: no role gate (matching `/jobs`/`/system-map`'s established open-to-any-authenticated-member pattern — the master plan's own text explicitly bundles `/quality` with those two as "read-only... views," not admin-gated). Fetches listings, computes gaps + cost, returns the summary.
 - `/quality` page: 4 stat tiles (total assessed, clean, has-gaps, total AI cost) + a 6-row table (one row per gap signal, its count). Aggregate counts only — no per-listing drill-down list, matching the master plan's own "4 tiles + 6-row table" framing and keeping this round's scope small.

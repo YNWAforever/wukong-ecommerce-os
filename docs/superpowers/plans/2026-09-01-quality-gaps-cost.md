@@ -25,6 +25,7 @@ Do **not** use an `$env:PATH = "...scratchpad\bin..."` prefix — that shim dire
 ### Task 1: `canonicalListingToGapsInput` — the adapter
 
 **Files:**
+
 - Create: `apps/web/lib/canonical-listing-gaps.ts`
 - Create: `apps/web/lib/canonical-listing-gaps.test.ts`
 
@@ -48,7 +49,10 @@ function contentFor(overrides: Partial<Record<string, unknown>> = {}) {
     description: { en: "A fine wine.", "zh-Hant": "一款好酒。" },
     seo: {
       title: { en: "Demo Wine | Shop", "zh-Hant": "示範美酒 | 商店" },
-      description: { en: "Buy Demo Wine today.", "zh-Hant": "立即購買示範美酒。" },
+      description: {
+        en: "Buy Demo Wine today.",
+        "zh-Hant": "立即購買示範美酒。",
+      },
     },
     tags: ["wine", "demo"],
     ...overrides,
@@ -83,7 +87,10 @@ describe("canonicalListingToGapsInput + bulkFormGaps", () => {
         contentFor({
           seo: {
             title: { en: "Demo Wine", "zh-Hant": "示範美酒" },
-            description: { en: "Buy Demo Wine today.", "zh-Hant": "立即購買示範美酒。" },
+            description: {
+              en: "Buy Demo Wine today.",
+              "zh-Hant": "立即購買示範美酒。",
+            },
           },
         }),
       ),
@@ -92,14 +99,19 @@ describe("canonicalListingToGapsInput + bulkFormGaps", () => {
   });
 
   it("joins tags with a comma for the keywords field", () => {
-    const input = canonicalListingToGapsInput(contentFor({ tags: ["a", "b", "c"] }));
+    const input = canonicalListingToGapsInput(
+      contentFor({ tags: ["a", "b", "c"] }),
+    );
     expect(input.seoKeywords).toBe("a, b, c");
   });
 
   it("flags keywordsMirrorName when the joined tags equal the English name", () => {
     const gaps = bulkFormGaps(
       canonicalListingToGapsInput(
-        contentFor({ title: { en: "wine, demo", "zh-Hant": "示範美酒" }, tags: ["wine", "demo"] }),
+        contentFor({
+          title: { en: "wine, demo", "zh-Hant": "示範美酒" },
+          tags: ["wine", "demo"],
+        }),
       ),
     );
     expect(gaps.keywordsMirrorName).toBe(true);
@@ -112,9 +124,11 @@ If Step 1 found that `localizedTextSchema`'s fields cannot be empty strings (val
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- canonical-listing-gaps.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -155,9 +169,11 @@ Adjust the exact import path/name for `CanonicalListing` to match whatever Step 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- canonical-listing-gaps.test.ts
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -172,6 +188,7 @@ git commit -m "feat: add canonicalListingToGapsInput, reusing bulkFormGaps again
 ### Task 2: `computeQualitySummary` — the pure aggregation function
 
 **Files:**
+
 - Create: `apps/web/lib/quality-summary.ts`
 - Create: `apps/web/lib/quality-summary.test.ts`
 
@@ -262,9 +279,11 @@ describe("computeQualitySummary", () => {
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- quality-summary.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -335,9 +354,11 @@ Adjust the `CanonicalListing` import to match Task 1's confirmed real export pat
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- quality-summary.test.ts
 ```
+
 Expected: PASS, all 5 tests.
 
 - [ ] **Step 6: Commit**
@@ -352,6 +373,7 @@ git commit -m "feat: add computeQualitySummary, the pure gap+cost aggregation fu
 ### Task 3: `GET /api/quality` route
 
 **Files:**
+
 - Create: `apps/web/app/api/quality/route.ts`
 - Create: `apps/web/app/api/quality/route.test.ts`
 
@@ -362,6 +384,7 @@ Read `apps/web/app/api/jobs/route.ts` in full (already known: no role gate beyon
 - [ ] **Step 2: Write the failing test**
 
 Create `apps/web/app/api/quality/route.test.ts`, mirroring `apps/web/app/api/jobs/route.test.ts`'s fixture style (fake `db.forWorkspace`, fake `sessionContext`). Cover:
+
 - Any authenticated member (viewer included) gets `200` with a `QualitySummary`-shaped body.
 - An unauthenticated request gets `401` (matching `requireSessionContext`'s standard behavior).
 - The listings-fetch repository method and `sumCostForListings` are both called, and `sumCostForListings` is called with exactly the ids of the listings the fetch returned (not an empty array, not some other id source).
@@ -369,14 +392,17 @@ Create `apps/web/app/api/quality/route.test.ts`, mirroring `apps/web/app/api/job
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/quality/route.test.ts"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
 
 Create `apps/web/app/api/quality/route.ts`. The handler:
+
 1. `requireSessionContext(deps.sessionContext)` — no role gate (viewer+, matching `/api/jobs`).
 2. Inside `db.forWorkspace(session.workspaceId, async (repositories) => { ... })`: fetch a bounded recent set of listings with active-version content using whatever real repository method Step 1 confirmed, then call `repositories.aiRuns.sumCostForListings(listings.map((l) => l.id))`.
 3. Call `computeQualitySummary(listings, totalCostUsd)`.
@@ -386,9 +412,11 @@ Create `apps/web/app/api/quality/route.ts`. The handler:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/api/quality/route.test.ts"
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -403,6 +431,7 @@ git commit -m "feat: add GET /api/quality"
 ### Task 4: `/quality` page and nav link
 
 **Files:**
+
 - Create: `apps/web/app/(app)/quality/page.tsx`
 - Create: `apps/web/components/quality-summary-client.tsx`
 - Create: `apps/web/components/quality-summary-client.test.tsx`
@@ -415,6 +444,7 @@ Read `apps/web/app/(app)/jobs/page.tsx` and `apps/web/components/jobs-ledger-cli
 - [ ] **Step 2: Write the failing test**
 
 Create `apps/web/components/quality-summary-client.test.tsx`. Cover:
+
 - Renders the 4 stat tiles with correct values from a fake fetch response (`totalAssessed`, `cleanCount`, `hasGapsCount`, `totalCostUsd` formatted as a 2-decimal USD string).
 - Renders the 6-row gap table with correct per-signal counts and human-readable labels (one row per key in `gapCounts`).
 - A fetch error (rejected promise or non-ok response) renders a visible error state.
@@ -423,9 +453,11 @@ Create `apps/web/components/quality-summary-client.test.tsx`. Cover:
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- quality-summary-client.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -435,6 +467,7 @@ Create `apps/web/components/quality-summary-client.tsx`: `"use client"`, fetches
 Create `apps/web/app/(app)/quality/page.tsx`: server component, no role gate (matches `/jobs`/`/system-map`), renders `<QualitySummaryClient />` inside the page's heading/layout wrapper (mirror `system-map/page.tsx`'s exact wrapper markup, substituting quality-appropriate bilingual copy).
 
 In `apps/web/app/(app)/layout.tsx`, add a nav link alongside the other unconditional links (not inside the `isAdmin` conditional — matches `/jobs`'s and `/system-map`'s placement), matching the exact bilingual pattern already used by every other link:
+
 ```tsx
 <Link href="/quality">
   內容品質 <span>Quality</span>
@@ -444,9 +477,11 @@ In `apps/web/app/(app)/layout.tsx`, add a nav link alongside the other unconditi
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- quality-summary-client.test.tsx
 ```
+
 Expected: PASS, all tests.
 
 - [ ] **Step 6: Commit**
@@ -465,42 +500,52 @@ git commit -m "feat: add the /quality page and nav link"
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 This package adds no database tables and no repository changes — no new integration tests are expected. Run this step anyway to confirm no regression in the existing integration suite. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 ---
