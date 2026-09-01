@@ -4,6 +4,7 @@ import {
   createEnrichmentBatchService,
   type CreateBatchInput,
   type CreateBatchResult,
+  type EnrichmentBatch,
 } from "../../../lib/enrichment-batch-service";
 import { getDatabase } from "../../../lib/intake-runtime";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
@@ -31,7 +32,7 @@ const bodySchema = z
       "summaryMissing",
     ]),
     budgetUsd: z.number().positive().max(10_000),
-    waveSize: z.number().int().min(1).max(500),
+    waveSize: z.number().int().min(1).max(5),
   })
   .strict();
 
@@ -69,6 +70,39 @@ export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
   };
 }
 
+export type ListEnrichmentBatchesRouteDeps = {
+  sessionContext: SessionContextPort;
+  listBatches(input: { workspaceId: string }): Promise<EnrichmentBatch[]>;
+};
+
+export function createListEnrichmentBatchesHandler(
+  deps: ListEnrichmentBatchesRouteDeps,
+) {
+  return async function listEnrichmentBatches(): Promise<Response> {
+    return withRouteErrors(async () => {
+      const context = await requireSessionContext(deps.sessionContext);
+      if (!requireWorkspaceRole("operator", context.role)) {
+        throw new ApiError(
+          403,
+          "insufficient_role",
+          "Operator access is required.",
+        );
+      }
+
+      const batches = await deps.listBatches({
+        workspaceId: context.workspaceId,
+      });
+
+      return jsonResponse(200, {
+        batches: batches.map((batch) => ({
+          ...batch,
+          createdAt: batch.createdAt.toISOString(),
+        })),
+      });
+    });
+  };
+}
+
 const service = createEnrichmentBatchService({
   getDatabase,
   publisher: listingPublisher,
@@ -77,4 +111,9 @@ const service = createEnrichmentBatchService({
 export const POST = createEnrichmentBatchHandler({
   sessionContext: authSessionContext,
   createBatch: service.createBatch,
+});
+
+export const GET = createListEnrichmentBatchesHandler({
+  sessionContext: authSessionContext,
+  listBatches: service.listBatches,
 });

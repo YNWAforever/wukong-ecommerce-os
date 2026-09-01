@@ -92,7 +92,7 @@ describe("enrichment batch creation", () => {
       label: "zh names",
       gap: "untranslatedName",
       budgetUsd: 5,
-      waveSize: 10,
+      waveSize: 3,
     });
 
     expect(result.selected).toBe(1);
@@ -111,7 +111,7 @@ describe("enrichment batch creation", () => {
       label: "zh names",
       gap: "untranslatedName",
       budgetUsd: 5,
-      waveSize: 10,
+      waveSize: 3,
     });
 
     expect(recorded.audits).toEqual([
@@ -124,7 +124,7 @@ describe("enrichment batch creation", () => {
           gap: "untranslatedName",
           selected: 1,
           budgetUsd: 5,
-          waveSize: 10,
+          waveSize: 3,
         },
       },
     ]);
@@ -140,7 +140,7 @@ describe("enrichment batch creation", () => {
         label: "zh names",
         gap: "untranslatedName",
         budgetUsd: 5,
-        waveSize: 10,
+        waveSize: 3,
       }),
     ).rejects.toThrow(/no products match/i);
     expect(recorded.created).toEqual([]);
@@ -193,7 +193,7 @@ describe("enrichment batch creation", () => {
         label: "zh names",
         gap: "untranslatedName",
         budgetUsd: 0,
-        waveSize: 10,
+        waveSize: 3,
       }),
     ).rejects.toThrow(/budget/);
   });
@@ -209,6 +209,22 @@ describe("enrichment batch creation", () => {
         gap: "untranslatedName",
         budgetUsd: 5,
         waveSize: 2.5,
+      }),
+    ).rejects.toThrow(/wave size/i);
+    expect(recorded.created).toEqual([]);
+  });
+
+  it("refuses a wave size above the 1-5 cap", async () => {
+    const { service, recorded } = serviceWith();
+
+    await expect(
+      service.createBatch({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        label: "zh names",
+        gap: "untranslatedName",
+        budgetUsd: 5,
+        waveSize: 6,
       }),
     ).rejects.toThrow(/wave size/i);
     expect(recorded.created).toEqual([]);
@@ -439,5 +455,127 @@ describe("enrichment batch advance", () => {
     await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
       /no such enrichment batch/i,
     );
+  });
+});
+
+describe("enrichment batch listing", () => {
+  it("returns every batch the repository lists", async () => {
+    const batches = [
+      {
+        id: "batch_1",
+        label: "first",
+        budgetUsd: 5,
+        waveSize: 2,
+        status: "open" as const,
+        createdBy: "user_1",
+        createdAt: new Date("2026-08-01T00:00:00Z"),
+      },
+    ];
+    const service = createEnrichmentBatchService({
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async listForWorkspace() {
+                  return batches;
+                },
+              },
+            });
+          },
+        }) as never,
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
+    });
+
+    const result = await service.listBatches({ workspaceId: "ws_opak" });
+    expect(result).toEqual(batches);
+  });
+});
+
+describe("enrichment batch detail", () => {
+  it("returns a batch with its item status counts", async () => {
+    const counts = {
+      pending: 1,
+      queued: 0,
+      succeeded: 2,
+      failed: 0,
+      skipped: 0,
+    };
+    const service = createEnrichmentBatchService({
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async getById(id: string) {
+                  return {
+                    id,
+                    label: "detail test",
+                    budgetUsd: 5,
+                    waveSize: 2,
+                    status: "running",
+                    createdBy: "user_1",
+                    createdAt: new Date("2026-08-01T00:00:00Z"),
+                  };
+                },
+                async countByStatus() {
+                  return counts;
+                },
+              },
+            });
+          },
+        }) as never,
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
+    });
+
+    const result = await service.getBatch({
+      workspaceId: "ws_opak",
+      batchId: "batch_1",
+    });
+    expect(result.batch.id).toBe("batch_1");
+    expect(result.counts).toEqual(counts);
+  });
+
+  it("rejects an unknown batch", async () => {
+    const service = createEnrichmentBatchService({
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async getById() {
+                  return null;
+                },
+              },
+            });
+          },
+        }) as never,
+      publisher: {
+        async enqueue() {
+          return { id: "job_1" };
+        },
+      },
+    });
+
+    await expect(
+      service.getBatch({ workspaceId: "ws_opak", batchId: "missing" }),
+    ).rejects.toThrow(/no such enrichment batch/i);
   });
 });

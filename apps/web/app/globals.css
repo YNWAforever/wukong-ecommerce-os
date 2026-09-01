@@ -599,7 +599,8 @@ button:disabled {
   align-items: center;
 }
 .review-status,
-.connection-status {
+.connection-status,
+.batch-status {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -611,14 +612,16 @@ button:disabled {
   white-space: nowrap;
 }
 .review-status > span:first-child,
-.connection-status > span:first-child {
+.connection-status > span:first-child,
+.batch-status > span:first-child {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: currentColor;
 }
 .review-status small,
-.connection-status small {
+.connection-status small,
+.batch-status small {
   color: inherit;
   font-size: 10px;
   font-weight: 500;
