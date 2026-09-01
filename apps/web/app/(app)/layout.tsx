@@ -48,6 +48,9 @@ export default async function AppLayout({
           <Link href="/jobs">
             內部作業 <span>Jobs</span>
           </Link>
+          <Link href="/system-map">
+            系統地圖 <span>System map</span>
+          </Link>
           {isAdmin ? (
             <Link href="/admin">
               管理 <span>Admin</span>
