@@ -1,6 +1,6 @@
-import { getDatabase } from "../../lib/intake-runtime.js";
-import type { WorkspaceRole } from "../../lib/session-context.js";
-import { ROLE_LABELS } from "./shell-nav-items.js";
+import { getDatabase } from "../../lib/intake-runtime";
+import type { WorkspaceRole } from "../../lib/session-context";
+import { ROLE_LABELS } from "./shell-nav-items";
 
 export const FALLBACK_WORKSPACE_NAME = "Wukong";
 

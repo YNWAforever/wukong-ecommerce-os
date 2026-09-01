@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { LOCALE_COOKIE_NAME, type Locale } from "../lib/locale.js";
+import { LOCALE_COOKIE_NAME, type Locale } from "../lib/locale";
 
 export type NavItem = {
   href: string;

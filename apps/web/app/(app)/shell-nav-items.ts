@@ -1,5 +1,5 @@
-import type { NavItem } from "../../components/app-shell-nav.js";
-import type { WorkspaceRole } from "../../lib/session-context.js";
+import type { NavItem } from "../../components/app-shell-nav";
+import type { WorkspaceRole } from "../../lib/session-context";
 
 export const SHELL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelZh: "總覽", labelEn: "Overview" },
