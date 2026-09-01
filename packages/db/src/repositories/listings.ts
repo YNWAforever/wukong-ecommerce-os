@@ -321,35 +321,6 @@ export function createListingRepository(
       );
     },
 
-    async countByStatus() {
-      scope.assertOpen();
-      const rows = await transaction
-        .select({
-          status: listingDrafts.status,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(listingDrafts)
-        .where(eq(listingDrafts.workspaceId, workspaceId))
-        .groupBy(listingDrafts.status);
-
-      const counts: Record<ListingStatus, number> = {
-        received: 0,
-        processing: 0,
-        needs_info: 0,
-        in_review: 0,
-        approved: 0,
-        reopened: 0,
-        publishing: 0,
-        published: 0,
-        publish_failed: 0,
-        failed: 0,
-      };
-      for (const row of rows) {
-        counts[row.status as ListingStatus] = row.count;
-      }
-      return counts;
-    },
-
     async listRecent(limit = 100) {
       scope.assertOpen();
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -418,6 +389,35 @@ export function createListingRepository(
             : 0,
         };
       });
+    },
+
+    async countByStatus() {
+      scope.assertOpen();
+      const rows = await transaction
+        .select({
+          status: listingDrafts.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(listingDrafts)
+        .where(eq(listingDrafts.workspaceId, workspaceId))
+        .groupBy(listingDrafts.status);
+
+      const counts: Record<ListingStatus, number> = {
+        received: 0,
+        processing: 0,
+        needs_info: 0,
+        in_review: 0,
+        approved: 0,
+        reopened: 0,
+        publishing: 0,
+        published: 0,
+        publish_failed: 0,
+        failed: 0,
+      };
+      for (const row of rows) {
+        counts[row.status as ListingStatus] = row.count;
+      }
+      return counts;
     },
 
     async requireById(id) {
