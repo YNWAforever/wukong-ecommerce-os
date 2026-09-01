@@ -19,6 +19,9 @@ const items: CatalogItem[] = [
     openBlockingFlagCount: 0,
     needsReview: true,
     needsAttention: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    contentDigest: "digest-1",
   },
   {
     id: "product-2",
@@ -32,6 +35,9 @@ const items: CatalogItem[] = [
     openBlockingFlagCount: null,
     needsReview: false,
     needsAttention: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    contentDigest: null,
   },
   {
     id: "product-3",
@@ -45,6 +51,9 @@ const items: CatalogItem[] = [
     openBlockingFlagCount: 0,
     needsReview: false,
     needsAttention: false,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    contentDigest: "digest-3",
   },
 ];
 

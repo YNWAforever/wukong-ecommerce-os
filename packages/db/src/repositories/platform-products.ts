@@ -29,6 +29,8 @@ export type PlatformProduct = {
   factsPrefill: ListingFacts | null;
   contentDigest: string | null;
   sourceImportId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type UpsertPlatformProductInput = {
@@ -99,6 +101,8 @@ const COLUMNS = {
   factsPrefill: platformProducts.factsPrefill,
   contentDigest: platformProducts.contentDigest,
   sourceImportId: platformProducts.sourceImportId,
+  createdAt: platformProducts.createdAt,
+  updatedAt: platformProducts.updatedAt,
 };
 
 type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {

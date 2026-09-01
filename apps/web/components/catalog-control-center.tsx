@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import type { CatalogResponse } from "../lib/catalog-contract";
+import type { CatalogPage } from "../lib/catalog-contract";
 import {
   CATALOG_FILTERS,
   type CatalogFilter,
@@ -20,7 +20,7 @@ const STATUS_TONE_CLASSES = {
   danger: styles.statusDanger,
 } as const;
 
-const EMPTY_RESPONSE: CatalogResponse = {
+const EMPTY_RESPONSE: CatalogPage = {
   items: [],
   summary: {
     total: 0,
@@ -30,10 +30,13 @@ const EMPTY_RESPONSE: CatalogResponse = {
     needsAttention: 0,
     published: 0,
   },
+  page: 1,
+  pageSize: 25,
+  totalMatching: 0,
 };
 
 export function CatalogControlCenter() {
-  const [data, setData] = useState<CatalogResponse | null>(null);
+  const [data, setData] = useState<CatalogPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
@@ -50,7 +53,7 @@ export function CatalogControlCenter() {
         if (!response.ok) {
           throw new Error(`Unable to load catalog (${response.status})`);
         }
-        setData((await response.json()) as CatalogResponse);
+        setData((await response.json()) as CatalogPage);
       } catch (loadError) {
         if (
           loadError instanceof DOMException &&

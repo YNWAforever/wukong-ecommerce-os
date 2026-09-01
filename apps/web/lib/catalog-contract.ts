@@ -14,6 +14,9 @@ export type CatalogItem = {
   openBlockingFlagCount: number | null;
   needsReview: boolean;
   needsAttention: boolean;
+  createdAt: string;
+  updatedAt: string;
+  contentDigest: string | null;
 };
 
 export type CatalogSummary = {
@@ -25,9 +28,12 @@ export type CatalogSummary = {
   published: number;
 };
 
-export type CatalogResponse = {
+export type CatalogPage = {
   items: CatalogItem[];
   summary: CatalogSummary;
+  page: number;
+  pageSize: number;
+  totalMatching: number;
 };
 
 export function summarizeCatalog(
@@ -42,4 +48,33 @@ export function summarizeCatalog(
     published: items.filter((item) => item.listingStatus === "published")
       .length,
   };
+}
+
+/**
+ * Server-side counterpart to `catalog-view-models.ts`'s `filterCatalogItems`
+ * -- same matching rules, relocated so the route can paginate over the
+ * filtered set instead of the client filtering whatever page happened to
+ * come back.
+ */
+export function filterCatalogItemsServer(
+  items: readonly CatalogItem[],
+  query: string | undefined,
+  filter: "all" | "attention" | "review" | "unlinked" | "published",
+): CatalogItem[] {
+  const normalizedQuery = (query ?? "").trim().toLocaleLowerCase();
+
+  return items.filter((item) => {
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "attention" && item.needsAttention) ||
+      (filter === "review" && item.needsReview) ||
+      (filter === "unlinked" && item.listingId === null) ||
+      (filter === "published" && item.listingStatus === "published");
+    if (!matchesFilter) return false;
+    if (!normalizedQuery) return true;
+
+    return [item.title, item.sku, item.remoteProductId, item.specVersion]
+      .filter((value): value is string => value !== null)
+      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
+  });
 }
