@@ -51,10 +51,11 @@ export function summarizeCatalog(
 }
 
 /**
- * Server-side counterpart to `catalog-view-models.ts`'s `filterCatalogItems`
- * -- same matching rules, relocated so the route can paginate over the
- * filtered set instead of the client filtering whatever page happened to
- * come back.
+ * Matches/searches catalog items by workflow cohort and free-text query.
+ * Runs server-side so the route can paginate over the filtered set instead
+ * of the client filtering whatever page happened to come back -- this
+ * replaced `catalog-view-models.ts`'s now-deleted client-side
+ * `filterCatalogItems`, which had the same matching rules.
  */
 export function filterCatalogItemsServer(
   items: readonly CatalogItem[],

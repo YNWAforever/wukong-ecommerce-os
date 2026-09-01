@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
 import {
@@ -9,7 +9,6 @@ import {
   type CatalogFilter,
   catalogStatusLabel,
   catalogStatusTone,
-  filterCatalogItems,
 } from "./catalog-view-models";
 import styles from "./catalog-control-center.module.css";
 
@@ -19,6 +18,8 @@ const STATUS_TONE_CLASSES = {
   success: styles.statusSuccess,
   danger: styles.statusDanger,
 } as const;
+
+const PAGE_SIZE = 25;
 
 const EMPTY_RESPONSE: CatalogPage = {
   items: [],
@@ -31,7 +32,7 @@ const EMPTY_RESPONSE: CatalogPage = {
     published: 0,
   },
   page: 1,
-  pageSize: 25,
+  pageSize: PAGE_SIZE,
   totalMatching: 0,
 };
 
@@ -40,13 +41,20 @@ export function CatalogControlCenter() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadCatalog() {
       try {
-        const response = await fetch("/api/catalog", {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          q: query,
+          filter,
+        });
+        const response = await fetch(`/api/catalog?${params.toString()}`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -71,13 +79,19 @@ export function CatalogControlCenter() {
 
     void loadCatalog();
     return () => controller.abort();
-  }, []);
+  }, [page, query, filter]);
 
   const response = data ?? EMPTY_RESPONSE;
-  const visibleItems = useMemo(
-    () => filterCatalogItems(response.items, query, filter),
-    [response.items, query, filter],
-  );
+
+  function handleQueryChange(value: string) {
+    setQuery(value);
+    setPage(1);
+  }
+
+  function handleFilterChange(value: CatalogFilter) {
+    setFilter(value);
+    setPage(1);
+  }
 
   if (error) {
     return (
@@ -118,12 +132,13 @@ export function CatalogControlCenter() {
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => handleQueryChange(event.target.value)}
               placeholder="SKU、商品名稱、SHOPLINE Product ID"
             />
           </label>
           <p className={styles.resultCount} aria-live="polite">
-            顯示 {visibleItems.length} / {response.summary.total} 個商品
+            顯示第 {page} 頁 · 符合 {response.totalMatching} /{" "}
+            {response.summary.total} 個商品
           </p>
         </div>
 
@@ -138,14 +153,14 @@ export function CatalogControlCenter() {
                   : styles.filterButton
               }
               aria-pressed={option.value === filter}
-              onClick={() => setFilter(option.value)}
+              onClick={() => handleFilterChange(option.value)}
             >
               {option.label}
             </button>
           ))}
         </div>
 
-        {visibleItems.length === 0 ? (
+        {response.items.length === 0 ? (
           <div className={styles.emptyState}>
             <h2>找不到符合條件的商品</h2>
             <p>調整搜尋字詞或篩選條件，查看其他商品。</p>
@@ -165,7 +180,7 @@ export function CatalogControlCenter() {
                 </tr>
               </thead>
               <tbody>
-                {visibleItems.map((item) => {
+                {response.items.map((item) => {
                   const tone = catalogStatusTone(item.listingStatus);
                   return (
                     <tr key={item.id}>
@@ -229,12 +244,27 @@ export function CatalogControlCenter() {
             </table>
           </div>
         )}
-      </div>
 
-      <p className={styles.scopeNote}>
-        此控制中心顯示最近 100
-        個平台商品。下一階段會加入分頁、平台差異偵測、批量修正及庫存／價格同步。
-      </p>
+        <div className={styles.paginationControls} aria-label="分頁">
+          <button
+            type="button"
+            className={styles.pageButton}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={page === 1}
+          >
+            上一頁 Previous
+          </button>
+          <span className={styles.pageIndicator}>第 {page} 頁</span>
+          <button
+            type="button"
+            className={styles.pageButton}
+            onClick={() => setPage((current) => current + 1)}
+            disabled={response.totalMatching <= page * PAGE_SIZE}
+          >
+            下一頁 Next
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
