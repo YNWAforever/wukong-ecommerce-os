@@ -114,7 +114,9 @@ export const metadata: Metadata = {
   description: "Evidence-backed product listing operations for Opak Cellar.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-Hant">
       <body>{children}</body>
@@ -165,7 +167,7 @@ export type WorkspaceRepository = {
 
 `WorkspaceProfile` (`packages/core/src/listing-schema.ts:53-68`) has a `name: z.string().min(1)` field — use `profile.name` directly for the brand-context/footer label. It has **no** operator-role-label field, and none should be added: "Opak operator" is not actually workspace-specific copy, it's a generic role-label for the current session's role (`session.role`, already resolved) — fix it with a small static bilingual role-label map, not a workspace-profile read.
 
-- **Locale value spelling:** the codebase's own established convention (root `layout.tsx`'s `lang="zh-Hant"`, `packages/core/src/listing-schema.ts`'s `localizedTextSchema`/`WorkspaceProfile.locales: z.tuple([z.literal("en"), z.literal("zh-Hant")])`) uses `"zh-Hant"`, not `"zh-HK"`. Use `"zh-Hant"` / `"en"` as the two valid locale-cookie values, matching this precedent exactly — **not** `"zh-HK"` (a spelling that appears only in the master plan's prose, never in actual code). This is a distinct concept from the `Intl.DateTimeFormat`/`Intl.NumberFormat` locale argument used for number/date *formatting conventions* (Task 2), which correctly stays `"zh-HK"` (matching the one existing precedent, `dashboard-listings-client.tsx`'s `new Intl.DateTimeFormat("zh-HK", ...)`) — formatting-convention locale and content-language locale are different concerns and are not required to use the same tag.
+- **Locale value spelling:** the codebase's own established convention (root `layout.tsx`'s `lang="zh-Hant"`, `packages/core/src/listing-schema.ts`'s `localizedTextSchema`/`WorkspaceProfile.locales: z.tuple([z.literal("en"), z.literal("zh-Hant")])`) uses `"zh-Hant"`, not `"zh-HK"`. Use `"zh-Hant"` / `"en"` as the two valid locale-cookie values, matching this precedent exactly — **not** `"zh-HK"` (a spelling that appears only in the master plan's prose, never in actual code). This is a distinct concept from the `Intl.DateTimeFormat`/`Intl.NumberFormat` locale argument used for number/date _formatting conventions_ (Task 2), which correctly stays `"zh-HK"` (matching the one existing precedent, `dashboard-listings-client.tsx`'s `new Intl.DateTimeFormat("zh-HK", ...)`) — formatting-convention locale and content-language locale are different concerns and are not required to use the same tag.
 
 - **Nav items this package actually ships** (verified against `origin/main`'s real routes — **not** the fuller 7-item list a different, more-advanced branch would have suggested): `/queue`, `/jobs`, `/system-map`, `/quality` do not exist on `main` yet. Sidebar ships with exactly the 5 routes that exist today, reusing their exact current bilingual labels: Overview/`/dashboard` (relabeled from "工作台/Workspace" to "總覽/Overview" per the approved design's explicit adoption of the Site's label), Catalog/`/catalog` ("商品中心/Catalog", unchanged), New listing/`/listings/new` ("建立草稿/New listing", unchanged), Bulk import/`/listings/import` ("SHOPLINE 匯入/Bulk import", unchanged), Batches/`/batches` ("批次/Batches", unchanged). Admin (`/admin`, "管理/Admin", unchanged) stays separately positioned, admin-gated. **No `/system-map` topbar link this round** — that route doesn't exist on this branch's base either.
 
@@ -174,27 +176,33 @@ export type WorkspaceRepository = {
 ### Task 1: Design tokens
 
 **Files:**
+
 - Modify: `apps/web/app/globals.css:1-18`
 
 - [ ] **Step 1: Edit the `:root` block**
 
 Change line 4 from:
+
 ```css
-  --muted: #7b8790;
+--muted: #7b8790;
 ```
+
 to:
+
 ```css
-  --muted: #5f6e7b;
+--muted: #5f6e7b;
 ```
 
 Add two new lines immediately after `--radius: 12px;` (line 16):
+
 ```css
-  --radius: 12px;
-  --radius-card: 16px;
-  --nav-active-bg: #edf3f7;
+--radius: 12px;
+--radius-card: 16px;
+--nav-active-bg: #edf3f7;
 ```
 
 The full `:root` block should now read:
+
 ```css
 :root {
   --ink: #182432;
@@ -221,9 +229,11 @@ The full `:root` block should now read:
 - [ ] **Step 2: Check formatting**
 
 Run:
+
 ```powershell
 corepack pnpm exec prettier --check apps/web/app/globals.css
 ```
+
 Expected: PASS. If it fails, run `corepack pnpm exec prettier --write apps/web/app/globals.css` and re-check.
 
 - [ ] **Step 3: Commit**
@@ -238,6 +248,7 @@ git commit -m "feat: fix the --muted value and add --radius-card/--nav-active-bg
 ### Task 2: Formatting utilities
 
 **Files:**
+
 - Create: `apps/web/lib/formatting.ts`
 - Create: `apps/web/lib/formatting.test.ts`
 
@@ -281,9 +292,11 @@ describe("formatHkTimestamp", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- formatting.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 3: Implement it**
@@ -319,7 +332,9 @@ const HK_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("zh-HK", {
 
 export function formatHkd(amountHkd: number): string {
   const isWholeNumber = Number.isInteger(amountHkd);
-  const formatter = isWholeNumber ? HKD_WHOLE_FORMATTER : HKD_FRACTIONAL_FORMATTER;
+  const formatter = isWholeNumber
+    ? HKD_WHOLE_FORMATTER
+    : HKD_FRACTIONAL_FORMATTER;
   return formatter.format(amountHkd);
 }
 
@@ -333,9 +348,11 @@ Re-derive the exact `formatHkd` output against the real `Intl.NumberFormat("zh-H
 - [ ] **Step 4: Run the test, adjust to match real `Intl` output, and confirm it passes**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- formatting.test.ts
 ```
+
 Expected: PASS, all 5 tests. If `formatHkd`'s exact symbol/spacing doesn't match on the first run, update both the implementation and the test's expected strings together based on what `Intl.NumberFormat` actually produces in this environment, then re-run until green.
 
 - [ ] **Step 5: Commit**
@@ -350,6 +367,7 @@ git commit -m "feat: add formatHkd/formatHkTimestamp formatting utilities"
 ### Task 3: Locale-cookie utility
 
 **Files:**
+
 - Create: `apps/web/lib/locale.ts`
 - Create: `apps/web/lib/locale.test.ts`
 
@@ -398,9 +416,11 @@ describe("constants", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- locale.test.ts
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 3: Implement it**
@@ -426,9 +446,11 @@ export function resolveLocale(value: string | undefined): Locale {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- locale.test.ts
 ```
+
 Expected: PASS, all 7 tests.
 
 - [ ] **Step 5: Commit**
@@ -443,6 +465,7 @@ git commit -m "feat: add the locale-cookie resolution utility"
 ### Task 4: `AppShellNav` client component
 
 **Files:**
+
 - Create: `apps/web/components/app-shell-nav.tsx`
 - Create: `apps/web/components/app-shell-nav.test.tsx`
 
@@ -465,7 +488,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelZh: "總覽", labelEn: "Overview" },
   { href: "/catalog", labelZh: "商品中心", labelEn: "Catalog" },
   { href: "/listings/new", labelZh: "建立草稿", labelEn: "New listing" },
-  { href: "/listings/import", labelZh: "SHOPLINE 匯入", labelEn: "Bulk import" },
+  {
+    href: "/listings/import",
+    labelZh: "SHOPLINE 匯入",
+    labelEn: "Bulk import",
+  },
   { href: "/batches", labelZh: "批次", labelEn: "Batches" },
 ];
 
@@ -564,7 +591,9 @@ describe("AppShellNav", () => {
       trigger!.click();
     });
 
-    const drawer = container.querySelector<HTMLElement>('[data-testid="drawer"]');
+    const drawer = container.querySelector<HTMLElement>(
+      '[data-testid="drawer"]',
+    );
     expect(drawer).not.toBeNull();
     expect(document.activeElement).not.toBe(document.body);
     expect(drawer!.contains(document.activeElement)).toBe(true);
@@ -572,7 +601,7 @@ describe("AppShellNav", () => {
     // Tab beyond the last focusable element inside the drawer must wrap back
     // to the first one, not escape the drawer.
     const focusable = drawer!.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled])',
+      "a[href], button:not([disabled])",
     );
     const last = focusable[focusable.length - 1]!;
     act(() => {
@@ -624,9 +653,11 @@ describe("AppShellNav", () => {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- app-shell-nav.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Implement it**
@@ -659,7 +690,11 @@ type AppShellNavProps = {
 
 const MOBILE_NAV_COUNT = 4;
 const LOCALE_COOKIE_NAME = "locale";
-const ADMIN_ITEM: NavItem = { href: "/admin", labelZh: "管理", labelEn: "Admin" };
+const ADMIN_ITEM: NavItem = {
+  href: "/admin",
+  labelZh: "管理",
+  labelEn: "Admin",
+};
 
 function setLocaleCookie(locale: Locale) {
   document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=31536000`;
@@ -712,7 +747,7 @@ export function AppShellNav({
 
     const focusable = () =>
       Array.from(
-        drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'),
+        drawer.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"),
       );
 
     focusable()[0]?.focus();
@@ -802,7 +837,9 @@ export function AppShellNav({
           onClick={openDrawer}
         >
           {locale === "zh-Hant" ? (
-            <>開啟導覽 <span>Open navigation</span></>
+            <>
+              開啟導覽 <span>Open navigation</span>
+            </>
           ) : (
             "Open navigation"
           )}
@@ -810,10 +847,22 @@ export function AppShellNav({
       </nav>
 
       {drawerOpen ? (
-        <div className="app-drawer" data-testid="drawer" ref={drawerRef} role="dialog" aria-modal="true">
-          <button type="button" data-testid="drawer-close" onClick={closeDrawer}>
+        <div
+          className="app-drawer"
+          data-testid="drawer"
+          ref={drawerRef}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            data-testid="drawer-close"
+            onClick={closeDrawer}
+          >
             {locale === "zh-Hant" ? (
-              <>關閉 <span>Close</span></>
+              <>
+                關閉 <span>Close</span>
+              </>
             ) : (
               "Close"
             )}
@@ -832,7 +881,9 @@ export function AppShellNav({
         <span className="pilot-badge">PILOT</span>
         <span className="operator-name">
           {locale === "zh-Hant" ? (
-            <>{roleLabelZh} <span>{roleLabelEn}</span></>
+            <>
+              {roleLabelZh} <span>{roleLabelEn}</span>
+            </>
           ) : (
             roleLabelEn
           )}
@@ -846,9 +897,11 @@ export function AppShellNav({
 - [ ] **Step 5: Run the tests and iterate until they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- app-shell-nav.test.tsx
 ```
+
 Expected: PASS, all 5 tests. The focus-trap test is the one most likely to need real debugging against actual DOM/focus behavior in the test environment (jsdom) — don't weaken the assertions to make it pass; fix the implementation until the real behavior (focus moves into the drawer on open, `Tab` wraps within the drawer, closing restores focus to the trigger) is genuinely correct.
 
 - [ ] **Step 6: Verify the focus-trap test is genuinely load-bearing**
@@ -867,6 +920,7 @@ git commit -m "feat: add the AppShellNav client component (sidebar, bottom-nav, 
 ### Task 5: Wire the shell together
 
 **Files:**
+
 - Modify: `apps/web/app/(app)/layout.tsx` (full content shown in "Baseline facts" above)
 - Modify: `apps/web/app/layout.tsx` (full content shown in "Baseline facts" above)
 - Create: `apps/web/app/(app)/layout.test.tsx`
@@ -902,7 +956,13 @@ describe("SHELL_NAV_ITEMS", () => {
 
 describe("ROLE_LABELS", () => {
   it("has a bilingual label for every WorkspaceRole", () => {
-    for (const role of ["viewer", "operator", "reviewer", "admin", "owner"] as const) {
+    for (const role of [
+      "viewer",
+      "operator",
+      "reviewer",
+      "admin",
+      "owner",
+    ] as const) {
       expect(ROLE_LABELS[role].zh).toBeTruthy();
       expect(ROLE_LABELS[role].en).toBeTruthy();
     }
@@ -913,9 +973,11 @@ describe("ROLE_LABELS", () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/(app)/layout.test.tsx"
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 3: Implement `shell-nav-items.ts`**
@@ -930,7 +992,11 @@ export const SHELL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelZh: "總覽", labelEn: "Overview" },
   { href: "/catalog", labelZh: "商品中心", labelEn: "Catalog" },
   { href: "/listings/new", labelZh: "建立草稿", labelEn: "New listing" },
-  { href: "/listings/import", labelZh: "SHOPLINE 匯入", labelEn: "Bulk import" },
+  {
+    href: "/listings/import",
+    labelZh: "SHOPLINE 匯入",
+    labelEn: "Bulk import",
+  },
   { href: "/batches", labelZh: "批次", labelEn: "Batches" },
 ];
 
@@ -946,9 +1012,11 @@ export const ROLE_LABELS: Record<WorkspaceRole, { zh: string; en: string }> = {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test -- "apps/web/app/(app)/layout.test.tsx"
 ```
+
 Expected: PASS, all 3 tests.
 
 - [ ] **Step 5: Rewrite `apps/web/app/(app)/layout.tsx`**
@@ -1049,25 +1117,31 @@ export default async function RootLayout({
 - [ ] **Step 7: Typecheck**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec tsc --noEmit
 ```
+
 Expected: PASS. Fix any type errors surfaced by the real `WorkspaceRole`/`NavItem`/`getDatabase()` shapes before proceeding — the sketches above may need small adjustments once checked against the real types.
 
 - [ ] **Step 8: Run the full `@wukong/web` test suite**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web test
 ```
+
 Expected: PASS, including every test written in Tasks 2-5. Fix any test broken by the shell rewrite (e.g. an existing test that renders `(app)/layout.tsx` or asserts on the old "Opak Cellar"/"Opak operator" strings) — search first: `corepack pnpm --filter @wukong/web exec vitest run --reporter=verbose 2>&1 | grep -i "opak\|layout"` to find any such test before assuming none exist.
 
 - [ ] **Step 9: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm exec prettier --check "apps/web/app/(app)/layout.tsx" apps/web/app/layout.tsx "apps/web/app/(app)/shell-nav-items.ts" "apps/web/app/(app)/layout.test.tsx"
 ```
+
 Expected: PASS, or fix with `--write` and re-check.
 
 - [ ] **Step 10: Commit**
@@ -1086,42 +1160,52 @@ git commit -m "feat: wire the sidebar shell, locale mechanism, and workspace-der
 - [ ] **Step 1: Typecheck everything**
 
 Run:
+
 ```powershell
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 This package adds no database schema changes — no new integration tests are expected, but run this to confirm no regression. If Postgres is unreachable, state that explicitly rather than reporting this step as passed.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Manual smoke check**

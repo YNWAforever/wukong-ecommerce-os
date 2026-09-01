@@ -14,16 +14,17 @@ Research for this design combined the master plan's own audit findings with dire
 
 `apps/web/app/globals.css`'s `:root` block already has tokens matching 5 of the Site's 6 confirmed colors by exact value, under different names:
 
-| Site's name (master plan) | Site's value | Runtime's existing name | Runtime's existing value | Match? |
-|---|---|---|---|---|
-| `--canvas` | `#f6f4ef` | `--stone` | `#f6f4ef` | ✅ identical |
-| `--text` | `#182432` | `--ink` | `#182432` | ✅ identical |
-| `--border` | `#dfe2e1` | `--line` | `#dfe2e1` | ✅ identical |
-| `--navy` | `#17324d` | `--navy` | `#17324d` | ✅ identical |
-| CTA / hover | `#b36a24` / `#8d4e17` | `--amber` / `--amber-dark` | `#b36a24` / `#8d4e17` | ✅ identical |
-| `--muted` | `#5f6e7b` | `--muted` | `#7b8790` | ❌ genuinely differs |
+| Site's name (master plan) | Site's value          | Runtime's existing name    | Runtime's existing value | Match?               |
+| ------------------------- | --------------------- | -------------------------- | ------------------------ | -------------------- |
+| `--canvas`                | `#f6f4ef`             | `--stone`                  | `#f6f4ef`                | ✅ identical         |
+| `--text`                  | `#182432`             | `--ink`                    | `#182432`                | ✅ identical         |
+| `--border`                | `#dfe2e1`             | `--line`                   | `#dfe2e1`                | ✅ identical         |
+| `--navy`                  | `#17324d`             | `--navy`                   | `#17324d`                | ✅ identical         |
+| CTA / hover               | `#b36a24` / `#8d4e17` | `--amber` / `--amber-dark` | `#b36a24` / `#8d4e17`    | ✅ identical         |
+| `--muted`                 | `#5f6e7b`             | `--muted`                  | `#7b8790`                | ❌ genuinely differs |
 
 **Decision:** keep the runtime's existing token names — renaming five already-correct tokens across every usage site in the codebase would be a large, purely cosmetic diff with zero behavioral or visual effect. Only two real changes are needed:
+
 1. Fix `--muted`'s value to `#5f6e7b`. Cross-confirmed twice: the master plan's own live-crawl research, and directly reading the Site's rendered inactive-nav-item text color (`rgb(95, 110, 123)` = `#5f6e7b`) via its computed styles.
 2. Add `--radius-card: 16px` (the confirmed card-corner radius) as a new, separate token — the runtime's existing `--radius: 12px` serves a different, already-in-use purpose and stays unchanged.
 
@@ -45,7 +46,7 @@ Role-aware visibility reuses the existing `roleOrder`/`requireWorkspaceRole` mec
 
 A cookie-backed locale preference (`zh-HK` default; only two valid values accepted, rejecting anything else to avoid any injection surface per ADR-4's own security note), read server-side on every request so `html lang` and the first paint are correct with no flash of the wrong locale. A real `繁中`/`EN` toggle group in the topbar, matching the Site's own control.
 
-**Scope decision, made explicit because it materially changes the size of this package:** clicking the Site's toggle was directly tested and replaces *all* visible text on the page — a genuine single-locale switch, not a relabel. The runtime's existing convention, built consistently across every package this session, shows both languages simultaneously everywhere (`商品中心 <span>Catalog</span>`). Retrofitting that convention into real single-locale rendering across every existing page (dashboard, catalog, listings, batches, jobs, quality, admin — components spanning nearly this entire session's output) is a much larger, cross-cutting effort that Package B's own file list (`globals.css`, `layout.tsx`, a locale utility, workspace-label reads) does not include.
+**Scope decision, made explicit because it materially changes the size of this package:** clicking the Site's toggle was directly tested and replaces _all_ visible text on the page — a genuine single-locale switch, not a relabel. The runtime's existing convention, built consistently across every package this session, shows both languages simultaneously everywhere (`商品中心 <span>Catalog</span>`). Retrofitting that convention into real single-locale rendering across every existing page (dashboard, catalog, listings, batches, jobs, quality, admin — components spanning nearly this entire session's output) is a much larger, cross-cutting effort that Package B's own file list (`globals.css`, `layout.tsx`, a locale utility, workspace-label reads) does not include.
 
 Package B implements the real mechanism and applies it to **the shell only** — nav labels, footer, topbar chrome genuinely switch language on toggle. Every other page's content keeps today's dual-language convention unchanged. This is not a compromise on correctness: the mechanism (cookie, provider, `html lang`) is fully real and reusable; a future package can extend single-locale rendering to page content using the same provider without rework here.
 
