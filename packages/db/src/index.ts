@@ -22,6 +22,7 @@ export type {
   PipelineRunRepository,
   PipelineResult,
   PipelineRunState,
+  PipelineRunSummary,
   PipelineStepName,
   StepClaim,
 } from "./repositories/pipeline-runs.js";

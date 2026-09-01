@@ -52,6 +52,7 @@ export type PublishJob = {
   leaseToken: string | null;
   leaseExpiresAt: Date | null;
   attemptCount: number;
+  createdAt: Date;
 };
 
 export type EnsurePublishJobInput = {
@@ -89,6 +90,9 @@ export type PublishJobRepository = {
    * "the publish job for this version" regardless of which action it used.
    */
   getByVersionId(versionId: string): Promise<PublishJob | null>;
+  /** Newest-first, this workspace's publish jobs only. `limit` defaults to
+   * 100 and must be between 1 and 100. */
+  listForWorkspace(limit?: number): Promise<PublishJob[]>;
   ensure(input: EnsurePublishJobInput): Promise<PublishJob>;
   markQueued(key: string): Promise<boolean>;
   claim(input: ClaimPublishJobInput): Promise<ClaimPublishJobResult>;
@@ -130,6 +134,7 @@ function toPublishJob(row: PublishJobRow | undefined): PublishJob | null {
     leaseToken: row.leaseToken,
     leaseExpiresAt: row.leaseExpiresAt,
     attemptCount: row.attemptCount,
+    createdAt: row.createdAt,
   };
 }
 
@@ -170,6 +175,31 @@ export function createPublishJobRepository(
         .orderBy(desc(publishJobs.createdAt))
         .limit(1);
       return toPublishJob(row);
+    },
+
+    async listForWorkspace(limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("publish job limit must be between 1 and 100");
+      }
+      const rows = await transaction
+        .select()
+        .from(publishJobs)
+        .where(eq(publishJobs.workspaceId, workspaceId))
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(publishJobs.createdAt), desc(publishJobs.id))
+        .limit(limit);
+      // `toPublishJob` returns null only when `versionId` is missing, which
+      // cannot happen for a row this repository created -- `ensure()` is the
+      // only insert path and always sets it. Filtered anyway so a future
+      // insert path (or a row someone created by hand) can't silently widen
+      // this list's element type into `PublishJob | null`.
+      return rows
+        .map(toPublishJob)
+        .filter((job): job is PublishJob => job !== null);
     },
 
     async ensure(input) {
