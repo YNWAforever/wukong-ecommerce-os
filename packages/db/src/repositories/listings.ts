@@ -64,6 +64,12 @@ export type ListingRepository = {
    */
   statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
+  /**
+   * Counts every listing in the workspace by status, unbounded by
+   * `listRecent`'s 100-row cap -- dashboard status tiles need the true
+   * total, not a count over whatever page happened to be fetched.
+   */
+  countByStatus(): Promise<Record<ListingStatus, number>>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
   requireForPublish(id: string): Promise<{
     id: string;
@@ -313,6 +319,35 @@ export function createListingRepository(
       return Object.fromEntries(
         rows.map((row) => [row.id, row.status as ListingStatus]),
       );
+    },
+
+    async countByStatus() {
+      scope.assertOpen();
+      const rows = await transaction
+        .select({
+          status: listingDrafts.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(listingDrafts)
+        .where(eq(listingDrafts.workspaceId, workspaceId))
+        .groupBy(listingDrafts.status);
+
+      const counts: Record<ListingStatus, number> = {
+        received: 0,
+        processing: 0,
+        needs_info: 0,
+        in_review: 0,
+        approved: 0,
+        reopened: 0,
+        publishing: 0,
+        published: 0,
+        publish_failed: 0,
+        failed: 0,
+      };
+      for (const row of rows) {
+        counts[row.status as ListingStatus] = row.count;
+      }
+      return counts;
     },
 
     async listRecent(limit = 100) {

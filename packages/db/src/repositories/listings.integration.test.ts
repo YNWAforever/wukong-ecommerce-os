@@ -694,6 +694,46 @@ describe("workspace isolation", () => {
     expect(byId.get(flaggedId)?.openBlockingFlagCount).toBe(1);
   });
 
+  it("counts listings by status across the whole workspace, not just a capped fetch", async () => {
+    const workspaceId = "ws_listings_count";
+    await forWorkspace(database, workspaceId, async (repos) => {
+      for (let index = 0; index < 3; index += 1) {
+        await repos.listings.create({ target: "shopline" });
+      }
+    });
+
+    const counts = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.countByStatus(),
+    );
+
+    expect(counts).toEqual({
+      received: 3,
+      processing: 0,
+      needs_info: 0,
+      in_review: 0,
+      approved: 0,
+      reopened: 0,
+      publishing: 0,
+      published: 0,
+      publish_failed: 0,
+      failed: 0,
+    });
+  });
+
+  it("isolates counts per workspace", async () => {
+    const workspaceA = "ws_listings_count_a";
+    const workspaceB = "ws_listings_count_b";
+
+    await forWorkspace(database, workspaceA, (repos) =>
+      repos.listings.create({ target: "shopline" }),
+    );
+
+    const countsB = await forWorkspace(database, workspaceB, (repos) =>
+      repos.listings.countByStatus(),
+    );
+    expect(countsB.received).toBe(0);
+  });
+
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(
