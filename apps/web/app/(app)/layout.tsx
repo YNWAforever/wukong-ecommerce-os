@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
 
 import { AppShellNav } from "../../components/app-shell-nav";
-import { getDatabase } from "../../lib/intake-runtime";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../lib/locale";
 import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
-import { ROLE_LABELS, SHELL_NAV_ITEMS } from "./shell-nav-items";
+import { SHELL_NAV_ITEMS } from "./shell-nav-items";
+import { resolveWorkspaceChrome } from "./workspace-chrome";
 
 export default async function AppLayout({
   children,
@@ -16,16 +16,7 @@ export default async function AppLayout({
   const isAdmin = session ? requireWorkspaceRole("admin", session.role) : false;
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
-
-  const workspaceName = session
-    ? await getDatabase()
-        .forWorkspace(session.workspaceId, (repositories) =>
-          repositories.workspaces.requireProfile(),
-        )
-        .then((profile) => profile.name)
-    : "Wukong";
-
-  const roleLabel = session ? ROLE_LABELS[session.role] : ROLE_LABELS.viewer;
+  const { workspaceName, roleLabel } = await resolveWorkspaceChrome(session);
 
   return (
     <div className="app-shell">
