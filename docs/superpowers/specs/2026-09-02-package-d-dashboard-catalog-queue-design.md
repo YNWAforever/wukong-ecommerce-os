@@ -21,7 +21,7 @@ New `apps/web/app/(app)/queue/page.tsx` renders `ListingQueue`, sourced from a n
 
 ## 3. Accurate counts — a real aggregate query
 
-New `repositories.listings.countByStatus(): Promise<Record<ListingStatus, number>>` — a genuine `COUNT(*) GROUP BY status` SQL query, correct regardless of workspace size (unlike the current approach, which counts whatever fit in a 100-row fetch and silently undercounts beyond that). Both `/dashboard`'s summary tiles and `/queue`'s per-lane counts use this. Item *lists* rendered on screen still cap at a reasonable limit for practicality (e.g. 200) — only the counts need to be exact.
+New `repositories.listings.countByStatus(): Promise<Record<ListingStatus, number>>` — a genuine `COUNT(*) GROUP BY status` SQL query, correct regardless of workspace size (unlike the current approach, which counts whatever fit in a 100-row fetch and silently undercounts beyond that). Both `/dashboard`'s summary tiles and `/queue`'s per-lane counts use this. Item _lists_ rendered on screen still cap at a reasonable limit for practicality (e.g. 200) — only the counts need to be exact.
 
 ## 4. `/catalog` — real server-side pagination and search
 

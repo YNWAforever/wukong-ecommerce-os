@@ -176,9 +176,9 @@ describe("DashboardListingsClient", () => {
 
     const { container, root } = await mount(fetcher);
 
-    const values = Array.from(
-      container.querySelectorAll(".metric-value"),
-    ).map((node) => node.textContent);
+    const values = Array.from(container.querySelectorAll(".metric-value")).map(
+      (node) => node.textContent,
+    );
     // active = total(149) - published(100) = 49
     // inReview = in_review(5) + reopened(1) = 6
     // blocked = failed(2) + publish_failed(1) = 3
@@ -212,11 +212,12 @@ describe("DashboardListingsClient", () => {
   });
 
   it("links to /queue for the full work queue", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        Response.json({ items: [baseItem], counts: { ...zeroCounts, in_review: 1 } }),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [baseItem],
+        counts: { ...zeroCounts, in_review: 1 },
+      }),
+    );
 
     const { container, root } = await mount(fetcher);
 

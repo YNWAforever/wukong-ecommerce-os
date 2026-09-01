@@ -31,13 +31,20 @@ If `corepack pnpm typecheck`/`test` (turbo-orchestrated) hits `Unable to find pa
 
 ```ts
 const products = await repositories.platformProducts.listRecent(100);
-const listingIds = [...new Set(products.map((p) => p.listingId).filter((id): id is string => id !== null))];
+const listingIds = [
+  ...new Set(
+    products.map((p) => p.listingId).filter((id): id is string => id !== null),
+  ),
+];
 const statuses = await repositories.listings.statusesByIds(listingIds);
 const recentListings = await repositories.listings.listRecent(100);
-const recentListingById = new Map(recentListings.map((listing) => [listing.id, listing]));
+const recentListingById = new Map(
+  recentListings.map((listing) => [listing.id, listing]),
+);
 ```
 
-  `recentListings` is fetched via `listRecent(100)` — the 100 *globally most-recently-updated listings*, unrelated to `listingIds` (the specific listings this page's products actually link to). Any product whose linked listing isn't among those 100 gets `recentListingById.get(product.listingId) === undefined`, and its `title`/`openBlockingFlagCount` silently fall back to less-accurate values (`product.sku ?? product.remoteProductId` instead of the real listing title; `null` flag count). This bug is independent of pagination and is fixed here by replacing that lookup with a proper bulk-by-ids fetch (Task 2).
+`recentListings` is fetched via `listRecent(100)` — the 100 _globally most-recently-updated listings_, unrelated to `listingIds` (the specific listings this page's products actually link to). Any product whose linked listing isn't among those 100 gets `recentListingById.get(product.listingId) === undefined`, and its `title`/`openBlockingFlagCount` silently fall back to less-accurate values (`product.sku ?? product.remoteProductId` instead of the real listing title; `null` flag count). This bug is independent of pagination and is fixed here by replacing that lookup with a proper bulk-by-ids fetch (Task 2).
+
 - **`catalog-control-center.tsx`'s existing search/filter is 100% client-side JS**, operating only on whatever the capped fetch returned (confirmed: `filterCatalogItems(response.items, query, filter)` in `catalog-view-models.ts`, called from a `useMemo` in the component — no query params sent to the server at all). The status `filter` values (`attention`/`review`/`unlinked`/`published`) and the search `query` (matched against `title`/`sku`/`remoteProductId`/`specVersion`) both need to move server-side.
 - **The component already has a stale, self-aware placeholder note** (`catalog-control-center.tsx`, confirmed by direct read): `此控制中心顯示最近 100 個平台商品。下一階段會加入分頁、平台差異偵測、批量修正及庫存／價格同步。` ("This control center shows the most recent 100 platform products. The next phase will add pagination..."). This note gets removed once pagination lands (Task 4) — it was already anticipating this exact work.
 - **`apps/web/app/(app)/dashboard/page.tsx`'s real current content** (confirmed by direct read):
@@ -236,6 +243,7 @@ export function ListingQueue({
 ### Task 1: `countByStatus` on the listings repository
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/listings.ts`
 - Modify: `packages/db/src/repositories/listings.integration.test.ts`
 
@@ -352,14 +360,17 @@ async countByStatus() {
 - [ ] **Step 5: Run the tests, confirm they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/db exec vitest run listings.integration.test.ts
 ```
+
 Expected: PASS, including the 2 new tests.
 
 - [ ] **Step 6: Typecheck and format**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/db exec tsc --noEmit
 corepack pnpm exec prettier --check packages/db/src/repositories/listings.ts packages/db/src/repositories/listings.integration.test.ts
@@ -382,6 +393,7 @@ EOF
 ### Task 2: `getByIds` on the listings repository
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/listings.ts`
 - Modify: `packages/db/src/repositories/listings.integration.test.ts`
 
@@ -405,15 +417,18 @@ it("fetches exactly the listings requested by id, regardless of update recency",
       // fetches by id, not by recency.
       const others: string[] = [];
       for (let index = 0; index < 100; index += 1) {
-        const created = await repositories.listings.create({ target: "shopline" });
+        const created = await repositories.listings.create({
+          target: "shopline",
+        });
         others.push(created.id);
       }
       return { targetId: target.id, otherIds: others };
     },
   );
 
-  const fetched = await database.forWorkspace(getByIdsWorkspaceId, (repositories) =>
-    repositories.listings.getByIds([targetId]),
+  const fetched = await database.forWorkspace(
+    getByIdsWorkspaceId,
+    (repositories) => repositories.listings.getByIds([targetId]),
   );
 
   expect(fetched.map((listing) => listing.id)).toEqual([targetId]);
@@ -425,8 +440,9 @@ it("returns an empty array for an empty id list without querying", async () => {
   await admin.unsafe(
     `INSERT INTO workspaces (id, name, profile) VALUES ('${emptyWorkspaceId}', '${emptyWorkspaceId}', '{}'::jsonb)`,
   );
-  const fetched = await database.forWorkspace(emptyWorkspaceId, (repositories) =>
-    repositories.listings.getByIds([]),
+  const fetched = await database.forWorkspace(
+    emptyWorkspaceId,
+    (repositories) => repositories.listings.getByIds([]),
   );
   expect(fetched).toEqual([]);
 });
@@ -435,9 +451,11 @@ it("returns an empty array for an empty id list without querying", async () => {
 - [ ] **Step 2: Run it, confirm it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/db exec vitest run listings.integration.test.ts
 ```
+
 Expected: FAIL — `getByIds is not a function`.
 
 - [ ] **Step 3: Add `getByIds` to the `ListingRepository` type and implementation**
@@ -476,14 +494,17 @@ async getByIds(ids) {
 - [ ] **Step 4: Run the tests, confirm they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/db exec vitest run listings.integration.test.ts
 ```
+
 Expected: PASS, including the 2 new tests (4 total new tests from Tasks 1-2).
 
 - [ ] **Step 5: Typecheck and format**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/db exec tsc --noEmit
 corepack pnpm exec prettier --check packages/db/src/repositories/listings.ts packages/db/src/repositories/listings.integration.test.ts
@@ -506,6 +527,7 @@ EOF
 ### Task 3: `GET /api/catalog` — real pagination and search
 
 **Files:**
+
 - Modify: `apps/web/lib/catalog-contract.ts`
 - Modify: `apps/web/app/api/catalog/route.ts`
 - Modify: `apps/web/app/api/catalog/route.test.ts`
@@ -554,6 +576,7 @@ Before deciding whether to keep the existing `CatalogResponse` type alongside `C
 - [ ] **Step 3: Write the failing route tests**
 
 Extend `apps/web/app/api/catalog/route.test.ts`, matching its existing mocking conventions exactly (read them in Step 1 — this plan does not repeat that boilerplate since it depends on the file's real, current fake-database helper). Cover:
+
 - No query params returns page 1 at a sensible default page size (25).
 - `page=2` returns different items than `page=1` for a fixture with more rows than one page.
 - A `q` search term matches an item that would fall outside page 1's default window.
@@ -564,9 +587,11 @@ Extend `apps/web/app/api/catalog/route.test.ts`, matching its existing mocking c
 - [ ] **Step 4: Run the tests, confirm they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run "app/api/catalog/route.test.ts"
 ```
+
 Expected: FAIL — new fields/params not yet implemented.
 
 - [ ] **Step 5: Add `filterCatalogItemsServer` to `catalog-contract.ts`**
@@ -634,8 +659,10 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
                 .filter((id): id is string => id !== null),
             ),
           ];
-          const statuses = await repositories.listings.statusesByIds(listingIds);
-          const linkedListings = await repositories.listings.getByIds(listingIds);
+          const statuses =
+            await repositories.listings.statusesByIds(listingIds);
+          const linkedListings =
+            await repositories.listings.getByIds(listingIds);
           const linkedListingById = new Map(
             linkedListings.map((listing) => [listing.id, listing]),
           );
@@ -681,7 +708,11 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           });
         });
 
-      const filtered = filterCatalogItemsServer(allItems, query.q, query.filter);
+      const filtered = filterCatalogItemsServer(
+        allItems,
+        query.q,
+        query.filter,
+      );
       const start = (query.page - 1) * query.pageSize;
       const pageItems = filtered.slice(start, start + query.pageSize);
 
@@ -702,9 +733,11 @@ Before trusting this verbatim: (1) confirm `product.createdAt`/`product.updatedA
 - [ ] **Step 7: Run the tests, iterate until they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run "app/api/catalog/route.test.ts"
 ```
+
 Expected: PASS, all tests including the new ones.
 
 - [ ] **Step 8: Commit**
@@ -724,6 +757,7 @@ EOF
 ### Task 4: `catalog-control-center.tsx` — wire to server-side pagination/search
 
 **Files:**
+
 - Modify: `apps/web/components/catalog-control-center.tsx`
 - Modify: `apps/web/components/catalog-view-models.ts`
 - Modify or create: `apps/web/components/catalog-control-center.test.tsx` (or `.test.ts` — check which, if either, already exists)
@@ -731,9 +765,11 @@ EOF
 - [ ] **Step 1: Search for an existing test file and read the component + its module CSS in full**
 
 Run:
+
 ```powershell
 corepack pnpm exec node -e "console.log(require('fs').existsSync('apps/web/components/catalog-control-center.test.tsx'), require('fs').existsSync('apps/web/components/catalog-control-center.test.ts'))"
 ```
+
 If a test file already exists, read it in full and extend it rather than creating a new one. Also read `apps/web/components/catalog-control-center.tsx` and `apps/web/components/catalog-control-center.module.css` in full to confirm the file's existing class-naming convention (e.g. `styles.filterButton`) before adding new pagination-control markup/CSS that matches it.
 
 - [ ] **Step 2: Write/extend the failing test**
@@ -743,14 +779,17 @@ Cover: the component's `fetch` call includes `page`/`pageSize`/`q`/`filter` as q
 - [ ] **Step 3: Run it, confirm it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run components/catalog-control-center.test.tsx
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Rewrite `catalog-control-center.tsx`**
 
 Read the current full file (from Step 1) side-by-side while making this targeted rewrite — not every line changes. Key changes:
+
 - State: add `page` (default `1`); keep `query`/`filter` as-is, but they now drive the fetch URL, not client-side filtering.
 - The `fetch` effect depends on `[page, query, filter]` and builds the URL: `` `/api/catalog?page=${page}&pageSize=25&q=${encodeURIComponent(query)}&filter=${filter}` ``.
 - Remove the `useMemo`-based `filterCatalogItems(...)` call entirely — `response.items` IS the already-filtered, already-paginated page; render it directly.
@@ -766,14 +805,17 @@ Read the current full file (from Step 1) side-by-side while making this targeted
 - [ ] **Step 6: Run the tests, iterate until they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run components/catalog-control-center.test.tsx
 ```
+
 Expected: PASS.
 
 - [ ] **Step 7: Typecheck and format**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec tsc --noEmit
 corepack pnpm exec prettier --check apps/web/components/catalog-control-center.tsx apps/web/components/catalog-view-models.ts apps/web/components/catalog-control-center.module.css
@@ -796,6 +838,7 @@ EOF
 ### Task 5: `/queue` — extract `ListingQueue` into its own route
 
 **Files:**
+
 - Create: `apps/web/app/(app)/queue/page.tsx`
 - Create: `apps/web/components/queue-client.tsx`
 - Create: `apps/web/components/queue-client.test.tsx`
@@ -814,9 +857,11 @@ Create `apps/web/components/queue-client.test.tsx`. First check whether `apps/we
 - [ ] **Step 3: Run it, confirm it fails**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run components/queue-client.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 4: Create `apps/web/components/queue-client.tsx`**
@@ -874,14 +919,17 @@ Read this file in full first. It has a test asserting `SHELL_NAV_ITEMS.map((item
 - [ ] **Step 8: Run the tests, iterate until they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run components/queue-client.test.tsx "apps/web/app/(app)/layout.test.tsx"
 ```
+
 Expected: PASS.
 
 - [ ] **Step 9: Typecheck and format**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec tsc --noEmit
 corepack pnpm exec prettier --check "apps/web/app/(app)/queue/page.tsx" apps/web/components/queue-client.tsx apps/web/components/queue-client.test.tsx "apps/web/app/(app)/shell-nav-items.ts" "apps/web/app/(app)/layout.test.tsx"
@@ -906,6 +954,7 @@ EOF
 ### Task 6: Dashboard — accurate counts, queue teaser, workspace-derived name
 
 **Files:**
+
 - Modify: `apps/web/app/(app)/dashboard/page.tsx`
 - Modify: `apps/web/components/dashboard-listings-client.tsx`
 - Modify: `apps/web/app/api/listings/route.ts`
@@ -925,9 +974,11 @@ In the `dashboard-listings-client` test file: assert the metric-strip values com
 - [ ] **Step 3: Run them, confirm they fail**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run "apps/web/app/api/listings/route.test.ts" components/dashboard-listings-client.test.ts
 ```
+
 (adjust the second path's extension to match the real file)
 Expected: FAIL.
 
@@ -946,7 +997,9 @@ const { items, counts } = await deps
   });
 
 return jsonResponse(200, {
-  items: items.map((item) => { /* unchanged mapping from the existing handler */ }),
+  items: items.map((item) => {
+    /* unchanged mapping from the existing handler */
+  }),
   counts,
 });
 ```
@@ -972,6 +1025,7 @@ export function dashboardMetricsFromCounts(
 ```
 
 Run `grep -rn "dashboardMetrics\b" apps/web` before deciding whether the old `dashboardMetrics` function (computed from `items`) can be deleted — delete it if nothing else imports it.
+
 - Replace the full `<ListingQueue ... />` render with a small teaser: the first 3-5 items from `queueItems` (prioritizing `in_review`/`needs_info` items, matching `queueGroups`' existing priority ordering) plus a `<Link href="/queue">查看完整工作佇列 View full queue</Link>`. If Task 5 Step 4 extracted shared helpers into `apps/web/lib/dashboard-queue-shared.ts`, import them from there instead of duplicating.
 
 - [ ] **Step 6: Update `apps/web/app/(app)/dashboard/page.tsx`**
@@ -1012,15 +1066,18 @@ export default async function DashboardPage() {
 - [ ] **Step 7: Run the tests, iterate until they pass**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec vitest run "apps/web/app/api/listings/route.test.ts" components/dashboard-listings-client.test.ts
 ```
+
 (adjust paths/extensions to match the real files)
 Expected: PASS.
 
 - [ ] **Step 8: Typecheck and format**
 
 Run:
+
 ```powershell
 corepack pnpm --filter @wukong/web exec tsc --noEmit
 corepack pnpm exec prettier --check "apps/web/app/(app)/dashboard/page.tsx" apps/web/components/dashboard-listings-client.tsx "apps/web/app/api/listings/route.ts"
@@ -1047,43 +1104,53 @@ EOF
 - [ ] **Step 1: Delete stale `.next` cache, then typecheck everything**
 
 Run:
+
 ```powershell
 rm -rf apps/web/.next
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package (this session repeatedly found a stale, gitignored `.next/types` cache produces spurious `tsc` errors when run directly inside `apps/web` without clearing it first — always clear it before the real verification pass).
 
 - [ ] **Step 2: Format check**
 
 Run:
+
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
 
 Run:
+
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages.
 
 - [ ] **Step 4: Integration suite (requires live Postgres)**
 
 Run:
+
 ```powershell
 docker compose up -d postgres
 corepack pnpm test:integration
 ```
+
 This package adds two new repository methods (Tasks 1-2) with real integration test coverage — these tests are NOT expected to pass without live Postgres. If Docker is unreachable, state that explicitly and report this step as BLOCKED, not skipped or assumed-passing.
 
 - [ ] **Step 5: `pnpm runtime:forbidden:check`**
 
 Run:
+
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Verify the real Turbopack production build**

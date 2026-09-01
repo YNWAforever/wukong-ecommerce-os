@@ -57,8 +57,10 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
                 .filter((id): id is string => id !== null),
             ),
           ];
-          const statuses = await repositories.listings.statusesByIds(listingIds);
-          const linkedListings = await repositories.listings.getByIds(listingIds);
+          const statuses =
+            await repositories.listings.statusesByIds(listingIds);
+          const linkedListings =
+            await repositories.listings.getByIds(listingIds);
           const linkedListingById = new Map(
             linkedListings.map((listing) => [listing.id, listing]),
           );
@@ -104,7 +106,11 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           });
         });
 
-      const filtered = filterCatalogItemsServer(allItems, query.q, query.filter);
+      const filtered = filterCatalogItemsServer(
+        allItems,
+        query.q,
+        query.filter,
+      );
       const start = (query.page - 1) * query.pageSize;
       const pageItems = filtered.slice(start, start + query.pageSize);
 

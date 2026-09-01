@@ -28,12 +28,12 @@ type FakeListing = {
 };
 
 function buildRequest(query = ""): Request {
-  return new Request(
-    `http://localhost/api/catalog${query ? `?${query}` : ""}`,
-  );
+  return new Request(`http://localhost/api/catalog${query ? `?${query}` : ""}`);
 }
 
-function product(overrides: Partial<FakeProduct> & { id: string }): FakeProduct {
+function product(
+  overrides: Partial<FakeProduct> & { id: string },
+): FakeProduct {
   return {
     connectionId: "00000000-0000-4000-8000-000000000201",
     remoteProductId: `remote-${overrides.id}`,
