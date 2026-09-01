@@ -103,6 +103,36 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   await expect(page.getByText(/Draft saved/)).toBeVisible();
   await expect(title).toHaveValue("Opak Cellar Riesling 2024 — reviewed");
 
+  // The approve button stays disabled until all 8 AI-written-field and 7
+  // negative-condition confirmations are checked (apps/web/lib/review-
+  // confirmation-keys.ts's CONFIRMATION_FIELD_KEYS/CONFIRMATION_NEGATIVE_KEYS,
+  // rendered by ConfirmationChecklist with matching #confirmation-field-<key>
+  // / #confirmation-negative-<key> checkbox ids) -- kept as a literal list
+  // here rather than importing across the app/e2e boundary.
+  for (const key of [
+    "nameZh",
+    "summaryEn",
+    "summaryZh",
+    "seoTitleEn",
+    "seoTitleZh",
+    "seoDescriptionEn",
+    "seoDescriptionZh",
+    "seoKeywords",
+  ]) {
+    await page.locator(`#confirmation-field-${key}`).check();
+  }
+  for (const key of [
+    "priceUnchanged",
+    "membershipUnchanged",
+    "categoryUnchanged",
+    "statusUnchanged",
+    "supplierUnchanged",
+    "quantityDeltaNeutral",
+    "noImageChange",
+  ]) {
+    await page.locator(`#confirmation-negative-${key}`).check();
+  }
+
   await page.getByRole("button", { name: /批准上架/ }).click();
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
