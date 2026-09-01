@@ -3,19 +3,19 @@ import { describe, expect, it } from "vitest";
 import { ROLE_LABELS, SHELL_NAV_ITEMS } from "./shell-nav-items.js";
 
 describe("SHELL_NAV_ITEMS", () => {
-  it("has exactly the 5 routes that exist on this branch, in the Site's confirmed order", () => {
+  it("has exactly the 6 routes that exist on this branch, in the Site's confirmed order", () => {
     expect(SHELL_NAV_ITEMS.map((item) => item.href)).toEqual([
       "/dashboard",
       "/catalog",
+      "/queue",
       "/listings/new",
       "/listings/import",
       "/batches",
     ]);
   });
 
-  it("does not include /queue, /jobs, /system-map, or /quality", () => {
+  it("does not include /jobs, /system-map, or /quality", () => {
     const hrefs = SHELL_NAV_ITEMS.map((item) => item.href);
-    expect(hrefs).not.toContain("/queue");
     expect(hrefs).not.toContain("/jobs");
     expect(hrefs).not.toContain("/system-map");
     expect(hrefs).not.toContain("/quality");

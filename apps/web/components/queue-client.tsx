@@ -6,21 +6,6 @@ import type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
 import { ListingQueue } from "./listing-queue";
 
-export type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
-export { mapDashboardItems } from "../lib/dashboard-queue-shared";
-
-export function dashboardMetrics(items: ListingCollectionItem[]) {
-  return {
-    active: items.filter((item) => item.status !== "published").length,
-    inReview: items.filter(
-      (item) => item.status === "in_review" || item.status === "reopened",
-    ).length,
-    blocked: items.filter(
-      (item) => item.status === "failed" || item.status === "publish_failed",
-    ).length,
-  };
-}
-
 type BulkApproveResultItem =
   | { listingId: string; ok: true; versionId: string }
   | { listingId: string; ok: false; code: string; message: string };
@@ -31,7 +16,7 @@ type BulkApproveResponse = {
   failed: number;
 };
 
-export function DashboardListingsClient() {
+export function QueueClient() {
   const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -118,7 +103,6 @@ export function DashboardListingsClient() {
       </p>
     );
 
-  const metrics = dashboardMetrics(items);
   const queueItems = mapDashboardItems(items);
   const eligibleIds = items
     .filter(
@@ -128,26 +112,6 @@ export function DashboardListingsClient() {
 
   return (
     <>
-      <div className="metric-strip" aria-label="工作台摘要">
-        <div>
-          <span className="metric-value">{metrics.active}</span>
-          <span className="metric-label">
-            進行中 <small>Active</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.inReview}</span>
-          <span className="metric-label">
-            待你審核 <small>Needs review</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.blocked}</span>
-          <span className="metric-label">
-            阻塞上架 <small>Blocked delivery</small>
-          </span>
-        </div>
-      </div>
       {selected.size > 0 ? (
         <div className="bulk-action-bar" role="region" aria-label="批量操作">
           <span>
