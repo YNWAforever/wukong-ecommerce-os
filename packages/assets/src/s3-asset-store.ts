@@ -10,6 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
   ASSET_UPLOAD_TTL_MS,
+  assertAnyAssetKey,
   assertAssetKey,
   createAssetKey,
   type AssetObjectMetadata,
@@ -147,7 +148,7 @@ export class S3AssetStore implements AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     await this.#transport.send(
       new PutObjectCommand({
         Bucket: this.#bucket,
@@ -161,7 +162,7 @@ export class S3AssetStore implements AssetStore {
   }
 
   async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
-    assertAssetKey(workspaceId, key);
+    assertAnyAssetKey(workspaceId, key);
     const response = (await this.#transport.send(
       new GetObjectCommand({
         Bucket: this.#bucket,
@@ -171,6 +172,9 @@ export class S3AssetStore implements AssetStore {
       Body?: { transformToByteArray(): Promise<Uint8Array> };
     };
     if (!response.Body) {
+      // apps/web/app/api/listings/export/[id]/download/route.ts matches this
+      // exact message to distinguish "object never written" from any other
+      // read failure -- keep the two in sync if this text changes.
       throw new Error("Asset object has no stored body");
     }
     return response.Body.transformToByteArray();

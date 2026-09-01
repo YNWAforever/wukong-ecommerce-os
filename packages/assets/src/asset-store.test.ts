@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createAssetKey, MemoryAssetStore } from "./asset-store.js";
+import {
+  createAssetKey,
+  createExportAssetKey,
+  MemoryAssetStore,
+} from "./asset-store.js";
 
 describe("MemoryAssetStore", () => {
   it("prefixes every key with the authorized workspace", async () => {
@@ -155,5 +159,31 @@ describe("MemoryAssetStore.readObject", () => {
     await expect(store.readObject("ws_opak", key)).rejects.toThrow(
       "Asset object has no stored body",
     );
+  });
+});
+
+describe("MemoryAssetStore exports/ namespace", () => {
+  it("accepts writeObject/readObject for a generated export key and round-trips the bytes", async () => {
+    const store = new MemoryAssetStore();
+    const body = new TextEncoder().encode("fake-xlsx-bytes");
+    const key = createExportAssetKey({
+      workspaceId: "ws_opak",
+      exportAttemptId: "11111111-1111-4111-8111-111111111111",
+      fileName: "export.xlsx",
+    });
+
+    const result = await store.writeObject(
+      "ws_opak",
+      key,
+      body,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    expect(result).toEqual({
+      size: body.byteLength,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    await expect(store.readObject("ws_opak", key)).resolves.toEqual(body);
   });
 });
