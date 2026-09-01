@@ -430,9 +430,8 @@ export function createListingRepository(
         .map((row) => row.activeVersion?.id)
         .filter((id): id is string => id !== undefined);
       // One batched query for every returned listing's flag count, not one
-      // query per listing — listRecent already bounds the result to at most
-      // 100 rows, so this is at most one extra round trip regardless of how
-      // many of them have an active version.
+      // query per listing — at most one extra round trip regardless of how
+      // many of the requested ids have an active version.
       const flagCounts =
         activeVersionIds.length > 0
           ? await transaction
