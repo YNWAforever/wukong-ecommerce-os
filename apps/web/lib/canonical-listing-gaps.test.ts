@@ -59,6 +59,40 @@ describe("canonicalListingToGapsInput + bulkFormGaps", () => {
     expect(gaps.untranslatedName).toBe(true);
   });
 
+  it("flags untranslatedSeoTitle when English and Traditional Chinese SEO titles match", () => {
+    const gaps = bulkFormGaps(
+      canonicalListingToGapsInput(
+        contentFor({
+          seo: {
+            title: { en: "Demo Wine | Shop", "zh-Hant": "Demo Wine | Shop" },
+            description: {
+              en: "Buy Demo Wine today.",
+              "zh-Hant": "立即購買示範美酒。",
+            },
+          },
+        }),
+      ),
+    );
+    expect(gaps.untranslatedSeoTitle).toBe(true);
+  });
+
+  it("flags seoDescriptionMirrorsSeoTitle when the SEO description equals the SEO title", () => {
+    const gaps = bulkFormGaps(
+      canonicalListingToGapsInput(
+        contentFor({
+          seo: {
+            title: { en: "Demo Wine | Shop", "zh-Hant": "示範美酒 | 商店" },
+            description: {
+              en: "Demo Wine | Shop",
+              "zh-Hant": "立即購買示範美酒。",
+            },
+          },
+        }),
+      ),
+    );
+    expect(gaps.seoDescriptionMirrorsSeoTitle).toBe(true);
+  });
+
   it("flags seoTitleMirrorsName when the SEO title equals the product name", () => {
     const gaps = bulkFormGaps(
       canonicalListingToGapsInput(
