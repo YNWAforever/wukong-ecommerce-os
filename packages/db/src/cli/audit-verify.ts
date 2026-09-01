@@ -50,6 +50,7 @@ export const TENANT_TABLES = [
   "shopline_connections",
   "platform_products",
   "source_imports",
+  "review_confirmations",
   "enrichment_batches",
   "enrichment_batch_items",
   "publish_jobs",

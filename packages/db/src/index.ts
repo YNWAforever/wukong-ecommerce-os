@@ -63,6 +63,11 @@ export type {
   SourceImportRepository,
 } from "./repositories/source-imports.js";
 export type {
+  ReviewConfirmation,
+  ReviewConfirmationRepository,
+  UpsertReviewConfirmationInput,
+} from "./repositories/review-confirmations.js";
+export type {
   CreateEnrichmentBatchInput,
   EnrichmentBatch,
   EnrichmentBatchCounts,

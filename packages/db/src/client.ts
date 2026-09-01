@@ -52,6 +52,10 @@ import {
   createMembershipRepository,
   type MembershipRepository,
 } from "./repositories/memberships.js";
+import {
+  createReviewConfirmationRepository,
+  type ReviewConfirmationRepository,
+} from "./repositories/review-confirmations.js";
 import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
@@ -72,6 +76,7 @@ export type WorkspaceRepositories = {
   shoplineConnections: ShoplineConnectionRepository;
   platformProducts: PlatformProductRepository;
   sourceImports: SourceImportRepository;
+  reviewConfirmations: ReviewConfirmationRepository;
   enrichmentBatches: EnrichmentBatchRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
@@ -175,6 +180,11 @@ export function createDatabase(
           scope,
         ),
         sourceImports: createSourceImportRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        reviewConfirmations: createReviewConfirmationRepository(
           transaction,
           workspaceId,
           scope,

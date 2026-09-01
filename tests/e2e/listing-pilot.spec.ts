@@ -103,6 +103,45 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   await expect(page.getByText(/Draft saved/)).toBeVisible();
   await expect(title).toHaveValue("Opak Cellar Riesling 2024 — reviewed");
 
+  // The approve button stays disabled until all 8 AI-written-field and 7
+  // negative-condition confirmations are checked (apps/web/lib/review-
+  // confirmation-keys.ts's CONFIRMATION_FIELD_KEYS/CONFIRMATION_NEGATIVE_KEYS,
+  // rendered by ConfirmationChecklist with matching #confirmation-field-<key>
+  // / #confirmation-negative-<key> checkbox ids) -- kept as a literal list
+  // here rather than importing across the app/e2e boundary. Each checkbox is
+  // a server-round-trip-controlled input (its onChange PATCHes
+  // /review-confirmations and only reflects `checked` once that resolves and
+  // the snapshot reloads), so `.check()`'s single immediate post-click
+  // verification always fails here -- click, then wait for the settled state
+  // with an assertion that actually retries.
+  for (const key of [
+    "nameZh",
+    "summaryEn",
+    "summaryZh",
+    "seoTitleEn",
+    "seoTitleZh",
+    "seoDescriptionEn",
+    "seoDescriptionZh",
+    "seoKeywords",
+  ]) {
+    const checkbox = page.locator(`#confirmation-field-${key}`);
+    await checkbox.click();
+    await expect(checkbox).toBeChecked();
+  }
+  for (const key of [
+    "priceUnchanged",
+    "membershipUnchanged",
+    "categoryUnchanged",
+    "statusUnchanged",
+    "supplierUnchanged",
+    "quantityDeltaNeutral",
+    "noImageChange",
+  ]) {
+    const checkbox = page.locator(`#confirmation-negative-${key}`);
+    await checkbox.click();
+    await expect(checkbox).toBeChecked();
+  }
+
   await page.getByRole("button", { name: /批准上架/ }).click();
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { allConfirmed } from "./confirmation-checklist";
 import type { ListingField, ListingReviewModel } from "./listing-view-models";
 
 export type { ListingField, ListingReviewModel } from "./listing-view-models";
@@ -10,6 +11,8 @@ type ListingFieldsFormProps = {
   model: ListingReviewModel;
   canEdit?: boolean;
   canApprove?: boolean;
+  fieldConfirmations?: Record<string, boolean>;
+  negativeConfirmations?: Record<string, boolean>;
   onApprove?: () => void;
   onSave?: (fields: ListingField[], baseVersionId: string) => void;
 };
@@ -51,6 +54,17 @@ const groups: Array<{ label: string; englishLabel: string; keys: string[] }> = [
       "title",
     ],
   },
+  {
+    label: "SEO 與標籤",
+    englishLabel: "SEO & tags",
+    keys: [
+      "seoTitleEn",
+      "seoTitleZh",
+      "seoDescriptionEn",
+      "seoDescriptionZh",
+      "seoKeywords",
+    ],
+  },
 ];
 
 function inputValue(value: ListingField["value"]): string {
@@ -69,6 +83,8 @@ export function ListingFieldsForm({
   model,
   canEdit = true,
   canApprove = true,
+  fieldConfirmations = {},
+  negativeConfirmations = {},
   onApprove,
   onSave,
 }: ListingFieldsFormProps) {
@@ -77,8 +93,15 @@ export function ListingFieldsForm({
     () => model.blockingFlags.some((flag) => flag.status === "open"),
     [model.blockingFlags],
   );
+  const confirmationsIncomplete = !allConfirmed(
+    fieldConfirmations,
+    negativeConfirmations,
+  );
   const approvalDisabled =
-    !canApprove || hasOpenBlockingFlag || model.status !== "in_review";
+    !canApprove ||
+    hasOpenBlockingFlag ||
+    confirmationsIncomplete ||
+    model.status !== "in_review";
 
   function updateField(key: string, value: string) {
     setFields((current) =>
@@ -198,7 +221,13 @@ export function ListingFieldsForm({
           type="button"
           onClick={onApprove}
           disabled={approvalDisabled}
-          aria-describedby={hasOpenBlockingFlag ? "approval-help" : undefined}
+          aria-describedby={
+            hasOpenBlockingFlag
+              ? "approval-help"
+              : confirmationsIncomplete
+                ? "confirmation-help"
+                : undefined
+          }
         >
           批准上架 <span>Approve listing</span>
         </button>
@@ -211,6 +240,12 @@ export function ListingFieldsForm({
             .map((flag) => flag.label)
             .join("、")}
           。完成處理並記錄理由後才能批准上架。
+        </div>
+      ) : null}
+      {!hasOpenBlockingFlag && confirmationsIncomplete ? (
+        <div id="confirmation-help" className="inline-warning" role="alert">
+          <strong>審核確認尚未完成：</strong>
+          請在下方確認清單勾選所有 8 個欄位與 7 項條件後才能批准上架。
         </div>
       ) : null}
       {!canApprove ? (

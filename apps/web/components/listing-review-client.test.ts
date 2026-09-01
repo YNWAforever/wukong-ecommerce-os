@@ -76,6 +76,9 @@ const response: ListingViewResponse = {
   delivery: null,
   queueStatus: null,
   shoplineLink: null,
+  reviewConfirmation: null,
+  sourceImportId: null,
+  contentDigest: null,
   permissions: {
     canProcess: true,
     canEdit: true,
@@ -108,6 +111,27 @@ describe("listing review client mapping", () => {
     );
     expect(mapped.model.fields).toContainEqual(
       expect.objectContaining({ key: "titleZhHant", value: "Opak 雷司令" }),
+    );
+    expect(mapped.model.fields).toContainEqual(
+      expect.objectContaining({ key: "seoTitleEn", value: "Opak Riesling" }),
+    );
+    expect(mapped.model.fields).toContainEqual(
+      expect.objectContaining({ key: "seoTitleZh", value: "Opak 雷司令" }),
+    );
+    expect(mapped.model.fields).toContainEqual(
+      expect.objectContaining({
+        key: "seoDescriptionEn",
+        value: "Dry Mosel Riesling.",
+      }),
+    );
+    expect(mapped.model.fields).toContainEqual(
+      expect.objectContaining({
+        key: "seoDescriptionZh",
+        value: "摩澤爾乾型雷司令。",
+      }),
+    );
+    expect(mapped.model.fields).toContainEqual(
+      expect.objectContaining({ key: "seoKeywords", value: "wine" }),
     );
     expect(mapped.model.blockingFlags).toEqual([
       expect.objectContaining({
@@ -160,6 +184,34 @@ describe("listing review client mapping", () => {
     });
     expect(listing.seo).toEqual(response.activeVersion!.content.seo);
     expect(listing.tags).toEqual(["wine"]);
+  });
+
+  it("applies edited SEO fields and re-splits the keyword list from a comma-joined string", () => {
+    const { model } = mapListingView(response);
+    const edited = model.fields.map((field) => {
+      if (field.key === "seoTitleEn")
+        return { ...field, value: "Opak Riesling — Dry Mosel" };
+      if (field.key === "seoTitleZh")
+        return { ...field, value: "Opak 精選雷司令" };
+      if (field.key === "seoDescriptionEn")
+        return { ...field, value: "A crisp, dry Mosel Riesling." };
+      if (field.key === "seoDescriptionZh")
+        return { ...field, value: "清爽乾型摩澤爾雷司令。" };
+      if (field.key === "seoKeywords")
+        return { ...field, value: "wine, riesling, mosel" };
+      return field;
+    });
+
+    const listing = applyListingFields(response.activeVersion!.content, edited);
+
+    expect(listing.seo).toEqual({
+      title: { en: "Opak Riesling — Dry Mosel", "zh-Hant": "Opak 精選雷司令" },
+      description: {
+        en: "A crisp, dry Mosel Riesling.",
+        "zh-Hant": "清爽乾型摩澤爾雷司令。",
+      },
+    });
+    expect(listing.tags).toEqual(["wine", "riesling", "mosel"]);
   });
 
   it("rejects a response without an active AI-generated version", () => {

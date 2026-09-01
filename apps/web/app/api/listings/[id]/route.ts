@@ -75,6 +75,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           const job = versionId
             ? await repositories.publishJobs.getByVersionId(versionId)
             : null;
+          const reviewConfirmation = versionId
+            ? await repositories.reviewConfirmations.getByVersionId(versionId)
+            : null;
           let connection: "connected" | "disconnected" | "error";
           try {
             if (deps.connectionStatus) {
@@ -134,6 +137,16 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             shoplineLink: platformProductLink
               ? { remoteProductId: platformProductLink.remoteProductId }
               : null,
+            reviewConfirmation: reviewConfirmation
+              ? {
+                  revision: reviewConfirmation.revision,
+                  fieldConfirmations: reviewConfirmation.fieldConfirmations,
+                  negativeConfirmations:
+                    reviewConfirmation.negativeConfirmations,
+                }
+              : null,
+            sourceImportId: platformProductLink?.sourceImportId ?? null,
+            contentDigest: platformProductLink?.contentDigest ?? null,
             permissions: listingPermissions(session.role),
           };
         });

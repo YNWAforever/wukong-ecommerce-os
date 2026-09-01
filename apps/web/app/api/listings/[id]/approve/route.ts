@@ -1,5 +1,6 @@
 import {
   approveListing as domainApprove,
+  assertApprovalFreshness,
   type AuditContext,
 } from "@wukong/core";
 import { createAssetKey } from "@wukong/assets";
@@ -16,6 +17,7 @@ import {
   type ApproveOneAssetStore,
 } from "../../../../../lib/listing-approval";
 import { getAssetStore, getDatabase } from "../../../../../lib/intake-runtime";
+import { allConfirmed } from "../../../../../lib/review-confirmation-keys";
 import {
   ApiError,
   jsonResponse,
@@ -41,6 +43,10 @@ type ApprovalRouteDeps = {
 const bodySchema = z
   .object({
     background: z.enum(["white", "brand"]).optional(),
+    expectedVersionId: z.string().min(1),
+    confirmationLedgerRevision: z.number().int().nonnegative(),
+    sourceImportId: z.string().min(1).optional(),
+    expectedRowDigest: z.string().min(1).optional(),
   })
   .strip();
 
@@ -74,6 +80,98 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
         entityId: id,
       };
       const db = deps.getDatabase();
+
+      // Phase 0: cheap, read-only checks that must reject before any
+      // product-shot I/O (phase 1/2 below) or the approval transaction
+      // (phase 3) runs -- the same "cheap checks before expensive work"
+      // ordering already established for the role check above. This is a
+      // separate `forWorkspace` call from phase 3's rather than threading
+      // these reads through `approveOne`'s own transaction, precisely so a
+      // failed check here short-circuits before phase 1/2's external I/O
+      // (S3 reads, a `sharp` composite, S3 writes) ever starts.
+      await db.forWorkspace(session.workspaceId, async (repositories) => {
+        const snapshot = await repositories.listings.getReviewSnapshot(id);
+        if (!snapshot?.activeVersion) {
+          throw new ApiError(404, "listing_not_found", "Listing not found.");
+        }
+        if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+          throw new ApiError(
+            409,
+            "version_conflict",
+            "This listing has changed since you started reviewing it.",
+          );
+        }
+
+        const confirmation =
+          await repositories.reviewConfirmations.getByVersionId(
+            snapshot.activeVersion.id,
+          );
+        if (
+          (confirmation?.revision ?? -1) !==
+          parsedBody.confirmationLedgerRevision
+        ) {
+          throw new ApiError(
+            409,
+            "confirmation_ledger_stale",
+            "The confirmation checklist has changed since you loaded it.",
+          );
+        }
+        if (
+          !confirmation ||
+          !allConfirmed(
+            confirmation.fieldConfirmations,
+            confirmation.negativeConfirmations,
+          )
+        ) {
+          throw new ApiError(
+            422,
+            "confirmation_incomplete",
+            "Complete the confirmation checklist before approving.",
+          );
+        }
+
+        const link = await repositories.platformProducts.getByListingId(id);
+        // A "created"-origin listing gets a `platform_products` row too,
+        // after its first publish (see `apps/worker/src/publish-product.ts`)
+        // -- but with `sourceImportId`/`contentDigest` always null, since it
+        // was never imported. The freshness check only makes sense for a row
+        // that came from an import; gating on `link !== null` alone would
+        // permanently 400 every re-approval of a create-origin listing (the
+        // client can never supply fields that don't exist for it).
+        if (link !== null && link.origin === "import") {
+          if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
+            throw new ApiError(
+              400,
+              "source_freshness_required",
+              "This listing is linked to an imported product and requires freshness fields.",
+            );
+          }
+          const result = await assertApprovalFreshness(
+            {
+              workspaceId: session.workspaceId,
+              listingId: id,
+              expectedSourceImportId: parsedBody.sourceImportId,
+              expectedRowDigest: parsedBody.expectedRowDigest,
+              expectedVersionId: parsedBody.expectedVersionId,
+            },
+            {
+              async getPlatformProductLink() {
+                return link;
+              },
+              async getActiveVersionId() {
+                return snapshot.activeVersion?.id ?? null;
+              },
+            },
+          );
+          if (!result.ok) {
+            throw new ApiError(
+              409,
+              result.reason,
+              "This listing's source data no longer matches what was reviewed.",
+            );
+          }
+        }
+      });
 
       let precomputedFinalAsset:
         { storageKey: string; priorFinalAssetIds: string[] } | undefined;
@@ -147,14 +245,31 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
 
       // Phase 3: the actual approval, in its own transaction. `approveOne`
       // re-reads a fresh `getReviewSnapshot` here rather than reusing phase
-      // 1's -- `promoteAndApprove`'s optimistic-concurrency check is what
+      // 0's/1's -- `promoteAndApprove`'s optimistic-concurrency check is what
       // guards against the listing changing during phase 2's external I/O.
+      // Passing `expectedVersionId`/`confirmationLedgerRevision`/
+      // `sourceImportId`+`expectedRowDigest` through makes `approveOne`
+      // re-read and re-verify each of them itself, inside this transaction --
+      // phase 0 above is only a fast fail-fast pre-check (so a doomed request
+      // rejects before phase 1/2's product-shot I/O runs), not the actual
+      // source of truth. Without this, a concurrent edit landing between
+      // phase 0 and here -- a new version promoted via `PUT
+      // /api/listings/[id]/review`, a checklist edit via `PATCH
+      // .../review-confirmations` bumping the ledger revision on the SAME
+      // version, or a catalog re-import updating `platform_products` on the
+      // SAME version -- would each silently approve against stale state
+      // instead of rejecting, since none of those edits changes the active
+      // version id on its own.
       const result = await db.forWorkspace(
         session.workspaceId,
         (repositories) =>
           approveOne(id, auditContext, repositories, {
             approve: deps.approve,
             precomputedFinalAsset,
+            expectedVersionId: parsedBody.expectedVersionId,
+            confirmationLedgerRevision: parsedBody.confirmationLedgerRevision,
+            sourceImportId: parsedBody.sourceImportId,
+            expectedRowDigest: parsedBody.expectedRowDigest,
           }),
       );
       return jsonResponse(200, result);

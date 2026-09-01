@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { ComplianceFlags } from "./compliance-flags";
+import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { ListingFieldsForm } from "./listing-fields-form";
@@ -54,6 +55,13 @@ export type ListingViewResponse = {
   } | null;
   queueStatus: string | null;
   shoplineLink: { remoteProductId: string } | null;
+  reviewConfirmation: {
+    revision: number;
+    fieldConfirmations: Record<string, boolean>;
+    negativeConfirmations: Record<string, boolean>;
+  } | null;
+  sourceImportId: string | null;
+  contentDigest: string | null;
   permissions: ListingPermissions;
 };
 
@@ -284,6 +292,43 @@ export function mapListingView(
       evidenceKey: "description.en",
       kind: "textarea",
     }),
+    field(response.evidence, {
+      key: "seoTitleEn",
+      label: "SEO 標題（英文）",
+      englishLabel: "SEO title (English)",
+      value: content.seo.title.en,
+      evidenceKey: "seo.title.en",
+    }),
+    field(response.evidence, {
+      key: "seoTitleZh",
+      label: "SEO 標題（繁中）",
+      englishLabel: "SEO title (Traditional Chinese)",
+      value: content.seo.title["zh-Hant"],
+      evidenceKey: "seo.title.zh-Hant",
+    }),
+    field(response.evidence, {
+      key: "seoDescriptionEn",
+      label: "SEO 描述（英文）",
+      englishLabel: "SEO description (English)",
+      value: content.seo.description.en,
+      evidenceKey: "seo.description.en",
+      kind: "textarea",
+    }),
+    field(response.evidence, {
+      key: "seoDescriptionZh",
+      label: "SEO 描述（繁中）",
+      englishLabel: "SEO description (Traditional Chinese)",
+      value: content.seo.description["zh-Hant"],
+      evidenceKey: "seo.description.zh-Hant",
+      kind: "textarea",
+    }),
+    field(response.evidence, {
+      key: "seoKeywords",
+      label: "SEO 關鍵字",
+      englishLabel: "SEO keywords",
+      value: content.tags.join(", "),
+      evidenceKey: "tags",
+    }),
   ];
   const blockingFlags: BlockingFlag[] = response.flags.map((flag) => ({
     id: flag.id,
@@ -375,6 +420,20 @@ export function applyListingFields(
       en: valueOf(fields, "descriptionEn"),
       "zh-Hant": valueOf(fields, "descriptionZhHant"),
     },
+    seo: {
+      title: {
+        en: valueOf(fields, "seoTitleEn"),
+        "zh-Hant": valueOf(fields, "seoTitleZh"),
+      },
+      description: {
+        en: valueOf(fields, "seoDescriptionEn"),
+        "zh-Hant": valueOf(fields, "seoDescriptionZh"),
+      },
+    },
+    tags: valueOf(fields, "seoKeywords")
+      .split(/[,，]/)
+      .map((value) => value.trim())
+      .filter(Boolean),
   };
 }
 
@@ -565,11 +624,22 @@ export function ListingReviewClient({
   }
 
   async function approve() {
+    if (!snapshot) throw new Error("Listing is not ready for review");
+    const { reviewConfirmation, sourceImportId, contentDigest } = snapshot;
     await run(async () => {
       const response = await fetch(`/api/listings/${listingId}/approve`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({
+          expectedVersionId: model.versionId,
+          confirmationLedgerRevision: reviewConfirmation?.revision ?? 0,
+          ...(sourceImportId && contentDigest
+            ? {
+                sourceImportId,
+                expectedRowDigest: contentDigest,
+              }
+            : {}),
+        }),
       });
       if (!response.ok) throw await responseError(response);
       await load();
@@ -586,6 +656,28 @@ export function ListingReviewClient({
       if (!response.ok) throw await responseError(response);
       await load();
     }, "合規提示已處理 · Compliance flag resolved");
+  }
+
+  async function saveConfirmations(
+    nextFieldConfirmations: Record<string, boolean>,
+    nextNegativeConfirmations: Record<string, boolean>,
+  ) {
+    await run(async () => {
+      const response = await fetch(
+        `/api/listings/${listingId}/review-confirmations`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            versionId: model.versionId,
+            fieldConfirmations: nextFieldConfirmations,
+            negativeConfirmations: nextNegativeConfirmations,
+          }),
+        },
+      );
+      if (!response.ok) throw await responseError(response);
+      await load();
+    }, "確認狀態已更新 · Confirmation updated");
   }
 
   async function exportCsv() {
@@ -669,8 +761,22 @@ export function ListingReviewClient({
             model={model}
             canApprove={permissions.canApprove && !busy}
             canEdit={permissions.canEdit && !busy}
+            fieldConfirmations={snapshot.reviewConfirmation?.fieldConfirmations}
+            negativeConfirmations={
+              snapshot.reviewConfirmation?.negativeConfirmations
+            }
             onApprove={approve}
             onSave={save}
+          />
+          <ConfirmationChecklist
+            fieldConfirmations={
+              snapshot.reviewConfirmation?.fieldConfirmations ?? {}
+            }
+            negativeConfirmations={
+              snapshot.reviewConfirmation?.negativeConfirmations ?? {}
+            }
+            canConfirm={permissions.canEdit && !busy}
+            onChange={saveConfirmations}
           />
           <ComplianceFlags
             flags={model.blockingFlags}

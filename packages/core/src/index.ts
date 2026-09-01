@@ -31,5 +31,21 @@ export type {
   AssertExportFreshnessInput,
   FreshnessFailureReason,
   FreshnessResult,
-  PlatformProductLink,
 } from "./assert-export-freshness.js";
+
+export { assertApprovalFreshness } from "./assert-approval-freshness.js";
+export type {
+  ApprovalFreshnessFailureReason,
+  ApprovalFreshnessResult,
+  AssertApprovalFreshnessDeps,
+  AssertApprovalFreshnessInput,
+} from "./assert-approval-freshness.js";
+
+export { assertContentFreshness } from "./content-freshness.js";
+export type {
+  ContentFreshnessDeps,
+  ContentFreshnessFailureReason,
+  ContentFreshnessInput,
+  ContentFreshnessResult,
+  PlatformProductLink,
+} from "./content-freshness.js";

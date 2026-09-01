@@ -492,6 +492,16 @@ describe("workspace isolation", () => {
       ],
       ["publish_jobs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["publish_jobs", ["workspace_id", "version_id"], "listing_versions"],
+      [
+        "review_confirmations",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "review_confirmations",
+        ["workspace_id", "version_id"],
+        "listing_versions",
+      ],
       ["review_events", ["workspace_id", "listing_id"], "listing_drafts"],
       ["source_assets", ["workspace_id", "listing_id"], "listing_drafts"],
       [
