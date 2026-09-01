@@ -1,7 +1,7 @@
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 import type { CanonicalListing } from "@wukong/core";
 
-import { canonicalListingToGapsInput } from "./canonical-listing-gaps.js";
+import { canonicalListingToGapsInput } from "./canonical-listing-gaps";
 
 export type QualityAssessedListing = {
   id: string;
