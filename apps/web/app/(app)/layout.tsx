@@ -1,15 +1,31 @@
-import Link from "next/link";
+import { cookies } from "next/headers";
 
+import { AppShellNav } from "../../components/app-shell-nav";
+import { getDatabase } from "../../lib/intake-runtime";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../lib/locale";
 import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
+import { ROLE_LABELS, SHELL_NAV_ITEMS } from "./shell-nav-items";
 
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await authSessionContext.resolve();
   const isAdmin = session ? requireWorkspaceRole("admin", session.role) : false;
+  const cookieStore = await cookies();
+  const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
+
+  const workspaceName = session
+    ? await getDatabase()
+        .forWorkspace(session.workspaceId, (repositories) =>
+          repositories.workspaces.requireProfile(),
+        )
+        .then((profile) => profile.name)
+    : "Wukong";
+
+  const roleLabel = session ? ROLE_LABELS[session.role] : ROLE_LABELS.viewer;
 
   return (
     <div className="app-shell">
@@ -17,54 +33,21 @@ export default async function AppLayout({
         跳到主要內容 <span>Skip to content</span>
       </a>
       <header className="topbar">
-        <div className="brand-lockup">
-          <Link
-            className="brand-mark"
-            href="/dashboard"
-            aria-label="Wukong home"
-          >
-            W
-          </Link>
-          <div>
-            <Link className="brand-name" href="/dashboard">
-              Wukong
-            </Link>
-            <span className="brand-context">Opak Cellar</span>
-          </div>
-        </div>
-        <nav aria-label="主要導覽">
-          <Link href="/dashboard">
-            工作台 <span>Workspace</span>
-          </Link>
-          <Link href="/catalog">
-            商品中心 <span>Catalog</span>
-          </Link>
-          <Link href="/listings/new">
-            建立草稿 <span>New listing</span>
-          </Link>
-          <Link href="/listings/import">
-            SHOPLINE 匯入 <span>Bulk import</span>
-          </Link>
-          <Link href="/batches">
-            批次 <span>Batches</span>
-          </Link>
-          {isAdmin ? (
-            <Link href="/admin">
-              管理 <span>Admin</span>
-            </Link>
-          ) : null}
-        </nav>
-        <div className="topbar-meta">
-          <span className="pilot-badge">PILOT</span>
-          <span className="operator-name">Opak operator</span>
-        </div>
+        <AppShellNav
+          navItems={SHELL_NAV_ITEMS}
+          isAdmin={isAdmin}
+          workspaceName={workspaceName}
+          roleLabelZh={roleLabel.zh}
+          roleLabelEn={roleLabel.en}
+          initialLocale={locale}
+        />
       </header>
       <main id="main-content" className="app-main">
         {children}
       </main>
       <footer className="app-footer">
         <span>Wukong Ecommerce OS</span>
-        <span>Opak Cellar pilot · HKD · en / zh-Hant</span>
+        <span>{workspaceName} pilot · HKD · en / zh-Hant</span>
       </footer>
     </div>
   );
