@@ -740,6 +740,42 @@ describe("workspace isolation", () => {
     expect(countsB.received).toBe(0);
   });
 
+  it("fetches exactly the listings requested by id, regardless of update recency", async () => {
+    const getByIdsWorkspaceId = "ws_listings_getbyids";
+
+    const { targetId, otherIds } = await forWorkspace(
+      database,
+      getByIdsWorkspaceId,
+      async (repos) => {
+        const target = await repos.listings.create({ target: "shopline" });
+        // 100 more-recently-touched listings, so `target` would fall outside
+        // any listRecent(100)-style "most recent" window -- proving getByIds
+        // fetches by id, not by recency.
+        const others: string[] = [];
+        for (let index = 0; index < 100; index += 1) {
+          const created = await repos.listings.create({ target: "shopline" });
+          others.push(created.id);
+        }
+        return { targetId: target.id, otherIds: others };
+      },
+    );
+
+    const fetched = await forWorkspace(database, getByIdsWorkspaceId, (repos) =>
+      repos.listings.getByIds([targetId]),
+    );
+
+    expect(fetched.map((listing) => listing.id)).toEqual([targetId]);
+    expect(otherIds).toHaveLength(100);
+  });
+
+  it("returns an empty array for an empty id list without querying", async () => {
+    const emptyWorkspaceId = "ws_listings_getbyids_empty";
+    const fetched = await forWorkspace(database, emptyWorkspaceId, (repos) =>
+      repos.listings.getByIds([]),
+    );
+    expect(fetched).toEqual([]);
+  });
+
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(
