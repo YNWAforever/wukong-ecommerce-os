@@ -1,7 +1,7 @@
 :root {
   --ink: #182432;
   --ink-soft: #506070;
-  --muted: #7b8790;
+  --muted: #5f6e7b;
   --navy: #17324d;
   --amber: #b36a24;
   --amber-dark: #8d4e17;
@@ -14,6 +14,8 @@
   --success: #2e6b58;
   --danger: #a53e35;
   --radius: 12px;
+  --radius-card: 16px;
+  --nav-active-bg: #edf3f7;
   --shadow: 0 10px 28px rgb(24 36 50 / 7%);
 }
 
