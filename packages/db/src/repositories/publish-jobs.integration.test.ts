@@ -460,17 +460,45 @@ describe("publish job repository", () => {
   });
 
   it("lists workspace publish jobs newest first, isolated per workspace, with limit bounds enforced", async () => {
+    // A workspace dedicated to just this test, not the shared "ws_publish_repo"
+    // every other test in this file also writes into -- reusing that shared
+    // workspace here would make `toEqual` below flaky against whatever rows
+    // earlier tests happened to leave behind. Needs its own listing/version/
+    // connection too, since publishJobs.ensure() requires real ids scoped to
+    // this workspace.
+    const listFixture = await forWorkspace(
+      database,
+      "ws_publish_repo_list",
+      async (repos) => {
+        const listing = await repos.listings.create({ target: "shopline" });
+        const listContext: AuditContext = {
+          workspaceId: "ws_publish_repo_list",
+          actorId: "test:publish-list",
+          entityId: listing.id,
+        };
+        const version = await repos.listings.appendVersion(
+          listing.id,
+          listingContent,
+          listContext,
+          repos.audit,
+        );
+        return { listingId: listing.id, versionId: version.id };
+      },
+    );
+    const [listConnection] =
+      await admin`insert into shopline_connections (workspace_id, shop_domain, encrypted_access_token) values ('ws_publish_repo_list', 'opak-list.example', 'encrypted-test-token-list') returning id`;
+
     const created = await forWorkspace(
       database,
-      "ws_publish_repo",
+      "ws_publish_repo_list",
       async (repos) => {
         const ids: string[] = [];
         for (let index = 0; index < 3; index += 1) {
           const job = await repos.publishJobs.ensure({
-            listingId,
-            versionId,
-            connectionId,
-            idempotencyKey: `ws_publish_repo:list_order:${index}`,
+            listingId: listFixture.listingId,
+            versionId: listFixture.versionId,
+            connectionId: listConnection.id as string,
+            idempotencyKey: `ws_publish_repo_list:list_order:${index}`,
             payloadDigest: "1".repeat(64),
           });
           ids.push(job.id);
@@ -537,20 +565,22 @@ describe("publish job repository", () => {
       },
     );
 
-    const listed = await forWorkspace(database, "ws_publish_repo", (repos) =>
-      repos.publishJobs.listForWorkspace(),
+    const listed = await forWorkspace(
+      database,
+      "ws_publish_repo_list",
+      (repos) => repos.publishJobs.listForWorkspace(),
     );
     expect(listed.map((job) => job.id)).toEqual([...created].reverse());
     expect(listed.map((job) => job.id)).not.toContain(otherJobId);
     expect(listed.every((job) => job.createdAt instanceof Date)).toBe(true);
 
     await expect(
-      forWorkspace(database, "ws_publish_repo", (repos) =>
+      forWorkspace(database, "ws_publish_repo_list", (repos) =>
         repos.publishJobs.listForWorkspace(0),
       ),
     ).rejects.toThrow(/limit must be between 1 and 100/i);
     await expect(
-      forWorkspace(database, "ws_publish_repo", (repos) =>
+      forWorkspace(database, "ws_publish_repo_list", (repos) =>
         repos.publishJobs.listForWorkspace(101),
       ),
     ).rejects.toThrow(/limit must be between 1 and 100/i);

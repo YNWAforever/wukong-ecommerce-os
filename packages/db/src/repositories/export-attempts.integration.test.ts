@@ -240,8 +240,20 @@ describe("export attempts repository", () => {
   });
 
   it("lists workspace export attempts newest first, isolated per workspace, with limit bounds enforced", async () => {
+    // A workspace dedicated to just this test, not the shared `workspaceId`
+    // every other test in this file also writes into -- reusing that shared
+    // workspace here would make `toEqual` below flaky against whatever rows
+    // earlier tests happened to leave behind.
+    const listWorkspaceId = "ws_export_attempts_list";
+    const otherListWorkspaceId = "ws_export_attempts_list_other";
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${listWorkspaceId}', '${listWorkspaceId}', '{}'::jsonb),
+        ('${otherListWorkspaceId}', '${otherListWorkspaceId}', '{}'::jsonb);
+    `);
+
     const ids: string[] = [];
-    await database.forWorkspace(workspaceId, async (repositories) => {
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
       for (let index = 0; index < 3; index += 1) {
         const attempt = await repositories.exportAttempts.ensure({
           idempotencyKey: `list_order_${index}`,
@@ -265,7 +277,7 @@ describe("export attempts repository", () => {
     }
 
     const otherId = await database.forWorkspace(
-      otherWorkspaceId,
+      otherListWorkspaceId,
       async (repositories) =>
         (
           await repositories.exportAttempts.ensure({
@@ -278,7 +290,7 @@ describe("export attempts repository", () => {
         ).id,
     );
 
-    await database.forWorkspace(workspaceId, async (repositories) => {
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
       const listed = await repositories.exportAttempts.listForWorkspace();
       expect(listed.map((attempt) => attempt.id)).toEqual([...ids].reverse());
       expect(listed.map((attempt) => attempt.id)).not.toContain(otherId);

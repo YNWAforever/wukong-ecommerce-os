@@ -262,8 +262,20 @@ describe("enrichment batch repository", () => {
   });
 
   it("lists workspace batches newest first, isolated per workspace, with limit bounds enforced", async () => {
+    // A workspace dedicated to just this test, not the shared `workspaceId`
+    // every other test in this file also writes into -- reusing that shared
+    // workspace here would make `toEqual` below flaky against whatever rows
+    // earlier tests happened to leave behind.
+    const listWorkspaceId = "ws_batches_list";
+    const otherListWorkspaceId = "ws_batches_list_other";
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${listWorkspaceId}', '${listWorkspaceId}', '{}'::jsonb),
+        ('${otherListWorkspaceId}', '${otherListWorkspaceId}', '{}'::jsonb);
+    `);
+
     const ids: string[] = [];
-    await database.forWorkspace(workspaceId, async (repositories) => {
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
       for (let index = 0; index < 3; index += 1) {
         const batch = await repositories.enrichmentBatches.create({
           label: `list order ${index}`,
@@ -287,7 +299,7 @@ describe("enrichment batch repository", () => {
     }
 
     const otherId = await database.forWorkspace(
-      otherWorkspaceId,
+      otherListWorkspaceId,
       async (repositories) => {
         const batch = await repositories.enrichmentBatches.create({
           label: "other workspace",
@@ -300,7 +312,7 @@ describe("enrichment batch repository", () => {
       },
     );
 
-    await database.forWorkspace(workspaceId, async (repositories) => {
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
       const listed = await repositories.enrichmentBatches.listForWorkspace();
       expect(listed.map((batch) => batch.id)).toEqual([...ids].reverse());
       expect(listed.map((batch) => batch.id)).not.toContain(otherId);
