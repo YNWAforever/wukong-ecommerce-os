@@ -215,6 +215,70 @@ describe("CatalogControlCenter", () => {
     await unmount(root);
   });
 
+  it("clearing the search query refetches with an empty q and resets page to 1", async () => {
+    const calls: URL[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const parsed = new URL(url, "http://localhost");
+      calls.push(parsed);
+      const page = Number(parsed.searchParams.get("page"));
+      const q = parsed.searchParams.get("q");
+
+      if (q === "riesling") {
+        return Promise.resolve(
+          Response.json(
+            pageResponse(
+              [makeItem({ id: "search-1", title: "Riesling bottle" })],
+              { page, totalMatching: 60 },
+            ),
+          ),
+        );
+      }
+      return Promise.resolve(
+        Response.json(
+          pageResponse(
+            [makeItem({ id: `p${page}`, title: `Page ${page} item` })],
+            {
+              page,
+              totalMatching: 60,
+            },
+          ),
+        ),
+      );
+    });
+
+    const { container, root } = await mount(fetcher);
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[type="search"]',
+    )!;
+    // Type a search, then advance to page 2, so clearing has to both refetch
+    // with an empty q AND reset page back to 1.
+    await act(async () => {
+      nativeSet(searchInput, "riesling");
+      await Promise.resolve();
+    });
+    expect(calls[1]!.searchParams.get("q")).toBe("riesling");
+
+    await act(async () => {
+      findButtonByText(container, "下一頁")!.click();
+      await Promise.resolve();
+    });
+    expect(calls[2]!.searchParams.get("page")).toBe("2");
+
+    await act(async () => {
+      nativeSet(searchInput, "");
+      await Promise.resolve();
+    });
+
+    expect(calls).toHaveLength(4);
+    expect(calls[3]!.searchParams.get("q")).toBe("");
+    expect(calls[3]!.searchParams.get("page")).toBe("1");
+    expect(container.textContent).toContain("Page 1 item");
+
+    await unmount(root);
+  });
+
   it("clicking a filter button sends filter and resets page to 1", async () => {
     const calls: URL[] = [];
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
