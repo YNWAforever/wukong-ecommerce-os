@@ -695,9 +695,15 @@ describe("workspace isolation", () => {
   });
 
   it("counts listings by status across the whole workspace, not just a capped fetch", async () => {
+    // 150 exceeds listRecent's 100-row cap on purpose: a buggy countByStatus
+    // that fetched rows (capped at 100) and counted them in JS would
+    // undercount here, while the real SQL `GROUP BY count(*)` -- which never
+    // applies a LIMIT -- is unaffected by row count. A fixture of only a
+    // few rows wouldn't distinguish the two implementations.
+    const listingCount = 150;
     const workspaceId = "ws_listings_count";
     await forWorkspace(database, workspaceId, async (repos) => {
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < listingCount; index += 1) {
         await repos.listings.create({ target: "shopline" });
       }
     });
@@ -707,7 +713,7 @@ describe("workspace isolation", () => {
     );
 
     expect(counts).toEqual({
-      received: 3,
+      received: listingCount,
       processing: 0,
       needs_info: 0,
       in_review: 0,
