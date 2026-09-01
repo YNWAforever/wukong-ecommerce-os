@@ -10,6 +10,26 @@ import { CatalogControlCenter } from "./catalog-control-center.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+async function mount(fetcher: ReturnType<typeof vi.fn>) {
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root: Root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(CatalogControlCenter));
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return { container, root };
+}
+
+async function unmount(root: Root) {
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+  vi.unstubAllGlobals();
+}
+
 function nativeSet(input: HTMLInputElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
@@ -17,6 +37,15 @@ function nativeSet(input: HTMLInputElement, value: string): void {
   )?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function findButtonByText(
+  container: HTMLElement,
+  text: string,
+): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(text),
+  );
 }
 
 function makeItem(
@@ -61,17 +90,139 @@ function pageResponse(
   };
 }
 
+/**
+ * Fetcher used by the tests that page/paginate: always echoes back a
+ * `Page {n} item` for whatever `page` was requested, with 60 total matches
+ * (more than 2 pages at pageSize 25) unless a param-specific branch below
+ * (search/filter) intercepts it.
+ */
+function makePagingFetcher(calls: URL[]) {
+  return vi.fn<typeof fetch>().mockImplementation((input) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const parsed = new URL(url, "http://localhost");
+    calls.push(parsed);
+    const page = Number(parsed.searchParams.get("page"));
+    return Promise.resolve(
+      Response.json(
+        pageResponse(
+          [makeItem({ id: `p${page}`, title: `Page ${page} item` })],
+          {
+            page,
+            totalMatching: 60,
+          },
+        ),
+      ),
+    );
+  });
+}
+
 describe("CatalogControlCenter", () => {
-  it("drives every fetch through server-side page/pageSize/q/filter params", async () => {
+  it("sends page, pageSize, q, and filter as query params on the initial fetch", async () => {
+    const calls: URL[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push(new URL(url, "http://localhost"));
+      return Promise.resolve(
+        Response.json(pageResponse([makeItem({ id: "1" })])),
+      );
+    });
+
+    const { root } = await mount(fetcher);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.pathname).toBe("/api/catalog");
+    expect(calls[0]!.searchParams.get("page")).toBe("1");
+    expect(calls[0]!.searchParams.get("pageSize")).toBe("25");
+    expect(calls[0]!.searchParams.get("q")).toBe("");
+    expect(calls[0]!.searchParams.get("filter")).toBe("all");
+
+    await unmount(root);
+  });
+
+  it("clicking next page increments page and refetches", async () => {
+    const calls: URL[] = [];
+    const fetcher = makePagingFetcher(calls);
+
+    const { container, root } = await mount(fetcher);
+    expect(container.textContent).toContain("Page 1 item");
+
+    await act(async () => {
+      findButtonByText(container, "下一頁")!.click();
+      await Promise.resolve();
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.searchParams.get("page")).toBe("2");
+    expect(container.textContent).toContain("Page 2 item");
+
+    await unmount(root);
+  });
+
+  it("typing a search query sends q and resets page to 1", async () => {
     const calls: URL[] = [];
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
       const url = typeof input === "string" ? input : input.toString();
       const parsed = new URL(url, "http://localhost");
       calls.push(parsed);
+      const page = Number(parsed.searchParams.get("page"));
+      const q = parsed.searchParams.get("q");
 
+      if (q === "riesling") {
+        return Promise.resolve(
+          Response.json(
+            pageResponse(
+              [makeItem({ id: "search-1", title: "Riesling bottle" })],
+              { page: 1, totalMatching: 1 },
+            ),
+          ),
+        );
+      }
+      return Promise.resolve(
+        Response.json(
+          pageResponse(
+            [makeItem({ id: `p${page}`, title: `Page ${page} item` })],
+            {
+              page,
+              totalMatching: 60,
+            },
+          ),
+        ),
+      );
+    });
+
+    const { container, root } = await mount(fetcher);
+
+    // Advance to page 2 first, so we can prove typing a search resets it.
+    await act(async () => {
+      findButtonByText(container, "下一頁")!.click();
+      await Promise.resolve();
+    });
+    expect(calls[1]!.searchParams.get("page")).toBe("2");
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[type="search"]',
+    )!;
+    await act(async () => {
+      nativeSet(searchInput, "riesling");
+      await Promise.resolve();
+    });
+
+    expect(calls).toHaveLength(3);
+    expect(calls[2]!.searchParams.get("q")).toBe("riesling");
+    expect(calls[2]!.searchParams.get("page")).toBe("1");
+    expect(container.textContent).toContain("Riesling bottle");
+
+    await unmount(root);
+  });
+
+  it("clicking a filter button sends filter and resets page to 1", async () => {
+    const calls: URL[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const parsed = new URL(url, "http://localhost");
+      calls.push(parsed);
       const page = Number(parsed.searchParams.get("page"));
       const filter = parsed.searchParams.get("filter");
-      const q = parsed.searchParams.get("q");
 
       if (filter === "attention") {
         return Promise.resolve(
@@ -80,138 +231,83 @@ describe("CatalogControlCenter", () => {
               [makeItem({ id: "attn-1", title: "Attention item" })],
               {
                 page: 1,
+                totalMatching: 60,
               },
             ),
-          ),
-        );
-      }
-      if (q === "riesling") {
-        return Promise.resolve(
-          Response.json(
-            pageResponse(
-              [makeItem({ id: "search-1", title: "Riesling bottle" })],
-              {
-                page: 1,
-                totalMatching: 1,
-              },
-            ),
-          ),
-        );
-      }
-      if (page === 2) {
-        return Promise.resolve(
-          Response.json(
-            pageResponse([makeItem({ id: "page2-1", title: "Page 2 item" })], {
-              page: 2,
-            }),
           ),
         );
       }
       return Promise.resolve(
         Response.json(
-          pageResponse([makeItem({ id: "page1-1", title: "Page 1 item" })], {
-            page: 1,
-          }),
+          pageResponse(
+            [makeItem({ id: `p${page}`, title: `Page ${page} item` })],
+            {
+              page,
+              totalMatching: 60,
+            },
+          ),
         ),
       );
     });
-    vi.stubGlobal("fetch", fetcher);
 
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root: Root = createRoot(container);
+    const { container, root } = await mount(fetcher);
+
+    // Advance to page 2 first, so we can prove clicking a filter resets it.
     await act(async () => {
-      root.render(createElement(CatalogControlCenter));
-    });
-    await act(async () => {
+      findButtonByText(container, "下一頁")!.click();
       await Promise.resolve();
     });
-
-    // Initial fetch: page 1, default page size, empty query, "all" filter.
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.pathname).toBe("/api/catalog");
-    expect(calls[0]!.searchParams.get("page")).toBe("1");
-    expect(calls[0]!.searchParams.get("pageSize")).toBe("25");
-    expect(calls[0]!.searchParams.get("q")).toBe("");
-    expect(calls[0]!.searchParams.get("filter")).toBe("all");
-    expect(container.textContent).toContain("Page 1 item");
-
-    const findButtonByText = (text: string) =>
-      Array.from(container.querySelectorAll("button")).find((button) =>
-        button.textContent?.includes(text),
-      );
-
-    const prevButton = () => findButtonByText("上一頁")!;
-    const nextButton = () => findButtonByText("下一頁")!;
-
-    // "Prev" is disabled on page 1; "next" is enabled (60 > 1 * 25).
-    expect(prevButton().disabled).toBe(true);
-    expect(nextButton().disabled).toBe(false);
-
-    // Clicking "next" increments page and refetches.
-    await act(async () => {
-      nextButton().click();
-      await Promise.resolve();
-    });
-    expect(calls).toHaveLength(2);
     expect(calls[1]!.searchParams.get("page")).toBe("2");
-    expect(calls[1]!.searchParams.get("filter")).toBe("all");
-    expect(container.textContent).toContain("Page 2 item");
-    // Page 2 of 60 total (25/page): still more remaining, and prev is enabled.
-    expect(prevButton().disabled).toBe(false);
-    expect(nextButton().disabled).toBe(false);
 
-    // Typing in the search box refetches with the new `q` param AND resets
-    // page back to 1 (we were on page 2).
-    const searchInput = container.querySelector<HTMLInputElement>(
-      'input[type="search"]',
-    )!;
     await act(async () => {
-      nativeSet(searchInput, "riesling");
+      findButtonByText(container, "需處理")!.click();
       await Promise.resolve();
     });
+
     expect(calls).toHaveLength(3);
-    expect(calls[2]!.searchParams.get("q")).toBe("riesling");
+    expect(calls[2]!.searchParams.get("filter")).toBe("attention");
     expect(calls[2]!.searchParams.get("page")).toBe("1");
-    expect(container.textContent).toContain("Riesling bottle");
-    // Only 1 matching row at pageSize 25: no further page to show.
-    expect(nextButton().disabled).toBe(true);
-
-    // Clear the search back out, then advance to page 2 again so we can
-    // prove a filter change also resets page back to 1.
-    await act(async () => {
-      nativeSet(searchInput, "");
-      await Promise.resolve();
-    });
-    expect(calls).toHaveLength(4);
-    expect(calls[3]!.searchParams.get("q")).toBe("");
-    expect(calls[3]!.searchParams.get("page")).toBe("1");
-
-    await act(async () => {
-      nextButton().click();
-      await Promise.resolve();
-    });
-    expect(calls).toHaveLength(5);
-    expect(calls[4]!.searchParams.get("page")).toBe("2");
-
-    // Clicking a filter button refetches with the `filter` param instead of
-    // re-filtering client-side, and resets page back to 1 (we were on page 2).
-    const attentionButton = findButtonByText("需處理")!;
-    await act(async () => {
-      attentionButton.click();
-      await Promise.resolve();
-    });
-    expect(calls).toHaveLength(6);
-    expect(calls[5]!.searchParams.get("filter")).toBe("attention");
-    expect(calls[5]!.searchParams.get("page")).toBe("1");
     expect(container.textContent).toContain("Attention item");
-
     // Result count line reflects the paginated response, not a client-side
     // filtered count.
     expect(container.textContent).toContain("符合 60 / 60 個商品");
 
-    await act(async () => root.unmount());
-    document.body.innerHTML = "";
-    vi.unstubAllGlobals();
+    await unmount(root);
+  });
+
+  it("disables prev on page 1 and next once there is no further page", async () => {
+    const calls: URL[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const parsed = new URL(url, "http://localhost");
+      calls.push(parsed);
+      const page = Number(parsed.searchParams.get("page"));
+      return Promise.resolve(
+        Response.json(
+          pageResponse([makeItem({ id: `p${page}` })], {
+            page,
+            // 30 total at pageSize 25: page 1 has more, page 2 does not.
+            totalMatching: 30,
+          }),
+        ),
+      );
+    });
+
+    const { container, root } = await mount(fetcher);
+    const prevButton = () => findButtonByText(container, "上一頁")!;
+    const nextButton = () => findButtonByText(container, "下一頁")!;
+
+    expect(prevButton().disabled).toBe(true);
+    expect(nextButton().disabled).toBe(false);
+
+    await act(async () => {
+      nextButton().click();
+      await Promise.resolve();
+    });
+
+    expect(prevButton().disabled).toBe(false);
+    expect(nextButton().disabled).toBe(true);
+
+    await unmount(root);
   });
 });
