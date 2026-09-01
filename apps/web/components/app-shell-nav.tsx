@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { LOCALE_COOKIE_NAME, type Locale } from "../lib/locale.js";
@@ -47,9 +48,16 @@ export function AppShellNav({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
 
   const fullNav = isAdmin ? [...navItems, ADMIN_ITEM] : navItems;
   const mobileNav = navItems.slice(0, MOBILE_NAV_COUNT);
+  // A nested route (e.g. "/listings/new/step-2") should still highlight its
+  // top-level nav item, not just an exact pathname match.
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(`${href}/`);
+  const navClassName = (item: NavItem) =>
+    isActive(item.href) ? "active" : undefined;
   const label = (item: NavItem) =>
     locale === "zh-Hant" ? (
       <>
@@ -140,7 +148,11 @@ export function AppShellNav({
 
         <nav className="app-sidebar" aria-label="主要導覽">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href}>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={navClassName(item)}
+            >
               {label(item)}
             </Link>
           ))}
@@ -148,7 +160,9 @@ export function AppShellNav({
 
         {isAdmin ? (
           <div className="app-sidebar-admin">
-            <Link href="/admin">{label(ADMIN_ITEM)}</Link>
+            <Link href="/admin" className={navClassName(ADMIN_ITEM)}>
+              {label(ADMIN_ITEM)}
+            </Link>
           </div>
         ) : null}
 
@@ -173,7 +187,11 @@ export function AppShellNav({
 
         <nav className="app-bottom-nav" aria-label="流動版主要導覽">
           {mobileNav.map((item) => (
-            <Link key={item.href} href={item.href}>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={navClassName(item)}
+            >
               {label(item)}
             </Link>
           ))}
@@ -232,7 +250,12 @@ export function AppShellNav({
           </button>
           <nav aria-label={DRAWER_LABEL}>
             {fullNav.map((item) => (
-              <Link key={item.href} href={item.href} onClick={closeDrawer}>
+              <Link
+                key={item.href}
+                href={item.href}
+                className={navClassName(item)}
+                onClick={closeDrawer}
+              >
                 {label(item)}
               </Link>
             ))}

@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const pathnameMock = vi.fn<() => string>(() => "/dashboard");
+vi.mock("next/navigation", () => ({ usePathname: () => pathnameMock() }));
 import { AppShellNav, type NavItem } from "./app-shell-nav.js";
 
 (
@@ -28,6 +30,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  pathnameMock.mockReturnValue("/dashboard");
 });
 
 afterEach(() => {
@@ -297,5 +300,53 @@ describe("AppShellNav", () => {
     });
     expect(receivedLocale).toBe("en");
     expect(document.cookie).toContain("locale=en");
+  });
+
+  it("marks the nav link matching the current route as active, and no other", () => {
+    pathnameMock.mockReturnValue("/catalog");
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+
+    const sidebarActiveLink = container.querySelector<HTMLAnchorElement>(
+      '.app-sidebar a[href="/catalog"]',
+    );
+    expect(sidebarActiveLink!.className).toContain("active");
+
+    const sidebarOtherLink = container.querySelector<HTMLAnchorElement>(
+      '.app-sidebar a[href="/dashboard"]',
+    );
+    expect(sidebarOtherLink!.className).not.toContain("active");
+
+    const bottomNavActiveLink = container.querySelector<HTMLAnchorElement>(
+      '.app-bottom-nav a[href="/catalog"]',
+    );
+    expect(bottomNavActiveLink!.className).toContain("active");
+  });
+
+  it("also marks a nested route active on its top-level nav item", () => {
+    pathnameMock.mockReturnValue("/listings/new/step-2");
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="zh-Hant"
+      />,
+    );
+
+    const activeLink = container.querySelector<HTMLAnchorElement>(
+      '.app-sidebar a[href="/listings/new"]',
+    );
+    expect(activeLink!.className).toContain("active");
   });
 });
