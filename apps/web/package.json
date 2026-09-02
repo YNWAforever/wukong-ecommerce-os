@@ -7,7 +7,7 @@
     "dev": "next dev",
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "next start",
-    "test": "vitest run",
+    "test": "vitest run --exclude '**/*.integration.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -31,6 +31,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "happy-dom": "20.8.3",
+    "postgres": "^3.4.7",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   }

@@ -28,6 +28,7 @@ import { authSessionContext } from "../../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../../lib/session-context-port";
 
 type RouteContext = { params: Promise<{ id: string }> };
+type ApprovalRejection = { status: number; code: string; message: string };
 type ApprovalRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase: () => {
@@ -89,110 +90,133 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
       // these reads through `approveOne`'s own transaction, precisely so a
       // failed check here short-circuits before phase 1/2's external I/O
       // (S3 reads, a `sharp` composite, S3 writes) ever starts.
-      await db.forWorkspace(session.workspaceId, async (repositories) => {
-        const snapshot = await repositories.listings.getReviewSnapshot(id);
-        if (!snapshot?.activeVersion) {
-          throw new ApiError(404, "listing_not_found", "Listing not found.");
-        }
-        if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: id,
-            action: "listing.review_conflict",
-            metadata: { reason: "version_conflict" },
-          });
-          throw new ApiError(
-            409,
-            "version_conflict",
-            "This listing has changed since you started reviewing it.",
-          );
-        }
-
-        const confirmation =
-          await repositories.reviewConfirmations.getByVersionId(
-            snapshot.activeVersion.id,
-          );
-        if (
-          (confirmation?.revision ?? -1) !==
-          parsedBody.confirmationLedgerRevision
-        ) {
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: id,
-            action: "listing.review_conflict",
-            metadata: { reason: "confirmation_ledger_stale" },
-          });
-          throw new ApiError(
-            409,
-            "confirmation_ledger_stale",
-            "The confirmation checklist has changed since you loaded it.",
-          );
-        }
-        if (
-          !confirmation ||
-          !allConfirmed(
-            confirmation.fieldConfirmations,
-            confirmation.negativeConfirmations,
-          )
-        ) {
-          throw new ApiError(
-            422,
-            "confirmation_incomplete",
-            "Complete the confirmation checklist before approving.",
-          );
-        }
-
-        const link = await repositories.platformProducts.getByListingId(id);
-        // A "created"-origin listing gets a `platform_products` row too,
-        // after its first publish (see `apps/worker/src/publish-product.ts`)
-        // -- but with `sourceImportId`/`contentDigest` always null, since it
-        // was never imported. The freshness check only makes sense for a row
-        // that came from an import; gating on `link !== null` alone would
-        // permanently 400 every re-approval of a create-origin listing (the
-        // client can never supply fields that don't exist for it).
-        if (link !== null && link.origin === "import") {
-          if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
-            throw new ApiError(
-              400,
-              "source_freshness_required",
-              "This listing is linked to an imported product and requires freshness fields.",
-            );
+      // The three checks below that write an audit event (`version_conflict`,
+      // `confirmation_ledger_stale`, and the freshness-gate failure) return a
+      // rejection descriptor instead of throwing directly. `db.forWorkspace`
+      // wraps this callback in a real Postgres transaction (see
+      // `packages/db/src/client.ts`); throwing from inside it rolls the
+      // transaction back, which would silently discard the audit write along
+      // with everything else -- so the ApiError for those three cases is
+      // thrown only after this call resolves and the transaction has
+      // committed. The other checks below (listing_not_found,
+      // confirmation_incomplete, source_freshness_required) write no audit
+      // event, so there's nothing for a rollback to undo and they keep
+      // throwing directly.
+      const rejection: ApprovalRejection | null = await db.forWorkspace(
+        session.workspaceId,
+        async (repositories) => {
+          const snapshot = await repositories.listings.getReviewSnapshot(id);
+          if (!snapshot?.activeVersion) {
+            throw new ApiError(404, "listing_not_found", "Listing not found.");
           }
-          const result = await assertApprovalFreshness(
-            {
-              workspaceId: session.workspaceId,
-              listingId: id,
-              expectedSourceImportId: parsedBody.sourceImportId,
-              expectedRowDigest: parsedBody.expectedRowDigest,
-              expectedVersionId: parsedBody.expectedVersionId,
-            },
-            {
-              async getPlatformProductLink() {
-                return link;
-              },
-              async getActiveVersionId() {
-                return snapshot.activeVersion?.id ?? null;
-              },
-            },
-          );
-          if (!result.ok) {
+          if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
             await repositories.audit.write({
               workspaceId: session.workspaceId,
               actorId: session.actorId,
               entityId: id,
               action: "listing.review_conflict",
-              metadata: { reason: result.reason },
+              metadata: { reason: "version_conflict" },
             });
+            return {
+              status: 409,
+              code: "version_conflict",
+              message:
+                "This listing has changed since you started reviewing it.",
+            };
+          }
+
+          const confirmation =
+            await repositories.reviewConfirmations.getByVersionId(
+              snapshot.activeVersion.id,
+            );
+          if (
+            (confirmation?.revision ?? -1) !==
+            parsedBody.confirmationLedgerRevision
+          ) {
+            await repositories.audit.write({
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: id,
+              action: "listing.review_conflict",
+              metadata: { reason: "confirmation_ledger_stale" },
+            });
+            return {
+              status: 409,
+              code: "confirmation_ledger_stale",
+              message:
+                "The confirmation checklist has changed since you loaded it.",
+            };
+          }
+          if (
+            !confirmation ||
+            !allConfirmed(
+              confirmation.fieldConfirmations,
+              confirmation.negativeConfirmations,
+            )
+          ) {
             throw new ApiError(
-              409,
-              result.reason,
-              "This listing's source data no longer matches what was reviewed.",
+              422,
+              "confirmation_incomplete",
+              "Complete the confirmation checklist before approving.",
             );
           }
-        }
-      });
+
+          const link = await repositories.platformProducts.getByListingId(id);
+          // A "created"-origin listing gets a `platform_products` row too,
+          // after its first publish (see `apps/worker/src/publish-product.ts`)
+          // -- but with `sourceImportId`/`contentDigest` always null, since it
+          // was never imported. The freshness check only makes sense for a row
+          // that came from an import; gating on `link !== null` alone would
+          // permanently 400 every re-approval of a create-origin listing (the
+          // client can never supply fields that don't exist for it).
+          if (link !== null && link.origin === "import") {
+            if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
+              throw new ApiError(
+                400,
+                "source_freshness_required",
+                "This listing is linked to an imported product and requires freshness fields.",
+              );
+            }
+            const result = await assertApprovalFreshness(
+              {
+                workspaceId: session.workspaceId,
+                listingId: id,
+                expectedSourceImportId: parsedBody.sourceImportId,
+                expectedRowDigest: parsedBody.expectedRowDigest,
+                expectedVersionId: parsedBody.expectedVersionId,
+              },
+              {
+                async getPlatformProductLink() {
+                  return link;
+                },
+                async getActiveVersionId() {
+                  return snapshot.activeVersion?.id ?? null;
+                },
+              },
+            );
+            if (!result.ok) {
+              await repositories.audit.write({
+                workspaceId: session.workspaceId,
+                actorId: session.actorId,
+                entityId: id,
+                action: "listing.review_conflict",
+                metadata: { reason: result.reason },
+              });
+              return {
+                status: 409,
+                code: result.reason,
+                message:
+                  "This listing's source data no longer matches what was reviewed.",
+              };
+            }
+          }
+          return null;
+        },
+      );
+
+      if (rejection) {
+        throw new ApiError(rejection.status, rejection.code, rejection.message);
+      }
 
       let precomputedFinalAsset:
         { storageKey: string; priorFinalAssetIds: string[] } | undefined;
