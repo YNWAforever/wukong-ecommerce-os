@@ -32,13 +32,15 @@ export type EnrichmentBatchCounts = Record<EnrichmentBatchItemStatus, number>;
 export type EnrichmentBatchRepository = {
   create(input: CreateEnrichmentBatchInput): Promise<EnrichmentBatch>;
   getById(id: string): Promise<EnrichmentBatch | null>;
-  listForWorkspace(): Promise<EnrichmentBatch[]>;
   listItemIds(batchId: string): Promise<string[]>;
   listItemsByStatus(
     batchId: string,
     status: EnrichmentBatchItemStatus,
   ): Promise<string[]>;
   countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
+  /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
+   * must be between 1 and 100. */
+  listForWorkspace(limit?: number): Promise<EnrichmentBatch[]>;
   /** Moves up to `limit` pending items to `queued` and returns their draft IDs. */
   claimWave(batchId: string, limit: number): Promise<string[]>;
   markItems(
@@ -136,20 +138,6 @@ export function createEnrichmentBatchRepository(
       return row ? toEnrichmentBatch(row) : null;
     },
 
-    async listForWorkspace() {
-      scope.assertOpen();
-      const rows = await transaction
-        .select(COLUMNS)
-        .from(enrichmentBatches)
-        .where(eq(enrichmentBatches.workspaceId, workspaceId))
-        // `created_at` alone ties whenever two batches are created in the same
-        // transaction (Postgres's `now()` is the transaction start time, not
-        // wall-clock time) — `id` breaks the tie deterministically, the same
-        // fix `claimWave`'s raw SQL already applies below.
-        .orderBy(desc(enrichmentBatches.createdAt), desc(enrichmentBatches.id));
-      return rows.map(toEnrichmentBatch);
-    },
-
     async listItemIds(batchId) {
       scope.assertOpen();
       const rows = await transaction
@@ -189,6 +177,24 @@ export function createEnrichmentBatchRepository(
       ) as EnrichmentBatchCounts;
       for (const row of rows) counts[row.status] = Number(row.total);
       return counts;
+    },
+
+    async listForWorkspace(limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("enrichment batch limit must be between 1 and 100");
+      }
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(enrichmentBatches)
+        .where(eq(enrichmentBatches.workspaceId, workspaceId))
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(enrichmentBatches.createdAt), desc(enrichmentBatches.id))
+        .limit(limit);
+      return rows.map(toEnrichmentBatch);
     },
 
     async claimWave(batchId, limit) {

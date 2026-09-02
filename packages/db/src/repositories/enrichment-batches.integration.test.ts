@@ -301,4 +301,110 @@ describe("enrichment batch repository", () => {
       ).toEqual([]);
     });
   });
+
+  it("lists workspace batches newest first, isolated per workspace, with limit bounds enforced", async () => {
+    // A workspace dedicated to just this test, not the shared `workspaceId`
+    // every other test in this file also writes into -- reusing that shared
+    // workspace here would make `toEqual` below flaky against whatever rows
+    // earlier tests happened to leave behind.
+    const listWorkspaceId = "ws_batches_list";
+    const otherListWorkspaceId = "ws_batches_list_other";
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${listWorkspaceId}', '${listWorkspaceId}', '{}'::jsonb),
+        ('${otherListWorkspaceId}', '${otherListWorkspaceId}', '{}'::jsonb);
+    `);
+
+    const ids: string[] = [];
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
+      for (let index = 0; index < 3; index += 1) {
+        const batch = await repositories.enrichmentBatches.create({
+          label: `list order ${index}`,
+          budgetUsd: 1,
+          waveSize: 1,
+          createdBy: "operator@example.com",
+          listingIds: [],
+        });
+        ids.push(batch.id);
+      }
+    });
+    // All three rows were inserted inside one transaction, so they would
+    // otherwise share the exact same `now()` -- backdate them to distinct,
+    // known instants so newest-first ordering is unambiguous.
+    for (const [index, id] of ids.entries()) {
+      const backdated = new Date(Date.now() - (ids.length - index) * 60_000);
+      await admin.unsafe(
+        "UPDATE enrichment_batches SET created_at = $1 WHERE id = $2",
+        [backdated, id],
+      );
+    }
+
+    const otherId = await database.forWorkspace(
+      otherListWorkspaceId,
+      async (repositories) => {
+        const batch = await repositories.enrichmentBatches.create({
+          label: "other workspace",
+          budgetUsd: 1,
+          waveSize: 1,
+          createdBy: "operator@example.com",
+          listingIds: [],
+        });
+        return batch.id;
+      },
+    );
+
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
+      const listed = await repositories.enrichmentBatches.listForWorkspace();
+      expect(listed.map((batch) => batch.id)).toEqual([...ids].reverse());
+      expect(listed.map((batch) => batch.id)).not.toContain(otherId);
+      expect(listed.every((batch) => batch.createdAt instanceof Date)).toBe(
+        true,
+      );
+
+      await expect(
+        repositories.enrichmentBatches.listForWorkspace(0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.enrichmentBatches.listForWorkspace(101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+    });
+  });
+
+  it("breaks a created_at tie deterministically by id when several batches share one transaction's now()", async () => {
+    // database.forWorkspace wraps every call in one Postgres transaction, and
+    // Postgres's now() is fixed for the whole transaction (transaction-start
+    // time, not per-statement) -- so all three batches created below get the
+    // exact same created_at with no backdating involved. This is the real
+    // production shape (e.g. one admin action creating several batches),
+    // not a test artifact: without an id tiebreaker, ORDER BY created_at DESC
+    // alone would leave these three in an arbitrary order.
+    const created = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const batches = [];
+        for (let index = 0; index < 3; index += 1) {
+          batches.push(
+            await repositories.enrichmentBatches.create({
+              label: `tie order ${index}`,
+              budgetUsd: 1,
+              waveSize: 1,
+              createdBy: "operator@example.com",
+              listingIds: [],
+            }),
+          );
+        }
+        return batches;
+      },
+    );
+    expect(
+      new Set(created.map((batch) => batch.createdAt.getTime())).size,
+    ).toBe(1);
+    const ids = created.map((batch) => batch.id);
+
+    const listed = await database.forWorkspace(workspaceId, (repositories) =>
+      repositories.enrichmentBatches.listForWorkspace(),
+    );
+    const tied = listed.filter((batch) => ids.includes(batch.id));
+    expect(tied.map((batch) => batch.id)).toEqual([...ids].sort().reverse());
+  });
 });

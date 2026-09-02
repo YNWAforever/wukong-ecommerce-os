@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ROLE_LABELS, SHELL_NAV_ITEMS } from "./shell-nav-items.js";
 
 describe("SHELL_NAV_ITEMS", () => {
-  it("has exactly the 6 routes that exist on this branch, in the Site's confirmed order", () => {
+  it("has exactly the 9 routes that exist on this branch, in order", () => {
     expect(SHELL_NAV_ITEMS.map((item) => item.href)).toEqual([
       "/dashboard",
       "/catalog",
@@ -11,14 +11,10 @@ describe("SHELL_NAV_ITEMS", () => {
       "/listings/new",
       "/listings/import",
       "/batches",
+      "/jobs",
+      "/system-map",
+      "/quality",
     ]);
-  });
-
-  it("does not include /jobs, /system-map, or /quality", () => {
-    const hrefs = SHELL_NAV_ITEMS.map((item) => item.href);
-    expect(hrefs).not.toContain("/jobs");
-    expect(hrefs).not.toContain("/system-map");
-    expect(hrefs).not.toContain("/quality");
   });
 });
 

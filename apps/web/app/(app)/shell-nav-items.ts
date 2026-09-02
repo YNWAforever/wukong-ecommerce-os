@@ -12,6 +12,9 @@ export const SHELL_NAV_ITEMS: NavItem[] = [
     labelEn: "Bulk import",
   },
   { href: "/batches", labelZh: "批次", labelEn: "Batches" },
+  { href: "/jobs", labelZh: "內部作業", labelEn: "Jobs" },
+  { href: "/system-map", labelZh: "系統地圖", labelEn: "System map" },
+  { href: "/quality", labelZh: "內容品質", labelEn: "Quality" },
 ];
 
 export const ROLE_LABELS: Record<WorkspaceRole, { zh: string; en: string }> = {
