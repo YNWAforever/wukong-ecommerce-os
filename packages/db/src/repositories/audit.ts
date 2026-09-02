@@ -1,9 +1,22 @@
+import { and, desc, eq } from "drizzle-orm";
+
 import type { AuditWriter, DomainAuditEvent } from "@wukong/core";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { auditEvents } from "../schema.js";
 
-export type WorkspaceAuditWriter = AuditWriter;
+export type AuditEventRecord = {
+  id: string;
+  actorId: string;
+  entityId: string;
+  action: string;
+  metadata: unknown;
+  createdAt: Date;
+};
+
+export type WorkspaceAuditWriter = AuditWriter & {
+  findRelatedToListing(listingId: string): Promise<AuditEventRecord[]>;
+};
 
 export function createAuditWriter(
   transaction: WorkspaceTransaction,
@@ -27,6 +40,28 @@ export function createAuditWriter(
         action: event.action,
         metadata: event.metadata,
       });
+    },
+
+    async findRelatedToListing(listingId: string): Promise<AuditEventRecord[]> {
+      scope.assertOpen();
+      const rows = await transaction
+        .select({
+          id: auditEvents.id,
+          actorId: auditEvents.actorId,
+          entityId: auditEvents.entityId,
+          action: auditEvents.action,
+          metadata: auditEvents.metadata,
+          createdAt: auditEvents.createdAt,
+        })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.workspaceId, workspaceId),
+            eq(auditEvents.entityId, listingId),
+          ),
+        )
+        .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id));
+      return rows;
     },
   };
 }
