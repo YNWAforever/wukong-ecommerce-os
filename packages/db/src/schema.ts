@@ -809,6 +809,49 @@ export const reviewConfirmations = pgTable(
   ],
 );
 
+// No FK from manifest to listing_drafts/listing_versions: manifest is a
+// point-in-time record of what the export request named, not a live
+// relational reference. A request can legitimately name a listing that
+// doesn't resolve at all (recorded as outcome "listing_not_found"), and the
+// row must stay readable even after the listing or version it mentions is
+// later deleted.
+export const exportAttempts = pgTable(
+  "export_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    manifest: jsonb("manifest")
+      .$type<
+        Array<{
+          listingId: string;
+          versionId: string | null;
+          outcome:
+            | "included"
+            | "excluded_no_op"
+            | "excluded_stale"
+            | "not_import_origin"
+            | "raw_row_invalid"
+            | "listing_not_found";
+          reason?: string;
+        }>
+      >()
+      .notNull(),
+    rowCount: integer("row_count").notNull(),
+    specVersion: text("spec_version").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("export_attempts_workspace_idempotency_uq").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
 export const enrichmentBatchStatus = pgEnum("enrichment_batch_status", [
   "open",
   "running",

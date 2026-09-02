@@ -1,4 +1,4 @@
-import { and, eq, exists, lt, not, sql } from "drizzle-orm";
+import { and, desc, eq, exists, lt, not, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { listingPipelineRuns, listingPipelineSteps } from "../schema.js";
 
@@ -25,6 +25,14 @@ export type PipelineRunState = {
  */
 export const PIPELINE_STEP_LEASE_MS = 300_000;
 
+export type PipelineRunSummary = {
+  id: string;
+  listingId: string;
+  versionId: string | null;
+  status: "started" | "succeeded" | "failed";
+  errorCode: string | null;
+  createdAt: Date;
+};
 export type StepClaim = {
   claimed: boolean;
   completed: boolean;
@@ -40,6 +48,9 @@ export type StepClaim = {
 export type PipelineRunRepository = {
   getCompleted(key: string): Promise<PipelineResult | null>;
   getState(key: string): Promise<PipelineRunState | null>;
+  /** Newest-first, this workspace's pipeline runs only. `limit` defaults to
+   * 100 and must be between 1 and 100. */
+  listForWorkspace(limit?: number): Promise<PipelineRunSummary[]>;
   claimStep(input: {
     idempotencyKey: string;
     listingId: string;
@@ -265,6 +276,41 @@ export function createPipelineRunRepository(
         errorCode: run.errorCode,
         steps,
       };
+    },
+
+    async listForWorkspace(limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("pipeline run limit must be between 1 and 100");
+      }
+      const rows = await transaction
+        .select({
+          id: listingPipelineRuns.id,
+          listingId: listingPipelineRuns.listingId,
+          versionId: listingPipelineRuns.versionId,
+          status: listingPipelineRuns.status,
+          errorCode: listingPipelineRuns.errorCode,
+          createdAt: listingPipelineRuns.createdAt,
+        })
+        .from(listingPipelineRuns)
+        .where(eq(listingPipelineRuns.workspaceId, workspaceId))
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(
+          desc(listingPipelineRuns.createdAt),
+          desc(listingPipelineRuns.id),
+        )
+        .limit(limit);
+      return rows.map((row) => ({
+        id: row.id,
+        listingId: row.listingId,
+        versionId: row.versionId,
+        status: row.status as "started" | "succeeded" | "failed",
+        errorCode: row.errorCode,
+        createdAt: row.createdAt,
+      }));
     },
 
     async claimStep(input) {

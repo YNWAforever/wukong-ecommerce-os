@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ASSET_EXPORT_READ_TTL_MS } from "./asset-store.js";
+import {
+  ASSET_EXPORT_READ_TTL_MS,
+  createExportAssetKey,
+} from "./asset-store.js";
 import {
   S3AssetStore,
   type S3Presigner,
@@ -228,5 +231,66 @@ describe("S3AssetStore.readObject", () => {
         "ws/ws_opak/sources/00000000-0000-4000-8000-000000000001/cutout.png",
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe("S3AssetStore exports/ namespace", () => {
+  it("accepts writeObject for a generated export key", async () => {
+    const send = vi.fn(async () => ({}));
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: { send },
+    });
+    const body = new TextEncoder().encode("fake-xlsx-bytes");
+    const key = createExportAssetKey({
+      workspaceId: "ws_opak",
+      exportAttemptId: "11111111-1111-4111-8111-111111111111",
+      fileName: "export.xlsx",
+    });
+    const mimeType =
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    const result = await store.writeObject("ws_opak", key, body, mimeType);
+
+    expect(result).toEqual({ size: body.byteLength, mimeType });
+    expect(send).toHaveBeenCalledOnce();
+    const [command] = send.mock.calls[0]!;
+    expect((command as { input: Record<string, unknown> }).input).toMatchObject(
+      {
+        Bucket: "test-bucket",
+        Key: key,
+        Body: body,
+        ContentType: mimeType,
+        ContentLength: body.byteLength,
+      },
+    );
+  });
+
+  it("accepts readObject for a generated export key", async () => {
+    const bodyBytes = new TextEncoder().encode("fake-xlsx-bytes");
+    const send = vi.fn(async () => ({
+      Body: { transformToByteArray: async () => bodyBytes },
+    }));
+    const store = new S3AssetStore({
+      bucket: "test-bucket",
+      transport: { send },
+    });
+    const key = createExportAssetKey({
+      workspaceId: "ws_opak",
+      exportAttemptId: "11111111-1111-4111-8111-111111111111",
+      fileName: "export.xlsx",
+    });
+
+    const result = await store.readObject("ws_opak", key);
+
+    expect(result).toEqual(bodyBytes);
+    expect(send).toHaveBeenCalledOnce();
+    const [command] = send.mock.calls[0]!;
+    expect((command as { input: Record<string, unknown> }).input).toMatchObject(
+      {
+        Bucket: "test-bucket",
+        Key: key,
+      },
+    );
   });
 });

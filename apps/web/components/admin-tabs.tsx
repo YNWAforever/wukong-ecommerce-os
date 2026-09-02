@@ -5,13 +5,15 @@ import { useState } from "react";
 import { AdminConnectionPanel } from "./admin-connection-panel";
 import { AdminMembersPanel } from "./admin-members-panel";
 import { AdminSettingsPanel } from "./admin-settings-panel";
+import { CapabilityRegistryPanel } from "./capability-registry-panel";
 
-type AdminTab = "members" | "connection" | "settings";
+type AdminTab = "members" | "connection" | "settings" | "capabilities";
 
 const TABS: { id: AdminTab; label: string }[] = [
   { id: "members", label: "成員 Members" },
   { id: "connection", label: "SHOPLINE 連線 Connection" },
   { id: "settings", label: "設定 Settings" },
+  { id: "capabilities", label: "系統真相 Capabilities" },
 ];
 
 export function AdminTabs() {
@@ -44,6 +46,7 @@ export function AdminTabs() {
         {active === "members" ? <AdminMembersPanel /> : null}
         {active === "connection" ? <AdminConnectionPanel /> : null}
         {active === "settings" ? <AdminSettingsPanel /> : null}
+        {active === "capabilities" ? <CapabilityRegistryPanel /> : null}
       </div>
     </div>
   );

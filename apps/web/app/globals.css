@@ -565,6 +565,9 @@ button:disabled {
   font-size: 11px;
   font-weight: 500;
 }
+.quality-metric-strip {
+  grid-template-columns: repeat(4, 1fr);
+}
 .section-heading {
   display: flex;
   align-items: flex-end;
@@ -1132,6 +1135,25 @@ button:disabled {
   background: #eff8f3;
   border-color: #cfe0d8;
 }
+.status-pending {
+  color: var(--muted);
+  background: #f7f8f7;
+}
+.status-running {
+  color: var(--amber-dark);
+  background: var(--amber-soft);
+  border-color: #edcfaa;
+}
+.status-succeeded {
+  color: var(--success);
+  background: #eff8f3;
+  border-color: #cfe0d8;
+}
+.status-cancelled {
+  color: var(--navy);
+  background: var(--stone);
+  border-color: var(--line-strong);
+}
 .delivery-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1523,4 +1545,22 @@ button:disabled {
 }
 .admin-tab-panel {
   color: var(--ink);
+}
+.jobs-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.jobs-row-meta {
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.jobs-row-link {
+  color: var(--amber-dark);
+  font-size: 12px;
+  font-weight: 800;
 }
