@@ -53,29 +53,30 @@ export function createJobsHandler(deps: JobsRouteDeps) {
       const { entries, metrics } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const [batches, publishJobs, pipelineRuns, exports] =
-            await Promise.all([
-              repositories.enrichmentBatches.listForWorkspace(
-                SOURCE_FETCH_LIMIT,
-              ),
-              repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
-            ]);
-
-          const [publishRetries, reviewConflictsByReason, importSums] =
-            await Promise.all([
-              repositories.audit.countByActionSince(
-                "listing.publish_failed",
-                since,
-              ),
-              repositories.audit.countByActionAndMetadataKeySince(
-                "listing.review_conflict",
-                "reason",
-                since,
-              ),
-              repositories.audit.sumImportMetricsSince(since),
-            ]);
+          const [
+            batches,
+            publishJobs,
+            pipelineRuns,
+            exports,
+            publishRetries,
+            reviewConflictsByReason,
+            importSums,
+          ] = await Promise.all([
+            repositories.enrichmentBatches.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.audit.countByActionSince(
+              "listing.publish_failed",
+              since,
+            ),
+            repositories.audit.countByActionAndMetadataKeySince(
+              "listing.review_conflict",
+              "reason",
+              since,
+            ),
+            repositories.audit.sumImportMetricsSince(since),
+          ]);
 
           let versionConflicts = 0;
           let staleSourceRejections = 0;

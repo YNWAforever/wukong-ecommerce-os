@@ -226,11 +226,15 @@ describe("GET /api/jobs", () => {
 
     const response = await handler();
     const body = await response.json();
+    // Exact values, not just types: the mock's countByActionAndMetadataKeySince
+    // deliberately returns one version_conflict-bucket reason and one
+    // stale-source-bucket reason, so this also proves the route's bucketing
+    // logic actually classifies them correctly, not just that the field exists.
     expect(body.metrics).toEqual({
-      publishRetries: expect.any(Number),
-      versionConflicts: expect.any(Number),
-      staleSourceRejections: expect.any(Number),
-      importedRows: expect.any(Number),
+      publishRetries: 3,
+      versionConflicts: 1,
+      staleSourceRejections: 2,
+      importedRows: 120,
     });
   });
 });
