@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 import { AuthForm, safeCallbackPath, type AuthFormMode } from "./auth-form";
+import { type Locale } from "../lib/locale";
 
 async function mount(
   mode: AuthFormMode,
@@ -17,7 +18,7 @@ async function mount(
     callbackUrl?: string;
     token?: string;
     initialStatus?: string;
-    locale?: "zh-Hant" | "en";
+    locale?: Locale;
   } = {},
 ) {
   const container = document.createElement("div");
@@ -316,5 +317,20 @@ describe("AuthForm", () => {
   it("renders English copy when locale is en", async () => {
     const container = await mount("password-signin", { locale: "en" });
     expect(container.textContent).toContain("Welcome back");
+  });
+
+  it.each([
+    ["password-signin", "歡迎回來"],
+    ["magic-link", "電郵登入"],
+    ["register", "完成受邀登記"],
+    ["set-password", "設定你的密碼"],
+    ["forgot-password", "重設你的密碼"],
+    ["reset-password", "選擇新密碼"],
+  ] as const)("renders the zh-Hant heading for %s", async (mode, heading) => {
+    const container = await mount(mode, {
+      locale: "zh-Hant",
+      token: "safe-query-token",
+    });
+    expect(container.textContent).toContain(heading);
   });
 });
