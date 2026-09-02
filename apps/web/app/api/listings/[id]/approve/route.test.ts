@@ -739,7 +739,7 @@ describe("POST /api/listings/[id]/approve", () => {
   });
 
   it("returns 409 version_conflict when expectedVersionId does not match the snapshot's active version", async () => {
-    const { handler } = makeHandler({});
+    const { handler, calls } = makeHandler({});
     const response = await handler(
       request({
         expectedVersionId: "00000000-0000-4000-8000-000000000999",
@@ -749,10 +749,18 @@ describe("POST /api/listings/[id]/approve", () => {
     );
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "version_conflict" });
+    expect(calls).toContainEqual([
+      "audit",
+      expect.objectContaining({
+        action: "listing.review_conflict",
+        entityId: listingId,
+        metadata: { reason: "version_conflict" },
+      }),
+    ]);
   });
 
   it("returns 409 confirmation_ledger_stale when confirmationLedgerRevision does not match the ledger's current revision", async () => {
-    const { handler } = makeHandler({
+    const { handler, calls } = makeHandler({
       confirmation: { ...fullyConfirmed!, revision: 5 },
     });
     const response = await handler(
@@ -766,6 +774,14 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(await response.json()).toMatchObject({
       code: "confirmation_ledger_stale",
     });
+    expect(calls).toContainEqual([
+      "audit",
+      expect.objectContaining({
+        action: "listing.review_conflict",
+        entityId: listingId,
+        metadata: { reason: "confirmation_ledger_stale" },
+      }),
+    ]);
   });
 
   it("returns 422 confirmation_incomplete when the confirmation checklist is not fully checked", async () => {
@@ -813,7 +829,7 @@ describe("POST /api/listings/[id]/approve", () => {
   });
 
   it("returns 409 with the freshness failure reason as the error code when an import-origin listing's row digest no longer matches", async () => {
-    const { handler } = makeHandler({
+    const { handler, calls } = makeHandler({
       platformProduct: {
         origin: "import",
         sourceImportId: "import_1",
@@ -833,6 +849,14 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(await response.json()).toMatchObject({
       code: "row_digest_mismatch",
     });
+    expect(calls).toContainEqual([
+      "audit",
+      expect.objectContaining({
+        action: "listing.review_conflict",
+        entityId: listingId,
+        metadata: { reason: "row_digest_mismatch" },
+      }),
+    ]);
   });
 
   it("approves a create-origin listing (no platform_products link) without requiring sourceImportId/expectedRowDigest", async () => {

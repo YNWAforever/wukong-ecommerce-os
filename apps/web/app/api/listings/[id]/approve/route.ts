@@ -95,6 +95,13 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
           throw new ApiError(404, "listing_not_found", "Listing not found.");
         }
         if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+          await repositories.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: id,
+            action: "listing.review_conflict",
+            metadata: { reason: "version_conflict" },
+          });
           throw new ApiError(
             409,
             "version_conflict",
@@ -110,6 +117,13 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
           (confirmation?.revision ?? -1) !==
           parsedBody.confirmationLedgerRevision
         ) {
+          await repositories.audit.write({
+            workspaceId: session.workspaceId,
+            actorId: session.actorId,
+            entityId: id,
+            action: "listing.review_conflict",
+            metadata: { reason: "confirmation_ledger_stale" },
+          });
           throw new ApiError(
             409,
             "confirmation_ledger_stale",
@@ -164,6 +178,13 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
             },
           );
           if (!result.ok) {
+            await repositories.audit.write({
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: id,
+              action: "listing.review_conflict",
+              metadata: { reason: result.reason },
+            });
             throw new ApiError(
               409,
               result.reason,
