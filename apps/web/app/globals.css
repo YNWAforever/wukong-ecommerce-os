@@ -1428,6 +1428,111 @@ button:disabled {
     width: 100%;
   }
 }
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+}
+.auth-shell-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 32px;
+  color: white;
+  background: var(--navy);
+}
+.auth-shell-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.auth-shell-logo {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  background: rgb(255 255 255 / 12%);
+  border-radius: 10px;
+  font-weight: 700;
+}
+.auth-shell-wordmark {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.auth-shell-tagline-small {
+  margin: 0;
+  color: rgb(255 255 255 / 65%);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.auth-shell-brand-header .locale-toggle {
+  margin-left: auto;
+}
+.auth-shell-brand-body {
+  display: none;
+}
+.auth-shell-eyebrow {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 4px 10px;
+  background: rgb(255 255 255 / 10%);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.auth-shell-brand-body h1 {
+  margin: 0 0 12px;
+  font-size: clamp(24px, 3vw, 32px);
+  line-height: 1.2;
+}
+.auth-shell-brand-body > p {
+  color: rgb(255 255 255 / 80%);
+  font-size: 14px;
+}
+.auth-shell-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 24px 0;
+}
+.auth-shell-stats > div {
+  padding: 14px;
+  background: rgb(255 255 255 / 6%);
+  border-radius: 10px;
+}
+.auth-shell-stats strong {
+  display: block;
+  font-size: 22px;
+}
+.auth-shell-stats span {
+  color: rgb(255 255 255 / 70%);
+  font-size: 12px;
+}
+.auth-shell-principles > p {
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+.auth-shell-principles ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: rgb(255 255 255 / 85%);
+}
+.auth-shell-card-wrap {
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background: linear-gradient(145deg, #f6f4ef 0%, #eee8dc 100%);
+}
+@media (min-width: 1024px) {
+  .auth-shell-brand-body {
+    display: block;
+  }
+}
 .admin-tabs {
   display: grid;
   gap: 20px;
