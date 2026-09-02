@@ -1391,7 +1391,7 @@ button:disabled {
 .auth-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(320px, 420px) 1fr;
+  grid-template-columns: 1fr;
 }
 .auth-shell-brand {
   display: flex;
@@ -1486,6 +1486,9 @@ button:disabled {
   background: linear-gradient(145deg, #f6f4ef 0%, #eee8dc 100%);
 }
 @media (min-width: 1024px) {
+  .auth-shell {
+    grid-template-columns: minmax(320px, 420px) 1fr;
+  }
   .auth-shell-brand-body {
     display: block;
   }
