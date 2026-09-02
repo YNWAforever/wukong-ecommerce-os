@@ -10,7 +10,6 @@ import type {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import type { ListingActivityEntry } from "../lib/listing-activity-service";
 import { ComplianceFlags } from "./compliance-flags";
 import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
@@ -33,6 +32,35 @@ type ListingPermissions = {
   canApprove: boolean;
   canDeliver: boolean;
 };
+
+// The wire shape of `ListingActivityEntry` (see lib/listing-activity-service.ts):
+// `createdAt` is a real `Date` server-side, but `jsonResponse` runs it through
+// `JSON.stringify`, so it arrives here as an ISO string, not a `Date`
+// instance -- `new Date(entry.createdAt)` is required before any formatting,
+// not optional convenience. Mirrors jobs-ledger-client.tsx's own
+// `WireLedgerEntry` pattern for the same reason.
+type WireListingActivityEntry =
+  | {
+      kind: "audit";
+      id: string;
+      action: string;
+      metadata: unknown;
+      createdAt: string;
+    }
+  | {
+      kind: "batch";
+      id: string;
+      label: string;
+      status: string;
+      createdAt: string;
+    }
+  | {
+      kind: "export";
+      id: string;
+      outcome: string;
+      reason?: string;
+      createdAt: string;
+    };
 
 export type ListingViewResponse = {
   listingId: string;
@@ -64,7 +92,7 @@ export type ListingViewResponse = {
   sourceImportId: string | null;
   contentDigest: string | null;
   permissions: ListingPermissions;
-  activity: ListingActivityEntry[];
+  activity: WireListingActivityEntry[];
 };
 
 type MappedListingView = {
