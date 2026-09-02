@@ -93,10 +93,7 @@ describe("AuthShell", () => {
   });
 
   it("renders exactly one h1 when the child (e.g. AuthForm) has its own h1, and it is the child's, not the tagline's", async () => {
-    const container = await mount(
-      "en",
-      <h1 id="auth-title">Sign in</h1>,
-    );
+    const container = await mount("en", <h1 id="auth-title">Sign in</h1>);
     const h1Elements = container.querySelectorAll<HTMLHeadingElement>("h1");
     expect(h1Elements.length).toBe(1);
     expect(h1Elements[0]?.id).toBe("auth-title");
