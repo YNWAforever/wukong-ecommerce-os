@@ -352,8 +352,9 @@ export function AuthForm({
               maxLength={PASSWORD_MAX}
               required
               disabled={isPending}
+              aria-describedby={"auth-password-hint-" + activeMode}
             />
-            <small>
+            <small id={"auth-password-hint-" + activeMode}>
               {locale === "zh-Hant"
                 ? "長度需為 12 至 128 個字元。"
                 : "Use 12 to 128 characters."}
