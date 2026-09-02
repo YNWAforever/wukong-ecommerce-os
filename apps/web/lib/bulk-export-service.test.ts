@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
+import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
 import { createBulkExport } from "./bulk-export-service.js";
 
@@ -178,6 +179,26 @@ describe("createBulkExport", () => {
         reason: "row_digest_mismatch",
       },
     ]);
+  });
+
+  it("does not write a no-op listing's row into the actual emitted workbook bytes", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed", "listing_noop"],
+        freshnessAttested: true,
+      },
+      depsWith(),
+    );
+    expect(result.rowCount).toBe(1);
+
+    // Parse the actual bytes, not just the manifest/rowCount -- this is what
+    // the original bug hid from: the manifest already correctly reported
+    // rowCount 1, but the real file contained 2 data rows.
+    const sheet = readBulkFormSheet(result.body);
+    // 2 header rows + exactly 1 data row.
+    expect(sheet).toHaveLength(3);
   });
 
   it("excludes every import-origin listing with not_attested when freshnessAttested is false", async () => {

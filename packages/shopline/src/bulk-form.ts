@@ -1088,7 +1088,7 @@ export function createBulkFormUpdate(
 
   for (const row of rows) {
     const values = byProductId.get(row.productId);
-    if (values === undefined && include === "changed") continue;
+    const changesBeforeRow = changes.length;
 
     const cells = BULK_FORM_COLUMNS.map((column) => {
       const key = column.key;
@@ -1113,6 +1113,17 @@ export function createBulkFormUpdate(
       });
       return replacement;
     });
+
+    // Skip a row that produced zero real changes -- e.g. an enrichment
+    // whose every value already matches the raw source. Deciding this
+    // AFTER building `cells` (rather than before, based on whether an
+    // enrichment entry merely exists) is what makes this correct for a
+    // MIXED batch: `createBulkExport` always supplies an enrichment entry
+    // for every freshness-surviving listing, even genuine no-ops, so
+    // "does an entry exist" was never a reliable signal that this specific
+    // row actually changed.
+    const rowChanged = changes.length > changesBeforeRow;
+    if (!rowChanged && include === "changed") continue;
 
     for (const column of QUANTITY_DELTA_COLUMNS) {
       const original = row.raw[column];
