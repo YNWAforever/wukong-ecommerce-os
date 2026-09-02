@@ -388,7 +388,7 @@ describe("CatalogControlCenter", () => {
 
     const table = container.querySelector("table");
     expect(table).not.toBeNull();
-    expect(table?.getAttribute("aria-label")).toBe("商品控制中心");
+    expect(table?.getAttribute("aria-label")).toBe("商品列表");
 
     await unmount(root);
   });
