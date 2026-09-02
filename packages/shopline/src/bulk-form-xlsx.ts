@@ -30,6 +30,11 @@ const ZIP_EOCD = 0x06054b50;
 const MAX_WORKSHEET_ROWS = 1_048_576;
 const MAX_WORKSHEET_COLUMNS = 16_384;
 const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+// 1.5x the per-entry cap: generous for a legitimate multi-sheet/multi-part
+// workbook (the real Opak workbook this system targets is 182KB compressed,
+// orders of magnitude under this), while still bounding a pathological
+// many-small-entries archive that the per-entry cap alone doesn't catch.
+const MAX_TOTAL_INFLATED_BYTES = 96 * 1024 * 1024;
 
 export class BulkFormWorkbookError extends Error {
   constructor(message: string) {
@@ -54,6 +59,7 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
   let offset = view.getUint32(eocd + 16, true);
   const decoder = new TextDecoder();
   const entries = new Map<string, Uint8Array>();
+  let totalInflatedBytes = 0;
 
   for (let n = 0; n < entryCount; n += 1) {
     if (view.getUint32(offset, true) !== ZIP_CENTRAL_HEADER) {
@@ -89,6 +95,12 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
         // rejected workbook rather than leaking a runtime error to the caller.
         throw new BulkFormWorkbookError(
           `zip entry ${name} inflates beyond the supported size`,
+        );
+      }
+      totalInflatedBytes += inflated.byteLength;
+      if (totalInflatedBytes > MAX_TOTAL_INFLATED_BYTES) {
+        throw new BulkFormWorkbookError(
+          "zip archive's total decompressed size exceeds the supported bound",
         );
       }
       entries.set(name, new Uint8Array(inflated));
