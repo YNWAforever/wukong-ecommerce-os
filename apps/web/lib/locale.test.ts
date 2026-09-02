@@ -1,6 +1,12 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { LOCALE_COOKIE_NAME, DEFAULT_LOCALE, resolveLocale } from "./locale.js";
+import {
+  LOCALE_COOKIE_NAME,
+  DEFAULT_LOCALE,
+  resolveLocale,
+  setLocaleCookie,
+} from "./locale.js";
 
 describe("resolveLocale", () => {
   it("returns zh-Hant for a valid zh-Hant cookie value", () => {
@@ -31,5 +37,18 @@ describe("constants", () => {
 
   it("names a real cookie", () => {
     expect(LOCALE_COOKIE_NAME).toBe("locale");
+  });
+});
+
+describe("setLocaleCookie", () => {
+  it("writes a one-year, root-path locale cookie", () => {
+    const original = document.cookie;
+    try {
+      document.cookie = "locale=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+      setLocaleCookie("en");
+      expect(document.cookie).toContain("locale=en");
+    } finally {
+      document.cookie = original;
+    }
   });
 });

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { LOCALE_COOKIE_NAME, type Locale } from "../lib/locale";
+import { setLocaleCookie, type Locale } from "../lib/locale";
 
 export type NavItem = {
   href: string;
@@ -30,10 +30,6 @@ const ADMIN_ITEM: NavItem = {
 };
 const FOCUSABLE_SELECTOR = "a[href], button:not([disabled])";
 const DRAWER_LABEL = "流動版完整導覽";
-
-function setLocaleCookie(locale: Locale) {
-  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=31536000`;
-}
 
 export function AppShellNav({
   navItems,
