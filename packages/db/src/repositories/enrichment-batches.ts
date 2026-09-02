@@ -37,6 +37,20 @@ export type EnrichmentBatchRepository = {
     batchId: string,
     status: EnrichmentBatchItemStatus,
   ): Promise<string[]>;
+  /** Newest-first, this workspace's batches this listing belongs to only.
+   * `limit` defaults to 100 and must be between 1 and 100, matching every
+   * sibling repository's own bound. */
+  listBatchesForListing(
+    listingId: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      batchId: string;
+      label: string;
+      status: EnrichmentBatchStatus;
+      createdAt: Date;
+    }>
+  >;
   countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
   /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
    * must be between 1 and 100. */
@@ -158,6 +172,40 @@ export function createEnrichmentBatchRepository(
         )
         .orderBy(asc(enrichmentBatchItems.createdAt));
       return rows.map((row) => row.listingId);
+    },
+
+    async listBatchesForListing(listingId, limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("enrichment batch limit must be between 1 and 100");
+      }
+      const rows = await transaction
+        .select({
+          batchId: enrichmentBatchItems.batchId,
+          label: enrichmentBatches.label,
+          status: enrichmentBatches.status,
+          createdAt: enrichmentBatches.createdAt,
+        })
+        .from(enrichmentBatchItems)
+        .innerJoin(
+          enrichmentBatches,
+          and(
+            eq(enrichmentBatches.workspaceId, enrichmentBatchItems.workspaceId),
+            eq(enrichmentBatches.id, enrichmentBatchItems.batchId),
+          ),
+        )
+        .where(
+          and(
+            eq(enrichmentBatchItems.workspaceId, workspaceId),
+            eq(enrichmentBatchItems.listingId, listingId),
+          ),
+        )
+        // Same tiebreak convention as `listForWorkspace`: batches created in
+        // one shared transaction share Postgres's per-transaction `now()`, so
+        // `id` breaks same-instant ties deterministically.
+        .orderBy(desc(enrichmentBatches.createdAt), desc(enrichmentBatches.id))
+        .limit(limit);
+      return rows;
     },
 
     async countByStatus(batchId) {
