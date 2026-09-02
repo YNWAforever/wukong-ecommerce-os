@@ -322,13 +322,53 @@ describe("audit repository — aggregate queries", () => {
     });
   });
 
-  it("scopes countByActionSince and sumImportMetricsSince to the calling workspace only", async () => {
-    const otherId = "ws_audit_metrics_other";
+  it("scopes all three aggregate methods to the calling workspace only", async () => {
+    // Dedicated, self-contained workspaces for this test -- not reusing
+    // metricsWorkspaceId, so this test's counts don't depend on how many
+    // events earlier tests in this describe block happened to write.
+    const scopedId = "ws_audit_isolation_scoped";
+    const otherId = "ws_audit_isolation_other";
     await admin.unsafe(`
-      INSERT INTO workspaces (id, name, profile) VALUES ('${otherId}', '${otherId}', '{}'::jsonb)
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${scopedId}', '${scopedId}', '{}'::jsonb),
+        ('${otherId}', '${otherId}', '{}'::jsonb)
       ON CONFLICT (id) DO NOTHING;
     `);
     const since = new Date(Date.now() - 60_000);
+
+    await database.forWorkspace(scopedId, async (repositories) => {
+      const draft = await repositories.listings.create({
+        target: "shopline",
+        note: "scoped ws",
+      });
+      await repositories.audit.write({
+        workspaceId: scopedId,
+        actorId: "user_1",
+        entityId: draft.id,
+        action: "listing.publish_failed",
+        metadata: { versionId: "v1", errorCode: "shopline_5xx" },
+      });
+      await repositories.audit.write({
+        workspaceId: scopedId,
+        actorId: "user_1",
+        entityId: draft.id,
+        action: "listing.review_conflict",
+        metadata: { reason: "version_conflict" },
+      });
+      await repositories.audit.write({
+        workspaceId: scopedId,
+        actorId: "user_1",
+        entityId: draft.id,
+        action: "listing.bulk_form_import_completed",
+        metadata: {
+          parsedRows: 10,
+          createdDrafts: 3,
+          refreshedProducts: 2,
+          issueCount: 1,
+        },
+      });
+    });
+
     await database.forWorkspace(otherId, async (repositories) => {
       const draft = await repositories.listings.create({
         target: "shopline",
@@ -341,14 +381,50 @@ describe("audit repository — aggregate queries", () => {
         action: "listing.publish_failed",
         metadata: { versionId: "v9", errorCode: "timeout" },
       });
+      await repositories.audit.write({
+        workspaceId: otherId,
+        actorId: "user_x",
+        entityId: draft.id,
+        action: "listing.review_conflict",
+        metadata: { reason: "version_conflict" },
+      });
+      await repositories.audit.write({
+        workspaceId: otherId,
+        actorId: "user_x",
+        entityId: draft.id,
+        action: "listing.bulk_form_import_completed",
+        metadata: {
+          parsedRows: 999,
+          createdDrafts: 999,
+          refreshedProducts: 999,
+          issueCount: 999,
+        },
+      });
     });
-    await database.forWorkspace(metricsWorkspaceId, async (repositories) => {
-      // metricsWorkspaceId already wrote 2 listing.publish_failed events in an earlier test in this describe block
-      const count = await repositories.audit.countByActionSince(
+
+    await database.forWorkspace(scopedId, async (repositories) => {
+      const publishFailedCount = await repositories.audit.countByActionSince(
         "listing.publish_failed",
         since,
       );
-      expect(count).toBe(2); // must not include otherId's event
+      expect(publishFailedCount).toBe(1); // not otherId's
+
+      const grouped = await repositories.audit.countByActionAndMetadataKeySince(
+        "listing.review_conflict",
+        "reason",
+        since,
+      );
+      expect(new Map(grouped.map((row) => [row.value, row.count]))).toEqual(
+        new Map([["version_conflict", 1]]), // not otherId's matching entry too
+      );
+
+      const summed = await repositories.audit.sumImportMetricsSince(since);
+      expect(summed).toEqual({
+        parsedRows: 10,
+        createdDrafts: 3,
+        refreshedProducts: 2,
+        issueCount: 1,
+      }); // not otherId's 999s
     });
   });
 });
