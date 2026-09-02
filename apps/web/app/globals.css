@@ -704,7 +704,8 @@ button:disabled {
 .evidence-panel,
 .flags,
 .delivery-panel,
-.product-shot-panel {
+.product-shot-panel,
+.activity-panel {
   padding: 28px;
   background: var(--surface);
   border: 1px solid var(--line);
