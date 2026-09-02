@@ -39,6 +39,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
 
   return (
     <div className="auth-shell">
+      <a className="skip-link" href="#main-content">
+        跳到主要內容 <span>Skip to content</span>
+      </a>
       <aside
         className="auth-shell-brand"
         aria-label="Wukong Catalog Operations OS"
@@ -114,7 +117,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
           </div>
         </div>
       </aside>
-      <main className="auth-shell-card-wrap">{children}</main>
+      <main id="main-content" className="auth-shell-card-wrap">
+        {children}
+      </main>
     </div>
   );
 }

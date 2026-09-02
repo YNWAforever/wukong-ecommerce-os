@@ -66,4 +66,15 @@ describe("AuthShell", () => {
     );
     expect(hrefs.some((href) => href?.includes("/pilot"))).toBe(false);
   });
+
+  it("renders a skip link pointing at the main content region", async () => {
+    const container = await mount("en");
+    const skipLink = container.querySelector<HTMLAnchorElement>(
+      'a[href="#main-content"]',
+    );
+    expect(skipLink).not.toBeNull();
+    expect(skipLink?.textContent).toContain("Skip to content");
+    const mainContent = document.getElementById("main-content");
+    expect(mainContent).not.toBeNull();
+  });
 });
