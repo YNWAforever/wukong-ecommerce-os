@@ -49,21 +49,33 @@ describe("audit repository — findRelatedToListing", () => {
         target: "shopline",
         note: "test draft",
       });
+      return draft.id;
+    });
+
+    // Each audit write happens in its own `forWorkspace` transaction so that
+    // Postgres's `now()` — which is fixed for the lifetime of a single
+    // transaction — actually advances between the two events. Writing both
+    // inside one transaction gives them an identical `created_at`, which
+    // makes the newest-first ordering assertion below fall back to a random
+    // UUID tiebreak and fail non-deterministically.
+    await database.forWorkspace(workspaceId, async (repositories) => {
       await repositories.audit.write({
         workspaceId,
         actorId: "user_1",
-        entityId: draft.id,
+        entityId: listingId,
         action: "listing.imported",
         metadata: { remoteProductId: "sku_1" },
       });
+    });
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
       await repositories.audit.write({
         workspaceId,
         actorId: "user_1",
-        entityId: draft.id,
+        entityId: listingId,
         action: "listing.approved",
         metadata: {},
       });
-      return draft.id;
     });
 
     await database.forWorkspace(otherWorkspaceId, async (repositories) => {
@@ -91,11 +103,44 @@ describe("audit repository — findRelatedToListing", () => {
   });
 
   it("never returns another workspace's audit events even for the same listing id", async () => {
+    // `entity_id` is a plain text column with no foreign-key constraint, so
+    // both workspaces can safely write an audit event against the same
+    // manually-chosen id without a real listings row existing for it. This
+    // lets us prove the `eq(auditEvents.workspaceId, workspaceId)` filter is
+    // load-bearing: if it were dropped, either workspace's query below would
+    // return both events instead of just its own.
+    const sharedListingId = "10101010-2020-4030-8040-505060607070";
+
     await database.forWorkspace(workspaceId, async (repositories) => {
-      const events = await repositories.audit.findRelatedToListing(
-        "00000000-0000-4000-8000-000000000000",
-      );
-      expect(events).toEqual([]);
+      await repositories.audit.write({
+        workspaceId,
+        actorId: "user_1",
+        entityId: sharedListingId,
+        action: "listing.imported",
+        metadata: {},
+      });
+    });
+
+    await database.forWorkspace(otherWorkspaceId, async (repositories) => {
+      await repositories.audit.write({
+        workspaceId: otherWorkspaceId,
+        actorId: "user_2",
+        entityId: sharedListingId,
+        action: "listing.imported",
+        metadata: {},
+      });
+    });
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const events = await repositories.audit.findRelatedToListing(sharedListingId);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.actorId).toBe("user_1");
+    });
+
+    await database.forWorkspace(otherWorkspaceId, async (repositories) => {
+      const events = await repositories.audit.findRelatedToListing(sharedListingId);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.actorId).toBe("user_2");
     });
   });
 });
