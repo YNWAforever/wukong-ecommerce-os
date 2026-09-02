@@ -1388,8 +1388,7 @@ button:disabled {
   color: var(--ink-soft);
   font-size: 13px;
 }
-.auth-status::before {
-  content: "Status: ";
+.auth-status strong {
   font-weight: 700;
 }
 .auth-links {
