@@ -133,7 +133,7 @@ export function createAuditWriter(
             gte(auditEvents.createdAt, since),
           ),
         )
-        .groupBy(sql`value`);
+        .groupBy(value);
       return rows;
     },
 
