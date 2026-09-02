@@ -10,6 +10,7 @@ import type {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { ActivityPanel } from "./activity-panel";
 import { ComplianceFlags } from "./compliance-flags";
 import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
@@ -819,6 +820,7 @@ export function ListingReviewClient({
             onCsv={exportCsv}
             onPublish={publish}
           />
+          <ActivityPanel entries={snapshot.activity} />
         </div>
       </div>
     </div>
