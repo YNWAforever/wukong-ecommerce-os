@@ -87,22 +87,40 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
 
     if (method === 0) entries.set(name, raw);
     else if (method === 8) {
+      // Cap THIS entry's own inflation at whatever remains of the total
+      // budget, not just the flat per-entry cap -- otherwise a rejected
+      // entry could still have been allowed to fully materialize up to
+      // MAX_INFLATED_BYTES before the total check ran, letting peak memory
+      // reach MAX_TOTAL_INFLATED_BYTES + MAX_INFLATED_BYTES instead of
+      // stopping at MAX_TOTAL_INFLATED_BYTES.
+      const remainingBudget = MAX_TOTAL_INFLATED_BYTES - totalInflatedBytes;
+      if (remainingBudget <= 0) {
+        throw new BulkFormWorkbookError(
+          "zip archive's total decompressed size exceeds the supported bound",
+        );
+      }
+      const perEntryLimit = Math.min(MAX_INFLATED_BYTES, remainingBudget);
       let inflated;
       try {
-        inflated = inflateRawSync(raw, { maxOutputLength: MAX_INFLATED_BYTES });
+        inflated = inflateRawSync(raw, { maxOutputLength: perEntryLimit });
       } catch {
-        // zlib throws ERR_BUFFER_TOO_LARGE past maxOutputLength; report it as a
-        // rejected workbook rather than leaking a runtime error to the caller.
+        // zlib throws ERR_BUFFER_TOO_LARGE past maxOutputLength; report it as
+        // a rejected workbook rather than leaking a runtime error to the
+        // caller. Which message is honest depends on which bound was
+        // actually tighter for this call: if the remaining total budget was
+        // already below the flat per-entry cap, this entry might have fit
+        // under MAX_INFLATED_BYTES alone but not in what's left of the
+        // archive's total budget.
+        if (perEntryLimit < MAX_INFLATED_BYTES) {
+          throw new BulkFormWorkbookError(
+            "zip archive's total decompressed size exceeds the supported bound",
+          );
+        }
         throw new BulkFormWorkbookError(
           `zip entry ${name} inflates beyond the supported size`,
         );
       }
       totalInflatedBytes += inflated.byteLength;
-      if (totalInflatedBytes > MAX_TOTAL_INFLATED_BYTES) {
-        throw new BulkFormWorkbookError(
-          "zip archive's total decompressed size exceeds the supported bound",
-        );
-      }
       entries.set(name, new Uint8Array(inflated));
     } else
       throw new BulkFormWorkbookError(
