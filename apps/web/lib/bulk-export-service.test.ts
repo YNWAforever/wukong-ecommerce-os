@@ -105,6 +105,7 @@ function depsWith(
       origin: "import" | "created";
       sourceImportId: string | null;
       contentDigest: string | null;
+      connectionId: string;
     }
   > = {
     listing_changed: {
@@ -113,6 +114,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
     // A genuine no-op: every enrichable column already matches what the
     // active version's content would write, so no cell in the sheet
@@ -132,6 +134,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
     listing_stale: {
       remoteProductId: "prod-stale",
@@ -139,6 +142,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
   };
   const versions: Record<
@@ -265,6 +269,7 @@ describe("createBulkExport", () => {
             origin: "import" as const,
             sourceImportId: "import_1",
             contentDigest: "digest_1",
+            connectionId: "conn_1",
           };
         }
         return depsWith().getPlatformProductLink(listingId);
@@ -336,6 +341,7 @@ describe("createBulkExport", () => {
           origin: "created" as const,
           sourceImportId: null,
           contentDigest: null,
+          connectionId: "conn_1",
         };
       },
       async getActiveVersion() {
@@ -410,6 +416,7 @@ describe("createBulkExport", () => {
             origin: "import" as const,
             sourceImportId: "import_1",
             contentDigest: "digest_1",
+            connectionId: "conn_1",
           };
         }
         return depsWith().getPlatformProductLink(listingId);
@@ -455,6 +462,7 @@ describe("createBulkExport", () => {
       origin: "import" as const,
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     };
     const deps = depsWith({
       async getPlatformProductLink(listingId: string) {
@@ -494,5 +502,84 @@ describe("createBulkExport", () => {
         deps,
       ),
     ).rejects.toBeInstanceOf(ShoplineBulkFormError);
+  });
+
+  it("rejects a request mixing listings from two different SHOPLINE connections", async () => {
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_other_store") {
+          return {
+            remoteProductId: "prod-other-store",
+            rawRow: rawRowFor({ productId: "prod-other-store" }),
+            origin: "import" as const,
+            sourceImportId: "import_1",
+            contentDigest: "digest_1",
+            connectionId: "conn_2",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_other_store") {
+          return {
+            id: "version_other_store",
+            content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+
+    await expect(
+      createBulkExport(
+        {
+          workspaceId: "ws_1",
+          requestedBy: "user_1",
+          listingIds: ["listing_changed", "listing_other_store"],
+          freshnessAttested: true,
+        },
+        deps,
+      ),
+    ).rejects.toMatchObject({
+      issues: [expect.objectContaining({ code: "mixed_source_connections" })],
+    });
+  });
+
+  it("does not require sourceImportId to match across listings from the same connection", async () => {
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_other_import") {
+          return {
+            remoteProductId: "prod-other-import",
+            rawRow: rawRowFor({ productId: "prod-other-import" }),
+            origin: "import" as const,
+            sourceImportId: "import_2",
+            contentDigest: "digest_1",
+            connectionId: "conn_1",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_other_import") {
+          return {
+            id: "version_other_import",
+            content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed", "listing_other_import"],
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.rowCount).toBe(2);
   });
 });

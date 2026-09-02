@@ -73,6 +73,7 @@ type PlatformProductFixture = {
   origin: "import" | "created";
   sourceImportId: string | null;
   contentDigest: string | null;
+  connectionId: string;
 } | null;
 
 const defaultReviewSnapshots: Record<string, ReviewSnapshotFixture> = {
@@ -106,6 +107,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
   // A genuine no-op: every enrichable column already matches what the active
   // version's content would write, so no cell in the sheet actually changes.
@@ -124,6 +126,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
   listing_stale: {
     remoteProductId: "prod-stale",
@@ -131,6 +134,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
 };
 
@@ -436,6 +440,7 @@ describe("POST /api/listings/export", () => {
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     };
     const { handler } = makeHandler({
       reviewSnapshots: {

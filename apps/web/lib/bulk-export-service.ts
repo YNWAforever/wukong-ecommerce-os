@@ -70,6 +70,7 @@ export type BulkExportPlatformProductLink = {
   origin: "import" | "created";
   sourceImportId: string | null;
   contentDigest: string | null;
+  connectionId: string;
 };
 
 /**
@@ -150,6 +151,9 @@ export async function createBulkExport(
   const enrichments: BulkFormEnrichment[] = [];
   // listingId -> remoteProductId, for the listings that made it into `rows`.
   const survivorRemoteProductIds = new Map<string, string>();
+  // The connectionId of the first import-origin listing seen, so every
+  // subsequent import-origin listing can be checked against it.
+  let sharedConnectionId: string | null = null;
 
   // Forwards straight to `deps` so `assertExportFreshness`'s own re-read of
   // the platform-product link and active version is a second, independent
@@ -185,6 +189,26 @@ export async function createBulkExport(
         outcome: "not_import_origin",
       });
       continue;
+    }
+
+    // Checked early, before the freshness gate: fail fast with a clear
+    // "you're mixing stores" error rather than a confusing per-listing
+    // freshness error when the real mistake is picking listings from two
+    // different SHOPLINE connections. sourceImportId is deliberately NOT
+    // checked here -- two listings from different import batches of the
+    // SAME connection is a normal, expected case.
+    if (sharedConnectionId === null) {
+      sharedConnectionId = link.connectionId;
+    } else if (link.connectionId !== sharedConnectionId) {
+      throw new ShoplineBulkFormError([
+        {
+          code: "mixed_source_connections",
+          productId: null,
+          column: null,
+          message:
+            "requested listings resolve to more than one SHOPLINE connection; export one store at a time",
+        },
+      ]);
     }
 
     const freshness = await assertExportFreshness(

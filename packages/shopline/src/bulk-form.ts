@@ -914,7 +914,12 @@ export type BulkFormEnrichmentIssueCode =
   | "enrichment_column_not_enrichable"
   | "enrichment_value_blank"
   | "enrichment_value_too_long"
-  | "enrichment_value_control_characters";
+  | "enrichment_value_control_characters"
+  // Thrown by a caller (apps/web/lib/bulk-export-service.ts), not by
+  // anything inside this package -- reuses ShoplineBulkFormError's shared
+  // shape/handling for a batch that mixes listings from two different
+  // SHOPLINE connections rather than adding a new error type.
+  | "mixed_source_connections";
 
 export type BulkFormEnrichmentIssue = {
   code: BulkFormEnrichmentIssueCode;
