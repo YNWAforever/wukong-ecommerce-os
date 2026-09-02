@@ -99,14 +99,12 @@ describe("ListingQueue", () => {
     expect(checkbox).not.toBeNull();
 
     const ariaLabel = checkbox!.getAttribute("aria-label");
-    expect(ariaLabel).toContain("Opak Cabernet 2024");
-    expect(ariaLabel).toContain("2");
-    expect(ariaLabel).toContain("個未解決的合規標記");
+    expect(ariaLabel).toBe("Opak Cabernet 2024 · 2 個未解決的合規標記");
 
     const titleAttr = checkbox!.getAttribute("title");
-    expect(titleAttr).toContain("Opak Cabernet 2024");
-    expect(titleAttr).toContain("2");
-    expect(titleAttr).toContain("個未解決的合規標記");
+    expect(titleAttr).toBe(
+      "Opak Cabernet 2024 · 2 個未解決的合規標記 · 2 unresolved compliance flags",
+    );
 
     await unmount(root);
   });
