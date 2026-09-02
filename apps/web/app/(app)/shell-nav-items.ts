@@ -4,6 +4,7 @@ import type { WorkspaceRole } from "../../lib/session-context";
 export const SHELL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelZh: "總覽", labelEn: "Overview" },
   { href: "/catalog", labelZh: "商品中心", labelEn: "Catalog" },
+  { href: "/queue", labelZh: "工作佇列", labelEn: "Work Queue" },
   { href: "/listings/new", labelZh: "建立草稿", labelEn: "New listing" },
   {
     href: "/listings/import",

@@ -1,7 +1,5 @@
 import type { ListingStatus } from "@wukong/core";
 
-import type { CatalogItem } from "../lib/catalog-contract";
-
 export type CatalogFilter =
   "all" | "attention" | "review" | "unlinked" | "published";
 
@@ -46,27 +44,4 @@ export function catalogStatusTone(
     return "warning";
   }
   return "neutral";
-}
-
-export function filterCatalogItems(
-  items: readonly CatalogItem[],
-  query: string,
-  filter: CatalogFilter,
-): CatalogItem[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-
-  return items.filter((item) => {
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "attention" && item.needsAttention) ||
-      (filter === "review" && item.needsReview) ||
-      (filter === "unlinked" && item.listingId === null) ||
-      (filter === "published" && item.listingStatus === "published");
-    if (!matchesFilter) return false;
-    if (!normalizedQuery) return true;
-
-    return [item.title, item.sku, item.remoteProductId, item.specVersion]
-      .filter((value): value is string => value !== null)
-      .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
-  });
 }

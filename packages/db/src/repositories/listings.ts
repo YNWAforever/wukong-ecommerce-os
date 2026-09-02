@@ -64,6 +64,21 @@ export type ListingRepository = {
    */
   statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
   listRecent(limit?: number): Promise<ListingSummary[]>;
+  /**
+   * Fetches exactly the listings with the given ids, unbounded by
+   * `listRecent`'s 100-row recency cap -- callers that already have a
+   * specific set of listing ids (e.g. from a paginated product list) need
+   * those exact rows, not whatever happens to fall within the most-recent
+   * window. Returns an empty array for an empty `ids` input, without
+   * querying.
+   */
+  getByIds(ids: readonly string[]): Promise<ListingSummary[]>;
+  /**
+   * Counts every listing in the workspace by status, unbounded by
+   * `listRecent`'s 100-row cap -- dashboard status tiles need the true
+   * total, not a count over whatever page happened to be fetched.
+   */
+  countByStatus(): Promise<Record<ListingStatus, number>>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
   requireForPublish(id: string): Promise<{
     id: string;
@@ -383,6 +398,105 @@ export function createListingRepository(
             : 0,
         };
       });
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      const rows = await transaction
+        .select({
+          listing: listingDrafts,
+          activeVersion: {
+            id: listingVersions.id,
+            content: listingVersions.content,
+          },
+        })
+        .from(listingDrafts)
+        .leftJoin(
+          listingVersions,
+          and(
+            eq(listingVersions.workspaceId, workspaceId),
+            eq(listingVersions.id, listingDrafts.activeVersionId),
+          ),
+        )
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, [...ids]),
+          ),
+        );
+
+      const activeVersionIds = rows
+        .map((row) => row.activeVersion?.id)
+        .filter((id): id is string => id !== undefined);
+      // One batched query for every returned listing's flag count, not one
+      // query per listing — at most one extra round trip regardless of how
+      // many of the requested ids have an active version.
+      const flagCounts =
+        activeVersionIds.length > 0
+          ? await transaction
+              .select({
+                versionId: complianceFlags.listingVersionId,
+                count: sql<number>`count(*)::int`,
+              })
+              .from(complianceFlags)
+              .where(
+                and(
+                  eq(complianceFlags.workspaceId, workspaceId),
+                  inArray(complianceFlags.listingVersionId, activeVersionIds),
+                  eq(complianceFlags.status, "open"),
+                  eq(complianceFlags.severity, "blocking"),
+                ),
+              )
+              .groupBy(complianceFlags.listingVersionId)
+          : [];
+      const flagCountByVersionId = new Map(
+        flagCounts.map((row) => [row.versionId, row.count]),
+      );
+
+      return rows.map(({ listing, activeVersion }) => {
+        const parsed = activeVersion?.id
+          ? canonicalListingSchema.safeParse(activeVersion.content)
+          : null;
+        return {
+          ...listing,
+          activeVersion: parsed?.success
+            ? { id: activeVersion!.id, content: parsed.data }
+            : null,
+          openBlockingFlagCount: activeVersion?.id
+            ? (flagCountByVersionId.get(activeVersion.id) ?? 0)
+            : 0,
+        };
+      });
+    },
+
+    async countByStatus() {
+      scope.assertOpen();
+      const rows = await transaction
+        .select({
+          status: listingDrafts.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(listingDrafts)
+        .where(eq(listingDrafts.workspaceId, workspaceId))
+        .groupBy(listingDrafts.status);
+
+      const counts: Record<ListingStatus, number> = {
+        received: 0,
+        processing: 0,
+        needs_info: 0,
+        in_review: 0,
+        approved: 0,
+        reopened: 0,
+        publishing: 0,
+        published: 0,
+        publish_failed: 0,
+        failed: 0,
+      };
+      for (const row of rows) {
+        counts[row.status as ListingStatus] = row.count;
+      }
+      return counts;
     },
 
     async requireById(id) {

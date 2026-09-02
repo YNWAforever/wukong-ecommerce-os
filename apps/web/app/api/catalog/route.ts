@@ -1,8 +1,11 @@
+import { z } from "zod";
+
 import type { Database } from "@wukong/db";
 import type { ListingStatus } from "@wukong/core";
 
 import {
   type CatalogItem,
+  filterCatalogItemsServer,
   summarizeCatalog,
 } from "../../../lib/catalog-contract";
 import { getDatabase } from "../../../lib/intake-runtime";
@@ -22,19 +25,31 @@ const ATTENTION_STATUSES = new Set<ListingStatus>([
 
 const REVIEW_STATUSES = new Set<ListingStatus>(["in_review", "reopened"]);
 
+const querySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  q: z.string().trim().optional(),
+  filter: z
+    .enum(["all", "attention", "review", "unlinked", "published"])
+    .default("all"),
+});
+
 type CatalogRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase(): Database;
 };
 
 export function createCatalogHandler(deps: CatalogRouteDeps) {
-  return async function catalog(): Promise<Response> {
+  return async function catalog(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const items = await deps
+      const url = new URL(request.url);
+      const query = querySchema.parse(Object.fromEntries(url.searchParams));
+
+      const allItems = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const products = await repositories.platformProducts.listRecent(100);
+          const products = await repositories.platformProducts.listRecent(5000);
           const listingIds = [
             ...new Set(
               products
@@ -44,23 +59,24 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           ];
           const statuses =
             await repositories.listings.statusesByIds(listingIds);
-          const recentListings = await repositories.listings.listRecent(100);
-          const recentListingById = new Map(
-            recentListings.map((listing) => [listing.id, listing]),
+          const linkedListings =
+            await repositories.listings.getByIds(listingIds);
+          const linkedListingById = new Map(
+            linkedListings.map((listing) => [listing.id, listing]),
           );
 
           return products.map((product): CatalogItem => {
-            const recentListing = product.listingId
-              ? recentListingById.get(product.listingId)
+            const linkedListing = product.listingId
+              ? linkedListingById.get(product.listingId)
               : undefined;
             const listingStatus = product.listingId
               ? (statuses[product.listingId] ?? null)
               : null;
             const openBlockingFlagCount =
-              recentListing?.openBlockingFlagCount ?? null;
+              linkedListing?.openBlockingFlagCount ?? null;
             const title =
-              recentListing?.activeVersion?.content.title["zh-Hant"] ??
-              recentListing?.activeVersion?.content.title.en ??
+              linkedListing?.activeVersion?.content.title["zh-Hant"] ??
+              linkedListing?.activeVersion?.content.title.en ??
               product.sku ??
               product.remoteProductId;
             const needsReview =
@@ -83,11 +99,28 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
               openBlockingFlagCount,
               needsReview,
               needsAttention,
+              createdAt: product.createdAt.toISOString(),
+              updatedAt: product.updatedAt.toISOString(),
+              contentDigest: product.contentDigest,
             };
           });
         });
 
-      return jsonResponse(200, { items, summary: summarizeCatalog(items) });
+      const filtered = filterCatalogItemsServer(
+        allItems,
+        query.q,
+        query.filter,
+      );
+      const start = (query.page - 1) * query.pageSize;
+      const pageItems = filtered.slice(start, start + query.pageSize);
+
+      return jsonResponse(200, {
+        items: pageItems,
+        summary: summarizeCatalog(allItems),
+        page: query.page,
+        pageSize: query.pageSize,
+        totalMatching: filtered.length,
+      });
     });
   };
 }

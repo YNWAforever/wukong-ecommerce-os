@@ -694,6 +694,88 @@ describe("workspace isolation", () => {
     expect(byId.get(flaggedId)?.openBlockingFlagCount).toBe(1);
   });
 
+  it("counts listings by status across the whole workspace, not just a capped fetch", async () => {
+    // 150 exceeds listRecent's 100-row cap on purpose: a buggy countByStatus
+    // that fetched rows (capped at 100) and counted them in JS would
+    // undercount here, while the real SQL `GROUP BY count(*)` -- which never
+    // applies a LIMIT -- is unaffected by row count. A fixture of only a
+    // few rows wouldn't distinguish the two implementations.
+    const listingCount = 150;
+    const workspaceId = "ws_listings_count";
+    await forWorkspace(database, workspaceId, async (repos) => {
+      for (let index = 0; index < listingCount; index += 1) {
+        await repos.listings.create({ target: "shopline" });
+      }
+    });
+
+    const counts = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.countByStatus(),
+    );
+
+    expect(counts).toEqual({
+      received: listingCount,
+      processing: 0,
+      needs_info: 0,
+      in_review: 0,
+      approved: 0,
+      reopened: 0,
+      publishing: 0,
+      published: 0,
+      publish_failed: 0,
+      failed: 0,
+    });
+  });
+
+  it("isolates counts per workspace", async () => {
+    const workspaceA = "ws_listings_count_a";
+    const workspaceB = "ws_listings_count_b";
+
+    await forWorkspace(database, workspaceA, (repos) =>
+      repos.listings.create({ target: "shopline" }),
+    );
+
+    const countsB = await forWorkspace(database, workspaceB, (repos) =>
+      repos.listings.countByStatus(),
+    );
+    expect(countsB.received).toBe(0);
+  });
+
+  it("fetches exactly the listings requested by id, regardless of update recency", async () => {
+    const getByIdsWorkspaceId = "ws_listings_getbyids";
+
+    const { targetId, otherIds } = await forWorkspace(
+      database,
+      getByIdsWorkspaceId,
+      async (repos) => {
+        const target = await repos.listings.create({ target: "shopline" });
+        // 100 more-recently-touched listings, so `target` would fall outside
+        // any listRecent(100)-style "most recent" window -- proving getByIds
+        // fetches by id, not by recency.
+        const others: string[] = [];
+        for (let index = 0; index < 100; index += 1) {
+          const created = await repos.listings.create({ target: "shopline" });
+          others.push(created.id);
+        }
+        return { targetId: target.id, otherIds: others };
+      },
+    );
+
+    const fetched = await forWorkspace(database, getByIdsWorkspaceId, (repos) =>
+      repos.listings.getByIds([targetId]),
+    );
+
+    expect(fetched.map((listing) => listing.id)).toEqual([targetId]);
+    expect(otherIds).toHaveLength(100);
+  });
+
+  it("returns an empty array for an empty id list without querying", async () => {
+    const emptyWorkspaceId = "ws_listings_getbyids_empty";
+    const fetched = await forWorkspace(database, emptyWorkspaceId, (repos) =>
+      repos.listings.getByIds([]),
+    );
+    expect(fetched).toEqual([]);
+  });
+
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(

@@ -1,97 +1,85 @@
 "use client";
 
-import type { ListingStatus } from "@wukong/core";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
-import { ListingQueue } from "./listing-queue";
-import type { QueueItem, QueueStatus } from "./listing-view-models";
+import type { ListingStatus } from "@wukong/core";
 
-export type ListingCollectionItem = {
-  id: string;
-  status: ListingStatus;
-  target: "shopline";
-  title: string;
-  sku: string | null;
-  updatedAt: string;
-  openBlockingFlagCount: number;
-};
+import type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
+import { mapDashboardItems } from "../lib/dashboard-queue-shared";
+import {
+  queueGroups,
+  type QueueItem,
+  type QueueStatus,
+} from "./listing-view-models";
 
-function queueStatus(status: ListingStatus): QueueStatus {
-  if (status === "reopened") return "in_review";
-  if (status === "publish_failed") return "failed";
-  return status;
-}
+export type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
+export { mapDashboardItems } from "../lib/dashboard-queue-shared";
 
-const nextActions: Record<QueueStatus, string> = {
-  received: "查看草稿",
-  processing: "查看處理狀態",
-  needs_info: "補充資料",
-  in_review: "繼續審核",
-  approved: "準備上架",
-  publishing: "查看發布狀態",
-  published: "查看商品",
-  failed: "查看錯誤",
-};
-
-export function mapDashboardItems(items: ListingCollectionItem[]): QueueItem[] {
-  return items.map((item) => {
-    const status = queueStatus(item.status);
-    return {
-      id: item.id,
-      title: item.title,
-      subtitle: `${item.sku ?? "未有 SKU"} · SHOPLINE`,
-      status,
-      updatedAt: new Intl.DateTimeFormat("zh-HK", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(item.updatedAt)),
-      nextAction: nextActions[status],
-      openBlockingFlagCount: item.openBlockingFlagCount,
-    };
-  });
-}
-
-export function dashboardMetrics(items: ListingCollectionItem[]) {
+/**
+ * Workspace-accurate dashboard metrics, derived from the real
+ * `countByStatus()` aggregate (not from the 100-row-capped `items` array,
+ * which can silently undercount past that window).
+ */
+export function dashboardMetricsFromCounts(
+  counts: Record<ListingStatus, number>,
+): { active: number; inReview: number; blocked: number } {
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   return {
-    active: items.filter((item) => item.status !== "published").length,
-    inReview: items.filter(
-      (item) => item.status === "in_review" || item.status === "reopened",
-    ).length,
-    blocked: items.filter(
-      (item) => item.status === "failed" || item.status === "publish_failed",
-    ).length,
+    active: total - counts.published,
+    inReview: counts.in_review + counts.reopened,
+    blocked: counts.failed + counts.publish_failed,
   };
 }
 
-type BulkApproveResultItem =
-  | { listingId: string; ok: true; versionId: string }
-  | { listingId: string; ok: false; code: string; message: string };
+const TEASER_SIZE = 5;
+const TEASER_PRIORITY_STATUSES = new Set<QueueStatus>([
+  "needs_info",
+  "in_review",
+]);
 
-type BulkApproveResponse = {
-  results: BulkApproveResultItem[];
-  approved: number;
-  failed: number;
+function queueGroupOrder(status: QueueStatus): number {
+  const index = queueGroups.findIndex((group) => group.status === status);
+  return index === -1 ? queueGroups.length : index;
+}
+
+/**
+ * Picks a small teaser (3-5 items) of the highest-priority queue items for
+ * the dashboard. `needs_info`/`in_review` items come first, ordered the
+ * same way the full `/queue` view orders its groups (needs_info before
+ * in_review); any remaining slots are filled from the rest of the queue,
+ * also in `queueGroups` order. The full grouped, selectable queue — and
+ * bulk-approve — now live at `/queue`.
+ */
+export function selectDashboardTeaser(items: QueueItem[]): QueueItem[] {
+  const byGroupOrder = (a: QueueItem, b: QueueItem) =>
+    queueGroupOrder(a.status) - queueGroupOrder(b.status);
+  const priority = items
+    .filter((item) => TEASER_PRIORITY_STATUSES.has(item.status))
+    .sort(byGroupOrder);
+  const rest = items
+    .filter((item) => !TEASER_PRIORITY_STATUSES.has(item.status))
+    .sort(byGroupOrder);
+  return [...priority, ...rest].slice(0, TEASER_SIZE);
+}
+
+type ListListingsResponse = {
+  items: ListingCollectionItem[];
+  counts: Record<ListingStatus, number>;
 };
 
 export function DashboardListingsClient() {
-  const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
+  const [data, setData] = useState<ListListingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
-    null,
-  );
-  const [bulkPending, setBulkPending] = useState(false);
 
-  const load = () => {
+  useEffect(() => {
     const controller = new AbortController();
     fetch("/api/listings", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok)
           throw new Error(`Unable to load listings (${response.status})`);
-        const body = (await response.json()) as {
-          items: ListingCollectionItem[];
-        };
-        setItems(body.items);
+        const body = (await response.json()) as ListListingsResponse;
+        setData(body);
       })
       .catch((loadError: unknown) => {
         if (
@@ -105,47 +93,8 @@ export function DashboardListingsClient() {
             : "Unable to load listings",
         );
       });
-    return controller;
-  };
-
-  useEffect(() => {
-    const controller = load();
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const toggleSelected = (id: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectAllEligible = (eligibleIds: string[]) => {
-    setSelected(new Set(eligibleIds.slice(0, 50)));
-  };
-
-  const clearSelection = () => setSelected(new Set());
-
-  const runBulkApprove = async () => {
-    setBulkPending(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch("/api/listings/bulk-approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listingIds: [...selected] }),
-      });
-      const body = (await response.json()) as BulkApproveResponse;
-      setBulkResult(body);
-      setSelected(new Set());
-      load();
-    } finally {
-      setBulkPending(false);
-    }
-  };
 
   if (error)
     return (
@@ -153,20 +102,15 @@ export function DashboardListingsClient() {
         {error}
       </p>
     );
-  if (!items)
+  if (!data)
     return (
       <p className="helper-copy" role="status">
         正在載入工作佇列… Loading work queue…
       </p>
     );
 
-  const metrics = dashboardMetrics(items);
-  const queueItems = mapDashboardItems(items);
-  const eligibleIds = items
-    .filter(
-      (item) => item.status === "in_review" && item.openBlockingFlagCount === 0,
-    )
-    .map((item) => item.id);
+  const metrics = dashboardMetricsFromCounts(data.counts);
+  const teaserItems = selectDashboardTeaser(mapDashboardItems(data.items));
 
   return (
     <>
@@ -190,45 +134,51 @@ export function DashboardListingsClient() {
           </span>
         </div>
       </div>
-      {selected.size > 0 ? (
-        <div className="bulk-action-bar" role="region" aria-label="批量操作">
-          <span>
-            {selected.size} 個項目已選取 · {selected.size} selected
-          </span>
-          <button type="button" onClick={runBulkApprove} disabled={bulkPending}>
-            {bulkPending
-              ? "批准中… Approving…"
-              : `批准 ${selected.size} 個上架項目`}
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={clearSelection}
-          >
-            清除選取 Clear selection
-          </button>
+      <section
+        className="queue-group dashboard-queue-teaser"
+        aria-labelledby="queue-teaser-heading"
+      >
+        <div className="section-heading compact">
+          <div>
+            <p className="eyebrow">
+              工作佇列 <span>WORK QUEUE</span>
+            </p>
+            <h2 id="queue-teaser-heading">最需要處理的項目</h2>
+          </div>
+          <Link className="text-link" href="/queue">
+            查看完整工作佇列 <span>View full queue</span>
+          </Link>
         </div>
-      ) : null}
-      {bulkResult ? (
-        <ul className="bulk-result-list" aria-live="polite">
-          {bulkResult.results.map((result) =>
-            result.ok ? (
-              <li key={result.listingId}>✓ {result.listingId}</li>
-            ) : (
-              <li key={result.listingId}>
-                ✗ {result.listingId}: {result.message}
+        {teaserItems.length > 0 ? (
+          <ul className="queue-list">
+            {teaserItems.map((item) => (
+              <li key={item.id} className="queue-item">
+                <div>
+                  <Link
+                    className="queue-item-title"
+                    href={`/listings/${item.id}`}
+                  >
+                    {item.title}
+                  </Link>
+                  <p>{item.subtitle}</p>
+                  <time dateTime={item.updatedAt}>{item.updatedAt}</time>
+                </div>
+                <Link
+                  className="secondary-button queue-action"
+                  href={`/listings/${item.id}`}
+                >
+                  {item.nextAction}
+                  <span aria-hidden="true"> →</span>
+                </Link>
               </li>
-            ),
-          )}
-        </ul>
-      ) : null}
-      <ListingQueue
-        items={queueItems}
-        selected={selected}
-        eligibleIds={eligibleIds}
-        onToggle={toggleSelected}
-        onSelectAllEligible={() => selectAllEligible(eligibleIds)}
-      />
+            ))}
+          </ul>
+        ) : (
+          <p className="empty-state">
+            目前沒有項目 <span>No items</span>
+          </p>
+        )}
+      </section>
     </>
   );
 }

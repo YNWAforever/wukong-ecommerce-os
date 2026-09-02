@@ -173,13 +173,16 @@ export function createListListingsHandler(deps: ListListingsDeps) {
   return async function listListings(): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const items = await deps
+      const { items, counts } = await deps
         .getDatabase()
-        .forWorkspace(context.workspaceId, async (repositories) =>
-          repositories.listings.listRecent(100),
-        );
+        .forWorkspace(context.workspaceId, async (repositories) => {
+          const items = await repositories.listings.listRecent(100);
+          const counts = await repositories.listings.countByStatus();
+          return { items, counts };
+        });
 
       return jsonResponse(200, {
+        counts,
         items: items.map((item) => {
           const content = item.activeVersion?.content as
             | {
