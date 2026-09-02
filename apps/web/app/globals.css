@@ -569,6 +569,9 @@ button:disabled {
 .quality-metric-strip {
   grid-template-columns: repeat(4, 1fr);
 }
+.jobs-metric-strip {
+  grid-template-columns: repeat(4, 1fr);
+}
 .section-heading {
   display: flex;
   align-items: flex-end;

@@ -45,6 +45,13 @@ function stubFetch(body: unknown, status = 200) {
   return fetcher;
 }
 
+const SAMPLE_METRICS = {
+  publishRetries: 3,
+  versionConflicts: 1,
+  staleSourceRejections: 2,
+  importedRows: 120,
+};
+
 const SAMPLE_ENTRIES = [
   {
     kind: "export",
@@ -103,7 +110,10 @@ describe("JobsLedgerClient", () => {
   });
 
   it("fetches /api/jobs and renders one row per entry, showing kind, summary, and rawStatus", async () => {
-    const fetcher = stubFetch({ entries: SAMPLE_ENTRIES });
+    const fetcher = stubFetch({
+      entries: SAMPLE_ENTRIES,
+      metrics: SAMPLE_METRICS,
+    });
 
     const { container } = await mountLedger();
 
@@ -125,7 +135,7 @@ describe("JobsLedgerClient", () => {
   });
 
   it("renders a listing link only when listingId is non-null", async () => {
-    stubFetch({ entries: SAMPLE_ENTRIES });
+    stubFetch({ entries: SAMPLE_ENTRIES, metrics: SAMPLE_METRICS });
 
     const { container } = await mountLedger();
 
@@ -138,7 +148,7 @@ describe("JobsLedgerClient", () => {
   });
 
   it("narrows visible rows to the selected kind via the filter toggle, and back to All", async () => {
-    stubFetch({ entries: SAMPLE_ENTRIES });
+    stubFetch({ entries: SAMPLE_ENTRIES, metrics: SAMPLE_METRICS });
 
     const { container } = await mountLedger();
 
@@ -227,5 +237,16 @@ describe("JobsLedgerClient", () => {
     expect(capturedSignal?.aborted).toBe(true);
 
     document.body.innerHTML = "";
+  });
+
+  it("renders a metric tile for each of the 4 new observability metrics", async () => {
+    stubFetch({ entries: [], metrics: SAMPLE_METRICS });
+
+    const { container } = await mountLedger();
+
+    const values = Array.from(
+      container.querySelectorAll(".jobs-metric-strip .metric-value"),
+    ).map((tile) => tile.textContent);
+    expect(values).toEqual(["3", "1", "2", "120"]);
   });
 });

@@ -114,6 +114,22 @@ describe("GET /api/jobs", () => {
                   ];
                 },
               },
+              audit: {
+                async countByActionSince() {
+                  return 0;
+                },
+                async countByActionAndMetadataKeySince() {
+                  return [];
+                },
+                async sumImportMetricsSince() {
+                  return {
+                    parsedRows: 0,
+                    createdDrafts: 0,
+                    refreshedProducts: 0,
+                    issueCount: 0,
+                  };
+                },
+              },
             });
           },
         }) as never,
@@ -144,5 +160,77 @@ describe("GET /api/jobs", () => {
       ["pipelineRuns.listForWorkspace", 100],
       ["exportAttempts.listForWorkspace", 100],
     ]);
+  });
+
+  it("includes a metrics summary alongside the ledger entries", async () => {
+    const handler = createJobsHandler({
+      sessionContext: {
+        async resolve() {
+          return {
+            workspaceId: "ws_opak",
+            actorId: "user_1",
+            role: "viewer",
+          };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              publishJobs: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              pipelineRuns: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              exportAttempts: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              audit: {
+                async countByActionSince() {
+                  return 3;
+                },
+                async countByActionAndMetadataKeySince() {
+                  return [
+                    { value: "version_conflict", count: 1 },
+                    { value: "source_import_mismatch", count: 2 },
+                  ];
+                },
+                async sumImportMetricsSince() {
+                  return {
+                    parsedRows: 120,
+                    createdDrafts: 10,
+                    refreshedProducts: 5,
+                    issueCount: 2,
+                  };
+                },
+              },
+            });
+          },
+        }) as never,
+    });
+
+    const response = await handler();
+    const body = await response.json();
+    expect(body.metrics).toEqual({
+      publishRetries: expect.any(Number),
+      versionConflicts: expect.any(Number),
+      staleSourceRejections: expect.any(Number),
+      importedRows: expect.any(Number),
+    });
   });
 });

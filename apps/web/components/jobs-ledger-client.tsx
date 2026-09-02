@@ -20,8 +20,16 @@ type WireLedgerEntry = {
   summary: string;
 };
 
+type JobsMetrics = {
+  publishRetries: number;
+  versionConflicts: number;
+  staleSourceRejections: number;
+  importedRows: number;
+};
+
 type JobsResponse = {
   entries: WireLedgerEntry[];
+  metrics: JobsMetrics;
 };
 
 type KindFilter = "all" | LedgerKind;
@@ -56,7 +64,15 @@ const STATUS_LABELS: Record<NormalizedStatus, string> = {
   cancelled: "已取消 Cancelled",
 };
 
-const EMPTY_RESPONSE: JobsResponse = { entries: [] };
+const EMPTY_RESPONSE: JobsResponse = {
+  entries: [],
+  metrics: {
+    publishRetries: 0,
+    versionConflicts: 0,
+    staleSourceRejections: 0,
+    importedRows: 0,
+  },
+};
 
 export function JobsLedgerClient() {
   const [data, setData] = useState<JobsResponse | null>(null);
@@ -122,6 +138,44 @@ export function JobsLedgerClient() {
 
   return (
     <section aria-label="作業記錄">
+      <div
+        className="metric-strip jobs-metric-strip"
+        aria-label="作業指標統計"
+      >
+        <div>
+          <span className="metric-value">
+            {response.metrics.publishRetries}
+          </span>
+          <span className="metric-label">
+            發佈重試 <small>Publish retries</small>
+          </span>
+        </div>
+        <div>
+          <span className="metric-value">
+            {response.metrics.versionConflicts}
+          </span>
+          <span className="metric-label">
+            版本衝突 <small>Version conflicts</small>
+          </span>
+        </div>
+        <div>
+          <span className="metric-value">
+            {response.metrics.staleSourceRejections}
+          </span>
+          <span className="metric-label">
+            來源已過時 <small>Stale-source rejections</small>
+          </span>
+        </div>
+        <div>
+          <span className="metric-value">
+            {response.metrics.importedRows}
+          </span>
+          <span className="metric-label">
+            近期匯入列數 <small>Recent imported rows</small>
+          </span>
+        </div>
+      </div>
+
       <div className="admin-tab-list" role="group" aria-label="依類型篩選">
         {KIND_FILTERS.map((option) => (
           <button
