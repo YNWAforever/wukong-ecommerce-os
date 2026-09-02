@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { exportAttempts } from "../schema.js";
@@ -91,6 +91,21 @@ export type ExportAttemptRepository = {
   /** Newest-first, this workspace's export attempts only. `limit` defaults
    * to 100 and must be between 1 and 100. */
   listForWorkspace(limit?: number): Promise<ExportAttempt[]>;
+  /** Every export attempt whose manifest contains an entry for this listing,
+   * newest first. Uses a jsonb containment check since `manifest` carries no
+   * foreign key to listings (see the type comment above). `limit` defaults
+   * to 100 and must be between 1 and 100. */
+  listContainingListing(
+    listingId: string,
+    limit?: number,
+  ): Promise<
+    Array<{
+      id: string;
+      outcome: ExportManifestOutcome;
+      reason?: string;
+      createdAt: Date;
+    }>
+  >;
 };
 
 // Mirrors the listingId:versionId normalization the idempotency key itself
@@ -188,6 +203,42 @@ export function createExportAttemptRepository(
         )
         .limit(1);
       return row ?? null;
+    },
+
+    async listContainingListing(listingId, limit = 100) {
+      scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("export attempt limit must be between 1 and 100");
+      }
+      const containment = JSON.stringify([{ listingId }]);
+      const rows = await transaction
+        .select({
+          id: exportAttempts.id,
+          manifest: exportAttempts.manifest,
+          createdAt: exportAttempts.createdAt,
+        })
+        .from(exportAttempts)
+        .where(
+          and(
+            eq(exportAttempts.workspaceId, workspaceId),
+            sql`${exportAttempts.manifest} @> ${containment}::jsonb`,
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(exportAttempts.createdAt), desc(exportAttempts.id))
+        .limit(limit);
+      return rows.map((row) => {
+        const entry = row.manifest.find((item) => item.listingId === listingId);
+        return {
+          id: row.id,
+          outcome: entry?.outcome ?? "listing_not_found",
+          reason: entry?.reason,
+          createdAt: row.createdAt,
+        };
+      });
     },
 
     async listForWorkspace(limit = 100) {
