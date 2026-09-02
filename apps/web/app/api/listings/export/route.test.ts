@@ -431,6 +431,49 @@ describe("POST /api/listings/export", () => {
     });
   });
 
+  it("writes one review_conflict event per excluded_stale entry when a request has more than one", async () => {
+    // freshnessAttested: false makes every import-origin listing excluded
+    // for the same, deterministic reason -- unlike listing_stale's
+    // call-count-based fixture, this holds steady within a single request
+    // regardless of how many listingIds are in it.
+    const { handler, audits } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop"],
+        freshnessAttested: false,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.manifest).toEqual([
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
+      {
+        listingId: "listing_noop",
+        versionId: "version_noop",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
+    ]);
+    expect(audits).toHaveLength(3);
+    expect(audits[0].action).toBe("listing.bulk_export_created");
+    const conflictAudits = audits.filter(
+      (a: any) => a.action === "listing.review_conflict",
+    );
+    expect(conflictAudits).toHaveLength(2);
+    expect(conflictAudits.map((a: any) => a.entityId).sort()).toEqual([
+      "listing_changed",
+      "listing_noop",
+    ]);
+    expect(
+      conflictAudits.every((a: any) => a.metadata.reason === "not_attested"),
+    ).toBe(true);
+  });
+
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
     const { handler } = makeHandler();
     const response = await handler(
