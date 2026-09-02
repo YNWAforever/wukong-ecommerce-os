@@ -203,6 +203,7 @@ button:disabled {
 }
 .locale-toggle button {
   padding: 6px 14px;
+  min-height: 44px;
   color: var(--ink-soft);
   font-size: 13px;
   background: var(--surface);
@@ -654,7 +655,7 @@ button:disabled {
 }
 .queue-action {
   flex: 0 0 auto;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 11px;
   font-size: 12px;
 }
