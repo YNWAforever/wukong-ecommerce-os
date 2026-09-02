@@ -15,7 +15,13 @@ export type AuditEventRecord = {
 };
 
 export type WorkspaceAuditWriter = AuditWriter & {
-  findRelatedToListing(listingId: string): Promise<AuditEventRecord[]>;
+  /** Newest-first, this workspace's events for this listing only. `limit`
+   * defaults to 100 and must be between 1 and 100, matching every sibling
+   * repository's own `listForWorkspace`-style bound. */
+  findRelatedToListing(
+    listingId: string,
+    limit?: number,
+  ): Promise<AuditEventRecord[]>;
 };
 
 export function createAuditWriter(
@@ -31,7 +37,9 @@ export function createAuditWriter(
     async write(event: DomainAuditEvent): Promise<void> {
       scope.assertOpen();
       if (event.workspaceId !== workspaceId) {
-        throw new Error("audit event workspace does not match transaction workspace");
+        throw new Error(
+          "audit event workspace does not match transaction workspace",
+        );
       }
       await transaction.insert(auditEvents).values({
         workspaceId,
@@ -42,8 +50,13 @@ export function createAuditWriter(
       });
     },
 
-    async findRelatedToListing(listingId: string): Promise<AuditEventRecord[]> {
+    async findRelatedToListing(listingId, limit = 100) {
       scope.assertOpen();
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error(
+          "audit findRelatedToListing limit must be between 1 and 100",
+        );
+      }
       const rows = await transaction
         .select({
           id: auditEvents.id,
@@ -60,7 +73,8 @@ export function createAuditWriter(
             eq(auditEvents.entityId, listingId),
           ),
         )
-        .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id));
+        .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+        .limit(limit);
       return rows;
     },
   };

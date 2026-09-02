@@ -15,7 +15,11 @@ const workspaceId = "ws_audit_repo";
 const otherWorkspaceId = "ws_audit_repo_other";
 
 describe("audit repository — findRelatedToListing", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -44,13 +48,16 @@ describe("audit repository — findRelatedToListing", () => {
   });
 
   it("returns only this workspace's audit events for the given listing, newest first", async () => {
-    const listingId = await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: "test draft",
-      });
-      return draft.id;
-    });
+    const listingId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: "test draft",
+        });
+        return draft.id;
+      },
+    );
 
     // Each audit write happens in its own `forWorkspace` transaction so that
     // Postgres's `now()` — which is fixed for the lifetime of a single
@@ -132,15 +139,37 @@ describe("audit repository — findRelatedToListing", () => {
     });
 
     await database.forWorkspace(workspaceId, async (repositories) => {
-      const events = await repositories.audit.findRelatedToListing(sharedListingId);
+      const events =
+        await repositories.audit.findRelatedToListing(sharedListingId);
       expect(events).toHaveLength(1);
       expect(events[0]?.actorId).toBe("user_1");
     });
 
     await database.forWorkspace(otherWorkspaceId, async (repositories) => {
-      const events = await repositories.audit.findRelatedToListing(sharedListingId);
+      const events =
+        await repositories.audit.findRelatedToListing(sharedListingId);
       expect(events).toHaveLength(1);
       expect(events[0]?.actorId).toBe("user_2");
+    });
+  });
+
+  it("returns an empty array for a listing id with no audit events", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const events = await repositories.audit.findRelatedToListing(
+        "00000000-0000-4000-8000-000000000000",
+      );
+      expect(events).toEqual([]);
+    });
+  });
+
+  it("rejects a limit outside 1..100", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await expect(
+        repositories.audit.findRelatedToListing("any-id", 0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.audit.findRelatedToListing("any-id", 101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
     });
   });
 });
