@@ -12,7 +12,10 @@ import {
   type BulkFormEnrichment,
   type BulkFormExportRow,
 } from "@wukong/shopline";
-import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  writeBulkFormWorkbook,
+  readBulkFormSheet,
+} from "@wukong/shopline/bulk-form-xlsx";
 
 /**
  * The pure decision of which requested listings go into one multi-product
@@ -102,6 +105,30 @@ export type CreateBulkExportResult = {
   specVersion: string;
   body: Uint8Array;
 };
+
+/**
+ * Compares a reparsed workbook grid against the sheet `createBulkFormUpdate`
+ * intended to write. `readBulkFormSheet` returns `null` for a blank cell
+ * (`packages/shopline/src/bulk-form-xlsx.ts`'s own `cellAt` helper collapses
+ * an empty string to `null` on read), while `BulkFormUpdate.sheet`'s blanks
+ * are `""` -- both sides are normalized to `""` before comparing, or every
+ * blank cell would spuriously fail this check.
+ */
+export function sheetsMatch(
+  reparsed: readonly (readonly (string | null)[])[],
+  intended: readonly (readonly string[])[],
+): boolean {
+  if (reparsed.length !== intended.length) return false;
+  for (let row = 0; row < intended.length; row += 1) {
+    const reparsedRow = reparsed[row] ?? [];
+    const intendedRow = intended[row] ?? [];
+    if (reparsedRow.length !== intendedRow.length) return false;
+    for (let col = 0; col < intendedRow.length; col += 1) {
+      if ((reparsedRow[col] ?? "") !== (intendedRow[col] ?? "")) return false;
+    }
+  }
+  return true;
+}
 
 export async function createBulkExport(
   input: CreateBulkExportInput,
@@ -263,6 +290,16 @@ export async function createBulkExport(
 
   const specVersion = update?.specVersion ?? SHOPLINE_BULK_FORM_SPEC_VERSION;
   const body = update ? writeBulkFormWorkbook(update.sheet) : new Uint8Array(0);
+
+  // Self-check: re-parse exactly what was just written and confirm it
+  // matches what was intended. An all-no-op batch has `update === null`
+  // and `body` is an empty placeholder -- nothing to reparse.
+  if (update && !sheetsMatch(readBulkFormSheet(body), update.sheet)) {
+    throw new Error(
+      "generated bulk-form workbook failed its own reparse-and-assert check -- the written bytes do not match the intended sheet",
+    );
+  }
+
   const rowCount = manifest.filter(
     (entry) => entry.outcome === "included",
   ).length;

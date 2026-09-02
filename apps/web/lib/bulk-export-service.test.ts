@@ -3,7 +3,40 @@ import { describe, expect, it } from "vitest";
 import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
-import { createBulkExport } from "./bulk-export-service.js";
+import { createBulkExport, sheetsMatch } from "./bulk-export-service.js";
+
+describe("sheetsMatch", () => {
+  it("treats a reparsed null cell and an intended empty-string cell as equivalent", () => {
+    expect(sheetsMatch([["a", null]], [["a", ""]])).toBe(true);
+  });
+
+  it("returns false when a cell value genuinely differs", () => {
+    expect(sheetsMatch([["a", "b"]], [["a", "c"]])).toBe(false);
+  });
+
+  it("returns false when row counts differ", () => {
+    expect(sheetsMatch([["a"]], [["a"], ["b"]])).toBe(false);
+  });
+
+  it("returns false when a row's column count differs", () => {
+    expect(sheetsMatch([["a", "b"]], [["a"]])).toBe(false);
+  });
+
+  it("returns true for identical sheets", () => {
+    expect(
+      sheetsMatch(
+        [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+        [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+      ),
+    ).toBe(true);
+  });
+});
 
 function contentFor(overrides: Partial<Record<string, unknown>> = {}) {
   return {
