@@ -41,12 +41,16 @@ export type ListingActivityRepositories = {
     >;
   };
   enrichmentBatches: {
-    listBatchesForListing(listingId: string): Promise<
+    listBatchesForListing(
+      listingId: string,
+    ): Promise<
       Array<{ batchId: string; label: string; status: string; createdAt: Date }>
     >;
   };
   exportAttempts: {
-    listContainingListing(listingId: string): Promise<
+    listContainingListing(
+      listingId: string,
+    ): Promise<
       Array<{ id: string; outcome: string; reason?: string; createdAt: Date }>
     >;
   };
@@ -70,33 +74,27 @@ export async function getListingActivity(
   ]);
 
   const entries: ListingActivityEntry[] = [
-    ...auditEvents.map(
-      (event): ListingActivityAuditEntry => ({
-        kind: "audit",
-        id: event.id,
-        action: event.action,
-        metadata: event.metadata,
-        createdAt: event.createdAt,
-      }),
-    ),
-    ...batches.map(
-      (batch): ListingActivityBatchEntry => ({
-        kind: "batch",
-        id: batch.batchId,
-        label: batch.label,
-        status: batch.status,
-        createdAt: batch.createdAt,
-      }),
-    ),
-    ...exportAttempts.map(
-      (attempt): ListingActivityExportEntry => ({
-        kind: "export",
-        id: attempt.id,
-        outcome: attempt.outcome,
-        reason: attempt.reason,
-        createdAt: attempt.createdAt,
-      }),
-    ),
+    ...auditEvents.map((event): ListingActivityAuditEntry => ({
+      kind: "audit",
+      id: event.id,
+      action: event.action,
+      metadata: event.metadata,
+      createdAt: event.createdAt,
+    })),
+    ...batches.map((batch): ListingActivityBatchEntry => ({
+      kind: "batch",
+      id: batch.batchId,
+      label: batch.label,
+      status: batch.status,
+      createdAt: batch.createdAt,
+    })),
+    ...exportAttempts.map((attempt): ListingActivityExportEntry => ({
+      kind: "export",
+      id: attempt.id,
+      outcome: attempt.outcome,
+      reason: attempt.reason,
+      createdAt: attempt.createdAt,
+    })),
   ];
 
   entries.sort((a, b) => {

@@ -156,8 +156,7 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
             return {
               status: 422,
               code: "confirmation_incomplete",
-              message:
-                "Complete the confirmation checklist before approving.",
+              message: "Complete the confirmation checklist before approving.",
             };
           }
 

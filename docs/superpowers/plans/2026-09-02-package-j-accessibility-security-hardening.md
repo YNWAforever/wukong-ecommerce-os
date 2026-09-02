@@ -14,9 +14,10 @@
 
 ---
 
-## Task 1: Skip link on auth routes
+## Task 1: Skip link on auth routes ✅ (commit 4b03a66)
 
 **Files:**
+
 - Modify: `apps/web/components/auth-shell.tsx`
 - Test: `apps/web/components/auth-shell.test.tsx`
 
@@ -95,9 +96,10 @@ git commit -m "feat: add a skip link to the auth shell"
 
 ---
 
-## Task 2: Demote the auth-shell tagline from `<h1>` to `<p>`
+## Task 2: Demote the auth-shell tagline from `<h1>` to `<p>` ✅ (140d293, d05f035, 3dcfad6)
 
 **Files:**
+
 - Modify: `apps/web/components/auth-shell.tsx`
 - Test: `apps/web/components/auth-shell.test.tsx`
 
@@ -195,9 +197,10 @@ git commit -m "fix: demote the auth-shell tagline from h1 to p so each auth page
 
 ---
 
-## Task 3: Associate the password hint with its input via `aria-describedby`
+## Task 3: Associate the password hint with its input via `aria-describedby` ✅ (0d80cba)
 
 **Files:**
+
 - Modify: `apps/web/components/auth-form.tsx`
 - Test: `apps/web/components/auth-form.test.tsx`
 
@@ -206,38 +209,38 @@ git commit -m "fix: demote the auth-shell tagline from h1 to p so each auth page
 Confirm the password field block still matches (currently `auth-form.tsx:331-362`):
 
 ```tsx
-{isPasswordMode(activeMode) ? (
-  <div className="auth-field">
-    <label htmlFor={"auth-password-" + activeMode}>
-      {locale === "zh-Hant"
-        ? isCompletionMode(activeMode)
-          ? "新密碼"
-          : "密碼"
-        : isCompletionMode(activeMode)
-          ? "New password"
-          : "Password"}
-    </label>
-    <input
-      id={"auth-password-" + activeMode}
-      name="password"
-      type="password"
-      autoComplete={
-        isCompletionMode(activeMode)
-          ? "new-password"
-          : "current-password"
-      }
-      minLength={PASSWORD_MIN}
-      maxLength={PASSWORD_MAX}
-      required
-      disabled={isPending}
-    />
-    <small>
-      {locale === "zh-Hant"
-        ? "長度需為 12 至 128 個字元。"
-        : "Use 12 to 128 characters."}
-    </small>
-  </div>
-) : null}
+{
+  isPasswordMode(activeMode) ? (
+    <div className="auth-field">
+      <label htmlFor={"auth-password-" + activeMode}>
+        {locale === "zh-Hant"
+          ? isCompletionMode(activeMode)
+            ? "新密碼"
+            : "密碼"
+          : isCompletionMode(activeMode)
+            ? "New password"
+            : "Password"}
+      </label>
+      <input
+        id={"auth-password-" + activeMode}
+        name="password"
+        type="password"
+        autoComplete={
+          isCompletionMode(activeMode) ? "new-password" : "current-password"
+        }
+        minLength={PASSWORD_MIN}
+        maxLength={PASSWORD_MAX}
+        required
+        disabled={isPending}
+      />
+      <small>
+        {locale === "zh-Hant"
+          ? "長度需為 12 至 128 個字元。"
+          : "Use 12 to 128 characters."}
+      </small>
+    </div>
+  ) : null;
+}
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -306,9 +309,10 @@ git commit -m "fix: associate the auth password hint with its input via aria-des
 
 ---
 
-## Task 4: Disabled queue checkbox label includes the listing title
+## Task 4: Disabled queue checkbox label includes the listing title ✅ (c1b5d39, 705fc8a)
 
 **Files:**
+
 - Modify: `apps/web/components/listing-queue.tsx`
 - Test: `apps/web/components/listing-queue.test.tsx`
 
@@ -347,7 +351,9 @@ it("includes the listing title in a disabled checkbox's accessible label", () =>
     eligible: false,
     openBlockingFlagCount: 2,
   });
-  render(<ListingQueue items={[item]} selected={new Set()} onToggle={() => {}} />);
+  render(
+    <ListingQueue items={[item]} selected={new Set()} onToggle={() => {}} />,
+  );
   const checkbox = screen.getByRole("checkbox");
   expect(checkbox).toHaveAccessibleName(/Opak Cabernet 2024/);
   expect(checkbox.getAttribute("title")).toMatch(/Opak Cabernet 2024/);
@@ -396,9 +402,10 @@ git commit -m "fix: include the listing title in a disabled queue checkbox's acc
 
 ---
 
-## Task 5: `aria-label` directly on the catalog control center's table
+## Task 5: `aria-label` directly on the catalog control center's table ✅ (74120b9, 5ea45ee)
 
 **Files:**
+
 - Modify: `apps/web/components/catalog-control-center.tsx`
 - Test: `apps/web/components/catalog-control-center.test.tsx`
 
@@ -413,7 +420,9 @@ Add to `apps/web/components/catalog-control-center.test.tsx` (read the file firs
 ```tsx
 it("gives the product table its own accessible name", () => {
   render(<CatalogControlCenter /* existing required props */ />);
-  expect(screen.getByRole("table", { name: "商品控制中心" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("table", { name: "商品控制中心" }),
+  ).toBeInTheDocument();
 });
 ```
 
@@ -450,9 +459,10 @@ git commit -m "fix: give the catalog control center's table its own aria-label"
 
 ---
 
-## Task 6: Touch-target CSS fixes
+## Task 6: Touch-target CSS fixes ✅ (4a8a251)
 
 **Files:**
+
 - Modify: `apps/web/app/globals.css`
 
 Per the design's own §6 testing guidance, a CSS-only value change isn't meaningfully TDD-able in this stack (no computed-style assertion tooling exists here) — verify by reading the rule directly plus a manual browser check, as the design specifies. No test file for this task.
@@ -517,9 +527,10 @@ git commit -m "fix: raise .queue-action and .locale-toggle button to the 44px to
 
 ---
 
-## Task 7: `loading.tsx` on every route
+## Task 7: `loading.tsx` on every route ✅ (73d672e, b8b171c)
 
 **Files:**
+
 - Create: `apps/web/components/route-loading.tsx`
 - Test: `apps/web/components/route-loading.test.tsx`
 - Create: 13 `loading.tsx` files (listed in Step 5)
@@ -624,9 +635,10 @@ git commit -m "feat: add a loading.tsx to every route using a shared RouteLoadin
 
 ---
 
-## Task 8: XLSX total decompressed-size bound
+## Task 8: XLSX total decompressed-size bound ✅ (2b78169, becb34b)
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form-xlsx.ts`
 - Test: `packages/shopline/src/bulk-form-xlsx.test.ts`
 
@@ -790,9 +802,10 @@ git commit -m "feat: bound the total decompressed size of a bulk-form XLSX archi
 
 ---
 
-## Task 9: `findRelatedToListing` on the audit repository
+## Task 9: `findRelatedToListing` on the audit repository ✅ (3c45a6a, f0e28a5, 8e3a752; follow-up: task_26ccdd0e for the missing index)
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/audit.ts`
 - Test: `packages/db/src/repositories/audit.integration.test.ts` (new)
 
@@ -821,7 +834,9 @@ export function createAuditWriter(
     async write(event: DomainAuditEvent): Promise<void> {
       scope.assertOpen();
       if (event.workspaceId !== workspaceId) {
-        throw new Error("audit event workspace does not match transaction workspace");
+        throw new Error(
+          "audit event workspace does not match transaction workspace",
+        );
       }
       await transaction.insert(auditEvents).values({
         workspaceId,
@@ -859,7 +874,11 @@ const workspaceId = "ws_audit_repo";
 const otherWorkspaceId = "ws_audit_repo_other";
 
 describe("audit repository — findRelatedToListing", () => {
-  const admin = postgres(adminUrl, { max: 1, onnotice: ignoreNotice, prepare: false });
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: ignoreNotice,
+    prepare: false,
+  });
   const database = createDatabase(appUrl, { migrationUrl: adminUrl });
 
   beforeAll(async () => {
@@ -888,27 +907,30 @@ describe("audit repository — findRelatedToListing", () => {
   });
 
   it("returns only this workspace's audit events for the given listing, newest first", async () => {
-    const listingId = await database.forWorkspace(workspaceId, async (repositories) => {
-      const draft = await repositories.listings.create({
-        target: "shopline",
-        note: "test draft",
-      });
-      await repositories.audit.write({
-        workspaceId,
-        actorId: "user_1",
-        entityId: draft.id,
-        action: "listing.imported",
-        metadata: { remoteProductId: "sku_1" },
-      });
-      await repositories.audit.write({
-        workspaceId,
-        actorId: "user_1",
-        entityId: draft.id,
-        action: "listing.approved",
-        metadata: {},
-      });
-      return draft.id;
-    });
+    const listingId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: "test draft",
+        });
+        await repositories.audit.write({
+          workspaceId,
+          actorId: "user_1",
+          entityId: draft.id,
+          action: "listing.imported",
+          metadata: { remoteProductId: "sku_1" },
+        });
+        await repositories.audit.write({
+          workspaceId,
+          actorId: "user_1",
+          entityId: draft.id,
+          action: "listing.approved",
+          metadata: {},
+        });
+        return draft.id;
+      },
+    );
 
     await database.forWorkspace(otherWorkspaceId, async (repositories) => {
       const otherDraft = await repositories.listings.create({
@@ -988,7 +1010,9 @@ export function createAuditWriter(
     async write(event: DomainAuditEvent): Promise<void> {
       scope.assertOpen();
       if (event.workspaceId !== workspaceId) {
-        throw new Error("audit event workspace does not match transaction workspace");
+        throw new Error(
+          "audit event workspace does not match transaction workspace",
+        );
       }
       await transaction.insert(auditEvents).values({
         workspaceId,
@@ -1038,9 +1062,10 @@ git commit -m "feat: add findRelatedToListing to the audit repository"
 
 ---
 
-## Task 10: `listBatchesForListing` on the enrichment-batch repository
+## Task 10: `listBatchesForListing` on the enrichment-batch repository ✅ (32415f4, fefe68f)
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/enrichment-batches.ts`
 - Test: `packages/db/src/repositories/enrichment-batches.integration.test.ts` (add to existing file — read it first to match its harness setup, which follows the same `export-attempts.integration.test.ts` convention)
 
@@ -1149,9 +1174,10 @@ git commit -m "feat: add listBatchesForListing to the enrichment-batch repositor
 
 ---
 
-## Task 11: `listContainingListing` on the export-attempts repository
+## Task 11: `listContainingListing` on the export-attempts repository ✅ (05308c5)
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/export-attempts.ts`
 - Test: `packages/db/src/repositories/export-attempts.integration.test.ts`
 
@@ -1176,28 +1202,31 @@ it("lists export attempts whose manifest contains the given listing id", async (
     },
   ];
 
-  const attemptId = await database.forWorkspace(workspaceId, async (repositories) => {
-    const attempt = await repositories.exportAttempts.ensure({
-      idempotencyKey: "key_contains_target",
-      requestedBy: "user_1",
-      manifest: manifestContainingTarget,
-      rowCount: 1,
-      specVersion: "bulk-form-v1",
-    });
-    return attempt.id;
-  });
+  const attemptId = await database.forWorkspace(
+    workspaceId,
+    async (repositories) => {
+      const attempt = await repositories.exportAttempts.ensure({
+        idempotencyKey: "key_contains_target",
+        requestedBy: "user_1",
+        manifest: manifestContainingTarget,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+      });
+      return attempt.id;
+    },
+  );
 
   await database.forWorkspace(workspaceId, async (repositories) => {
-    const containing = await repositories.exportAttempts.listContainingListing(
-      targetListingId,
-    );
+    const containing =
+      await repositories.exportAttempts.listContainingListing(targetListingId);
     expect(containing.map((entry) => entry.id)).toEqual([attemptId]);
     expect(containing[0]?.outcome).toBe("excluded_stale");
     expect(containing[0]?.reason).toBe("row_digest_mismatch");
 
-    const notContaining = await repositories.exportAttempts.listContainingListing(
-      "99999999-9999-4999-8999-999999999999",
-    );
+    const notContaining =
+      await repositories.exportAttempts.listContainingListing(
+        "99999999-9999-4999-8999-999999999999",
+      );
     expect(notContaining).toEqual([]);
   });
 });
@@ -1280,9 +1309,10 @@ git commit -m "feat: add listContainingListing to the export-attempts repository
 
 ---
 
-## Task 12: `listing-activity-service.ts` + extend `GET /api/listings/[id]`
+## Task 12: `listing-activity-service.ts` + extend `GET /api/listings/[id]` ✅ (3467324, f6fe191)
 
 **Files:**
+
 - Create: `apps/web/lib/listing-activity-service.ts`
 - Test: `apps/web/lib/listing-activity-service.test.ts`
 - Modify: `apps/web/app/api/listings/[id]/route.ts`
@@ -1406,12 +1436,16 @@ export type ListingActivityRepositories = {
     >;
   };
   enrichmentBatches: {
-    listBatchesForListing(listingId: string): Promise<
+    listBatchesForListing(
+      listingId: string,
+    ): Promise<
       Array<{ batchId: string; label: string; status: string; createdAt: Date }>
     >;
   };
   exportAttempts: {
-    listContainingListing(listingId: string): Promise<
+    listContainingListing(
+      listingId: string,
+    ): Promise<
       Array<{ id: string; outcome: string; reason?: string; createdAt: Date }>
     >;
   };
@@ -1435,33 +1469,27 @@ export async function getListingActivity(
   ]);
 
   const entries: ListingActivityEntry[] = [
-    ...auditEvents.map(
-      (event): ListingActivityAuditEntry => ({
-        kind: "audit",
-        id: event.id,
-        action: event.action,
-        metadata: event.metadata,
-        createdAt: event.createdAt,
-      }),
-    ),
-    ...batches.map(
-      (batch): ListingActivityBatchEntry => ({
-        kind: "batch",
-        id: batch.batchId,
-        label: batch.label,
-        status: batch.status,
-        createdAt: batch.createdAt,
-      }),
-    ),
-    ...exportAttempts.map(
-      (attempt): ListingActivityExportEntry => ({
-        kind: "export",
-        id: attempt.id,
-        outcome: attempt.outcome,
-        reason: attempt.reason,
-        createdAt: attempt.createdAt,
-      }),
-    ),
+    ...auditEvents.map((event): ListingActivityAuditEntry => ({
+      kind: "audit",
+      id: event.id,
+      action: event.action,
+      metadata: event.metadata,
+      createdAt: event.createdAt,
+    })),
+    ...batches.map((batch): ListingActivityBatchEntry => ({
+      kind: "batch",
+      id: batch.batchId,
+      label: batch.label,
+      status: batch.status,
+      createdAt: batch.createdAt,
+    })),
+    ...exportAttempts.map((attempt): ListingActivityExportEntry => ({
+      kind: "export",
+      id: attempt.id,
+      outcome: attempt.outcome,
+      reason: attempt.reason,
+      createdAt: attempt.createdAt,
+    })),
   ];
 
   entries.sort((a, b) => {
@@ -1512,7 +1540,7 @@ import { getListingActivity } from "../../../../lib/listing-activity-service";
 Inside the `db.forWorkspace` callback, after `const listingAssets = await repositories.sourceAssets.listForListing(id);` (or anywhere after `repositories` is in scope), add:
 
 ```ts
-          const activity = await getListingActivity(repositories, id);
+const activity = await getListingActivity(repositories, id);
 ```
 
 And add `activity,` to the returned object, e.g. immediately after `permissions: listingPermissions(session.role),`:
@@ -1539,9 +1567,10 @@ git commit -m "feat: compose per-listing activity and surface it from GET /api/l
 
 ---
 
-## Task 13: `ActivityPanel` component wired into the review page
+## Task 13: `ActivityPanel` component wired into the review page ✅ (b366b31, 06df911, 148e43c)
 
 **Files:**
+
 - Create: `apps/web/components/activity-panel.tsx`
 - Test: `apps/web/components/activity-panel.test.tsx`
 - Modify: `apps/web/components/listing-review-client.tsx`
@@ -1701,9 +1730,10 @@ git commit -m "feat: add an Activity panel to the listing review page"
 
 ---
 
-## Task 14: `listing.review_conflict` audit writes in the approve route
+## Task 14: `listing.review_conflict` audit writes in the approve route ✅ (f4fd5ed, fc5bf82, 555f29b — caught & fixed a real transaction-rollback bug that silently dropped every audit write)
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/[id]/approve/route.ts`
 - Test: `apps/web/app/api/listings/[id]/approve/route.test.ts` (add to existing file)
 
@@ -1767,57 +1797,54 @@ Expected: FAIL — `auditWrites` is empty for all three cases (no `audit.write` 
 In `apps/web/app/api/listings/[id]/approve/route.ts`, inside the Phase 0 `db.forWorkspace` callback, change each of the three branches:
 
 ```ts
-        if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: id,
-            action: "listing.review_conflict",
-            metadata: { reason: "version_conflict" },
-          });
-          throw new ApiError(
-            409,
-            "version_conflict",
-            "This listing has changed since you started reviewing it.",
-          );
-        }
+if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+  await repositories.audit.write({
+    workspaceId: session.workspaceId,
+    actorId: session.actorId,
+    entityId: id,
+    action: "listing.review_conflict",
+    metadata: { reason: "version_conflict" },
+  });
+  throw new ApiError(
+    409,
+    "version_conflict",
+    "This listing has changed since you started reviewing it.",
+  );
+}
 ```
 
 ```ts
-        if (
-          (confirmation?.revision ?? -1) !==
-          parsedBody.confirmationLedgerRevision
-        ) {
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: id,
-            action: "listing.review_conflict",
-            metadata: { reason: "confirmation_ledger_stale" },
-          });
-          throw new ApiError(
-            409,
-            "confirmation_ledger_stale",
-            "The confirmation checklist has changed since you loaded it.",
-          );
-        }
+if ((confirmation?.revision ?? -1) !== parsedBody.confirmationLedgerRevision) {
+  await repositories.audit.write({
+    workspaceId: session.workspaceId,
+    actorId: session.actorId,
+    entityId: id,
+    action: "listing.review_conflict",
+    metadata: { reason: "confirmation_ledger_stale" },
+  });
+  throw new ApiError(
+    409,
+    "confirmation_ledger_stale",
+    "The confirmation checklist has changed since you loaded it.",
+  );
+}
 ```
 
 ```ts
-          if (!result.ok) {
-            await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: id,
-              action: "listing.review_conflict",
-              metadata: { reason: result.reason },
-            });
-            throw new ApiError(
-              409,
-              result.reason,
-              "This listing's source data no longer matches what was reviewed.",
-            );
-          }
+if (!result.ok) {
+  await repositories.audit.write({
+    workspaceId: session.workspaceId,
+    actorId: session.actorId,
+    entityId: id,
+    action: "listing.review_conflict",
+    metadata: { reason: result.reason },
+  });
+  throw new ApiError(
+    409,
+    result.reason,
+    "This listing's source data no longer matches what was reviewed.",
+  );
+}
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -1834,9 +1861,10 @@ git commit -m "feat: audit listing.review_conflict on approve-route version/conf
 
 ---
 
-## Task 15: `listing.review_conflict` audit writes in the export route
+## Task 15: `listing.review_conflict` audit writes in the export route ✅ (77bb780, e75a467)
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/export/route.ts`
 - Test: `apps/web/app/api/listings/export/route.test.ts` (add to existing file)
 
@@ -1885,40 +1913,34 @@ Expected: FAIL — no `listing.review_conflict` write exists yet.
 In `apps/web/app/api/listings/export/route.ts`, immediately after the existing `if (ensured.wasCreated) { ... }` block's `listing.bulk_export_created` write (inside the same `if`, after that `await repositories.audit.write({...})` call, before the block's closing brace):
 
 ```ts
-            if (ensured.wasCreated) {
-              await repositories.audit.write({
-                workspaceId: session.workspaceId,
-                actorId: session.actorId,
-                entityId: ensured.id,
-                action: "listing.bulk_export_created",
-                metadata: {
-                  exportAttemptId: ensured.id,
-                  includedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome === "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
-                  excludedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome !== "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
-                },
-              });
-              for (const entry of ensured.manifest) {
-                if (entry.outcome === "excluded_stale" && entry.reason) {
-                  await repositories.audit.write({
-                    workspaceId: session.workspaceId,
-                    actorId: session.actorId,
-                    entityId: entry.listingId,
-                    action: "listing.review_conflict",
-                    metadata: { reason: entry.reason },
-                  });
-                }
-              }
-            }
+if (ensured.wasCreated) {
+  await repositories.audit.write({
+    workspaceId: session.workspaceId,
+    actorId: session.actorId,
+    entityId: ensured.id,
+    action: "listing.bulk_export_created",
+    metadata: {
+      exportAttemptId: ensured.id,
+      includedListingIds: ensured.manifest
+        .filter((entry: ExportManifestEntry) => entry.outcome === "included")
+        .map((entry: ExportManifestEntry) => entry.listingId),
+      excludedListingIds: ensured.manifest
+        .filter((entry: ExportManifestEntry) => entry.outcome !== "included")
+        .map((entry: ExportManifestEntry) => entry.listingId),
+    },
+  });
+  for (const entry of ensured.manifest) {
+    if (entry.outcome === "excluded_stale" && entry.reason) {
+      await repositories.audit.write({
+        workspaceId: session.workspaceId,
+        actorId: session.actorId,
+        entityId: entry.listingId,
+        action: "listing.review_conflict",
+        metadata: { reason: entry.reason },
+      });
+    }
+  }
+}
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -1935,9 +1957,10 @@ git commit -m "feat: audit listing.review_conflict for each freshness-excluded l
 
 ---
 
-## Task 16: Aggregate audit write on bulk-form import completion
+## Task 16: Aggregate audit write on bulk-form import completion ✅ (1e04b96)
 
 **Files:**
+
 - Modify: `apps/web/lib/bulk-form-import.ts`
 - Test: `apps/web/lib/bulk-form-import.test.ts` (add to existing file)
 
@@ -2013,9 +2036,10 @@ git commit -m "feat: write an aggregate listing.bulk_form_import_completed audit
 
 ---
 
-## Task 17: Aggregate query methods on the audit repository
+## Task 17: Aggregate query methods on the audit repository ✅ (d5c0404, c2ece9e, 06afb53 — Docker outage mid-task; also caught a real Postgres GROUP BY bug via live testing)
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/audit.ts`
 - Test: `packages/db/src/repositories/audit.integration.test.ts`
 
@@ -2279,9 +2303,10 @@ git commit -m "feat: add aggregate count/sum queries to the audit repository"
 
 ---
 
-## Task 18: Metric tiles on `/jobs`
+## Task 18: Metric tiles on `/jobs` ✅ (def9811, d8ef488)
 
 **Files:**
+
 - Modify: `apps/web/app/api/jobs/route.ts`
 - Modify: `apps/web/components/jobs-ledger-client.tsx`
 - Modify: `apps/web/app/globals.css`
@@ -2468,37 +2493,34 @@ const EMPTY_RESPONSE: JobsResponse = {
 Add the tile strip as the first child of the returned `<section aria-label="作業記錄">`, before the existing `<div className="admin-tab-list" ...>`:
 
 ```tsx
-      <div
-        className="metric-strip jobs-metric-strip"
-        aria-label="作業指標統計"
-      >
-        <div>
-          <span className="metric-value">{response.metrics.publishRetries}</span>
-          <span className="metric-label">
-            發佈重試 <small>Publish retries</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{response.metrics.versionConflicts}</span>
-          <span className="metric-label">
-            版本衝突 <small>Version conflicts</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">
-            {response.metrics.staleSourceRejections}
-          </span>
-          <span className="metric-label">
-            來源已過時 <small>Stale-source rejections</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{response.metrics.importedRows}</span>
-          <span className="metric-label">
-            近期匯入列數 <small>Recent imported rows</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip jobs-metric-strip" aria-label="作業指標統計">
+  <div>
+    <span className="metric-value">{response.metrics.publishRetries}</span>
+    <span className="metric-label">
+      發佈重試 <small>Publish retries</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{response.metrics.versionConflicts}</span>
+    <span className="metric-label">
+      版本衝突 <small>Version conflicts</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">
+      {response.metrics.staleSourceRejections}
+    </span>
+    <span className="metric-label">
+      來源已過時 <small>Stale-source rejections</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{response.metrics.importedRows}</span>
+    <span className="metric-label">
+      近期匯入列數 <small>Recent imported rows</small>
+    </span>
+  </div>
+</div>
 ```
 
 Add the 4-column modifier to `apps/web/app/globals.css`, immediately after the existing `.quality-metric-strip` rule (`globals.css:568-570`):
@@ -2560,6 +2582,7 @@ Expected: exit 0, and the route manifest lists all 13 new `loading.tsx` boundari
 - [ ] **Step 7: Manual browser verification**
 
 Using `.claude/launch.json`'s `wukong-web-start` config (against the build from Step 6) or `wukong-web-dev`:
+
 - Confirm the skip link appears on Tab-focus on any `/signin`/`/register` page and jumps focus into the card (Task 1).
 - Confirm each auth page has exactly one visible `<h1>` (Task 2) via the accessibility tree, not just the test.
 - Confirm a `/listings/[id]` review page renders a new "Activity" section listing at least the listing's own `listing.imported` event (Tasks 9-13).

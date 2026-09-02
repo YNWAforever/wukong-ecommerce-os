@@ -21,7 +21,13 @@ type TestActivityEntry =
       metadata: unknown;
       createdAt: string;
     }
-  | { kind: "batch"; id: string; label: string; status: string; createdAt: string }
+  | {
+      kind: "batch";
+      id: string;
+      label: string;
+      status: string;
+      createdAt: string;
+    }
   | {
       kind: "export";
       id: string;
@@ -142,7 +148,9 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(/來源資料無效，未納入 Excluded, invalid source row/);
+    expect(container.textContent).toMatch(
+      /來源資料無效，未納入 Excluded, invalid source row/,
+    );
     expect(container.textContent).not.toContain("raw_row_invalid");
 
     await unmount(root);

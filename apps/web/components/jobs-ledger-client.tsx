@@ -138,10 +138,7 @@ export function JobsLedgerClient() {
 
   return (
     <section aria-label="作業記錄">
-      <div
-        className="metric-strip jobs-metric-strip"
-        aria-label="作業指標統計"
-      >
+      <div className="metric-strip jobs-metric-strip" aria-label="作業指標統計">
         <div>
           <span className="metric-value">
             {response.metrics.publishRetries}
@@ -167,9 +164,7 @@ export function JobsLedgerClient() {
           </span>
         </div>
         <div>
-          <span className="metric-value">
-            {response.metrics.importedRows}
-          </span>
+          <span className="metric-value">{response.metrics.importedRows}</span>
           <span className="metric-label">
             近期匯入列數 <small>Recent imported rows</small>
           </span>

@@ -319,28 +319,33 @@ describe("export attempts repository", () => {
       },
     ];
 
-    const attemptId = await database.forWorkspace(workspaceId, async (repositories) => {
-      const attempt = await repositories.exportAttempts.ensure({
-        idempotencyKey: "key_contains_target",
-        requestedBy: "user_1",
-        manifest: manifestContainingTarget,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-      });
-      return attempt.id;
-    });
+    const attemptId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const attempt = await repositories.exportAttempts.ensure({
+          idempotencyKey: "key_contains_target",
+          requestedBy: "user_1",
+          manifest: manifestContainingTarget,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+        });
+        return attempt.id;
+      },
+    );
 
     await database.forWorkspace(workspaceId, async (repositories) => {
-      const containing = await repositories.exportAttempts.listContainingListing(
-        targetListingId,
-      );
+      const containing =
+        await repositories.exportAttempts.listContainingListing(
+          targetListingId,
+        );
       expect(containing.map((entry) => entry.id)).toEqual([attemptId]);
       expect(containing[0]?.outcome).toBe("excluded_stale");
       expect(containing[0]?.reason).toBe("row_digest_mismatch");
 
-      const notContaining = await repositories.exportAttempts.listContainingListing(
-        "99999999-9999-4999-8999-999999999999",
-      );
+      const notContaining =
+        await repositories.exportAttempts.listContainingListing(
+          "99999999-9999-4999-8999-999999999999",
+        );
       expect(notContaining).toEqual([]);
     });
   });
@@ -397,9 +402,10 @@ describe("export attempts repository", () => {
     );
 
     await database.forWorkspace(isolationWorkspaceId, async (repositories) => {
-      const containing = await repositories.exportAttempts.listContainingListing(
-        sharedListingId,
-      );
+      const containing =
+        await repositories.exportAttempts.listContainingListing(
+          sharedListingId,
+        );
       expect(containing.map((entry) => entry.id)).toEqual([ownId]);
       expect(containing.map((entry) => entry.id)).not.toContain(otherId);
     });

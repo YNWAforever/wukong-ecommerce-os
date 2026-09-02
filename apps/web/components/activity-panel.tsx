@@ -8,7 +8,13 @@ export type ActivityPanelEntry =
       metadata: unknown;
       createdAt: string;
     }
-  | { kind: "batch"; id: string; label: string; status: string; createdAt: string }
+  | {
+      kind: "batch";
+      id: string;
+      label: string;
+      status: string;
+      createdAt: string;
+    }
   | {
       kind: "export";
       id: string;
@@ -77,11 +83,7 @@ function summarize(entry: ActivityPanelEntry): string {
   }
 }
 
-export function ActivityPanel({
-  entries,
-}: {
-  entries: ActivityPanelEntry[];
-}) {
+export function ActivityPanel({ entries }: { entries: ActivityPanelEntry[] }) {
   return (
     <section className="activity-panel" aria-labelledby="activity-heading">
       <div className="section-heading compact">
