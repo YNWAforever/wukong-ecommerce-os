@@ -77,4 +77,17 @@ describe("AuthShell", () => {
     const mainContent = document.getElementById("main-content");
     expect(mainContent).not.toBeNull();
   });
+
+  it("demotes the tagline from h1 to p so the page has only one h1", async () => {
+    const container = await mount("en");
+    const h1Elements = container.querySelectorAll<HTMLHeadingElement>("h1");
+    expect(h1Elements.length).toBe(0);
+    const taglineElement = container.querySelector<HTMLParagraphElement>(
+      "p.auth-shell-tagline",
+    );
+    expect(taglineElement).not.toBeNull();
+    expect(taglineElement?.textContent).toContain(
+      "Verify the evidence before approving the content.",
+    );
+  });
 });

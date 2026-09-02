@@ -79,11 +79,11 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
               ? "Evidence-first 商品目錄營運"
               : "Evidence-first catalog operations"}
           </p>
-          <h1>
+          <p className="auth-shell-tagline">
             {isZh
               ? "先核實證據，再批准內容。"
               : "Verify the evidence before approving the content."}
-          </h1>
+          </p>
           <p>
             {isZh
               ? "Wukong 將來源檔、AI 建議、人手審批及 SHOPLINE 匯入證明分開管理，避免把已產生檔案誤當成已完成更新。"
