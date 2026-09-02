@@ -90,30 +90,31 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
       // these reads through `approveOne`'s own transaction, precisely so a
       // failed check here short-circuits before phase 1/2's external I/O
       // (S3 reads, a `sharp` composite, S3 writes) ever starts.
-      // The three checks below that write an audit event (`version_conflict`,
-      // `confirmation_ledger_stale`, and the freshness-gate failure) return a
-      // rejection descriptor instead of throwing directly. `db.forWorkspace`
-      // wraps this callback in a real Postgres transaction (see
-      // `packages/db/src/client.ts`); throwing from inside it rolls the
-      // transaction back, which would silently discard the audit write along
-      // with everything else -- so the ApiError for those three cases is
-      // thrown only after this call resolves and the transaction has
-      // committed. The other checks below (listing_not_found,
-      // confirmation_incomplete, source_freshness_required) write no audit
-      // event, so there's nothing for a rollback to undo and they keep
-      // throwing directly.
+      // Every rejection below -- whether or not it writes an audit event --
+      // returns a rejection descriptor instead of throwing directly.
+      // `db.forWorkspace` wraps this callback in a real Postgres transaction
+      // (see `packages/db/src/client.ts`); throwing from inside it rolls the
+      // transaction back, which would silently discard any audit write along
+      // with everything else. Returning uniformly means there's no branch
+      // left whose control-flow shape depends on whether it happens to write
+      // an audit event today -- copying any branch as a template for a new
+      // one can't reintroduce that rollback bug. The single corresponding
+      // `throw new ApiError(...)` happens once, after this call resolves and
+      // the transaction has committed.
       const rejection: ApprovalRejection | null = await db.forWorkspace(
         session.workspaceId,
         async (repositories) => {
           const snapshot = await repositories.listings.getReviewSnapshot(id);
           if (!snapshot?.activeVersion) {
-            throw new ApiError(404, "listing_not_found", "Listing not found.");
+            return {
+              status: 404,
+              code: "listing_not_found",
+              message: "Listing not found.",
+            };
           }
           if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
             await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: id,
+              ...auditContext,
               action: "listing.review_conflict",
               metadata: { reason: "version_conflict" },
             });
@@ -134,9 +135,7 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
             parsedBody.confirmationLedgerRevision
           ) {
             await repositories.audit.write({
-              workspaceId: session.workspaceId,
-              actorId: session.actorId,
-              entityId: id,
+              ...auditContext,
               action: "listing.review_conflict",
               metadata: { reason: "confirmation_ledger_stale" },
             });
@@ -154,11 +153,12 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
               confirmation.negativeConfirmations,
             )
           ) {
-            throw new ApiError(
-              422,
-              "confirmation_incomplete",
-              "Complete the confirmation checklist before approving.",
-            );
+            return {
+              status: 422,
+              code: "confirmation_incomplete",
+              message:
+                "Complete the confirmation checklist before approving.",
+            };
           }
 
           const link = await repositories.platformProducts.getByListingId(id);
@@ -171,11 +171,12 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
           // client can never supply fields that don't exist for it).
           if (link !== null && link.origin === "import") {
             if (!parsedBody.sourceImportId || !parsedBody.expectedRowDigest) {
-              throw new ApiError(
-                400,
-                "source_freshness_required",
-                "This listing is linked to an imported product and requires freshness fields.",
-              );
+              return {
+                status: 400,
+                code: "source_freshness_required",
+                message:
+                  "This listing is linked to an imported product and requires freshness fields.",
+              };
             }
             const result = await assertApprovalFreshness(
               {
@@ -196,9 +197,7 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
             );
             if (!result.ok) {
               await repositories.audit.write({
-                workspaceId: session.workspaceId,
-                actorId: session.actorId,
-                entityId: id,
+                ...auditContext,
                 action: "listing.review_conflict",
                 metadata: { reason: result.reason },
               });

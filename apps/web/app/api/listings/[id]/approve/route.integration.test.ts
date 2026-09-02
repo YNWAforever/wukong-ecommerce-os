@@ -113,7 +113,11 @@ describe("POST /api/listings/[id]/approve (live Postgres)", () => {
       const version = await repos.listings.appendVersion(
         listing.id,
         listingContent,
-        { workspaceId, actorId: "test:approve-audit-fix", entityId: listing.id },
+        {
+          workspaceId,
+          actorId: "test:approve-audit-fix",
+          entityId: listing.id,
+        },
         repos.audit,
       );
       return { listingId: listing.id, versionId: version.id };
@@ -122,42 +126,39 @@ describe("POST /api/listings/[id]/approve (live Postgres)", () => {
     return { listingId: created.listingId, activeVersionId: created.versionId };
   }
 
-  it(
-    "commits the listing.review_conflict audit write even though the version_conflict rejection rolls the rest of the phase-0 transaction back",
-    async () => {
-      const { listingId } = await seedInReview();
-      const mismatchedVersionId = "00000000-0000-4000-8000-000000000999";
+  it("commits the listing.review_conflict audit write even though the version_conflict rejection rolls the rest of the phase-0 transaction back", async () => {
+    const { listingId } = await seedInReview();
+    const mismatchedVersionId = "00000000-0000-4000-8000-000000000999";
 
-      const response = await handler(
-        routeRequest(listingId, {
-          expectedVersionId: mismatchedVersionId,
-          confirmationLedgerRevision: 0,
-        }),
-        routeContext(listingId),
-      );
+    const response = await handler(
+      routeRequest(listingId, {
+        expectedVersionId: mismatchedVersionId,
+        confirmationLedgerRevision: 0,
+      }),
+      routeContext(listingId),
+    );
 
-      expect(response.status).toBe(409);
-      expect(await response.json()).toMatchObject({
-        code: "version_conflict",
-      });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "version_conflict",
+    });
 
-      // The assertion that would have caught the original bug: a SEPARATE,
-      // fresh `forWorkspace` call -- a brand new transaction, reusing
-      // nothing from the request above -- reading back what is actually
-      // durable in Postgres. If the fix regresses and the ApiError is once
-      // again thrown from inside the same transaction as the audit write,
-      // this query comes back empty even though the response above still
-      // correctly reports 409 version_conflict.
-      const events = await forWorkspace(database, workspaceId, (repos) =>
-        repos.audit.findRelatedToListing(listingId),
-      );
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          action: "listing.review_conflict",
-          entityId: listingId,
-          metadata: { reason: "version_conflict" },
-        }),
-      );
-    },
-  );
+    // The assertion that would have caught the original bug: a SEPARATE,
+    // fresh `forWorkspace` call -- a brand new transaction, reusing
+    // nothing from the request above -- reading back what is actually
+    // durable in Postgres. If the fix regresses and the ApiError is once
+    // again thrown from inside the same transaction as the audit write,
+    // this query comes back empty even though the response above still
+    // correctly reports 409 version_conflict.
+    const events = await forWorkspace(database, workspaceId, (repos) =>
+      repos.audit.findRelatedToListing(listingId),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        action: "listing.review_conflict",
+        entityId: listingId,
+        metadata: { reason: "version_conflict" },
+      }),
+    );
+  });
 });
