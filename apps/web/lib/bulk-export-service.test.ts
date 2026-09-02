@@ -22,6 +22,19 @@ describe("sheetsMatch", () => {
     expect(sheetsMatch([["a", "b"]], [["a"]])).toBe(false);
   });
 
+  it("treats a row that's shorter due to a blank trailing cell as matching", () => {
+    // Mirrors real writer/reader behavior: `writeBulkFormWorkbook` omits the
+    // `<c>` element for a blank cell entirely, so a row whose trailing
+    // column(s) are blank (e.g. the locked `slKey1`, last in
+    // BULK_FORM_COLUMNS) reparses shorter than the fixed-width intended row
+    // -- that's a correct round trip, not a mismatch.
+    expect(sheetsMatch([["a", "b"]], [["a", "b", ""]])).toBe(true);
+  });
+
+  it("still catches a genuine mismatch even when the reparsed row is shorter", () => {
+    expect(sheetsMatch([["a", "x"]], [["a", "b", ""]])).toBe(false);
+  });
+
   it("returns true for identical sheets", () => {
     expect(
       sheetsMatch(
@@ -232,6 +245,65 @@ describe("createBulkExport", () => {
     const sheet = readBulkFormSheet(result.body);
     // 2 header rows + exactly 1 data row.
     expect(sheet).toHaveLength(3);
+  });
+
+  it("does not trip the reparse-and-assert self-check on a real write/read round trip when the raw row's trailing locked column (slKey1) is blank", async () => {
+    // slKey1 is the LAST column in BULK_FORM_COLUMNS and is locked (echoed
+    // verbatim, never enriched) -- an ordinary, type-sanctioned blank state,
+    // not an edge case. `writeBulkFormWorkbook` omits the `<c>` element for a
+    // blank cell entirely, so a row whose trailing cell is blank reparses
+    // shorter than the fixed-width sheet `createBulkFormUpdate` intended to
+    // write. Before the fix, `sheetsMatch`'s raw length check flagged that as
+    // a mismatch and `createBulkExport` threw on this perfectly correct
+    // export.
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_blank_trailing_column") {
+          return {
+            remoteProductId: "prod-blank-trailing",
+            rawRow: rawRowFor({ slKey1: "" }),
+            origin: "import" as const,
+            sourceImportId: "import_1",
+            contentDigest: "digest_1",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_blank_trailing_column") {
+          return {
+            id: "version_blank_trailing",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_blank_trailing_column"],
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.rowCount).toBe(1);
+    expect(result.manifest).toEqual([
+      {
+        listingId: "listing_blank_trailing_column",
+        versionId: "version_blank_trailing",
+        outcome: "included",
+      },
+    ]);
+
+    // Confirm the round trip actually did produce a shortened trailing row --
+    // otherwise this test wouldn't be exercising the bug at all.
+    const sheet = readBulkFormSheet(result.body);
+    const dataRow = sheet[2] ?? [];
+    expect(dataRow.length).toBeLessThan(BULK_FORM_COLUMNS.length);
   });
 
   it("excludes every import-origin listing with not_attested when freshnessAttested is false", async () => {

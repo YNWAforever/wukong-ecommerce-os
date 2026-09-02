@@ -108,11 +108,22 @@ export type CreateBulkExportResult = {
 
 /**
  * Compares a reparsed workbook grid against the sheet `createBulkFormUpdate`
- * intended to write. `readBulkFormSheet` returns `null` for a blank cell
- * (`packages/shopline/src/bulk-form-xlsx.ts`'s own `cellAt` helper collapses
- * an empty string to `null` on read), while `BulkFormUpdate.sheet`'s blanks
- * are `""` -- both sides are normalized to `""` before comparing, or every
- * blank cell would spuriously fail this check.
+ * intended to write. Two normalizations are needed, or this would spuriously
+ * fail on every export that has a blank trailing cell:
+ *
+ * - `readBulkFormSheet` returns `null` for a blank cell (the inline
+ *   null-for-blank logic in `packages/shopline/src/bulk-form-xlsx.ts`'s own
+ *   `readBulkFormSheet`, around lines 222-234), while `BulkFormUpdate.sheet`'s
+ *   blanks are `""` -- both sides are normalized to `""` before comparing.
+ * - `writeBulkFormWorkbook`'s `worksheetXml` omits the `<c>` element entirely
+ *   for a blank cell (`bulk-form-xlsx.ts`'s `if (value.length === 0) return
+ *   "";`), so a row whose TRAILING cell(s) are blank -- e.g. the locked,
+ *   never-enriched `slKey1` column, which is last in `BULK_FORM_COLUMNS` --
+ *   round-trips to a shorter array than it was written with. That is correct
+ *   reader/writer behavior, not corruption, so row width is compared as the
+ *   max of the two lengths rather than requiring exact length equality; an
+ *   unexpected non-blank value on either side still fails the per-column
+ *   comparison below.
  */
 export function sheetsMatch(
   reparsed: readonly (readonly (string | null)[])[],
@@ -122,8 +133,8 @@ export function sheetsMatch(
   for (let row = 0; row < intended.length; row += 1) {
     const reparsedRow = reparsed[row] ?? [];
     const intendedRow = intended[row] ?? [];
-    if (reparsedRow.length !== intendedRow.length) return false;
-    for (let col = 0; col < intendedRow.length; col += 1) {
+    const width = Math.max(reparsedRow.length, intendedRow.length);
+    for (let col = 0; col < width; col += 1) {
       if ((reparsedRow[col] ?? "") !== (intendedRow[col] ?? "")) return false;
     }
   }
