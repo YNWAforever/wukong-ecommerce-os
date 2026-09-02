@@ -116,7 +116,7 @@ function modeCopy(mode: AuthFormMode, locale: Locale) {
     case "password-signin":
       return {
         heading: "Welcome back",
-        intro: "Sign in to manage Opak Cellar listings.",
+        intro: "Sign in to manage your product listings.",
         submit: "Sign in with password",
       };
     case "magic-link":
