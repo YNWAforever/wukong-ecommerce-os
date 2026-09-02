@@ -10,6 +10,7 @@ import type {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import type { ListingActivityEntry } from "../lib/listing-activity-service";
 import { ComplianceFlags } from "./compliance-flags";
 import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
@@ -63,6 +64,7 @@ export type ListingViewResponse = {
   sourceImportId: string | null;
   contentDigest: string | null;
   permissions: ListingPermissions;
+  activity: ListingActivityEntry[];
 };
 
 type MappedListingView = {
