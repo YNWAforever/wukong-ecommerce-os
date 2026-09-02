@@ -6,6 +6,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/headers", () => ({
+  cookies: () => Promise.resolve({ get: () => ({ value: "en" }) }),
+}));
 
 const pagePath = fileURLToPath(new URL("./page.tsx", import.meta.url));
 
@@ -21,7 +24,7 @@ describe("SignInPage", () => {
       }),
     );
 
-    expect(markup).toContain("Opak Cellar");
+    expect(markup).toContain("Welcome back");
     expect(markup).toContain("invitation");
     expect(markup).toContain('type="email"');
     expect(markup).toContain('type="password"');
