@@ -507,9 +507,7 @@ describe("enrichment batch repository", () => {
     await database.forWorkspace(listWorkspaceId, async (repositories) => {
       const related =
         await repositories.enrichmentBatches.listBatchesForListing(draftId);
-      expect(related.map((batch) => batch.batchId)).not.toContain(
-        otherBatchId,
-      );
+      expect(related.map((batch) => batch.batchId)).not.toContain(otherBatchId);
       expect(related).toHaveLength(2);
       // workspaceId scoping, not just id matching: workspace A has no item
       // row for workspace B's own draft either.
@@ -531,6 +529,17 @@ describe("enrichment batch repository", () => {
       expect(
         await repositories.enrichmentBatches.listBatchesForListing(draftId),
       ).toEqual([]);
+    });
+  });
+
+  it("rejects a listBatchesForListing limit outside 1..100", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await expect(
+        repositories.enrichmentBatches.listBatchesForListing("any-id", 0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.enrichmentBatches.listBatchesForListing("any-id", 101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
     });
   });
 });
