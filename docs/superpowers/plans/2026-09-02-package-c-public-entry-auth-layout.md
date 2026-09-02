@@ -96,7 +96,7 @@ export default async function RootLayout({
 }
 ```
 
-- **Package B's real locale-toggle pattern** (`apps/web/components/app-shell-nav.tsx`), confirmed by reading it: a plain `document.cookie` write with a 1-year max-age, client-side `useState` for immediate reactivity, and **no** `router.refresh()` call anywhere — switching locale changes only the client-rendered labels immediately and persists via the cookie for the *next* navigation/reload; it does not force other already-rendered server content to re-render. This plan's `AuthShell` toggle follows the identical pattern, not a new one:
+- **Package B's real locale-toggle pattern** (`apps/web/components/app-shell-nav.tsx`), confirmed by reading it: a plain `document.cookie` write with a 1-year max-age, client-side `useState` for immediate reactivity, and **no** `router.refresh()` call anywhere — switching locale changes only the client-rendered labels immediately and persists via the cookie for the _next_ navigation/reload; it does not force other already-rendered server content to re-render. This plan's `AuthShell` toggle follows the identical pattern, not a new one:
 
 ```ts
 function setLocaleCookie(locale: Locale) {
@@ -131,6 +131,7 @@ Wukong 將來源檔、AI 建議、人手審批及 SHOPLINE 匯入證明分開管
 使用已獲邀請及由工作區管理員核准的帳戶登入。
 工作電郵 / 密碼 / 忘記密碼？
 ```
+
 On mobile (375px, confirmed via screenshot), the brand panel collapses to just the top navy bar (logo + locale toggle) — the tagline/stats/principles content does not render below ~1024px.
 
 ---
@@ -138,6 +139,7 @@ On mobile (375px, confirmed via screenshot), the brand panel collapses to just t
 ### Task 1: Extract the locale-cookie helper into a shared module
 
 **Files:**
+
 - Modify: `apps/web/lib/locale.ts`
 - Modify: `apps/web/lib/locale.test.ts`
 - Modify: `apps/web/components/app-shell-nav.tsx`
@@ -172,6 +174,7 @@ Note: this test needs a DOM (`document`) — check the file's existing `// @vite
 ```
 corepack pnpm --filter @wukong/web exec vitest run lib/locale.test.ts
 ```
+
 Expected: FAIL — `setLocaleCookie is not exported` (or not defined).
 
 - [ ] **Step 4: Add `setLocaleCookie` to `apps/web/lib/locale.ts`**
@@ -229,6 +232,7 @@ EOF
 ### Task 2: Make `AuthForm` locale-aware
 
 **Files:**
+
 - Modify: `apps/web/components/auth-form.tsx`
 - Modify: `apps/web/components/auth-form.test.tsx`
 - Modify: `apps/web/app/globals.css`
@@ -305,6 +309,7 @@ it("renders English copy when locale is en", async () => {
 ```
 corepack pnpm --filter @wukong/web exec vitest run components/auth-form.test.tsx
 ```
+
 Expected: the 2 new tests FAIL (`locale` prop not yet accepted/used by `AuthForm`); every pre-existing test still PASSES (since `AuthForm` doesn't yet require or read a `locale` prop — an extra unused prop is harmless to a component that doesn't destructure it yet).
 
 - [ ] **Step 5: Add bilingual copy to `auth-form.tsx`**
@@ -440,6 +445,7 @@ export function AuthForm({
 Update every call site that used `modeCopy(activeMode)` to `modeCopy(activeMode, locale)`, every `GENERIC_ERROR` reference to `genericError(locale)`, every `EMAIL_SUCCESS` reference to `emailSuccess(locale)`.
 
 Bilingual the remaining static JSX strings (labels, buttons, links) using the same `locale === "zh-Hant" ? "..." : "..."` inline pattern already established by `AppShellNav`'s own `label()` helper — apply it to:
+
 - The `auth-tabs` buttons: `"Password"` → zh-Hant `"密碼"`; `"Magic link"` → zh-Hant `"連結登入"`.
 - `"Email address"` label → zh-Hant `"工作電郵"`.
 - `"Password"` / `"New password"` labels → zh-Hant `"密碼"` / `"新密碼"`.
@@ -488,6 +494,7 @@ Confirm the exact zh-Hant heading string for `password-signin` written in Step 5
 ```
 corepack pnpm --filter @wukong/web exec vitest run components/auth-form.test.tsx
 ```
+
 Expected: ALL tests pass — every pre-existing assertion (now exercised with the explicit `locale: "en"` default from Step 2) plus the 2 new zh-Hant/en tests.
 
 - [ ] **Step 9: Typecheck and format**
@@ -514,6 +521,7 @@ EOF
 ### Task 3: Build the shared two-panel `AuthShell` component
 
 **Files:**
+
 - Create: `apps/web/components/auth-shell.tsx`
 - Create: `apps/web/components/auth-shell.test.tsx`
 - Modify: `apps/web/app/globals.css`
@@ -567,7 +575,9 @@ describe("AuthShell", () => {
 
   it("renders the card content passed as children", async () => {
     const container = await mount("zh-Hant");
-    expect(container.querySelector('[data-testid="card-content"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="card-content"]'),
+    ).not.toBeNull();
   });
 
   it("toggling the locale button updates the rendered language and writes the cookie", async () => {
@@ -596,6 +606,7 @@ describe("AuthShell", () => {
 ```
 corepack pnpm --filter @wukong/web exec vitest run components/auth-shell.test.tsx
 ```
+
 Expected: FAIL — module does not exist.
 
 - [ ] **Step 3: Create `apps/web/components/auth-shell.tsx`**
@@ -642,7 +653,10 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
 
   return (
     <div className="auth-shell">
-      <aside className="auth-shell-brand" aria-label="Wukong Catalog Operations OS">
+      <aside
+        className="auth-shell-brand"
+        aria-label="Wukong Catalog Operations OS"
+      >
         <div className="auth-shell-brand-header">
           <div className="auth-shell-logo" aria-hidden="true">
             WK
@@ -672,7 +686,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
         </div>
         <div className="auth-shell-brand-body">
           <p className="auth-shell-eyebrow">
-            {isZh ? "Evidence-first 商品目錄營運" : "Evidence-first catalog operations"}
+            {isZh
+              ? "Evidence-first 商品目錄營運"
+              : "Evidence-first catalog operations"}
           </p>
           <h1>
             {isZh
@@ -687,7 +703,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
           <div className="auth-shell-stats">
             <div>
               <strong>71</strong>
-              <span>{isZh ? "SHOPLINE 範本欄位" : "SHOPLINE template fields"}</span>
+              <span>
+                {isZh ? "SHOPLINE 範本欄位" : "SHOPLINE template fields"}
+              </span>
             </div>
             <div>
               <strong>8</strong>
@@ -695,7 +713,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
             </div>
             <div>
               <strong>0</strong>
-              <span>{isZh ? "直接 SHOPLINE 寫入" : "direct SHOPLINE writes"}</span>
+              <span>
+                {isZh ? "直接 SHOPLINE 寫入" : "direct SHOPLINE writes"}
+              </span>
             </div>
           </div>
           <div className="auth-shell-principles">
@@ -858,6 +878,7 @@ EOF
 ### Task 4: Move the 5 auth pages into a new `(auth)` route group wired to `AuthShell`
 
 **Files:**
+
 - Create: `apps/web/app/(auth)/layout.tsx`
 - Create: `apps/web/app/(auth)/signin/page.tsx` (moved from `apps/web/app/signin/page.tsx`)
 - Create: `apps/web/app/(auth)/register/page.tsx` (moved from `apps/web/app/register/page.tsx`)
@@ -924,7 +945,10 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
           : "Your password has been reset. Sign in to continue."
         : "";
   return (
-    <section className="auth-card" aria-label={isZh ? "Wukong 登入" : "Wukong sign in"}>
+    <section
+      className="auth-card"
+      aria-label={isZh ? "Wukong 登入" : "Wukong sign in"}
+    >
       <p className="auth-card-eyebrow">{isZh ? "歡迎回來" : "Welcome back"}</p>
       <AuthForm
         mode="password-signin"
@@ -996,7 +1020,11 @@ export default async function ForgotPasswordPage({ searchParams }: PageProps) {
       className="auth-card"
       aria-label={isZh ? "Wukong 密碼復原" : "Wukong password recovery"}
     >
-      <AuthForm mode="forgot-password" locale={locale} callbackUrl={callbackUrl} />
+      <AuthForm
+        mode="forgot-password"
+        locale={locale}
+        callbackUrl={callbackUrl}
+      />
     </section>
   );
 }
@@ -1068,6 +1096,7 @@ EOF
 ### Task 5: Add the invalid/expired-link state to the two token-based pages
 
 **Files:**
+
 - Create: `apps/web/app/(auth)/register/set-password/page.tsx`
 - Create: `apps/web/app/(auth)/reset-password/page.tsx`
 - Create: `apps/web/app/(auth)/register/set-password/page.test.tsx`
@@ -1144,6 +1173,7 @@ Write the equivalent for `apps/web/app/(auth)/register/set-password/page.test.ts
 ```
 corepack pnpm --filter @wukong/web exec vitest run "app/(auth)/reset-password/page.test.tsx" "app/(auth)/register/set-password/page.test.tsx"
 ```
+
 Expected: FAIL — modules don't exist yet.
 
 - [ ] **Step 4: Create `apps/web/app/(auth)/reset-password/page.tsx`**
@@ -1321,6 +1351,7 @@ EOF
 ### Task 6: Document the verified CSRF/cookie defaults (G10)
 
 **Files:**
+
 - Modify: `apps/web/auth.ts`
 
 - [ ] **Step 1: Read `apps/web/auth.ts` in full**
@@ -1382,6 +1413,7 @@ EOF
 rm -rf apps/web/.next
 corepack pnpm typecheck
 ```
+
 Expected: PASS across every package.
 
 - [ ] **Step 2: Format check**
@@ -1389,6 +1421,7 @@ Expected: PASS across every package.
 ```powershell
 corepack pnpm format:runtime:check
 ```
+
 Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <files>` and re-check.
 
 - [ ] **Step 3: Full unit suite**
@@ -1396,6 +1429,7 @@ Expected: PASS, or fix flagged files with `corepack pnpm exec prettier --write <
 ```powershell
 corepack pnpm test
 ```
+
 Expected: PASS, all packages, including every file touched in Tasks 1-6.
 
 - [ ] **Step 4: `pnpm runtime:forbidden:check`**
@@ -1403,6 +1437,7 @@ Expected: PASS, all packages, including every file touched in Tasks 1-6.
 ```powershell
 corepack pnpm runtime:forbidden:check
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Verify the real Turbopack production build**

@@ -43,11 +43,13 @@ describe("constants", () => {
 describe("setLocaleCookie", () => {
   it("writes a one-year, root-path locale cookie", () => {
     try {
-      document.cookie = "locale=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+      document.cookie =
+        "locale=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
       setLocaleCookie("en");
       expect(document.cookie).toContain("locale=en");
     } finally {
-      document.cookie = "locale=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+      document.cookie =
+        "locale=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
     }
   });
 });
