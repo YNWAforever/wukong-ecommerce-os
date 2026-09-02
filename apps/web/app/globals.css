@@ -1467,9 +1467,6 @@ button:disabled {
   font-size: 11px;
   letter-spacing: 0.08em;
 }
-.auth-shell-brand-header .locale-toggle {
-  margin-left: auto;
-}
 .auth-shell-brand-body {
   display: none;
 }
