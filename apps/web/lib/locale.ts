@@ -11,3 +11,7 @@ export function resolveLocale(value: string | undefined): Locale {
   }
   return DEFAULT_LOCALE;
 }
+
+export function setLocaleCookie(locale: Locale) {
+  document.cookie = `${LOCALE_COOKIE_NAME}=${locale}; path=/; max-age=31536000`;
+}

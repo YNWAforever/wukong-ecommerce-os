@@ -184,6 +184,16 @@ async function latestEmailUrl(recipient: string): Promise<string> {
 
 export async function enrollAndSignInOpakAdmin(page: Page) {
   await page.goto("/register?callbackUrl=%2Flistings%2Fnew");
+  // The auth pages default to zh-Hant when no locale cookie is set (a real,
+  // intentional product default -- see docs/superpowers/specs/2026-09-02-
+  // package-c-public-entry-auth-layout-design.md). This fixture's own
+  // assertions are pinned to English copy, so it must pin the browser to
+  // English explicitly (via the same cookie the app itself reads) rather
+  // than depend on the app's default, then reload to pick it up.
+  await page.evaluate(() => {
+    document.cookie = "locale=en; path=/; max-age=31536000";
+  });
+  await page.reload();
   await page.getByLabel("Email address").fill(OPAK_ADMIN_EMAIL);
   await page.getByRole("button", { name: "Send registration email" }).click();
   await expect(

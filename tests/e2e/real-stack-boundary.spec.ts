@@ -206,6 +206,15 @@ test.describe("real-stack runtime", () => {
     expect(await session.json()).toBeNull();
 
     await page.goto("/signin");
+    // The auth pages default to zh-Hant when no locale cookie is set (a
+    // real, intentional product default -- see docs/superpowers/specs/
+    // 2026-09-02-package-c-public-entry-auth-layout-design.md). This
+    // assertion is pinned to English copy, so pin the browser to English
+    // explicitly rather than depend on the app's default, then reload.
+    await page.evaluate(() => {
+      document.cookie = "locale=en; path=/; max-age=31536000";
+    });
+    await page.reload();
     await expect(
       page.getByRole("heading", { name: "Welcome back" }),
     ).toBeVisible();

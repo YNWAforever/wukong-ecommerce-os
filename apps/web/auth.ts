@@ -98,6 +98,16 @@ export function buildAuthOptions(
   };
 
   const access = dependencies.access ?? createAuthAccessRepository(db);
+  // CSRF/secure-cookie defaults verified directly against the installed
+  // better-auth@1.5.5 source (docs/superpowers/specs/2026-09-02-package-c-
+  // public-entry-auth-layout-design.md §5), not assumed: cookies are always
+  // httpOnly; sameSite defaults to "lax"; `secure` auto-resolves from
+  // whether `baseURL` is https (true in prod/preview via BETTER_AUTH_URL/
+  // VERCEL_URL, false for local http dev); `trustedOrigins` defaults to
+  // exactly this app's own computed baseURL origin, recomputed per Vercel
+  // deployment -- never wildcarded. Correct as-is for this single-origin
+  // deployment; no explicit `trustedOrigins`/cookie-attribute override
+  // is needed.
   return {
     secret: env.secret,
     baseURL: env.baseUrl,

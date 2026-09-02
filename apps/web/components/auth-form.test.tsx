@@ -10,16 +10,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 import { AuthForm, safeCallbackPath, type AuthFormMode } from "./auth-form";
+import { type Locale } from "../lib/locale";
 
 async function mount(
   mode: AuthFormMode,
-  props: { callbackUrl?: string; token?: string; initialStatus?: string } = {},
+  props: {
+    callbackUrl?: string;
+    token?: string;
+    initialStatus?: string;
+    locale?: Locale;
+  } = {},
 ) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
+  const { locale = "en", ...rest } = props;
   await act(async () => {
-    root.render(<AuthForm mode={mode} {...props} />);
+    root.render(<AuthForm mode={mode} locale={locale} {...rest} />);
   });
   return container;
 }
@@ -235,7 +242,7 @@ describe("AuthForm", () => {
     });
     const status = container.querySelector('[aria-live="polite"]');
     expect(status?.textContent).toBe(
-      "Your password is ready. Sign in to continue.",
+      "Status: Your password is ready. Sign in to continue.",
     );
   });
 
@@ -299,5 +306,31 @@ describe("AuthForm", () => {
       container.querySelector<HTMLButtonElement>('button[type="submit"]')
         ?.disabled,
     ).toBe(false);
+  });
+
+  it("renders zh-Hant copy when locale is zh-Hant", async () => {
+    const container = await mount("password-signin", { locale: "zh-Hant" });
+    expect(container.textContent).toContain("歡迎回來");
+    expect(container.textContent).not.toContain("Welcome back");
+  });
+
+  it("renders English copy when locale is en", async () => {
+    const container = await mount("password-signin", { locale: "en" });
+    expect(container.textContent).toContain("Welcome back");
+  });
+
+  it.each([
+    ["password-signin", "歡迎回來"],
+    ["magic-link", "電郵登入"],
+    ["register", "完成受邀登記"],
+    ["set-password", "設定你的密碼"],
+    ["forgot-password", "重設你的密碼"],
+    ["reset-password", "選擇新密碼"],
+  ] as const)("renders the zh-Hant heading for %s", async (mode, heading) => {
+    const container = await mount(mode, {
+      locale: "zh-Hant",
+      token: "safe-query-token",
+    });
+    expect(container.textContent).toContain(heading);
   });
 });

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState, useTransition } from "react";
 
+import { type Locale } from "../lib/locale";
+
 export type AuthFormMode =
   | "password-signin"
   | "magic-link"
@@ -14,14 +16,22 @@ export type AuthFormMode =
 
 type AuthFormProps = {
   mode: AuthFormMode;
+  locale: Locale;
   callbackUrl?: string;
   initialStatus?: string;
   token?: string;
 };
 
-const GENERIC_ERROR = "Unable to complete this request.";
-const EMAIL_SUCCESS =
-  "If this address is eligible, an email will arrive shortly.";
+function genericError(locale: Locale): string {
+  return locale === "zh-Hant"
+    ? "無法完成此請求。"
+    : "Unable to complete this request.";
+}
+function emailSuccess(locale: Locale): string {
+  return locale === "zh-Hant"
+    ? "如此地址符合資格，郵件將於稍後送達。"
+    : "If this address is eligible, an email will arrive shortly.";
+}
 const PASSWORD_MIN = 12;
 const PASSWORD_MAX = 128;
 
@@ -61,12 +71,52 @@ export function safeCallbackPath(value?: string): string {
   }
 }
 
-function modeCopy(mode: AuthFormMode) {
+function modeCopy(mode: AuthFormMode, locale: Locale) {
+  if (locale === "zh-Hant") {
+    switch (mode) {
+      case "password-signin":
+        return {
+          heading: "歡迎回來",
+          intro: "登入以管理商品上架內容。",
+          submit: "使用密碼登入",
+        };
+      case "magic-link":
+        return {
+          heading: "電郵登入",
+          intro: "請求一個安全登入連結寄至你的收件匣。",
+          submit: "傳送登入連結給我",
+        };
+      case "register":
+        return {
+          heading: "完成受邀登記",
+          intro: "請使用邀請電郵內的連結建立帳戶。",
+          submit: "傳送登記電郵",
+        };
+      case "set-password":
+        return {
+          heading: "設定你的密碼",
+          intro: "完成已驗證的登記，設定一組安全密碼。",
+          submit: "建立密碼",
+        };
+      case "forgot-password":
+        return {
+          heading: "重設你的密碼",
+          intro: "請求一封安全的密碼重設電郵。",
+          submit: "傳送重設電郵",
+        };
+      case "reset-password":
+        return {
+          heading: "選擇新密碼",
+          intro: "輸入並確認你的新密碼。",
+          submit: "重設密碼",
+        };
+    }
+  }
   switch (mode) {
     case "password-signin":
       return {
         heading: "Welcome back",
-        intro: "Sign in to manage Opak Cellar listings.",
+        intro: "Sign in to manage your product listings.",
         submit: "Sign in with password",
       };
     case "magic-link":
@@ -116,6 +166,7 @@ function isCompletionMode(mode: AuthFormMode) {
 
 export function AuthForm({
   mode,
+  locale,
   callbackUrl,
   token,
   initialStatus = "",
@@ -130,7 +181,7 @@ export function AuthForm({
     mode === "password-signin" || mode === "magic-link" ? signinMode : mode;
   const isSigninMode =
     activeMode === "password-signin" || activeMode === "magic-link";
-  const copy = modeCopy(activeMode);
+  const copy = modeCopy(activeMode, locale);
   const callback = safeCallbackPath(callbackUrl);
 
   function selectSigninMode(nextMode: "password-signin" | "magic-link") {
@@ -150,15 +201,23 @@ export function AuthForm({
       isPasswordMode(activeMode) &&
       (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX)
     ) {
-      setStatus("Password must be between 12 and 128 characters.");
+      setStatus(
+        locale === "zh-Hant"
+          ? "密碼長度須為 12 至 128 個字元。"
+          : "Password must be between 12 and 128 characters.",
+      );
       return;
     }
     if (isCompletionMode(activeMode) && password !== confirmPassword) {
-      setStatus("Passwords must match.");
+      setStatus(
+        locale === "zh-Hant"
+          ? "兩次輸入的密碼不一致。"
+          : "Passwords must match.",
+      );
       return;
     }
     if (isCompletionMode(activeMode) && !token) {
-      setStatus(GENERIC_ERROR);
+      setStatus(genericError(locale));
       return;
     }
 
@@ -203,7 +262,7 @@ export function AuthForm({
           body: JSON.stringify(request[1]),
         });
         if (!response.ok) {
-          setStatus(GENERIC_ERROR);
+          setStatus(genericError(locale));
           return;
         }
         if (activeMode === "password-signin") {
@@ -218,9 +277,9 @@ export function AuthForm({
           router.push(completionHref("reset", callback));
           return;
         }
-        setStatus(EMAIL_SUCCESS);
+        setStatus(emailSuccess(locale));
       } catch {
-        setStatus(GENERIC_ERROR);
+        setStatus(genericError(locale));
       }
     });
   }
@@ -234,14 +293,14 @@ export function AuthForm({
             aria-pressed={activeMode === "password-signin"}
             onClick={() => selectSigninMode("password-signin")}
           >
-            Password
+            {locale === "zh-Hant" ? "密碼" : "Password"}
           </button>
           <button
             type="button"
             aria-pressed={activeMode === "magic-link"}
             onClick={() => selectSigninMode("magic-link")}
           >
-            Magic link
+            {locale === "zh-Hant" ? "連結登入" : "Magic link"}
           </button>
         </div>
       ) : null}
@@ -256,7 +315,9 @@ export function AuthForm({
       >
         {!isCompletionMode(activeMode) ? (
           <div className="auth-field">
-            <label htmlFor={"auth-email-" + activeMode}>Email address</label>
+            <label htmlFor={"auth-email-" + activeMode}>
+              {locale === "zh-Hant" ? "工作電郵" : "Email address"}
+            </label>
             <input
               id={"auth-email-" + activeMode}
               name="email"
@@ -270,7 +331,13 @@ export function AuthForm({
         {isPasswordMode(activeMode) ? (
           <div className="auth-field">
             <label htmlFor={"auth-password-" + activeMode}>
-              {isCompletionMode(activeMode) ? "New password" : "Password"}
+              {locale === "zh-Hant"
+                ? isCompletionMode(activeMode)
+                  ? "新密碼"
+                  : "密碼"
+                : isCompletionMode(activeMode)
+                  ? "New password"
+                  : "Password"}
             </label>
             <input
               id={"auth-password-" + activeMode}
@@ -286,13 +353,17 @@ export function AuthForm({
               required
               disabled={isPending}
             />
-            <small>Use 12 to 128 characters.</small>
+            <small>
+              {locale === "zh-Hant"
+                ? "長度需為 12 至 128 個字元。"
+                : "Use 12 to 128 characters."}
+            </small>
           </div>
         ) : null}
         {isCompletionMode(activeMode) ? (
           <div className="auth-field">
             <label htmlFor={"auth-confirm-" + activeMode}>
-              Confirm new password
+              {locale === "zh-Hant" ? "確認新密碼" : "Confirm new password"}
             </label>
             <input
               id={"auth-confirm-" + activeMode}
@@ -312,10 +383,15 @@ export function AuthForm({
           type="submit"
           disabled={isPending}
         >
-          {isPending ? "Please wait..." : copy.submit}
+          {isPending
+            ? locale === "zh-Hant"
+              ? "處理中..."
+              : "Please wait..."
+            : copy.submit}
         </button>
         <p className="auth-status" role="status" aria-live="polite">
-          {status || "\u00a0"}
+          <strong>{locale === "zh-Hant" ? "狀態：" : "Status: "}</strong>
+          {status || " "}
         </p>
       </form>
       <nav className="auth-links" aria-label="Account help">
@@ -325,17 +401,19 @@ export function AuthForm({
               "/forgot-password?callbackUrl=" + encodeURIComponent(callback)
             }
           >
-            Forgot password?
+            {locale === "zh-Hant" ? "忘記密碼？" : "Forgot password?"}
           </Link>
         ) : null}
         {isSigninMode ? (
           <Link href={"/register?callbackUrl=" + encodeURIComponent(callback)}>
-            Register with an invitation
+            {locale === "zh-Hant"
+              ? "已收到邀請？設定帳戶"
+              : "Register with an invitation"}
           </Link>
         ) : null}
         {activeMode !== "password-signin" && activeMode !== "magic-link" ? (
           <Link href={"/signin?callbackUrl=" + encodeURIComponent(callback)}>
-            Back to sign in
+            {locale === "zh-Hant" ? "返回登入" : "Back to sign in"}
           </Link>
         ) : null}
       </nav>
