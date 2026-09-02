@@ -46,21 +46,21 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     id: "attended-enrichment-batches",
     label: "AI 批次強化 / Attended AI-enrichment batches",
     description:
-      "Batch creation and wave advancement are live in production. The list/detail read UI for reviewing an existing batch is built but not yet merged to main.",
+      "Batch creation, wave advancement, and the list/detail read UI for reviewing an existing batch are all live in production.",
     state: "pilot",
   },
   {
     id: "multi-product-export",
     label: "多商品匯出 / Multi-product export",
     description:
-      "Export multiple approved, freshness-checked listings as one SHOPLINE-importable workbook. Built, not yet merged to main.",
+      "Export multiple approved, freshness-checked listings as one SHOPLINE-importable workbook.",
     state: "pilot",
   },
   {
     id: "jobs-ledger",
     label: "作業總覽 / Jobs ledger",
     description:
-      "A read-only view of recent enrichment batches, publish jobs, AI pipeline runs, and exports in one time-sorted list. Built, not yet merged to main.",
+      "A read-only view of recent enrichment batches, publish jobs, AI pipeline runs, and exports in one time-sorted list.",
     state: "pilot",
   },
 ];
