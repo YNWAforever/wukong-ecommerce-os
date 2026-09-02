@@ -354,13 +354,23 @@ describe("POST /api/listings/export", () => {
     expect(assetStore.calls[0].mimeType).toBe(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    expect(audits).toHaveLength(1);
+    expect(audits).toHaveLength(2);
     expect(audits[0].action).toBe("listing.bulk_export_created");
     expect(audits[0].metadata.includedListingIds).toEqual(["listing_changed"]);
     expect(audits[0].metadata.excludedListingIds).toEqual([
       "listing_noop",
       "listing_stale",
     ]);
+    // One listing.review_conflict event per excluded_stale manifest entry --
+    // listing_noop is excluded too, but as excluded_no_op, not
+    // excluded_stale, so it must not get a review_conflict event.
+    expect(audits[1]).toMatchObject({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      entityId: "listing_stale",
+      action: "listing.review_conflict",
+      metadata: { reason: "row_digest_mismatch" },
+    });
   });
 
   it.each(["viewer", "operator"] as const)(
@@ -384,11 +394,18 @@ describe("POST /api/listings/export", () => {
     expect(response.status).toBe(400);
   });
 
-  it("returns the same exportAttemptId for two identical requests, and writes only one audit event across both", async () => {
+  it("returns the same exportAttemptId for two identical requests, and writes only one bulk_export_created and one review_conflict audit event across both", async () => {
     const { handler, audits } = makeHandler();
+    // Uses freshnessAttested: false (not the listing_stale fixture) so the
+    // excluded_stale outcome is stable across repeat calls to the SAME
+    // handler/repositories -- listing_stale's fixture instead simulates a
+    // freshness race via a call-count counter that keeps incrementing across
+    // repeat calls within one test, which would make the manifest differ
+    // between the first and second request and defeat the point of this
+    // idempotency assertion.
     const body = {
-      listingIds: ["listing_changed", "listing_noop"],
-      freshnessAttested: true,
+      listingIds: ["listing_changed"],
+      freshnessAttested: false,
     };
     const first = await (await handler(request(body))).json();
     const second = await (await handler(request(body))).json();
@@ -396,9 +413,22 @@ describe("POST /api/listings/export", () => {
     expect(second.manifest).toEqual(first.manifest);
     expect(second.rowCount).toBe(first.rowCount);
     // The second call's `ensure()` found the existing row (wasCreated:
-    // false) rather than inserting a new one, so it must not duplicate the
-    // audit event for an export attempt that only genuinely happened once.
-    expect(audits).toHaveLength(1);
+    // false) rather than inserting a new one, so it must not duplicate
+    // either the bulk_export_created event or the per-excluded_stale-entry
+    // review_conflict event for an export attempt that only genuinely
+    // happened once.
+    expect(audits).toHaveLength(2);
+    expect(
+      audits.filter((a: any) => a.action === "listing.bulk_export_created"),
+    ).toHaveLength(1);
+    const conflictAudits = audits.filter(
+      (a: any) => a.action === "listing.review_conflict",
+    );
+    expect(conflictAudits).toHaveLength(1);
+    expect(conflictAudits[0]).toMatchObject({
+      entityId: "listing_changed",
+      metadata: { reason: "not_attested" },
+    });
   });
 
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
