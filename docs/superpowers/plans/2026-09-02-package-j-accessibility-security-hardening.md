@@ -2545,7 +2545,7 @@ git commit -m "feat: surface publish-retry, review-conflict, and import-volume m
 
 ---
 
-## Task 19: Full-suite verification
+## Task 19: Full-suite verification ✅ (see final report to user for the complete breakdown)
 
 **Files:** none (verification only)
 
