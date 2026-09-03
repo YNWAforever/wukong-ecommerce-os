@@ -1,8 +1,55 @@
 import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
+import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
-import { createBulkExport } from "./bulk-export-service.js";
+import { createBulkExport, sheetsMatch } from "./bulk-export-service.js";
+
+describe("sheetsMatch", () => {
+  it("treats a reparsed null cell and an intended empty-string cell as equivalent", () => {
+    expect(sheetsMatch([["a", null]], [["a", ""]])).toBe(true);
+  });
+
+  it("returns false when a cell value genuinely differs", () => {
+    expect(sheetsMatch([["a", "b"]], [["a", "c"]])).toBe(false);
+  });
+
+  it("returns false when row counts differ", () => {
+    expect(sheetsMatch([["a"]], [["a"], ["b"]])).toBe(false);
+  });
+
+  it("returns false when a row's column count differs", () => {
+    expect(sheetsMatch([["a", "b"]], [["a"]])).toBe(false);
+  });
+
+  it("treats a row that's shorter due to a blank trailing cell as matching", () => {
+    // Mirrors real writer/reader behavior: `writeBulkFormWorkbook` omits the
+    // `<c>` element for a blank cell entirely, so a row whose trailing
+    // column(s) are blank (e.g. the locked `slKey1`, last in
+    // BULK_FORM_COLUMNS) reparses shorter than the fixed-width intended row
+    // -- that's a correct round trip, not a mismatch.
+    expect(sheetsMatch([["a", "b"]], [["a", "b", ""]])).toBe(true);
+  });
+
+  it("still catches a genuine mismatch even when the reparsed row is shorter", () => {
+    expect(sheetsMatch([["a", "x"]], [["a", "b", ""]])).toBe(false);
+  });
+
+  it("returns true for identical sheets", () => {
+    expect(
+      sheetsMatch(
+        [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+        [
+          ["a", "b"],
+          ["c", "d"],
+        ],
+      ),
+    ).toBe(true);
+  });
+});
 
 function contentFor(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -58,6 +105,7 @@ function depsWith(
       origin: "import" | "created";
       sourceImportId: string | null;
       contentDigest: string | null;
+      connectionId: string;
     }
   > = {
     listing_changed: {
@@ -66,6 +114,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
     // A genuine no-op: every enrichable column already matches what the
     // active version's content would write, so no cell in the sheet
@@ -85,6 +134,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
     listing_stale: {
       remoteProductId: "prod-stale",
@@ -92,6 +142,7 @@ function depsWith(
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     },
   };
   const versions: Record<
@@ -180,6 +231,86 @@ describe("createBulkExport", () => {
     ]);
   });
 
+  it("does not write a no-op listing's row into the actual emitted workbook bytes", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed", "listing_noop"],
+        freshnessAttested: true,
+      },
+      depsWith(),
+    );
+    expect(result.rowCount).toBe(1);
+
+    // Parse the actual bytes, not just the manifest/rowCount -- this is what
+    // the original bug hid from: the manifest already correctly reported
+    // rowCount 1, but the real file contained 2 data rows.
+    const sheet = readBulkFormSheet(result.body);
+    // 2 header rows + exactly 1 data row.
+    expect(sheet).toHaveLength(3);
+  });
+
+  it("does not trip the reparse-and-assert self-check on a real write/read round trip when the raw row's trailing locked column (slKey1) is blank", async () => {
+    // slKey1 is the LAST column in BULK_FORM_COLUMNS and is locked (echoed
+    // verbatim, never enriched) -- an ordinary, type-sanctioned blank state,
+    // not an edge case. `writeBulkFormWorkbook` omits the `<c>` element for a
+    // blank cell entirely, so a row whose trailing cell is blank reparses
+    // shorter than the fixed-width sheet `createBulkFormUpdate` intended to
+    // write. Before the fix, `sheetsMatch`'s raw length check flagged that as
+    // a mismatch and `createBulkExport` threw on this perfectly correct
+    // export.
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_blank_trailing_column") {
+          return {
+            remoteProductId: "prod-blank-trailing",
+            rawRow: rawRowFor({ slKey1: "" }),
+            origin: "import" as const,
+            sourceImportId: "import_1",
+            contentDigest: "digest_1",
+            connectionId: "conn_1",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_blank_trailing_column") {
+          return {
+            id: "version_blank_trailing",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_blank_trailing_column"],
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.rowCount).toBe(1);
+    expect(result.manifest).toEqual([
+      {
+        listingId: "listing_blank_trailing_column",
+        versionId: "version_blank_trailing",
+        outcome: "included",
+      },
+    ]);
+
+    // Confirm the round trip actually did produce a shortened trailing row --
+    // otherwise this test wouldn't be exercising the bug at all.
+    const sheet = readBulkFormSheet(result.body);
+    const dataRow = sheet[2] ?? [];
+    expect(dataRow.length).toBeLessThan(BULK_FORM_COLUMNS.length);
+  });
+
   it("excludes every import-origin listing with not_attested when freshnessAttested is false", async () => {
     const result = await createBulkExport(
       {
@@ -210,6 +341,7 @@ describe("createBulkExport", () => {
           origin: "created" as const,
           sourceImportId: null,
           contentDigest: null,
+          connectionId: "conn_1",
         };
       },
       async getActiveVersion() {
@@ -284,6 +416,7 @@ describe("createBulkExport", () => {
             origin: "import" as const,
             sourceImportId: "import_1",
             contentDigest: "digest_1",
+            connectionId: "conn_1",
           };
         }
         return depsWith().getPlatformProductLink(listingId);
@@ -329,6 +462,7 @@ describe("createBulkExport", () => {
       origin: "import" as const,
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     };
     const deps = depsWith({
       async getPlatformProductLink(listingId: string) {
@@ -368,5 +502,88 @@ describe("createBulkExport", () => {
         deps,
       ),
     ).rejects.toBeInstanceOf(ShoplineBulkFormError);
+  });
+
+  it("rejects a request mixing listings from two different SHOPLINE connections", async () => {
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_other_store") {
+          return {
+            remoteProductId: "prod-other-store",
+            rawRow: rawRowFor({ productId: "prod-other-store" }),
+            origin: "import" as const,
+            sourceImportId: "import_1",
+            contentDigest: "digest_1",
+            connectionId: "conn_2",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_other_store") {
+          return {
+            id: "version_other_store",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+
+    await expect(
+      createBulkExport(
+        {
+          workspaceId: "ws_1",
+          requestedBy: "user_1",
+          listingIds: ["listing_changed", "listing_other_store"],
+          freshnessAttested: true,
+        },
+        deps,
+      ),
+    ).rejects.toMatchObject({
+      issues: [expect.objectContaining({ code: "mixed_source_connections" })],
+    });
+  });
+
+  it("does not require sourceImportId to match across listings from the same connection", async () => {
+    const deps = depsWith({
+      async getPlatformProductLink(listingId: string) {
+        if (listingId === "listing_other_import") {
+          return {
+            remoteProductId: "prod-other-import",
+            rawRow: rawRowFor({ productId: "prod-other-import" }),
+            origin: "import" as const,
+            sourceImportId: "import_2",
+            contentDigest: "digest_1",
+            connectionId: "conn_1",
+          };
+        }
+        return depsWith().getPlatformProductLink(listingId);
+      },
+      async getActiveVersion(listingId: string) {
+        if (listingId === "listing_other_import") {
+          return {
+            id: "version_other_import",
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
+          };
+        }
+        return depsWith().getActiveVersion(listingId);
+      },
+    });
+
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed", "listing_other_import"],
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.rowCount).toBe(2);
   });
 });

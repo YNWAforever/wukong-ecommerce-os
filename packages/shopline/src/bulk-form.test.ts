@@ -429,6 +429,20 @@ describe("createBulkFormUpdate", () => {
     ]);
   });
 
+  it("excludes a no-op product's row from a mixed batch, not just from the reported changes", () => {
+    const result = parsed();
+    const update = createBulkFormUpdate(result.rows, [
+      { productId: "p1", values: { nameZh: "示範酒莊麗絲玲 2024" } },
+      // Same value as the row's own raw nameZh -- a genuine no-op.
+      { productId: "p2", values: { nameZh: "Demo Estate Riesling 2024" } },
+    ]);
+
+    // 2 header rows + exactly 1 data row (the changed product only).
+    expect(update.sheet).toHaveLength(3);
+    expect(update.changes).toHaveLength(1);
+    expect(update.changes[0]?.productId).toBe("p1");
+  });
+
   it("omits untouched rows by default and keeps them on request", () => {
     const rows = parsed().rows;
     const enrichment = [
