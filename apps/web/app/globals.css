@@ -203,6 +203,7 @@ button:disabled {
 }
 .locale-toggle button {
   padding: 6px 14px;
+  min-height: 44px;
   color: var(--ink-soft);
   font-size: 13px;
   background: var(--surface);
@@ -568,6 +569,9 @@ button:disabled {
 .quality-metric-strip {
   grid-template-columns: repeat(4, 1fr);
 }
+.jobs-metric-strip {
+  grid-template-columns: repeat(4, 1fr);
+}
 .section-heading {
   display: flex;
   align-items: flex-end;
@@ -654,7 +658,7 @@ button:disabled {
 }
 .queue-action {
   flex: 0 0 auto;
-  min-height: 42px;
+  min-height: 44px;
   padding: 8px 11px;
   font-size: 12px;
 }
@@ -703,7 +707,8 @@ button:disabled {
 .evidence-panel,
 .flags,
 .delivery-panel,
-.product-shot-panel {
+.product-shot-panel,
+.activity-panel {
   padding: 28px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -1460,10 +1465,12 @@ button:disabled {
   border-radius: 999px;
   font-size: 12px;
 }
-.auth-shell-brand-body h1 {
-  margin: 0 0 12px;
-  font-size: clamp(24px, 3vw, 32px);
-  line-height: 1.2;
+.auth-shell-tagline {
+  margin: 0 0 16px;
+  font-family: Georgia, serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 .auth-shell-brand-body > p {
   color: rgb(255 255 255 / 80%);

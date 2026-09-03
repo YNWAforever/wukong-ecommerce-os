@@ -191,6 +191,26 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                     .map((entry: ExportManifestEntry) => entry.listingId),
                 },
               });
+
+              // One event per listing this attempt excluded for staleness --
+              // same action as the approve route's Phase-0 rejections
+              // (apps/web/app/api/listings/[id]/approve/route.ts), just
+              // batched here since one export attempt can flag many listings
+              // at once. Gated on `wasCreated` for the same reason as the
+              // write above: a repeat/idempotent request replays the same
+              // manifest and must not duplicate the events that a genuinely
+              // new attempt already wrote.
+              for (const entry of ensured.manifest) {
+                if (entry.outcome === "excluded_stale" && entry.reason) {
+                  await repositories.audit.write({
+                    workspaceId: session.workspaceId,
+                    actorId: session.actorId,
+                    entityId: entry.listingId,
+                    action: "listing.review_conflict",
+                    metadata: { reason: entry.reason },
+                  });
+                }
+              }
             }
 
             return { attempt: ensured, body: exported.body };

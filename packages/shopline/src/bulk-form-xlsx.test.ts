@@ -278,6 +278,20 @@ describe("bulk form xlsx adapter", () => {
     expect(() => readBulkFormSheet(bytes)).toThrow(/inflates beyond/);
   });
 
+  it("rejects an archive whose total decompressed size exceeds the combined bound, even though every individual entry stays under the per-entry cap", () => {
+    const first = deflateRawSync(Buffer.alloc(50 * 1024 * 1024, 0x61));
+    const second = deflateRawSync(Buffer.alloc(50 * 1024 * 1024, 0x62));
+
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      { name: "xl/worksheets/sheet1.xml", raw: new Uint8Array(first) },
+      { name: "xl/worksheets/sheet2.xml", raw: new Uint8Array(second) },
+    ]);
+
+    expect(bytes.byteLength).toBeLessThan(400 * 1024);
+    expect(() => readBulkFormSheet(bytes)).toThrow(/total decompressed size/);
+  });
+
   it("rejects a file that is not a workbook", () => {
     expect(() =>
       readBulkFormSheet(new TextEncoder().encode("not a zip")),

@@ -130,6 +130,28 @@ describe("GET /api/jobs", () => {
                   ];
                 },
               },
+              // Not instrumented via `calls` -- this test proves the 5
+              // ledger sources merge into one ledger; the metrics summary
+              // these back is covered separately by "includes a metrics
+              // summary alongside the ledger entries" below, so adding these
+              // return values to the `calls` assertion here would widen this
+              // test's scope beyond what it's meant to verify.
+              audit: {
+                async countByActionSince() {
+                  return 0;
+                },
+                async countByActionAndMetadataKeySince() {
+                  return [];
+                },
+                async sumImportMetricsSince() {
+                  return {
+                    parsedRows: 0,
+                    createdDrafts: 0,
+                    refreshedProducts: 0,
+                    issueCount: 0,
+                  };
+                },
+              },
             });
           },
         }) as never,
@@ -163,5 +185,86 @@ describe("GET /api/jobs", () => {
       ["exportAttempts.listForWorkspace", 100],
       ["importResults.listForWorkspace", 100],
     ]);
+  });
+
+  it("includes a metrics summary alongside the ledger entries", async () => {
+    const handler = createJobsHandler({
+      sessionContext: {
+        async resolve() {
+          return {
+            workspaceId: "ws_opak",
+            actorId: "user_1",
+            role: "viewer",
+          };
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              enrichmentBatches: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              publishJobs: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              pipelineRuns: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              exportAttempts: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              importResults: {
+                async listForWorkspace() {
+                  return [];
+                },
+              },
+              audit: {
+                async countByActionSince() {
+                  return 3;
+                },
+                async countByActionAndMetadataKeySince() {
+                  return [
+                    { value: "version_conflict", count: 1 },
+                    { value: "source_import_mismatch", count: 2 },
+                  ];
+                },
+                async sumImportMetricsSince() {
+                  return {
+                    parsedRows: 120,
+                    createdDrafts: 10,
+                    refreshedProducts: 5,
+                    issueCount: 2,
+                  };
+                },
+              },
+            });
+          },
+        }) as never,
+    });
+
+    const response = await handler();
+    const body = await response.json();
+    // Exact values, not just types: the mock's countByActionAndMetadataKeySince
+    // deliberately returns one version_conflict-bucket reason and one
+    // stale-source-bucket reason, so this also proves the route's bucketing
+    // logic actually classifies them correctly, not just that the field exists.
+    expect(body.metrics).toEqual({
+      publishRetries: 3,
+      versionConflicts: 1,
+      staleSourceRejections: 2,
+      importedRows: 120,
+    });
   });
 });

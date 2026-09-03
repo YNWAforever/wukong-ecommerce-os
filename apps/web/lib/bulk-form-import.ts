@@ -223,6 +223,23 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
         // One statement for every mirror row rather than one per product.
         await repositories.platformProducts.upsertMany(mirrors);
 
+        // One aggregate event per import call, entityId'd to the sourceImport
+        // row -- not to any one listing, since this event summarizes the
+        // whole batch. Mirrors enrichment_batch.created's own per-batch
+        // (not per-listing) entityId convention.
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: input.actorId,
+          entityId: sourceImport.id,
+          action: "listing.bulk_form_import_completed",
+          metadata: {
+            parsedRows: parsed.rows.length,
+            createdDrafts,
+            refreshedProducts,
+            issueCount: parsed.issues.length,
+          },
+        });
+
         return {
           specVersion: parsed.specVersion,
           parsedRows: parsed.rows.length,

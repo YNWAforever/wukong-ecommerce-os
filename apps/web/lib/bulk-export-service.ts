@@ -12,7 +12,10 @@ import {
   type BulkFormEnrichment,
   type BulkFormExportRow,
 } from "@wukong/shopline";
-import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  writeBulkFormWorkbook,
+  readBulkFormSheet,
+} from "@wukong/shopline/bulk-form-xlsx";
 
 /**
  * The pure decision of which requested listings go into one multi-product
@@ -57,9 +60,9 @@ export type CreateBulkExportInput = {
 
 /**
  * A superset of `content-freshness.ts`'s `PlatformProductLink` — carries the
- * extra fields (`remoteProductId`, `rawRow`, `origin`) this orchestration
- * needs beyond what the freshness gate itself reads. Structurally assignable
- * wherever `PlatformProductLink` is expected.
+ * extra fields (`remoteProductId`, `rawRow`, `origin`, `connectionId`) this
+ * orchestration needs beyond what the freshness gate itself reads.
+ * Structurally assignable wherever `PlatformProductLink` is expected.
  */
 export type BulkExportPlatformProductLink = {
   remoteProductId: string;
@@ -67,6 +70,7 @@ export type BulkExportPlatformProductLink = {
   origin: "import" | "created";
   sourceImportId: string | null;
   contentDigest: string | null;
+  connectionId: string;
 };
 
 /**
@@ -103,6 +107,41 @@ export type CreateBulkExportResult = {
   body: Uint8Array;
 };
 
+/**
+ * Compares a reparsed workbook grid against the sheet `createBulkFormUpdate`
+ * intended to write. Two normalizations are needed, or this would spuriously
+ * fail on every export that has a blank trailing cell:
+ *
+ * - `readBulkFormSheet` returns `null` for a blank cell (the inline
+ *   null-for-blank logic in `packages/shopline/src/bulk-form-xlsx.ts`'s own
+ *   `readBulkFormSheet`, around lines 222-234), while `BulkFormUpdate.sheet`'s
+ *   blanks are `""` -- both sides are normalized to `""` before comparing.
+ * - `writeBulkFormWorkbook`'s `worksheetXml` omits the `<c>` element entirely
+ *   for a blank cell (`bulk-form-xlsx.ts`'s `if (value.length === 0) return
+ *   "";`), so a row whose TRAILING cell(s) are blank -- e.g. the locked,
+ *   never-enriched `slKey1` column, which is last in `BULK_FORM_COLUMNS` --
+ *   round-trips to a shorter array than it was written with. That is correct
+ *   reader/writer behavior, not corruption, so row width is compared as the
+ *   max of the two lengths rather than requiring exact length equality; an
+ *   unexpected non-blank value on either side still fails the per-column
+ *   comparison below.
+ */
+export function sheetsMatch(
+  reparsed: readonly (readonly (string | null)[])[],
+  intended: readonly (readonly string[])[],
+): boolean {
+  if (reparsed.length !== intended.length) return false;
+  for (let row = 0; row < intended.length; row += 1) {
+    const reparsedRow = reparsed[row] ?? [];
+    const intendedRow = intended[row] ?? [];
+    const width = Math.max(reparsedRow.length, intendedRow.length);
+    for (let col = 0; col < width; col += 1) {
+      if ((reparsedRow[col] ?? "") !== (intendedRow[col] ?? "")) return false;
+    }
+  }
+  return true;
+}
+
 export async function createBulkExport(
   input: CreateBulkExportInput,
   deps: CreateBulkExportDeps,
@@ -112,6 +151,9 @@ export async function createBulkExport(
   const enrichments: BulkFormEnrichment[] = [];
   // listingId -> remoteProductId, for the listings that made it into `rows`.
   const survivorRemoteProductIds = new Map<string, string>();
+  // The connectionId of the first import-origin listing seen, so every
+  // subsequent import-origin listing can be checked against it.
+  let sharedConnectionId: string | null = null;
 
   // Forwards straight to `deps` so `assertExportFreshness`'s own re-read of
   // the platform-product link and active version is a second, independent
@@ -147,6 +189,26 @@ export async function createBulkExport(
         outcome: "not_import_origin",
       });
       continue;
+    }
+
+    // Checked early, before the freshness gate: fail fast with a clear
+    // "you're mixing stores" error rather than a confusing per-listing
+    // freshness error when the real mistake is picking listings from two
+    // different SHOPLINE connections. sourceImportId is deliberately NOT
+    // checked here -- two listings from different import batches of the
+    // SAME connection is a normal, expected case.
+    if (sharedConnectionId === null) {
+      sharedConnectionId = link.connectionId;
+    } else if (link.connectionId !== sharedConnectionId) {
+      throw new ShoplineBulkFormError([
+        {
+          code: "mixed_source_connections",
+          productId: null,
+          column: null,
+          message:
+            "requested listings resolve to more than one SHOPLINE connection; export one store at a time",
+        },
+      ]);
     }
 
     const freshness = await assertExportFreshness(
@@ -263,6 +325,16 @@ export async function createBulkExport(
 
   const specVersion = update?.specVersion ?? SHOPLINE_BULK_FORM_SPEC_VERSION;
   const body = update ? writeBulkFormWorkbook(update.sheet) : new Uint8Array(0);
+
+  // Self-check: re-parse exactly what was just written and confirm it
+  // matches what was intended. An all-no-op batch has `update === null`
+  // and `body` is an empty placeholder -- nothing to reparse.
+  if (update && !sheetsMatch(readBulkFormSheet(body), update.sheet)) {
+    throw new Error(
+      "generated bulk-form workbook failed its own reparse-and-assert check -- the written bytes do not match the intended sheet",
+    );
+  }
+
   const rowCount = manifest.filter(
     (entry) => entry.outcome === "included",
   ).length;

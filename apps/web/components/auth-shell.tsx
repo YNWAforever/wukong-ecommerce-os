@@ -39,6 +39,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
 
   return (
     <div className="auth-shell">
+      <a className="skip-link" href="#main-content">
+        跳到主要內容 <span>Skip to content</span>
+      </a>
       <aside
         className="auth-shell-brand"
         aria-label="Wukong Catalog Operations OS"
@@ -76,11 +79,11 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
               ? "Evidence-first 商品目錄營運"
               : "Evidence-first catalog operations"}
           </p>
-          <h1>
+          <p className="auth-shell-tagline">
             {isZh
               ? "先核實證據，再批准內容。"
               : "Verify the evidence before approving the content."}
-          </h1>
+          </p>
           <p>
             {isZh
               ? "Wukong 將來源檔、AI 建議、人手審批及 SHOPLINE 匯入證明分開管理，避免把已產生檔案誤當成已完成更新。"
@@ -114,7 +117,9 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
           </div>
         </div>
       </aside>
-      <main className="auth-shell-card-wrap">{children}</main>
+      <main id="main-content" className="auth-shell-card-wrap">
+        {children}
+      </main>
     </div>
   );
 }

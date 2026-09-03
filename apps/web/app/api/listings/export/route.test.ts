@@ -73,6 +73,7 @@ type PlatformProductFixture = {
   origin: "import" | "created";
   sourceImportId: string | null;
   contentDigest: string | null;
+  connectionId: string;
 } | null;
 
 const defaultReviewSnapshots: Record<string, ReviewSnapshotFixture> = {
@@ -106,6 +107,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
   // A genuine no-op: every enrichable column already matches what the active
   // version's content would write, so no cell in the sheet actually changes.
@@ -124,6 +126,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
   listing_stale: {
     remoteProductId: "prod-stale",
@@ -131,6 +134,7 @@ const defaultPlatformProducts: Record<string, PlatformProductFixture> = {
     origin: "import",
     sourceImportId: "import_1",
     contentDigest: "digest_1",
+    connectionId: "conn_1",
   },
 };
 
@@ -354,13 +358,23 @@ describe("POST /api/listings/export", () => {
     expect(assetStore.calls[0].mimeType).toBe(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    expect(audits).toHaveLength(1);
+    expect(audits).toHaveLength(2);
     expect(audits[0].action).toBe("listing.bulk_export_created");
     expect(audits[0].metadata.includedListingIds).toEqual(["listing_changed"]);
     expect(audits[0].metadata.excludedListingIds).toEqual([
       "listing_noop",
       "listing_stale",
     ]);
+    // One listing.review_conflict event per excluded_stale manifest entry --
+    // listing_noop is excluded too, but as excluded_no_op, not
+    // excluded_stale, so it must not get a review_conflict event.
+    expect(audits[1]).toMatchObject({
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      entityId: "listing_stale",
+      action: "listing.review_conflict",
+      metadata: { reason: "row_digest_mismatch" },
+    });
   });
 
   it.each(["viewer", "operator"] as const)(
@@ -384,11 +398,18 @@ describe("POST /api/listings/export", () => {
     expect(response.status).toBe(400);
   });
 
-  it("returns the same exportAttemptId for two identical requests, and writes only one audit event across both", async () => {
+  it("returns the same exportAttemptId for two identical requests, and writes only one bulk_export_created and one review_conflict audit event across both", async () => {
     const { handler, audits } = makeHandler();
+    // Uses freshnessAttested: false (not the listing_stale fixture) so the
+    // excluded_stale outcome is stable across repeat calls to the SAME
+    // handler/repositories -- listing_stale's fixture instead simulates a
+    // freshness race via a call-count counter that keeps incrementing across
+    // repeat calls within one test, which would make the manifest differ
+    // between the first and second request and defeat the point of this
+    // idempotency assertion.
     const body = {
-      listingIds: ["listing_changed", "listing_noop"],
-      freshnessAttested: true,
+      listingIds: ["listing_changed"],
+      freshnessAttested: false,
     };
     const first = await (await handler(request(body))).json();
     const second = await (await handler(request(body))).json();
@@ -396,9 +417,65 @@ describe("POST /api/listings/export", () => {
     expect(second.manifest).toEqual(first.manifest);
     expect(second.rowCount).toBe(first.rowCount);
     // The second call's `ensure()` found the existing row (wasCreated:
-    // false) rather than inserting a new one, so it must not duplicate the
-    // audit event for an export attempt that only genuinely happened once.
-    expect(audits).toHaveLength(1);
+    // false) rather than inserting a new one, so it must not duplicate
+    // either the bulk_export_created event or the per-excluded_stale-entry
+    // review_conflict event for an export attempt that only genuinely
+    // happened once.
+    expect(audits).toHaveLength(2);
+    expect(
+      audits.filter((a: any) => a.action === "listing.bulk_export_created"),
+    ).toHaveLength(1);
+    const conflictAudits = audits.filter(
+      (a: any) => a.action === "listing.review_conflict",
+    );
+    expect(conflictAudits).toHaveLength(1);
+    expect(conflictAudits[0]).toMatchObject({
+      entityId: "listing_changed",
+      metadata: { reason: "not_attested" },
+    });
+  });
+
+  it("writes one review_conflict event per excluded_stale entry when a request has more than one", async () => {
+    // freshnessAttested: false makes every import-origin listing excluded
+    // for the same, deterministic reason -- unlike listing_stale's
+    // call-count-based fixture, this holds steady within a single request
+    // regardless of how many listingIds are in it.
+    const { handler, audits } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop"],
+        freshnessAttested: false,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.manifest).toEqual([
+      {
+        listingId: "listing_changed",
+        versionId: "version_changed",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
+      {
+        listingId: "listing_noop",
+        versionId: "version_noop",
+        outcome: "excluded_stale",
+        reason: "not_attested",
+      },
+    ]);
+    expect(audits).toHaveLength(3);
+    expect(audits[0].action).toBe("listing.bulk_export_created");
+    const conflictAudits = audits.filter(
+      (a: any) => a.action === "listing.review_conflict",
+    );
+    expect(conflictAudits).toHaveLength(2);
+    expect(conflictAudits.map((a: any) => a.entityId).sort()).toEqual([
+      "listing_changed",
+      "listing_noop",
+    ]);
+    expect(
+      conflictAudits.every((a: any) => a.metadata.reason === "not_attested"),
+    ).toBe(true);
   });
 
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
@@ -436,6 +513,7 @@ describe("POST /api/listings/export", () => {
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
+      connectionId: "conn_1",
     };
     const { handler } = makeHandler({
       reviewSnapshots: {
