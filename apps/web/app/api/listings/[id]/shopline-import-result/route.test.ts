@@ -99,12 +99,13 @@ describe("POST /api/listings/[id]/shopline-import-result", () => {
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.outcome).toBe("accepted");
+    expect(body.exportAttemptId).toBe(null);
     expect(created).toHaveLength(1);
     expect(auditEvents).toEqual([
       expect.objectContaining({
         action: "listing.shopline_import_result_recorded",
         entityId: listingId,
-        metadata: expect.objectContaining({ outcome: "accepted" }),
+        metadata: { outcome: "accepted", exportAttemptId: null },
       }),
     ]);
   });
@@ -121,7 +122,7 @@ describe("POST /api/listings/[id]/shopline-import-result", () => {
   });
 
   it("records an outcome against a specific exportAttemptId", async () => {
-    const { handler } = makeHandler();
+    const { handler, auditEvents } = makeHandler();
     const response = await handler(
       makeRequest({ outcome: "accepted", exportAttemptId }),
       makeContext(listingId),
@@ -129,6 +130,13 @@ describe("POST /api/listings/[id]/shopline-import-result", () => {
     expect(response.status).toBe(201);
     const body = await response.json();
     expect(body.exportAttemptId).toBe(exportAttemptId);
+    expect(auditEvents).toEqual([
+      expect.objectContaining({
+        action: "listing.shopline_import_result_recorded",
+        entityId: listingId,
+        metadata: { outcome: "accepted", exportAttemptId },
+      }),
+    ]);
   });
 
   it("rejects a rejected outcome with no rejectReason as a 400", async () => {
