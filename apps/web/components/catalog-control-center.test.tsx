@@ -392,4 +392,32 @@ describe("CatalogControlCenter", () => {
 
     await unmount(root);
   });
+
+  it("exposes each metric tile as a role=\"group\" tied to its visible label", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(pageResponse([])));
+
+    const { container, root } = await mount(fetcher);
+
+    const tiles = container.querySelectorAll('[role="group"]');
+    expect(tiles.length).toBe(5);
+
+    const expectedLabels = [
+      "商品 Products",
+      "已連結 Linked",
+      "待審核 Needs review",
+      "需處理 Attention",
+      "已發佈 Published",
+    ];
+
+    tiles.forEach((tile, index) => {
+      const labelledBy = tile.getAttribute("aria-labelledby");
+      expect(labelledBy).not.toBeNull();
+      const labelElement = document.getElementById(labelledBy!);
+      expect(labelElement?.textContent).toBe(expectedLabels[index]);
+    });
+
+    await unmount(root);
+  });
 });
