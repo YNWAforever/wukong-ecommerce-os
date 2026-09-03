@@ -19,6 +19,7 @@
 ## Task 1: Fix the core bug in `createBulkFormUpdate`
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form.ts`
 - Test: `packages/shopline/src/bulk-form.test.ts`
 
@@ -133,7 +134,9 @@ it("excludes a no-op product's row from a mixed batch, not just from the reporte
     { productId: "prod-noop", values: { nameZh: "沒有變化" } },
   ];
 
-  const update = createBulkFormUpdate(rows, enrichments, { include: "changed" });
+  const update = createBulkFormUpdate(rows, enrichments, {
+    include: "changed",
+  });
 
   // 2 header rows + exactly 1 data row (the changed product only).
   expect(update.sheet).toHaveLength(3);
@@ -221,7 +224,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes (t
 
 - [ ] **Step 6: Write the failing integration-level test in `bulk-export-service.test.ts`**
 
-This is the test that would have caught the *original* bug — today's suite only ever asserts on `manifest`/`rowCount`, never on the actual emitted bytes. Read `apps/web/lib/bulk-export-service.test.ts` in full first (it should still match the version quoted in this plan's research: a `depsWith()` helper building `links`/`versions` records keyed by listing id, with `listing_changed`/`listing_noop`/`listing_stale` fixtures already defined).
+This is the test that would have caught the _original_ bug — today's suite only ever asserts on `manifest`/`rowCount`, never on the actual emitted bytes. Read `apps/web/lib/bulk-export-service.test.ts` in full first (it should still match the version quoted in this plan's research: a `depsWith()` helper building `links`/`versions` records keyed by listing id, with `listing_changed`/`listing_noop`/`listing_stale` fixtures already defined).
 
 Add the import for XLSX parsing at the top of the file:
 
@@ -263,6 +266,7 @@ Since Task 1's fix already landed in Step 4, this test should PASS immediately. 
 git add packages/shopline/src/bulk-form.ts packages/shopline/src/bulk-form.test.ts apps/web/lib/bulk-export-service.test.ts
 git commit -m "fix: exclude no-op rows from a mixed multi-product export, not just from the reported manifest"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -270,6 +274,7 @@ git commit -m "fix: exclude no-op rows from a mixed multi-product export, not ju
 ## Task 2: Reparse-and-assert in `createBulkExport`
 
 **Files:**
+
 - Modify: `apps/web/lib/bulk-export-service.ts`
 - Test: `apps/web/lib/bulk-export-service.test.ts`
 
@@ -341,7 +346,10 @@ Expected: FAIL — `sheetsMatch` is not exported (module has no such export yet)
 In `apps/web/lib/bulk-export-service.ts`, update the import line to also bring in `readBulkFormSheet`:
 
 ```ts
-import { writeBulkFormWorkbook, readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  writeBulkFormWorkbook,
+  readBulkFormSheet,
+} from "@wukong/shopline/bulk-form-xlsx";
 ```
 
 Add the exported helper function (place it near the top of the file, after the type definitions, before `createBulkExport`):
@@ -419,6 +427,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes (a
 git add apps/web/lib/bulk-export-service.ts apps/web/lib/bulk-export-service.test.ts
 git commit -m "feat: reparse and assert the emitted export workbook matches what was intended"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -426,6 +435,7 @@ git commit -m "feat: reparse and assert the emitted export workbook matches what
 ## Task 3: Mixed-source/store rejection
 
 **Files:**
+
 - Modify: `packages/shopline/src/bulk-form.ts`
 - Modify: `apps/web/lib/bulk-export-service.ts`
 - Test: `apps/web/lib/bulk-export-service.test.ts`
@@ -490,110 +500,110 @@ Read the per-listing loop inside `createBulkExport` and confirm the shape right 
 Add `connectionId` to `bulk-export-service.test.ts`'s existing `depsWith()` helper's `links` record type and every entry, plus the ad-hoc inline override objects in its other tests — this is required BEFORE these new tests can even typecheck, since `BulkExportPlatformProductLink` is about to become a required field. Change:
 
 ```ts
-  const links: Record<
-    string,
-    {
-      remoteProductId: string;
-      rawRow: Record<string, string | null> | null;
-      origin: "import" | "created";
-      sourceImportId: string | null;
-      contentDigest: string | null;
-    }
-  > = {
-    listing_changed: {
-      remoteProductId: "prod-changed",
-      rawRow: rawRowFor(),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-    },
-    listing_noop: {
-      remoteProductId: "prod-noop",
-      rawRow: rawRowFor({
-        nameZh: "標題",
-        summaryEn: "Desc EN",
-        summaryZh: "描述",
-        seoTitleEn: "SEO title EN",
-        seoTitleZh: "SEO 標題",
-        seoDescriptionEn: "SEO desc EN",
-        seoDescriptionZh: "SEO 描述",
-        seoKeywords: "a, b",
-      }),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-    },
-    listing_stale: {
-      remoteProductId: "prod-stale",
-      rawRow: rawRowFor(),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-    },
-  };
+const links: Record<
+  string,
+  {
+    remoteProductId: string;
+    rawRow: Record<string, string | null> | null;
+    origin: "import" | "created";
+    sourceImportId: string | null;
+    contentDigest: string | null;
+  }
+> = {
+  listing_changed: {
+    remoteProductId: "prod-changed",
+    rawRow: rawRowFor(),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+  },
+  listing_noop: {
+    remoteProductId: "prod-noop",
+    rawRow: rawRowFor({
+      nameZh: "標題",
+      summaryEn: "Desc EN",
+      summaryZh: "描述",
+      seoTitleEn: "SEO title EN",
+      seoTitleZh: "SEO 標題",
+      seoDescriptionEn: "SEO desc EN",
+      seoDescriptionZh: "SEO 描述",
+      seoKeywords: "a, b",
+    }),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+  },
+  listing_stale: {
+    remoteProductId: "prod-stale",
+    rawRow: rawRowFor(),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+  },
+};
 ```
 
 to (adding `connectionId: "conn_1"` to every entry, and to the type):
 
 ```ts
-  const links: Record<
-    string,
-    {
-      remoteProductId: string;
-      rawRow: Record<string, string | null> | null;
-      origin: "import" | "created";
-      sourceImportId: string | null;
-      contentDigest: string | null;
-      connectionId: string;
-    }
-  > = {
-    listing_changed: {
-      remoteProductId: "prod-changed",
-      rawRow: rawRowFor(),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-      connectionId: "conn_1",
-    },
-    listing_noop: {
-      remoteProductId: "prod-noop",
-      rawRow: rawRowFor({
-        nameZh: "標題",
-        summaryEn: "Desc EN",
-        summaryZh: "描述",
-        seoTitleEn: "SEO title EN",
-        seoTitleZh: "SEO 標題",
-        seoDescriptionEn: "SEO desc EN",
-        seoDescriptionZh: "SEO 描述",
-        seoKeywords: "a, b",
-      }),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-      connectionId: "conn_1",
-    },
-    listing_stale: {
-      remoteProductId: "prod-stale",
-      rawRow: rawRowFor(),
-      origin: "import",
-      sourceImportId: "import_1",
-      contentDigest: "digest_1",
-      connectionId: "conn_1",
-    },
-  };
+const links: Record<
+  string,
+  {
+    remoteProductId: string;
+    rawRow: Record<string, string | null> | null;
+    origin: "import" | "created";
+    sourceImportId: string | null;
+    contentDigest: string | null;
+    connectionId: string;
+  }
+> = {
+  listing_changed: {
+    remoteProductId: "prod-changed",
+    rawRow: rawRowFor(),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+    connectionId: "conn_1",
+  },
+  listing_noop: {
+    remoteProductId: "prod-noop",
+    rawRow: rawRowFor({
+      nameZh: "標題",
+      summaryEn: "Desc EN",
+      summaryZh: "描述",
+      seoTitleEn: "SEO title EN",
+      seoTitleZh: "SEO 標題",
+      seoDescriptionEn: "SEO desc EN",
+      seoDescriptionZh: "SEO 描述",
+      seoKeywords: "a, b",
+    }),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+    connectionId: "conn_1",
+  },
+  listing_stale: {
+    remoteProductId: "prod-stale",
+    rawRow: rawRowFor(),
+    origin: "import",
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+    connectionId: "conn_1",
+  },
+};
 ```
 
 Then find every ad-hoc inline `getPlatformProductLink` override object in this file's other tests (there are 3: in `"excludes a create-origin listing with not_import_origin..."`, `"marks a listing whose stored raw row fails isBulkFormRawRow..."`, and `"rethrows a ShoplineBulkFormError instead of silently reporting excluded_no_op..."`) and add `connectionId: "conn_1"` to each — e.g.:
 
 ```ts
-        return {
-          remoteProductId: "prod-created",
-          rawRow: null,
-          origin: "created" as const,
-          sourceImportId: null,
-          contentDigest: null,
-          connectionId: "conn_1",
-        };
+return {
+  remoteProductId: "prod-created",
+  rawRow: null,
+  origin: "created" as const,
+  sourceImportId: null,
+  contentDigest: null,
+  connectionId: "conn_1",
+};
 ```
 
 (same pattern for the other two — read each one in the live file and add the field, keeping every other field unchanged).
@@ -620,7 +630,9 @@ it("rejects a request mixing listings from two different SHOPLINE connections", 
       if (listingId === "listing_other_store") {
         return {
           id: "version_other_store",
-          content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+          content: contentFor({
+            title: { en: "Title EN", "zh-Hant": "新標題" },
+          }),
         };
       }
       return depsWith().getActiveVersion(listingId);
@@ -661,7 +673,9 @@ it("does not require sourceImportId to match across listings from the same conne
       if (listingId === "listing_other_import") {
         return {
           id: "version_other_import",
-          content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+          content: contentFor({
+            title: { en: "Title EN", "zh-Hant": "新標題" },
+          }),
         };
       }
       return depsWith().getActiveVersion(listingId);
@@ -782,6 +796,7 @@ Read `apps/web/app/api/listings/export/route.test.ts` in full. It likely has its
 git add packages/shopline/src/bulk-form.ts apps/web/lib/bulk-export-service.ts apps/web/lib/bulk-export-service.test.ts "apps/web/app/api/listings/export/route.test.ts"
 git commit -m "feat: reject a bulk export that mixes listings from two different SHOPLINE connections"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer. Omit the route test file from `git add` if Step 6 found nothing needed changing there.)
 
 ---

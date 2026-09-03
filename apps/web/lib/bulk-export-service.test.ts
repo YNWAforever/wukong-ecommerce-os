@@ -523,7 +523,9 @@ describe("createBulkExport", () => {
         if (listingId === "listing_other_store") {
           return {
             id: "version_other_store",
-            content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
           };
         }
         return depsWith().getActiveVersion(listingId);
@@ -564,7 +566,9 @@ describe("createBulkExport", () => {
         if (listingId === "listing_other_import") {
           return {
             id: "version_other_import",
-            content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
+            content: contentFor({
+              title: { en: "Title EN", "zh-Hant": "新標題" },
+            }),
           };
         }
         return depsWith().getActiveVersion(listingId);
