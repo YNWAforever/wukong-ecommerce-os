@@ -10,7 +10,7 @@ import {
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 
-// Fetched generously from each of the 4 sources -- the merge-then-truncate
+// Fetched generously from each of the 5 sources -- the merge-then-truncate
 // happens inside buildJobsLedger, not per source. Fetching fewer than the
 // display limit from any one source could wrongly under-represent a source
 // that happens to have more recent activity than the others.
@@ -34,7 +34,7 @@ export function createJobsHandler(deps: JobsRouteDeps) {
       const entries = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const [batches, publishJobs, pipelineRuns, exports] =
+          const [batches, publishJobs, pipelineRuns, exports, importResults] =
             await Promise.all([
               repositories.enrichmentBatches.listForWorkspace(
                 SOURCE_FETCH_LIMIT,
@@ -42,10 +42,11 @@ export function createJobsHandler(deps: JobsRouteDeps) {
               repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
               repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
               repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
+              repositories.importResults.listForWorkspace(SOURCE_FETCH_LIMIT),
             ]);
 
           return buildJobsLedger(
-            { batches, publishJobs, pipelineRuns, exports },
+            { batches, publishJobs, pipelineRuns, exports, importResults },
             LEDGER_DISPLAY_LIMIT,
           );
         });

@@ -20,7 +20,7 @@ describe("GET /api/jobs", () => {
     expect(response.status).toBe(401);
   });
 
-  it("merges all 4 sources into one ledger for any authenticated member, including a viewer", async () => {
+  it("merges all 5 sources into one ledger for any authenticated member, including a viewer", async () => {
     const calls: unknown[] = [];
     const handler = createJobsHandler({
       sessionContext: {
@@ -114,6 +114,22 @@ describe("GET /api/jobs", () => {
                   ];
                 },
               },
+              importResults: {
+                async listForWorkspace(limit: number) {
+                  calls.push(["importResults.listForWorkspace", limit]);
+                  return [
+                    {
+                      id: "ir1",
+                      listingId: "l4",
+                      exportAttemptId: null,
+                      outcome: "accepted",
+                      rejectReason: null,
+                      recordedBy: "user_1",
+                      createdAt: new Date("2026-08-05T00:00:00Z"),
+                    },
+                  ];
+                },
+              },
             });
           },
         }) as never,
@@ -123,14 +139,16 @@ describe("GET /api/jobs", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    // Newest-first: e1 (08-04) > pr1 (08-03) > p1 (08-02) > b1 (08-01).
+    // Newest-first: ir1 (08-05) > e1 (08-04) > pr1 (08-03) > p1 (08-02) > b1 (08-01).
     expect(body.entries.map((entry: { id: string }) => entry.id)).toEqual([
+      "ir1",
       "e1",
       "pr1",
       "p1",
       "b1",
     ]);
     expect(body.entries.map((entry: { kind: string }) => entry.kind)).toEqual([
+      "import_result",
       "export",
       "pipeline_run",
       "publish_job",
@@ -143,6 +161,7 @@ describe("GET /api/jobs", () => {
       ["publishJobs.listForWorkspace", 100],
       ["pipelineRuns.listForWorkspace", 100],
       ["exportAttempts.listForWorkspace", 100],
+      ["importResults.listForWorkspace", 100],
     ]);
   });
 });

@@ -150,7 +150,38 @@ that import, uploading this export will silently revert it. This is not
 validated or warned about automatically; re-importing right before exporting
 is the operator's responsibility for now.
 
-## 7. Approving many listings at once
+## 7. Recording a SHOPLINE import result
+
+After manually re-importing a Wukong-generated bulk-form file into SHOPLINE (§6), record what SHOPLINE actually reported. Nothing does this automatically — the `/jobs` ledger only shows that a file was _generated_, not what happened after you uploaded it.
+
+```bash
+curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
+  -H "Cookie: $WUKONG_SESSION_COOKIE" \
+  -H "Content-Type: application/json" \
+  -d '{"outcome":"accepted"}'
+```
+
+If SHOPLINE rejected the row, record why:
+
+```bash
+curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
+  -H "Cookie: $WUKONG_SESSION_COOKIE" \
+  -H "Content-Type: application/json" \
+  -d '{"outcome":"rejected","rejectReason":"duplicate SKU"}'
+```
+
+If this listing's file came from a multi-product export, include that export's id so the record can be traced back to the exact file:
+
+```bash
+curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
+  -H "Cookie: $WUKONG_SESSION_COOKIE" \
+  -H "Content-Type: application/json" \
+  -d '{"outcome":"accepted","exportAttemptId":"<export-attempt-uuid>"}'
+```
+
+Requires the operator role. This call is per-listing: reconciling a multi-product export means calling it once per listing in that batch, the same way approving many listings at once (below) calls single-listing approval logic once per listing rather than as one combined request. Recorded results appear in the `/jobs` ledger as `import_result` entries.
+
+## 8. Approving many listings at once
 
 From the dashboard's work queue, an `in_review` listing with no open blocking
 compliance flags can be selected via its checkbox. "Select all eligible"
@@ -168,7 +199,7 @@ listings succeeded and which didn't, and why.
 Nothing about single-listing review changes: this is a faster way to approve
 many already-eligible listings, not a new kind of approval.
 
-## 8. Workspace admin area
+## 9. Workspace admin area
 
 The `/admin` page (visible to `admin` and `owner` roles only) replaces three
 manual steps this runbook used to require: inviting a teammate, connecting or
@@ -194,7 +225,7 @@ connection date.
 and save. It takes effect immediately for the workspace's branding — no
 deploy or code change required.
 
-## 9. Re-delivering a published listing via SHOPLINE API
+## 10. Re-delivering a published listing via SHOPLINE API
 
 When a reviewer delivers a listing via `shopline_api` and that listing already
 has a known remote product, delivery now calls `updateProduct` against that
