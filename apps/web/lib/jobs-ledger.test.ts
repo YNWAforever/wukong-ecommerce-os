@@ -374,4 +374,56 @@ describe("buildJobsLedger", () => {
     });
     expect(entries[0]!.summary).toContain("duplicate SKU");
   });
+
+  it("falls back to 'no reason given' when a rejected import result has a null rejectReason", () => {
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        exports: [],
+        importResults: [
+          {
+            id: "ir_3",
+            listingId: "listing_3",
+            exportAttemptId: null,
+            outcome: "rejected",
+            rejectReason: null,
+            recordedBy: "user_1",
+            createdAt: new Date("2026-09-03T00:00:00.000Z"),
+          },
+        ],
+      },
+      10,
+    );
+    expect(entries[0]!.summary).toBe("Import rejected: no reason given");
+  });
+
+  it("truncates a long rejectReason in the summary instead of rendering it in full", () => {
+    const longReason = "x".repeat(250);
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        exports: [],
+        importResults: [
+          {
+            id: "ir_4",
+            listingId: "listing_4",
+            exportAttemptId: null,
+            outcome: "rejected",
+            rejectReason: longReason,
+            recordedBy: "user_1",
+            createdAt: new Date("2026-09-03T00:00:00.000Z"),
+          },
+        ],
+      },
+      10,
+    );
+    const summary = entries[0]!.summary;
+    expect(summary).toBe(`Import rejected: ${"x".repeat(200)}…`);
+    expect(summary).not.toContain(longReason);
+    expect(summary.length).toBeLessThan(longReason.length);
+  });
 });

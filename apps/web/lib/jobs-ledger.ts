@@ -99,6 +99,21 @@ function publishJobSummary(job: PublishJob): string {
   }
 }
 
+// `rejectReason` is free text up to 2000 characters (see the zod schema in
+// `app/api/listings/[id]/shopline-import-result/route.ts`). The `/jobs`
+// ledger row renders `summary` as a single wrapped `<p>` with no CSS
+// truncation, so an uncapped reason would dominate a compact view where
+// every other row's summary is a short one-liner. Capping it here keeps the
+// full reason available wherever the caller reads it straight off the
+// import result -- only this summary string is shortened.
+const REJECT_REASON_SUMMARY_LIMIT = 200;
+
+function truncateRejectReason(rejectReason: string | null): string {
+  if (rejectReason === null) return "no reason given";
+  if (rejectReason.length <= REJECT_REASON_SUMMARY_LIMIT) return rejectReason;
+  return `${rejectReason.slice(0, REJECT_REASON_SUMMARY_LIMIT)}…`;
+}
+
 export function buildJobsLedger(
   sources: JobsLedgerSources,
   limit: number,
@@ -169,7 +184,7 @@ export function buildJobsLedger(
       summary:
         result.outcome === "accepted"
           ? "Import accepted by SHOPLINE"
-          : `Import rejected: ${result.rejectReason ?? "no reason given"}`,
+          : `Import rejected: ${truncateRejectReason(result.rejectReason)}`,
     })),
   ];
 
