@@ -77,6 +77,12 @@ export type {
   ExportManifestOutcome,
 } from "./repositories/export-attempts.js";
 export type {
+  CreateImportResultInput,
+  ImportResult,
+  ImportResultOutcome,
+  ImportResultRepository,
+} from "./repositories/import-results.js";
+export type {
   CreateEnrichmentBatchInput,
   EnrichmentBatch,
   EnrichmentBatchCounts,

@@ -849,6 +849,54 @@ export const exportAttempts = pgTable(
       table.workspaceId,
       table.idempotencyKey,
     ),
+    uniqueIndex("export_attempts_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+  ],
+);
+
+export const importResults = pgTable(
+  "import_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    /** Null when the recorded listing's bulk-form file came from the
+     * single-listing `deliver` (bulk_form) path, which persists no
+     * export_attempts row -- only the multi-product `/api/listings/export`
+     * route produces one to reference here. */
+    exportAttemptId: uuid("export_attempt_id"),
+    outcome: text("outcome").notNull(),
+    rejectReason: text("reject_reason"),
+    recordedBy: text("recorded_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    index("import_results_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    index("import_results_workspace_export_attempt_idx").on(
+      table.workspaceId,
+      table.exportAttemptId,
+    ),
+    check(
+      "import_results_outcome_check",
+      sql`outcome IN ('accepted', 'rejected')`,
+    ),
+    foreignKey({
+      name: "import_results_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "import_results_workspace_export_attempt_fkey",
+      columns: [table.workspaceId, table.exportAttemptId],
+      foreignColumns: [exportAttempts.workspaceId, exportAttempts.id],
+    }).onDelete("restrict"),
   ],
 );
 
