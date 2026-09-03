@@ -6,7 +6,7 @@
 
 ## 1. What this fixes
 
-Nothing today records what SHOPLINE actually accepted after an operator manually re-imports a Wukong-generated bulk-form export. The `/jobs` ledger (Package I, on `main`) shows that a file was *generated* (via its `export` entries, sourced from `export_attempts`), but has no concept of what happened after the operator uploaded that file to SHOPLINE — whether the import succeeded, was rejected, or partially succeeded. The Opak UAT rollout runbook's Stage 1–2 workaround (a manual log) is explicitly documented as insufficient at Stage 3's 50–100-product, 2-week cadence.
+Nothing today records what SHOPLINE actually accepted after an operator manually re-imports a Wukong-generated bulk-form export. The `/jobs` ledger (Package I, on `main`) shows that a file was _generated_ (via its `export` entries, sourced from `export_attempts`), but has no concept of what happened after the operator uploaded that file to SHOPLINE — whether the import succeeded, was rejected, or partially succeeded. The Opak UAT rollout runbook's Stage 1–2 workaround (a manual log) is explicitly documented as insufficient at Stage 3's 50–100-product, 2-week cadence.
 
 ## 2. Scope
 
@@ -48,7 +48,7 @@ Indexes: `(workspaceId, listingId)` for lookup, `(workspaceId, createdAt desc, i
     .strict()
     .refine(
       (body) => body.outcome !== "rejected" || body.rejectReason !== undefined,
-      { message: "rejectReason is required when outcome is \"rejected\"." },
+      { message: 'rejectReason is required when outcome is "rejected".' },
     );
   ```
   (Mirrors `export/route.ts`'s existing `.refine()` pattern for a different invariant — no new validation idiom introduced.)

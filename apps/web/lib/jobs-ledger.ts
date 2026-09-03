@@ -7,11 +7,7 @@ import type {
 } from "@wukong/db";
 
 export type LedgerKind =
-  | "batch"
-  | "publish_job"
-  | "pipeline_run"
-  | "export"
-  | "import_result";
+  "batch" | "publish_job" | "pipeline_run" | "export" | "import_result";
 export type NormalizedStatus =
   "pending" | "running" | "succeeded" | "failed" | "cancelled";
 

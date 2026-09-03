@@ -19,6 +19,7 @@
 ## Task 1: Migration, schema, and repository
 
 **Files:**
+
 - Create: `packages/db/drizzle/0015_import_results.sql`
 - Modify: `packages/db/src/schema.ts`
 - Create: `packages/db/src/repositories/import-results.ts`
@@ -380,7 +381,7 @@ import {
 In `WorkspaceRepositories`, immediately after `exportAttempts: ExportAttemptRepository;`:
 
 ```ts
-  importResults: ImportResultRepository;
+importResults: ImportResultRepository;
 ```
 
 In `runForWorkspace`'s `repositories` object, immediately after the `exportAttempts: createExportAttemptRepository(...)` block:
@@ -420,6 +421,7 @@ Expected: exit 0, clean.
 git add packages/db/drizzle/0015_import_results.sql packages/db/src/schema.ts packages/db/src/repositories/import-results.ts packages/db/src/repositories/import-results.integration.test.ts packages/db/src/client.ts packages/db/src/index.ts
 git commit -m "feat: add import_results table and repository for SHOPLINE import reconciliation"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -427,6 +429,7 @@ git commit -m "feat: add import_results table and repository for SHOPLINE import
 ## Task 2: `POST /api/listings/[id]/shopline-import-result` route
 
 **Files:**
+
 - Create: `apps/web/app/api/listings/[id]/shopline-import-result/route.ts`
 - Create: `apps/web/app/api/listings/[id]/shopline-import-result/route.test.ts`
 
@@ -450,11 +453,13 @@ import { createImportResultHandler } from "./route.js";
 const listingId = "11111111-1111-4111-8111-111111111111";
 const exportAttemptId = "22222222-2222-4222-8222-222222222222";
 
-function makeHandler(overrides: {
-  role?: string;
-  listingExists?: boolean;
-  exportAttemptExists?: boolean;
-} = {}) {
+function makeHandler(
+  overrides: {
+    role?: string;
+    listingExists?: boolean;
+    exportAttemptExists?: boolean;
+  } = {},
+) {
   const role = overrides.role ?? "operator";
   const listingExists = overrides.listingExists ?? true;
   const exportAttemptExists = overrides.exportAttemptExists ?? true;
@@ -502,13 +507,20 @@ function makeHandler(overrides: {
       },
     },
     getDatabase: () => ({
-      async forWorkspace(_workspaceId: string, work: (repos: unknown) => unknown) {
+      async forWorkspace(
+        _workspaceId: string,
+        work: (repos: unknown) => unknown,
+      ) {
         return work(repositories);
       },
     }),
   };
 
-  return { handler: createImportResultHandler(deps as never), auditEvents, created };
+  return {
+    handler: createImportResultHandler(deps as never),
+    auditEvents,
+    created,
+  };
 }
 
 function makeRequest(body: unknown) {
@@ -753,6 +765,7 @@ Expected: exit 0, clean.
 git add "apps/web/app/api/listings/[id]/shopline-import-result/route.ts" "apps/web/app/api/listings/[id]/shopline-import-result/route.test.ts"
 git commit -m "feat: add POST /api/listings/[id]/shopline-import-result endpoint"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -760,6 +773,7 @@ git commit -m "feat: add POST /api/listings/[id]/shopline-import-result endpoint
 ## Task 3: `/jobs` ledger integration
 
 **Files:**
+
 - Modify: `apps/web/lib/jobs-ledger.ts`
 - Modify: `apps/web/lib/jobs-ledger.test.ts`
 - Modify: `apps/web/app/api/jobs/route.ts`
@@ -846,11 +860,13 @@ In `apps/web/components/jobs-ledger-client.test.tsx`, find the existing per-kind
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run:
+
 ```bash
 corepack pnpm exec vitest run apps/web/lib/jobs-ledger.test.ts
 corepack pnpm exec vitest run apps/web/app/api/jobs/route.test.ts
 corepack pnpm exec vitest run apps/web/components/jobs-ledger-client.test.tsx
 ```
+
 Expected: all three FAIL — `import_result` isn't a valid `LedgerKind` yet (TypeScript error in the test files themselves, or a runtime mismatch), `JobsLedgerSources` has no `importResults` field, and the route/component don't know about the new kind.
 
 - [ ] **Step 4: Implement the ledger integration**
@@ -873,11 +889,7 @@ Change line 8:
 
 ```ts
 export type LedgerKind =
-  | "batch"
-  | "publish_job"
-  | "pipeline_run"
-  | "export"
-  | "import_result";
+  "batch" | "publish_job" | "pipeline_run" | "export" | "import_result";
 ```
 
 Change `JobsLedgerSources` (lines 22–27) to add a 5th field:
@@ -912,21 +924,19 @@ Inside `buildJobsLedger`'s `entries` array construction, immediately after the `
 In `apps/web/app/api/jobs/route.ts`, change the `Promise.all([...])` (lines 37–45) to fetch a 5th source:
 
 ```ts
-          const [batches, publishJobs, pipelineRuns, exports, importResults] =
-            await Promise.all([
-              repositories.enrichmentBatches.listForWorkspace(
-                SOURCE_FETCH_LIMIT,
-              ),
-              repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.importResults.listForWorkspace(SOURCE_FETCH_LIMIT),
-            ]);
+const [batches, publishJobs, pipelineRuns, exports, importResults] =
+  await Promise.all([
+    repositories.enrichmentBatches.listForWorkspace(SOURCE_FETCH_LIMIT),
+    repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
+    repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
+    repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
+    repositories.importResults.listForWorkspace(SOURCE_FETCH_LIMIT),
+  ]);
 
-          return buildJobsLedger(
-            { batches, publishJobs, pipelineRuns, exports, importResults },
-            LEDGER_DISPLAY_LIMIT,
-          );
+return buildJobsLedger(
+  { batches, publishJobs, pipelineRuns, exports, importResults },
+  LEDGER_DISPLAY_LIMIT,
+);
 ```
 
 In `apps/web/components/jobs-ledger-client.tsx`, change `KIND_FILTERS` (lines 29–35) to add a new entry:
@@ -959,11 +969,13 @@ No other change needed in this file — the row template is generic over `Ledger
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run:
+
 ```bash
 corepack pnpm exec vitest run apps/web/lib/jobs-ledger.test.ts
 corepack pnpm exec vitest run apps/web/app/api/jobs/route.test.ts
 corepack pnpm exec vitest run apps/web/components/jobs-ledger-client.test.tsx
 ```
+
 Expected: all three PASS, including every pre-existing test in each file.
 
 - [ ] **Step 6: Typecheck**
@@ -977,6 +989,7 @@ Expected: exit 0, clean.
 git add apps/web/lib/jobs-ledger.ts apps/web/lib/jobs-ledger.test.ts apps/web/app/api/jobs/route.ts apps/web/app/api/jobs/route.test.ts apps/web/components/jobs-ledger-client.tsx apps/web/components/jobs-ledger-client.test.tsx
 git commit -m "feat: show recorded SHOPLINE import results in the /jobs ledger"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -984,6 +997,7 @@ git commit -m "feat: show recorded SHOPLINE import results in the /jobs ledger"
 ## Task 4: Documentation
 
 **Files:**
+
 - Modify: `docs/runbooks/shopline-pilot-onboarding.md`
 
 - [ ] **Step 1: Read the current file**
@@ -994,10 +1008,10 @@ Read `docs/runbooks/shopline-pilot-onboarding.md` in full. Confirm its current s
 
 Insert a new section immediately after the existing §6 ("Exporting enrichment back to SHOPLINE") and before the existing §7 ("Approving many listings at once"):
 
-```markdown
+````markdown
 ## 7. Recording a SHOPLINE import result
 
-After manually re-importing a Wukong-generated bulk-form file into SHOPLINE (§6), record what SHOPLINE actually reported. Nothing does this automatically — the `/jobs` ledger only shows that a file was *generated*, not what happened after you uploaded it.
+After manually re-importing a Wukong-generated bulk-form file into SHOPLINE (§6), record what SHOPLINE actually reported. Nothing does this automatically — the `/jobs` ledger only shows that a file was _generated_, not what happened after you uploaded it.
 
 ```bash
 curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
@@ -1005,6 +1019,7 @@ curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result"
   -H "Content-Type: application/json" \
   -d '{"outcome":"accepted"}'
 ```
+````
 
 If SHOPLINE rejected the row, record why:
 
@@ -1025,7 +1040,8 @@ curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result"
 ```
 
 Requires the operator role. This call is per-listing: reconciling a multi-product export means calling it once per listing in that batch, the same way approving many listings at once (below) calls single-listing approval logic once per listing rather than as one combined request. Recorded results appear in the `/jobs` ledger as `import_result` entries.
-```
+
+````
 
 Renumber the existing §7 ("Approving many listings at once") to §8, existing §8 ("Workspace admin area") to §9, and existing §9 ("Re-delivering a published listing via SHOPLINE API") to §10 — update only the `## N.` heading numbers, not their titles or content.
 
@@ -1033,7 +1049,7 @@ Renumber the existing §7 ("Approving many listings at once") to §8, existing �
 
 ```bash
 grep -n "^## " docs/runbooks/shopline-pilot-onboarding.md
-```
+````
 
 Expected: exactly 10 numbered sections, 1 through 10, in order, no gaps or duplicates, with "Recording a SHOPLINE import result" as §7.
 
@@ -1051,6 +1067,7 @@ If it fails, run `corepack pnpm exec prettier --write docs/runbooks/shopline-pil
 git add docs/runbooks/shopline-pilot-onboarding.md
 git commit -m "docs: document recording a SHOPLINE import result"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---

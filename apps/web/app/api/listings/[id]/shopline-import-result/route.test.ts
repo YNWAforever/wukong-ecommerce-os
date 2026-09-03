@@ -76,13 +76,10 @@ function makeHandler(
 }
 
 function makeRequest(body: unknown) {
-  return new Request(
-    "http://localhost/api/listings/x/shopline-import-result",
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-  );
+  return new Request("http://localhost/api/listings/x/shopline-import-result", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 function makeContext(id: string) {
