@@ -12,20 +12,20 @@
 
 **`audit_events`** — existing index: `audit_events_workspace_created_idx` on `(workspace_id, created_at)` only.
 
-| Method | Query shape | Covered today? |
-|---|---|---|
-| `findRelatedToListing(listingId, limit)` | `WHERE workspace_id=? AND entity_id=? ORDER BY created_at DESC, id DESC` | No — `entity_id` isn't in the index |
-| `audit-verify.ts`'s release-gate query | `WHERE workspace_id=? AND entity_id=? ORDER BY created_at ASC, id ASC` | No — same gap, same table |
-| `countByActionSince(action, since)` | `WHERE workspace_id=? AND action=? AND created_at>=?` | No — `action` isn't in the index |
-| `countByActionAndMetadataKeySince(...)` | same WHERE as above, plus a `GROUP BY` on a jsonb-extraction expression | No — same gap |
-| `sumImportMetricsSince(since)` | `WHERE workspace_id=? AND action='listing.bulk_form_import_completed' AND created_at>=?` | No — same gap |
+| Method                                   | Query shape                                                                              | Covered today?                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| `findRelatedToListing(listingId, limit)` | `WHERE workspace_id=? AND entity_id=? ORDER BY created_at DESC, id DESC`                 | No — `entity_id` isn't in the index |
+| `audit-verify.ts`'s release-gate query   | `WHERE workspace_id=? AND entity_id=? ORDER BY created_at ASC, id ASC`                   | No — same gap, same table           |
+| `countByActionSince(action, since)`      | `WHERE workspace_id=? AND action=? AND created_at>=?`                                    | No — `action` isn't in the index    |
+| `countByActionAndMetadataKeySince(...)`  | same WHERE as above, plus a `GROUP BY` on a jsonb-extraction expression                  | No — same gap                       |
+| `sumImportMetricsSince(since)`           | `WHERE workspace_id=? AND action='listing.bulk_form_import_completed' AND created_at>=?` | No — same gap                       |
 
 **`export_attempts`** — existing index: a unique index on `(workspace_id, idempotency_key)` only (no `created_at`-covering index at all).
 
-| Method | Query shape | Covered today? |
-|---|---|---|
-| `getById(id)` | `WHERE workspace_id=? AND id=?` | Yes — `id`'s primary key is already maximally selective |
-| `listForWorkspace(limit)` | `WHERE workspace_id=? ORDER BY created_at DESC, id DESC` | No — no index covers this at all |
+| Method                                    | Query shape                                                                                           | Covered today?                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `getById(id)`                             | `WHERE workspace_id=? AND id=?`                                                                       | Yes — `id`'s primary key is already maximally selective       |
+| `listForWorkspace(limit)`                 | `WHERE workspace_id=? ORDER BY created_at DESC, id DESC`                                              | No — no index covers this at all                              |
 | `listContainingListing(listingId, limit)` | `WHERE workspace_id=? AND manifest @> '[{"listingId":...}]'::jsonb ORDER BY created_at DESC, id DESC` | No — full per-workspace scan comparing every row's `manifest` |
 
 `listContainingListing` is called from `apps/web/lib/listing-activity-service.ts` to build a listing's activity panel — a real, user-facing read path, not an internal-only tool.

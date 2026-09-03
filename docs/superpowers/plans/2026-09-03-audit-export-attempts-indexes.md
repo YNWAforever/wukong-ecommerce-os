@@ -19,6 +19,7 @@
 ## Task 1: Add the 4 indexes
 
 **Files:**
+
 - Create: `packages/db/drizzle/0015_audit_export_attempts_indexes.sql`
 - Modify: `packages/db/src/schema.ts`
 
@@ -264,6 +265,7 @@ If `packages/db/drizzle/0015_audit_export_attempts_indexes.sql` or `packages/db/
 git add packages/db/drizzle/0015_audit_export_attempts_indexes.sql packages/db/src/schema.ts
 git commit -m "feat: add missing indexes on audit_events and export_attempts"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 - [ ] **Step 12: Report status**
