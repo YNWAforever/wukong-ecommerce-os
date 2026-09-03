@@ -374,4 +374,22 @@ describe("CatalogControlCenter", () => {
 
     await unmount(root);
   });
+
+  it("renders the table with an accessible name", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      new URL(url, "http://localhost");
+      return Promise.resolve(
+        Response.json(pageResponse([makeItem({ id: "1" })])),
+      );
+    });
+
+    const { container, root } = await mount(fetcher);
+
+    const table = container.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(table?.getAttribute("aria-label")).toBe("商品列表");
+
+    await unmount(root);
+  });
 });

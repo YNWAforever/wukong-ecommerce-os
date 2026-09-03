@@ -30,6 +30,11 @@ const ZIP_EOCD = 0x06054b50;
 const MAX_WORKSHEET_ROWS = 1_048_576;
 const MAX_WORKSHEET_COLUMNS = 16_384;
 const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
+// 1.5x the per-entry cap: generous for a legitimate multi-sheet/multi-part
+// workbook (the real Opak workbook this system targets is 182KB compressed,
+// orders of magnitude under this), while still bounding a pathological
+// many-small-entries archive that the per-entry cap alone doesn't catch.
+const MAX_TOTAL_INFLATED_BYTES = 96 * 1024 * 1024;
 
 export class BulkFormWorkbookError extends Error {
   constructor(message: string) {
@@ -54,6 +59,7 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
   let offset = view.getUint32(eocd + 16, true);
   const decoder = new TextDecoder();
   const entries = new Map<string, Uint8Array>();
+  let totalInflatedBytes = 0;
 
   for (let n = 0; n < entryCount; n += 1) {
     if (view.getUint32(offset, true) !== ZIP_CENTRAL_HEADER) {
@@ -81,16 +87,40 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
 
     if (method === 0) entries.set(name, raw);
     else if (method === 8) {
+      // Cap THIS entry's own inflation at whatever remains of the total
+      // budget, not just the flat per-entry cap -- otherwise a rejected
+      // entry could still have been allowed to fully materialize up to
+      // MAX_INFLATED_BYTES before the total check ran, letting peak memory
+      // reach MAX_TOTAL_INFLATED_BYTES + MAX_INFLATED_BYTES instead of
+      // stopping at MAX_TOTAL_INFLATED_BYTES.
+      const remainingBudget = MAX_TOTAL_INFLATED_BYTES - totalInflatedBytes;
+      if (remainingBudget <= 0) {
+        throw new BulkFormWorkbookError(
+          "zip archive's total decompressed size exceeds the supported bound",
+        );
+      }
+      const perEntryLimit = Math.min(MAX_INFLATED_BYTES, remainingBudget);
       let inflated;
       try {
-        inflated = inflateRawSync(raw, { maxOutputLength: MAX_INFLATED_BYTES });
+        inflated = inflateRawSync(raw, { maxOutputLength: perEntryLimit });
       } catch {
-        // zlib throws ERR_BUFFER_TOO_LARGE past maxOutputLength; report it as a
-        // rejected workbook rather than leaking a runtime error to the caller.
+        // zlib throws ERR_BUFFER_TOO_LARGE past maxOutputLength; report it as
+        // a rejected workbook rather than leaking a runtime error to the
+        // caller. Which message is honest depends on which bound was
+        // actually tighter for this call: if the remaining total budget was
+        // already below the flat per-entry cap, this entry might have fit
+        // under MAX_INFLATED_BYTES alone but not in what's left of the
+        // archive's total budget.
+        if (perEntryLimit < MAX_INFLATED_BYTES) {
+          throw new BulkFormWorkbookError(
+            "zip archive's total decompressed size exceeds the supported bound",
+          );
+        }
         throw new BulkFormWorkbookError(
           `zip entry ${name} inflates beyond the supported size`,
         );
       }
+      totalInflatedBytes += inflated.byteLength;
       entries.set(name, new Uint8Array(inflated));
     } else
       throw new BulkFormWorkbookError(

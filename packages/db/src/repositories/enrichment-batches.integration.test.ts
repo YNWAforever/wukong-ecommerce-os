@@ -407,4 +407,139 @@ describe("enrichment batch repository", () => {
     const tied = listed.filter((batch) => ids.includes(batch.id));
     expect(tied.map((batch) => batch.id)).toEqual([...ids].sort().reverse());
   });
+
+  it("lists the batches a given listing belongs to, newest first, workspace-isolated", async () => {
+    const listWorkspaceId = "ws_batches_for_listing";
+    const otherListWorkspaceId = "ws_batches_for_listing_other";
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${listWorkspaceId}', '${listWorkspaceId}', '{}'::jsonb),
+        ('${otherListWorkspaceId}', '${otherListWorkspaceId}', '{}'::jsonb);
+    `);
+
+    const draftId = await database.forWorkspace(
+      listWorkspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: "test draft",
+        });
+        return draft.id;
+      },
+    );
+
+    // Separate `forWorkspace` calls, one batch per transaction: Postgres's
+    // `now()` is fixed for the life of one transaction, so two batches
+    // created inside a single `forWorkspace` call would tie on `created_at`
+    // and make the newest-first assertion below non-deterministic.
+    const batchA = await database.forWorkspace(
+      listWorkspaceId,
+      (repositories) =>
+        repositories.enrichmentBatches.create({
+          label: "Batch A",
+          budgetUsd: 5,
+          waveSize: 10,
+          createdBy: "user_1",
+          listingIds: [draftId],
+        }),
+    );
+    const batchB = await database.forWorkspace(
+      listWorkspaceId,
+      (repositories) =>
+        repositories.enrichmentBatches.create({
+          label: "Batch B",
+          budgetUsd: 5,
+          waveSize: 10,
+          createdBy: "user_1",
+          listingIds: [draftId],
+        }),
+    );
+
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
+      const related =
+        await repositories.enrichmentBatches.listBatchesForListing(draftId);
+      expect(related.map((batch) => batch.batchId)).toEqual([
+        batchB.id,
+        batchA.id,
+      ]);
+      expect(related.every((batch) => batch.createdAt instanceof Date)).toBe(
+        true,
+      );
+      expect(related.map((batch) => batch.label)).toEqual([
+        "Batch B",
+        "Batch A",
+      ]);
+    });
+
+    // Genuine cross-workspace isolation. `listing_drafts.id` is a global
+    // primary key (not `(workspace_id, id)`), so a second workspace cannot
+    // literally reuse `draftId` -- instead it gets its own real draft and its
+    // own real batch referencing it, exercising the same join/filter path
+    // this repository uses for `draftId`. The test then checks both
+    // directions: workspace A's query must not surface workspace B's batch,
+    // and workspace B's query (for its own draft) must not surface workspace
+    // A's batches, and must not surface anything at all when asked about
+    // workspace A's `draftId`, which it has no item rows for.
+    const otherDraftId = await database.forWorkspace(
+      otherListWorkspaceId,
+      async (repositories) => {
+        const draft = await repositories.listings.create({
+          target: "shopline",
+          note: "other workspace draft",
+        });
+        return draft.id;
+      },
+    );
+    const otherBatchId = await database.forWorkspace(
+      otherListWorkspaceId,
+      async (repositories) => {
+        const batch = await repositories.enrichmentBatches.create({
+          label: "Other workspace batch",
+          budgetUsd: 5,
+          waveSize: 10,
+          createdBy: "user_2",
+          listingIds: [otherDraftId],
+        });
+        return batch.id;
+      },
+    );
+
+    await database.forWorkspace(listWorkspaceId, async (repositories) => {
+      const related =
+        await repositories.enrichmentBatches.listBatchesForListing(draftId);
+      expect(related.map((batch) => batch.batchId)).not.toContain(otherBatchId);
+      expect(related).toHaveLength(2);
+      // workspaceId scoping, not just id matching: workspace A has no item
+      // row for workspace B's own draft either.
+      expect(
+        await repositories.enrichmentBatches.listBatchesForListing(
+          otherDraftId,
+        ),
+      ).toEqual([]);
+    });
+
+    await database.forWorkspace(otherListWorkspaceId, async (repositories) => {
+      const related =
+        await repositories.enrichmentBatches.listBatchesForListing(
+          otherDraftId,
+        );
+      expect(related.map((batch) => batch.batchId)).toEqual([otherBatchId]);
+      // And workspace B sees nothing for workspace A's draft, even though
+      // that draft really does belong to two batches -- just not this one's.
+      expect(
+        await repositories.enrichmentBatches.listBatchesForListing(draftId),
+      ).toEqual([]);
+    });
+  });
+
+  it("rejects a listBatchesForListing limit outside 1..100", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await expect(
+        repositories.enrichmentBatches.listBatchesForListing("any-id", 0),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.enrichmentBatches.listBatchesForListing("any-id", 101),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+    });
+  });
 });

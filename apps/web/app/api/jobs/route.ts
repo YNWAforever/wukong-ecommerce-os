@@ -22,6 +22,24 @@ const SOURCE_FETCH_LIMIT = 100;
 // value outside that range by construction.
 const LEDGER_DISPLAY_LIMIT = 50;
 
+// 30 days: long enough to be a meaningful trend line on a page checked
+// periodically, short enough that the aggregate queries stay cheap without
+// their own dedicated index -- these queries scan
+// audit_events_workspace_created_idx and filter by action/metadata after.
+const METRICS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+// review_conflict's `reason` values come from two different sources -- the
+// approve route's own literals ("version_conflict", "confirmation_ledger_stale")
+// and assertApprovalFreshness/assertExportFreshness's FreshnessFailureReason
+// union ("not_attested" | "no_remote_link" | "source_import_mismatch" |
+// "row_digest_mismatch" | "version_mismatch" | "header_contract_stale") --
+// bucketed here into the 2 metrics the design names, rather than an 8-way
+// breakdown no tile could usefully show.
+const VERSION_CONFLICT_REASONS = new Set([
+  "version_conflict",
+  "confirmation_ledger_stale",
+]);
+
 type JobsRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase(): Database;
@@ -31,26 +49,60 @@ export function createJobsHandler(deps: JobsRouteDeps) {
   return async function jobs(): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const entries = await deps
+      const since = new Date(Date.now() - METRICS_WINDOW_MS);
+      const { entries, metrics } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const [batches, publishJobs, pipelineRuns, exports] =
-            await Promise.all([
-              repositories.enrichmentBatches.listForWorkspace(
-                SOURCE_FETCH_LIMIT,
-              ),
-              repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
-              repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
-            ]);
+          const [
+            batches,
+            publishJobs,
+            pipelineRuns,
+            exports,
+            publishRetries,
+            reviewConflictsByReason,
+            importSums,
+          ] = await Promise.all([
+            repositories.enrichmentBatches.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.audit.countByActionSince(
+              "listing.publish_failed",
+              since,
+            ),
+            repositories.audit.countByActionAndMetadataKeySince(
+              "listing.review_conflict",
+              "reason",
+              since,
+            ),
+            repositories.audit.sumImportMetricsSince(since),
+          ]);
 
-          return buildJobsLedger(
-            { batches, publishJobs, pipelineRuns, exports },
-            LEDGER_DISPLAY_LIMIT,
-          );
+          let versionConflicts = 0;
+          let staleSourceRejections = 0;
+          for (const row of reviewConflictsByReason) {
+            if (row.value && VERSION_CONFLICT_REASONS.has(row.value)) {
+              versionConflicts += row.count;
+            } else {
+              staleSourceRejections += row.count;
+            }
+          }
+
+          return {
+            entries: buildJobsLedger(
+              { batches, publishJobs, pipelineRuns, exports },
+              LEDGER_DISPLAY_LIMIT,
+            ),
+            metrics: {
+              publishRetries,
+              versionConflicts,
+              staleSourceRejections,
+              importedRows: importSums.parsedRows,
+            },
+          };
         });
 
-      return jsonResponse(200, { entries });
+      return jsonResponse(200, { entries, metrics });
     });
   };
 }

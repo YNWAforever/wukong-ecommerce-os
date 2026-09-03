@@ -9,15 +9,16 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { AuthShell } from "./auth-shell";
 
-async function mount(initialLocale: "zh-Hant" | "en") {
+async function mount(
+  initialLocale: "zh-Hant" | "en",
+  children: React.ReactNode = <div data-testid="card-content">card</div>,
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <AuthShell initialLocale={initialLocale}>
-        <div data-testid="card-content">card</div>
-      </AuthShell>,
+      <AuthShell initialLocale={initialLocale}>{children}</AuthShell>,
     );
   });
   return container;
@@ -65,5 +66,42 @@ describe("AuthShell", () => {
       a.getAttribute("href"),
     );
     expect(hrefs.some((href) => href?.includes("/pilot"))).toBe(false);
+  });
+
+  it("renders a skip link pointing at the main content region", async () => {
+    const container = await mount("en");
+    const skipLink = container.querySelector<HTMLAnchorElement>(
+      'a[href="#main-content"]',
+    );
+    expect(skipLink).not.toBeNull();
+    expect(skipLink?.textContent).toContain("Skip to content");
+    const mainContent = document.getElementById("main-content");
+    expect(mainContent).not.toBeNull();
+  });
+
+  it("demotes the tagline from h1 to p so the page has only one h1", async () => {
+    const container = await mount("en");
+    const h1Elements = container.querySelectorAll<HTMLHeadingElement>("h1");
+    expect(h1Elements.length).toBe(0);
+    const taglineElement = container.querySelector<HTMLParagraphElement>(
+      "p.auth-shell-tagline",
+    );
+    expect(taglineElement).not.toBeNull();
+    expect(taglineElement?.textContent).toContain(
+      "Verify the evidence before approving the content.",
+    );
+  });
+
+  it("renders exactly one h1 when the child (e.g. AuthForm) has its own h1, and it is the child's, not the tagline's", async () => {
+    const container = await mount("en", <h1 id="auth-title">Sign in</h1>);
+    const h1Elements = container.querySelectorAll<HTMLHeadingElement>("h1");
+    expect(h1Elements.length).toBe(1);
+    expect(h1Elements[0]?.id).toBe("auth-title");
+    expect(h1Elements[0]?.textContent).toBe("Sign in");
+    const taglineElement = container.querySelector<HTMLParagraphElement>(
+      "p.auth-shell-tagline",
+    );
+    expect(taglineElement).not.toBeNull();
+    expect(taglineElement?.tagName).toBe("P");
   });
 });

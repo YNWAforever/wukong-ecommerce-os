@@ -333,4 +333,29 @@ describe("AuthForm", () => {
     });
     expect(container.textContent).toContain(heading);
   });
+
+  it.each([
+    ["password-signin", "en", "Use 12 to 128 characters."],
+    ["set-password", "en", "Use 12 to 128 characters."],
+    ["reset-password", "en", "Use 12 to 128 characters."],
+    ["password-signin", "zh-Hant", "長度需為 12 至 128 個字元。"],
+    ["set-password", "zh-Hant", "長度需為 12 至 128 個字元。"],
+    ["reset-password", "zh-Hant", "長度需為 12 至 128 個字元。"],
+  ] as const)(
+    "associates password hint with input via aria-describedby for %s in %s",
+    async (mode, locale, expectedHint) => {
+      const container = await mount(mode, {
+        token: "safe-query-token",
+        locale,
+      });
+      const passwordInput = container.querySelector<HTMLInputElement>(
+        'input[name="password"]',
+      );
+      expect(passwordInput).not.toBeNull();
+      const ariaDescribedBy = passwordInput?.getAttribute("aria-describedby");
+      expect(ariaDescribedBy).not.toBeNull();
+      const hintElement = container.querySelector(`#${ariaDescribedBy}`);
+      expect(hintElement?.textContent).toBe(expectedHint);
+    },
+  );
 });

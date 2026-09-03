@@ -170,7 +170,13 @@ describe("bulk form importer", () => {
       sheet: sheetOf(rowFor()),
     });
 
-    expect(recorded.audits).toEqual([
+    // Filter out the aggregate listing.bulk_form_import_completed event --
+    // it fires once per import regardless of per-row outcome, so it's out of
+    // scope for this per-row assertion.
+    const perRowAudits = recorded.audits.filter(
+      (event) => event.action !== "listing.bulk_form_import_completed",
+    );
+    expect(perRowAudits).toEqual([
       expect.objectContaining({
         action: "listing.imported",
         entityId: "draft_1",
@@ -264,7 +270,13 @@ describe("bulk form importer", () => {
       sheet: sheetOf(rowFor()),
     });
 
-    expect(recorded.audits).toEqual([
+    // Filter out the aggregate listing.bulk_form_import_completed event --
+    // it fires once per import regardless of per-row outcome, so it's out of
+    // scope for this per-row assertion.
+    const perRowAudits = recorded.audits.filter(
+      (event) => event.action !== "listing.bulk_form_import_completed",
+    );
+    expect(perRowAudits).toEqual([
       expect.objectContaining({
         action: "listing.import_refreshed",
         entityId: "draft_existing",
@@ -298,7 +310,13 @@ describe("bulk form importer", () => {
       sheet: sheetOf(rowFor()),
     });
 
-    expect(second.recorded.audits).toEqual([]);
+    // Filter out the aggregate listing.bulk_form_import_completed event --
+    // it fires once per import regardless of per-row outcome, so it's out of
+    // scope for this per-row assertion.
+    const perRowAudits = second.recorded.audits.filter(
+      (event) => event.action !== "listing.bulk_form_import_completed",
+    );
+    expect(perRowAudits).toEqual([]);
   });
 
   it("writes a note the extract step can read, keeping provenance first", async () => {
@@ -496,5 +514,34 @@ describe("bulk form importer", () => {
     expect(
       recorded.upserts.every((u) => u.sourceImportId === "source_import_1"),
     ).toBe(true);
+  });
+
+  it("writes one aggregate listing.bulk_form_import_completed audit event per import, entityId'd to the source import", async () => {
+    const { importBulkForm, recorded } = importerWith();
+
+    const result = await importBulkForm({
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
+      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+    });
+
+    expect(recorded.audits).toContainEqual(
+      expect.objectContaining({
+        action: "listing.bulk_form_import_completed",
+        // The source import row's own id -- not any listing's id, since this
+        // event summarizes the whole batch, not one product.
+        entityId: "source_import_1",
+        metadata: {
+          parsedRows: result.parsedRows,
+          createdDrafts: result.createdDrafts,
+          refreshedProducts: result.refreshedProducts,
+          issueCount: result.issues.length,
+        },
+      }),
+    );
   });
 });

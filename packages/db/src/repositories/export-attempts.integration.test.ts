@@ -307,6 +307,139 @@ describe("export attempts repository", () => {
     });
   });
 
+  it("lists export attempts whose manifest contains the given listing id", async () => {
+    const targetListingId = "44444444-4444-4444-8444-444444444444";
+    const manifestContainingTarget = [
+      ...manifest,
+      {
+        listingId: targetListingId,
+        versionId: "55555555-5555-4555-8555-555555555555",
+        outcome: "excluded_stale" as const,
+        reason: "row_digest_mismatch",
+      },
+    ];
+
+    const attemptId = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const attempt = await repositories.exportAttempts.ensure({
+          idempotencyKey: "key_contains_target",
+          requestedBy: "user_1",
+          manifest: manifestContainingTarget,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+        });
+        return attempt.id;
+      },
+    );
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const containing =
+        await repositories.exportAttempts.listContainingListing(
+          targetListingId,
+        );
+      expect(containing.map((entry) => entry.id)).toEqual([attemptId]);
+      expect(containing[0]?.outcome).toBe("excluded_stale");
+      expect(containing[0]?.reason).toBe("row_digest_mismatch");
+
+      const notContaining =
+        await repositories.exportAttempts.listContainingListing(
+          "99999999-9999-4999-8999-999999999999",
+        );
+      expect(notContaining).toEqual([]);
+    });
+  });
+
+  it("isolates listContainingListing per workspace even when the same listing id appears in both workspaces' manifests", async () => {
+    // The listingId inside `manifest` is plain jsonb content -- there is no
+    // foreign key and no uniqueness constraint tying it to an actual listing
+    // row, so nothing stops the exact same listingId string from showing up
+    // in two different workspaces' export_attempts rows. Isolation has to
+    // come from the workspaceId filter in the query, not from the data being
+    // naturally distinct -- so this test deliberately reuses one listingId
+    // across both workspaces to prove the filter actually does the work.
+    const sharedListingId = "66666666-6666-4666-8666-666666666666";
+    const sharedManifestEntry = {
+      listingId: sharedListingId,
+      versionId: "77777777-7777-4777-8777-777777777777",
+      outcome: "included" as const,
+    };
+
+    const isolationWorkspaceId = "ws_export_attempts_isolation";
+    const otherIsolationWorkspaceId = "ws_export_attempts_isolation_other";
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${isolationWorkspaceId}', '${isolationWorkspaceId}', '{}'::jsonb),
+        ('${otherIsolationWorkspaceId}', '${otherIsolationWorkspaceId}', '{}'::jsonb);
+    `);
+
+    const ownId = await database.forWorkspace(
+      isolationWorkspaceId,
+      async (repositories) =>
+        (
+          await repositories.exportAttempts.ensure({
+            idempotencyKey: "key_isolation_own",
+            requestedBy: "user_1",
+            manifest: [sharedManifestEntry],
+            rowCount: 1,
+            specVersion: "bulk-form-v1",
+          })
+        ).id,
+    );
+
+    const otherId = await database.forWorkspace(
+      otherIsolationWorkspaceId,
+      async (repositories) =>
+        (
+          await repositories.exportAttempts.ensure({
+            idempotencyKey: "key_isolation_other",
+            requestedBy: "user_1",
+            manifest: [sharedManifestEntry],
+            rowCount: 1,
+            specVersion: "bulk-form-v1",
+          })
+        ).id,
+    );
+
+    await database.forWorkspace(isolationWorkspaceId, async (repositories) => {
+      const containing =
+        await repositories.exportAttempts.listContainingListing(
+          sharedListingId,
+        );
+      expect(containing.map((entry) => entry.id)).toEqual([ownId]);
+      expect(containing.map((entry) => entry.id)).not.toContain(otherId);
+    });
+
+    await database.forWorkspace(
+      otherIsolationWorkspaceId,
+      async (repositories) => {
+        const containing =
+          await repositories.exportAttempts.listContainingListing(
+            sharedListingId,
+          );
+        expect(containing.map((entry) => entry.id)).toEqual([otherId]);
+        expect(containing.map((entry) => entry.id)).not.toContain(ownId);
+      },
+    );
+  });
+
+  it("enforces listContainingListing's limit bounds", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      await expect(
+        repositories.exportAttempts.listContainingListing(
+          "11111111-1111-4111-8111-111111111111",
+          0,
+        ),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+      await expect(
+        repositories.exportAttempts.listContainingListing(
+          "11111111-1111-4111-8111-111111111111",
+          101,
+        ),
+      ).rejects.toThrow(/limit must be between 1 and 100/i);
+    });
+  });
+
   it("breaks a created_at tie deterministically by id when several export attempts share one transaction's now()", async () => {
     // database.forWorkspace wraps every call in one Postgres transaction, and
     // Postgres's now() is fixed for the whole transaction (transaction-start

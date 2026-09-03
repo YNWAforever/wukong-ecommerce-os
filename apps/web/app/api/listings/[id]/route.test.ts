@@ -25,6 +25,11 @@ function handlerFor(
     reviewConfirmations?: {
       getByVersionId: (versionId: string) => Promise<any>;
     };
+    audit?: { findRelatedToListing: (id: string) => Promise<any[]> };
+    enrichmentBatches?: {
+      listBatchesForListing: (id: string) => Promise<any[]>;
+    };
+    exportAttempts?: { listContainingListing: (id: string) => Promise<any[]> };
   } = {},
 ) {
   return createListingViewHandler({
@@ -81,6 +86,21 @@ function handlerFor(
             reviewConfirmations: overrides.reviewConfirmations ?? {
               async getByVersionId() {
                 return null;
+              },
+            },
+            audit: overrides.audit ?? {
+              async findRelatedToListing() {
+                return [];
+              },
+            },
+            enrichmentBatches: overrides.enrichmentBatches ?? {
+              async listBatchesForListing() {
+                return [];
+              },
+            },
+            exportAttempts: overrides.exportAttempts ?? {
+              async listContainingListing() {
+                return [];
               },
             },
           });
@@ -344,4 +364,15 @@ it("returns null sourceImportId and contentDigest when no platform product link 
     sourceImportId: null,
     contentDigest: null,
   });
+});
+
+it("includes the listing's activity feed in the response", async () => {
+  const response = await handlerFor("reviewer", true)(
+    new Request("http://localhost"),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(Array.isArray(body.activity)).toBe(true);
 });

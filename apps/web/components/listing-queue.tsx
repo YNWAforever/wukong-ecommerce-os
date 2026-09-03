@@ -80,12 +80,12 @@ export function ListingQueue({
                             aria-label={
                               eligible
                                 ? `選取 ${item.title}`
-                                : `${item.openBlockingFlagCount} 個未解決的合規標記`
+                                : `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`
                             }
                             title={
                               eligible
                                 ? undefined
-                                : `${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
+                                : `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
                             }
                             onChange={() => onToggle(item.id)}
                           />

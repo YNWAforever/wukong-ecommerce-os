@@ -7,6 +7,7 @@ import {
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
+import { getListingActivity } from "../../../../lib/listing-activity-service";
 import { authSessionContext } from "../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../lib/session-context-port";
 
@@ -93,6 +94,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
 
           const listingAssets =
             await repositories.sourceAssets.listForListing(id);
+          const activity = await getListingActivity(repositories, id);
           const cutout = listingAssets.find(
             (asset: { kind: string; metadata: unknown }) =>
               asset.kind === "image/png" &&
@@ -148,6 +150,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             sourceImportId: platformProductLink?.sourceImportId ?? null,
             contentDigest: platformProductLink?.contentDigest ?? null,
             permissions: listingPermissions(session.role),
+            activity,
           };
         });
       return jsonResponse(200, result);

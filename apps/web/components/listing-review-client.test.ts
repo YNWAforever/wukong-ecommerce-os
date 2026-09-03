@@ -86,6 +86,7 @@ const response: ListingViewResponse = {
     canApprove: true,
     canDeliver: true,
   },
+  activity: [],
 };
 
 describe("listing review client mapping", () => {

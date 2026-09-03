@@ -167,7 +167,7 @@ export function CatalogControlCenter() {
           </div>
         ) : (
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
+            <table className={styles.table} aria-label="商品列表">
               <thead>
                 <tr>
                   <th scope="col">商品 Product</th>

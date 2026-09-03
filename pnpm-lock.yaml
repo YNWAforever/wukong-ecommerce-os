@@ -16,7 +16,7 @@ importers:
         version: 1.51.1
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       prettier:
         specifier: 3.9.5
         version: 3.9.5
@@ -28,7 +28,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   apps/web:
     dependencies:
@@ -52,7 +52,7 @@ importers:
         version: link:../../packages/shopline
       better-auth:
         specifier: ^1.5.5
-        version: 1.5.5(@cloudflare/workers-types@5.20260718.1)(drizzle-kit@0.31.10)(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9))(mongodb@7.5.0)(next@16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0)))
+        version: 1.5.5(@cloudflare/workers-types@5.20260718.1)(drizzle-kit@0.31.10)(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9))(mongodb@7.5.0)(next@16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0)))
       drizzle-orm:
         specifier: 0.44.7
         version: 0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9)
@@ -74,7 +74,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       '@types/nodemailer':
         specifier: ^8.0.1
         version: 8.0.1
@@ -83,16 +83,19 @@ importers:
         version: 19.2.18
       '@types/react-dom':
         specifier: latest
-        version: 19.2.4(@types/react@19.2.18)
+        version: 19.2.5(@types/react@19.2.18)
       happy-dom:
         specifier: 20.8.3
         version: 20.8.3
+      postgres:
+        specifier: ^3.4.7
+        version: 3.4.9
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   apps/worker:
     dependencies:
@@ -120,13 +123,13 @@ importers:
         version: 5.20260718.1
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
       wrangler:
         specifier: 4.112.0
         version: 4.112.0(@cloudflare/workers-types@5.20260718.1)
@@ -145,10 +148,10 @@ importers:
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       sharp:
         specifier: ^0.35.3
-        version: 0.35.3(@types/node@26.2.0)
+        version: 0.35.3(@types/node@26.4.0)
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
@@ -157,7 +160,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   packages/assets:
     dependencies:
@@ -169,17 +172,17 @@ importers:
         version: 3.1085.0
       sharp:
         specifier: ^0.35.3
-        version: 0.35.3(@types/node@26.2.0)
+        version: 0.35.3(@types/node@26.4.0)
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   packages/core:
     dependencies:
@@ -207,7 +210,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       drizzle-kit:
         specifier: ^0.31.7
         version: 0.31.10
@@ -219,7 +222,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   packages/jobs:
     dependencies:
@@ -229,13 +232,13 @@ importers:
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
   packages/shopline:
     dependencies:
@@ -245,7 +248,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: latest
-        version: 26.2.0
+        version: 26.4.0
       tsx:
         specifier: ^4.20.6
         version: 4.23.0
@@ -254,7 +257,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+        version: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
 
 packages:
 
@@ -1604,17 +1607,17 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/node@26.1.1':
-    resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
-
   '@types/node@26.2.0':
     resolution: {integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==}
+
+  '@types/node@26.4.0':
+    resolution: {integrity: sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ==}
 
   '@types/nodemailer@8.0.1':
     resolution: {integrity: sha512-PxpaInm8V1JQDd4j0ds5HfvWQk8JupS1C0Picb96QJsrrRDjBH+DlK7L4ZdNSqNULhiZRQHc40nLVShaGxXAMw==}
 
-  '@types/react-dom@19.2.4':
-    resolution: {integrity: sha512-Bsc+QHgp+P/F02XDzNCY9jnZNCUuLki36KT7VKrTXXLdHf+vHMNZnW1rVu5DNW/rCK+fya3DATySbLM4yhtKUw==}
+  '@types/react-dom@19.2.5':
+    resolution: {integrity: sha512-fMPwH9v7r/pp43yUd2/Mbiex5KouJwwR3dzHkhLREUC6764VyDsqxhAxv6OFEYR1RhjOyD1naqba8ECDBe7ZQg==}
     peerDependencies:
       '@types/react': ^19.2.0
 
@@ -3549,19 +3552,19 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/node@26.1.1':
+  '@types/node@26.2.0':
     dependencies:
       undici-types: 8.3.0
 
-  '@types/node@26.2.0':
+  '@types/node@26.4.0':
     dependencies:
       undici-types: 8.3.0
 
   '@types/nodemailer@8.0.1':
     dependencies:
-      '@types/node': 26.1.1
+      '@types/node': 26.2.0
 
-  '@types/react-dom@19.2.4(@types/react@19.2.18)':
+  '@types/react-dom@19.2.5(@types/react@19.2.18)':
     dependencies:
       '@types/react': 19.2.18
 
@@ -3650,13 +3653,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))':
+  '@vitest/mocker@4.1.10(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0)
+      vite: 8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -3686,7 +3689,7 @@ snapshots:
 
   baseline-browser-mapping@2.10.42: {}
 
-  better-auth@1.5.5(@cloudflare/workers-types@5.20260718.1)(drizzle-kit@0.31.10)(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9))(mongodb@7.5.0)(next@16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))):
+  better-auth@1.5.5(@cloudflare/workers-types@5.20260718.1)(drizzle-kit@0.31.10)(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9))(mongodb@7.5.0)(next@16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))):
     dependencies:
       '@better-auth/core': 1.5.5(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@5.20260718.1)(better-call@1.3.2(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0)
       '@better-auth/drizzle-adapter': 1.5.5(@better-auth/core@1.5.5(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@5.20260718.1)(better-call@1.3.2(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.4.0))(@better-auth/utils@0.3.1)(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260718.1)(kysely@0.28.17)(postgres@3.4.9))
@@ -3712,7 +3715,7 @@ snapshots:
       next: 16.2.10(@playwright/test@1.51.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
-      vitest: 4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+      vitest: 4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
     transitivePeerDependencies:
       - '@cloudflare/workers-types'
 
@@ -4120,7 +4123,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.34.5
       '@img/sharp-win32-x64': 0.34.5
 
-  sharp@0.35.3(@types/node@26.2.0):
+  sharp@0.35.3(@types/node@26.4.0):
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
@@ -4151,7 +4154,7 @@ snapshots:
       '@img/sharp-win32-arm64': 0.35.3
       '@img/sharp-win32-ia32': 0.35.3
       '@img/sharp-win32-x64': 0.35.3
-      '@types/node': 26.2.0
+      '@types/node': 26.4.0
 
   siginfo@2.0.0: {}
 
@@ -4244,7 +4247,7 @@ snapshots:
     dependencies:
       pathe: 2.0.3
 
-  vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0):
+  vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.5
@@ -4252,15 +4255,15 @@ snapshots:
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 26.2.0
+      '@types/node': 26.4.0
       esbuild: 0.28.1
       fsevents: 2.3.3
       tsx: 4.23.0
 
-  vitest@4.1.10(@types/node@26.2.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0)):
+  vitest@4.1.10(@types/node@26.4.0)(happy-dom@20.8.3)(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0))
+      '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -4277,10 +4280,10 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.4(@types/node@26.2.0)(esbuild@0.28.1)(tsx@4.23.0)
+      vite: 8.1.4(@types/node@26.4.0)(esbuild@0.28.1)(tsx@4.23.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 26.2.0
+      '@types/node': 26.4.0
       happy-dom: 20.8.3
     transitivePeerDependencies:
       - msw
