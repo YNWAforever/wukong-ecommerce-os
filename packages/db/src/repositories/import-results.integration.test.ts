@@ -138,4 +138,54 @@ describe("import results repository", () => {
       ),
     ).rejects.toThrow();
   });
+
+  it("links to a real export_attempts row in the same workspace", async () => {
+    const exportAttemptId = "33333333-3333-4333-8333-333333333333";
+    await admin.unsafe(`
+      INSERT INTO export_attempts
+        (id, workspace_id, idempotency_key, requested_by, manifest, row_count, spec_version, created_at)
+      VALUES
+        ('${exportAttemptId}', '${workspaceId}', 'idem_import_results_same_ws', 'user_1', '[]'::jsonb, 0, 'opak-2026-05', now());
+    `);
+
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const created = await repositories.importResults.create({
+        listingId,
+        exportAttemptId,
+        outcome: "accepted",
+        rejectReason: null,
+        recordedBy: "user_1",
+      });
+      expect(created.exportAttemptId).toBe(exportAttemptId);
+
+      const listed = await repositories.importResults.listForWorkspace();
+      const found = listed.find((row) => row.id === created.id);
+      expect(found?.exportAttemptId).toBe(exportAttemptId);
+    });
+  });
+
+  it("rejects an exportAttemptId that belongs to another workspace (FK restrict)", async () => {
+    const otherExportAttemptId = "44444444-4444-4444-8444-444444444444";
+    await admin.unsafe(`
+      INSERT INTO export_attempts
+        (id, workspace_id, idempotency_key, requested_by, manifest, row_count, spec_version, created_at)
+      VALUES
+        ('${otherExportAttemptId}', '${otherWorkspaceId}', 'idem_import_results_other_ws', 'user_1', '[]'::jsonb, 0, 'opak-2026-05', now());
+    `);
+
+    // Same "keep the failing call outside any forWorkspace wrapper" reasoning
+    // as the listingId FK-restrict test above: this must reject the whole
+    // transaction, not be caught inside the callback.
+    await expect(
+      database.forWorkspace(workspaceId, (repositories) =>
+        repositories.importResults.create({
+          listingId,
+          exportAttemptId: otherExportAttemptId,
+          outcome: "accepted",
+          rejectReason: null,
+          recordedBy: "user_1",
+        }),
+      ),
+    ).rejects.toThrow();
+  });
 });
