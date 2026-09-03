@@ -66,6 +66,7 @@ describe("buildJobsLedger", () => {
             createdAt: new Date("2026-08-31T07:00:00Z"),
           },
         ],
+        importResults: [],
       },
       10,
     );
@@ -129,6 +130,7 @@ describe("buildJobsLedger", () => {
         publishJobs: [],
         pipelineRuns: [],
         exports: [],
+        importResults: [],
       },
       1,
     );
@@ -169,6 +171,7 @@ describe("buildJobsLedger", () => {
             createdAt: new Date(),
           },
         ],
+        importResults: [],
       },
       10,
     );
@@ -207,6 +210,7 @@ describe("buildJobsLedger", () => {
         publishJobs: [],
         pipelineRuns: [],
         exports: [],
+        importResults: [],
       },
       10,
     );
@@ -250,6 +254,7 @@ describe("buildJobsLedger", () => {
           },
         ],
         exports: [],
+        importResults: [],
       },
       10,
     );
@@ -300,6 +305,7 @@ describe("buildJobsLedger", () => {
         ],
         pipelineRuns: [],
         exports: [],
+        importResults: [],
       },
       10,
     );
@@ -307,5 +313,65 @@ describe("buildJobsLedger", () => {
       expect(entry.summary).not.toBe("Publishing");
       expect(entry.summary).toBe("Queued for publish");
     }
+  });
+
+  it("maps an accepted import result to a succeeded entry", () => {
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        exports: [],
+        importResults: [
+          {
+            id: "ir_1",
+            listingId: "listing_1",
+            exportAttemptId: null,
+            outcome: "accepted",
+            rejectReason: null,
+            recordedBy: "user_1",
+            createdAt: new Date("2026-09-03T00:00:00.000Z"),
+          },
+        ],
+      },
+      10,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "import_result",
+      id: "ir_1",
+      listingId: "listing_1",
+      normalizedStatus: "succeeded",
+      rawStatus: "accepted",
+    });
+  });
+
+  it("maps a rejected import result to a failed entry with the reason in the summary", () => {
+    const entries = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        exports: [],
+        importResults: [
+          {
+            id: "ir_2",
+            listingId: "listing_2",
+            exportAttemptId: null,
+            outcome: "rejected",
+            rejectReason: "duplicate SKU",
+            recordedBy: "user_1",
+            createdAt: new Date("2026-09-03T00:00:00.000Z"),
+          },
+        ],
+      },
+      10,
+    );
+    expect(entries[0]).toMatchObject({
+      kind: "import_result",
+      normalizedStatus: "failed",
+      rawStatus: "rejected",
+    });
+    expect(entries[0]!.summary).toContain("duplicate SKU");
   });
 });

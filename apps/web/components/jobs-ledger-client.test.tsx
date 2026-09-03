@@ -168,6 +168,44 @@ describe("JobsLedgerClient", () => {
     expect(container.querySelectorAll(".flag-item").length).toBe(4);
   });
 
+  it("renders and filters on the import_result kind", async () => {
+    const entries = [
+      ...SAMPLE_ENTRIES,
+      {
+        kind: "import_result",
+        id: "ir1",
+        listingId: "l4",
+        normalizedStatus: "succeeded",
+        rawStatus: "accepted",
+        createdAt: "2026-08-05T00:00:00.000Z",
+        summary: "Import accepted by SHOPLINE",
+      },
+    ];
+    stubFetch({ entries });
+
+    const { container } = await mountLedger();
+
+    expect(container.querySelectorAll(".flag-item").length).toBe(
+      entries.length,
+    );
+    expect(container.textContent).toContain("Import accepted by SHOPLINE");
+
+    const importResultButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("Import result"));
+    expect(importResultButton).not.toBeUndefined();
+
+    await act(async () => {
+      importResultButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+
+    const filteredRows = container.querySelectorAll(".flag-item");
+    expect(filteredRows.length).toBe(1);
+    expect(container.textContent).toContain("Import accepted by SHOPLINE");
+  });
+
   it("renders a visible error state when the fetch fails", async () => {
     stubFetch({ message: "workspace not found" }, 500);
 

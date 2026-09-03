@@ -32,6 +32,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: KindFilter; label: string }> = [
   { value: "publish_job", label: "發佈工作 Publish job" },
   { value: "pipeline_run", label: "AI 流程 Pipeline run" },
   { value: "export", label: "匯出 Export" },
+  { value: "import_result", label: "匯入結果 Import result" },
 ];
 
 const KIND_LABELS: Record<LedgerKind, string> = {
@@ -39,6 +40,7 @@ const KIND_LABELS: Record<LedgerKind, string> = {
   publish_job: "發佈工作 Publish job",
   pipeline_run: "AI 流程 Pipeline run",
   export: "匯出 Export",
+  import_result: "匯入結果 Import result",
 };
 
 // Each of the 5 normalizedStatus values gets its own `status-*` tone class
