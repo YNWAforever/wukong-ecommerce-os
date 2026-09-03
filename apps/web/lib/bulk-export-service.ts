@@ -60,9 +60,9 @@ export type CreateBulkExportInput = {
 
 /**
  * A superset of `content-freshness.ts`'s `PlatformProductLink` — carries the
- * extra fields (`remoteProductId`, `rawRow`, `origin`) this orchestration
- * needs beyond what the freshness gate itself reads. Structurally assignable
- * wherever `PlatformProductLink` is expected.
+ * extra fields (`remoteProductId`, `rawRow`, `origin`, `connectionId`) this
+ * orchestration needs beyond what the freshness gate itself reads.
+ * Structurally assignable wherever `PlatformProductLink` is expected.
  */
 export type BulkExportPlatformProductLink = {
   remoteProductId: string;
