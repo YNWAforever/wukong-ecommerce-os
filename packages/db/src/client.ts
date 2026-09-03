@@ -60,6 +60,10 @@ import {
   createExportAttemptRepository,
   type ExportAttemptRepository,
 } from "./repositories/export-attempts.js";
+import {
+  createImportResultRepository,
+  type ImportResultRepository,
+} from "./repositories/import-results.js";
 import { loadSqlMigrations } from "./migrations.js";
 import * as schema from "./schema.js";
 
@@ -82,6 +86,7 @@ export type WorkspaceRepositories = {
   sourceImports: SourceImportRepository;
   reviewConfirmations: ReviewConfirmationRepository;
   exportAttempts: ExportAttemptRepository;
+  importResults: ImportResultRepository;
   enrichmentBatches: EnrichmentBatchRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
@@ -195,6 +200,11 @@ export function createDatabase(
           scope,
         ),
         exportAttempts: createExportAttemptRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        importResults: createImportResultRepository(
           transaction,
           workspaceId,
           scope,

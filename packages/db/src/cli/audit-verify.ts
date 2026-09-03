@@ -52,6 +52,7 @@ export const TENANT_TABLES = [
   "source_imports",
   "review_confirmations",
   "export_attempts",
+  "import_results",
   "enrichment_batches",
   "enrichment_batch_items",
   "publish_jobs",

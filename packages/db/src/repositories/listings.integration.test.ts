@@ -454,6 +454,12 @@ describe("workspace isolation", () => {
       ],
       ["field_evidence", ["workspace_id", "source_asset_id"], "source_assets"],
       [
+        "import_results",
+        ["workspace_id", "export_attempt_id"],
+        "export_attempts",
+      ],
+      ["import_results", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
         "listing_drafts",
         ["workspace_id", "active_version_id"],
         "listing_versions",
