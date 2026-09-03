@@ -393,7 +393,7 @@ describe("CatalogControlCenter", () => {
     await unmount(root);
   });
 
-  it("exposes each metric tile as a role=\"group\" tied to its visible label", async () => {
+  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json(pageResponse([])));

@@ -24,7 +24,7 @@ Three components render "metric tiles" — a numeric value paired with a text la
 - **`apps/web/components/dashboard-listings-client.tsx`** (lines ~117-136) — 3 tiles, each an inline bare `<div>` (no shared component), inside a `.metric-strip` wrapper that itself has a coarse `aria-label="工作台摘要"` covering the whole strip, not per-tile.
 - **`apps/web/components/quality-summary-client.tsx`** (lines ~90-115) — 4 tiles, same inline bare-`<div>` pattern as above, inside its own `.metric-strip`-classed wrapper with `aria-label="內容品質統計"`.
 
-Confirmed via `git grep`/direct reads: no existing test in any of the three components' test files asserts on the *absence* of `role="group"`, so adding it is purely additive. `quality-summary-client.test.tsx`'s one existing markup-shape assertion (`container.querySelectorAll(".metric-value")`, line 81) is unaffected — it queries the value span's class, not the wrapping div's attributes.
+Confirmed via `git grep`/direct reads: no existing test in any of the three components' test files asserts on the _absence_ of `role="group"`, so adding it is purely additive. `quality-summary-client.test.tsx`'s one existing markup-shape assertion (`container.querySelectorAll(".metric-value")`, line 81) is unaffected — it queries the value span's class, not the wrapping div's attributes.
 
 ## 3. The fix — identical pattern in all 3 files, no refactor
 
@@ -38,6 +38,7 @@ No refactor into a shared tile component for the two files that lack one — del
 ## 4. Testing plan
 
 For each of the 3 components' existing test files, add a test (or extend an existing rendering test) confirming, per tile:
+
 - The wrapping element has `role="group"`.
 - Its `aria-labelledby` attribute resolves to an element (via `getElementById` or Testing Library's `getByRole("group", { name: ... })`, whichever matches each file's existing query style) whose text content matches that tile's visible label.
 

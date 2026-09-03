@@ -21,6 +21,7 @@
 ## Task 1: `catalog-control-center.tsx`
 
 **Files:**
+
 - Modify: `apps/web/components/catalog-control-center.tsx`
 - Modify: `apps/web/components/catalog-control-center.test.tsx`
 
@@ -112,7 +113,7 @@ async function unmount(root: Root) {
 Add this test to the `describe("CatalogControlCenter", ...)` block (or the top-level `describe` this file actually uses — match the real file's structure):
 
 ```ts
-it("exposes each metric tile as a role=\"group\" tied to its visible label", async () => {
+it('exposes each metric tile as a role="group" tied to its visible label', async () => {
   const fetcher = vi
     .fn<typeof fetch>()
     .mockResolvedValue(Response.json(pageResponse([])));
@@ -200,6 +201,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes.
 git add apps/web/components/catalog-control-center.tsx apps/web/components/catalog-control-center.test.tsx
 git commit -m "fix: expose catalog metric tiles as role=\"group\" for assistive tech"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -207,6 +209,7 @@ git commit -m "fix: expose catalog metric tiles as role=\"group\" for assistive 
 ## Task 2: `dashboard-listings-client.tsx`
 
 **Files:**
+
 - Modify: `apps/web/components/dashboard-listings-client.tsx`
 - Modify: `apps/web/components/dashboard-listings-client.test.ts`
 
@@ -215,26 +218,26 @@ git commit -m "fix: expose catalog metric tiles as role=\"group\" for assistive 
 Read `apps/web/components/dashboard-listings-client.tsx` in full and confirm: line 3's import is still `import { useEffect, useState } from "react";`; the component has `if (error) return (...)` and `if (!data) return (...)` early-return branches (around lines 100-108) **before** the metric-strip JSX (around lines 117-136), which still matches:
 
 ```tsx
-      <div className="metric-strip" aria-label="工作台摘要">
-        <div>
-          <span className="metric-value">{metrics.active}</span>
-          <span className="metric-label">
-            進行中 <small>Active</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.inReview}</span>
-          <span className="metric-label">
-            待你審核 <small>Needs review</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.blocked}</span>
-          <span className="metric-label">
-            阻塞上架 <small>Blocked delivery</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip" aria-label="工作台摘要">
+  <div>
+    <span className="metric-value">{metrics.active}</span>
+    <span className="metric-label">
+      進行中 <small>Active</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{metrics.inReview}</span>
+    <span className="metric-label">
+      待你審核 <small>Needs review</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{metrics.blocked}</span>
+    <span className="metric-label">
+      阻塞上架 <small>Blocked delivery</small>
+    </span>
+  </div>
+</div>
 ```
 
 This early-return-before-metrics ordering matters: any new `useId()` calls must go at the **top** of the component function (alongside the existing `useState`/`useEffect` calls), not immediately before this JSX block. If they were placed after the early returns, they'd be skipped entirely on the error/loading renders and only called on the loaded render — a hook-count mismatch across renders of the same mounted instance, which violates React's Rules of Hooks and throws "Rendered fewer hooks than expected" when the component transitions from loading to loaded.
@@ -277,38 +280,38 @@ describe("DashboardListingsClient", () => {
 Add this as a new test inside the `describe("DashboardListingsClient", ...)` block, immediately after the existing "computes the metric strip..." test:
 
 ```ts
-  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({
-        items: [baseItem],
-        counts: {
-          ...zeroCounts,
-          received: 40,
-          in_review: 5,
-          reopened: 1,
-          failed: 2,
-          publish_failed: 1,
-          published: 100,
-        },
-      }),
-    );
+it('exposes each metric tile as a role="group" tied to its visible label', async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      items: [baseItem],
+      counts: {
+        ...zeroCounts,
+        received: 40,
+        in_review: 5,
+        reopened: 1,
+        failed: 2,
+        publish_failed: 1,
+        published: 100,
+      },
+    }),
+  );
 
-    const { container, root } = await mount(fetcher);
+  const { container, root } = await mount(fetcher);
 
-    const tiles = container.querySelectorAll('[role="group"]');
-    expect(tiles.length).toBe(3);
+  const tiles = container.querySelectorAll('[role="group"]');
+  expect(tiles.length).toBe(3);
 
-    const expectedSubstrings = ["進行中", "待你審核", "阻塞上架"];
+  const expectedSubstrings = ["進行中", "待你審核", "阻塞上架"];
 
-    tiles.forEach((tile, index) => {
-      const labelledBy = tile.getAttribute("aria-labelledby");
-      expect(labelledBy).not.toBeNull();
-      const labelElement = document.getElementById(labelledBy!);
-      expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
-    });
-
-    await unmount(root);
+  tiles.forEach((tile, index) => {
+    const labelledBy = tile.getAttribute("aria-labelledby");
+    expect(labelledBy).not.toBeNull();
+    const labelElement = document.getElementById(labelledBy!);
+    expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
   });
+
+  await unmount(root);
+});
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -333,9 +336,9 @@ import { useEffect, useId, useState } from "react";
 At the top of the component function, alongside the existing `useState` declarations and before the `useEffect` call, add:
 
 ```tsx
-  const activeLabelId = useId();
-  const inReviewLabelId = useId();
-  const blockedLabelId = useId();
+const activeLabelId = useId();
+const inReviewLabelId = useId();
+const blockedLabelId = useId();
 ```
 
 (Read the actual current top-of-function structure first and place these wherever fits naturally alongside the other hooks — the exact insertion point depends on the real current code, which may differ slightly from what this plan assumed.)
@@ -343,51 +346,51 @@ At the top of the component function, alongside the existing `useState` declarat
 Change the metric-strip JSX from:
 
 ```tsx
-      <div className="metric-strip" aria-label="工作台摘要">
-        <div>
-          <span className="metric-value">{metrics.active}</span>
-          <span className="metric-label">
-            進行中 <small>Active</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.inReview}</span>
-          <span className="metric-label">
-            待你審核 <small>Needs review</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{metrics.blocked}</span>
-          <span className="metric-label">
-            阻塞上架 <small>Blocked delivery</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip" aria-label="工作台摘要">
+  <div>
+    <span className="metric-value">{metrics.active}</span>
+    <span className="metric-label">
+      進行中 <small>Active</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{metrics.inReview}</span>
+    <span className="metric-label">
+      待你審核 <small>Needs review</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{metrics.blocked}</span>
+    <span className="metric-label">
+      阻塞上架 <small>Blocked delivery</small>
+    </span>
+  </div>
+</div>
 ```
 
 to:
 
 ```tsx
-      <div className="metric-strip" aria-label="工作台摘要">
-        <div role="group" aria-labelledby={activeLabelId}>
-          <span className="metric-value">{metrics.active}</span>
-          <span className="metric-label" id={activeLabelId}>
-            進行中 <small>Active</small>
-          </span>
-        </div>
-        <div role="group" aria-labelledby={inReviewLabelId}>
-          <span className="metric-value">{metrics.inReview}</span>
-          <span className="metric-label" id={inReviewLabelId}>
-            待你審核 <small>Needs review</small>
-          </span>
-        </div>
-        <div role="group" aria-labelledby={blockedLabelId}>
-          <span className="metric-value">{metrics.blocked}</span>
-          <span className="metric-label" id={blockedLabelId}>
-            阻塞上架 <small>Blocked delivery</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip" aria-label="工作台摘要">
+  <div role="group" aria-labelledby={activeLabelId}>
+    <span className="metric-value">{metrics.active}</span>
+    <span className="metric-label" id={activeLabelId}>
+      進行中 <small>Active</small>
+    </span>
+  </div>
+  <div role="group" aria-labelledby={inReviewLabelId}>
+    <span className="metric-value">{metrics.inReview}</span>
+    <span className="metric-label" id={inReviewLabelId}>
+      待你審核 <small>Needs review</small>
+    </span>
+  </div>
+  <div role="group" aria-labelledby={blockedLabelId}>
+    <span className="metric-value">{metrics.blocked}</span>
+    <span className="metric-label" id={blockedLabelId}>
+      阻塞上架 <small>Blocked delivery</small>
+    </span>
+  </div>
+</div>
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -401,6 +404,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes.
 git add apps/web/components/dashboard-listings-client.tsx apps/web/components/dashboard-listings-client.test.ts
 git commit -m "fix: expose dashboard metric tiles as role=\"group\" for assistive tech"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
@@ -408,6 +412,7 @@ git commit -m "fix: expose dashboard metric tiles as role=\"group\" for assistiv
 ## Task 3: `quality-summary-client.tsx`
 
 **Files:**
+
 - Modify: `apps/web/components/quality-summary-client.tsx`
 - Modify: `apps/web/components/quality-summary-client.test.tsx`
 
@@ -416,55 +421,52 @@ git commit -m "fix: expose dashboard metric tiles as role=\"group\" for assistiv
 Read `apps/web/components/quality-summary-client.tsx` in full and confirm: line 3's import is still `import { useEffect, useState } from "react";`; the component has `if (error) return (...)` and `if (!data) return (...)` early-return branches (around lines 74-82) **before** the metric-strip JSX (around lines 90-115) — same hook-ordering constraint as Task 2 applies, for the same reason. Confirm the metric-strip JSX still matches:
 
 ```tsx
-      <div
-        className="metric-strip quality-metric-strip"
-        aria-label="內容品質統計"
-      >
-        <div>
-          <span className="metric-value">{data.totalAssessed}</span>
-          <span className="metric-label">
-            已評估商品 <small>Total assessed</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{data.cleanCount}</span>
-          <span className="metric-label">
-            無缺口 <small>Clean</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{data.hasGapsCount}</span>
-          <span className="metric-label">
-            有缺口 <small>Has gaps</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
-          <span className="metric-label">
-            AI 總成本 <small>Total AI cost</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip quality-metric-strip" aria-label="內容品質統計">
+  <div>
+    <span className="metric-value">{data.totalAssessed}</span>
+    <span className="metric-label">
+      已評估商品 <small>Total assessed</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{data.cleanCount}</span>
+    <span className="metric-label">
+      無缺口 <small>Clean</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{data.hasGapsCount}</span>
+    <span className="metric-label">
+      有缺口 <small>Has gaps</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
+    <span className="metric-label">
+      AI 總成本 <small>Total AI cost</small>
+    </span>
+  </div>
+</div>
 ```
 
 Read `apps/web/components/quality-summary-client.test.tsx` in full and confirm: the `SAMPLE_SUMMARY` fixture (around lines 47-60) still matches `{ totalAssessed: 42, cleanCount: 10, hasGapsCount: 32, gapCounts: {...}, totalCostUsd: 12.5 }`; `stubFetch(body, status?)` (around lines 36-45) and `mountClient()` (around lines 22-34) are **separate** helpers — `stubFetch` is called first, then `mountClient()` with **no** arguments (different signature than Task 1/2's `mount(fetcher)`); the existing test "fetches /api/quality and renders 4 stat tiles with correct values" (around lines 71-85) still matches:
 
 ```ts
-  it("fetches /api/quality and renders 4 stat tiles with correct values", async () => {
-    const fetcher = stubFetch(SAMPLE_SUMMARY);
+it("fetches /api/quality and renders 4 stat tiles with correct values", async () => {
+  const fetcher = stubFetch(SAMPLE_SUMMARY);
 
-    const { container } = await mountClient();
+  const { container } = await mountClient();
 
-    expect(fetcher).toHaveBeenCalledWith(
-      "/api/quality",
-      expect.objectContaining({ cache: "no-store" }),
-    );
+  expect(fetcher).toHaveBeenCalledWith(
+    "/api/quality",
+    expect.objectContaining({ cache: "no-store" }),
+  );
 
-    const tiles = container.querySelectorAll(".metric-value");
-    expect(tiles.length).toBe(4);
-    const tileText = Array.from(tiles).map((tile) => tile.textContent);
-    expect(tileText).toEqual(["42", "10", "32", "$12.50"]);
-  });
+  const tiles = container.querySelectorAll(".metric-value");
+  expect(tiles.length).toBe(4);
+  const tileText = Array.from(tiles).map((tile) => tile.textContent);
+  expect(tileText).toEqual(["42", "10", "32", "$12.50"]);
+});
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -472,23 +474,23 @@ Read `apps/web/components/quality-summary-client.test.tsx` in full and confirm: 
 Add this as a new test inside the `describe("QualitySummaryClient", ...)` block, immediately after the existing "fetches /api/quality..." test:
 
 ```ts
-  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
-    stubFetch(SAMPLE_SUMMARY);
+it('exposes each metric tile as a role="group" tied to its visible label', async () => {
+  stubFetch(SAMPLE_SUMMARY);
 
-    const { container } = await mountClient();
+  const { container } = await mountClient();
 
-    const tiles = container.querySelectorAll('[role="group"]');
-    expect(tiles.length).toBe(4);
+  const tiles = container.querySelectorAll('[role="group"]');
+  expect(tiles.length).toBe(4);
 
-    const expectedSubstrings = ["已評估商品", "無缺口", "有缺口", "AI 總成本"];
+  const expectedSubstrings = ["已評估商品", "無缺口", "有缺口", "AI 總成本"];
 
-    tiles.forEach((tile, index) => {
-      const labelledBy = tile.getAttribute("aria-labelledby");
-      expect(labelledBy).not.toBeNull();
-      const labelElement = document.getElementById(labelledBy!);
-      expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
-    });
+  tiles.forEach((tile, index) => {
+    const labelledBy = tile.getAttribute("aria-labelledby");
+    expect(labelledBy).not.toBeNull();
+    const labelElement = document.getElementById(labelledBy!);
+    expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
   });
+});
 ```
 
 Note: unlike Task 1/2's tests, this file's `afterEach` (already present, around lines 63-69) handles unmounting for every test automatically — do not add a manual `unmount()` call here, matching this file's own established convention (its existing tests don't call one either).
@@ -515,10 +517,10 @@ import { useEffect, useId, useState } from "react";
 At the top of the component function, alongside the existing `useState` declarations and before the `useEffect` call, add:
 
 ```tsx
-  const totalAssessedLabelId = useId();
-  const cleanLabelId = useId();
-  const hasGapsLabelId = useId();
-  const totalCostLabelId = useId();
+const totalAssessedLabelId = useId();
+const cleanLabelId = useId();
+const hasGapsLabelId = useId();
+const totalCostLabelId = useId();
 ```
 
 (Read the actual current top-of-function structure first and place these wherever fits naturally alongside the other hooks.)
@@ -526,69 +528,63 @@ At the top of the component function, alongside the existing `useState` declarat
 Change the metric-strip JSX from:
 
 ```tsx
-      <div
-        className="metric-strip quality-metric-strip"
-        aria-label="內容品質統計"
-      >
-        <div>
-          <span className="metric-value">{data.totalAssessed}</span>
-          <span className="metric-label">
-            已評估商品 <small>Total assessed</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{data.cleanCount}</span>
-          <span className="metric-label">
-            無缺口 <small>Clean</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{data.hasGapsCount}</span>
-          <span className="metric-label">
-            有缺口 <small>Has gaps</small>
-          </span>
-        </div>
-        <div>
-          <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
-          <span className="metric-label">
-            AI 總成本 <small>Total AI cost</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip quality-metric-strip" aria-label="內容品質統計">
+  <div>
+    <span className="metric-value">{data.totalAssessed}</span>
+    <span className="metric-label">
+      已評估商品 <small>Total assessed</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{data.cleanCount}</span>
+    <span className="metric-label">
+      無缺口 <small>Clean</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{data.hasGapsCount}</span>
+    <span className="metric-label">
+      有缺口 <small>Has gaps</small>
+    </span>
+  </div>
+  <div>
+    <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
+    <span className="metric-label">
+      AI 總成本 <small>Total AI cost</small>
+    </span>
+  </div>
+</div>
 ```
 
 to:
 
 ```tsx
-      <div
-        className="metric-strip quality-metric-strip"
-        aria-label="內容品質統計"
-      >
-        <div role="group" aria-labelledby={totalAssessedLabelId}>
-          <span className="metric-value">{data.totalAssessed}</span>
-          <span className="metric-label" id={totalAssessedLabelId}>
-            已評估商品 <small>Total assessed</small>
-          </span>
-        </div>
-        <div role="group" aria-labelledby={cleanLabelId}>
-          <span className="metric-value">{data.cleanCount}</span>
-          <span className="metric-label" id={cleanLabelId}>
-            無缺口 <small>Clean</small>
-          </span>
-        </div>
-        <div role="group" aria-labelledby={hasGapsLabelId}>
-          <span className="metric-value">{data.hasGapsCount}</span>
-          <span className="metric-label" id={hasGapsLabelId}>
-            有缺口 <small>Has gaps</small>
-          </span>
-        </div>
-        <div role="group" aria-labelledby={totalCostLabelId}>
-          <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
-          <span className="metric-label" id={totalCostLabelId}>
-            AI 總成本 <small>Total AI cost</small>
-          </span>
-        </div>
-      </div>
+<div className="metric-strip quality-metric-strip" aria-label="內容品質統計">
+  <div role="group" aria-labelledby={totalAssessedLabelId}>
+    <span className="metric-value">{data.totalAssessed}</span>
+    <span className="metric-label" id={totalAssessedLabelId}>
+      已評估商品 <small>Total assessed</small>
+    </span>
+  </div>
+  <div role="group" aria-labelledby={cleanLabelId}>
+    <span className="metric-value">{data.cleanCount}</span>
+    <span className="metric-label" id={cleanLabelId}>
+      無缺口 <small>Clean</small>
+    </span>
+  </div>
+  <div role="group" aria-labelledby={hasGapsLabelId}>
+    <span className="metric-value">{data.hasGapsCount}</span>
+    <span className="metric-label" id={hasGapsLabelId}>
+      有缺口 <small>Has gaps</small>
+    </span>
+  </div>
+  <div role="group" aria-labelledby={totalCostLabelId}>
+    <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
+    <span className="metric-label" id={totalCostLabelId}>
+      AI 總成本 <small>Total AI cost</small>
+    </span>
+  </div>
+</div>
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
@@ -602,6 +598,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes.
 git add apps/web/components/quality-summary-client.tsx apps/web/components/quality-summary-client.test.tsx
 git commit -m "fix: expose quality metric tiles as role=\"group\" for assistive tech"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
