@@ -227,7 +227,10 @@ describe("QueueClient", () => {
       if (url === "/api/listings/bulk-approve") {
         return Promise.resolve(
           Response.json(
-            { code: "insufficient_role", message: "Reviewer access is required." },
+            {
+              code: "insufficient_role",
+              message: "Reviewer access is required.",
+            },
             { status: 403 },
           ),
         );

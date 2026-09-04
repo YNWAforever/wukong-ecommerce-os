@@ -21,6 +21,7 @@
 ## Task 1: Fix `runBulkApprove`'s error handling
 
 **Files:**
+
 - Modify: `apps/web/components/queue-client.tsx`
 - Modify: `apps/web/components/queue-client.test.tsx`
 
@@ -29,49 +30,49 @@
 Read `apps/web/components/queue-client.tsx` in full and confirm it still matches:
 
 ```tsx
-  const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
-    null,
-  );
-  const [bulkPending, setBulkPending] = useState(false);
+const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
+const [error, setError] = useState<string | null>(null);
+const [selected, setSelected] = useState<Set<string>>(new Set());
+const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(null);
+const [bulkPending, setBulkPending] = useState(false);
 ```
 
 ```tsx
-  const runBulkApprove = async () => {
-    setBulkPending(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch("/api/listings/bulk-approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listingIds: [...selected] }),
-      });
-      const body = (await response.json()) as BulkApproveResponse;
-      setBulkResult(body);
-      setSelected(new Set());
-      load();
-    } finally {
-      setBulkPending(false);
-    }
-  };
+const runBulkApprove = async () => {
+  setBulkPending(true);
+  setBulkResult(null);
+  try {
+    const response = await fetch("/api/listings/bulk-approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingIds: [...selected] }),
+    });
+    const body = (await response.json()) as BulkApproveResponse;
+    setBulkResult(body);
+    setSelected(new Set());
+    load();
+  } finally {
+    setBulkPending(false);
+  }
+};
 ```
 
 ```tsx
-      {bulkResult ? (
-        <ul className="bulk-result-list" aria-live="polite">
-          {bulkResult.results.map((result) =>
-            result.ok ? (
-              <li key={result.listingId}>✓ {result.listingId}</li>
-            ) : (
-              <li key={result.listingId}>
-                ✗ {result.listingId}: {result.message}
-              </li>
-            ),
-          )}
-        </ul>
-      ) : null}
+{
+  bulkResult ? (
+    <ul className="bulk-result-list" aria-live="polite">
+      {bulkResult.results.map((result) =>
+        result.ok ? (
+          <li key={result.listingId}>✓ {result.listingId}</li>
+        ) : (
+          <li key={result.listingId}>
+            ✗ {result.listingId}: {result.message}
+          </li>
+        ),
+      )}
+    </ul>
+  ) : null;
+}
 ```
 
 Confirm the top-level `error` state (lines 93-98: `if (error) return <p className="inline-warning" role="alert">{error}</p>;`) is a different concept — the queue itself failed to load, and returns early replacing the whole component. The new `bulkError` must **not** reuse this variable or this early-return pattern, since the queue view stays valid when only the bulk-approve action fails.
@@ -83,85 +84,88 @@ Read `apps/web/components/queue-client.test.tsx` in full and confirm the existin
 Add these two tests to the `describe("QueueClient", ...)` block, immediately after the existing "selects eligible items and runs bulk-approve, then reloads the list" test:
 
 ```tsx
-  it("shows a visible error and preserves the selection when bulk-approve's request fails outright", async () => {
-    const calls: { url: string }[] = [];
-    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
-      const url = typeof input === "string" ? input : input.toString();
-      calls.push({ url });
-      if (url === "/api/listings/bulk-approve") {
-        return Promise.reject(new TypeError("Failed to fetch"));
-      }
-      return Promise.resolve(Response.json({ items: [eligibleItem] }));
-    });
-
-    const { container, root } = await mount(fetcher);
-
-    await act(async () => {
-      findButtonByText(container, "全選可批准項目")!.click();
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      findButtonByText(container, "批准")!.click();
-      await Promise.resolve();
-    });
-
-    const alert = container.querySelector('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Bulk approve failed");
-
-    // Selection is preserved -- the bulk-action-bar only renders while
-    // selected.size > 0, and it must still be there after a failed attempt.
-    expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
-    expect(container.textContent).toContain("1 個項目已選取");
-
-    // The list was not reloaded -- only the one initial /api/listings call.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
-    expect(listingsCalls.length).toBe(1);
-
-    await unmount(root);
+it("shows a visible error and preserves the selection when bulk-approve's request fails outright", async () => {
+  const calls: { url: string }[] = [];
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+    const url = typeof input === "string" ? input : input.toString();
+    calls.push({ url });
+    if (url === "/api/listings/bulk-approve") {
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
+    return Promise.resolve(Response.json({ items: [eligibleItem] }));
   });
 
-  it("shows the server's error message and does not render the results list when bulk-approve returns a non-ok response", async () => {
-    const calls: { url: string }[] = [];
-    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
-      const url = typeof input === "string" ? input : input.toString();
-      calls.push({ url });
-      if (url === "/api/listings/bulk-approve") {
-        return Promise.resolve(
-          Response.json(
-            { code: "insufficient_role", message: "Reviewer access is required." },
-            { status: 403 },
-          ),
-        );
-      }
-      return Promise.resolve(Response.json({ items: [eligibleItem] }));
-    });
+  const { container, root } = await mount(fetcher);
 
-    const { container, root } = await mount(fetcher);
-
-    await act(async () => {
-      findButtonByText(container, "全選可批准項目")!.click();
-      await Promise.resolve();
-    });
-
-    await act(async () => {
-      findButtonByText(container, "批准")!.click();
-      await Promise.resolve();
-    });
-
-    const alert = container.querySelector('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Reviewer access is required.");
-
-    expect(container.querySelector(".bulk-result-list")).toBeNull();
-    expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
-
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
-    expect(listingsCalls.length).toBe(1);
-
-    await unmount(root);
+  await act(async () => {
+    findButtonByText(container, "全選可批准項目")!.click();
+    await Promise.resolve();
   });
+
+  await act(async () => {
+    findButtonByText(container, "批准")!.click();
+    await Promise.resolve();
+  });
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert).not.toBeNull();
+  expect(alert!.textContent).toContain("Bulk approve failed");
+
+  // Selection is preserved -- the bulk-action-bar only renders while
+  // selected.size > 0, and it must still be there after a failed attempt.
+  expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
+  expect(container.textContent).toContain("1 個項目已選取");
+
+  // The list was not reloaded -- only the one initial /api/listings call.
+  const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+  expect(listingsCalls.length).toBe(1);
+
+  await unmount(root);
+});
+
+it("shows the server's error message and does not render the results list when bulk-approve returns a non-ok response", async () => {
+  const calls: { url: string }[] = [];
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+    const url = typeof input === "string" ? input : input.toString();
+    calls.push({ url });
+    if (url === "/api/listings/bulk-approve") {
+      return Promise.resolve(
+        Response.json(
+          {
+            code: "insufficient_role",
+            message: "Reviewer access is required.",
+          },
+          { status: 403 },
+        ),
+      );
+    }
+    return Promise.resolve(Response.json({ items: [eligibleItem] }));
+  });
+
+  const { container, root } = await mount(fetcher);
+
+  await act(async () => {
+    findButtonByText(container, "全選可批准項目")!.click();
+    await Promise.resolve();
+  });
+
+  await act(async () => {
+    findButtonByText(container, "批准")!.click();
+    await Promise.resolve();
+  });
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert).not.toBeNull();
+  expect(alert!.textContent).toContain("Reviewer access is required.");
+
+  expect(container.querySelector(".bulk-result-list")).toBeNull();
+  expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
+
+  const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+  expect(listingsCalls.length).toBe(1);
+
+  await unmount(root);
+});
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -174,74 +178,70 @@ Expected: both new tests FAIL. The first fails because the rejected fetch is cur
 Change the state declarations from:
 
 ```tsx
-  const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
-    null,
-  );
-  const [bulkPending, setBulkPending] = useState(false);
+const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(null);
+const [bulkPending, setBulkPending] = useState(false);
 ```
 
 to:
 
 ```tsx
-  const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
-    null,
-  );
-  const [bulkError, setBulkError] = useState<string | null>(null);
-  const [bulkPending, setBulkPending] = useState(false);
+const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(null);
+const [bulkError, setBulkError] = useState<string | null>(null);
+const [bulkPending, setBulkPending] = useState(false);
 ```
 
 Change `runBulkApprove` from:
 
 ```tsx
-  const runBulkApprove = async () => {
-    setBulkPending(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch("/api/listings/bulk-approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listingIds: [...selected] }),
-      });
-      const body = (await response.json()) as BulkApproveResponse;
-      setBulkResult(body);
-      setSelected(new Set());
-      load();
-    } finally {
-      setBulkPending(false);
-    }
-  };
+const runBulkApprove = async () => {
+  setBulkPending(true);
+  setBulkResult(null);
+  try {
+    const response = await fetch("/api/listings/bulk-approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingIds: [...selected] }),
+    });
+    const body = (await response.json()) as BulkApproveResponse;
+    setBulkResult(body);
+    setSelected(new Set());
+    load();
+  } finally {
+    setBulkPending(false);
+  }
+};
 ```
 
 to:
 
 ```tsx
-  const runBulkApprove = async () => {
-    setBulkPending(true);
-    setBulkResult(null);
-    setBulkError(null);
-    try {
-      const response = await fetch("/api/listings/bulk-approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listingIds: [...selected] }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setBulkError(bulkErrorMessage(body));
-        return;
-      }
-      setBulkResult(body as BulkApproveResponse);
-      setSelected(new Set());
-      load();
-    } catch {
-      // Covers both a rejected fetch() call (network failure) and a thrown
-      // response.json() (malformed body) -- both reach this same fallback,
-      // since neither has a real server-reported message to show instead.
-      setBulkError("Bulk approve failed -- try again.");
-    } finally {
-      setBulkPending(false);
+const runBulkApprove = async () => {
+  setBulkPending(true);
+  setBulkResult(null);
+  setBulkError(null);
+  try {
+    const response = await fetch("/api/listings/bulk-approve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ listingIds: [...selected] }),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok) {
+      setBulkError(bulkErrorMessage(body));
+      return;
     }
-  };
+    setBulkResult(body as BulkApproveResponse);
+    setSelected(new Set());
+    load();
+  } catch {
+    // Covers both a rejected fetch() call (network failure) and a thrown
+    // response.json() (malformed body) -- both reach this same fallback,
+    // since neither has a real server-reported message to show instead.
+    setBulkError("Bulk approve failed -- try again.");
+  } finally {
+    setBulkPending(false);
+  }
+};
 ```
 
 Add this helper function above `QueueClient` (after the existing `BulkApproveResponse` type, before the component):
@@ -263,42 +263,48 @@ function bulkErrorMessage(body: unknown): string {
 Change the render block from:
 
 ```tsx
-      {bulkResult ? (
-        <ul className="bulk-result-list" aria-live="polite">
-          {bulkResult.results.map((result) =>
-            result.ok ? (
-              <li key={result.listingId}>✓ {result.listingId}</li>
-            ) : (
-              <li key={result.listingId}>
-                ✗ {result.listingId}: {result.message}
-              </li>
-            ),
-          )}
-        </ul>
-      ) : null}
+{
+  bulkResult ? (
+    <ul className="bulk-result-list" aria-live="polite">
+      {bulkResult.results.map((result) =>
+        result.ok ? (
+          <li key={result.listingId}>✓ {result.listingId}</li>
+        ) : (
+          <li key={result.listingId}>
+            ✗ {result.listingId}: {result.message}
+          </li>
+        ),
+      )}
+    </ul>
+  ) : null;
+}
 ```
 
 to:
 
 ```tsx
-      {bulkError ? (
-        <p className="inline-warning" role="alert">
-          {bulkError}
-        </p>
-      ) : null}
-      {bulkResult ? (
-        <ul className="bulk-result-list" aria-live="polite">
-          {bulkResult.results.map((result) =>
-            result.ok ? (
-              <li key={result.listingId}>✓ {result.listingId}</li>
-            ) : (
-              <li key={result.listingId}>
-                ✗ {result.listingId}: {result.message}
-              </li>
-            ),
-          )}
-        </ul>
-      ) : null}
+{
+  bulkError ? (
+    <p className="inline-warning" role="alert">
+      {bulkError}
+    </p>
+  ) : null;
+}
+{
+  bulkResult ? (
+    <ul className="bulk-result-list" aria-live="polite">
+      {bulkResult.results.map((result) =>
+        result.ok ? (
+          <li key={result.listingId}>✓ {result.listingId}</li>
+        ) : (
+          <li key={result.listingId}>
+            ✗ {result.listingId}: {result.message}
+          </li>
+        ),
+      )}
+    </ul>
+  ) : null;
+}
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -312,6 +318,7 @@ Expected: PASS, and confirm every pre-existing test in this file still passes (7
 git add apps/web/components/queue-client.tsx apps/web/components/queue-client.test.tsx
 git commit -m "fix: surface bulk-approve request failures instead of failing silently"
 ```
+
 (Add a `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer.)
 
 ---
