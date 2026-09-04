@@ -18,10 +18,27 @@ import type { SessionContextPort } from "../../../../lib/session-context-port";
  * sub-second; a client selecting more than this chunks into multiple
  * requests rather than the server accepting an unbounded list.
  */
-const MAX_BULK_APPROVE_IDS = 50;
+const MAX_BULK_APPROVE_ITEMS = 50;
 
 const bodySchema = z.object({
-  listingIds: z.array(z.string().uuid()).min(1).max(MAX_BULK_APPROVE_IDS),
+  items: z
+    .array(
+      z.object({
+        listingId: z.string().uuid(),
+        expectedVersionId: z.string().min(1),
+        confirmationLedgerRevision: z.number().int().nonnegative(),
+        expectedSourceImportId: z.string().min(1).optional(),
+        expectedRowDigest: z.string().min(1).optional(),
+      }),
+    )
+    .min(1)
+    .max(MAX_BULK_APPROVE_ITEMS)
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.listingId.toLowerCase())).size ===
+        items.length,
+      "Select each listing only once.",
+    ),
 });
 
 function assertReviewer(role: string): void {
@@ -56,13 +73,27 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       assertReviewer(session.role);
-      const body = bodySchema.parse(await request.json());
+      const input = await request.json();
+      if (
+        input &&
+        typeof input === "object" &&
+        "listingIds" in input &&
+        !("items" in input)
+      ) {
+        throw new ApiError(
+          400,
+          "review_context_required",
+          "Open the listing and complete its review before approving.",
+        );
+      }
+      const body = bodySchema.parse(input);
 
       // Sequential, one transaction per listing — not one transaction for the
       // whole batch. A stale flag on one listing must approve the rest, not
       // roll them back; see the design spec's "Chosen design" section.
       const results: BulkApproveItemResult[] = [];
-      for (const id of body.listingIds) {
+      for (const item of body.items) {
+        const id = item.listingId;
         const auditContext = {
           workspaceId: session.workspaceId,
           actorId: session.actorId,
@@ -74,6 +105,10 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
             .forWorkspace(session.workspaceId, (repositories) =>
               approveOne(id, auditContext, repositories, {
                 approve: deps.approve,
+                expectedVersionId: item.expectedVersionId,
+                confirmationLedgerRevision: item.confirmationLedgerRevision,
+                sourceImportId: item.expectedSourceImportId,
+                expectedRowDigest: item.expectedRowDigest,
               }),
             );
           results.push({
@@ -90,13 +125,11 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
               message: error.message,
             });
           } else {
-            const message =
-              error instanceof Error ? error.message : "Unknown error";
             results.push({
               listingId: id,
               ok: false,
               code: "unknown_error",
-              message,
+              message: "Unable to approve this listing. Please try again.",
             });
           }
         }

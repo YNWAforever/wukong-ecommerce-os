@@ -58,6 +58,7 @@ const baseItem = {
   sku: "OPAK-001",
   updatedAt: "2026-08-16T00:00:00.000Z",
   openBlockingFlagCount: 0,
+  reviewContext: null,
 };
 
 describe("mapDashboardItems", () => {

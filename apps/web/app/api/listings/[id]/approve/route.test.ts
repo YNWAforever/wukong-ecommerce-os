@@ -113,6 +113,7 @@ function makeHandler(options: {
                   listing: {
                     id,
                     target: "shopline",
+                    activeVersionId: versionId,
                     status: options.status ?? "in_review",
                   },
                   activeVersion: {
@@ -262,6 +263,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -461,6 +463,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "approved",
                     },
                     activeVersion: {
@@ -618,6 +621,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -947,6 +951,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: activeId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1036,6 +1041,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1134,6 +1140,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1155,7 +1162,11 @@ describe("POST /api/listings/[id]/approve", () => {
               },
               reviewConfirmations: {
                 async getByVersionId() {
-                  return fullyConfirmed;
+                  return {
+                    ...fullyConfirmed!,
+                    sourceImportId: "import_1",
+                    rowDigest: "digest_1",
+                  };
                 },
               },
               platformProducts: {
@@ -1243,6 +1254,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1315,4 +1327,113 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
     expect(linkCallCount).toBe(2);
   });
+  it("approves an imported listing with confirmations bound to the observed source", async () => {
+    const { handler } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import-1",
+        contentDigest: "digest-1",
+      },
+      confirmation: {
+        ...fullyConfirmed!,
+        sourceImportId: "import-1",
+        rowDigest: "digest-1",
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import-1",
+        expectedRowDigest: "digest-1",
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses confirmations from a previous source even when the client sends current source metadata", async () => {
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import-2",
+        contentDigest: "digest-2",
+      },
+      confirmation: {
+        ...fullyConfirmed!,
+        sourceImportId: "import-1",
+        rowDigest: "digest-1",
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import-2",
+        expectedRowDigest: "digest-2",
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "confirmation_source_stale",
+    });
+    expect(
+      calls.filter(
+        (call) => Array.isArray(call) && call[0] === "getReviewSnapshot",
+      ),
+    ).toHaveLength(1);
+    expect(
+      calls.filter(
+        (call) =>
+          Array.isArray(call) && ["approve", "domainApprove"].includes(call[0]),
+      ),
+    ).toEqual([]);
+  });
+  it.each(["request", "checklist"])(
+    "rejects a lost import link from %s context before approval work",
+    async (binding) => {
+      const { handler, calls } = makeHandler({
+        platformProduct: {
+          origin: "created",
+          sourceImportId: null,
+          contentDigest: null,
+        },
+        confirmation:
+          binding === "checklist"
+            ? {
+                ...fullyConfirmed!,
+                sourceImportId: "import-1",
+                rowDigest: "digest-1",
+              }
+            : fullyConfirmed,
+      });
+      const response = await handler(
+        request({
+          expectedVersionId: versionId,
+          confirmationLedgerRevision: 0,
+          ...(binding === "request"
+            ? { sourceImportId: "import-1", expectedRowDigest: "digest-1" }
+            : {}),
+        }),
+        routeContext(),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "source_origin_changed",
+      });
+      expect(
+        calls.filter(
+          (call) => Array.isArray(call) && call[0] === "getReviewSnapshot",
+        ),
+      ).toHaveLength(1);
+      expect(
+        calls.filter(
+          (call) =>
+            Array.isArray(call) &&
+            ["approve", "domainApprove"].includes(call[0]),
+        ),
+      ).toEqual([]);
+    },
+  );
 });

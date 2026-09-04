@@ -109,3 +109,21 @@ describe("ListingQueue", () => {
     await unmount(root);
   });
 });
+
+describe("ListingQueue review readiness", () => {
+  it("explains missing review readiness without claiming zero unresolved flags", async () => {
+    const { container, root } = await mount([buildQueueItem()]);
+    try {
+      const checkbox = container.querySelector(
+        'input[type="checkbox"]',
+      ) as HTMLInputElement;
+      expect(checkbox.disabled).toBe(true);
+      expect(checkbox.getAttribute("title")).toContain(
+        "Open listing to complete review",
+      );
+      expect(checkbox.getAttribute("title")).not.toContain("0 unresolved");
+    } finally {
+      await unmount(root);
+    }
+  });
+});

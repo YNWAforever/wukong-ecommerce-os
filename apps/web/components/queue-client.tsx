@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-import type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
+import type {
+  ListingCollectionItem,
+  ListingReviewContext,
+} from "../lib/dashboard-queue-shared";
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
 import { ListingQueue } from "./listing-queue";
 
@@ -31,7 +34,12 @@ function bulkErrorMessage(body: unknown): string {
 export function QueueClient() {
   const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Keep the context observed at selection, including after a partial-success
+  // reload. Retrying a failed item must not silently approve refreshed data.
+  const [selection, setSelection] = useState<Map<string, ListingReviewContext>>(
+    new Map(),
+  );
+  const selected = new Set(selection.keys());
   const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
     null,
   );
@@ -71,19 +79,32 @@ export function QueueClient() {
   }, []);
 
   const toggleSelected = (id: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
+    setSelection((current) => {
+      const next = new Map(current);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else {
+        const item = items?.find((candidate) => candidate.id === id);
+        if (item?.reviewContext && current.size < 50) {
+          next.set(id, { ...item.reviewContext });
+        }
+      }
       return next;
     });
   };
 
   const selectAllEligible = (eligibleIds: string[]) => {
-    setSelected(new Set(eligibleIds.slice(0, 50)));
+    setSelection((current) => {
+      const next = new Map<string, ListingReviewContext>();
+      const itemsById = new Map(items?.map((item) => [item.id, item]));
+      for (const id of eligibleIds.slice(0, 50)) {
+        const context = current.get(id) ?? itemsById.get(id)?.reviewContext;
+        if (context) next.set(id, { ...context });
+      }
+      return next;
+    });
   };
 
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => setSelection(new Map());
 
   const runBulkApprove = async () => {
     setBulkPending(true);
@@ -93,15 +114,28 @@ export function QueueClient() {
       const response = await fetch("/api/listings/bulk-approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ listingIds: [...selected] }),
+        body: JSON.stringify({
+          items: [...selection].map(([listingId, context]) => ({
+            listingId,
+            ...context,
+          })),
+        }),
       });
       const body: unknown = await response.json();
       if (!response.ok) {
         setBulkError(bulkErrorMessage(body));
         return;
       }
-      setBulkResult(body as BulkApproveResponse);
-      setSelected(new Set());
+      const result = body as BulkApproveResponse;
+      const approvedIds = new Set(
+        result.results.filter((item) => item.ok).map((item) => item.listingId),
+      );
+      setBulkResult(result);
+      setSelection((current) => {
+        const next = new Map(current);
+        for (const id of approvedIds) next.delete(id);
+        return next;
+      });
       load();
     } catch {
       // Covers both a rejected fetch() call (network failure) and a thrown
@@ -129,7 +163,10 @@ export function QueueClient() {
   const queueItems = mapDashboardItems(items);
   const eligibleIds = items
     .filter(
-      (item) => item.status === "in_review" && item.openBlockingFlagCount === 0,
+      (item) =>
+        item.status === "in_review" &&
+        item.openBlockingFlagCount === 0 &&
+        item.reviewContext != null,
     )
     .map((item) => item.id);
 

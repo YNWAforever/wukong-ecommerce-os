@@ -112,7 +112,10 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
               message: "Listing not found.",
             };
           }
-          if (snapshot.activeVersion.id !== parsedBody.expectedVersionId) {
+          if (
+            snapshot.activeVersion.id !== parsedBody.expectedVersionId ||
+            snapshot.listing.activeVersionId !== snapshot.activeVersion.id
+          ) {
             await repositories.audit.write({
               ...auditContext,
               action: "listing.review_conflict",
@@ -161,6 +164,20 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
           }
 
           const link = await repositories.platformProducts.getByListingId(id);
+          if (
+            link?.origin !== "import" &&
+            (parsedBody.sourceImportId !== undefined ||
+              parsedBody.expectedRowDigest !== undefined ||
+              confirmation.sourceImportId != null ||
+              confirmation.rowDigest != null)
+          ) {
+            return {
+              status: 409,
+              code: "source_origin_changed",
+              message:
+                "This listing's imported source link has changed. Review the listing again.",
+            };
+          }
           // A "created"-origin listing gets a `platform_products` row too,
           // after its first publish (see `apps/worker/src/publish-product.ts`)
           // -- but with `sourceImportId`/`contentDigest` always null, since it
@@ -205,6 +222,17 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
                 code: result.reason,
                 message:
                   "This listing's source data no longer matches what was reviewed.",
+              };
+            }
+            if (
+              confirmation.sourceImportId !== parsedBody.sourceImportId ||
+              confirmation.rowDigest !== parsedBody.expectedRowDigest
+            ) {
+              return {
+                status: 409,
+                code: "confirmation_source_stale",
+                message:
+                  "The confirmation checklist belongs to different source data. Review the listing again.",
               };
             }
           }

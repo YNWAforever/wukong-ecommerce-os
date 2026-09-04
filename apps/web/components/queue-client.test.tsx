@@ -46,6 +46,12 @@ const eligibleItem = {
   sku: "OPAK-001",
   updatedAt: "2026-08-16T00:00:00.000Z",
   openBlockingFlagCount: 0,
+  reviewContext: {
+    expectedVersionId: "version_1",
+    confirmationLedgerRevision: 0,
+    expectedSourceImportId: "import_1",
+    expectedRowDigest: "digest_1",
+  },
 };
 
 const publishedItem = {
@@ -169,7 +175,7 @@ describe("QueueClient", () => {
     expect(bulkCall).toBeDefined();
     expect(bulkCall!.init?.method).toBe("POST");
     expect(JSON.parse(bulkCall!.init!.body as string)).toEqual({
-      listingIds: ["listing_1"],
+      items: [{ listingId: "listing_1", ...eligibleItem.reviewContext }],
     });
 
     // The list reloads after a successful bulk-approve.
@@ -261,5 +267,175 @@ describe("QueueClient", () => {
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
+  });
+});
+
+describe("QueueClient review context", () => {
+  it("keeps failed selections and their observed context after a partial-success reload", async () => {
+    const failedItem = {
+      ...eligibleItem,
+      id: "listing_3",
+      title: "Failed neighbor",
+      reviewContext: {
+        expectedVersionId: "version_3",
+        confirmationLedgerRevision: 2,
+        expectedSourceImportId: "import_3",
+        expectedRowDigest: "digest_3",
+      },
+    };
+    const refreshedItem = {
+      ...failedItem,
+      reviewContext: {
+        expectedVersionId: "version_4",
+        confirmationLedgerRevision: 5,
+        expectedSourceImportId: "import_4",
+        expectedRowDigest: "digest_4",
+      },
+    };
+    const requests: unknown[] = [];
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({
+            results: [
+              ...(requests.length === 1
+                ? [{ listingId: "listing_1", ok: true, versionId: "version_1" }]
+                : []),
+              {
+                listingId: "listing_3",
+                ok: false,
+                code: "version_conflict",
+                message: "Review this listing again.",
+              },
+            ],
+            approved: requests.length === 1 ? 1 : 0,
+            failed: 1,
+          }),
+        );
+      }
+      listLoads += 1;
+      return Promise.resolve(
+        Response.json({
+          items: listLoads === 1 ? [eligibleItem, failedItem] : [refreshedItem],
+        }),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 2")!.click());
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.textContent).toContain("Review this listing again.");
+      expect(
+        (container.querySelector('input[type="checkbox"]') as HTMLInputElement)
+          .checked,
+      ).toBe(true);
+      expect(listLoads).toBe(2);
+
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests[1]).toEqual({
+        items: [{ listingId: failedItem.id, ...failedItem.reviewContext }],
+      });
+
+      // Explicit deselection and reselection adopt the refreshed review state.
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests[2]).toEqual({
+        items: [
+          { listingId: refreshedItem.id, ...refreshedItem.reviewContext },
+        ],
+      });
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("omits import fields for a created-origin selection", async () => {
+    const created = {
+      ...eligibleItem,
+      reviewContext: {
+        expectedVersionId: "version_created",
+        confirmationLedgerRevision: 0,
+      },
+    };
+    const requests: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({ results: [], approved: 0, failed: 0 }),
+        );
+      }
+      return Promise.resolve(Response.json({ items: [created] }));
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests).toEqual([
+        { items: [{ listingId: created.id, ...created.reviewContext }] },
+      ]);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("requires review context before allowing selection", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [{ ...eligibleItem, reviewContext: null }],
+      }),
+    );
+    const { container, root } = await mount(fetcher);
+    try {
+      expect(
+        (container.querySelector('input[type="checkbox"]') as HTMLInputElement)
+          .disabled,
+      ).toBe(true);
+      expect(findButtonByText(container, "全選可批准項目")).toBeUndefined();
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("preserves the selection and request error feedback when the response body is malformed", async () => {
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      if (input === "/api/listings/bulk-approve") {
+        return Promise.resolve(new Response("not json", { status: 200 }));
+      }
+      listLoads += 1;
+      return Promise.resolve(Response.json({ items: [eligibleItem] }));
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "Bulk approve failed",
+      );
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.querySelector(".bulk-result-list")).toBeNull();
+      expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
   });
 });

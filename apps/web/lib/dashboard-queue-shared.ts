@@ -2,6 +2,13 @@ import type { ListingStatus } from "@wukong/core";
 
 import type { QueueItem, QueueStatus } from "../components/listing-view-models";
 
+export type ListingReviewContext = {
+  expectedVersionId: string;
+  confirmationLedgerRevision: number;
+  expectedSourceImportId?: string;
+  expectedRowDigest?: string;
+};
+
 export type ListingCollectionItem = {
   id: string;
   status: ListingStatus;
@@ -10,6 +17,7 @@ export type ListingCollectionItem = {
   sku: string | null;
   updatedAt: string;
   openBlockingFlagCount: number;
+  reviewContext: ListingReviewContext | null;
 };
 
 function queueStatus(status: ListingStatus): QueueStatus {

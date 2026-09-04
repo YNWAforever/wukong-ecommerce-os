@@ -46,13 +46,24 @@ none of that, since there was no imported sheet to derive it from.
 
 ## Bulk approve
 
-Bulk approve lets a reviewer select several `in_review` listings with no open
-blocking compliance flags and approve them in one action. It is not a new
-kind of approval — each selected listing goes through the exact same
-single-listing approval logic, once per listing, in its own transaction, so
-one listing's stale flag cannot roll back another's legitimate approval.
-There is no field-level or partial-within-a-listing approval anywhere in the
-system; approval is still whole-listing, all-or-nothing.
+Bulk approve selects fully confirmed in_review listings with no open blocking
+flags. The queue captures each item's observed version, confirmation revision
+and imported source ID/digest at selection. It submits {items: [...]}; legacy
+ID-only requests receive 400 review_context_required. Batches are limited to
+50 distinct UUIDs, including case-insensitive duplicate rejection.
+
+Both approval routes use the shared service's mandatory version, complete
+checklist, revision and applicable source checks. Imported source must match
+both the current platform link and confirmation ledger. A lost/overwritten
+import origin cannot erase an existing request or ledger source binding.
+Single approval retains its early checks before optional product-shot I/O.
+
+Each item has its own workspace transaction, preserving valid approvals when
+another item fails. Failed selections retain their original review context
+across reloads; only successes clear automatically. Explicit reselection can
+adopt newly reviewed context. Approval remains whole-listing, all-or-nothing.
+Ordinary source/checklist reads are not locked through commit; durable
+approved-source receipts and the remaining concurrency risks are Task 3.
 
 ## Workspace roles
 
