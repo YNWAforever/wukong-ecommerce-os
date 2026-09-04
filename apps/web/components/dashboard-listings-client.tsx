@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import Link from "next/link";
 
 import type { ListingStatus } from "@wukong/core";
@@ -71,6 +71,9 @@ type ListListingsResponse = {
 export function DashboardListingsClient() {
   const [data, setData] = useState<ListListingsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const activeLabelId = useId();
+  const inReviewLabelId = useId();
+  const blockedLabelId = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,21 +118,21 @@ export function DashboardListingsClient() {
   return (
     <>
       <div className="metric-strip" aria-label="工作台摘要">
-        <div>
+        <div role="group" aria-labelledby={activeLabelId}>
           <span className="metric-value">{metrics.active}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={activeLabelId}>
             進行中 <small>Active</small>
           </span>
         </div>
-        <div>
+        <div role="group" aria-labelledby={inReviewLabelId}>
           <span className="metric-value">{metrics.inReview}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={inReviewLabelId}>
             待你審核 <small>Needs review</small>
           </span>
         </div>
-        <div>
+        <div role="group" aria-labelledby={blockedLabelId}>
           <span className="metric-value">{metrics.blocked}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={blockedLabelId}>
             阻塞上架 <small>Blocked delivery</small>
           </span>
         </div>

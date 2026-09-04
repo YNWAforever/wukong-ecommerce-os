@@ -84,6 +84,24 @@ describe("QualitySummaryClient", () => {
     expect(tileText).toEqual(["42", "10", "32", "$12.50"]);
   });
 
+  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
+    stubFetch(SAMPLE_SUMMARY);
+
+    const { container } = await mountClient();
+
+    const tiles = container.querySelectorAll('[role="group"]');
+    expect(tiles.length).toBe(4);
+
+    const expectedSubstrings = ["已評估商品", "無缺口", "有缺口", "AI 總成本"];
+
+    tiles.forEach((tile, index) => {
+      const labelledBy = tile.getAttribute("aria-labelledby");
+      expect(labelledBy).not.toBeNull();
+      const labelElement = document.getElementById(labelledBy!);
+      expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
+    });
+  });
+
   it("renders a 6-row table, one row per gap signal, with a human-readable label and its count", async () => {
     stubFetch(SAMPLE_SUMMARY);
 
