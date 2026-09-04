@@ -4,27 +4,31 @@ import type {
   ListingStatus,
 } from "@wukong/core";
 import {
-  createBulkFormUpdate,
   createShoplineCsv,
   evaluateDeliveryPolicy,
-  isBulkFormRawRow,
   shoplinePublishIdempotencyKey,
   ShoplineBulkFormError,
   SHOPLINE_CSV_SPEC_VERSION,
-  type BulkFormExportRow,
   type DeliveryAuditFacts,
   type DeliveryConnectionSnapshot,
   type DeliveryJobSnapshot,
   type DeliveryListingSnapshot,
   type DeliveryPolicyOutcome,
 } from "@wukong/shopline";
-import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  createBulkExport,
+  recheckBulkExport,
+  BulkUpdateEligibilityConflict,
+  type CreateBulkExportDeps,
+  type ExportManifestEntry,
+} from "./bulk-export-service";
 
 export type DeliverInput = {
   workspaceId: string;
   actorId: string;
   draftId: string;
   method: "csv" | "shopline_api" | "bulk_form";
+  freshnessAttested?: boolean;
 };
 
 export type DeliverySnapshot = {
@@ -54,9 +58,12 @@ export type DeliveryResult =
   | { kind: "validation_error"; issues: string[] }
   | { kind: "disconnected"; csvFallback: { method: "csv"; path: string } }
   | { kind: "already_published"; remoteProductId: string | null }
-  | { kind: "no_remote_link" };
+  | { kind: "no_remote_link" }
+  | { kind: "bulk_update_ineligible"; entry: ExportManifestEntry };
 
 export type DeliveryDeps = {
+  /** Mandatory for bulk_form; unused by the separate create CSV/API flows. */
+  bulkUpdate?: CreateBulkExportDeps;
   listings: { requireForPublish(draftId: string): Promise<DeliverySnapshot> };
   imageUrls(
     workspaceId: string,
@@ -90,15 +97,7 @@ export type DeliveryDeps = {
     connectionId?: string | null;
     remoteProductId: string | null;
   } | null>;
-  /**
-   * Read by both the `bulk_form` method (to build the export row) and, as of
-   * this task, the `shopline_api` method's request-phase snapshot (to decide
-   * create-vs-update and build the matching idempotency key). Optional so
-   * every existing csv-only test that never touches this keeps compiling
-   * unchanged. A caller that reaches the bulk_form branch without supplying
-   * it has a wiring bug, not a business outcome, so that path throws rather
-   * than returning a DeliveryResult variant for it.
-   */
+  /** SHOPLINE API create-versus-update lookup; CSV does not require it. */
   platformProducts?: {
     getByListingId(listingId: string): Promise<{
       remoteProductId: string;
@@ -234,7 +233,15 @@ function resultFromPolicy(
   snapshot: DeliveryPolicySnapshot,
 ): Exclude<
   DeliveryResult,
-  { kind: "csv" | "bulk_form" | "queued" | "retry_required" | "no_remote_link" }
+  {
+    kind:
+      | "csv"
+      | "bulk_form"
+      | "queued"
+      | "retry_required"
+      | "no_remote_link"
+      | "bulk_update_ineligible";
+  }
 > {
   switch (outcome.kind) {
     case "blocking_flags":
@@ -480,107 +487,77 @@ export async function deliverListing(
   return { kind: "queued", jobId, versionId: plan.versionId };
 }
 
-/**
- * Bulk-form export does not go through `evaluateDeliveryPolicy` — that
- * function is shaped around `ShoplineProductPayload` projection and
- * validation, neither of which applies to a bulk-form row. The review-state
- * gate is deliberately the same one the create path enforces (`approved` or
- * `published`, matching `isEligibleStatus`'s request-phase check in
- * `@wukong/shopline`'s delivery policy), and the blocking-flags gate mirrors
- * `evaluateDeliveryPolicy`'s own check on `listing.flags` — bulk-form export
- * must not be an easier way to ship unreviewed AI content than CSV or the
- * API path is.
- */
+/** Single and multi-product Bulk Update share the same eligibility and writer. */
 async function deliverBulkForm(
   input: DeliverInput,
   deps: DeliveryDeps,
 ): Promise<DeliveryResult> {
-  const source = await deps.listings.requireForPublish(input.draftId);
-  if (
-    !source.activeVersion ||
-    !(source.status === "approved" || source.status === "published")
-  ) {
-    return { kind: "approval_required" };
-  }
-
-  const blockingFlags = source.flags.filter(
-    (flag) => flag.severity === "blocking" && flag.status === "open",
-  );
-  if (blockingFlags.length > 0) {
-    return {
-      kind: "blocking_flags",
-      issues: blockingFlags.map((flag) => `${flag.field}: ${flag.rule}`),
-    };
-  }
-
-  if (!deps.platformProducts) {
-    throw new Error("deliverBulkForm requires deps.platformProducts");
-  }
-  const link = await deps.platformProducts.getByListingId(input.draftId);
-  if (!link) return { kind: "no_remote_link" };
-  if (!link.rawRow || !isBulkFormRawRow(link.rawRow)) {
-    return {
-      kind: "validation_error",
-      issues: ["stored bulk-form row is missing one or more columns"],
-    };
-  }
-
-  const { content } = source.activeVersion;
-  const row: BulkFormExportRow = {
-    productId: link.remoteProductId,
-    raw: link.rawRow,
-    rowNumber: 1,
+  if (!deps.bulkUpdate)
+    throw new Error("deliverBulkForm requires deps.bulkUpdate");
+  const exportInput = {
+    workspaceId: input.workspaceId,
+    requestedBy: input.actorId,
+    listingIds: [input.draftId],
+    freshnessAttested: input.freshnessAttested === true,
   };
-
-  let update: ReturnType<typeof createBulkFormUpdate>;
   try {
-    update = createBulkFormUpdate(
-      [row],
-      [
-        {
-          productId: link.remoteProductId,
-          values: {
-            nameZh: content.title["zh-Hant"],
-            summaryEn: content.description.en,
-            summaryZh: content.description["zh-Hant"],
-            seoTitleEn: content.seo.title.en,
-            seoTitleZh: content.seo.title["zh-Hant"],
-            seoDescriptionEn: content.seo.description.en,
-            seoDescriptionZh: content.seo.description["zh-Hant"],
-            // No delimiter convention exists elsewhere in the codebase for
-            // this field — chosen as the plain, human-editable form an
-            // operator reviewing the file by eye would expect.
-            seoKeywords: content.tags.join(", "),
-          },
-        },
-      ],
-    );
+    const exported = await createBulkExport(exportInput, deps.bulkUpdate);
+    const entry = exported.manifest[0]!;
+    if (entry.outcome !== "included") {
+      if (entry.outcome === "listing_not_found") {
+        if (!(await deps.bulkUpdate.getReviewState(input.draftId)))
+          throw new Error("listing not found");
+        return { kind: "approval_required" };
+      }
+      if (entry.outcome === "excluded_unapproved")
+        return { kind: "approval_required" };
+      if (entry.outcome === "excluded_blocked") {
+        const state = await deps.bulkUpdate.getReviewState(input.draftId);
+        return {
+          kind: "blocking_flags",
+          issues: (state?.flags ?? [])
+            .filter(
+              (flag) => flag.severity === "blocking" && flag.status === "open",
+            )
+            .map((flag) => flag.field + ": " + flag.rule),
+        };
+      }
+      if (entry.outcome === "not_import_origin")
+        return { kind: "no_remote_link" };
+      if (entry.outcome === "raw_row_invalid")
+        return {
+          kind: "validation_error",
+          issues: ["stored bulk-form row is missing one or more columns"],
+        };
+      return { kind: "bulk_update_ineligible", entry };
+    }
+    await recheckBulkExport(exportInput, exported.evidence, deps.bulkUpdate);
+    const evidence = exported.evidence[0]!;
+    await deps.audit.write({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      action: "listing.bulk_form_exported",
+      entityId: input.draftId,
+      metadata: {
+        specVersion: exported.specVersion,
+        versionId: evidence.versionId,
+        remoteProductId: evidence.remoteProductId,
+      },
+    });
+    return {
+      kind: "bulk_form",
+      body: exported.body,
+      specVersion: exported.specVersion,
+      versionId: evidence.versionId,
+    };
   } catch (error) {
-    if (error instanceof ShoplineBulkFormError) {
+    if (error instanceof BulkUpdateEligibilityConflict)
+      return { kind: "bulk_update_ineligible", entry: error.entry };
+    if (error instanceof ShoplineBulkFormError)
       return {
         kind: "validation_error",
         issues: error.issues.map((issue) => issue.message),
       };
-    }
     throw error;
   }
-
-  const body = writeBulkFormWorkbook(update.sheet);
-  await deps.audit.write({
-    workspaceId: input.workspaceId,
-    actorId: input.actorId,
-    action: "listing.bulk_form_exported",
-    entityId: input.draftId,
-    metadata: {
-      specVersion: update.specVersion,
-      versionId: source.activeVersion.id,
-      remoteProductId: link.remoteProductId,
-    },
-  });
-  return {
-    kind: "bulk_form",
-    body,
-    specVersion: update.specVersion,
-    versionId: source.activeVersion.id,
-  };
 }

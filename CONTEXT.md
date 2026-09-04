@@ -72,3 +72,22 @@ membership, is enforced in the `memberships` repository itself
 via `MembershipGuardViolation`) — not only at the
 `apps/web/app/api/workspace/members/[userId]/route.ts` route layer — so the
 guarantee holds for any caller of the repository, not just the current UI.
+
+## Bulk Update export eligibility
+
+Single-listing bulk-form delivery and multi-product export share the same
+eligibility policy and workbook builder. They require an approved/published
+active version, no open blocking flags, all eight field and seven negative
+confirmations for that listing/version, an import-origin remote link, matching
+confirmation/source metadata, explicit freshness attestation and the current
+header contract. Create CSV/API delivery keeps its separate policy.
+
+Export prepares request-local evidence and rechecks version, confirmation
+revision, flags and source/link identity at the final audit/attempt boundary.
+An all-excluded or all-no-op multi-export returns a manifest with rowCount 0
+and exportAttemptId null; it creates no object or successful export event.
+Single bulk_form requests must explicitly send freshnessAttested: true.
+
+These checks do not establish a durable approved-source receipt or atomic
+Postgres/object-store publication. Immutable source/approval binding, artifact
+hash/readiness and retry identity remain continuation Task 3.

@@ -1,3 +1,7 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "./review-confirmation-keys";
 import { describe, expect, it } from "vitest";
 
 import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
@@ -159,7 +163,35 @@ function depsWith(
       content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
     },
   };
-  return {
+  const fixtureListingIds = new Map<string, string>();
+  const result: Parameters<typeof createBulkExport>[1] = {
+    async getReviewState(listingId: string) {
+      return {
+        status: "approved",
+        activeVersionId: (await result.getActiveVersion(listingId))?.id ?? null,
+        flags: [],
+      };
+    },
+    async getReviewConfirmation(versionId: string) {
+      // Fixtures may override the version lookup; remember the caller's listing
+      // rather than guessing from version ID spelling.
+      const listingId = fixtureListingIds.get(versionId)!;
+      const link = links[listingId];
+      return {
+        id: "confirmation",
+        listingId,
+        versionId,
+        revision: 0,
+        fieldConfirmations: Object.fromEntries(
+          CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+        ),
+        negativeConfirmations: Object.fromEntries(
+          CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+        ),
+        sourceImportId: link?.sourceImportId ?? "import_1",
+        rowDigest: link?.contentDigest ?? "digest_1",
+      };
+    },
     async getPlatformProductLink(listingId: string) {
       return links[listingId] ?? null;
     },
@@ -174,6 +206,13 @@ function depsWith(
     },
     ...overrides,
   };
+  const getVersion = result.getActiveVersion;
+  result.getActiveVersion = async (listingId) => {
+    const version = await getVersion(listingId);
+    if (version) fixtureListingIds.set(version.id, listingId);
+    return version;
+  };
+  return result;
 }
 
 describe("createBulkExport", () => {
@@ -362,6 +401,7 @@ describe("createBulkExport", () => {
         listingId: "listing_created",
         versionId: "version_created",
         outcome: "not_import_origin",
+        reason: "not_import_origin",
       },
     ]);
     expect(result.rowCount).toBe(0);
@@ -575,6 +615,13 @@ describe("createBulkExport", () => {
       },
     });
 
+    const getConfirmation = deps.getReviewConfirmation;
+    deps.getReviewConfirmation = async (versionId) => {
+      const confirmation = await getConfirmation(versionId);
+      return confirmation && versionId === "version_other_import"
+        ? { ...confirmation, sourceImportId: "import_2" }
+        : confirmation;
+    };
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",

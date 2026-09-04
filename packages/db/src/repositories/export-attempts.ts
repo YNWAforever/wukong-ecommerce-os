@@ -9,6 +9,9 @@ export type ExportManifestOutcome =
   | "included"
   | "excluded_no_op"
   | "excluded_stale"
+  | "excluded_unapproved"
+  | "excluded_blocked"
+  | "excluded_unconfirmed"
   | "not_import_origin"
   | "raw_row_invalid"
   | "listing_not_found";
