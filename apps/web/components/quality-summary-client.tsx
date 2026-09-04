@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { QualitySummary } from "../lib/quality-summary";
 
@@ -34,6 +34,11 @@ function formatUsd(amountUsd: number): string {
 export function QualitySummaryClient() {
   const [data, setData] = useState<QualitySummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const totalAssessedLabelId = useId();
+  const cleanLabelId = useId();
+  const hasGapsLabelId = useId();
+  const totalCostLabelId = useId();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,27 +96,27 @@ export function QualitySummaryClient() {
         className="metric-strip quality-metric-strip"
         aria-label="內容品質統計"
       >
-        <div>
+        <div role="group" aria-labelledby={totalAssessedLabelId}>
           <span className="metric-value">{data.totalAssessed}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={totalAssessedLabelId}>
             已評估商品 <small>Total assessed</small>
           </span>
         </div>
-        <div>
+        <div role="group" aria-labelledby={cleanLabelId}>
           <span className="metric-value">{data.cleanCount}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={cleanLabelId}>
             無缺口 <small>Clean</small>
           </span>
         </div>
-        <div>
+        <div role="group" aria-labelledby={hasGapsLabelId}>
           <span className="metric-value">{data.hasGapsCount}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={hasGapsLabelId}>
             有缺口 <small>Has gaps</small>
           </span>
         </div>
-        <div>
+        <div role="group" aria-labelledby={totalCostLabelId}>
           <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
-          <span className="metric-label">
+          <span className="metric-label" id={totalCostLabelId}>
             AI 總成本 <small>Total AI cost</small>
           </span>
         </div>

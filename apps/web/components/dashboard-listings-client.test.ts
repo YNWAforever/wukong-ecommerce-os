@@ -187,6 +187,39 @@ describe("DashboardListingsClient", () => {
     await unmount(root);
   });
 
+  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [baseItem],
+        counts: {
+          ...zeroCounts,
+          received: 40,
+          in_review: 5,
+          reopened: 1,
+          failed: 2,
+          publish_failed: 1,
+          published: 100,
+        },
+      }),
+    );
+
+    const { container, root } = await mount(fetcher);
+
+    const tiles = container.querySelectorAll('[role="group"]');
+    expect(tiles.length).toBe(3);
+
+    const expectedSubstrings = ["進行中", "待你審核", "阻塞上架"];
+
+    tiles.forEach((tile, index) => {
+      const labelledBy = tile.getAttribute("aria-labelledby");
+      expect(labelledBy).not.toBeNull();
+      const labelElement = document.getElementById(labelledBy!);
+      expect(labelElement?.textContent).toContain(expectedSubstrings[index]);
+    });
+
+    await unmount(root);
+  });
+
   it("renders only a small teaser, not the full grouped queue", async () => {
     const items = Array.from({ length: 8 }, (_, index) => ({
       ...baseItem,

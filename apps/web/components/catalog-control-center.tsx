@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
 import {
@@ -270,10 +270,13 @@ export function CatalogControlCenter() {
 }
 
 function Metric({ value, label }: { value: number; label: string }) {
+  const labelId = useId();
   return (
-    <div className={styles.metric}>
+    <div className={styles.metric} role="group" aria-labelledby={labelId}>
       <span className={styles.metricValue}>{value}</span>
-      <span className={styles.metricLabel}>{label}</span>
+      <span className={styles.metricLabel} id={labelId}>
+        {label}
+      </span>
     </div>
   );
 }
