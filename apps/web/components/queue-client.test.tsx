@@ -179,4 +179,84 @@ describe("QueueClient", () => {
 
     await unmount(root);
   });
+
+  it("shows a visible error and preserves the selection when bulk-approve's request fails outright", async () => {
+    const calls: { url: string }[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push({ url });
+      if (url === "/api/listings/bulk-approve") {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve(Response.json({ items: [eligibleItem] }));
+    });
+
+    const { container, root } = await mount(fetcher);
+
+    await act(async () => {
+      findButtonByText(container, "全選可批准項目")!.click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(container, "批准")!.click();
+      await Promise.resolve();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain("Bulk approve failed");
+
+    // Selection is preserved -- the bulk-action-bar only renders while
+    // selected.size > 0, and it must still be there after a failed attempt.
+    expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
+    expect(container.textContent).toContain("1 個項目已選取");
+
+    // The list was not reloaded -- only the one initial /api/listings call.
+    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    expect(listingsCalls.length).toBe(1);
+
+    await unmount(root);
+  });
+
+  it("shows the server's error message and does not render the results list when bulk-approve returns a non-ok response", async () => {
+    const calls: { url: string }[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push({ url });
+      if (url === "/api/listings/bulk-approve") {
+        return Promise.resolve(
+          Response.json(
+            { code: "insufficient_role", message: "Reviewer access is required." },
+            { status: 403 },
+          ),
+        );
+      }
+      return Promise.resolve(Response.json({ items: [eligibleItem] }));
+    });
+
+    const { container, root } = await mount(fetcher);
+
+    await act(async () => {
+      findButtonByText(container, "全選可批准項目")!.click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      findButtonByText(container, "批准")!.click();
+      await Promise.resolve();
+    });
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert!.textContent).toContain("Reviewer access is required.");
+
+    expect(container.querySelector(".bulk-result-list")).toBeNull();
+    expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
+
+    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    expect(listingsCalls.length).toBe(1);
+
+    await unmount(root);
+  });
 });

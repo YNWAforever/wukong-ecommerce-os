@@ -16,6 +16,18 @@ type BulkApproveResponse = {
   failed: number;
 };
 
+function bulkErrorMessage(body: unknown): string {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "message" in body &&
+    typeof (body as { message: unknown }).message === "string"
+  ) {
+    return (body as { message: string }).message;
+  }
+  return "Bulk approve failed -- try again.";
+}
+
 export function QueueClient() {
   const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +35,7 @@ export function QueueClient() {
   const [bulkResult, setBulkResult] = useState<BulkApproveResponse | null>(
     null,
   );
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkPending, setBulkPending] = useState(false);
 
   const load = () => {
@@ -75,16 +88,26 @@ export function QueueClient() {
   const runBulkApprove = async () => {
     setBulkPending(true);
     setBulkResult(null);
+    setBulkError(null);
     try {
       const response = await fetch("/api/listings/bulk-approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ listingIds: [...selected] }),
       });
-      const body = (await response.json()) as BulkApproveResponse;
-      setBulkResult(body);
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        setBulkError(bulkErrorMessage(body));
+        return;
+      }
+      setBulkResult(body as BulkApproveResponse);
       setSelected(new Set());
       load();
+    } catch {
+      // Covers both a rejected fetch() call (network failure) and a thrown
+      // response.json() (malformed body) -- both reach this same fallback,
+      // since neither has a real server-reported message to show instead.
+      setBulkError("Bulk approve failed -- try again.");
     } finally {
       setBulkPending(false);
     }
@@ -130,6 +153,11 @@ export function QueueClient() {
             清除選取 Clear selection
           </button>
         </div>
+      ) : null}
+      {bulkError ? (
+        <p className="inline-warning" role="alert">
+          {bulkError}
+        </p>
       ) : null}
       {bulkResult ? (
         <ul className="bulk-result-list" aria-live="polite">
