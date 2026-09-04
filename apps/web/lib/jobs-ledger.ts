@@ -1,11 +1,13 @@
 import type {
   EnrichmentBatch,
   ExportAttempt,
+  ImportResult,
   PipelineRunSummary,
   PublishJob,
 } from "@wukong/db";
 
-export type LedgerKind = "batch" | "publish_job" | "pipeline_run" | "export";
+export type LedgerKind =
+  "batch" | "publish_job" | "pipeline_run" | "export" | "import_result";
 export type NormalizedStatus =
   "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -24,6 +26,7 @@ export type JobsLedgerSources = {
   publishJobs: readonly PublishJob[];
   pipelineRuns: readonly PipelineRunSummary[];
   exports: readonly ExportAttempt[];
+  importResults: readonly ImportResult[];
 };
 
 const BATCH_STATUS: Record<EnrichmentBatch["status"], NormalizedStatus> = {
@@ -92,6 +95,21 @@ function publishJobSummary(job: PublishJob): string {
   }
 }
 
+// `rejectReason` is free text up to 2000 characters (see the zod schema in
+// `app/api/listings/[id]/shopline-import-result/route.ts`). The `/jobs`
+// ledger row renders `summary` as a single wrapped `<p>` with no CSS
+// truncation, so an uncapped reason would dominate a compact view where
+// every other row's summary is a short one-liner. Capping it here keeps the
+// full reason available wherever the caller reads it straight off the
+// import result -- only this summary string is shortened.
+const REJECT_REASON_SUMMARY_LIMIT = 200;
+
+function truncateRejectReason(rejectReason: string | null): string {
+  if (rejectReason === null) return "no reason given";
+  if (rejectReason.length <= REJECT_REASON_SUMMARY_LIMIT) return rejectReason;
+  return `${rejectReason.slice(0, REJECT_REASON_SUMMARY_LIMIT)}…`;
+}
+
 export function buildJobsLedger(
   sources: JobsLedgerSources,
   limit: number,
@@ -152,18 +170,32 @@ export function buildJobsLedger(
             : `Export: ${included} row(s)`,
       };
     }),
+    ...sources.importResults.map((result): LedgerEntry => ({
+      kind: "import_result",
+      id: result.id,
+      listingId: result.listingId,
+      normalizedStatus: result.outcome === "accepted" ? "succeeded" : "failed",
+      rawStatus: result.outcome,
+      createdAt: result.createdAt,
+      summary:
+        result.outcome === "accepted"
+          ? "Import accepted by SHOPLINE"
+          : `Import rejected: ${truncateRejectReason(result.rejectReason)}`,
+    })),
   ];
 
   // Primary sort is createdAt descending. Ties are possible and not rare:
   // Task 1 (see git history on the 4 `listForWorkspace` queries) hit exactly
   // this within a single source, because rows written inside one shared
   // `db.forWorkspace` transaction share Postgres's per-transaction `now()`.
+  // (Now 5 sources -- importResults joined the same pattern in Task 3.)
   // Here it's worse -- a tie can also happen *across* sources (a batch and a
   // publish job created in the same instant), which a per-source id tiebreak
   // can't help with. `Array.prototype.sort` has been spec-guaranteed stable
   // since ES2019, so ties would already come out deterministic by relying on
   // this array's concatenation order (batches, then publishJobs, then
-  // pipelineRuns, then exports) -- but that "insertion order" tiebreak is
+  // pipelineRuns, then exports, then importResults) -- but that "insertion
+  // order" tiebreak is
   // meaningless as a business rule and silently depends on the concatenation
   // order above never being reshuffled for readability. `id` is an explicit,
   // self-documenting tiebreak that doesn't rely on that.
