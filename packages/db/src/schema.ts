@@ -849,6 +849,23 @@ export const exportAttempts = pgTable(
       table.workspaceId,
       table.idempotencyKey,
     ),
+    index("export_attempts_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+      table.id,
+    ),
+    // GIN index for listContainingListing's `manifest @> '[{"listingId":...}]'::jsonb`
+    // containment check. jsonb_path_ops is not in drizzle-orm's PgIndexOpClass
+    // literal union, but ExtraConfigColumn#op() accepts any string (its own doc
+    // comment: "you can always specify any string you want in the operator
+    // class, in case Drizzle doesn't have it natively in its types") -- verified
+    // against node_modules/drizzle-orm's pg-core/columns/common.d.ts (0.44.7).
+    index("export_attempts_manifest_gin_idx").using(
+      "gin",
+      table.manifest.op("jsonb_path_ops"),
+    ),
+    // Needed so import_results' composite FK to (workspace_id, id) has a
+    // matching unique constraint to reference -- see import_results below.
     uniqueIndex("export_attempts_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -1102,6 +1119,17 @@ export const auditEvents = pgTable(
   (table) => [
     index("audit_events_workspace_created_idx").on(
       table.workspaceId,
+      table.createdAt,
+    ),
+    index("audit_events_workspace_entity_idx").on(
+      table.workspaceId,
+      table.entityId,
+      table.createdAt,
+      table.id,
+    ),
+    index("audit_events_workspace_action_idx").on(
+      table.workspaceId,
+      table.action,
       table.createdAt,
     ),
   ],
