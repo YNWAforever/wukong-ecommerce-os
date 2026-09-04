@@ -1,3 +1,10 @@
+import {
+  BULK_FORM_COLUMNS,
+  hashBulkFormRow,
+  hashBulkFormHeaderContract,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  type BulkFormRawRow,
+} from "@wukong/shopline";
 import { describe, expect, it, vi } from "vitest";
 
 import { approveOne } from "../../../../lib/listing-approval";
@@ -7,6 +14,18 @@ import {
 } from "../../../../lib/review-confirmation-keys";
 import { createBulkApproveHandler } from "./route.js";
 
+const sourceRawRow = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "productId" ? "synthetic-product" : "",
+  ]),
+) as BulkFormRawRow;
+const sourceDigest = hashBulkFormRow(sourceRawRow);
+const sourceLink = {
+  connectionId: "synthetic-connection",
+  remoteProductId: "synthetic-product",
+  rawRow: sourceRawRow,
+};
 const context = {
   workspaceId: "ws_opak",
   actorId: "reviewer_1",
@@ -70,6 +89,7 @@ function makeHandler(
   const domainApproval = vi.fn();
   const repositoriesFor = (pending: string[] = [], events: unknown[] = []) => ({
     listings: {
+      async lockReviewState() {},
       async getReviewSnapshot(id: string) {
         const row = options.rows?.[id];
         if (row?.missing) return null;
@@ -116,9 +136,30 @@ function makeHandler(
           : row.confirmation;
       },
     },
+    sourceRows: {
+      async getForProduct(input: Record<string, string>) {
+        return {
+          ...input,
+          id: "snapshot-1",
+          workspaceId: context.workspaceId,
+          listingId: id1,
+          sourceRowDigest: sourceDigest,
+          rawRow: sourceRawRow,
+          headerContractSha256: hashBulkFormHeaderContract(),
+          specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+          createdAt: new Date(0),
+        };
+      },
+    },
+    approvalReceipts: {
+      async record(input: Record<string, unknown>) {
+        return { ...input, id: "receipt-1", wasCreated: true };
+      },
+    },
     platformProducts: {
       async getByListingId(id: string) {
-        return options.rows?.[id]?.link ?? null;
+        const link = options.rows?.[id]?.link;
+        return link ? { ...sourceLink, ...link } : null;
       },
     },
     audit: {
@@ -178,17 +219,17 @@ function makeHandler(
 const imported = {
   origin: "import" as const,
   sourceImportId: "import-1",
-  contentDigest: "digest-1",
+  contentDigest: sourceDigest,
 };
 const importedConfirmation = () => ({
   ...confirmed(id1),
   sourceImportId: "import-1",
-  rowDigest: "digest-1",
+  rowDigest: sourceDigest,
 });
 const importedItem = (overrides = {}) =>
   item(id1, {
     expectedSourceImportId: "import-1",
-    expectedRowDigest: "digest-1",
+    expectedRowDigest: sourceDigest,
     ...overrides,
   });
 
@@ -435,7 +476,14 @@ describe("POST /api/listings/bulk-approve", () => {
       ).json(),
     ).toMatchObject({ approved: 3, failed: 0 });
     expect(committed).toEqual([id1, id2, id3]);
-    expect(audited).toHaveLength(3);
+    expect(audited).toHaveLength(4);
+    expect(audited).toContainEqual(
+      expect.objectContaining({
+        action: "listing.bulk_update_approval_bound",
+        actorId: context.actorId,
+        entityId: id1,
+      }),
+    );
     expect(domainApproval).toHaveBeenCalledWith(id1 + "-v1", {
       workspaceId: context.workspaceId,
       actorId: context.actorId,

@@ -62,8 +62,35 @@ Each item has its own workspace transaction, preserving valid approvals when
 another item fails. Failed selections retain their original review context
 across reloads; only successes clear automatically. Explicit reselection can
 adopt newly reviewed context. Approval remains whole-listing, all-or-nothing.
-Ordinary source/checklist reads are not locked through commit; durable
-approved-source receipts and the remaining concurrency risks are Task 3.
+Approval and Bulk Update eligibility acquire the listing draft lock. Database
+triggers serialize platform source, confirmation and compliance flag changes
+with that lock. Imported approval appends a receipt bound to the immutable
+source row, exact approved version and reviewed checklist revision. A product-shot
+promotion may inherit the reviewed predecessor checklist only until the promoted
+version receives a checklist of its own; that requires renewed approval.
+
+## Bulk Update source and artifact history
+
+Each import preserves every parsed row in source_row_snapshots before updating
+the current platform mirror. Old imports and their approved receipts remain
+immutable to the runtime role. Missing historical source or approval evidence
+fails closed; reimport and renewed approval are required. Reconfirming a new
+source alone cannot reuse a previous approval. Receipt insertion order uses a
+database identity ordinal rather than transaction timestamps.
+
+Multi-export builds from the approved immutable rows, verifies their full row
+hashes and uses canonical listing order. Its versioned provenance and workbook
+SHA-256 determine the attempt identity. Attempts start pending and become ready
+only after conditional object creation/read-back and hash verification. Failed
+uploads remain failed or pending if the state database is unavailable; matching
+retries recover identical bytes without overwriting existing objects. New
+downloads require readiness and matching bytes. Legacy all-null provenance rows
+remain historical downloads explicitly marked incomplete.
+
+Single Bulk Update delivery uses the same durable eligibility rules but retains
+its direct workbook response; the operator journey through stable multi-export
+attempt references is Task 5. Generated XLSX is not proof of SHOPLINE acceptance
+or of current merchant-side protected fields.
 
 ## Workspace roles
 

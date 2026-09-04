@@ -433,6 +433,21 @@ describe("workspace isolation", () => {
       ["ai_runs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["ai_runs", ["workspace_id", "prompt_version_id"], "prompt_versions"],
       [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "confirmation_version_id"],
+        "listing_versions",
+      ],
+      [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "source_snapshot_id"],
+        "source_row_snapshots",
+      ],
+      [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
         "compliance_flags",
         ["workspace_id", "listing_version_id"],
         "listing_versions",
@@ -515,6 +530,16 @@ describe("workspace isolation", () => {
         ["workspace_id", "connection_id"],
         "shopline_connections",
       ],
+      [
+        "source_row_snapshots",
+        ["workspace_id", "connection_id", "source_import_id"],
+        "source_imports",
+      ],
+      [
+        "source_row_snapshots",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
     ];
     const rows = await admin`
       select
@@ -531,7 +556,7 @@ describe("workspace isolation", () => {
           select 1
           from pg_index i
           where i.indrelid = c.conrelid
-            and (i.indkey::smallint[])[0:1] = c.conkey
+            and (i.indkey::smallint[])[0:array_length(c.conkey, 1)-1] = c.conkey
         ) as child_fk_indexed
       from pg_constraint c
       join pg_class child on child.oid = c.conrelid
@@ -539,7 +564,7 @@ describe("workspace isolation", () => {
       join pg_namespace n on n.oid = child.relnamespace
       where c.contype = 'f'
         and n.nspname = 'public'
-        and array_length(c.conkey, 1) = 2
+        and array_length(c.conkey, 1) >= 2
       order by child.relname, 2
     `;
 

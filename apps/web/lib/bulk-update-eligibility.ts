@@ -3,7 +3,16 @@ import {
   assertExportFreshness,
   type FreshnessFailureReason,
 } from "@wukong/core";
-import type { ReviewConfirmation } from "@wukong/db";
+import type {
+  ReviewConfirmation,
+  BulkUpdateApprovalReceipt,
+  SourceRowSnapshot,
+} from "@wukong/db";
+import {
+  hashBulkFormRow,
+  isBulkFormRawRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
 import { allConfirmed } from "./review-confirmation-keys";
 
 export type BulkUpdateLink = {
@@ -22,11 +31,19 @@ export type BulkUpdateEligibilityReason =
   | "confirmation_required"
   | "confirmation_changed"
   | "not_import_origin"
-  | "remote_link_changed";
+  | "remote_link_changed"
+  | "approval_binding_required"
+  | "approval_binding_changed"
+  | "source_snapshot_mismatch"
+  | "raw_row_invalid";
 
-// Request-local evidence, NOT a durable approval receipt. A renewed checklist
-// cannot prove which source or ledger revision was approved (continuation Task 3).
+// Evidence links the exported version to immutable approval and source records.
 export type BulkUpdateEvidence = {
+  approvalReceiptId: string;
+  sourceSnapshotId: string;
+  confirmationVersionId: string;
+  headerContractSha256: string;
+  specVersion: string;
   listingId: string;
   versionId: string;
   confirmationRevision: number;
@@ -37,6 +54,14 @@ export type BulkUpdateEvidence = {
 };
 
 export type BulkUpdateEligibilityDeps = {
+  getApprovalReceipt(
+    versionId: string,
+  ): Promise<BulkUpdateApprovalReceipt | null>;
+  getSourceRow(input: {
+    sourceImportId: string;
+    connectionId: string;
+    remoteProductId: string;
+  }): Promise<SourceRowSnapshot | null>;
   getReviewState(listingId: string): Promise<{
     status: ListingStatus;
     activeVersionId: string | null;
@@ -104,10 +129,36 @@ export async function checkBulkUpdateEligibility(
       expected.versionId !== input.versionId)
   )
     return { ok: false, reason: "version_mismatch" };
-  const confirmation = await deps.getReviewConfirmation(input.versionId);
-  if (!confirmationMatches(confirmation, input))
+  const receipt = await deps.getApprovalReceipt(input.versionId);
+  if (!receipt) return { ok: false, reason: "approval_binding_required" };
+  if (
+    receipt.listingId !== input.listingId ||
+    receipt.versionId !== input.versionId ||
+    (expected && expected.approvalReceiptId !== receipt.id)
+  ) {
+    return { ok: false, reason: "approval_binding_changed" };
+  }
+  // Product-shot promotion can inherit its reviewed predecessor's checklist.
+  // Once the new active version has a checklist of its own, any prior binding
+  // is superseded, including a revoked or incomplete replacement checklist.
+  const inheritedChecklistReplaced = async () =>
+    receipt.confirmationVersionId !== input.versionId &&
+    (await deps.getReviewConfirmation(input.versionId)) !== null;
+  if (await inheritedChecklistReplaced())
+    return { ok: false, reason: "confirmation_changed" };
+  const confirmationInput = {
+    listingId: input.listingId,
+    versionId: receipt.confirmationVersionId,
+  };
+  const confirmation = await deps.getReviewConfirmation(
+    receipt.confirmationVersionId,
+  );
+  if (!confirmationMatches(confirmation, confirmationInput))
     return { ok: false, reason: "confirmation_required" };
-  if (expected && confirmation.revision !== expected.confirmationRevision) {
+  if (
+    confirmation.revision !== receipt.confirmationRevision ||
+    (expected && confirmation.revision !== expected.confirmationRevision)
+  ) {
     return { ok: false, reason: "confirmation_changed" };
   }
   const link = await deps.getPlatformProductLink(input.listingId);
@@ -139,6 +190,39 @@ export async function checkBulkUpdateEligibility(
       link.connectionId !== expected.connectionId)
   ) {
     return { ok: false, reason: "remote_link_changed" };
+  }
+  if (
+    receipt.sourceImportId !== link.sourceImportId ||
+    receipt.connectionId !== link.connectionId ||
+    receipt.remoteProductId !== link.remoteProductId ||
+    receipt.sourceRowDigest !== link.contentDigest ||
+    receipt.headerContractSha256 !== deps.currentHeaderContractSha256() ||
+    receipt.specVersion !== SHOPLINE_BULK_FORM_SPEC_VERSION
+  ) {
+    return { ok: false, reason: "approval_binding_changed" };
+  }
+  if (!link.rawRow || !isBulkFormRawRow(link.rawRow))
+    return { ok: false, reason: "raw_row_invalid" };
+  const sourceRow = await deps.getSourceRow({
+    sourceImportId: link.sourceImportId,
+    connectionId: link.connectionId,
+    remoteProductId: link.remoteProductId,
+  });
+  if (
+    !sourceRow ||
+    sourceRow.id !== receipt.sourceSnapshotId ||
+    sourceRow.listingId !== input.listingId ||
+    sourceRow.connectionId !== link.connectionId ||
+    sourceRow.sourceImportId !== link.sourceImportId ||
+    sourceRow.remoteProductId !== link.remoteProductId ||
+    sourceRow.sourceRowDigest !== receipt.sourceRowDigest ||
+    sourceRow.headerContractSha256 !== receipt.headerContractSha256 ||
+    sourceRow.specVersion !== receipt.specVersion ||
+    !isBulkFormRawRow(sourceRow.rawRow) ||
+    hashBulkFormRow(sourceRow.rawRow) !== receipt.sourceRowDigest ||
+    hashBulkFormRow(link.rawRow) !== receipt.sourceRowDigest
+  ) {
+    return { ok: false, reason: "source_snapshot_mismatch" };
   }
   let latestState = state;
   let latestLink: BulkUpdateLink | null = link;
@@ -175,8 +259,16 @@ export async function checkBulkUpdateEligibility(
     latestLink.connectionId !== link.connectionId
   )
     return { ok: false, reason: "remote_link_changed" };
-  const latestConfirmation = await deps.getReviewConfirmation(input.versionId);
-  if (!confirmationMatches(latestConfirmation, input))
+  if (
+    !latestLink.rawRow ||
+    !isBulkFormRawRow(latestLink.rawRow) ||
+    hashBulkFormRow(latestLink.rawRow) !== receipt.sourceRowDigest
+  )
+    return { ok: false, reason: "source_snapshot_mismatch" };
+  const latestConfirmation = await deps.getReviewConfirmation(
+    receipt.confirmationVersionId,
+  );
+  if (!confirmationMatches(latestConfirmation, confirmationInput))
     return { ok: false, reason: "confirmation_required" };
   if (latestConfirmation.revision !== confirmation.revision)
     return { ok: false, reason: "confirmation_changed" };
@@ -184,10 +276,20 @@ export async function checkBulkUpdateEligibility(
     return { ok: false, reason: "source_import_mismatch" };
   if (latestConfirmation.rowDigest !== link.contentDigest)
     return { ok: false, reason: "row_digest_mismatch" };
+  if (await inheritedChecklistReplaced())
+    return { ok: false, reason: "confirmation_changed" };
+  const latestReceipt = await deps.getApprovalReceipt(input.versionId);
+  if (!latestReceipt || latestReceipt.id !== receipt.id)
+    return { ok: false, reason: "approval_binding_changed" };
   return {
     ok: true,
-    link,
+    link: { ...link, rawRow: sourceRow.rawRow },
     evidence: {
+      approvalReceiptId: receipt.id,
+      sourceSnapshotId: sourceRow.id,
+      confirmationVersionId: receipt.confirmationVersionId,
+      headerContractSha256: receipt.headerContractSha256,
+      specVersion: receipt.specVersion,
       listingId: input.listingId,
       versionId: input.versionId,
       confirmationRevision: confirmation.revision,

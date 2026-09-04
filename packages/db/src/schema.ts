@@ -327,6 +327,11 @@ export const listingVersions = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("listing_versions_workspace_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
     uniqueIndex("listing_versions_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -736,6 +741,11 @@ export const sourceImports = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("source_imports_workspace_connection_id_uq").on(
+      table.workspaceId,
+      table.connectionId,
+      table.id,
+    ),
     uniqueIndex("source_imports_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -843,6 +853,13 @@ export const exportAttempts = pgTable(
         }>
       >()
       .notNull(),
+    provenance: jsonb("provenance").$type<Record<string, unknown>>(),
+    artifactSha256: text("artifact_sha256"),
+    artifactStatus: text("artifact_status").$type<
+      "pending" | "ready" | "failed"
+    >(),
+    artifactErrorCode: text("artifact_error_code"),
+    artifactReadyAt: timestamp("artifact_ready_at", { withTimezone: true }),
     rowCount: integer("row_count").notNull(),
     specVersion: text("spec_version").notNull(),
     createdAt: timestamps.createdAt,
@@ -1135,5 +1152,134 @@ export const auditEvents = pgTable(
       table.action,
       table.createdAt,
     ),
+  ],
+);
+
+export const sourceRowSnapshots = pgTable(
+  "source_row_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    sourceImportId: uuid("source_import_id").notNull(),
+    remoteProductId: text("remote_product_id").notNull(),
+    sourceRowDigest: text("source_row_digest").notNull(),
+    rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
+    specVersion: text("spec_version").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("source_row_snapshots_product_uq").on(
+      table.workspaceId,
+      table.sourceImportId,
+      table.connectionId,
+      table.remoteProductId,
+    ),
+    uniqueIndex("source_row_snapshots_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    index("source_row_snapshots_import_idx").on(
+      table.workspaceId,
+      table.connectionId,
+      table.sourceImportId,
+    ),
+    foreignKey({
+      name: "source_row_snapshots_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "source_row_snapshots_import_fkey",
+      columns: [table.workspaceId, table.connectionId, table.sourceImportId],
+      foreignColumns: [
+        sourceImports.workspaceId,
+        sourceImports.connectionId,
+        sourceImports.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const bulkUpdateApprovalReceipts = pgTable(
+  "bulk_update_approval_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    receiptOrdinal: bigint("receipt_ordinal", { mode: "bigint" })
+      .generatedAlwaysAsIdentity()
+      .notNull(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    sourceSnapshotId: uuid("source_snapshot_id").notNull(),
+    confirmationVersionId: uuid("confirmation_version_id").notNull(),
+    confirmationRevision: integer("confirmation_revision").notNull(),
+    approvedBy: text("approved_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("bulk_update_approval_receipts_ordinal_uq").on(
+      table.receiptOrdinal,
+    ),
+    uniqueIndex("bulk_update_approval_receipts_binding_uq").on(
+      table.workspaceId,
+      table.versionId,
+      table.sourceSnapshotId,
+      table.confirmationVersionId,
+      table.confirmationRevision,
+    ),
+    index("bulk_update_approval_receipts_version_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.versionId,
+    ),
+    index("bulk_update_approval_receipts_confirmation_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.confirmationVersionId,
+    ),
+    index("bulk_update_approval_receipts_snapshot_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.sourceSnapshotId,
+    ),
+    foreignKey({
+      name: "bulk_update_approval_receipts_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "bulk_update_approval_receipts_confirmation_version_fkey",
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.confirmationVersionId,
+      ],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "bulk_update_approval_receipts_snapshot_fkey",
+      columns: [table.workspaceId, table.listingId, table.sourceSnapshotId],
+      foreignColumns: [
+        sourceRowSnapshots.workspaceId,
+        sourceRowSnapshots.listingId,
+        sourceRowSnapshots.id,
+      ],
+    }).onDelete("restrict"),
   ],
 );

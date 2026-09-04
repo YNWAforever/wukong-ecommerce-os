@@ -480,4 +480,121 @@ describe("export attempts repository", () => {
       [...ids].sort().reverse(),
     );
   });
+  it("persists pending provenance, recovers ready, and never demotes a concurrent success", async () => {
+    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
+      const input = {
+        idempotencyKey: "artifact_state",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        provenance: { version: 1, rowOrder: [manifest[0].listingId] },
+        artifactSha256: "a".repeat(64),
+      };
+      const created = await exportAttempts.ensure(input);
+      expect(created).toMatchObject({
+        artifactStatus: "pending",
+        artifactSha256: input.artifactSha256,
+        provenance: input.provenance,
+      });
+      const failed = await exportAttempts.markFailed({
+        id: created.id,
+        artifactSha256: input.artifactSha256,
+        errorCode: "artifact_upload_failed",
+      });
+      expect(failed.artifactStatus).toBe("failed");
+      const ready = await exportAttempts.markReady({
+        id: created.id,
+        artifactSha256: input.artifactSha256,
+      });
+      expect(ready).toMatchObject({
+        artifactStatus: "ready",
+        artifactErrorCode: null,
+      });
+      expect(ready.artifactReadyAt).toBeInstanceOf(Date);
+      const lateFailure = await exportAttempts.markFailed({
+        id: created.id,
+        artifactSha256: input.artifactSha256,
+        errorCode: "artifact_upload_failed",
+      });
+      expect(lateFailure.artifactStatus).toBe("ready");
+      const repeat = await exportAttempts.ensure(input);
+      expect(repeat).toMatchObject({
+        id: created.id,
+        wasCreated: false,
+        artifactStatus: "ready",
+      });
+    });
+  });
+
+  it("rejects artifact identity collisions and cross-workspace status mutations", async () => {
+    const input = {
+      idempotencyKey: "artifact_collision",
+      requestedBy: "user_1",
+      manifest,
+      rowCount: 1,
+      specVersion: "bulk-form-v1",
+      provenance: { version: 1, source: "source-1" },
+      artifactSha256: "b".repeat(64),
+    };
+    const row = await database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+      exportAttempts.ensure(input),
+    );
+    await expect(
+      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+        exportAttempts.ensure({
+          ...input,
+          provenance: { version: 1, source: "source-2" },
+        }),
+      ),
+    ).rejects.toThrow(/idempotency/);
+    await expect(
+      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+        exportAttempts.ensure({ ...input, artifactSha256: "c".repeat(64) }),
+      ),
+    ).rejects.toThrow(/idempotency/);
+    await expect(
+      database.forWorkspace(otherWorkspaceId, ({ exportAttempts }) =>
+        exportAttempts.markReady({
+          id: row.id,
+          artifactSha256: input.artifactSha256,
+        }),
+      ),
+    ).rejects.toThrow(/artifact/);
+  });
+
+  it("concurrent completion and failure preserve a ready artifact", async () => {
+    const artifactSha256 = "d".repeat(64);
+    const row = await database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+      exportAttempts.ensure({
+        idempotencyKey: "artifact_race",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        provenance: { version: 1 },
+        artifactSha256,
+      }),
+    );
+    await Promise.all([
+      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+        exportAttempts.markReady({ id: row.id, artifactSha256 }),
+      ),
+      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+        exportAttempts.markFailed({
+          id: row.id,
+          artifactSha256,
+          errorCode: "artifact_upload_failed",
+        }),
+      ),
+    ]);
+    const actual = await database.forWorkspace(
+      workspaceId,
+      ({ exportAttempts }) => exportAttempts.getById(row.id),
+    );
+    expect(actual).toMatchObject({
+      artifactStatus: "ready",
+      artifactErrorCode: null,
+    });
+  });
 });

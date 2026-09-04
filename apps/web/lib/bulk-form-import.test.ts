@@ -34,6 +34,7 @@ const FILENAME = "opak-export.xlsx";
 const SHEET_NAME = "Default";
 
 type Recorded = {
+  sourceRows: Record<string, unknown>[];
   created: { note: string | null }[];
   upserts: {
     remoteProductId: string;
@@ -61,6 +62,7 @@ function importerWith(
   existing: Record<string, { listingId: string; contentDigest: string }> = {},
 ) {
   const recorded: Recorded = {
+    sourceRows: [],
     created: [],
     upserts: [],
     audits: [],
@@ -85,7 +87,16 @@ function importerWith(
             sourceImports: {
               async create(input: Recorded["sourceImportCreates"][number]) {
                 recorded.sourceImportCreates.push(input);
-                return { id: "source_import_1", ...input };
+                return {
+                  id: "source_import_" + recorded.sourceImportCreates.length,
+                  ...input,
+                };
+              },
+            },
+            sourceRows: {
+              async createMany(rows: Record<string, unknown>[]) {
+                recorded.sourceRows.push(...structuredClone(rows));
+                return rows;
               },
             },
             platformProducts: {
@@ -542,6 +553,42 @@ describe("bulk form importer", () => {
           issueCount: result.issues.length,
         },
       }),
+    );
+  });
+  it("preserves a separate immutable row for each import including pass-through changes", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      remote_1: { listingId: "draft_existing", contentDigest: "prior" },
+    });
+    const input = {
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      rawBytes: RAW_BYTES,
+      merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+      filename: FILENAME,
+      sheetName: SHEET_NAME,
+    };
+    await importBulkForm({ ...input, sheet: sheetOf(rowFor()) });
+    await importBulkForm({
+      ...input,
+      sheet: sheetOf(rowFor({ regularPrice: "105.0" })),
+    });
+    expect(recorded.sourceRows).toHaveLength(2);
+    expect(recorded.sourceRows[0]).toMatchObject({
+      listingId: "draft_existing",
+      connectionId: "connection_1",
+      sourceImportId: "source_import_1",
+      remoteProductId: "remote_1",
+      rawRow: { regularPrice: "100.0" },
+    });
+    expect(recorded.sourceRows[1]).toMatchObject({
+      sourceImportId: "source_import_2",
+      rawRow: { regularPrice: "105.0" },
+    });
+    expect(recorded.sourceRows[0]?.sourceRowDigest).not.toBe(
+      recorded.sourceRows[1]?.sourceRowDigest,
+    );
+    expect(recorded.sourceRows.map((row) => row.sourceRowDigest)).toEqual(
+      recorded.upserts.map((row) => row.contentDigest),
     );
   });
 });

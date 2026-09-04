@@ -6,11 +6,21 @@ import {
 } from "@wukong/core";
 import type {
   AuditWriter,
+  SourceRowRepository,
+  SourceRowSnapshot,
+  ApprovalReceiptRepository,
   ListingRepository,
   PlatformProductRepository,
   ReviewConfirmationRepository,
   SourceAssetRepository,
 } from "@wukong/db";
+
+import {
+  hashBulkFormRow,
+  hashBulkFormHeaderContract,
+  isBulkFormRawRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
 
 import { allConfirmed } from "./review-confirmation-keys";
 import { ApiError } from "./route-support";
@@ -28,6 +38,7 @@ import { ApiError } from "./route-support";
 export type ApproveOneRepositories = {
   listings: Pick<
     ListingRepository,
+    | "lockReviewState"
     | "getReviewSnapshot"
     | "approve"
     | "promoteAndApprove"
@@ -41,6 +52,8 @@ export type ApproveOneRepositories = {
   >;
   reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
   platformProducts: Pick<PlatformProductRepository, "getByListingId">;
+  sourceRows: Pick<SourceRowRepository, "getForProduct">;
+  approvalReceipts: Pick<ApprovalReceiptRepository, "record">;
   audit: AuditWriter;
 };
 
@@ -131,6 +144,47 @@ export async function findProductShotAssets(
   return { cutout, priorFinalAssetIds };
 }
 
+/** Validate the current imported row against the immutable source snapshot. */
+export async function readApprovalSourceSnapshot(
+  listingId: string,
+  link: {
+    sourceImportId: string | null;
+    connectionId: string;
+    remoteProductId: string;
+    contentDigest: string | null;
+    rawRow: Record<string, string | null> | null;
+  },
+  repositories: Pick<ApproveOneRepositories, "sourceRows">,
+): Promise<SourceRowSnapshot | null> {
+  if (
+    !link.sourceImportId ||
+    !link.contentDigest ||
+    !link.rawRow ||
+    !isBulkFormRawRow(link.rawRow)
+  )
+    return null;
+  const row = await repositories.sourceRows.getForProduct({
+    sourceImportId: link.sourceImportId,
+    connectionId: link.connectionId,
+    remoteProductId: link.remoteProductId,
+  });
+  if (
+    !row ||
+    row.listingId !== listingId ||
+    row.sourceImportId !== link.sourceImportId ||
+    row.connectionId !== link.connectionId ||
+    row.remoteProductId !== link.remoteProductId ||
+    row.sourceRowDigest !== link.contentDigest ||
+    row.headerContractSha256 !== hashBulkFormHeaderContract() ||
+    row.specVersion !== SHOPLINE_BULK_FORM_SPEC_VERSION ||
+    !isBulkFormRawRow(row.rawRow) ||
+    hashBulkFormRow(row.rawRow) !== row.sourceRowDigest ||
+    hashBulkFormRow(link.rawRow) !== row.sourceRowDigest
+  )
+    return null;
+  return row;
+}
+
 /**
  * Both approval routes validate the reviewer's observed version, checklist and
  * imported source here, inside their workspace transaction. The single route's
@@ -140,8 +194,8 @@ export async function findProductShotAssets(
  * evidence and flags, then promoted through the existing approval repository.
  * Asset reads, compositing and object writes remain outside this transaction.
  *
- * These checks detect changes since review; source and checklist rows are not
- * locked through commit. Durable approved-source binding remains separate work.
+ * The draft lock serializes flag, confirmation and source writes through the
+ * database review-lock triggers. Imported approvals append an immutable receipt.
  */
 export async function approveOne(
   id: string,
@@ -160,6 +214,7 @@ export async function approveOne(
       "Open the listing and complete its review before approving.",
     );
   }
+  await repositories.listings.lockReviewState(id);
   const snapshot = await repositories.listings.getReviewSnapshot(id);
   if (!snapshot) {
     throw new ApiError(404, "listing_not_found", "Listing not found.");
@@ -262,6 +317,18 @@ export async function approveOne(
     }
   }
 
+  const sourceRow =
+    link?.origin === "import"
+      ? await readApprovalSourceSnapshot(id, link, repositories)
+      : null;
+  if (link?.origin === "import" && !sourceRow) {
+    throw new ApiError(
+      409,
+      "source_snapshot_required",
+      "Reimport this product before approving; its source snapshot is unavailable or has changed.",
+    );
+  }
+
   let versionIdToApprove: string = snapshot.activeVersion.id;
 
   if (deps.precomputedFinalAsset) {
@@ -336,6 +403,27 @@ export async function approveOne(
         auditContext,
         repositories.audit,
       );
+    }
+    if (sourceRow) {
+      const receipt = await repositories.approvalReceipts.record({
+        listingId: id,
+        versionId: approved.versionId,
+        sourceSnapshotId: sourceRow.id,
+        confirmationVersionId: snapshot.activeVersion.id,
+        confirmationRevision: confirmation.revision,
+        approvedBy: auditContext.actorId,
+      });
+      if (receipt.wasCreated)
+        await repositories.audit.write({
+          ...auditContext,
+          action: "listing.bulk_update_approval_bound",
+          metadata: {
+            approvalReceiptId: receipt.id,
+            sourceSnapshotId: sourceRow.id,
+            versionId: approved.versionId,
+            confirmationRevision: confirmation.revision,
+          },
+        });
     }
     return {
       listingId: id,

@@ -10,6 +10,7 @@ function makeHandler(
     role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
     listingExists?: boolean;
     exportAttemptExists?: boolean;
+    artifactStatus?: string;
   } = {},
 ) {
   const role = overrides.role ?? "operator";
@@ -27,7 +28,13 @@ function makeHandler(
     },
     exportAttempts: {
       async getById(id: string) {
-        return exportAttemptExists ? { id } : null;
+        return exportAttemptExists
+          ? {
+              id,
+              artifactStatus: overrides.artifactStatus,
+              provenance: overrides.artifactStatus ? { version: 1 } : null,
+            }
+          : null;
       },
     },
     importResults: {
@@ -176,3 +183,17 @@ describe("POST /api/listings/[id]/shopline-import-result", () => {
     expect(response.status).toBe(403);
   });
 });
+
+it.each(["pending", "failed"])(
+  "does not attach an import outcome to a %s artifact",
+  async (artifactStatus) => {
+    const { handler, created, auditEvents } = makeHandler({ artifactStatus });
+    const response = await handler(
+      makeRequest({ outcome: "accepted", exportAttemptId }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+    expect(response.status).toBe(409);
+    expect(created).toHaveLength(0);
+    expect(auditEvents).toHaveLength(0);
+  },
+);

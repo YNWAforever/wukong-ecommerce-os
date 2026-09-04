@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { AssetObjectMissingError } from "@wukong/assets";
 import type { ReviewConfirmation } from "@wukong/db";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import {
@@ -7,6 +9,9 @@ import {
 import {
   BULK_FORM_COLUMNS,
   hashBulkFormHeaderContract,
+  hashBulkFormRow,
+  isBulkFormRawRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
 } from "@wukong/shopline";
 import { describe, expect, it } from "vitest";
 
@@ -156,6 +161,11 @@ function makeExportAttempts() {
       rowCount: number;
       specVersion: string;
       createdAt: Date;
+      provenance: Record<string, unknown> | null;
+      artifactSha256: string | null;
+      artifactStatus: string | null;
+      artifactErrorCode: string | null;
+      artifactReadyAt: Date | null;
     }
   >();
   let counter = 0;
@@ -196,9 +206,38 @@ function makeExportAttempts() {
         rowCount: input.rowCount,
         specVersion: input.specVersion,
         createdAt: new Date(),
+        provenance: input.provenance ?? null,
+        artifactSha256: input.artifactSha256 ?? null,
+        artifactStatus: input.provenance ? "pending" : null,
+        artifactErrorCode: null,
+        artifactReadyAt: null,
       };
       store.set(input.idempotencyKey, created);
       return { ...created, wasCreated: true };
+    },
+    async markReady(input: any) {
+      const row = [...store.values()].find(
+        (row) =>
+          row.id === input.id && row.artifactSha256 === input.artifactSha256,
+      )!;
+      Object.assign(row, {
+        artifactStatus: "ready",
+        artifactErrorCode: null,
+        artifactReadyAt: new Date(),
+      });
+      return { ...row };
+    },
+    async markFailed(input: any) {
+      const row = [...store.values()].find(
+        (row) =>
+          row.id === input.id && row.artifactSha256 === input.artifactSha256,
+      )!;
+      if (row.artifactStatus !== "ready")
+        Object.assign(row, {
+          artifactStatus: "failed",
+          artifactErrorCode: input.errorCode,
+        });
+      return { ...row };
     },
     async getById(id: string) {
       for (const value of store.values()) {
@@ -225,7 +264,16 @@ function makeRepositories(
   } = {},
 ) {
   const reviewSnapshots = options.reviewSnapshots ?? defaultReviewSnapshots;
-  const platformProducts = options.platformProducts ?? defaultPlatformProducts;
+  const platformProducts =
+    options.platformProducts ?? structuredClone(defaultPlatformProducts);
+  for (const link of Object.values(platformProducts)) {
+    if (
+      link?.contentDigest === "digest_1" &&
+      link.rawRow &&
+      isBulkFormRawRow(link.rawRow)
+    )
+      link.contentDigest = hashBulkFormRow(link.rawRow);
+  }
   const headerContractSha256 =
     options.headerContractSha256 ?? HEADER_CONTRACT_SHA;
   const audits: any[] = [];
@@ -236,8 +284,54 @@ function makeRepositories(
   // mismatched digest on every call after.
   let staleCallCount = 0;
 
+  const sourceSnapshots = Object.entries(platformProducts).flatMap(
+    ([listingId, link]) =>
+      !link
+        ? []
+        : [
+            {
+              id: `snapshot_${listingId}`,
+              workspaceId: context.workspaceId,
+              listingId,
+              sourceImportId: link.sourceImportId,
+              connectionId: link.connectionId,
+              remoteProductId: link.remoteProductId,
+              sourceRowDigest: link.contentDigest,
+              rawRow: structuredClone(link.rawRow),
+              headerContractSha256: HEADER_CONTRACT_SHA,
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+            },
+          ],
+  );
+  const receipts = sourceSnapshots.map((snapshot) => ({
+    ...snapshot,
+    id: `receipt_${snapshot.listingId}`,
+    sourceSnapshotId: snapshot.id,
+    versionId: reviewSnapshots[snapshot.listingId]?.activeVersion?.id,
+    confirmationVersionId:
+      reviewSnapshots[snapshot.listingId]?.activeVersion?.id,
+    confirmationRevision: 0,
+  }));
   const repositories = {
+    sourceRows: {
+      async getForProduct(input: any) {
+        return (
+          sourceSnapshots.find(
+            (row) =>
+              row.sourceImportId === input.sourceImportId &&
+              row.connectionId === input.connectionId &&
+              row.remoteProductId === input.remoteProductId,
+          ) ?? null
+        );
+      },
+    },
+    approvalReceipts: {
+      async getByVersionId(versionId: string) {
+        return receipts.find((row) => row.versionId === versionId) ?? null;
+      },
+    },
     listings: {
+      async lockReviewState() {},
       async getReviewSnapshot(listingId: string) {
         const snapshot = reviewSnapshots[listingId];
         if (!snapshot) return null;
@@ -267,7 +361,8 @@ function makeRepositories(
     },
     sourceImports: {
       async getById(id: string) {
-        if (id === "import_1") return { headerContractSha256 };
+        if (id === "import_1" || id === "import_2")
+          return { headerContractSha256 };
         return null;
       },
     },
@@ -315,8 +410,10 @@ function makeRepositories(
 
 function makeAssetStore() {
   const calls: any[] = [];
+  const objects = new Map<string, Uint8Array>();
   return {
     calls,
+    objects,
     async writeObject(
       workspaceId: string,
       key: string,
@@ -324,7 +421,23 @@ function makeAssetStore() {
       mimeType: string,
     ) {
       calls.push({ workspaceId, key, body, mimeType });
+      objects.set(key, new Uint8Array(body));
       return { size: body.byteLength, mimeType };
+    },
+    async writeObjectIfAbsent(
+      workspaceId: string,
+      key: string,
+      body: Uint8Array,
+      mimeType: string,
+    ) {
+      if (objects.has(key)) return false;
+      await this.writeObject(workspaceId, key, body, mimeType);
+      return true;
+    },
+    async readObject(_workspaceId: string, key: string) {
+      const bytes = objects.get(key);
+      if (!bytes) throw new AssetObjectMissingError();
+      return new Uint8Array(bytes);
     },
   };
 }
@@ -371,6 +484,7 @@ function makeHandler(
 
   return {
     handler,
+    repositories,
     audits,
     assetStore,
     exportAttempts,
@@ -502,13 +616,13 @@ describe("POST /api/listings/export", () => {
     expect(
       body.manifest.map((entry: any) => [entry.listingId, entry.outcome]),
     ).toEqual([
-      ["ready", "included"],
-      ["review", "excluded_unapproved"],
       ["blocked", "excluded_blocked"],
       ["missing", "excluded_unconfirmed"],
+      ["noop", "excluded_no_op"],
+      ["ready", "included"],
+      ["review", "excluded_unapproved"],
       ["revoked_field", "excluded_unconfirmed"],
       ["revoked_negative", "excluded_unconfirmed"],
-      ["noop", "excluded_no_op"],
     ]);
     expect(assetStore.calls).toHaveLength(1);
     const sheet = readBulkFormSheet(assetStore.calls[0].body);
@@ -519,8 +633,12 @@ describe("POST /api/listings/export", () => {
       "product-ready",
     ]);
     expect(audits[0].metadata.includedListingIds).toEqual(["ready"]);
-    expect(audits[0].metadata.excludedListingIds).toEqual(ids.slice(1));
-    expect(workspaces).toEqual([context.workspaceId, context.workspaceId]);
+    expect(audits[0].metadata.excludedListingIds).toEqual(ids.slice(1).sort());
+    expect(workspaces).toEqual([
+      context.workspaceId,
+      context.workspaceId,
+      context.workspaceId,
+    ]);
   });
 
   it.each([
@@ -614,8 +732,7 @@ describe("POST /api/listings/export", () => {
     const second = await (await handler(request(payload))).json();
     expect(first.rowCount).toBe(1);
     expect(second).toEqual(first);
-    expect(assetStore.calls).toHaveLength(2);
-    expect(assetStore.calls[1].body).toEqual(assetStore.calls[0].body);
+    expect(assetStore.calls).toHaveLength(1);
     expect(audits).toHaveLength(1);
   });
 
@@ -849,7 +966,7 @@ describe("POST /api/listings/export", () => {
       },
       platformProducts: {
         listing_dup_a: sharedLink,
-        listing_dup_b: sharedLink,
+        listing_dup_b: { ...sharedLink, sourceImportId: "import_2" },
       },
     });
     const response = await handler(
@@ -921,4 +1038,165 @@ describe("POST /api/listings/export", () => {
     expect(response.status).toBe(500);
     expect(assetStore.calls).toHaveLength(0);
   });
+});
+
+describe("durable artifact creation", () => {
+  it("commits canonical provenance and a hash of exactly the downloadable rows", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    const first = await (
+      await handler(
+        request({
+          listingIds: ["listing_noop", "listing_changed"],
+          freshnessAttested: true,
+        }),
+      )
+    ).json();
+    const repeat = await (
+      await handler(
+        request({
+          listingIds: ["listing_changed", "listing_noop"],
+          freshnessAttested: true,
+        }),
+      )
+    ).json();
+    expect(repeat.exportAttemptId).toBe(first.exportAttemptId);
+    expect(assetStore.calls).toHaveLength(1);
+    const attempt = await exportAttempts.getById(first.exportAttemptId);
+    expect(attempt?.artifactStatus).toBe("ready");
+    expect(attempt?.artifactSha256).toBe(
+      createHash("sha256").update(assetStore.calls[0].body).digest("hex"),
+    );
+    expect(attempt?.provenance).toMatchObject({
+      identityVersion: 1,
+      headerContractSha256: HEADER_CONTRACT_SHA,
+      rowOrder: ["listing_changed"],
+    });
+  });
+  it("records upload failure then recovers the same committed artifact", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    const original = assetStore.writeObjectIfAbsent.bind(assetStore);
+    assetStore.writeObjectIfAbsent = async () => {
+      throw new Error("upload unavailable");
+    };
+    const payload = {
+      listingIds: ["listing_changed"],
+      freshnessAttested: true,
+    };
+    const response = await handler(request(payload));
+    expect(response.status).toBe(503);
+    const failure = await response.json();
+    expect(
+      (await exportAttempts.getById(failure.exportAttemptId))?.artifactStatus,
+    ).toBe("failed");
+    assetStore.writeObjectIfAbsent = original;
+    const recovered = await (await handler(request(payload))).json();
+    expect(recovered.exportAttemptId).toBe(failure.exportAttemptId);
+    expect(
+      (await exportAttempts.getById(recovered.exportAttemptId))?.artifactStatus,
+    ).toBe("ready");
+  });
+  it("does not replace corrupted stored bytes on retry", async () => {
+    const { handler, assetStore } = makeHandler();
+    const payload = {
+      listingIds: ["listing_changed"],
+      freshnessAttested: true,
+    };
+    await handler(request(payload));
+    const key = assetStore.calls[0].key;
+    const corrupt = new Uint8Array([9]);
+    assetStore.objects.set(key, corrupt);
+    const response = await handler(request(payload));
+    expect(response.status).toBe(409);
+    expect(assetStore.calls).toHaveLength(1);
+    expect(assetStore.objects.get(key)).toEqual(corrupt);
+  });
+  it("recovers uploaded bytes after the readiness transaction fails", async () => {
+    let failReady = true;
+    const { handler, assetStore, exportAttempts } = makeHandler({
+      beforeTransaction: (repos, call) => {
+        if (call === 3 && failReady) {
+          failReady = false;
+          throw new Error("commit unavailable");
+        }
+      },
+    });
+    const payload = {
+      listingIds: ["listing_changed"],
+      freshnessAttested: true,
+    };
+    expect((await handler(request(payload))).status).toBe(503);
+    const recovered = await (await handler(request(payload))).json();
+    expect(
+      (await exportAttempts.getById(recovered.exportAttemptId))?.artifactStatus,
+    ).toBe("ready");
+    expect(assetStore.calls).toHaveLength(1);
+  });
+});
+
+it("a renewed durable approval gets a new artifact identity while preserving earlier bytes", async () => {
+  const { handler, repositories, assetStore, exportAttempts } = makeHandler();
+  const payload = { listingIds: ["listing_changed"], freshnessAttested: true };
+  const first = await (await handler(request(payload))).json();
+  const readReceipt = repositories.approvalReceipts.getByVersionId;
+  repositories.approvalReceipts.getByVersionId = async (versionId) => {
+    const receipt = await readReceipt(versionId);
+    return receipt ? { ...receipt, id: "renewed-receipt" } : null;
+  };
+  const second = await (await handler(request(payload))).json();
+  expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
+  expect(assetStore.calls).toHaveLength(2);
+  expect(assetStore.calls[1].body).toEqual(assetStore.calls[0].body);
+  const earlier = await exportAttempts.getById(first.exportAttemptId);
+  expect((earlier?.provenance?.evidence as any[])[0].approvalReceiptId).toBe(
+    "receipt_listing_changed",
+  );
+});
+
+it("fresh source evidence and approval create a new attempt without replacing the earlier artifact", async () => {
+  const products = structuredClone(defaultPlatformProducts);
+  const { handler, repositories, assetStore, exportAttempts } = makeHandler({
+    platformProducts: products,
+  });
+  const payload = { listingIds: ["listing_changed"], freshnessAttested: true };
+  const first = await (await handler(request(payload))).json();
+  const oldBytes = new Uint8Array(assetStore.calls[0].body);
+  const oldReceipt =
+    await repositories.approvalReceipts.getByVersionId("version_changed");
+  const oldSnapshot = await repositories.sourceRows.getForProduct({
+    sourceImportId: "import_1",
+    connectionId: "conn_1",
+    remoteProductId: "prod-changed",
+  });
+  products.listing_changed!.sourceImportId = "import_2";
+  products.listing_changed!.rawRow = rawRowFor({
+    slKey1: "new locked source value",
+  });
+  const newRaw = products.listing_changed!.rawRow!;
+  if (!isBulkFormRawRow(newRaw)) throw new Error("invalid fixture");
+  products.listing_changed!.contentDigest = hashBulkFormRow(newRaw);
+  const snapshot = {
+    ...oldSnapshot!,
+    id: "renewed-snapshot",
+    sourceImportId: "import_2",
+    rawRow: structuredClone(products.listing_changed!.rawRow),
+    sourceRowDigest: products.listing_changed!.contentDigest,
+  };
+  repositories.sourceRows.getForProduct = async () => snapshot;
+  repositories.approvalReceipts.getByVersionId = async () => ({
+    ...oldReceipt!,
+    sourceSnapshotId: snapshot.id,
+    sourceImportId: "import_2",
+    sourceRowDigest: snapshot.sourceRowDigest,
+    id: "renewed-receipt",
+  });
+  const second = await (await handler(request(payload))).json();
+  expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
+  expect(second.rowCount).toBe(1);
+  expect(assetStore.calls).toHaveLength(2);
+  expect(assetStore.objects.get(assetStore.calls[0].key)).toEqual(oldBytes);
+  expect(
+    (await exportAttempts.getById(first.exportAttemptId))?.artifactSha256,
+  ).not.toBe(
+    (await exportAttempts.getById(second.exportAttemptId))?.artifactSha256,
+  );
 });

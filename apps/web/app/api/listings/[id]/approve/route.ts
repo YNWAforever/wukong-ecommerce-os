@@ -14,6 +14,7 @@ import { z } from "zod";
 import {
   approveOne,
   findProductShotAssets,
+  readApprovalSourceSnapshot,
   type ApproveOneAssetStore,
 } from "../../../../../lib/listing-approval";
 import { getAssetStore, getDatabase } from "../../../../../lib/intake-runtime";
@@ -233,6 +234,14 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
                 code: "confirmation_source_stale",
                 message:
                   "The confirmation checklist belongs to different source data. Review the listing again.",
+              };
+            }
+            if (!(await readApprovalSourceSnapshot(id, link, repositories))) {
+              return {
+                status: 409,
+                code: "source_snapshot_required",
+                message:
+                  "Reimport this product before approving; its source snapshot is unavailable or has changed.",
               };
             }
           }

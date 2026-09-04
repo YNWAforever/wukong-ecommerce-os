@@ -16,6 +16,7 @@ vi.mock("@wukong/shopline", async (importOriginal) => {
 
 import {
   BULK_FORM_COLUMNS,
+  hashBulkFormRow,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
   shoplinePublishIdempotencyKey,
 } from "@wukong/shopline";
@@ -873,6 +874,10 @@ describe("bulk-form export", () => {
     ),
   };
 
+  platformProduct.contentDigest = hashBulkFormRow(
+    platformProduct.rawRow as never,
+  );
+
   function bulkFormDeps(
     options: {
       status?: "approved" | "published" | "in_review";
@@ -908,6 +913,40 @@ describe("bulk-form export", () => {
           },
         },
         bulkUpdate: {
+          async getApprovalReceipt() {
+            return {
+              id: "receipt_1",
+              workspaceId: "ws_opak",
+              listingId: "listing_1",
+              versionId: "version_1",
+              sourceSnapshotId: "source_1",
+              confirmationVersionId: "version_1",
+              confirmationRevision: 0,
+              approvedBy: "reviewer_1",
+              createdAt: new Date(0),
+              connectionId: "conn_1",
+              sourceImportId: "import_1",
+              remoteProductId: "remote_1",
+              sourceRowDigest: platformProduct.contentDigest,
+              headerContractSha256: "contract_1",
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+            };
+          },
+          async getSourceRow() {
+            return {
+              id: "source_1",
+              workspaceId: "ws_opak",
+              listingId: "listing_1",
+              connectionId: "conn_1",
+              sourceImportId: "import_1",
+              remoteProductId: "remote_1",
+              sourceRowDigest: platformProduct.contentDigest,
+              rawRow: structuredClone(platformProduct.rawRow),
+              headerContractSha256: "contract_1",
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+              createdAt: new Date(0),
+            };
+          },
           async getActiveVersion() {
             return { id: "version_1", content };
           },
@@ -927,7 +966,7 @@ describe("bulk-form export", () => {
                   versionId: "version_1",
                   revision: 0,
                   sourceImportId: "import_1",
-                  rowDigest: "digest_1",
+                  rowDigest: platformProduct.contentDigest,
                   fieldConfirmations: Object.fromEntries(
                     CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
                   ),

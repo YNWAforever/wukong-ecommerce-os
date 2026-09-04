@@ -33,6 +33,8 @@ describe("getListingActivity", () => {
           {
             id: "export_1",
             outcome: "included" as const,
+            artifactStatus: "failed" as const,
+            provenanceComplete: true,
             reason: undefined,
             createdAt: new Date("2026-09-01T15:00:00Z"),
           },
@@ -48,7 +50,12 @@ describe("getListingActivity", () => {
       "audit",
     ]);
     expect(activity[0]).toMatchObject({ kind: "batch", id: "batch_1" });
-    expect(activity[1]).toMatchObject({ kind: "export", id: "export_1" });
+    expect(activity[1]).toMatchObject({
+      kind: "export",
+      id: "export_1",
+      artifactStatus: "failed",
+      provenanceComplete: true,
+    });
     expect(activity[2]).toMatchObject({ kind: "audit", id: "audit_1" });
   });
 });

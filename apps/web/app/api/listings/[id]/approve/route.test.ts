@@ -1,3 +1,10 @@
+import {
+  BULK_FORM_COLUMNS,
+  hashBulkFormRow,
+  hashBulkFormHeaderContract,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  type BulkFormRawRow,
+} from "@wukong/shopline";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@wukong/assets/product-shot-flatten", async (importOriginal) => {
@@ -22,6 +29,18 @@ import { createApproveListingHandler } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
+const sourceRawRow = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "productId" ? "synthetic-product" : "",
+  ]),
+) as BulkFormRawRow;
+const sourceDigest = hashBulkFormRow(sourceRawRow);
+const sourceLink = {
+  connectionId: "synthetic-connection",
+  remoteProductId: "synthetic-product",
+  rawRow: sourceRawRow,
+};
 const context = {
   workspaceId: "ws_opak",
   actorId: "reviewer_1",
@@ -107,6 +126,7 @@ function makeHandler(options: {
         ) {
           return work({
             listings: {
+              async lockReviewState() {},
               async getReviewSnapshot(id: string) {
                 calls.push(["getReviewSnapshot", id]);
                 return {
@@ -140,10 +160,33 @@ function makeHandler(options: {
                 return confirmation;
               },
             },
+            sourceRows: {
+              async getForProduct(input: Record<string, string>) {
+                return {
+                  ...input,
+                  id: "snapshot-1",
+                  workspaceId: context.workspaceId,
+                  listingId,
+                  sourceRowDigest: sourceDigest,
+                  rawRow: sourceRawRow,
+                  headerContractSha256: hashBulkFormHeaderContract(),
+                  specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                  createdAt: new Date(0),
+                };
+              },
+            },
+            approvalReceipts: {
+              async record(input: Record<string, unknown>) {
+                calls.push(["approvalReceipts.record", input]);
+                return { ...input, id: "receipt-1", wasCreated: true };
+              },
+            },
             platformProducts: {
               async getByListingId(id: string) {
                 calls.push(["platformProducts.getByListingId", id]);
-                return platformProduct;
+                return platformProduct
+                  ? { ...sourceLink, ...platformProduct }
+                  : null;
               },
             },
             audit: {
@@ -258,6 +301,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
@@ -339,6 +383,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -458,6 +523,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
@@ -533,6 +599,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -616,6 +703,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
@@ -650,6 +738,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -816,7 +925,7 @@ describe("POST /api/listings/[id]/approve", () => {
       platformProduct: {
         origin: "import",
         sourceImportId: "import_1",
-        contentDigest: "digest_1",
+        contentDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -837,7 +946,7 @@ describe("POST /api/listings/[id]/approve", () => {
       platformProduct: {
         origin: "import",
         sourceImportId: "import_1",
-        contentDigest: "digest_1",
+        contentDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -942,6 +1051,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   snapshotCallCount += 1;
                   const activeId =
@@ -974,6 +1084,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -1036,6 +1167,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
@@ -1071,6 +1203,27 @@ describe("POST /api/listings/[id]/approve", () => {
                     revision,
                   ]);
                   return { ...fullyConfirmed!, revision };
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -1135,6 +1288,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
@@ -1165,15 +1319,36 @@ describe("POST /api/listings/[id]/approve", () => {
                   return {
                     ...fullyConfirmed!,
                     sourceImportId: "import_1",
-                    rowDigest: "digest_1",
+                    rowDigest: sourceDigest,
                   };
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
                 async getByListingId(id: string) {
                   linkCallCount += 1;
                   const contentDigest =
-                    linkCallCount === 1 ? "digest_1" : "digest_2";
+                    linkCallCount === 1 ? sourceDigest : "digest_2";
                   calls.push([
                     "platformProducts.getByListingId",
                     id,
@@ -1181,6 +1356,7 @@ describe("POST /api/listings/[id]/approve", () => {
                   ]);
                   return {
                     origin: "import" as const,
+                    ...sourceLink,
                     sourceImportId: "import_1",
                     contentDigest,
                   };
@@ -1205,7 +1381,7 @@ describe("POST /api/listings/[id]/approve", () => {
         expectedVersionId: versionId,
         confirmationLedgerRevision: 0,
         sourceImportId: "import_1",
-        expectedRowDigest: "digest_1",
+        expectedRowDigest: sourceDigest,
       }),
       routeContext(),
     );
@@ -1249,6 +1425,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
@@ -1279,6 +1456,27 @@ describe("POST /api/listings/[id]/approve", () => {
                   return fullyConfirmed;
                 },
               },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
+                },
+              },
               platformProducts: {
                 async getByListingId(id: string) {
                   linkCallCount += 1;
@@ -1290,8 +1488,9 @@ describe("POST /api/listings/[id]/approve", () => {
                   if (linkCallCount === 1) return null;
                   return {
                     origin: "import" as const,
+                    ...sourceLink,
                     sourceImportId: "import_1",
-                    contentDigest: "digest_1",
+                    contentDigest: sourceDigest,
                   };
                 },
               },
@@ -1328,16 +1527,16 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(linkCallCount).toBe(2);
   });
   it("approves an imported listing with confirmations bound to the observed source", async () => {
-    const { handler } = makeHandler({
+    const { handler, calls } = makeHandler({
       platformProduct: {
         origin: "import",
         sourceImportId: "import-1",
-        contentDigest: "digest-1",
+        contentDigest: sourceDigest,
       },
       confirmation: {
         ...fullyConfirmed!,
         sourceImportId: "import-1",
-        rowDigest: "digest-1",
+        rowDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -1345,11 +1544,29 @@ describe("POST /api/listings/[id]/approve", () => {
         expectedVersionId: versionId,
         confirmationLedgerRevision: 0,
         sourceImportId: "import-1",
-        expectedRowDigest: "digest-1",
+        expectedRowDigest: sourceDigest,
       }),
       routeContext(),
     );
     expect(response.status).toBe(200);
+    expect(calls).toContainEqual([
+      "approvalReceipts.record",
+      {
+        listingId,
+        versionId,
+        sourceSnapshotId: "snapshot-1",
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        approvedBy: context.actorId,
+      },
+    ]);
+    expect(calls).toContainEqual([
+      "audit",
+      expect.objectContaining({
+        action: "listing.bulk_update_approval_bound",
+        actorId: context.actorId,
+      }),
+    ]);
   });
 
   it("refuses confirmations from a previous source even when the client sends current source metadata", async () => {
@@ -1362,7 +1579,7 @@ describe("POST /api/listings/[id]/approve", () => {
       confirmation: {
         ...fullyConfirmed!,
         sourceImportId: "import-1",
-        rowDigest: "digest-1",
+        rowDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -1404,7 +1621,7 @@ describe("POST /api/listings/[id]/approve", () => {
             ? {
                 ...fullyConfirmed!,
                 sourceImportId: "import-1",
-                rowDigest: "digest-1",
+                rowDigest: sourceDigest,
               }
             : fullyConfirmed,
       });
@@ -1413,7 +1630,7 @@ describe("POST /api/listings/[id]/approve", () => {
           expectedVersionId: versionId,
           confirmationLedgerRevision: 0,
           ...(binding === "request"
-            ? { sourceImportId: "import-1", expectedRowDigest: "digest-1" }
+            ? { sourceImportId: "import-1", expectedRowDigest: sourceDigest }
             : {}),
         }),
         routeContext(),

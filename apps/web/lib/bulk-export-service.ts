@@ -1,5 +1,7 @@
 import type {
   ListingRepository,
+  ApprovalReceiptRepository,
+  SourceRowRepository,
   PlatformProductRepository,
   ReviewConfirmationRepository,
   SourceImportRepository,
@@ -79,6 +81,7 @@ export type CreateBulkExportResult = {
   /** Count of listings actually written into the sheet — not raw cell-change count. */
   rowCount: number;
   specVersion: string;
+  headerContractSha256: string;
   body: Uint8Array;
 };
 
@@ -131,7 +134,8 @@ export async function createBulkExport(
   // subsequent import-origin listing can be checked against it.
   let sharedConnectionId: string | null = null;
 
-  for (const listingId of input.listingIds) {
+  // One stable order binds locks, workbook rows, manifest and approval evidence.
+  for (const listingId of [...input.listingIds].sort()) {
     const activeVersion = await deps.getActiveVersion(listingId);
     if (!activeVersion) {
       manifest.push({
@@ -290,7 +294,14 @@ export async function createBulkExport(
     (entry) => entry.outcome === "included",
   ).length;
 
-  return { manifest, evidence: includedEvidence, rowCount, specVersion, body };
+  return {
+    manifest,
+    evidence: includedEvidence,
+    rowCount,
+    specVersion,
+    headerContractSha256: deps.currentHeaderContractSha256(),
+    body,
+  };
 }
 
 export function exclusionFor(
@@ -298,8 +309,10 @@ export function exclusionFor(
   versionId: string,
   reason: BulkUpdateEligibilityReason,
 ): ExportManifestEntry {
+  if (reason === "raw_row_invalid")
+    return { listingId, versionId, outcome: "raw_row_invalid" };
   const outcome =
-    reason === "approval_required"
+    reason === "approval_required" || reason === "approval_binding_required"
       ? "excluded_unapproved"
       : reason === "blocking_flags"
         ? "excluded_blocked"
@@ -342,10 +355,12 @@ export async function recheckBulkExport(
 
 /** Bind every authorization read to the caller's workspace transaction. */
 export function createBulkExportDeps(repositories: {
-  listings: Pick<ListingRepository, "getReviewSnapshot">;
+  listings: Pick<ListingRepository, "getReviewSnapshot" | "lockReviewState">;
   platformProducts: Pick<PlatformProductRepository, "getByListingId">;
   reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
   sourceImports: Pick<SourceImportRepository, "getById">;
+  sourceRows: Pick<SourceRowRepository, "getForProduct">;
+  approvalReceipts: Pick<ApprovalReceiptRepository, "getByVersionId">;
 }): CreateBulkExportDeps {
   return {
     async getActiveVersion(listingId) {
@@ -353,6 +368,7 @@ export function createBulkExportDeps(repositories: {
       return snapshot?.activeVersion ?? null;
     },
     async getReviewState(listingId) {
+      await repositories.listings.lockReviewState(listingId);
       const snapshot = await repositories.listings.getReviewSnapshot(listingId);
       if (!snapshot) return null;
       return {
@@ -366,6 +382,9 @@ export function createBulkExportDeps(repositories: {
         flags: snapshot.flags,
       };
     },
+    getApprovalReceipt: (versionId) =>
+      repositories.approvalReceipts.getByVersionId(versionId),
+    getSourceRow: (input) => repositories.sourceRows.getForProduct(input),
     getReviewConfirmation: (versionId) =>
       repositories.reviewConfirmations.getByVersionId(versionId),
     getPlatformProductLink: (listingId) =>

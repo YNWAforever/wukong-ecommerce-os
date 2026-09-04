@@ -310,8 +310,8 @@ describe("buildJobsLedger", () => {
       10,
     );
     for (const entry of entries) {
-      expect(entry.summary).not.toBe("Publishing");
-      expect(entry.summary).toBe("Queued for publish");
+      expect(entry?.summary).not.toBe("Publishing");
+      expect(entry?.summary).toBe("Queued for publish");
     }
   });
 
@@ -425,5 +425,66 @@ describe("buildJobsLedger", () => {
     expect(summary).toBe(`Import rejected: ${"x".repeat(200)}…`);
     expect(summary).not.toContain(longReason);
     expect(summary.length).toBeLessThan(longReason.length);
+  });
+});
+
+describe("export artifact ledger truth", () => {
+  it.each([
+    ["pending", "pending"],
+    ["failed", "failed"],
+    ["ready", "succeeded"],
+  ])("maps %s to %s", (artifactStatus, normalizedStatus) => {
+    const [entry] = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        importResults: [],
+        exports: [
+          {
+            id: "export",
+            requestedBy: "reviewer",
+            manifest: [
+              {
+                listingId: "listing",
+                versionId: "version",
+                outcome: "included",
+              },
+            ],
+            rowCount: 1,
+            specVersion: "v1",
+            createdAt: new Date(),
+            artifactStatus,
+            artifactSha256: "a".repeat(64),
+            provenance: { version: 1 },
+          } as any,
+        ],
+      },
+      10,
+    );
+    expect(entry?.normalizedStatus).toBe(normalizedStatus);
+    expect(entry?.rawStatus).toBe(artifactStatus);
+  });
+  it("labels legacy provenance as incomplete", () => {
+    const [entry] = buildJobsLedger(
+      {
+        batches: [],
+        publishJobs: [],
+        pipelineRuns: [],
+        importResults: [],
+        exports: [
+          {
+            id: "legacy",
+            requestedBy: "reviewer",
+            manifest: [],
+            rowCount: 1,
+            specVersion: "v1",
+            createdAt: new Date(),
+          },
+        ],
+      },
+      10,
+    );
+    expect(entry?.summary).toContain("provenance incomplete");
   });
 });
