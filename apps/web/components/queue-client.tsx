@@ -1,4 +1,11 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  commonCopy,
+  safeUiError,
+  reasonLabel,
+} from "../lib/ui-copy";
 
 import { useCallback, useState } from "react";
 
@@ -33,6 +40,8 @@ function bulkErrorMessage(body: unknown): string {
 }
 
 export function QueueClient() {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   const [page, setPage] = useState(1);
   // Keep the context observed at selection, including after a partial-success
   // reload. Retrying a failed item must not silently approve refreshed data.
@@ -116,7 +125,11 @@ export function QueueClient() {
       });
       const body: unknown = await response.json();
       if (!response.ok) {
-        setBulkError(bulkErrorMessage(body));
+        setBulkError(
+          response.status === 401 || response.status === 403
+            ? String(response.status)
+            : bulkErrorMessage(body),
+        );
         return;
       }
       const result = body as BulkApproveResponse;
@@ -143,20 +156,20 @@ export function QueueClient() {
   if (!items && error)
     return (
       <div className="load-error" role="alert">
-        <p>{error}</p>
+        <p>{safeUiError(error, locale)}</p>
         <button type="button" onClick={reload}>
-          Retry
+          {c.retry}
         </button>
       </div>
     );
   if (!items)
     return (
       <p className="helper-copy" role="status">
-        正在載入工作佇列… Loading work queue…
+        {localized(locale, "正在載入工作佇列…", "Loading work queue…")}
       </p>
     );
 
-  const queueItems = mapDashboardItems(items);
+  const queueItems = mapDashboardItems(items, locale);
   const eligibleIds = items
     .filter(
       (item) =>
@@ -167,26 +180,46 @@ export function QueueClient() {
     .map((item) => item.id);
 
   return (
-    <section aria-label="Work queue" aria-busy={loading}>
+    <section
+      aria-label={localized(locale, "工作佇列", "Work queue")}
+      aria-busy={loading}
+    >
       {error ? (
         <div className="load-error" role="alert">
-          <span>{error}</span>
+          <span>{safeUiError(error, locale)}</span>
           <button type="button" onClick={reload} disabled={loading}>
-            Retry
+            {c.retry}
           </button>
         </div>
       ) : null}
       {stale ? (
-        <p role="status">Refreshing work queue… Showing previous results.</p>
+        <p role="status">
+          {localized(
+            locale,
+            "正在更新工作佇列… 顯示上次結果。",
+            "Refreshing work queue… Showing previous results.",
+          )}
+        </p>
       ) : null}
       <p>
-        Workspace listings: {data?.totalMatching ?? "unavailable"} matching ·
-        Showing page {data?.page ?? page}
+        {localized(
+          locale,
+          `工作區商品：符合 ${data?.totalMatching ?? c.unavailable} 個 · 顯示第 ${data?.page ?? page} 頁`,
+          `Workspace listings: ${data?.totalMatching ?? "unavailable"} matching · Showing page ${data?.page ?? page}`,
+        )}
       </p>
       {selected.size > 0 ? (
-        <div className="bulk-action-bar" role="region" aria-label="批量操作">
+        <div
+          className="bulk-action-bar"
+          role="region"
+          aria-label={localized(locale, "批量操作", "Bulk actions")}
+        >
           <span>
-            {selected.size} 個項目已選取 · {selected.size} selected
+            {localized(
+              locale,
+              `${selected.size} 個項目已選取`,
+              `${selected.size} selected`,
+            )}
           </span>
           <button
             type="button"
@@ -194,8 +227,12 @@ export function QueueClient() {
             disabled={bulkPending || loading || Boolean(error)}
           >
             {bulkPending
-              ? "批准中… Approving…"
-              : `批准 ${selected.size} 個上架項目`}
+              ? localized(locale, "批准中…", "Approving…")
+              : localized(
+                  locale,
+                  `批准 ${selected.size} 個上架項目`,
+                  `Approve ${selected.size} listings`,
+                )}
           </button>
           <button
             type="button"
@@ -203,13 +240,13 @@ export function QueueClient() {
             onClick={clearSelection}
             disabled={bulkPending || loading}
           >
-            清除選取 Clear selection
+            {c.clearSelection}
           </button>
         </div>
       ) : null}
       {bulkError ? (
         <p className="inline-warning" role="alert">
-          {bulkError}
+          {safeUiError(bulkError, locale, "action")}
         </p>
       ) : null}
       {bulkResult ? (
@@ -219,7 +256,7 @@ export function QueueClient() {
               <li key={result.listingId}>✓ {result.listingId}</li>
             ) : (
               <li key={result.listingId}>
-                ✗ {result.listingId}: {result.message}
+                ✗ {result.listingId}: {reasonLabel(result.code, locale)}
               </li>
             ),
           )}
@@ -237,13 +274,13 @@ export function QueueClient() {
           onSelectAllEligible={() => selectAllEligible(eligibleIds)}
         />
       </fieldset>
-      <nav aria-label="Queue pagination">
+      <nav aria-label={localized(locale, "佇列分頁", "Queue pagination")}>
         <button
           type="button"
           onClick={() => setPage((current) => Math.max(1, current - 1))}
           disabled={loading || bulkPending || page === 1}
         >
-          Previous
+          {c.previous}
         </button>
         <button
           type="button"
@@ -255,7 +292,7 @@ export function QueueClient() {
             page * data.pageSize >= data.totalMatching
           }
         >
-          Next
+          {c.next}
         </button>
       </nav>
     </section>

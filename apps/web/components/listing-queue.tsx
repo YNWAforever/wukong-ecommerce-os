@@ -1,3 +1,6 @@
+"use client";
+import { useLocale } from "../lib/locale-context";
+import { localized, commonCopy, formatHkDate } from "../lib/ui-copy";
 import Link from "next/link";
 
 import { queueGroups, type QueueItem } from "./listing-view-models";
@@ -17,18 +20,23 @@ export function ListingQueue({
   onToggle,
   onSelectAllEligible,
 }: ListingQueueProps) {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   const eligibleSet = new Set(eligibleIds);
   return (
     <section className="queue" aria-labelledby="queue-heading">
       <div className="section-heading">
         <div>
           <p className="eyebrow">
-            工作佇列 <span>WORK QUEUE</span>
+            {localized(locale, "工作佇列", "Work queue")}
           </p>
-          <h2 id="queue-heading">下一步工作</h2>
+          <h2 id="queue-heading">
+            {localized(locale, "下一步工作", "Next actions")}
+          </h2>
         </div>
         <Link className="text-link" href="/listings/new">
-          建立上架草稿<span aria-hidden="true"> →</span>
+          {c.createDraft}
+          <span aria-hidden="true"> →</span>
         </Link>
       </div>
       <div className="queue-groups">
@@ -47,8 +55,9 @@ export function ListingQueue({
             >
               <div className="queue-group-heading">
                 <div>
-                  <h3 id={`queue-${group.status}`}>{group.label}</h3>
-                  <p>{group.englishLabel}</p>
+                  <h3 id={`queue-${group.status}`}>
+                    {localized(locale, group.label, group.englishLabel)}
+                  </h3>
                 </div>
                 {group.status === "in_review" && groupEligibleCount > 0 ? (
                   <button
@@ -56,12 +65,16 @@ export function ListingQueue({
                     className="secondary-button"
                     onClick={onSelectAllEligible}
                   >
-                    全選可批准項目 Select all eligible
+                    {localized(locale, "全選可批准項目", "Select all eligible")}
                   </button>
                 ) : null}
                 <span
                   className="count-badge"
-                  aria-label={`${groupItems.length} items`}
+                  aria-label={localized(
+                    locale,
+                    `${groupItems.length} 個項目`,
+                    `${groupItems.length} items`,
+                  )}
                 >
                   {groupItems.length}
                 </span>
@@ -79,17 +92,37 @@ export function ListingQueue({
                             disabled={!eligible}
                             aria-label={
                               eligible
-                                ? `選取 ${item.title}`
+                                ? localized(
+                                    locale,
+                                    `選取 ${item.title}`,
+                                    `Select ${item.title}`,
+                                  )
                                 : item.openBlockingFlagCount > 0
-                                  ? `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`
-                                  : `${item.title} · 請開啟項目完成審核`
+                                  ? localized(
+                                      locale,
+                                      `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`,
+                                      `${item.title} · ${item.openBlockingFlagCount} unresolved compliance flags`,
+                                    )
+                                  : localized(
+                                      locale,
+                                      `${item.title} · 請開啟項目完成審核`,
+                                      `${item.title} · Open listing to complete review`,
+                                    )
                             }
                             title={
                               eligible
                                 ? undefined
                                 : item.openBlockingFlagCount > 0
-                                  ? `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
-                                  : `${item.title} · 請開啟項目完成審核 · Open listing to complete review`
+                                  ? localized(
+                                      locale,
+                                      `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`,
+                                      `${item.title} · ${item.openBlockingFlagCount} unresolved compliance flags`,
+                                    )
+                                  : localized(
+                                      locale,
+                                      `${item.title} · 請開啟項目完成審核`,
+                                      `${item.title} · Open listing to complete review`,
+                                    )
                             }
                             onChange={() => onToggle(item.id)}
                           />
@@ -103,7 +136,7 @@ export function ListingQueue({
                           </Link>
                           <p>{item.subtitle}</p>
                           <time dateTime={item.updatedAt}>
-                            {item.updatedAt}
+                            {formatHkDate(item.updatedAt, locale)}
                           </time>
                         </div>
                         <Link
@@ -118,9 +151,7 @@ export function ListingQueue({
                   })}
                 </ul>
               ) : (
-                <p className="empty-state">
-                  目前沒有項目 <span>No items</span>
-                </p>
+                <p className="empty-state">{c.empty}</p>
               )}
             </section>
           );

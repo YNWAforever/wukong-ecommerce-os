@@ -23,14 +23,14 @@ const base = {
   scope: "advisory_current_read" as const,
 };
 describe("SourceReadinessSummary", () => {
-  it("shows eligible-after-attestation as advisory and unverified", () => {
+  it("shows eligible-after-attestation as advisory and 未經核實", () => {
     const html = renderToStaticMarkup(
       createElement(SourceReadinessSummary, { readiness: base }),
     );
-    expect(html).toContain("Source ready for eligibility check");
-    expect(html).toContain("revision 3");
-    expect(html).toContain("Freshness is not attested");
-    expect(html).toContain("unverified");
+    expect(html).toContain("來源可供資格檢查");
+    expect(html).toContain("修訂 3");
+    expect(html).toContain("尚未確認時效");
+    expect(html).toContain("未經核實");
   });
   it("shows ineligible and unknown states without claiming readiness", () => {
     const ineligible = renderToStaticMarkup(
@@ -45,10 +45,10 @@ describe("SourceReadinessSummary", () => {
         },
       }),
     );
-    expect(ineligible).toContain("Source action required");
-    expect(ineligible).toContain("not available");
+    expect(ineligible).toContain("來源需要處理");
+    expect(ineligible).toContain("未有資料");
     expect(
       renderToStaticMarkup(createElement(SourceReadinessSummary, {})),
-    ).toContain("Source readiness unknown");
+    ).toContain("來源準備狀態不明");
   });
 });

@@ -102,9 +102,7 @@ describe("ListingQueue", () => {
     expect(ariaLabel).toBe("Opak Cabernet 2024 · 2 個未解決的合規標記");
 
     const titleAttr = checkbox!.getAttribute("title");
-    expect(titleAttr).toBe(
-      "Opak Cabernet 2024 · 2 個未解決的合規標記 · 2 unresolved compliance flags",
-    );
+    expect(titleAttr).toBe("Opak Cabernet 2024 · 2 個未解決的合規標記");
 
     await unmount(root);
   });
@@ -118,9 +116,7 @@ describe("ListingQueue review readiness", () => {
         'input[type="checkbox"]',
       ) as HTMLInputElement;
       expect(checkbox.disabled).toBe(true);
-      expect(checkbox.getAttribute("title")).toContain(
-        "Open listing to complete review",
-      );
+      expect(checkbox.getAttribute("title")).toContain("請開啟項目完成審核");
       expect(checkbox.getAttribute("title")).not.toContain("0 unresolved");
     } finally {
       await unmount(root);

@@ -213,7 +213,7 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Bulk approve failed");
+    expect(alert!.textContent).toContain("操作未能完成，請重試。");
 
     // Selection is preserved -- the bulk-action-bar only renders while
     // selected.size > 0, and it must still be there after a failed attempt.
@@ -239,7 +239,7 @@ describe("QueueClient", () => {
           Response.json(
             {
               code: "insufficient_role",
-              message: "Reviewer access is required.",
+              message: "你沒有權限執行此操作。",
             },
             { status: 403 },
           ),
@@ -262,7 +262,7 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Reviewer access is required.");
+    expect(alert!.textContent).toContain("你沒有權限執行此操作。");
 
     expect(container.querySelector(".bulk-result-list")).toBeNull();
     expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
@@ -313,7 +313,7 @@ describe("QueueClient review context", () => {
                 listingId: "listing_3",
                 ok: false,
                 code: "version_conflict",
-                message: "Review this listing again.",
+                message: "需要重新檢查來源及審核證據",
               },
             ],
             approved: requests.length === 1 ? 1 : 0,
@@ -337,7 +337,7 @@ describe("QueueClient review context", () => {
       );
       await act(async () => findButtonByText(container, "批准 2")!.click());
       expect(container.textContent).toContain("1 個項目已選取");
-      expect(container.textContent).toContain("Review this listing again.");
+      expect(container.textContent).toContain("需要重新檢查來源及審核證據");
       expect(
         Array.from(
           container.querySelectorAll<HTMLInputElement>(
@@ -347,10 +347,10 @@ describe("QueueClient review context", () => {
       ).toHaveLength(1);
       expect(listLoads).toBe(2);
       expect(container.querySelector("[role=alert]")?.textContent).toContain(
-        "reload unavailable",
+        "無法載入資料，請重試。",
       );
       expect(findButtonByText(container, "批准 1")!.disabled).toBe(true);
-      await act(async () => findButtonByText(container, "Retry")!.click());
+      await act(async () => findButtonByText(container, "重試")!.click());
       expect(container.querySelector("[role=alert]")).toBeNull();
 
       await act(async () => findButtonByText(container, "批准 1")!.click());
@@ -448,7 +448,7 @@ describe("QueueClient review context", () => {
       );
       await act(async () => findButtonByText(container, "批准 1")!.click());
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-        "Bulk approve failed",
+        "操作未能完成，請重試。",
       );
       expect(container.textContent).toContain("1 個項目已選取");
       expect(container.querySelector(".bulk-result-list")).toBeNull();
@@ -502,9 +502,9 @@ describe("QueueClient pagination", () => {
           container.querySelector('input[type="checkbox"]') as HTMLInputElement
         ).click(),
       );
-      await act(async () => findButtonByText(container, "Next")!.click());
-      expect(findButtonByText(container, "Next")!.disabled).toBe(true);
-      expect(container.textContent).toContain("Refreshing work queue");
+      await act(async () => findButtonByText(container, "下一頁")!.click());
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+      expect(container.textContent).toContain("正在更新工作佇列");
       await act(async () =>
         pendingResolve(
           Response.json({
@@ -516,12 +516,12 @@ describe("QueueClient pagination", () => {
         ),
       );
       expect(container.textContent).toContain("Row 100");
-      expect(container.textContent).toContain("101 matching");
-      expect(findButtonByText(container, "Next")!.disabled).toBe(true);
+      expect(container.textContent).toContain("符合 101 個");
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
       await act(async () =>
         findButtonByText(container, "全選可批准項目")!.click(),
       );
-      expect(container.textContent).toContain("2 selected");
+      expect(container.textContent).toContain("2 個項目已選取");
       rows[0] = {
         ...rows[0]!,
         reviewContext: {
@@ -529,11 +529,11 @@ describe("QueueClient pagination", () => {
           expectedVersionId: "changed",
         },
       };
-      await act(async () => findButtonByText(container, "Previous")!.click());
+      await act(async () => findButtonByText(container, "上一頁")!.click());
       await act(async () =>
         findButtonByText(container, "全選可批准項目")!.click(),
       );
-      expect(container.textContent).toContain("50 selected");
+      expect(container.textContent).toContain("50 個項目已選取");
       await act(async () => findButtonByText(container, "批准 50")!.click());
       expect(requests[0]!.items).toHaveLength(50);
       expect(requests[0]!.items).toContainEqual(

@@ -1,14 +1,12 @@
+"use client";
 import type { SourceReadiness } from "../lib/source-readiness";
-const REASONS: Record<string, string> = {
-  not_attested: "Eligible after a fresh operator attestation",
-  no_remote_link: "No imported SHOPLINE source is linked",
-  header_contract_stale: "Imported workbook format is outdated",
-  remote_link_changed: "The current SHOPLINE source link changed",
-  version_mismatch: "No active version is available",
-  approval_receipt_missing: "Approval evidence is missing",
-  confirmation_missing: "Reviewed source binding is missing",
-  source_changed: "Reviewed source differs from the current import",
-};
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  commonCopy,
+  formatHkDate,
+  reasonLabel,
+} from "../lib/ui-copy";
 export function SourceReadinessSummary({
   readiness,
   compact = false,
@@ -16,43 +14,58 @@ export function SourceReadinessSummary({
   readiness?: SourceReadiness;
   compact?: boolean;
 }) {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   if (!readiness)
     return (
-      <span className="source-readiness unknown">Source readiness unknown</span>
+      <span className="source-readiness unknown">
+        {localized(locale, "來源準備狀態不明", "Source readiness unknown")}
+      </span>
     );
   const reviewed = readiness.reviewedBinding;
   return (
     <div className={compact ? "source-readiness compact" : "source-readiness"}>
       <strong>
         {readiness.eligibleAfterAttestation
-          ? "Source ready for eligibility check"
-          : "Source action required"}
+          ? localized(
+              locale,
+              "來源可供資格檢查",
+              "Source ready for eligibility check",
+            )
+          : localized(locale, "來源需要處理", "Source action required")}
       </strong>
+      <span>{reasonLabel(readiness.reason, locale)}</span>
       <span>
-        {REASONS[readiness.reason] ?? readiness.reason.replaceAll("_", " ")}
+        {localized(locale, "匯入", "Import")}:{" "}
+        {readiness.sourceImportId ?? c.unavailable}
       </span>
-      <>
-        <span>Import: {readiness.sourceImportId ?? "not available"}</span>
-        <span>
-          Merchant-attested export time:{" "}
-          {readiness.merchantAttestedExportAt
-            ? new Intl.DateTimeFormat("en-HK", {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "Asia/Hong_Kong",
-              }).format(new Date(readiness.merchantAttestedExportAt))
-            : "not available"}
-        </span>
-        <span>
-          Reviewed binding:{" "}
-          {reviewed
-            ? `revision ${reviewed.revision} · version ${reviewed.versionId} · import ${reviewed.sourceImportId ?? "not available"}`
-            : "not available"}
-        </span>
-      </>
+      <span>
+        {localized(
+          locale,
+          "商戶確認的匯出時間",
+          "Merchant-attested export time",
+        )}
+        : {formatHkDate(readiness.merchantAttestedExportAt, locale)}
+      </span>
+      <span>
+        {localized(locale, "已審核綁定", "Reviewed binding")}:{" "}
+        {reviewed ? (
+          <>
+            {localized(locale, "修訂", "revision")} {reviewed.revision} ·{" "}
+            {localized(locale, "版本", "version")} {reviewed.versionId} ·{" "}
+            {localized(locale, "匯入", "import")}{" "}
+            {reviewed.sourceImportId ?? c.unavailable}
+          </>
+        ) : (
+          c.unavailable
+        )}
+      </span>
       <small>
-        Advisory only. Freshness is not attested and SHOPLINE acceptance is
-        unverified.
+        {localized(
+          locale,
+          "僅供參考。尚未確認時效，SHOPLINE 接受結果未經核實。",
+          "Advisory only. Freshness is not attested and SHOPLINE acceptance is unverified.",
+        )}
       </small>
     </div>
   );

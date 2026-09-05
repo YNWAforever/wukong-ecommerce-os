@@ -1677,3 +1677,63 @@ button:disabled {
   gap: var(--space-3);
   margin-block: var(--space-4);
 }
+
+/* Keyboard and narrow viewport support for operations surfaces. */
+.app-main {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.source-readiness,
+.jobs-row-meta,
+.bulk-result-list,
+.export-attempt-detail {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.app-main:focus {
+  outline: 2px solid var(--accent, #8a4b25);
+  outline-offset: 4px;
+}
+@media (max-width: 600px) {
+  .app-main button,
+  .app-main input[type="checkbox"],
+  .app-main a.secondary-button,
+  .app-main a.primary-button,
+  .locale-toggle button,
+  .app-bottom-nav button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .queue-item {
+    flex-wrap: wrap;
+  }
+  .queue-item > div {
+    min-width: 0;
+    flex: 1 1 200px;
+  }
+  .pagination-controls {
+    flex-wrap: wrap;
+  }
+  .app-footer {
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+  }
+  .members-table {
+    width: 100%;
+    table-layout: fixed;
+  }
+  .members-table th,
+  .members-table td {
+    overflow-wrap: anywhere;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

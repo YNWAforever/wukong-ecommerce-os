@@ -418,3 +418,40 @@ describe("AppShellNav", () => {
     expect(activeLink!.className).toContain("active");
   });
 });
+
+it("makes main/footer inert while the drawer is open and restores their previous state", () => {
+  const main = document.createElement("main");
+  main.id = "main-content";
+  const footer = document.createElement("footer");
+  footer.className = "app-footer";
+  footer.setAttribute("inert", "");
+  document.body.append(main, footer);
+  render(
+    <AppShellNav
+      navItems={NAV_ITEMS}
+      isAdmin={false}
+      workspaceName="Synthetic"
+      roleLabelZh="檢視者"
+      roleLabelEn="Viewer"
+      initialLocale="en"
+    />,
+  );
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="drawer-trigger"]')!
+      .click(),
+  );
+  expect(main.hasAttribute("inert")).toBe(true);
+  expect(footer.hasAttribute("inert")).toBe(true);
+  act(() =>
+    container
+      .querySelector('[data-testid="drawer"]')!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+  );
+  expect(main.hasAttribute("inert")).toBe(false);
+  expect(footer.hasAttribute("inert")).toBe(true);
+  main.remove();
+  footer.remove();
+});

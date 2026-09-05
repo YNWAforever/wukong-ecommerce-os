@@ -1,3 +1,4 @@
+import { localized } from "../../lib/ui-copy";
 import { cookies } from "next/headers";
 
 import { AppShellNav } from "../../components/app-shell-nav";
@@ -21,7 +22,7 @@ export default async function AppLayout({
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
-        跳到主要內容 <span>Skip to content</span>
+        {localized(locale, "跳到主要內容", "Skip to content")}
       </a>
       <header className="topbar">
         <AppShellNav
@@ -33,12 +34,15 @@ export default async function AppLayout({
           initialLocale={locale}
         />
       </header>
-      <main id="main-content" className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         {children}
       </main>
       <footer className="app-footer">
         <span>Wukong Ecommerce OS</span>
-        <span>{workspaceName} pilot · HKD · en / zh-Hant</span>
+        <span>
+          {workspaceName} · HKD ·{" "}
+          {localized(locale, "試行工作區", "Pilot workspace")}
+        </span>
       </footer>
     </div>
   );

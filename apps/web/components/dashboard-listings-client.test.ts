@@ -338,20 +338,16 @@ it("discloses the latest-five bound while keeping full-workspace metrics and com
   );
   const { container, root } = await mount(fetcher);
   try {
-    expect(container.textContent).toContain("Latest five listings");
-    expect(container.textContent).toContain(
-      "Bounded view of the latest five workspace listings",
-    );
-    expect(container.textContent).toContain(
-      "Summary metrics cover the full workspace",
-    );
+    expect(container.textContent).toContain("最新五個項目");
+    expect(container.textContent).toContain("僅顯示工作區最新五個項目");
+    expect(container.textContent).toContain("摘要統計涵蓋整個工作區");
     expect(container.textContent).not.toContain("最需要處理的項目");
     expect(container.querySelector(".metric-strip")?.textContent).toContain(
       "200",
     );
-    expect(container.textContent).toContain("Import: import-1");
-    expect(container.textContent).toContain("Merchant-attested export time:");
-    expect(container.textContent).toContain("revision 3 · version version-1");
+    expect(container.textContent).toContain("匯入: import-1");
+    expect(container.textContent).toContain("商戶確認的匯出時間:");
+    expect(container.textContent).toContain("修訂 3 · 版本 version-1");
   } finally {
     await unmount(root);
   }

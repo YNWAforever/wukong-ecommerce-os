@@ -106,7 +106,7 @@ describe("JobsLedgerClient", () => {
     // admin-connection-panel.test.tsx for the same convention.
     globalThis.fetch = vi.fn<typeof fetch>() as unknown as typeof fetch;
     const markup = renderToStaticMarkup(createElement(JobsLedgerClient));
-    expect(markup).toContain("Loading");
+    expect(markup).toContain("正在載入");
   });
 
   it("fetches /api/jobs and renders one row per entry, showing kind, summary, and rawStatus", async () => {
@@ -155,7 +155,7 @@ describe("JobsLedgerClient", () => {
     expect(container.querySelectorAll(".flag-item").length).toBe(4);
 
     const exportButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Export"),
+      (button) => button.textContent?.includes("匯出"),
     );
     expect(exportButton).not.toBeUndefined();
 
@@ -169,7 +169,7 @@ describe("JobsLedgerClient", () => {
     expect(container.textContent).not.toContain("AI pipeline run");
 
     const allButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("All"),
+      (button) => button.textContent?.includes("全部"),
     );
     await act(async () => {
       allButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -202,7 +202,7 @@ describe("JobsLedgerClient", () => {
 
     const importResultButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Import result"));
+    ).find((button) => button.textContent?.includes("匯入結果"));
     expect(importResultButton).not.toBeUndefined();
 
     await act(async () => {
@@ -222,7 +222,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Unable to load jobs",
+      "無法載入資料，請重試。",
     );
   });
 
@@ -235,7 +235,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "network down",
+      "無法載入資料，請重試。",
     );
   });
 

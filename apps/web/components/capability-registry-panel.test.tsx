@@ -38,8 +38,8 @@ describe("CapabilityRegistryPanel", () => {
 
     // Every entry's label and description text is present in the markup.
     for (const entry of CAPABILITY_REGISTRY) {
-      expect(markup).toContain(entry.label);
-      expect(markup).toContain(entry.description);
+      expect(markup).toContain(entry.labelZh);
+      expect(markup).toContain(entry.descriptionZh);
     }
 
     // A known entry is findable by its label.
@@ -53,7 +53,7 @@ describe("CapabilityRegistryPanel", () => {
     // The registry's current mix of states is reflected in the labels shown
     // (blocked and live both appear at least once in the fixture data).
     expect(markup).toContain("已封鎖");
-    expect(markup).toContain("已上線");
+    expect(markup).toContain("已實作");
   });
 
   it("ties each entry's row to its own state-specific CSS class, never a different one", () => {

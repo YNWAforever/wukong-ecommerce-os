@@ -1,4 +1,13 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  commonCopy,
+  safeUiError,
+  formatNumber,
+  formatHkDate,
+  stateLabel,
+} from "../lib/ui-copy";
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
@@ -50,22 +59,18 @@ type JobsResponse = {
 
 type KindFilter = "all" | LedgerKind;
 
-const KIND_FILTERS: ReadonlyArray<{ value: KindFilter; label: string }> = [
-  { value: "all", label: "全部 All" },
-  { value: "batch", label: "批次 Batch" },
-  { value: "publish_job", label: "發佈工作 Publish job" },
-  { value: "pipeline_run", label: "AI 流程 Pipeline run" },
-  { value: "export", label: "匯出 Export" },
-  { value: "import_result", label: "匯入結果 Import result" },
+const KIND_FILTERS: ReadonlyArray<{
+  value: KindFilter;
+  labelZh: string;
+  labelEn: string;
+}> = [
+  { value: "all", labelZh: "全部", labelEn: "All" },
+  { value: "batch", labelZh: "批次", labelEn: "Batch" },
+  { value: "publish_job", labelZh: "發佈工作", labelEn: "Publish job" },
+  { value: "pipeline_run", labelZh: "AI 流程", labelEn: "Pipeline run" },
+  { value: "export", labelZh: "匯出", labelEn: "Export" },
+  { value: "import_result", labelZh: "匯入結果", labelEn: "Import result" },
 ];
-
-const KIND_LABELS: Record<LedgerKind, string> = {
-  batch: "批次 Batch",
-  publish_job: "發佈工作 Publish job",
-  pipeline_run: "AI 流程 Pipeline run",
-  export: "匯出 Export",
-  import_result: "匯入結果 Import result",
-};
 
 // Each of the 5 normalizedStatus values gets its own `status-*` tone class
 // (see globals.css) so they read as genuinely distinct states rather than a
@@ -74,15 +79,10 @@ const KIND_LABELS: Record<LedgerKind, string> = {
 // `status-failed` class already used by the review/connection status
 // pills), and cancelled is navy -- the one status none of the other pills on
 // this branch needed a color for yet.
-const STATUS_LABELS: Record<NormalizedStatus, string> = {
-  pending: "待處理 Pending",
-  running: "進行中 Running",
-  succeeded: "成功 Succeeded",
-  failed: "失敗 Failed",
-  cancelled: "已取消 Cancelled",
-};
 
 export function JobsLedgerClient() {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [page, setPage] = useState(1);
 
@@ -111,16 +111,16 @@ export function JobsLedgerClient() {
   if (!data && error)
     return (
       <div className="load-error" role="alert">
-        <p>{error}</p>
+        <p>{safeUiError(error, locale)}</p>
         <button type="button" onClick={reload}>
-          Retry
+          {c.retry}
         </button>
       </div>
     );
   if (!data) {
     return (
       <p className="helper-copy" role="status">
-        正在載入作業記錄… Loading jobs ledger…
+        {localized(locale, "正在載入作業記錄…", "Loading jobs ledger…")}
       </p>
     );
   }
@@ -131,64 +131,79 @@ export function JobsLedgerClient() {
       ? response.entries
       : response.entries.filter((entry) => entry.kind === kindFilter);
   return (
-    <section aria-label="作業記錄" aria-busy={loading}>
+    <section
+      aria-label={localized(locale, "作業記錄", "Jobs ledger")}
+      aria-busy={loading}
+    >
       {error ? (
         <div className="load-error" role="alert">
-          <span>{error}</span>
+          <span>{safeUiError(error, locale)}</span>
           <button type="button" onClick={reload}>
-            Retry
+            {c.retry}
           </button>
         </div>
       ) : null}
       {stale ? (
         <p className="refresh-status" role="status">
-          Refreshing jobs ledger…
+          {localized(locale, "正在更新作業記錄…", "Refreshing jobs ledger…")}
         </p>
       ) : null}
       {response.metricsScope ? (
         <p className="helper-copy">
-          All-history workspace ledger. Metrics cover the{" "}
-          {response.metricsScope.windowDays}-day window since{" "}
+          {localized(
+            locale,
+            `工作區完整歷史記錄。指標涵蓋 ${response.metricsScope.windowDays} 天，由以下時間起：`,
+            `All-history workspace ledger. Metrics cover the ${response.metricsScope.windowDays}-day window since `,
+          )}
           <time dateTime={response.metricsScope.since}>
-            {response.metricsScope.since}
+            {formatHkDate(response.metricsScope.since, locale)}
           </time>
           .
         </p>
       ) : null}
-      <div className="metric-strip jobs-metric-strip" aria-label="作業指標統計">
+      <div
+        className="metric-strip jobs-metric-strip"
+        aria-label={localized(locale, "作業指標統計", "Job metrics")}
+      >
         <div>
           <span className="metric-value">
-            {response.metrics.publishRetries}
+            {formatNumber(response.metrics.publishRetries, locale)}
           </span>
           <span className="metric-label">
-            發佈重試 <small>Publish retries</small>
+            {localized(locale, "發佈重試", "Publish retries")}
           </span>
         </div>
         <div>
           <span className="metric-value">
-            {response.metrics.versionConflicts}
+            {formatNumber(response.metrics.versionConflicts, locale)}
           </span>
           <span className="metric-label">
-            版本衝突 <small>Version conflicts</small>
+            {localized(locale, "版本衝突", "Version conflicts")}
           </span>
         </div>
         <div>
           <span className="metric-value">
-            {response.metrics.staleSourceRejections}
+            {formatNumber(response.metrics.staleSourceRejections, locale)}
           </span>
           <span className="metric-label">
-            來源已過時 <small>Stale-source rejections</small>
+            {localized(locale, "來源已過時", "Stale-source rejections")}
           </span>
         </div>
         <div>
-          <span className="metric-value">{response.metrics.importedRows}</span>
+          <span className="metric-value">
+            {formatNumber(response.metrics.importedRows, locale)}
+          </span>
           <span className="metric-label">
-            近期匯入列數 <small>Recent imported rows</small>
+            {localized(locale, "近期匯入列數", "Recent imported rows")}
           </span>
         </div>
       </div>
 
-      <div className="admin-tab-list" role="group" aria-label="依類型篩選">
+      <div
+        className="admin-tab-list"
+        role="group"
+        aria-label={localized(locale, "依類型篩選", "Filter by kind")}
+      >
         {KIND_FILTERS.map((option) => (
           <button
             key={option.value}
@@ -202,7 +217,7 @@ export function JobsLedgerClient() {
               setPage(1);
             }}
           >
-            {option.label}
+            {localized(locale, option.labelZh, option.labelEn)}
           </button>
         ))}
       </div>
@@ -210,9 +225,19 @@ export function JobsLedgerClient() {
       {response.exportReconciliations?.length ? (
         <section
           className="export-reconciliations"
-          aria-label="Bulk Update XLSX reconciliations"
+          aria-label={localized(
+            locale,
+            "批量更新 XLSX 結果對帳",
+            "Bulk Update XLSX reconciliations",
+          )}
         >
-          <h2>Bulk Update XLSX reconciliations</h2>
+          <h2>
+            {localized(
+              locale,
+              "批量更新 XLSX 結果對帳",
+              "Bulk Update XLSX reconciliations",
+            )}
+          </h2>
           {response.exportReconciliations.map((detail) => (
             <ExportReconciliationPanel
               key={detail.attempt.id}
@@ -228,18 +253,25 @@ export function JobsLedgerClient() {
         </section>
       ) : null}
 
-      <div className="pagination-controls" aria-label="Jobs pagination">
+      <div
+        className="pagination-controls"
+        aria-label={localized(locale, "作業分頁", "Jobs pagination")}
+      >
         <button
           type="button"
           onClick={() => setPage((value) => Math.max(1, value - 1))}
           disabled={page === 1 || loading}
         >
-          Previous
+          {c.previous}
         </button>
         <span>
-          Page {page}
+          {localized(locale, `第 ${page} 頁`, `Page ${page}`)}
           {response.totalMatching !== undefined
-            ? ` · ${response.totalMatching} matching / ${response.total} total`
+            ? localized(
+                locale,
+                ` · 符合 ${response.totalMatching} / 共 ${response.total} 個`,
+                ` · ${response.totalMatching} matching / ${response.total} total`,
+              )
             : ""}
         </span>
         <button
@@ -251,13 +283,17 @@ export function JobsLedgerClient() {
             page * response.pageSize >= response.totalMatching
           }
         >
-          Next
+          {c.next}
         </button>
       </div>
 
       {visibleEntries.length === 0 ? (
         <p className="helper-copy">
-          找不到符合條件的作業紀錄。 <span>No jobs match this filter.</span>
+          {localized(
+            locale,
+            "找不到符合條件的作業紀錄。",
+            "No jobs match this filter.",
+          )}
         </p>
       ) : (
         <ul className="flag-list">
@@ -267,18 +303,37 @@ export function JobsLedgerClient() {
               <li className="flag-item" key={`${entry.kind}:${entry.id}`}>
                 <div className="flag-content">
                   <div className="jobs-row-header">
-                    <h3>{KIND_LABELS[entry.kind]}</h3>
+                    <h3>
+                      {localized(
+                        locale,
+                        KIND_FILTERS.find((item) => item.value === entry.kind)!
+                          .labelZh,
+                        KIND_FILTERS.find((item) => item.value === entry.kind)!
+                          .labelEn,
+                      )}
+                    </h3>
                     <span
                       className={`connection-status status-${entry.normalizedStatus}`}
                     >
                       <span aria-hidden="true" />
-                      {STATUS_LABELS[entry.normalizedStatus]}
+                      {stateLabel(entry.normalizedStatus, locale)}
                     </span>
                   </div>
-                  <p>{entry.summary}</p>
+                  <details>
+                    <summary>
+                      {localized(
+                        locale,
+                        "原始作業證據",
+                        "Original job evidence",
+                      )}
+                    </summary>
+                    <p>{entry.summary}</p>
+                    <code>{entry.rawStatus}</code>
+                  </details>
                   <div className="jobs-row-meta">
-                    {entry.rawStatus} ·{" "}
-                    <time dateTime={createdAt.toISOString()}>
+                    {localized(locale, "紀錄 ID", "Record ID")}: {entry.id} ·{" "}
+                    {stateLabel(entry.normalizedStatus, locale)} ·{" "}
+                    <time dateTime={formatHkDate(createdAt, locale)}>
                       {createdAt.toISOString()}
                     </time>
                   </div>
@@ -290,7 +345,7 @@ export function JobsLedgerClient() {
                       className="jobs-row-link"
                       href={`/listings/${entry.listingId}`}
                     >
-                      查看上架流程 <span>View listing</span>
+                      {localized(locale, "查看上架流程", "View listing")}
                     </Link>
                   ) : null}
                 </div>
@@ -304,6 +359,8 @@ export function JobsLedgerClient() {
 }
 
 function ExportAttemptInspector({ attemptId }: { attemptId: string }) {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   const [opened, setOpened] = useState(false);
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -329,17 +386,21 @@ function ExportAttemptInspector({ attemptId }: { attemptId: string }) {
         className="secondary-button"
         onClick={() => setOpened(true)}
       >
-        Inspect export attempt
+        {localized(locale, "檢視匯出紀錄", "Inspect export attempt")}
       </button>
     );
   return (
     <div className="export-attempt-detail">
-      {loading && !data ? <span role="status">Loading attempt…</span> : null}
+      {loading && !data ? (
+        <span role="status">
+          {localized(locale, "正在載入匯出紀錄…", "Loading attempt…")}
+        </span>
+      ) : null}
       {error ? (
         <div role="alert">
-          <span>{error}</span>
+          <span>{safeUiError(error, locale)}</span>
           <button type="button" onClick={reload}>
-            Retry detail
+            {localized(locale, "重試載入詳情", "Retry detail")}
           </button>
         </div>
       ) : null}

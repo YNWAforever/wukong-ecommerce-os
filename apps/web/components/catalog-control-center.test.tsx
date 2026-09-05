@@ -407,13 +407,7 @@ describe("CatalogControlCenter", () => {
     const tiles = container.querySelectorAll('[role="group"]');
     expect(tiles.length).toBe(5);
 
-    const expectedLabels = [
-      "商品 Products",
-      "已連結 Linked",
-      "待審核 Needs review",
-      "需處理 Attention",
-      "已發佈 Published",
-    ];
+    const expectedLabels = ["商品", "已連結", "待審核", "需處理", "已發佈"];
 
     tiles.forEach((tile, index) => {
       const labelledBy = tile.getAttribute("aria-labelledby");
@@ -453,20 +447,18 @@ describe("CatalogControlCenter", () => {
     );
     const { container, root } = await mount(fetcher);
     const imported = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Select SKU-IMPORT for Bulk Update"]',
+      'input[aria-label="選取 SKU-IMPORT 作批量更新"]',
     );
     expect(imported).not.toBeNull();
     expect(
       container.querySelector(
-        'input[aria-label="Select SKU-CREATED for Bulk Update"]',
+        'input[aria-label="選取 SKU-CREATED 作批量更新"]',
       ),
     ).toBeNull();
     await act(async () => imported!.click());
-    expect(container.textContent).toContain("1 selected for Bulk Update");
-    await act(async () =>
-      findButtonByText(container, "Clear selection")!.click(),
-    );
-    expect(container.textContent).toContain("0 selected for Bulk Update");
+    expect(container.textContent).toContain("已選取 1 個商品作批量更新");
+    await act(async () => findButtonByText(container, "清除選取")!.click());
+    expect(container.textContent).toContain("已選取 0 個商品作批量更新");
     await unmount(root);
   });
 
@@ -510,10 +502,10 @@ describe("CatalogControlCenter", () => {
       await Promise.resolve();
     });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Unable to load catalog",
+      "無法載入資料，請重試。",
     );
     await act(async () => {
-      findButtonByText(container, "Retry")!.click();
+      findButtonByText(container, "重試")!.click();
       await Promise.resolve();
     });
     expect(calls.at(-1)!.searchParams.get("filter")).toBe("attention");
@@ -556,16 +548,16 @@ it("keeps compact source provenance visible and disables page controls during a 
     .mockReturnValueOnce(pending);
   const { container, root } = await mount(fetcher);
   try {
-    expect(container.textContent).toContain("Import: import-1");
-    expect(container.textContent).toContain("Merchant-attested export time:");
-    expect(container.textContent).toContain("revision 3 · version version-1");
-    await act(async () => findButtonByText(container, "Next")!.click());
-    expect(findButtonByText(container, "Next")!.disabled).toBe(true);
-    expect(findButtonByText(container, "Previous")!.disabled).toBe(true);
+    expect(container.textContent).toContain("匯入: import-1");
+    expect(container.textContent).toContain("商戶確認的匯出時間:");
+    expect(container.textContent).toContain("修訂 3 · 版本 version-1");
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+    expect(findButtonByText(container, "上一頁")!.disabled).toBe(true);
     await act(async () =>
       resolve(Response.json(pageResponse([item], { page: 2 }))),
     );
-    expect(findButtonByText(container, "Previous")!.disabled).toBe(false);
+    expect(findButtonByText(container, "上一頁")!.disabled).toBe(false);
   } finally {
     await unmount(root);
   }

@@ -1,4 +1,13 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  commonCopy,
+  safeUiError,
+  formatNumber,
+  formatHkDate,
+  stateLabel,
+} from "../lib/ui-copy";
 
 import { useCallback, useId } from "react";
 import Link from "next/link";
@@ -71,6 +80,8 @@ type ListListingsResponse = {
 };
 
 export function DashboardListingsClient() {
+  const locale = useLocale();
+  const c = commonCopy[locale];
   const activeLabelId = useId();
   const inReviewLabelId = useId();
   const blockedLabelId = useId();
@@ -92,41 +103,52 @@ export function DashboardListingsClient() {
   if (!data && error)
     return (
       <div className="load-error" role="alert">
-        <p>{error}</p>
+        <p>{safeUiError(error, locale)}</p>
         <button type="button" onClick={reload}>
-          Retry
+          {c.retry}
         </button>
       </div>
     );
   if (!data)
     return (
       <p className="helper-copy" role="status">
-        正在載入工作佇列… Loading work queue…
+        {localized(locale, "正在載入工作佇列…", "Loading work queue…")}
       </p>
     );
 
   const metrics = dashboardMetricsFromCounts(data.counts);
-  const teaserItems = selectDashboardTeaser(mapDashboardItems(data.items));
+  const teaserItems = selectDashboardTeaser(
+    mapDashboardItems(data.items, locale),
+  );
 
   return (
     <>
-      <div className="metric-strip" aria-label="工作台摘要">
+      <div
+        className="metric-strip"
+        aria-label={localized(locale, "工作台摘要", "Workspace summary")}
+      >
         <div role="group" aria-labelledby={activeLabelId}>
-          <span className="metric-value">{metrics.active}</span>
+          <span className="metric-value">
+            {formatNumber(metrics.active, locale)}
+          </span>
           <span className="metric-label" id={activeLabelId}>
-            進行中 <small>Active</small>
+            {localized(locale, "進行中", "Active")}
           </span>
         </div>
         <div role="group" aria-labelledby={inReviewLabelId}>
-          <span className="metric-value">{metrics.inReview}</span>
+          <span className="metric-value">
+            {formatNumber(metrics.inReview, locale)}
+          </span>
           <span className="metric-label" id={inReviewLabelId}>
-            待你審核 <small>Needs review</small>
+            {localized(locale, "待你審核", "Needs review")}
           </span>
         </div>
         <div role="group" aria-labelledby={blockedLabelId}>
-          <span className="metric-value">{metrics.blocked}</span>
+          <span className="metric-value">
+            {formatNumber(metrics.blocked, locale)}
+          </span>
           <span className="metric-label" id={blockedLabelId}>
-            阻塞上架 <small>Blocked delivery</small>
+            {localized(locale, "阻塞上架", "Blocked delivery")}
           </span>
         </div>
       </div>
@@ -138,29 +160,40 @@ export function DashboardListingsClient() {
         <div className="section-heading compact">
           <div>
             <p className="eyebrow">
-              工作佇列 <span>WORK QUEUE</span>
+              {localized(locale, "工作佇列", "Work queue")}
             </p>
             <h2 id="queue-teaser-heading">
-              最新五個項目 · Latest five listings
+              {localized(locale, "最新五個項目", "Latest five listings")}
             </h2>
           </div>
           <Link className="text-link" href="/queue">
-            查看完整工作佇列 <span>View full queue</span>
+            {localized(locale, "查看完整工作佇列", "View full queue")}
           </Link>
         </div>
         <p>
-          Bounded view of the latest five workspace listings, ordered within
-          this page. Summary metrics cover the full workspace.
+          {localized(
+            locale,
+            "僅顯示工作區最新五個項目，於本頁內排序。摘要統計涵蓋整個工作區。",
+            "Bounded view of the latest five workspace listings, ordered within this page. Summary metrics cover the full workspace.",
+          )}
         </p>
         {error ? (
           <div role="alert">
-            {error}
+            {safeUiError(error, locale)}
             <button type="button" onClick={reload}>
-              Retry
+              {c.retry}
             </button>
           </div>
         ) : null}
-        {stale ? <p role="status">Refreshing latest listings…</p> : null}
+        {stale ? (
+          <p role="status">
+            {localized(
+              locale,
+              "正在更新最新項目…",
+              "Refreshing latest listings…",
+            )}
+          </p>
+        ) : null}
         {teaserItems.length > 0 ? (
           <ul className="queue-list">
             {teaserItems.map((item) => (
@@ -180,7 +213,9 @@ export function DashboardListingsClient() {
                     }
                     compact
                   />
-                  <time dateTime={item.updatedAt}>{item.updatedAt}</time>
+                  <time dateTime={item.updatedAt}>
+                    {formatHkDate(item.updatedAt, locale)}
+                  </time>
                 </div>
                 <Link
                   className="secondary-button queue-action"
@@ -194,7 +229,7 @@ export function DashboardListingsClient() {
           </ul>
         ) : (
           <p className="empty-state">
-            目前沒有項目 <span>No items</span>
+            {localized(locale, "目前沒有項目", "No items")}
           </p>
         )}
       </section>

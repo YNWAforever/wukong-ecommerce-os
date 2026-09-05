@@ -1,23 +1,26 @@
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
+import { readPageCopy } from "../../../lib/read-page-copy";
+import { commonCopy } from "../../../lib/ui-copy";
 import Link from "next/link";
 
 import { CatalogControlCenter } from "../../../components/catalog-control-center";
 
-export default function CatalogPage() {
+export default async function CatalogPage() {
+  const locale = resolveLocale(
+    (await cookies()).get(LOCALE_COOKIE_NAME)?.value,
+  );
+  const copy = readPageCopy.catalog[locale];
   return (
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            Catalog operations <span>ECOMMERCE OS CONTROL PLANE</span>
-          </p>
-          <h1>由平台商品到可發佈草稿，一頁掌握營運狀態。</h1>
-          <p className="lede">
-            查看 SHOPLINE
-            商品鏡像、草稿連結、審核進度與阻塞項目，優先處理最接近發佈的商品。
-          </p>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.title}</h1>
+          <p className="lede">{copy.description}</p>
         </div>
         <Link className="primary-button" href="/listings/new">
-          建立上架草稿 <span>Create draft</span>
+          {commonCopy[locale].createDraft}
         </Link>
       </div>
       <CatalogControlCenter />

@@ -64,7 +64,7 @@ describe("QualitySummaryClient", () => {
     stubFetch(SAMPLE_SUMMARY);
     const { container } = await mountClient();
     expect(container.textContent).toContain(
-      "42 assessed of unavailable; unavailable without an active version; unavailable unassessable",
+      "共 未有資料 個商品，已評估 42 個；未有資料 個未有目前版本；未有資料 個無法評估",
     );
   });
 
@@ -89,7 +89,7 @@ describe("QualitySummaryClient", () => {
     const tiles = container.querySelectorAll(".metric-value");
     expect(tiles.length).toBe(4);
     const tileText = Array.from(tiles).map((tile) => tile.textContent);
-    expect(tileText).toEqual(["42", "10", "32", "$12.50"]);
+    expect(tileText).toEqual(["42", "10", "32", "US$12.50"]);
   });
 
   it('exposes each metric tile as a role="group" tied to its visible label', async () => {
@@ -120,35 +120,30 @@ describe("QualitySummaryClient", () => {
 
     const rowText = rows.map((row) => row.textContent ?? "");
     expect(
+      rowText.some((text) => /名稱未翻譯/i.test(text) && text.includes("5")),
+    ).toBe(true);
+    expect(
       rowText.some(
-        (text) => /Untranslated name/i.test(text) && text.includes("5"),
+        (text) => /SEO 標題未翻譯/i.test(text) && text.includes("6"),
       ),
     ).toBe(true);
     expect(
       rowText.some(
-        (text) => /Untranslated SEO title/i.test(text) && text.includes("6"),
+        (text) => /SEO 標題與商品名稱相同/i.test(text) && text.includes("7"),
       ),
     ).toBe(true);
     expect(
       rowText.some(
-        (text) => /SEO title mirrors name/i.test(text) && text.includes("7"),
+        (text) => /SEO 簡介與 SEO 標題相同/i.test(text) && text.includes("8"),
       ),
     ).toBe(true);
     expect(
       rowText.some(
-        (text) =>
-          /SEO description mirrors SEO title/i.test(text) && text.includes("8"),
+        (text) => /關鍵字與商品名稱相同/i.test(text) && text.includes("9"),
       ),
     ).toBe(true);
     expect(
-      rowText.some(
-        (text) => /Keywords mirror name/i.test(text) && text.includes("9"),
-      ),
-    ).toBe(true);
-    expect(
-      rowText.some(
-        (text) => /Summary missing/i.test(text) && text.includes("21"),
-      ),
+      rowText.some((text) => /缺少摘要/i.test(text) && text.includes("21")),
     ).toBe(true);
   });
 
@@ -158,7 +153,7 @@ describe("QualitySummaryClient", () => {
     const { container } = await mountClient();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Unable to load quality summary",
+      "無法載入資料，請重試。",
     );
   });
 
@@ -171,7 +166,7 @@ describe("QualitySummaryClient", () => {
     const { container } = await mountClient();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "network down",
+      "無法載入資料，請重試。",
     );
   });
 

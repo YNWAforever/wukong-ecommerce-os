@@ -5,13 +5,14 @@ export type CatalogFilter =
 
 export const CATALOG_FILTERS: ReadonlyArray<{
   value: CatalogFilter;
-  label: string;
+  labelZh: string;
+  labelEn: string;
 }> = [
-  { value: "all", label: "全部 All" },
-  { value: "attention", label: "需處理 Attention" },
-  { value: "review", label: "待審核 Review" },
-  { value: "unlinked", label: "未建立草稿 Unlinked" },
-  { value: "published", label: "已發佈 Published" },
+  { value: "all", labelZh: "全部", labelEn: "All" },
+  { value: "attention", labelZh: "需處理", labelEn: "Attention" },
+  { value: "review", labelZh: "待審核", labelEn: "Review" },
+  { value: "unlinked", labelZh: "未建立草稿", labelEn: "Unlinked" },
+  { value: "published", labelZh: "已發佈", labelEn: "Published" },
 ];
 
 const STATUS_LABELS: Record<ListingStatus, string> = {
