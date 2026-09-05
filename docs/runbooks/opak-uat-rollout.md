@@ -45,7 +45,7 @@ All four real UAT stages remain unchecked by this source-only verification. Neve
 
 Use the catalog Bulk Update action to retain a stable export attempt, then download its exact ready artifact. Record each included member using the exported version, not its later active version. /jobs shows accepted/rejected/unreported totals and retained rejection/correction reasons. Retry with the same idempotency key; a correction appends against the observed preceding receipt and includes a reason.
 
-Historical/manual mode is explicitly unlinked and cannot close reconciliation for an export attempt. Even an all-accepted attempt remains independently unverified until the authorized fresh SHOPLINE export is compared. See onboarding section 7 for the request contract.
+Historical/manual mode is explicitly unlinked and cannot close reconciliation for an export attempt. Even an all-accepted attempt remains independently unverified. A separate fresh-export comparison records supplied-snapshot field evidence; store and export time remain operator-attested, and the comparison does not change that status or establish live acceptance. See onboarding section 7 for the request contract.
 
 ## 5. Merchant restoration procedure
 
