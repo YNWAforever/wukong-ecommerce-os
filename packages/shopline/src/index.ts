@@ -89,3 +89,5 @@ export {
   decryptShoplineToken,
   encryptShoplineToken,
 } from "./token-vault.js";
+
+export * from "./fresh-export-comparison.js";

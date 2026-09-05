@@ -1,137 +1,61 @@
-# Task 1 Report: Shared Shopline delivery policy tests and contract
+# Task 1 backend implementation report
 
-## Status
+Base: 6bc21e0. Local branch: codex/catalog-fresh-export-verification. Synthetic development only; no push/deploy/production migration, merchant workbook, provider call or source/result/publish mutation.
 
-DONE
+## Wire contract for Task 2
 
-## Implementation
+Type-only browser imports from apps/web/lib/fresh-export-verification.ts:
+- ExportVerificationWire (full persisted record with ISO createdAt and merchantAttestedExportAt)
+- ExportVerificationSummaryWire (omits provenance; comparison contains only outcome + counts)
+- ExportVerificationHistoryWire = {items: ExportVerificationSummaryWire[],total:number,page:number,pageSize:number}
+- RecordExportVerificationWire = {verification:ExportVerificationWire,replayed:boolean}
 
-- Added a pure `packages/shopline/src/delivery-policy.ts` contract with typed snapshots, plans, audit facts, and discriminated business outcomes.
-- Added `evaluateDeliveryPolicy`, preserving the SHA-256 digest of `JSON.stringify(CanonicalListing)` via `hashCanonicalListing`.
-- The policy uses existing `projectToShopline` and `validateShoplineProduct` for both API and CSV plans; it has no app, database, asset, queue, connector, or network imports.
-- Worker evaluation returns `stale_plan` for a missing job, version drift, absent digest, or digest drift before projection and any host-side connector operation can be reached.
-- Exported only the policy API and types from `packages/shopline/src/index.ts`.
+Endpoint /api/listings/export/:attemptId/verifications. GET and POST require reviewer/admin/owner. Workspace/actor come only from session.
 
-## Files
+POST: raw XLSX body, URLSearchParams filename, merchantAttestedExportAt, sameStoreAttested=true. Timestamp must be valid calendar ISO with explicit Z/offset, strictly after artifactReadyAt and <= server now. Browser must convert explicit Hong Kong export time to ISO; no file timestamp inference. 201 new evidence; 200 exact identity retry. Filename/actor are deliberately not identity inputs: exact evidence retains first filename/actor.
 
-- `packages/shopline/src/delivery-policy.test.ts` (new)
-- `packages/shopline/src/delivery-policy.ts` (new)
-- `packages/shopline/src/index.ts`
+GET ?page=1&pageSize=10 -> ExportVerificationHistoryWire. Page size 1..20; page 1..1,000,000. Exact total and rows share one SQL statement snapshot. Summary query does not load full comparison/provenance. GET ?verificationId=<UUID> -> {verification: ExportVerificationWire}, scoped by both authenticated workspace and attempt. Missing/foreign detail returns 404 comparison_not_found. Do not render summary as full evidence; request detail when selected.
 
-## RED evidence
+Full record: id, exportAttemptId, artifactSha256, suppliedSha256, merchantAttestedExportAt, connectionId, policyVersion='fresh-export-v1', filename, recordedBy, provenance, comparison, createdAt. Provenance retains exact approved attempt/version/source/connection binding; comparison.products maps product IDs to that evidence. Original supplied XLSX bytes are NOT retained/downloadable.
 
-Command:
+comparison.outcome: matches_compared_fields | differences_found | inconclusive. Human labels: Matches compared fields / Differences found / Inconclusive. Any missing, ambiguous or variant target makes overall inconclusive while other product differences remain visible.
 
-```powershell
-npm.cmd run test -- src/delivery-policy.test.ts
-```
+comparison.counts: expected, matched, differences, missing, ambiguous, unsupportedVariant, unrelatedRows, suppliedRows.
 
-Result: exit 1; 1 failed test file and 19 failed tests. Each failure was caused by the intentionally absent `evaluateDeliveryPolicy`/`hashCanonicalListing` exports, confirming the new policy contract did not yet exist.
+comparison.products[]: productId; outcome = matched | differences | missing | ambiguous | unsupported_variant; expectedRow={rowNumber,cells:(string|null)[]}; observedRows (all duplicates retained); fields (69 entries only for comparable targets); quantityDeltaObservations (2 entries only for comparable targets). Field = {column,category:intended|protected,expected:string|null,observed:string|null,different:boolean}. Delta = {column:updateQuantity|updateVariantQuantity,expected,observed}. 8 intended, 61 protected, 2 delta categories. Missing/ambiguous/variant fields arrays empty, never interpreted as matched. Complete rows remain retained for these outcomes.
 
-## GREEN evidence
+Required scope copy: supplied snapshot; store and time operator-attested. Protected differences are observations, not causation claims. Delta values never establish stock neutrality. Normalized string comparison does not claim raw XLSX type/style fidelity, authenticated merchant origin, current live SHOPLINE truth or causal application. Existing reconciliation.verificationStatus and operator report totals remain untouched/unverified.
 
-Focused policy command:
+## Bounds and errors
 
-```powershell
-npm.cmd run test -- src/delivery-policy.test.ts
-```
+4 MiB streamed upload bound, also checked in service; Default sheet with exact current en+zh header rows; 5,000 data rows; 32,767 characters/cell. All nonblank extra columns rejected. Blank cells/missing trailing cells normalize to null, meaningful whitespace and leading-zero IDs preserved. Exact ID only, never SKU/row order. Comparator normalized evidence <=2 MiB; repository checks entire input envelope +512 bytes reserved for generated ID/date so POST full record <=2 MiB. Oversized evidence rejects, never truncates. SQL defensive comparison-json bound is 3 MiB because PostgreSQL jsonb text inserts serialization whitespace; application 2 MiB wire bound is authoritative.
 
-Result: exit 0; 1 passed file, 19 passed tests.
+Safe errors:
+- 401 unauthorized; 403 insufficient_role.
+- 404 export_attempt_not_found, comparison_not_found.
+- 400 comparison_same_store_required, comparison_filename_invalid, comparison_export_time_invalid, comparison_workbook_invalid, comparison_input_invalid, invalid_pagination, invalid_verification_id.
+- 413 comparison_upload_too_large, comparison_input_too_large.
+- 409 export_artifact_not_ready, export_provenance_incomplete, export_artifact_hash_mismatch, export_membership_mismatch, export_verification_binding_mismatch, comparison_identity_conflict (binding helper can also emit listing_not_in_export/export_version_mismatch).
+- 503 export_artifact_unavailable, comparison_unavailable, comparison_history_unavailable. No reader/provider/SQL details in response/logs.
 
-Package regression command:
+## RED / GREEN evidence
 
-```powershell
-npm.cmd run test
-```
+All commands use corepack.cmd pnpm@11.7.0 from active worktree.
 
-Result: exit 0; 5 passed files, 45 passed tests.
+1. --filter @wukong/shopline exec vitest run src/fresh-export-comparison.test.ts: RED missing module. GREEN 75 initial cases; final 77 cases after malformed localized header and serialized evidence-bound regressions. Full --filter @wukong/shopline test: GREEN 228 tests in 11 files.
+2. --filter @wukong/db exec vitest run src/repositories/export-verifications.test.ts: RED missing module; GREEN 1 deterministic identity test (each identity dimension changes key).
+3. --filter @wukong/web exec vitest run lib/fresh-export-verification.test.ts: RED missing module; GREEN 17 initial service cases, final 20.
+4. --filter @wukong/web exec vitest run 'app/api/listings/export/[id]/verifications/route.test.ts': RED missing route; GREEN 16 route cases.
+5. Combined web focused command: GREEN 36 tests in 2 files. --filter @wukong/web typecheck GREEN.
+6. --filter @wukong/shopline build and --filter @wukong/db build GREEN.
+7. After sourcing .superpowers/sdd/task8-db-env.ps1: --filter @wukong/db exec vitest run src/repositories/export-verifications.integration.test.ts: first run 7/8 (audit rollback assertion expected unwrapped driver message; corrected to Drizzle cause), final GREEN 9/9. Tests use shared TEST_DATABASE_* convention and check admin/runtime same database. Actual run only task8_integration, non-superuser NOBYPASSRLS runtime.
+8. --filter @wukong/db exec vitest run src/export-verifications-migration.integration.test.ts with FRESH_EXPORT_REHEARSAL_DATABASE_ADMIN_URL pointing to task8_migration and FRESH_EXPORT_REHEARSAL_DISPOSABLE=yes: GREEN 2/2. Guard checks loopback:55445/task8_migration, separate from integration URL; current_database rechecked before each schema reset. Without explicit rehearsal opt-in, destructive tests skip. Proves fresh+replay; pre0017 synthetic legacy report ->0017 ->0018 upgrade preserves report and creates zero comparison receipts; full replay preserves report.
+9. Full DB unit suite initially exposed tenant audit probe coverage missing export_verifications; added new table to TENANT_TABLES. Focused audit-verify suite GREEN 12/12; full DB rerun recorded below.
 
-Typecheck command:
+Real DB guarantees checked: one evidence+audit for concurrent exact retry; first actor/filename retained; new snapshot appends; complete paged total including empty page; full-detail workspace+attempt scoping; direct runtime RLS; composite foreign workspace FK (guard temporarily disabled in rollback-only admin transaction to isolate FK); update/delete rejected even after runtime privilege regrant; failed audit rolls back evidence; immutable digest/connection/membership/chronology enforced; all-migration replay preserves existing evidence; total-envelope size rejects before insert. No trusted evidence backfill.
 
-```powershell
-npm.cmd run typecheck
-```
+## Review handoff / limitations
 
-Result: exit 0; `tsc -p tsconfig.json --noEmit` completed without errors.
+Independent spec/quality review is the next gate, owned by root after this commit. UI/E2E and full combined web suite remain root/Task2 gates. Services are root-owned and remain running for subsequent acceptance. Migration0018 has only been applied to guarded disposable local integration/rehearsal databases; operational DB and all production environments untouched by this task.
 
-Scoped whitespace command:
-
-```powershell
-git diff --check -- packages/shopline/src/delivery-policy.ts packages/shopline/src/delivery-policy.test.ts packages/shopline/src/index.ts
-```
-
-Result: exit 0; no whitespace errors.
-
-## Self-review
-
-- Checked that only the requested Shopline source files are staged for this task; pre-existing worktree modifications and untracked artifacts remain untouched.
-- Confirmed all policy outcomes are data-only objects and JSON-serializable.
-- Confirmed API connection eligibility uses supplied metadata only; the policy has no probe or connector seam to call.
-- Confirmed resolved compliance flags are not blocking, while open blocking flags retain the original structured flag data.
-
-## Concerns
-
-None for Task 1. Host adapter migration, publish-job state translation, and connector side-effect assertions remain intentionally deferred to Tasks 2–5.
-
-## Review Fix (2026-08-08)
-
-### Status
-
-DONE
-
-### Files
-
-- `packages/shopline/src/delivery-policy.ts`
-- `packages/shopline/src/delivery-policy.test.ts`
-- `.superpowers/sdd/task-1-report.md`
-
-### RED evidence
-
-```powershell
-npm.cmd run test -- src/delivery-policy.test.ts
-```
-
-Result: exit 1; the new published-before-connection, audit-facts, and cross-workspace connection regressions failed as expected (5 failures). After expanding the audit matrix to unsupported-method and wrong-target outcomes, the focused test correctly failed again with 2 missing version/digest assertions.
-
-### Fix
-
-- Restored the legacy policy order: after target, active-version, status, and blocking-flag checks, request-phase API `published` returns `already_published` before connection eligibility.
-- Made audit facts derive the active-version ID/digest whenever available and include any supplied connection ID; each result retains a specific reason.
-- Reused `projectToShopline` as the single established projection-and-validation boundary, removing the redundant second `validateShoplineProduct` call without changing API/CSV payload behavior.
-- Added focused coverage for a verified connection from another workspace returning `disconnected` with its connection ID in audit facts.
-
-### GREEN evidence
-
-Focused policy command:
-
-```powershell
-npm.cmd run test -- src/delivery-policy.test.ts
-```
-
-Result: exit 0; 1 passed file, 26 passed tests.
-
-Shopline package regression command:
-
-```powershell
-npm.cmd run test
-```
-
-Result: exit 0; 5 passed files, 52 passed tests.
-
-Typecheck command:
-
-```powershell
-npm.cmd run typecheck
-```
-
-Result: exit 0; `tsc -p tsconfig.json --noEmit` completed without errors.
-
-### Self-review
-
-- Confirmed stale-plan version/digest binding remains before projection and no policy-side connector work exists.
-- Confirmed API and CSV still share exactly `projectToShopline` and the resulting validated payload.
-- Confirmed the working changes are confined to the shared Shopline policy, its policy test, and this required report; existing web, worker, database, and unrelated worktree changes remain untouched.
-
-### Concerns
-
-None. The policy intentionally leaves remote-product lookup and host adapter side effects outside this pure contract.
+Final DB unit rerun: GREEN 69 tests in 14 files. Final formatting check and git diff --cached --check passed. Implementation commit before report inclusion: 0ffbb409a6e74bc88d3a9f28f4bf74bf9a1e2f69 (report added by amend; use current HEAD for review).

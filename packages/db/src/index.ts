@@ -122,3 +122,5 @@ export {
   ImportResultConflict,
   validateExportResultBinding,
 } from "./repositories/import-results.js";
+
+export * from "./repositories/export-verifications.js";
