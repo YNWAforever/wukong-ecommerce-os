@@ -54,6 +54,7 @@ export function ImportResultHistory({
 }
 type ImportResultFormProps = {
   listingId: string;
+  unavailable?: boolean;
   latestResult?: ImportResultReceipt | null;
   onRecorded?: () => void | Promise<void>;
 } & (
@@ -63,6 +64,7 @@ type ImportResultFormProps = {
 
 export function ImportResultForm({
   listingId,
+  unavailable = false,
   versionId,
   exportAttemptId,
   latestResult = null,
@@ -82,16 +84,36 @@ export function ImportResultForm({
   const payloadRef = useRef<string | null>(null);
   const inFlight = useRef(false);
 
+  const retryContext = useRef<{
+    intent: string;
+    predecessor: ImportResultReceipt | null;
+  } | null>(null);
+  const intent = JSON.stringify({
+    listingId,
+    mode,
+    exportAttemptId,
+    versionId,
+    outcome,
+    rejectReason: rejectReason.trim(),
+    correctionReason: correctionReason.trim(),
+  });
+  // A receipt refresh must not turn an ambiguous retry into a new correction.
+  // Changed operator input starts a new intent against the latest evidence.
+  const predecessor =
+    retryContext.current?.intent === intent
+      ? retryContext.current.predecessor
+      : latestResult;
+
   async function submit() {
-    if (inFlight.current) return;
+    if (inFlight.current || unavailable) return;
     const payload = {
       mode,
       outcome,
       ...(outcome === "rejected" ? { rejectReason: rejectReason.trim() } : {}),
       ...(mode === "export" ? { exportAttemptId, versionId } : {}),
-      ...(latestResult
+      ...(predecessor
         ? {
-            supersedesResultId: latestResult.id,
+            supersedesResultId: predecessor.id,
             correctionReason: correctionReason.trim(),
           }
         : {}),
@@ -101,6 +123,7 @@ export function ImportResultForm({
       payloadRef.current = identity;
       keyRef.current = crypto.randomUUID();
     }
+    retryContext.current = { intent, predecessor };
     inFlight.current = true;
     setBusy(true);
     setMessage(null);
@@ -121,6 +144,7 @@ export function ImportResultForm({
       await onRecorded?.();
       keyRef.current = null;
       payloadRef.current = null;
+      retryContext.current = null;
     } catch (error) {
       setFailed(true);
       setMessage(error instanceof Error ? error.message : "action_failed");
@@ -132,10 +156,12 @@ export function ImportResultForm({
 
   const invalid =
     (outcome === "rejected" && !rejectReason.trim()) ||
-    (!!latestResult && !correctionReason.trim());
+    (!!predecessor && !correctionReason.trim());
   return (
     <form
       className="result-form"
+      hidden={unavailable}
+      style={unavailable ? { display: "none" } : undefined}
       aria-busy={busy}
       aria-describedby={message ? messageId : undefined}
       onSubmit={(event) => {
@@ -167,7 +193,7 @@ export function ImportResultForm({
           />
         </label>
       ) : null}
-      {latestResult ? (
+      {predecessor ? (
         <label>
           {t("更正原因", "Correction reason")}
           <textarea
@@ -182,11 +208,11 @@ export function ImportResultForm({
       <button
         className="secondary-button"
         type="submit"
-        disabled={busy || invalid}
+        disabled={unavailable || busy || invalid}
       >
         {busy
           ? t("正在記錄…", "Recording…")
-          : latestResult
+          : predecessor
             ? t("記錄更正", "Record correction")
             : t("記錄操作員結果", "Record operator result")}
       </button>

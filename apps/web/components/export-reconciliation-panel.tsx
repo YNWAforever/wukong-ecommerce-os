@@ -51,6 +51,55 @@ export type WireExportReconciliationDetail = {
   };
 };
 
+// Receipts are append-only and revisions increase within an exact manifest member.
+// Merge evidence rather than response arrival order: parent reads and report reloads
+// can overlap, and each may contain a newer receipt for a different member.
+function mergeDetail(
+  current: WireExportReconciliationDetail,
+  incoming: WireExportReconciliationDetail,
+): WireExportReconciliationDetail {
+  if (current.attempt.id !== incoming.attempt.id) return incoming;
+  const members = incoming.reconciliation.members.map((member) => {
+    const previous = current.reconciliation.members.find(
+      (candidate) =>
+        candidate.listingId === member.listingId &&
+        candidate.versionId === member.versionId &&
+        candidate.outcome === member.outcome,
+    );
+    if (
+      !previous ||
+      (previous.latestResult?.revision ?? 0) <=
+        (member.latestResult?.revision ?? 0)
+    )
+      return member;
+    return {
+      ...member,
+      latestResult: previous.latestResult,
+      history: previous.history,
+    };
+  });
+  const included = members.filter((member) => member.outcome === "included");
+  const accepted = included.filter(
+    (member) => member.latestResult?.outcome === "accepted",
+  ).length;
+  const rejected = included.filter(
+    (member) => member.latestResult?.outcome === "rejected",
+  ).length;
+  return {
+    ...incoming,
+    reconciliation: {
+      ...incoming.reconciliation,
+      members,
+      counts: {
+        ...incoming.reconciliation.counts,
+        accepted,
+        rejected,
+        unreported: included.length - accepted - rejected,
+      },
+    },
+  };
+}
+
 export function ExportReconciliationPanel({
   detail: initialDetail,
 }: {
@@ -59,13 +108,26 @@ export function ExportReconciliationPanel({
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
   const [detail, setDetail] = useState(initialDetail);
+  const [previousParent, setPreviousParent] = useState(initialDetail);
+  // Update during render so children never commit stale predecessor props. This
+  // retains the same form instance and its in-flight/idempotency refs.
+  if (previousParent !== initialDetail) {
+    setPreviousParent(initialDetail);
+    setDetail((current) => mergeDetail(current, initialDetail));
+  }
   async function reload() {
     const response = await fetch(`/api/listings/export/${detail.attempt.id}`, {
       cache: "no-store",
     });
     if (!response.ok)
       throw new Error(`Unable to reload export status (${response.status})`);
-    setDetail((await response.json()) as WireExportReconciliationDetail);
+    const incoming = (await response.json()) as WireExportReconciliationDetail;
+    setDetail((current) =>
+      current.attempt.id === detail.attempt.id &&
+      incoming.attempt.id === detail.attempt.id
+        ? mergeDetail(current, incoming)
+        : current,
+    );
   }
   const { attempt, reconciliation, capabilities } = detail;
   const ready = attempt.artifactStatus === "ready";
@@ -180,11 +242,14 @@ export function ExportReconciliationPanel({
               label={t("更正記錄", "Correction history")}
               results={member.history}
             />
-            {ready &&
-            member.outcome === "included" &&
-            member.versionId &&
-            capabilities.canRecordImportResult ? (
+            {ready && member.outcome === "included" && member.versionId ? (
               <ImportResultForm
+                key={JSON.stringify([
+                  attempt.id,
+                  member.listingId,
+                  member.versionId,
+                ])}
+                unavailable={!capabilities.canRecordImportResult}
                 listingId={member.listingId}
                 mode="export"
                 versionId={member.versionId}

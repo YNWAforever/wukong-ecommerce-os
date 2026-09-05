@@ -232,3 +232,258 @@ it("reuses the idempotency key when an ambiguous result submission is retried", 
 
 // Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
 vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+
+function reported(
+  revision: number,
+  outcome: "accepted" | "rejected" = "rejected",
+): WireExportReconciliationDetail {
+  const receipt = {
+    id: "result-" + revision,
+    revision,
+    outcome,
+    rejectReason: outcome === "rejected" ? "rejection-" + revision : null,
+    correctionReason: revision > 1 ? "correction-" + revision : null,
+    createdAt: "2026-01-02T00:00:00Z",
+  };
+  return {
+    ...detail,
+    reconciliation: {
+      ...detail.reconciliation,
+      counts: {
+        ...detail.reconciliation.counts,
+        accepted: outcome === "accepted" ? 1 : 0,
+        rejected: outcome === "rejected" ? 1 : 0,
+        unreported: 0,
+      },
+      members: detail.reconciliation.members.map((m) =>
+        m.listingId === "listing-a"
+          ? { ...m, latestResult: receipt, history: [receipt] }
+          : m,
+      ),
+    },
+  };
+}
+function deferredResponse() {
+  let resolve!: (value: Response) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<Response>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+async function panelHarness(initial = detail) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = async (next: WireExportReconciliationDetail) => {
+    await act(async () =>
+      root.render(createElement(ExportReconciliationPanel, { detail: next })),
+    );
+  };
+  await render(initial);
+  return {
+    container,
+    render,
+    close: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    },
+  };
+}
+function count(container: HTMLElement, label: string) {
+  return Array.from(container.querySelectorAll("dt")).find(
+    (n) => n.textContent === label,
+  )?.nextElementSibling?.textContent;
+}
+
+it("adopts same-attempt parent receipts, counts, and correction predecessor", async () => {
+  const view = await panelHarness();
+  try {
+    await view.render(reported(1));
+    expect(view.container.textContent).toContain("rejection-1");
+    expect(count(view.container, "Rejected")).toBe("1");
+    expect(count(view.container, "Unreported")).toBe("0");
+    expect(
+      view.container.querySelector('textarea[aria-label="Correction reason"]'),
+    ).not.toBeNull();
+  } finally {
+    await view.close();
+  }
+});
+
+it("retains local post-report receipts when a stale parent response arrives", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ result: { id: "result-2" } }))
+    .mockResolvedValueOnce(Response.json(reported(2)));
+  vi.stubGlobal("fetch", fetcher);
+  const view = await panelHarness();
+  try {
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click();
+    });
+    expect(view.container.textContent).toContain("rejection-2");
+    await view.render(reported(1, "accepted"));
+    expect(view.container.textContent).toContain("rejection-2");
+    expect(count(view.container, "Rejected")).toBe("1");
+    expect(count(view.container, "Accepted")).toBe("0");
+    await view.render(reported(3, "accepted"));
+    expect(view.container.textContent).toContain("correction-3");
+    expect(count(view.container, "Accepted")).toBe("1");
+  } finally {
+    await view.close();
+  }
+});
+
+it("does not regress newer parent receipts when an older local reload completes", async () => {
+  const reload = deferredResponse();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ result: { id: "result-1" } }))
+      .mockReturnValueOnce(reload.promise),
+  );
+  const view = await panelHarness();
+  try {
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click();
+    });
+    await view.render(reported(2));
+    await act(async () =>
+      reload.resolve(Response.json(reported(1, "accepted"))),
+    );
+    expect(view.container.textContent).toContain("rejection-2");
+    expect(count(view.container, "Rejected")).toBe("1");
+    expect(count(view.container, "Accepted")).toBe("0");
+  } finally {
+    await view.close();
+  }
+});
+
+it("merges independently newer members rather than choosing a whole response", async () => {
+  const withSecond = (
+    first: number,
+    second: number,
+  ): WireExportReconciliationDetail => {
+    const value = reported(first);
+    const other = reported(second, "accepted").reconciliation.members[0]!;
+    return {
+      ...value,
+      reconciliation: {
+        ...value.reconciliation,
+        counts: {
+          requested: 2,
+          included: 2,
+          excluded: 0,
+          noOp: 0,
+          accepted: 1,
+          rejected: 1,
+          unreported: 0,
+        },
+        members: [
+          value.reconciliation.members[0]!,
+          { ...other, listingId: "listing-c", versionId: "version-c" },
+        ],
+      },
+    };
+  };
+  const view = await panelHarness(withSecond(2, 1));
+  try {
+    await view.render(withSecond(1, 3));
+    expect(
+      view.container.querySelector('[data-listing-id="listing-a"]')!
+        .textContent,
+    ).toContain("rejection-2");
+    expect(
+      view.container.querySelector('[data-listing-id="listing-c"]')!
+        .textContent,
+    ).toContain("correction-3");
+    expect(count(view.container, "Accepted")).toBe("1");
+    expect(count(view.container, "Rejected")).toBe("1");
+  } finally {
+    await view.close();
+  }
+});
+
+it("does not apply an old attempt reload to a replacement attempt", async () => {
+  const reload = deferredResponse();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ result: { id: "result-1" } }))
+      .mockReturnValueOnce(reload.promise),
+  );
+  const view = await panelHarness();
+  try {
+    await act(async () =>
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click(),
+    );
+    await view.render({
+      ...detail,
+      attempt: { ...detail.attempt, id: "attempt-other" },
+    });
+    await act(async () => reload.resolve(Response.json(reported(1))));
+    expect(
+      view.container.querySelector("article")!.dataset.exportAttemptId,
+    ).toBe("attempt-other");
+    expect(view.container.textContent).not.toContain("rejection-1");
+    expect(count(view.container, "Unreported")).toBe("1");
+  } finally {
+    await view.close();
+  }
+});
+
+it("retains an ambiguous retry through permission loss and restoration without allowing hidden submits", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockRejectedValueOnce(new Error("lost response"))
+    .mockResolvedValueOnce(Response.json({ replayed: true }))
+    .mockResolvedValueOnce(Response.json(reported(1, "accepted")));
+  let key = 0;
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("crypto", { randomUUID: () => "key-" + ++key });
+  const view = await panelHarness();
+  try {
+    await act(async () =>
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click(),
+    );
+    await view.render({
+      ...reported(1, "accepted"),
+      capabilities: { ...detail.capabilities, canRecordImportResult: false },
+    });
+    const retainedForm = view.container.querySelector("form");
+    expect(retainedForm).not.toBeNull();
+    expect(retainedForm!.hidden).toBe(true);
+    expect(retainedForm!.style.display).toBe("none");
+    await act(async () =>
+      retainedForm!.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    await view.render(reported(1, "accepted"));
+    expect(view.container.querySelector("form")).toBe(retainedForm);
+    await act(async () =>
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click(),
+    );
+    expect(fetcher.mock.calls[1]![1]!.body).toBe(
+      fetcher.mock.calls[0]![1]!.body,
+    );
+  } finally {
+    await view.close();
+  }
+});
