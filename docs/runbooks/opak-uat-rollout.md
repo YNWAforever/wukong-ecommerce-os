@@ -62,3 +62,7 @@ Infrastructure rollback remains in production-readiness.md; it does not restore 
 Record stage, dates, product count, deployed revision and migration evidence; private evidence references for source/delivered/fresh-export digests and all-field comparisons; blank/+0 decision; attempt reconciliation including corrections; stage-scoped audit:verify aggregate result (zero missing actions and zero accessible foreign records); remaining defects; named Opak approver and explicit written advance/stop decision.
 
 No provider calls, production migration, deployment, merchant data import or SHOPLINE write is authorized by this document alone.
+
+## Attempt review packet
+
+The selected-comparison evidence packet can assemble the exact export references, applicable receipt revisions and normalized comparison for stage review. It records a database as-of time and payload digest; subsequent operator corrections require a refreshed preview. It does not select the latest comparison automatically or sign off a stage. Continue retaining authorized original workbooks and obtaining the written merchant decisions required above. Packet integrity is a payload hash, not proof of merchant origin, export time, causality, stock neutrality or client receipt.

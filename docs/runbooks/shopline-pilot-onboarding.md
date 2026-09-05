@@ -202,3 +202,11 @@ For a ready attempt, a reviewer/admin/owner can open its separate comparison pan
 Review intended-content and protected-field differences, missing or ambiguous products, and quantity instruction observations separately. History is paged; select a record to inspect its full normalized evidence. Comparisons do not change operator accepted/rejected totals or their unverified status. A match means only that the compared normalized fields match the supplied snapshot.
 
 The system retains the supplied digest and normalized relevant rows, not the original supplied XLSX bytes. Retain authorized original workbooks in the approved private evidence location. This feature requires the reviewed code and migration 0018 to be deployed through a separately authorized rollout; local synthetic verification does not authorize that rollout.
+
+### Download an attempt evidence packet
+
+Open the exact comparison to review, preview its evidence packet, then download the JSON attachment. Review the selected comparison ID, receipt and member counts, and as-of time. A newer comparison is not chosen automatically. If receipts changed after preview, refresh and review the new summary before downloading. Unavailable requests can be retried while retaining the selection.
+
+The packet includes the selected normalized comparison and applicable operator receipt revisions, with explicit unreported members. It is bounded to 3 MiB and 1,000 receipt revisions; oversized evidence is refused. To check integrity, canonicalize the parsed payload using the declared sorted-json-v1 rules and compare its UTF-8 SHA-256 with payloadSha256. The hash detects payload changes; it is not an authenticated merchant signature.
+
+Retain the downloaded packet only in the approved private evidence location. It does not contain original supplied XLSX bytes, replace required merchant evidence, advance a UAT stage, or authorize a write. Store/time are operator-attested and reports remain independently unverified. A download audit records response preparation, not receipt by the reviewer. Use requires a separately authorized rollout of the reviewed code; this phase adds no migration.
