@@ -64,16 +64,14 @@ export function createExportEvidenceService(deps: {
             failure("evidence_snapshot_changed");
           let bytes: Uint8Array;
           try {
-            bytes = await deps
-              .getAssetStore()
-              .readObject(
-                input.workspaceId,
-                createExportAssetKey({
-                  workspaceId: input.workspaceId,
-                  exportAttemptId: input.exportAttemptId,
-                  fileName: `export-${input.exportAttemptId}.xlsx`,
-                }),
-              );
+            bytes = await deps.getAssetStore().readObject(
+              input.workspaceId,
+              createExportAssetKey({
+                workspaceId: input.workspaceId,
+                exportAttemptId: input.exportAttemptId,
+                fileName: `export-${input.exportAttemptId}.xlsx`,
+              }),
+            );
           } catch {
             failure("export_artifact_unavailable", 503);
           }
