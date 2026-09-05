@@ -18,6 +18,9 @@ function handlerFor(
   role: "viewer" | "operator" | "reviewer" | "admin" | "owner",
   hasConnection = false,
   overrides: {
+    importResults?: {
+      listHistoricalForListing: (id: string) => Promise<any[]>;
+    };
     sourceAssets?: { listForListing: (id: string) => Promise<any[]> };
     workspaces?: { requireProfile: () => Promise<any> };
     assetStore?: { createReadUrl: (...args: any[]) => Promise<any> };
@@ -56,6 +59,11 @@ function handlerFor(
                   evidence: [],
                   flags: [],
                 };
+              },
+            },
+            importResults: overrides.importResults ?? {
+              async listHistoricalForListing() {
+                return [];
               },
             },
             publishJobs: {
@@ -380,4 +388,19 @@ it("includes the listing's activity feed in the response", async () => {
   expect(response.status).toBe(200);
   const body = await response.json();
   expect(Array.isArray(body.activity)).toBe(true);
+});
+
+it("returns durable manual history from the authorized listing read", async () => {
+  const history = [
+    { id: "manual-receipt", mode: "historical_manual", revision: 2 },
+  ];
+  const listHistoricalForListing = vi.fn().mockResolvedValue(history);
+  const response = await handlerFor("operator", false, {
+    importResults: { listHistoricalForListing },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).historicalImportResults).toEqual(history);
+  expect(listHistoricalForListing).toHaveBeenCalledWith(listingId);
 });

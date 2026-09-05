@@ -243,3 +243,46 @@ describe("trusted results repository", () => {
     }
   });
 });
+
+it("reloads a listing's manual correction history without export or foreign records", async () => {
+  const exported = await attempt();
+  await create({ ...base, exportAttemptId: exported.id });
+  const otherListing = "44444444-4444-4444-8444-444444444444";
+  await admin`insert into listing_drafts(id,workspace_id) values(${otherListing},'ws_results')`;
+  const manual = {
+    mode: "historical_manual" as const,
+    listingId,
+    exportAttemptId: null,
+    idempotencyKey: "manual-first",
+    outcome: "accepted" as const,
+    rejectReason: null,
+    recordedBy: "user",
+  };
+  const [first, correction] = await db.forWorkspace("ws_results", async (r) => {
+    const first = await r.importResults.create(manual);
+    const correction = await r.importResults.create({
+      ...manual,
+      idempotencyKey: "manual-correction",
+      outcome: "rejected",
+      rejectReason: "Synthetic correction",
+      supersedesResultId: first.id,
+      correctionReason: "Reviewed history",
+    });
+    return [first, correction];
+  });
+  await create({
+    ...manual,
+    listingId: otherListing,
+    idempotencyKey: "other-manual",
+  });
+  const history = await db.forWorkspace("ws_results", (r) =>
+    r.importResults.listHistoricalForListing(listingId),
+  );
+  expect(history.map((r) => r.id)).toEqual([correction!.id, first!.id]);
+  expect(history[0]!.createdAt).toEqual(history[1]!.createdAt);
+  expect(
+    await db.forWorkspace("other", (r) =>
+      r.importResults.listHistoricalForListing(listingId),
+    ),
+  ).toEqual([]);
+});

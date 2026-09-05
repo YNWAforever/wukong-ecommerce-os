@@ -155,6 +155,8 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             contentDigest: platformProductLink?.contentDigest ?? null,
             permissions: listingPermissions(session.role),
             activity,
+            historicalImportResults:
+              await repositories.importResults.listHistoricalForListing(id),
           };
         });
       return jsonResponse(200, result);

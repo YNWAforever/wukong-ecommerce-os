@@ -51,6 +51,7 @@ export type ImportResultRepository = {
     input: CreateImportResultInput,
   ): Promise<ImportResult & { wasCreated: boolean }>;
   listForWorkspace(limit?: number): Promise<ImportResult[]>;
+  listHistoricalForListing(listingId: string): Promise<ImportResult[]>;
   listForExportAttempts(ids: readonly string[]): Promise<ImportResult[]>;
 };
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -280,6 +281,22 @@ export function createImportResultRepository(
           .where(workspace)
           .orderBy(desc(importResults.createdAt), desc(importResults.id))
           .limit(limit)
+      ).map(parse);
+    },
+    async listHistoricalForListing(listingId) {
+      scope.assertOpen();
+      return (
+        await transaction
+          .select(columns)
+          .from(importResults)
+          .where(
+            and(
+              workspace,
+              eq(importResults.listingId, listingId),
+              eq(importResults.mode, "historical_manual"),
+            ),
+          )
+          .orderBy(desc(importResults.revision))
       ).map(parse);
     },
     async listForExportAttempts(ids) {
