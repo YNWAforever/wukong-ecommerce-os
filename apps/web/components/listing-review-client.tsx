@@ -536,10 +536,13 @@ export function ListingReviewClient({
           setProcessingState(undefined);
         }
       } catch (cause) {
-        if (requestId.current !== id || signal?.aborted) return;
-        setError(
-          cause instanceof Error ? cause.message : "Unable to load listing.",
-        );
+        if (requestId.current === id && !signal?.aborted) {
+          setError(
+            cause instanceof Error ? cause.message : "Unable to load listing.",
+          );
+        }
+        // Background callers swallow rejection; imperative callers must observe it
+        // even when a newer request owns the displayed snapshot and load error.
         throw cause;
       }
     },

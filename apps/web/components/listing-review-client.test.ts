@@ -333,6 +333,43 @@ describe("ListingReviewClient processing orchestration", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it("rejects an imperative refresh superseded by a successful poll without claiming mutation success", async () => {
+    let rejectRefresh!: (cause: Error) => void;
+    const refresh = new Promise<Response>((_, reject) => {
+      rejectRefresh = reject;
+    });
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockResolvedValueOnce(
+        Response.json({ processing: { state: "queued", jobId: "job_1" } }),
+      )
+      .mockReturnValueOnce(refresh)
+      .mockResolvedValueOnce(Response.json(processingSnapshot("processing")));
+    const { container } = await mountReview("retry_required");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Start processing"))!
+        .click();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(container.textContent).toContain("AI processing");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => {
+      rejectRefresh(new Error("imperative refresh failed"));
+    });
+    expect(container.querySelector(".success-note")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "imperative refresh failed",
+    );
+    expect(container.textContent).toContain("AI processing");
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
   it("rejects the current imperative refresh so a mutation cannot claim refresh success", async () => {
     processingFetcher()
       .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
