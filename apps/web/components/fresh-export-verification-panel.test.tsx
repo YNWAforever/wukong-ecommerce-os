@@ -6,11 +6,15 @@ import {
   FreshExportVerificationPanel,
   comparisonTimeToIso,
 } from "./fresh-export-verification-panel";
-vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+const testLocale = vi.hoisted(() => ({ value: "en" as "en" | "zh-Hant" }));
+vi.mock("../lib/locale-context", () => ({ useLocale: () => testLocale.value }));
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  testLocale.value = "en";
+});
 it("converts explicit Hong Kong seconds and rejects invalid calendar dates", () => {
   expect(comparisonTimeToIso("2026-09-05T12:34:56")).toBe(
     "2026-09-05T04:34:56.000Z",
@@ -55,6 +59,19 @@ it("sends raw selected workbook, explicit time and attestation; retains lost-res
   await act(async () =>
     host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
   );
+  const collapseAndReopen = async () => {
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>("button")!.click(),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>("button")!.click(),
+    );
+    const visibleInput =
+      host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    expect(visibleInput.files?.[0]).toBe(file);
+    expect(visibleInput).toBe(input);
+  };
+  await collapseAndReopen();
   const submit = () =>
     host
       .querySelector("form")!
@@ -75,6 +92,7 @@ it("sends raw selected workbook, explicit time and attestation; retains lost-res
   expect(posts()[0]![1]!.body).toBe(file);
   expect(host.textContent).not.toContain("private transport detail");
   expect(time.value).toBe("2026-09-05T12:34:56");
+  await collapseAndReopen();
   await act(async () => submit());
   expect(posts()).toHaveLength(2);
   expect(posts()[1]).toEqual(posts()[0]);
@@ -249,3 +267,99 @@ it("rejects missing selection/time/attestation without posting and ignores super
   expect(host.textContent).toContain("per page; total 5");
   await act(async () => root.unmount());
 });
+
+it.each([
+  [
+    "comparison_workbook_invalid",
+    "Choose a valid current SHOPLINE workbook",
+    "請選擇有效的現行 SHOPLINE 工作簿",
+  ],
+  ["comparison_input_too_large", "Use a smaller snapshot", "請使用較小的快照"],
+  [
+    "comparison_upload_too_large",
+    "Choose an XLSX up to 4 MiB",
+    "請選擇不超過 4 MiB 的 XLSX",
+  ],
+  [
+    "comparison_filename_invalid",
+    "Choose a workbook with a valid .xlsx filename",
+    "請選擇具有效 .xlsx 檔名的工作簿",
+  ],
+  [
+    "comparison_same_store_required",
+    "Confirm the snapshot is from the same SHOPLINE store",
+    "請確認快照來自同一 SHOPLINE 商店",
+  ],
+  [
+    "comparison_input_invalid",
+    "Check the selected workbook, export time and same-store confirmation",
+    "請檢查所選工作簿、匯出時間及同一商店確認",
+  ],
+  [
+    "comparison_unavailable",
+    "Inputs are retained; please retry",
+    "輸入已保留，請重試",
+  ],
+])(
+  "renders safe actionable bilingual API error for %s",
+  async (code, en, zh) => {
+    for (const locale of ["en", "zh-Hant"] as const) {
+      testLocale.value = locale;
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn<typeof fetch>()
+          .mockImplementation(async (_url, init) =>
+            init?.method === "POST"
+              ? Response.json(
+                  { code, message: "private provider details" },
+                  { status: 400 },
+                )
+              : Response.json({ items: [], total: 0, page: 1, pageSize: 10 }),
+          ),
+      );
+      const host = document.createElement("div"),
+        root = createRoot(host);
+      await act(async () =>
+        root.render(
+          createElement(FreshExportVerificationPanel, {
+            attemptId: "attempt-1",
+          }),
+        ),
+      );
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>("button")!.click(),
+      );
+      const file = new File(["xlsx"], "retained.xlsx"),
+        input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+      await act(async () => {
+        Object.defineProperty(input, "files", { value: [file] });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const time = host.querySelector<HTMLInputElement>(
+        'input[type="datetime-local"]',
+      )!;
+      await act(async () => {
+        time.value = "2026-09-05T12:34:56";
+        time.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+      );
+      await act(async () =>
+        host
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          ),
+      );
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        locale === "en" ? en : zh,
+      );
+      expect(host.textContent).not.toContain("private provider details");
+      expect(input.files?.[0]).toBe(file);
+      expect(time.value).toBe("2026-09-05T12:34:56");
+      await act(async () => root.unmount());
+    }
+  },
+);

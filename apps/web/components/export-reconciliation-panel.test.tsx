@@ -672,5 +672,7 @@ it("only exposes fresh comparison for ready reviewer-capable attempts", () => {
       attempt: { ...detail.attempt, artifactStatus: "pending" },
     }),
   ).not.toContain("Compare fresh export");
-  expect(render(detail)).not.toMatch(/<form[^>]*>[^]*<form/);
+  const parsed = document.createElement("div");
+  parsed.innerHTML = render(detail);
+  expect(parsed.querySelector("form form")).toBeNull();
 });

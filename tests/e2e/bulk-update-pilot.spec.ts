@@ -577,6 +577,82 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     name: "Record snapshot comparison",
     exact: true,
   });
+  const compareToggle = compare.getByRole("button", {
+    name: "Compare fresh export",
+    exact: true,
+  });
+  const collapseAndReopenComparison = async (selectedName: string) => {
+    await compareToggle.click();
+    await expect(compareFile).toBeHidden();
+    await compareToggle.click();
+    await expect(compareFile).toBeVisible();
+    expect(
+      await compareFile.evaluate(
+        (element: HTMLInputElement) => element.files?.[0]?.name,
+      ),
+    ).toBe(selectedName);
+    await expect(compareTime).toHaveValue(snapshotTime);
+    await expect(
+      compare.getByLabel(
+        "I confirm this snapshot is from the same SHOPLINE store.",
+        { exact: true },
+      ),
+    ).toBeChecked();
+  };
+  const invalidHeader = snapshotSheet.map((row) => [...row]);
+  invalidHeader[0]![0] = "Invalid header";
+  const oversizedRow = snapshotSheet[2]!.map((cell, index) =>
+    ["productId", "variantId"].includes(BULK_FORM_COLUMNS[index]!.key)
+      ? cell
+      : "x".repeat(32767),
+  );
+  for (const invalid of [
+    {
+      name: "invalid-headers.xlsx",
+      buffer: Buffer.from(writeBulkFormWorkbook(invalidHeader)),
+      status: 400,
+      code: "comparison_workbook_invalid",
+      copy: "Choose a valid current SHOPLINE workbook",
+    },
+    {
+      name: "oversized-evidence.xlsx",
+      buffer: Buffer.from(
+        writeBulkFormWorkbook([...snapshotSheet.slice(0, 2), oversizedRow]),
+      ),
+      status: 413,
+      code: "comparison_input_too_large",
+      copy: "Use a smaller snapshot",
+    },
+  ]) {
+    await compareFile.setInputFiles({
+      name: invalid.name,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: invalid.buffer,
+    });
+    const invalidResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === comparisonPath &&
+        r.request().method() === "POST",
+    );
+    await compareSubmit.click();
+    const response = await invalidResponse;
+    expect(response.status()).toBe(invalid.status);
+    expect(await response.json()).toMatchObject({ code: invalid.code });
+    await expect(compare.getByRole("alert")).toContainText(invalid.copy);
+    expect(
+      await compareFile.evaluate(
+        (element: HTMLInputElement) => element.files?.[0]?.name,
+      ),
+    ).toBe(invalid.name);
+  }
+  await compareFile.setInputFiles({
+    name: "matching-snapshot.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: matchingBytes,
+  });
+  await collapseAndReopenComparison("matching-snapshot.xlsx");
   const matchesResponse = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === comparisonPath &&
@@ -633,6 +709,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(
     await compareFile.evaluate((e: HTMLInputElement) => e.files?.[0]?.name),
   ).toBe("changed-missing.xlsx");
+  await collapseAndReopenComparison("changed-missing.xlsx");
   const comparisonRetry = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === comparisonPath &&

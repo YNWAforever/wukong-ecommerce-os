@@ -145,25 +145,47 @@ export function FreshExportVerificationPanel({
       });
       if (!response.ok) {
         const body = (await response.json()) as { code?: string };
-        if (body.code === "comparison_export_time_invalid")
-          throw new Error("time");
-        throw new Error();
+        const correction: Record<string, string> = {
+          comparison_export_time_invalid: t(
+            "匯出時間必須晚於檔案準備時間，且不可在未來。",
+            "Export time must be after artifact readiness and cannot be in the future.",
+          ),
+          comparison_workbook_invalid: t(
+            "請選擇有效的現行 SHOPLINE 工作簿，包含 Default 工作表及完整英文和繁體中文標題列。",
+            "Choose a valid current SHOPLINE workbook with the Default sheet and complete English and Traditional Chinese header rows.",
+          ),
+          comparison_input_too_large: t(
+            "請使用較小的快照；標準化比較證據超出上限。請減少資料列或過長的儲存格內容。",
+            "Use a smaller snapshot; normalized comparison evidence exceeds the limit. Reduce rows or oversized cell content.",
+          ),
+          comparison_upload_too_large: t(
+            "請選擇不超過 4 MiB 的 XLSX 工作簿。",
+            "Choose an XLSX up to 4 MiB.",
+          ),
+          comparison_filename_invalid: t(
+            "請選擇具有效 .xlsx 檔名的工作簿。",
+            "Choose a workbook with a valid .xlsx filename.",
+          ),
+          comparison_same_store_required: t(
+            "請確認快照來自同一 SHOPLINE 商店，並勾選確認方格。",
+            "Confirm the snapshot is from the same SHOPLINE store and select the confirmation checkbox.",
+          ),
+          comparison_input_invalid: t(
+            "請檢查所選工作簿、匯出時間及同一商店確認，修正後再提交。",
+            "Check the selected workbook, export time and same-store confirmation, then submit the corrected evidence.",
+          ),
+        };
+        if (alive.current)
+          setError(correction[body.code ?? ""] ?? retryError());
+        return;
       }
       const body = (await response.json()) as RecordExportVerificationWire;
       if (alive.current) {
         if (request === detailRequest.current) setSelected(body.verification);
         await loadHistory(1);
       }
-    } catch (cause) {
-      if (alive.current)
-        setError(
-          cause instanceof Error && cause.message === "time"
-            ? t(
-                "匯出時間必須晚於檔案準備時間，且不可在未來。",
-                "Export time must be after artifact readiness and cannot be in the future.",
-              )
-            : retryError(),
-        );
+    } catch {
+      if (alive.current) setError(retryError());
     } finally {
       inFlight.current = false;
       if (alive.current) setBusy(false);
@@ -185,272 +207,269 @@ export function FreshExportVerificationPanel({
       >
         {t("比較最新匯出", "Compare fresh export")}
       </button>
-      {open && (
-        <div>
-          <h4>{t("所提供快照比較", "Supplied snapshot comparison")}</h4>
-          <p>
-            {t(
-              "所提供快照；商店及時間由操作員聲明。原始 XLSX 不會保留，亦無法下載。",
-              "Supplied snapshot; store and time operator-attested. Original supplied XLSX bytes are not retained or downloadable.",
-            )}
-          </p>
-          <p className="helper-copy">
-            {t(
-              "比較 8 個預期內容欄位及 61 個受保護欄位的標準化字串。受保護欄位差異只屬觀察，並不證明成因。另列 2 個庫存增減指令，不能證明庫存不變。不核實原始 Excel 類型或格式、商家來源、實際套用或目前 SHOPLINE 即時狀態；操作員回報及未核實狀態不變。",
-              "Compares normalized strings in 8 intended content and 61 protected fields. Protected differences are observations, not causation claims. The 2 quantity-delta instructions are separate and cannot establish stock neutrality. This does not verify raw Excel types/styles, authenticated merchant origin, causal application or current live SHOPLINE truth. Operator reports and unverified status remain unchanged.",
-            )}
-          </p>
-          <form onSubmit={submit} noValidate>
-            <fieldset disabled={busy}>
-              <label>
-                {t("最新 SHOPLINE XLSX", "Fresh SHOPLINE XLSX")}
-                <input
-                  type="file"
-                  accept=".xlsx"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
-              <label>
-                {t(
-                  "SHOPLINE 匯出時間（香港 UTC+08:00）",
-                  "SHOPLINE export time (Hong Kong UTC+08:00)",
-                )}
-                <input
-                  type="datetime-local"
-                  step="1"
-                  value={time}
-                  onInput={(e) => setTime(e.currentTarget.value)}
-                  onChange={(e) => setTime(e.target.value)}
-                />
-              </label>
-              <p className="helper-copy">
-                {t(
-                  "明確輸入晚於交付檔案準備時間的匯出時間；不會使用檔案時間。",
-                  "Enter the export time explicitly, after delivered artifact readiness; file timestamps are not used.",
-                )}
-              </p>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={sameStore}
-                  onChange={(e) => setSameStore(e.target.checked)}
-                />
-                {t(
-                  "我確認此快照來自同一 SHOPLINE 商店。",
-                  "I confirm this snapshot is from the same SHOPLINE store.",
-                )}
-              </label>
-              <button type="submit" className="primary-button">
-                {busy
-                  ? t("比較中…", "Comparing…")
-                  : t("記錄快照比較", "Record snapshot comparison")}
-              </button>
-            </fieldset>
-          </form>
-          {error && <p role="alert">{error}</p>}
-          <h4>{t("比較記錄", "Comparison history")}</h4>
-          <button
-            type="button"
-            className="secondary-button"
-            disabled={loading || busy}
-            onClick={() => void loadHistory(history?.page ?? 1)}
-          >
-            {t("重新整理比較記錄", "Refresh comparison history")}
-          </button>
-          {loading && <p role="status">{t("載入中…", "Loading…")}</p>}
-          {history && (
-            <>
-              <p>
-                {t("頁", "Page")} {history.page} · {t("每頁最多", "Up to")}{" "}
-                {history.pageSize} {t("筆；總共", "per page; total")}{" "}
-                {history.total}
-              </p>
-              <ul>
-                {history.items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => void loadDetail(item.id)}
-                    >
-                      {item.filename} · {label(item.comparison.outcome)} ·{" "}
-                      {formatHkDate(item.merchantAttestedExportAt, locale)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                disabled={loading || busy || history.page <= 1}
-                onClick={() => void loadHistory(history.page - 1)}
-              >
-                {t("上一頁", "Previous page")}
-              </button>{" "}
-              <button
-                type="button"
-                disabled={
-                  loading ||
-                  busy ||
-                  history.page * history.pageSize >= history.total
-                }
-                onClick={() => void loadHistory(history.page + 1)}
-              >
-                {t("下一頁", "Next page")}
-              </button>
-            </>
+      <div hidden={!open}>
+        <h4>{t("所提供快照比較", "Supplied snapshot comparison")}</h4>
+        <p>
+          {t(
+            "所提供快照；商店及時間由操作員聲明。原始 XLSX 不會保留，亦無法下載。",
+            "Supplied snapshot; store and time operator-attested. Original supplied XLSX bytes are not retained or downloadable.",
           )}
-          {selected && (
-            <div data-verification-id={selected.id}>
-              <h4>{label(selected.comparison.outcome)}</h4>
-              <p>
-                {selected.filename} ·{" "}
-                {formatHkDate(selected.merchantAttestedExportAt, locale)}
-              </p>
-              <dl className="reconciliation-counts">
-                {Object.entries(selected.comparison.counts).map(
-                  ([key, value]) => (
-                    <div key={key}>
-                      <dt>
-                        {
-                          (
-                            {
-                              expected: t("預期商品", "Expected products"),
-                              matched: t("相符商品", "Matched products"),
-                              differences: t(
-                                "差異商品",
-                                "Products with differences",
-                              ),
-                              missing: t("缺少商品", "Missing products"),
-                              ambiguous: t("重複 ID", "Ambiguous IDs"),
-                              unsupportedVariant: t(
-                                "不支援變體",
-                                "Unsupported variants",
-                              ),
-                              unrelatedRows: t("無關資料列", "Unrelated rows"),
-                              suppliedRows: t("提供資料列", "Supplied rows"),
-                            } as Record<string, string>
-                          )[key]
-                        }
-                      </dt>
-                      <dd>{value}</dd>
-                    </div>
-                  ),
-                )}
-              </dl>
-              <p>
-                {t("比較 ID", "Comparison ID")}: <code>{selected.id}</code>
-                <br />
-                {t("商店連接", "Store connection")}:{" "}
-                <code>{selected.connectionId}</code>
-                <br />
-                {t("檔案 SHA-256", "Artifact SHA-256")}:{" "}
-                <code>{selected.artifactSha256}</code>
-                <br />
-                {t("快照 SHA-256", "Snapshot SHA-256")}:{" "}
-                <code>{selected.suppliedSha256}</code>
-                <br />
-                {t("記錄人", "Recorded by")}: {selected.recordedBy} ·{" "}
-                {formatHkDate(selected.createdAt, locale)} ·{" "}
-                {selected.policyVersion}
-              </p>
-              {selected.comparison.products.map((product) => (
-                <details key={product.productId}>
-                  <summary>
-                    {product.productId} · {label(product.outcome)}
-                  </summary>
-                  <p>
-                    {t("交付列", "Delivered row")}{" "}
-                    {product.expectedRow.rowNumber} ·{" "}
-                    {t("快照列", "Snapshot rows")}:{" "}
-                    {product.observedRows
-                      .map((row) => row.rowNumber)
-                      .join(", ") || t("無", "None")}
-                  </p>
-                  {product.fields.length > 0 ? (
-                    <>
-                      <p>
-                        {t(
-                          "69 個欄位：8 個預期內容、61 個受保護欄位",
-                          "69 fields: 8 intended content, 61 protected",
-                        )}
-                      </p>
-                      <ul>
-                        {product.fields
-                          .filter((field) => field.different)
-                          .map((field) => (
-                            <li key={field.column}>
-                              <strong>{field.column}</strong> ·{" "}
-                              {field.category === "intended"
-                                ? t("預期內容", "Intended content")
-                                : t("受保護", "Protected")}
-                              <div>
-                                {t("預期", "Expected")}:{" "}
-                                <code>
-                                  {field.expected === null
-                                    ? t("空白", "Blank")
-                                    : JSON.stringify(field.expected)}
-                                </code>
-                              </div>
-                              <div>
-                                {t("觀察", "Observed")}:{" "}
-                                <code>
-                                  {field.observed === null
-                                    ? t("空白", "Blank")
-                                    : JSON.stringify(field.observed)}
-                                </code>
-                              </div>
-                            </li>
-                          ))}
-                      </ul>
-                      <h5>
-                        {t(
-                          "庫存增減指令觀察（分開列示）",
-                          "Quantity-delta observations (separate)",
-                        )}
-                      </h5>
-                      <ul>
-                        {product.quantityDeltaObservations.map((field) => (
-                          <li key={field.column}>
-                            {field.column}: {t("預期", "Expected")}{" "}
-                            {JSON.stringify(field.expected)} →{" "}
-                            {t("觀察", "Observed")}{" "}
-                            {JSON.stringify(field.observed)}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  ) : (
+        </p>
+        <p className="helper-copy">
+          {t(
+            "比較 8 個預期內容欄位及 61 個受保護欄位的標準化字串。受保護欄位差異只屬觀察，並不證明成因。另列 2 個庫存增減指令，不能證明庫存不變。不核實原始 Excel 類型或格式、商家來源、實際套用或目前 SHOPLINE 即時狀態；操作員回報及未核實狀態不變。",
+            "Compares normalized strings in 8 intended content and 61 protected fields. Protected differences are observations, not causation claims. The 2 quantity-delta instructions are separate and cannot establish stock neutrality. This does not verify raw Excel types/styles, authenticated merchant origin, causal application or current live SHOPLINE truth. Operator reports and unverified status remain unchanged.",
+          )}
+        </p>
+        <form onSubmit={submit} noValidate>
+          <fieldset disabled={busy}>
+            <label>
+              {t("最新 SHOPLINE XLSX", "Fresh SHOPLINE XLSX")}
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <label>
+              {t(
+                "SHOPLINE 匯出時間（香港 UTC+08:00）",
+                "SHOPLINE export time (Hong Kong UTC+08:00)",
+              )}
+              <input
+                type="datetime-local"
+                step="1"
+                value={time}
+                onInput={(e) => setTime(e.currentTarget.value)}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </label>
+            <p className="helper-copy">
+              {t(
+                "明確輸入晚於交付檔案準備時間的匯出時間；不會使用檔案時間。",
+                "Enter the export time explicitly, after delivered artifact readiness; file timestamps are not used.",
+              )}
+            </p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={sameStore}
+                onChange={(e) => setSameStore(e.target.checked)}
+              />
+              {t(
+                "我確認此快照來自同一 SHOPLINE 商店。",
+                "I confirm this snapshot is from the same SHOPLINE store.",
+              )}
+            </label>
+            <button type="submit" className="primary-button">
+              {busy
+                ? t("比較中…", "Comparing…")
+                : t("記錄快照比較", "Record snapshot comparison")}
+            </button>
+          </fieldset>
+        </form>
+        {error && <p role="alert">{error}</p>}
+        <h4>{t("比較記錄", "Comparison history")}</h4>
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={loading || busy}
+          onClick={() => void loadHistory(history?.page ?? 1)}
+        >
+          {t("重新整理比較記錄", "Refresh comparison history")}
+        </button>
+        {loading && <p role="status">{t("載入中…", "Loading…")}</p>}
+        {history && (
+          <>
+            <p>
+              {t("頁", "Page")} {history.page} · {t("每頁最多", "Up to")}{" "}
+              {history.pageSize} {t("筆；總共", "per page; total")}{" "}
+              {history.total}
+            </p>
+            <ul>
+              {history.items.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void loadDetail(item.id)}
+                  >
+                    {item.filename} · {label(item.comparison.outcome)} ·{" "}
+                    {formatHkDate(item.merchantAttestedExportAt, locale)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={loading || busy || history.page <= 1}
+              onClick={() => void loadHistory(history.page - 1)}
+            >
+              {t("上一頁", "Previous page")}
+            </button>{" "}
+            <button
+              type="button"
+              disabled={
+                loading ||
+                busy ||
+                history.page * history.pageSize >= history.total
+              }
+              onClick={() => void loadHistory(history.page + 1)}
+            >
+              {t("下一頁", "Next page")}
+            </button>
+          </>
+        )}
+        {selected && (
+          <div data-verification-id={selected.id}>
+            <h4>{label(selected.comparison.outcome)}</h4>
+            <p>
+              {selected.filename} ·{" "}
+              {formatHkDate(selected.merchantAttestedExportAt, locale)}
+            </p>
+            <dl className="reconciliation-counts">
+              {Object.entries(selected.comparison.counts).map(
+                ([key, value]) => (
+                  <div key={key}>
+                    <dt>
+                      {
+                        (
+                          {
+                            expected: t("預期商品", "Expected products"),
+                            matched: t("相符商品", "Matched products"),
+                            differences: t(
+                              "差異商品",
+                              "Products with differences",
+                            ),
+                            missing: t("缺少商品", "Missing products"),
+                            ambiguous: t("重複 ID", "Ambiguous IDs"),
+                            unsupportedVariant: t(
+                              "不支援變體",
+                              "Unsupported variants",
+                            ),
+                            unrelatedRows: t("無關資料列", "Unrelated rows"),
+                            suppliedRows: t("提供資料列", "Supplied rows"),
+                          } as Record<string, string>
+                        )[key]
+                      }
+                    </dt>
+                    <dd>{value}</dd>
+                  </div>
+                ),
+              )}
+            </dl>
+            <p>
+              {t("比較 ID", "Comparison ID")}: <code>{selected.id}</code>
+              <br />
+              {t("商店連接", "Store connection")}:{" "}
+              <code>{selected.connectionId}</code>
+              <br />
+              {t("檔案 SHA-256", "Artifact SHA-256")}:{" "}
+              <code>{selected.artifactSha256}</code>
+              <br />
+              {t("快照 SHA-256", "Snapshot SHA-256")}:{" "}
+              <code>{selected.suppliedSha256}</code>
+              <br />
+              {t("記錄人", "Recorded by")}: {selected.recordedBy} ·{" "}
+              {formatHkDate(selected.createdAt, locale)} ·{" "}
+              {selected.policyVersion}
+            </p>
+            {selected.comparison.products.map((product) => (
+              <details key={product.productId}>
+                <summary>
+                  {product.productId} · {label(product.outcome)}
+                </summary>
+                <p>
+                  {t("交付列", "Delivered row")} {product.expectedRow.rowNumber}{" "}
+                  · {t("快照列", "Snapshot rows")}:{" "}
+                  {product.observedRows
+                    .map((row) => row.rowNumber)
+                    .join(", ") || t("無", "None")}
+                </p>
+                {product.fields.length > 0 ? (
+                  <>
                     <p>
                       {t(
-                        "未比較欄位，並不代表相符。",
-                        "Fields were not compared; this does not mean matched.",
+                        "69 個欄位：8 個預期內容、61 個受保護欄位",
+                        "69 fields: 8 intended content, 61 protected",
                       )}
                     </p>
-                  )}
-                </details>
-              ))}
-              <details>
-                <summary>
-                  {t(
-                    "完整標準化證據及版本綁定",
-                    "Complete normalized evidence and version bindings",
-                  )}
-                </summary>
-                <pre>
-                  {JSON.stringify(
-                    {
-                      provenance: selected.provenance,
-                      products: selected.comparison.products,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
+                    <ul>
+                      {product.fields
+                        .filter((field) => field.different)
+                        .map((field) => (
+                          <li key={field.column}>
+                            <strong>{field.column}</strong> ·{" "}
+                            {field.category === "intended"
+                              ? t("預期內容", "Intended content")
+                              : t("受保護", "Protected")}
+                            <div>
+                              {t("預期", "Expected")}:{" "}
+                              <code>
+                                {field.expected === null
+                                  ? t("空白", "Blank")
+                                  : JSON.stringify(field.expected)}
+                              </code>
+                            </div>
+                            <div>
+                              {t("觀察", "Observed")}:{" "}
+                              <code>
+                                {field.observed === null
+                                  ? t("空白", "Blank")
+                                  : JSON.stringify(field.observed)}
+                              </code>
+                            </div>
+                          </li>
+                        ))}
+                    </ul>
+                    <h5>
+                      {t(
+                        "庫存增減指令觀察（分開列示）",
+                        "Quantity-delta observations (separate)",
+                      )}
+                    </h5>
+                    <ul>
+                      {product.quantityDeltaObservations.map((field) => (
+                        <li key={field.column}>
+                          {field.column}: {t("預期", "Expected")}{" "}
+                          {JSON.stringify(field.expected)} →{" "}
+                          {t("觀察", "Observed")}{" "}
+                          {JSON.stringify(field.observed)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <p>
+                    {t(
+                      "未比較欄位，並不代表相符。",
+                      "Fields were not compared; this does not mean matched.",
+                    )}
+                  </p>
+                )}
               </details>
-            </div>
-          )}
-        </div>
-      )}
+            ))}
+            <details>
+              <summary>
+                {t(
+                  "完整標準化證據及版本綁定",
+                  "Complete normalized evidence and version bindings",
+                )}
+              </summary>
+              <pre>
+                {JSON.stringify(
+                  {
+                    provenance: selected.provenance,
+                    products: selected.comparison.products,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
