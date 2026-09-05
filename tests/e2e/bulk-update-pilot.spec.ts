@@ -782,6 +782,263 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   } finally {
     await evidenceDb.end();
   }
+  // Task 9: explicitly select the older matching comparison, despite a newer one.
+  await compare.getByRole("button", { name: /matching-snapshot.xlsx/ }).click();
+  const packet = compare.getByRole("region", {
+    name: "Evidence packet",
+    exact: true,
+  });
+  const previewButton = packet.getByRole("button", {
+    name: "Preview evidence packet",
+    exact: true,
+  });
+  const downloadButton = packet.getByRole("button", {
+    name: "Download evidence JSON",
+    exact: true,
+  });
+  const packetPath = `/api/listings/export/${attemptId}/evidence-packet`;
+  await expect(downloadButton).toBeDisabled();
+  const previewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === packetPath &&
+      r.request().method() === "GET",
+  );
+  await previewButton.click();
+  const previewHttp = await previewResponse;
+  expect(previewHttp.status()).toBe(200);
+  expect(new URL(previewHttp.url()).searchParams.get("comparisonId")).toBe(
+    matchingRecord.id,
+  );
+  const reviewed = await previewHttp.json();
+  expect(reviewed).toMatchObject({
+    comparisonId: matchingRecord.id,
+    exportAttemptId: attemptId,
+    receiptRevisionCount: 3,
+    unreportedMemberCount: 0,
+  });
+  expect(reviewed.payload).toBeUndefined();
+  const repeatedPreview = await page.request.get(
+    packetPath + "?comparisonId=" + matchingRecord.id,
+  );
+  expect((await repeatedPreview.json()).snapshotSha256).toBe(
+    reviewed.snapshotSha256,
+  );
+  const auditConnection = postgres(ADMIN_URL, { max: 1, prepare: false });
+  const auditState = async () =>
+    await auditConnection`SELECT action,count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} GROUP BY action ORDER BY action`;
+  try {
+    const beforePacketAudit = await auditState();
+    expect(
+      beforePacketAudit.some(
+        (row) => row.action === "shopline.export_evidence_packet_downloaded",
+      ),
+    ).toBe(false);
+    // A genuine append-only receipt correction after preview must make POST stale.
+    const currentMember = detail.reconciliation.members.find(
+      (member: { listingId: string }) => member.listingId === listingIds[1],
+    );
+    const corrected = await page.request.post(
+      `/api/listings/${listingIds[1]}/shopline-import-result`,
+      {
+        data: {
+          mode: "export",
+          outcome: "accepted",
+          exportAttemptId: attemptId,
+          versionId: currentMember.versionId,
+          supersedesResultId: committedCorrection!.id,
+          correctionReason: "Synthetic evidence-packet stale-preview check",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    );
+    expect(corrected.status()).toBe(201);
+    const correction = (await corrected.json()).result;
+    const staleResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === packetPath &&
+        r.request().method() === "POST",
+    );
+    await downloadButton.click();
+    const stale = await staleResponse;
+    expect(stale.status()).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      code: "evidence_snapshot_changed",
+    });
+    expect(stale.request().postDataJSON()).toEqual({
+      comparisonId: matchingRecord.id,
+      expectedSnapshotSha256: reviewed.snapshotSha256,
+    });
+    await expect(packet.getByRole("alert")).toContainText(
+      "Refresh the preview and review",
+    );
+    await expect(downloadButton).toBeDisabled();
+    await expect(
+      compare.locator(`[data-verification-id="${matchingRecord.id}"]`),
+    ).toBeVisible();
+    await previewButton.click();
+    await expect(downloadButton).toBeEnabled();
+    // Retryable unavailable response preserves the reviewed identity.
+    await page.route(
+      "**" + packetPath,
+      (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "evidence_packet_unavailable" }),
+        }),
+      { times: 1 },
+    );
+    await downloadButton.click();
+    await expect(packet.getByRole("alert")).toContainText("Please retry");
+    await expect(downloadButton).toBeEnabled();
+    const beforeDownloadAudit = await auditState();
+    const downloadEvent = page.waitForEvent("download");
+    const downloadResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === packetPath &&
+        r.request().method() === "POST",
+    );
+    await downloadButton.click();
+    const download = await downloadEvent,
+      downloadHttp = await downloadResponse;
+    expect(downloadHttp.status()).toBe(200);
+    expect(downloadHttp.headers()["cache-control"]).toBe("no-store");
+    expect(downloadHttp.headers()["content-disposition"]).toContain(
+      `export-${attemptId}-comparison-${matchingRecord.id}-evidence.json`,
+    );
+    expect(download.suggestedFilename()).toBe(
+      `export-${attemptId}-comparison-${matchingRecord.id}-evidence.json`,
+    );
+    const jsonBytes = await readFile((await download.path())!);
+    expect(jsonBytes.byteLength).toBeLessThanOrEqual(3 * 1024 * 1024);
+    const envelope = JSON.parse(jsonBytes.toString("utf8"));
+    // Independent canonicalization: no production helper imported.
+    const sorted = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(sorted)
+        : value !== null && typeof value === "object"
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [
+                  key,
+                  sorted((value as Record<string, unknown>)[key]),
+                ]),
+            )
+          : value;
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(sorted(envelope.payload)))
+        .digest("hex"),
+    ).toBe(envelope.payloadSha256);
+    expect(jsonBytes.toString("utf8")).toBe(JSON.stringify(sorted(envelope)));
+    const { asOf: _asOf, ...snapshotPayload } = envelope.payload;
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(sorted(snapshotPayload)))
+        .digest("hex"),
+    ).toBe(downloadHttp.request().postDataJSON().expectedSnapshotSha256);
+    expect(envelope.payload.attempt).toMatchObject({
+      id: attemptId,
+      artifactSha256: matchingRecord.artifactSha256,
+    });
+    expect(envelope.payload.comparison).toMatchObject({
+      id: matchingRecord.id,
+      exportAttemptId: attemptId,
+      suppliedSha256: matchingRecord.suppliedSha256,
+    });
+    expect(envelope.payload.comparison.id).not.toBe(committedComparison!.id);
+    expect(envelope.payload.limitations).toEqual({
+      suppliedSnapshot: true,
+      storeAndTime: "operator_attested",
+      evidence: "normalized_cells_only",
+      quantityDeltas: "observational",
+      authenticatedLiveShoplineState: false,
+      causalityClaim: false,
+      stockNeutralityClaim: false,
+      uatSignOff: false,
+      merchantWriteAuthorization: false,
+    });
+    for (const member of envelope.payload.members) {
+      const binding = matchingRecord.provenance.evidence.find(
+        (e: { listingId: string }) => e.listingId === member.listingId,
+      );
+      expect(member).toMatchObject(binding);
+      const priorMember = detail.reconciliation.members.find(
+        (m: { listingId: string }) => m.listingId === member.listingId,
+      );
+      const expectedHistory = [
+        ...priorMember.history,
+        ...(member.listingId === listingIds[1] ? [correction] : []),
+      ].sort((a, b) => a.revision - b.revision);
+      expect(member.receipts.map((r: { id: string }) => r.id)).toEqual(
+        expectedHistory.map((r) => r.id),
+      );
+      member.receipts.forEach((r: Record<string, unknown>, index: number) => {
+        expect(r).toMatchObject({
+          listingId: member.listingId,
+          versionId: member.versionId,
+          exportAttemptId: attemptId,
+          revision: index + 1,
+          supersedesResultId:
+            index === 0 ? null : member.receipts[index - 1].id,
+        });
+        expect(r.recordedBy).toBeTruthy();
+        expect(r.createdAt).toBeTruthy();
+      });
+      expect(member.operatorOutcome).toBe("accepted");
+    }
+    expect(
+      envelope.payload.members.flatMap(
+        (m: { receipts: unknown[] }) => m.receipts,
+      ),
+    ).toHaveLength(4);
+    const afterDownloadAudit = await auditState();
+    expect(
+      afterDownloadAudit.filter(
+        (row) => row.action !== "shopline.export_evidence_packet_downloaded",
+      ),
+    ).toEqual(beforeDownloadAudit);
+    expect(
+      afterDownloadAudit.find(
+        (row) => row.action === "shopline.export_evidence_packet_downloaded",
+      )?.count,
+    ).toBe(1);
+    const [downloadAudit] =
+      await auditConnection`SELECT metadata FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='shopline.export_evidence_packet_downloaded'`;
+    expect(Object.keys(downloadAudit!.metadata).sort()).toEqual(
+      [
+        "comparisonId",
+        "exportAttemptId",
+        "payloadSha256",
+        "schemaVersion",
+        "snapshotSha256",
+      ].sort(),
+    );
+    const afterPacket = await (
+      await page.request.get("/api/listings/export/" + attemptId)
+    ).json();
+    expect(afterPacket.attempt).toEqual(afterComparison.attempt);
+    expect(afterPacket.reconciliation.counts).toEqual(
+      afterComparison.reconciliation.counts,
+    );
+    expect(
+      (
+        await (
+          await page.request.get(comparisonPath + "?page=1&pageSize=10")
+        ).json()
+      ).total,
+    ).toBe(2);
+    // Selection change removes the old preview and cannot immediately download.
+    await compare.getByRole("button", { name: /changed-missing.xlsx/ }).click();
+    await expect(downloadButton).toBeDisabled();
+    await compare
+      .getByRole("button", { name: /matching-snapshot.xlsx/ })
+      .click();
+    await expect(downloadButton).toBeDisabled();
+  } finally {
+    await auditConnection.end();
+  }
   const qualityResponse = await page.request.get("/api/quality");
   expect(qualityResponse.status()).toBe(200);
   const qualityMetrics = (await qualityResponse.json()).reviewMetrics;

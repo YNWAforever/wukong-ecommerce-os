@@ -1796,3 +1796,17 @@ button:disabled {
   overflow: auto;
   font-size: 0.8rem;
 }
+
+.export-evidence-packet-panel {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.export-evidence-packet-panel .evidence-packet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

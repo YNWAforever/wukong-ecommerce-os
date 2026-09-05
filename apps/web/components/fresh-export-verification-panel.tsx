@@ -7,6 +7,7 @@ import type {
 } from "../lib/fresh-export-verification";
 import { useLocale } from "../lib/locale-context";
 import { localized, formatHkDate } from "../lib/ui-copy";
+import { ExportEvidencePacketPanel } from "./export-evidence-packet-panel";
 import { merchantExportTimeToIso } from "./bulk-import-panel";
 
 export function comparisonTimeToIso(value: string): string | null {
@@ -322,6 +323,11 @@ export function FreshExportVerificationPanel({
         )}
         {selected && (
           <div data-verification-id={selected.id}>
+            <ExportEvidencePacketPanel
+              key={selected.id}
+              attemptId={attemptId}
+              comparisonId={selected.id}
+            />
             <h4>{label(selected.comparison.outcome)}</h4>
             <p>
               {selected.filename} ·{" "}
