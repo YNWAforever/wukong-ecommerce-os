@@ -104,7 +104,7 @@ test("read pages support both locales and keyboard navigation at desktop and 375
 }, testInfo) => {
   test.setTimeout(120_000);
   page.setDefaultTimeout(10_000);
-  const baseUrl = localBrowserUrl();
+  const baseUrl = localBrowserUrl(testInfo.project.use.baseURL);
   const fixture = await prepareBulkUpdateFixture();
   await signInBulkImportOperator(page, fixture);
   await importSyntheticProduct(page);

@@ -50,13 +50,13 @@ export async function assertSkipLink(page: Page) {
   await expect(page.locator("#main-content")).toBeFocused();
 }
 
-export function localBrowserUrl() {
-  const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
+export function localBrowserUrl(baseUrl: string | undefined) {
   if (
     !baseUrl ||
+    !["http:", "https:"].includes(new URL(baseUrl).protocol) ||
     !["127.0.0.1", "localhost", "[::1]"].includes(new URL(baseUrl).hostname)
   ) {
-    throw new Error("Explicit loopback browser URL required");
+    throw new Error("Loopback browser URL required");
   }
   return baseUrl;
 }
@@ -68,7 +68,7 @@ export async function captureDeliveryLocaleMatrix(
   listingId: string,
   attemptId: string,
 ) {
-  const baseUrl = localBrowserUrl();
+  const baseUrl = localBrowserUrl(testInfo.project.use.baseURL);
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const locale of ["en", "zh-Hant"] as const) {
     await page

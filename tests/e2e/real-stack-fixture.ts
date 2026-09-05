@@ -74,13 +74,17 @@ function s3Client() {
   });
 }
 
-async function resetBucket(client: S3Client) {
+async function ensureBucket(client: S3Client) {
   try {
     await client.send(new CreateBucketCommand({ Bucket: S3_BUCKET }));
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     if (!/BucketAlreadyOwnedByYou|BucketAlreadyExists/i.test(name)) throw error;
   }
+}
+
+async function resetBucket(client: S3Client) {
+  await ensureBucket(client);
   const listed = await client.send(
     new ListObjectsV2Command({ Bucket: S3_BUCKET }),
   );
@@ -332,6 +336,9 @@ export async function signInBulkImportOperator(
 /** Unique local reviewer workspace for the attended Bulk Update journey. */
 export async function prepareBulkUpdateFixture() {
   const fixture = await prepareBulkImportFixture();
+  // Bulk Update can run before the listing pilot on fresh CI storage. Ensure
+  // its export bucket exists without deleting another fixture's objects.
+  await ensureBucket(s3Client());
   const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
   try {
     await admin`UPDATE memberships SET role='reviewer' WHERE workspace_id=${fixture.workspaceId} AND user_id=${fixture.userId}`;
