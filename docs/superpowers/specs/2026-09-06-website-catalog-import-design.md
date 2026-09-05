@@ -1,7 +1,7 @@
 # Website catalog import — approved design
 
 Date: 2026-09-06
-Status: User approved the proposed URL-first, 20-product preview. This written specification is ready for review before implementation planning.
+Status: User approved the written specification on 2026-09-06. Implementation planning is authorized; implementation and deployment are not yet complete.
 Base: GitHub main adeeae01d1f34d727baee4716f36560ea6e93a29 (PR #76 merged), verified against ls-remote.
 
 ## User outcome
