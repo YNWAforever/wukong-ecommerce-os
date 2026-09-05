@@ -33,6 +33,8 @@ type TestActivityEntry =
       id: string;
       outcome: string;
       reason?: string;
+      artifactStatus?: string | null;
+      provenanceComplete?: boolean;
       createdAt: string;
     };
 
@@ -174,4 +176,19 @@ describe("ActivityPanel", () => {
 
     await unmount(root);
   });
+});
+
+it("shows artifact failure separately from included membership", async () => {
+  const { container, root } = await mount([
+    {
+      kind: "export",
+      id: "failed",
+      outcome: "included",
+      artifactStatus: "failed",
+      provenanceComplete: true,
+      createdAt: "2026-09-05T00:00:00Z",
+    },
+  ]);
+  expect(container.textContent).toContain("file failed");
+  await unmount(root);
 });

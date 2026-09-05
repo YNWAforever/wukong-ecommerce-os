@@ -1,4 +1,8 @@
 import { z } from "zod";
+import type { WorkspaceRepositories } from "@wukong/db";
+
+import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
+import { allConfirmed } from "../../../lib/review-confirmation-keys";
 
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
@@ -169,6 +173,68 @@ type ListListingsDeps = {
   getDatabase: IntakeRouteDeps["getDatabase"];
 };
 
+async function readQueueReviewContext(
+  item: {
+    id: string;
+    status: string;
+    activeVersion: { id: string } | null;
+    openBlockingFlagCount: number;
+  },
+  repositories: Pick<
+    WorkspaceRepositories,
+    "reviewConfirmations" | "platformProducts"
+  >,
+): Promise<ListingReviewContext | null> {
+  if (
+    item.status !== "in_review" ||
+    item.openBlockingFlagCount !== 0 ||
+    !item.activeVersion
+  )
+    return null;
+
+  const confirmation = await repositories.reviewConfirmations.getByVersionId(
+    item.activeVersion.id,
+  );
+  if (
+    !confirmation ||
+    confirmation.listingId !== item.id ||
+    confirmation.versionId !== item.activeVersion.id ||
+    !Number.isInteger(confirmation.revision) ||
+    confirmation.revision < 0 ||
+    !allConfirmed(
+      confirmation.fieldConfirmations,
+      confirmation.negativeConfirmations,
+    )
+  )
+    return null;
+
+  const reviewContext: ListingReviewContext = {
+    expectedVersionId: item.activeVersion.id,
+    confirmationLedgerRevision: confirmation.revision,
+  };
+  const link = await repositories.platformProducts.getByListingId(item.id);
+  if (
+    link?.origin !== "import" &&
+    (confirmation.sourceImportId != null || confirmation.rowDigest != null)
+  )
+    return null;
+  if (link?.origin === "import") {
+    // Expose the source bound to the completed checklist only while it still
+    // matches the current import. Refreshing the queue must not rebind a stale
+    // checklist to new source data.
+    if (
+      !confirmation.sourceImportId ||
+      !confirmation.rowDigest ||
+      confirmation.sourceImportId !== link.sourceImportId ||
+      confirmation.rowDigest !== link.contentDigest
+    )
+      return null;
+    reviewContext.expectedSourceImportId = confirmation.sourceImportId;
+    reviewContext.expectedRowDigest = confirmation.rowDigest;
+  }
+  return reviewContext;
+}
+
 export function createListListingsHandler(deps: ListListingsDeps) {
   return async function listListings(): Promise<Response> {
     return withRouteErrors(async () => {
@@ -178,7 +244,13 @@ export function createListListingsHandler(deps: ListListingsDeps) {
         .forWorkspace(context.workspaceId, async (repositories) => {
           const items = await repositories.listings.listRecent(100);
           const counts = await repositories.listings.countByStatus();
-          return { items, counts };
+          const reviewedItems = await Promise.all(
+            items.map(async (item) => ({
+              ...item,
+              reviewContext: await readQueueReviewContext(item, repositories),
+            })),
+          );
+          return { items: reviewedItems, counts };
         });
 
       return jsonResponse(200, {
@@ -207,6 +279,7 @@ export function createListListingsHandler(deps: ListListingsDeps) {
             sku: content?.sku ?? null,
             updatedAt,
             openBlockingFlagCount: item.openBlockingFlagCount,
+            reviewContext: item.reviewContext,
           };
         }),
       });

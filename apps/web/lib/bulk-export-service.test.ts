@@ -1,6 +1,15 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "./review-confirmation-keys";
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
+import {
+  BULK_FORM_COLUMNS,
+  hashBulkFormRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  ShoplineBulkFormError,
+} from "@wukong/shopline";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
 import { createBulkExport, sheetsMatch } from "./bulk-export-service.js";
@@ -110,7 +119,7 @@ function depsWith(
   > = {
     listing_changed: {
       remoteProductId: "prod-changed",
-      rawRow: rawRowFor(),
+      rawRow: rawRowFor({ productId: "prod-changed" }),
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
@@ -159,7 +168,85 @@ function depsWith(
       content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
     },
   };
-  return {
+  const fixtureListingIds = new Map<string, string>();
+  const boundLinks = new Map<
+    string,
+    NonNullable<
+      Awaited<
+        ReturnType<
+          Parameters<typeof createBulkExport>[1]["getPlatformProductLink"]
+        >
+      >
+    >
+  >();
+  let reviewingListingId = "";
+  const result: Parameters<typeof createBulkExport>[1] = {
+    async getReviewState(listingId: string) {
+      reviewingListingId = listingId;
+      return {
+        status: "approved",
+        activeVersionId: (await result.getActiveVersion(listingId))?.id ?? null,
+        flags: [],
+      };
+    },
+    async getReviewConfirmation(versionId: string) {
+      // Fixtures may override the version lookup; remember the caller's listing
+      // rather than guessing from version ID spelling.
+      const listingId = fixtureListingIds.get(versionId)!;
+      const link = boundLinks.get(listingId);
+      return {
+        id: "confirmation",
+        listingId,
+        versionId,
+        revision: 0,
+        fieldConfirmations: Object.fromEntries(
+          CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+        ),
+        negativeConfirmations: Object.fromEntries(
+          CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+        ),
+        sourceImportId: link?.sourceImportId ?? "import_1",
+        rowDigest: link?.contentDigest ?? "digest_1",
+      };
+    },
+    async getApprovalReceipt(versionId) {
+      const listingId = fixtureListingIds.get(versionId)!;
+      const link = boundLinks.get(listingId);
+      return {
+        id: "receipt_" + listingId,
+        workspaceId: "ws_1",
+        listingId,
+        versionId,
+        sourceSnapshotId: "source_" + listingId,
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        approvedBy: "reviewer",
+        createdAt: new Date(0),
+        connectionId: link?.connectionId ?? "conn_1",
+        sourceImportId: link?.sourceImportId ?? "import_1",
+        remoteProductId: link?.remoteProductId ?? "prod-1",
+        sourceRowDigest: link?.contentDigest ?? "digest_1",
+        headerContractSha256: "contract_1",
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+    async getSourceRow() {
+      const listingId = reviewingListingId;
+      const link = boundLinks.get(listingId)!;
+      return {
+        id: "source_" + listingId,
+        workspaceId: "ws_1",
+        listingId,
+        sourceImportId: link.sourceImportId!,
+        connectionId: link.connectionId,
+        remoteProductId: link.remoteProductId,
+        sourceRowDigest: link.contentDigest!,
+        rawRow: link.rawRow!,
+        headerContractSha256: "contract_1",
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+        createdAt: new Date(0),
+      };
+    },
     async getPlatformProductLink(listingId: string) {
       return links[listingId] ?? null;
     },
@@ -174,6 +261,27 @@ function depsWith(
     },
     ...overrides,
   };
+  const getLink = result.getPlatformProductLink;
+  result.getPlatformProductLink = async (listingId) => {
+    const link = await getLink(listingId);
+    if (!link) return null;
+    return link.contentDigest === "digest_1" && link.rawRow
+      ? { ...link, contentDigest: hashBulkFormRow(link.rawRow as never) }
+      : link;
+  };
+  const getVersion = result.getActiveVersion;
+  result.getActiveVersion = async (listingId) => {
+    const version = await getVersion(listingId);
+    if (version) {
+      fixtureListingIds.set(version.id, listingId);
+      if (!boundLinks.has(listingId)) {
+        const link = await result.getPlatformProductLink(listingId);
+        if (link) boundLinks.set(listingId, structuredClone(link));
+      }
+    }
+    return version;
+  };
+  return result;
 }
 
 describe("createBulkExport", () => {
@@ -362,6 +470,7 @@ describe("createBulkExport", () => {
         listingId: "listing_created",
         versionId: "version_created",
         outcome: "not_import_origin",
+        reason: "not_import_origin",
       },
     ]);
     expect(result.rowCount).toBe(0);
@@ -575,6 +684,13 @@ describe("createBulkExport", () => {
       },
     });
 
+    const getConfirmation = deps.getReviewConfirmation;
+    deps.getReviewConfirmation = async (versionId) => {
+      const confirmation = await getConfirmation(versionId);
+      return confirmation && versionId === "version_other_import"
+        ? { ...confirmation, sourceImportId: "import_2" }
+        : confirmation;
+    };
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
@@ -585,5 +701,26 @@ describe("createBulkExport", () => {
       deps,
     );
     expect(result.rowCount).toBe(2);
+  });
+});
+
+describe("immutable export ordering", () => {
+  it("uses identical workbook bytes, evidence and manifest when listing IDs are reordered", async () => {
+    const input = {
+      workspaceId: "ws_1",
+      requestedBy: "reviewer",
+      freshnessAttested: true,
+    };
+    const forward = await createBulkExport(
+      { ...input, listingIds: ["listing_changed", "listing_stale"] },
+      depsWith(),
+    );
+    const reverse = await createBulkExport(
+      { ...input, listingIds: ["listing_stale", "listing_changed"] },
+      depsWith(),
+    );
+    expect(reverse.body).toEqual(forward.body);
+    expect(reverse.evidence).toEqual(forward.evidence);
+    expect(reverse.manifest).toEqual(forward.manifest);
   });
 });

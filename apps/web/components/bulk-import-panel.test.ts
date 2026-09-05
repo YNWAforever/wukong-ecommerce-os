@@ -40,9 +40,13 @@ describe("validateBulkImportFile", () => {
 describe("submitBulkImport", () => {
   it("returns a validation_error without calling the fetcher for a bad extension", async () => {
     const fetcher = vi.fn<typeof fetch>();
-    const result = await submitBulkImport(xlsxFile("catalog.csv", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.csv", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "validation_error",
       message: "Choose an .xlsx SHOPLINE Bulk Update workbook.",
@@ -54,6 +58,7 @@ describe("submitBulkImport", () => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await submitBulkImport(
       xlsxFile("catalog.xlsx", MAX_BULK_IMPORT_BYTES + 1),
+      "2026-08-01T08:00",
       { fetcher },
     );
     expect(result).toEqual({
@@ -67,9 +72,13 @@ describe("submitBulkImport", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new TypeError("Failed to fetch"));
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
@@ -82,9 +91,13 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         new Response("<html>gateway timeout</html>", { status: 504 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
@@ -113,9 +126,13 @@ describe("submitBulkImport", () => {
         { status: 201 },
       ),
     );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "success",
       specVersion: "opak-2026-05",
@@ -134,7 +151,7 @@ describe("submitBulkImport", () => {
       ],
     });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/listings/import",
+      "/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00.000Z&filename=catalog.xlsx",
       expect.objectContaining({ method: "POST" }),
     );
   });
@@ -162,9 +179,13 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         Response.json({ code, message: "server detail" }, { status: 400 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({ kind: "api_error", code, message });
   });
 
@@ -177,9 +198,13 @@ describe("submitBulkImport", () => {
           { status: 400 },
         ),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "api_error",
       code: "some_future_code",
@@ -193,9 +218,13 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         Response.json({ message: "server-provided detail" }, { status: 500 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "api_error",
       code: "unknown_error",
@@ -207,9 +236,13 @@ describe("submitBulkImport", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({}, { status: 500 }));
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
     expect(result).toEqual({
       kind: "api_error",
       code: "unknown_error",
@@ -255,8 +288,23 @@ describe("BulkImportPanel", () => {
     await act(async () => {
       input!.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    // submitBulkImport awaits one fetch + one .json() call, so flush once more.
+    const timeInput = container.querySelector<HTMLInputElement>(
+      "#merchant-attested-export-at",
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(timeInput, "2026-08-01T08:00");
     await act(async () => {
+      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
       await Promise.resolve();
     });
 

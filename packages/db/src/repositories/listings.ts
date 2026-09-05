@@ -49,6 +49,7 @@ export type ReviewSnapshot = {
 };
 
 export type ListingRepository = {
+  lockReviewState(listingId: string): Promise<void>;
   create(input: CreateListingInput): Promise<Listing>;
   /**
    * Replaces the draft's note. Used when a re-import changes the source row:
@@ -303,6 +304,14 @@ export function createListingRepository(
         throw new Error("listing note update did not match exactly one row");
     },
 
+    async lockReviewState(listingId) {
+      scope.assertOpen();
+      await transaction
+        .select({ id: listingDrafts.id })
+        .from(listingDrafts)
+        .where(byId(listingId))
+        .for("update");
+    },
     async getById(id) {
       scope.assertOpen();
       const [listing] = await transaction

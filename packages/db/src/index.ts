@@ -106,3 +106,13 @@ export {
   type ShoplineConnectionSeedRuntime,
   type ShoplineConnectionSeedStore,
 } from "./seed-shopline-connection.js";
+export type {
+  SourceRowSnapshot,
+  CreateSourceRowInput,
+  SourceRowRepository,
+} from "./repositories/source-rows.js";
+export type {
+  BulkUpdateApprovalReceipt,
+  RecordApprovalReceiptInput,
+  ApprovalReceiptRepository,
+} from "./repositories/approval-receipts.js";

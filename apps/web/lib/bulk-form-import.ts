@@ -147,6 +147,9 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
         let createdDrafts = 0;
         let refreshedProducts = 0;
         const mirrors: UpsertPlatformProductInput[] = [];
+        const sourceRows: Array<
+          Parameters<typeof repositories.sourceRows.createMany>[0][number]
+        > = [];
 
         for (const row of parsed.rows) {
           const prior = knownByRemoteId.get(row.productId);
@@ -185,7 +188,8 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           // Both branches are domain mutations, so both are audited. Refreshing
           // a snapshot rewrites the row and its digest — the record of what the
           // catalog looked like — and that must not happen unrecorded. An
-          // unchanged re-import mutates nothing and so writes nothing.
+          // unchanged re-import has no per-listing content event; its new source
+          // snapshot and aggregate import event still preserve that observation.
           if (isNewDraft || isRefresh) {
             // Metadata carries identifiers only — never merchant content.
             await repositories.audit.write({
@@ -204,6 +208,16 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             });
           }
 
+          sourceRows.push({
+            listingId,
+            connectionId: connection.id,
+            sourceImportId: sourceImport.id,
+            remoteProductId: row.productId,
+            sourceRowDigest: contentDigest,
+            rawRow,
+            headerContractSha256,
+            specVersion: parsed.specVersion,
+          });
           mirrors.push({
             connectionId: connection.id,
             remoteProductId: row.productId,
@@ -221,6 +235,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
         }
 
         // One statement for every mirror row rather than one per product.
+        await repositories.sourceRows.createMany(sourceRows);
         await repositories.platformProducts.upsertMany(mirrors);
 
         // One aggregate event per import call, entityId'd to the sourceImport

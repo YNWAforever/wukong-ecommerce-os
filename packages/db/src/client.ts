@@ -1,3 +1,11 @@
+import {
+  createSourceRowRepository,
+  type SourceRowRepository,
+} from "./repositories/source-rows.js";
+import {
+  createApprovalReceiptRepository,
+  type ApprovalReceiptRepository,
+} from "./repositories/approval-receipts.js";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -78,6 +86,8 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  sourceRows: SourceRowRepository;
+  approvalReceipts: ApprovalReceiptRepository;
   listings: ListingRepository;
   sourceAssets: SourceAssetRepository;
   publishJobs: PublishJobRepository;
@@ -168,6 +178,12 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        sourceRows: createSourceRowRepository(transaction, workspaceId, scope),
+        approvalReceipts: createApprovalReceiptRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         listings: createListingRepository(transaction, workspaceId, scope),
         sourceAssets: createSourceAssetRepository(
           transaction,

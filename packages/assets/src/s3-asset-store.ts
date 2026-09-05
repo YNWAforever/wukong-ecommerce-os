@@ -10,6 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
   ASSET_UPLOAD_TTL_MS,
+  AssetObjectMissingError,
   assertAnyAssetKey,
   assertAssetKey,
   createAssetKey,
@@ -161,22 +162,52 @@ export class S3AssetStore implements AssetStore {
     return { size: body.byteLength, mimeType };
   }
 
+  async writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean> {
+    assertAnyAssetKey(workspaceId, key);
+    try {
+      await this.#transport.send(
+        new PutObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+          Body: body,
+          ContentType: mimeType,
+          ContentLength: body.byteLength,
+          IfNoneMatch: "*",
+        }) as unknown as S3Command,
+      );
+      return true;
+    } catch (error) {
+      if (httpStatus(error) === 412) return false;
+      throw error;
+    }
+  }
+
   async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
     assertAnyAssetKey(workspaceId, key);
-    const response = (await this.#transport.send(
-      new GetObjectCommand({
-        Bucket: this.#bucket,
-        Key: key,
-      }) as unknown as S3Command,
-    )) as {
-      Body?: { transformToByteArray(): Promise<Uint8Array> };
-    };
-    if (!response.Body) {
-      // apps/web/app/api/listings/export/[id]/download/route.ts matches this
-      // exact message to distinguish "object never written" from any other
-      // read failure -- keep the two in sync if this text changes.
-      throw new Error("Asset object has no stored body");
+    try {
+      const response = (await this.#transport.send(
+        new GetObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+        }) as unknown as S3Command,
+      )) as { Body?: { transformToByteArray(): Promise<Uint8Array> } };
+      if (!response.Body) throw new AssetObjectMissingError();
+      return await response.Body.transformToByteArray();
+    } catch (error) {
+      if (httpStatus(error) === 404) throw new AssetObjectMissingError();
+      throw error;
     }
-    return response.Body.transformToByteArray();
   }
+}
+
+function httpStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("$metadata" in error))
+    return undefined;
+  return (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+    ?.httpStatusCode;
 }

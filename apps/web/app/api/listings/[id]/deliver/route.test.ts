@@ -1,3 +1,12 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "../../../../../lib/review-confirmation-keys";
+import {
+  hashBulkFormHeaderContract,
+  hashBulkFormRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
 import { ASSET_EXPORT_READ_TTL_MS } from "@wukong/assets";
 import { BULK_FORM_COLUMNS } from "@wukong/shopline";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +22,48 @@ import { createDeliverListingHandler, defaultDelivery } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
+const bulkRaw = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "nameEn" ? "Demo Estate Riesling" : "",
+  ]),
+);
+const bulkDigest = hashBulkFormRow(bulkRaw as never);
+const bulkBinding = {
+  sourceRows: {
+    async getForProduct() {
+      return {
+        id: "source_1",
+        listingId,
+        connectionId: "conn_1",
+        sourceImportId: "import_1",
+        remoteProductId: "remote_1",
+        sourceRowDigest: bulkDigest,
+        rawRow: structuredClone(bulkRaw),
+        headerContractSha256: hashBulkFormHeaderContract(),
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+  },
+  approvalReceipts: {
+    async getByVersionId() {
+      return {
+        id: "receipt_1",
+        listingId,
+        versionId,
+        sourceSnapshotId: "source_1",
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        connectionId: "conn_1",
+        sourceImportId: "import_1",
+        remoteProductId: "remote_1",
+        sourceRowDigest: bulkDigest,
+        headerContractSha256: hashBulkFormHeaderContract(),
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+  },
+};
 const context = {
   workspaceId: "ws_opak",
   actorId: "reviewer_1",
@@ -642,7 +693,24 @@ describe("POST /api/listings/[id]/deliver", () => {
       forWorkspace: vi.fn(
         async (_workspaceId: string, work: (repos: any) => unknown) =>
           work({
+            ...bulkBinding,
             listings: {
+              async lockReviewState() {},
+              async getReviewSnapshot() {
+                return {
+                  listing: {
+                    id: listingId,
+                    status: "approved",
+                    activeVersionId: versionId,
+                  },
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
               async requireForPublish() {
                 return {
                   id: listingId,
@@ -657,12 +725,39 @@ describe("POST /api/listings/[id]/deliver", () => {
                 };
               },
             },
+            reviewConfirmations: {
+              async getByVersionId() {
+                return {
+                  id: "confirmation",
+                  listingId,
+                  versionId,
+                  revision: 0,
+                  sourceImportId: "import_1",
+                  rowDigest: bulkDigest,
+                  fieldConfirmations: Object.fromEntries(
+                    CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+                  ),
+                  negativeConfirmations: Object.fromEntries(
+                    CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+                  ),
+                };
+              },
+            },
+            sourceImports: {
+              async getById() {
+                return { headerContractSha256: hashBulkFormHeaderContract() };
+              },
+            },
             sourceAssets: { listForListing: async () => [] },
             audit: { write: vi.fn(async () => undefined) },
             platformProducts: {
               async getByListingId() {
                 return {
                   remoteProductId: "remote_1",
+                  origin: "import",
+                  sourceImportId: "import_1",
+                  contentDigest: bulkDigest,
+                  connectionId: "conn_1",
                   rawRow: Object.fromEntries(
                     BULK_FORM_COLUMNS.map((column) => [
                       column.key,
@@ -690,7 +785,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
+        body: JSON.stringify({ method: "bulk_form", freshnessAttested: true }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -709,7 +804,24 @@ describe("POST /api/listings/[id]/deliver", () => {
       forWorkspace: vi.fn(
         async (_workspaceId: string, work: (repos: any) => unknown) =>
           work({
+            ...bulkBinding,
             listings: {
+              async lockReviewState() {},
+              async getReviewSnapshot() {
+                return {
+                  listing: {
+                    id: listingId,
+                    status: "approved",
+                    activeVersionId: versionId,
+                  },
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
               async requireForPublish() {
                 return {
                   id: listingId,
@@ -722,6 +834,29 @@ describe("POST /api/listings/[id]/deliver", () => {
                   },
                   flags: [],
                 };
+              },
+            },
+            reviewConfirmations: {
+              async getByVersionId() {
+                return {
+                  id: "confirmation",
+                  listingId,
+                  versionId,
+                  revision: 0,
+                  sourceImportId: "import_1",
+                  rowDigest: bulkDigest,
+                  fieldConfirmations: Object.fromEntries(
+                    CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+                  ),
+                  negativeConfirmations: Object.fromEntries(
+                    CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+                  ),
+                };
+              },
+            },
+            sourceImports: {
+              async getById() {
+                return { headerContractSha256: hashBulkFormHeaderContract() };
               },
             },
             sourceAssets: { listForListing: async () => [] },
@@ -749,7 +884,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
+        body: JSON.stringify({ method: "bulk_form", freshnessAttested: true }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );

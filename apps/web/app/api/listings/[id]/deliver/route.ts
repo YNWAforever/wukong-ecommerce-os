@@ -1,3 +1,4 @@
+import { createBulkExportDeps } from "../../../../../lib/bulk-export-service";
 import { z } from "zod";
 import {
   ASSET_EXPORT_READ_TTL_MS,
@@ -26,7 +27,10 @@ import {
 } from "../../../../../lib/delivery-service";
 
 const bodySchema = z
-  .object({ method: z.enum(["csv", "shopline_api", "bulk_form"]) })
+  .object({
+    method: z.enum(["csv", "shopline_api", "bulk_form"]),
+    freshnessAttested: z.boolean().optional(),
+  })
   .strict();
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
@@ -117,6 +121,13 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
         message: "SHOPLINE is not connected; use CSV fallback.",
         csvFallback: result.csvFallback,
       });
+    case "bulk_update_ineligible":
+      return jsonResponse(409, {
+        code: result.entry.reason ?? result.entry.outcome,
+        message:
+          "Bulk Update review or source evidence is incomplete or changed; reload before exporting.",
+        manifest: [result.entry],
+      });
     case "no_remote_link":
       return jsonResponse(409, {
         code: "no_remote_link",
@@ -145,6 +156,9 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
           actorId: session.actorId,
           draftId: id,
           method: body.method,
+          ...(body.method === "bulk_form"
+            ? { freshnessAttested: body.freshnessAttested === true }
+            : {}),
         });
       } catch (error) {
         if (
@@ -177,6 +191,7 @@ export function defaultDelivery(
           input.workspaceId,
           async (repositories) => {
             return deliverListing(input, {
+              bulkUpdate: createBulkExportDeps(repositories),
               listings: repositories.listings,
               imageUrls: (workspaceId, draftId, imageAssetIds) =>
                 resolveListingImageUrls({

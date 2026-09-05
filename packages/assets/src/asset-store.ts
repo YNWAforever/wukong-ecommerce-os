@@ -35,6 +35,13 @@ export class AssetInputError extends Error {
   }
 }
 
+export class AssetObjectMissingError extends Error {
+  constructor() {
+    super("Asset object has no stored body");
+    this.name = "AssetObjectMissingError";
+  }
+}
+
 export interface AssetStore {
   createUpload(input: CreateUploadInput): Promise<{
     key: string;
@@ -55,6 +62,13 @@ export interface AssetStore {
     mimeType: string,
   ): Promise<AssetObjectMetadata>;
   readObject(workspaceId: string, key: string): Promise<Uint8Array>;
+  /** Atomically create; false means another writer already created the object. */
+  writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean>;
 }
 
 export function assertWorkspaceId(workspaceId: string): void {
@@ -263,7 +277,7 @@ export class MemoryAssetStore implements AssetStore {
   ): Promise<AssetObjectMetadata> {
     assertAnyAssetKey(workspaceId, key);
     const metadata: AssetObjectMetadata = { size: body.byteLength, mimeType };
-    this.#objects.set(key, { metadata, body });
+    this.#objects.set(key, { metadata, body: new Uint8Array(body) });
     return metadata;
   }
 
@@ -274,9 +288,24 @@ export class MemoryAssetStore implements AssetStore {
       // apps/web/app/api/listings/export/[id]/download/route.ts matches this
       // exact message to distinguish "object never written" from any other
       // read failure -- keep the two in sync if this text changes.
-      throw new Error("Asset object has no stored body");
+      throw new AssetObjectMissingError();
     }
-    return entry.body;
+    return new Uint8Array(entry.body);
+  }
+
+  async writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean> {
+    assertAnyAssetKey(workspaceId, key);
+    if (this.#objects.has(key)) return false;
+    this.#objects.set(key, {
+      metadata: { size: body.byteLength, mimeType },
+      body: new Uint8Array(body),
+    });
+    return true;
   }
 
   putObject(

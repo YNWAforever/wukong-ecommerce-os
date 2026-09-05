@@ -6,7 +6,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { expect, type Page } from "@playwright/test";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createDatabase } from "../../packages/db/src/client.js";
+import { hashPassword } from "../../apps/web/lib/password-crypto.js";
 import postgres from "postgres";
 
 import { S3AssetStore } from "../../packages/assets/src/s3-asset-store.js";
@@ -274,4 +276,55 @@ export async function verifyCompletedAudit(draftId: string) {
     draftId,
     url: RUNTIME_URL,
   });
+}
+
+/** The import journey uses the real database/auth boundary, without Queue, mail or asset services. */
+export async function prepareBulkImportFixture() {
+  for (const raw of [ADMIN_URL, RUNTIME_URL]) {
+    const url = new URL(raw);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
+      throw new Error(
+        "Bulk import browser fixtures require isolated local database URLs",
+      );
+  }
+  await ensureRuntimeRole();
+  const database = createDatabase(RUNTIME_URL, { migrationUrl: ADMIN_URL });
+  try {
+    await database.migrate();
+  } finally {
+    await database.close();
+  }
+  const suffix = randomUUID();
+  const workspaceId = "ws_import_" + suffix.replaceAll("-", "");
+  const userId = "user_import_" + suffix;
+  const email = "bulk-import-" + suffix + "@local.invalid";
+  const password = "Synthetic import password 1!";
+  const connectionId = randomUUID();
+  const passwordHash = await hashPassword(password);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`INSERT INTO workspaces (id,name,profile) VALUES (${workspaceId},'Synthetic import workspace',${OPAK_PROFILE}::jsonb)`;
+    await admin`INSERT INTO users(id,email,auth_email_verified) VALUES (${userId},${email},true)`;
+    await admin`INSERT INTO memberships(workspace_id,user_id,role) VALUES (${workspaceId},${userId},'operator')`;
+    await admin`INSERT INTO workspace_invites(workspace_id,email,role,status) VALUES (${workspaceId},${email},'operator','accepted')`;
+    await admin`INSERT INTO auth_accounts(id,user_id,account_id,provider_id,password) VALUES (${randomUUID()},${userId},${userId},'credential',${passwordHash})`;
+  } finally {
+    await admin.end();
+  }
+  return { workspaceId, userId, email, password, connectionId };
+}
+
+export async function signInBulkImportOperator(
+  page: Page,
+  fixture: Awaited<ReturnType<typeof prepareBulkImportFixture>>,
+) {
+  await page.goto("/signin?callbackUrl=%2Flistings%2Fimport");
+  await page.evaluate(() => {
+    document.cookie = "locale=en; path=/; max-age=31536000";
+  });
+  await page.reload();
+  await page.getByLabel("Email address").fill(fixture.email);
+  await page.getByLabel("Password", { exact: true }).fill(fixture.password);
+  await page.getByRole("button", { name: "Sign in with password" }).click();
+  await expect(page).toHaveURL(/\/listings\/import$/);
 }

@@ -1,16 +1,20 @@
+import type { ExportAttempt } from "@wukong/db";
 import { createHash } from "node:crypto";
 
 import type { AssetStore } from "@wukong/assets";
-import { BULK_FORM_XLSX_MIME_TYPE, createExportAssetKey } from "@wukong/assets";
 import {
-  hashBulkFormHeaderContract,
-  ShoplineBulkFormError,
-} from "@wukong/shopline";
+  artifactHash,
+  ensureExportArtifact,
+  ExportArtifactConflict,
+} from "../../../../lib/export-artifact";
+import { ShoplineBulkFormError } from "@wukong/shopline";
 import { z } from "zod";
 
 import {
   createBulkExport,
-  type CreateBulkExportDeps,
+  createBulkExportDeps,
+  recheckBulkExport,
+  BulkUpdateEligibilityConflict,
   type ExportManifestEntry,
 } from "../../../../lib/bulk-export-service";
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -51,29 +55,15 @@ function assertReviewer(role: string): void {
   }
 }
 
-/**
- * `workspaceId + freshnessAttested + sorted "listingId:versionId" pairs`,
- * hashed. `freshnessAttested` MUST be folded into the key: two requests for
- * the same listings/versions but different attestation values mean genuinely
- * different things (one may exclude every listing as `not_attested`, the
- * other may not), and colliding them on the same idempotency key would hand
- * the second caller back the first caller's stale, wrong manifest. A
- * `versionId` of `null` (e.g. a `listing_not_found` entry) participates as
- * the literal string `"null"` so those entries still affect the key instead
- * of being silently dropped.
- */
-function computeIdempotencyKey(
-  workspaceId: string,
-  freshnessAttested: boolean,
-  manifest: readonly Pick<ExportManifestEntry, "listingId" | "versionId">[],
-): string {
-  const pairs = manifest
-    .map((entry) => `${entry.listingId}:${entry.versionId ?? "null"}`)
-    .sort()
-    .join(",");
-  return createHash("sha256")
-    .update(`${workspaceId}:${freshnessAttested}:${pairs}`)
-    .digest("hex");
+/** Canonical JSON makes object property insertion order irrelevant to request identity. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
 }
 
 export type ExportListingsRouteDeps = {
@@ -84,7 +74,7 @@ export type ExportListingsRouteDeps = {
       work: (repositories: any) => Promise<T>,
     ): Promise<T>;
   };
-  getAssetStore: () => Pick<AssetStore, "writeObject">;
+  getAssetStore: () => Pick<AssetStore, "readObject" | "writeObjectIfAbsent">;
 };
 
 export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
@@ -97,62 +87,52 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
       const body = bodySchema.parse(await request.json());
 
       try {
-        // The callback only returns identifiers and DB-durable data
-        // (`attempt`) plus the pure-function output (`body`) -- the actual
-        // asset-store write happens AFTER this resolves, once the
-        // transaction has committed. Doing it inside the callback would let
-        // a later failure in the same callback (e.g. the audit insert
-        // hitting a transient error) roll back the `ensure()`d row while the
-        // already-written object survives, orphaned under a key nothing will
-        // ever reference again (a retry recomputes the same idempotency key
-        // but `ensure()` does a fresh INSERT with a new random id). Writing
-        // only after commit makes the one remaining failure direction the
-        // safe one: a committed attempt whose object isn't written yet,
-        // which a retry with the same idempotency key self-heals, since
-        // `createBulkExport` is pure over its deps and the same inputs
-        // deterministically produce the same bytes.
-        const { attempt, body: workbookBody } = await deps
-          .getDatabase()
-          .forWorkspace(session.workspaceId, async (repositories) => {
-            const exportDeps: CreateBulkExportDeps = {
-              async getActiveVersion(listingId) {
-                const snapshot =
-                  await repositories.listings.getReviewSnapshot(listingId);
-                if (!snapshot?.activeVersion) return null;
-                return {
-                  id: snapshot.activeVersion.id,
-                  content: snapshot.activeVersion.content,
-                };
-              },
-              getPlatformProductLink: (listingId) =>
-                repositories.platformProducts.getByListingId(listingId),
-              async getSourceImportHeaderContractSha256(sourceImportId) {
-                const sourceImport =
-                  await repositories.sourceImports.getById(sourceImportId);
-                return sourceImport?.headerContractSha256 ?? null;
-              },
-              currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
-            };
+        const database = deps.getDatabase();
+        const input = {
+          workspaceId: session.workspaceId,
+          requestedBy: session.actorId,
+          listingIds: body.listingIds,
+          freshnessAttested: body.freshnessAttested,
+        };
+        const exported = await database.forWorkspace(
+          session.workspaceId,
+          (repositories) =>
+            createBulkExport(input, createBulkExportDeps(repositories)),
+        );
+        if (exported.rowCount === 0) {
+          return jsonResponse(200, {
+            exportAttemptId: null,
+            manifest: exported.manifest,
+            rowCount: 0,
+          });
+        }
 
-            // May throw ShoplineBulkFormError for a genuine validation
-            // problem in the requested set (e.g. two listing ids resolving
-            // to the same SHOPLINE remoteProductId) -- caught below, not
-            // here, so it can be mapped to a real HTTP error response
-            // instead of aborting the transaction with an opaque 500.
-            const exported = await createBulkExport(
-              {
-                workspaceId: session.workspaceId,
-                requestedBy: session.actorId,
-                listingIds: body.listingIds,
-                freshnessAttested: body.freshnessAttested,
-              },
-              exportDeps,
-            );
+        const artifactSha256 = artifactHash(exported.body);
+        const provenance = {
+          identityVersion: 1,
+          workspaceId: session.workspaceId,
+          freshnessAttested: body.freshnessAttested,
+          headerContractSha256: exported.headerContractSha256,
+          specVersion: exported.specVersion,
+          rowOrder: exported.evidence.map((entry) => entry.listingId),
+          evidence: exported.evidence,
+          manifest: exported.manifest,
+        };
+        const idempotencyKey = createHash("sha256")
+          .update(canonicalJson({ provenance, artifactSha256 }))
+          .digest("hex");
 
-            const idempotencyKey = computeIdempotencyKey(
-              session.workspaceId,
-              body.freshnessAttested,
-              exported.manifest,
+        // Revalidate the captured evidence in a fresh workspace transaction at
+        // the attempt/artifact boundary. Nothing is persisted or audited if it
+        // changed. Commit the attempt and audit before uploading, so rollback
+        // cannot leave an orphan object. Artifact readiness is a separate concern.
+        const attempt = await database.forWorkspace(
+          session.workspaceId,
+          async (repositories) => {
+            await recheckBulkExport(
+              input,
+              exported.evidence,
+              createBulkExportDeps(repositories),
             );
 
             const ensured = await repositories.exportAttempts.ensure({
@@ -161,6 +141,8 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               manifest: exported.manifest,
               rowCount: exported.rowCount,
               specVersion: exported.specVersion,
+              provenance,
+              artifactSha256,
             });
 
             // Only a genuinely new attempt gets its own audit event --
@@ -213,30 +195,89 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               }
             }
 
-            return { attempt: ensured, body: exported.body };
-          });
-
-        // Always write the workbook, even on a repeat request that hit the
-        // same idempotency key -- see the comment above on why this is an
-        // intentional, self-healing idempotent overwrite rather than wasted
-        // work.
-        await deps.getAssetStore().writeObject(
-          session.workspaceId,
-          createExportAssetKey({
-            workspaceId: session.workspaceId,
-            exportAttemptId: attempt.id,
-            fileName: `export-${attempt.id}.xlsx`,
-          }),
-          workbookBody,
-          BULK_FORM_XLSX_MIME_TYPE,
+            return ensured;
+          },
         );
+
+        let verified = false;
+        let ready: ExportAttempt;
+        try {
+          await ensureExportArtifact(
+            {
+              workspaceId: session.workspaceId,
+              id: attempt.id,
+              artifactSha256: attempt.artifactSha256,
+              body: exported.body,
+            },
+            deps.getAssetStore(),
+          );
+          verified = true;
+          ready = await database.forWorkspace<ExportAttempt>(
+            session.workspaceId,
+            (repositories) =>
+              repositories.exportAttempts.markReady({
+                id: attempt.id,
+                artifactSha256,
+              }),
+          );
+        } catch (error) {
+          const code =
+            error instanceof ExportArtifactConflict
+              ? error.code
+              : verified
+                ? "artifact_state_commit_failed"
+                : "artifact_upload_failed";
+          let artifactStatus = attempt.artifactStatus;
+          try {
+            const failed = await database.forWorkspace<ExportAttempt>(
+              session.workspaceId,
+              (repositories) =>
+                repositories.exportAttempts.markFailed({
+                  id: attempt.id,
+                  artifactSha256,
+                  errorCode: code,
+                }),
+            );
+            artifactStatus = failed.artifactStatus;
+          } catch {
+            // The pending record remains retryable if the state database is unavailable.
+            console.error(
+              JSON.stringify({
+                event: "export.artifact_state_unavailable",
+                exportAttemptId: attempt.id,
+              }),
+            );
+          }
+          return jsonResponse(
+            error instanceof ExportArtifactConflict ? 409 : 503,
+            {
+              code,
+              message:
+                error instanceof ExportArtifactConflict
+                  ? error.message
+                  : "The export file could not be confirmed ready; retry the export.",
+              exportAttemptId: attempt.id,
+              artifactStatus,
+            },
+          );
+        }
 
         return jsonResponse(200, {
           exportAttemptId: attempt.id,
           manifest: attempt.manifest,
           rowCount: attempt.rowCount,
+          artifactStatus: ready.artifactStatus,
+          artifactSha256,
         });
       } catch (error) {
+        if (error instanceof BulkUpdateEligibilityConflict) {
+          return jsonResponse(409, {
+            code: "export_eligibility_changed",
+            message: error.message,
+            manifest: [error.entry],
+            rowCount: 0,
+          });
+        }
         if (error instanceof ShoplineBulkFormError) {
           return jsonResponse(409, {
             code: "export_validation_failed",

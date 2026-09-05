@@ -78,6 +78,17 @@ export function createImportResultHandler(deps: ImportResultRouteDeps) {
                 "Export attempt not found.",
               );
             }
+            const legacy =
+              attempt.provenance == null &&
+              attempt.artifactStatus == null &&
+              attempt.artifactSha256 == null;
+            if (!legacy && attempt.artifactStatus !== "ready") {
+              throw new ApiError(
+                409,
+                "export_artifact_not_ready",
+                "The export artifact is not ready.",
+              );
+            }
           }
 
           const row = await repositories.importResults.create({

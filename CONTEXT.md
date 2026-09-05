@@ -44,15 +44,65 @@ against it instead of creating a duplicate. Only `import`-origin rows carry a
 SKU, spec version, raw row, and content digest — a `created`-origin row has
 none of that, since there was no imported sheet to derive it from.
 
+## Bulk import browser contract
+
+/listings/import retains the selected workbook until a separate submit. Operators
+must explicitly enter SHOPLINE export time in Hong Kong UTC+08:00; the browser
+converts it to an ISO UTC instant and sends merchantAttestedExportAt plus the
+exact filename in URLSearchParams, with the raw workbook body. No timestamp is
+inferred from upload time or file metadata. Validation/API/network failures
+preserve file and time for retry; an in-flight guard prevents duplicate submits.
+Native fetch is invoked without the dependency object as its receiver.
+/listings/new remains the separate create-intake route. This attestation does
+not verify merchant-side freshness or replace source-bound approval eligibility.
+
 ## Bulk approve
 
-Bulk approve lets a reviewer select several `in_review` listings with no open
-blocking compliance flags and approve them in one action. It is not a new
-kind of approval — each selected listing goes through the exact same
-single-listing approval logic, once per listing, in its own transaction, so
-one listing's stale flag cannot roll back another's legitimate approval.
-There is no field-level or partial-within-a-listing approval anywhere in the
-system; approval is still whole-listing, all-or-nothing.
+Bulk approve selects fully confirmed in_review listings with no open blocking
+flags. The queue captures each item's observed version, confirmation revision
+and imported source ID/digest at selection. It submits {items: [...]}; legacy
+ID-only requests receive 400 review_context_required. Batches are limited to
+50 distinct UUIDs, including case-insensitive duplicate rejection.
+
+Both approval routes use the shared service's mandatory version, complete
+checklist, revision and applicable source checks. Imported source must match
+both the current platform link and confirmation ledger. A lost/overwritten
+import origin cannot erase an existing request or ledger source binding.
+Single approval retains its early checks before optional product-shot I/O.
+
+Each item has its own workspace transaction, preserving valid approvals when
+another item fails. Failed selections retain their original review context
+across reloads; only successes clear automatically. Explicit reselection can
+adopt newly reviewed context. Approval remains whole-listing, all-or-nothing.
+Approval and Bulk Update eligibility acquire the listing draft lock. Database
+triggers serialize platform source, confirmation and compliance flag changes
+with that lock. Imported approval appends a receipt bound to the immutable
+source row, exact approved version and reviewed checklist revision. A product-shot
+promotion may inherit the reviewed predecessor checklist only until the promoted
+version receives a checklist of its own; that requires renewed approval.
+
+## Bulk Update source and artifact history
+
+Each import preserves every parsed row in source_row_snapshots before updating
+the current platform mirror. Old imports and their approved receipts remain
+immutable to the runtime role. Missing historical source or approval evidence
+fails closed; reimport and renewed approval are required. Reconfirming a new
+source alone cannot reuse a previous approval. Receipt insertion order uses a
+database identity ordinal rather than transaction timestamps.
+
+Multi-export builds from the approved immutable rows, verifies their full row
+hashes and uses canonical listing order. Its versioned provenance and workbook
+SHA-256 determine the attempt identity. Attempts start pending and become ready
+only after conditional object creation/read-back and hash verification. Failed
+uploads remain failed or pending if the state database is unavailable; matching
+retries recover identical bytes without overwriting existing objects. New
+downloads require readiness and matching bytes. Legacy all-null provenance rows
+remain historical downloads explicitly marked incomplete.
+
+Single Bulk Update delivery uses the same durable eligibility rules but retains
+its direct workbook response; the operator journey through stable multi-export
+attempt references is Task 5. Generated XLSX is not proof of SHOPLINE acceptance
+or of current merchant-side protected fields.
 
 ## Workspace roles
 
@@ -72,3 +122,24 @@ membership, is enforced in the `memberships` repository itself
 via `MembershipGuardViolation`) — not only at the
 `apps/web/app/api/workspace/members/[userId]/route.ts` route layer — so the
 guarantee holds for any caller of the repository, not just the current UI.
+
+## Bulk Update export eligibility
+
+Single-listing bulk-form delivery and multi-product export share the same
+eligibility policy and workbook builder. They require an approved/published
+active version, no open blocking flags, all eight field and seven negative
+confirmations for that listing/version, an import-origin remote link, matching
+confirmation/source metadata, explicit freshness attestation and the current
+header contract. Create CSV/API delivery keeps its separate policy.
+
+Export prepares request-local evidence and rechecks version, confirmation
+revision, flags and source/link identity at the final audit/attempt boundary.
+An all-excluded or all-no-op multi-export returns a manifest with rowCount 0
+and exportAttemptId null; it creates no object or successful export event.
+Single bulk_form requests must explicitly send freshnessAttested: true.
+
+Durable approved-source receipts and pending/ready/failed artifact records
+now enforce source/approval binding, verified workbook hashes and retry identity;
+see Bulk Update source and artifact history above. Object-store publication is
+verified through the recoverable artifact lifecycle, not an atomic cross-store
+transaction. Merchant-side freshness and SHOPLINE acceptance remain unverified.

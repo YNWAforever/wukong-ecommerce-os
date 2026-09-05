@@ -20,6 +20,8 @@ export type ActivityPanelEntry =
       id: string;
       outcome: string;
       reason?: string;
+      artifactStatus?: string | null;
+      provenanceComplete?: boolean;
       createdAt: string;
     };
 
@@ -76,9 +78,19 @@ function summarize(entry: ActivityPanelEntry): string {
     }
     case "export": {
       const outcome = EXPORT_OUTCOME_LABELS[entry.outcome] ?? entry.outcome;
-      return entry.reason
-        ? `匯出 Export: ${outcome} (${entry.reason})`
-        : `匯出 Export: ${outcome}`;
+      const artifact =
+        entry.provenanceComplete !== true
+          ? " (historical; provenance incomplete)"
+          : entry.artifactStatus === "failed"
+            ? " (file failed)"
+            : entry.artifactStatus === "pending"
+              ? " (file pending)"
+              : "";
+      return (
+        (entry.reason
+          ? `匯出 Export: ${outcome} (${entry.reason})`
+          : `匯出 Export: ${outcome}`) + artifact
+      );
     }
   }
 }

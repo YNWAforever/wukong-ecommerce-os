@@ -1,3 +1,7 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "./review-confirmation-keys";
 import { describe, expect, it, vi } from "vitest";
 import type { ComplianceFlag } from "@wukong/core";
 import { evaluateDeliveryPolicy } from "@wukong/shopline";
@@ -12,6 +16,7 @@ vi.mock("@wukong/shopline", async (importOriginal) => {
 
 import {
   BULK_FORM_COLUMNS,
+  hashBulkFormRow,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
   shoplinePublishIdempotencyKey,
 } from "@wukong/shopline";
@@ -855,6 +860,10 @@ describe("request-phase platform product link resolution", () => {
 describe("bulk-form export", () => {
   const platformProduct = {
     remoteProductId: "remote_1",
+    origin: "import" as const,
+    sourceImportId: "import_1",
+    contentDigest: "digest_1",
+    connectionId: "conn_1",
     rawRow: Object.fromEntries(
       BULK_FORM_COLUMNS.map((column) => [
         column.key,
@@ -865,11 +874,16 @@ describe("bulk-form export", () => {
     ),
   };
 
+  platformProduct.contentDigest = hashBulkFormRow(
+    platformProduct.rawRow as never,
+  );
+
   function bulkFormDeps(
     options: {
       status?: "approved" | "published" | "in_review";
       hasLink?: boolean;
       flags?: ComplianceFlag[];
+      missingConfirmations?: boolean;
     } = {},
   ) {
     const audits: unknown[] = [];
@@ -898,6 +912,79 @@ describe("bulk-form export", () => {
             throw new Error("bulk_form must not enqueue a publish job");
           },
         },
+        bulkUpdate: {
+          async getApprovalReceipt() {
+            return {
+              id: "receipt_1",
+              workspaceId: "ws_opak",
+              listingId: "listing_1",
+              versionId: "version_1",
+              sourceSnapshotId: "source_1",
+              confirmationVersionId: "version_1",
+              confirmationRevision: 0,
+              approvedBy: "reviewer_1",
+              createdAt: new Date(0),
+              connectionId: "conn_1",
+              sourceImportId: "import_1",
+              remoteProductId: "remote_1",
+              sourceRowDigest: platformProduct.contentDigest,
+              headerContractSha256: "contract_1",
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+            };
+          },
+          async getSourceRow() {
+            return {
+              id: "source_1",
+              workspaceId: "ws_opak",
+              listingId: "listing_1",
+              connectionId: "conn_1",
+              sourceImportId: "import_1",
+              remoteProductId: "remote_1",
+              sourceRowDigest: platformProduct.contentDigest,
+              rawRow: structuredClone(platformProduct.rawRow),
+              headerContractSha256: "contract_1",
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+              createdAt: new Date(0),
+            };
+          },
+          async getActiveVersion() {
+            return { id: "version_1", content };
+          },
+          async getReviewState() {
+            return {
+              status: options.status ?? "approved",
+              activeVersionId: "version_1",
+              flags: options.flags ?? [],
+            };
+          },
+          async getReviewConfirmation() {
+            return options.missingConfirmations
+              ? null
+              : {
+                  id: "confirmation",
+                  listingId: "listing_1",
+                  versionId: "version_1",
+                  revision: 0,
+                  sourceImportId: "import_1",
+                  rowDigest: platformProduct.contentDigest,
+                  fieldConfirmations: Object.fromEntries(
+                    CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+                  ),
+                  negativeConfirmations: Object.fromEntries(
+                    CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+                  ),
+                };
+          },
+          async getPlatformProductLink() {
+            return options.hasLink === false ? null : platformProduct;
+          },
+          async getSourceImportHeaderContractSha256() {
+            return "contract_1";
+          },
+          currentHeaderContractSha256() {
+            return "contract_1";
+          },
+        },
         platformProducts: {
           async getByListingId() {
             return options.hasLink === false ? null : platformProduct;
@@ -906,6 +993,84 @@ describe("bulk-form export", () => {
       },
     };
   }
+
+  it("preserves missing-listing errors for the route's 404 response", async () => {
+    const { deps, audits } = bulkFormDeps();
+    await expect(
+      deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "missing",
+          method: "bulk_form",
+          freshnessAttested: true,
+        },
+        {
+          ...deps,
+          bulkUpdate: {
+            ...deps.bulkUpdate,
+            getActiveVersion: async () => null,
+            getReviewState: async () => null,
+          },
+        },
+      ),
+    ).rejects.toThrow("listing not found");
+    expect(audits).toEqual([]);
+  });
+
+  it("requires approval for an existing listing without an active version", async () => {
+    const { deps, audits } = bulkFormDeps();
+    expect(
+      await deliverListing(
+        {
+          workspaceId: "ws_opak",
+          actorId: "reviewer_1",
+          draftId: "listing_1",
+          method: "bulk_form",
+          freshnessAttested: true,
+        },
+        {
+          ...deps,
+          bulkUpdate: {
+            ...deps.bulkUpdate,
+            getActiveVersion: async () => null,
+          },
+        },
+      ),
+    ).toEqual({ kind: "approval_required" });
+    expect(audits).toEqual([]);
+  });
+
+  it("refuses approved bulk content without current confirmations", async () => {
+    const { deps, audits } = bulkFormDeps({ missingConfirmations: true });
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+        freshnessAttested: true,
+      },
+      deps,
+    );
+    expect(result.kind).not.toBe("bulk_form");
+    expect(audits).toEqual([]);
+  });
+
+  it("refuses bulk content without explicit freshness attestation", async () => {
+    const { deps, audits } = bulkFormDeps();
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "reviewer_1",
+        draftId: "listing_1",
+        method: "bulk_form",
+      },
+      deps,
+    );
+    expect(result.kind).not.toBe("bulk_form");
+    expect(audits).toEqual([]);
+  });
 
   it("exports an .xlsx workbook for an approved, linked listing", async () => {
     const { deps, audits } = bulkFormDeps();
@@ -916,6 +1081,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );
@@ -949,6 +1115,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );
@@ -980,7 +1147,7 @@ describe("bulk-form export", () => {
     }
   });
 
-  it("throws when deps.platformProducts is not supplied at all", async () => {
+  it("throws when mandatory bulkUpdate dependencies are not supplied", async () => {
     const audits: unknown[] = [];
     const deps = {
       listings: {
@@ -1017,10 +1184,11 @@ describe("bulk-form export", () => {
           actorId: "reviewer_1",
           draftId: "listing_1",
           method: "bulk_form",
+          freshnessAttested: true,
         },
         deps,
       ),
-    ).rejects.toThrow("deliverBulkForm requires deps.platformProducts");
+    ).rejects.toThrow("deliverBulkForm requires deps.bulkUpdate");
     expect(audits).toEqual([]);
   });
 
@@ -1033,6 +1201,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );
@@ -1050,6 +1219,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );
@@ -1078,6 +1248,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );
@@ -1117,6 +1288,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
+        freshnessAttested: true,
       },
       deps,
     );

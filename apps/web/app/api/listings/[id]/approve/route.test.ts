@@ -1,3 +1,10 @@
+import {
+  BULK_FORM_COLUMNS,
+  hashBulkFormRow,
+  hashBulkFormHeaderContract,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  type BulkFormRawRow,
+} from "@wukong/shopline";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@wukong/assets/product-shot-flatten", async (importOriginal) => {
@@ -22,6 +29,18 @@ import { createApproveListingHandler } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
+const sourceRawRow = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "productId" ? "synthetic-product" : "",
+  ]),
+) as BulkFormRawRow;
+const sourceDigest = hashBulkFormRow(sourceRawRow);
+const sourceLink = {
+  connectionId: "synthetic-connection",
+  remoteProductId: "synthetic-product",
+  rawRow: sourceRawRow,
+};
 const context = {
   workspaceId: "ws_opak",
   actorId: "reviewer_1",
@@ -107,12 +126,14 @@ function makeHandler(options: {
         ) {
           return work({
             listings: {
+              async lockReviewState() {},
               async getReviewSnapshot(id: string) {
                 calls.push(["getReviewSnapshot", id]);
                 return {
                   listing: {
                     id,
                     target: "shopline",
+                    activeVersionId: versionId,
                     status: options.status ?? "in_review",
                   },
                   activeVersion: {
@@ -139,10 +160,33 @@ function makeHandler(options: {
                 return confirmation;
               },
             },
+            sourceRows: {
+              async getForProduct(input: Record<string, string>) {
+                return {
+                  ...input,
+                  id: "snapshot-1",
+                  workspaceId: context.workspaceId,
+                  listingId,
+                  sourceRowDigest: sourceDigest,
+                  rawRow: sourceRawRow,
+                  headerContractSha256: hashBulkFormHeaderContract(),
+                  specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                  createdAt: new Date(0),
+                };
+              },
+            },
+            approvalReceipts: {
+              async record(input: Record<string, unknown>) {
+                calls.push(["approvalReceipts.record", input]);
+                return { ...input, id: "receipt-1", wasCreated: true };
+              },
+            },
             platformProducts: {
               async getByListingId(id: string) {
                 calls.push(["platformProducts.getByListingId", id]);
-                return platformProduct;
+                return platformProduct
+                  ? { ...sourceLink, ...platformProduct }
+                  : null;
               },
             },
             audit: {
@@ -257,11 +301,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -337,6 +383,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -456,11 +523,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "approved",
                     },
                     activeVersion: {
@@ -530,6 +599,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -613,11 +703,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot() {
                   return {
                     listing: {
                       id: listingId,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -646,6 +738,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -812,7 +925,7 @@ describe("POST /api/listings/[id]/approve", () => {
       platformProduct: {
         origin: "import",
         sourceImportId: "import_1",
-        contentDigest: "digest_1",
+        contentDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -833,7 +946,7 @@ describe("POST /api/listings/[id]/approve", () => {
       platformProduct: {
         origin: "import",
         sourceImportId: "import_1",
-        contentDigest: "digest_1",
+        contentDigest: sourceDigest,
       },
     });
     const response = await handler(
@@ -938,6 +1051,7 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   snapshotCallCount += 1;
                   const activeId =
@@ -947,6 +1061,7 @@ describe("POST /api/listings/[id]/approve", () => {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: activeId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -969,6 +1084,27 @@ describe("POST /api/listings/[id]/approve", () => {
               reviewConfirmations: {
                 async getByVersionId() {
                   return fullyConfirmed;
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -1031,11 +1167,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1065,6 +1203,27 @@ describe("POST /api/listings/[id]/approve", () => {
                     revision,
                   ]);
                   return { ...fullyConfirmed!, revision };
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
@@ -1129,11 +1288,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1155,14 +1316,39 @@ describe("POST /api/listings/[id]/approve", () => {
               },
               reviewConfirmations: {
                 async getByVersionId() {
-                  return fullyConfirmed;
+                  return {
+                    ...fullyConfirmed!,
+                    sourceImportId: "import_1",
+                    rowDigest: sourceDigest,
+                  };
+                },
+              },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
                 },
               },
               platformProducts: {
                 async getByListingId(id: string) {
                   linkCallCount += 1;
                   const contentDigest =
-                    linkCallCount === 1 ? "digest_1" : "digest_2";
+                    linkCallCount === 1 ? sourceDigest : "digest_2";
                   calls.push([
                     "platformProducts.getByListingId",
                     id,
@@ -1170,6 +1356,7 @@ describe("POST /api/listings/[id]/approve", () => {
                   ]);
                   return {
                     origin: "import" as const,
+                    ...sourceLink,
                     sourceImportId: "import_1",
                     contentDigest,
                   };
@@ -1194,7 +1381,7 @@ describe("POST /api/listings/[id]/approve", () => {
         expectedVersionId: versionId,
         confirmationLedgerRevision: 0,
         sourceImportId: "import_1",
-        expectedRowDigest: "digest_1",
+        expectedRowDigest: sourceDigest,
       }),
       routeContext(),
     );
@@ -1238,11 +1425,13 @@ describe("POST /api/listings/[id]/approve", () => {
           ) {
             return work({
               listings: {
+                async lockReviewState() {},
                 async getReviewSnapshot(id: string) {
                   return {
                     listing: {
                       id,
                       target: "shopline",
+                      activeVersionId: versionId,
                       status: "in_review",
                     },
                     activeVersion: {
@@ -1267,6 +1456,27 @@ describe("POST /api/listings/[id]/approve", () => {
                   return fullyConfirmed;
                 },
               },
+              sourceRows: {
+                async getForProduct(input: Record<string, string>) {
+                  return {
+                    ...input,
+                    id: "snapshot-1",
+                    workspaceId: context.workspaceId,
+                    listingId,
+                    sourceRowDigest: sourceDigest,
+                    rawRow: sourceRawRow,
+                    headerContractSha256: hashBulkFormHeaderContract(),
+                    specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+                    createdAt: new Date(0),
+                  };
+                },
+              },
+              approvalReceipts: {
+                async record(input: Record<string, unknown>) {
+                  calls.push(["approvalReceipts.record", input]);
+                  return { ...input, id: "receipt-1", wasCreated: true };
+                },
+              },
               platformProducts: {
                 async getByListingId(id: string) {
                   linkCallCount += 1;
@@ -1278,8 +1488,9 @@ describe("POST /api/listings/[id]/approve", () => {
                   if (linkCallCount === 1) return null;
                   return {
                     origin: "import" as const,
+                    ...sourceLink,
                     sourceImportId: "import_1",
-                    contentDigest: "digest_1",
+                    contentDigest: sourceDigest,
                   };
                 },
               },
@@ -1315,4 +1526,131 @@ describe("POST /api/listings/[id]/approve", () => {
     expect(calls).not.toContainEqual(["domainApprove-should-not-be-called"]);
     expect(linkCallCount).toBe(2);
   });
+  it("approves an imported listing with confirmations bound to the observed source", async () => {
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import-1",
+        contentDigest: sourceDigest,
+      },
+      confirmation: {
+        ...fullyConfirmed!,
+        sourceImportId: "import-1",
+        rowDigest: sourceDigest,
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import-1",
+        expectedRowDigest: sourceDigest,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(200);
+    expect(calls).toContainEqual([
+      "approvalReceipts.record",
+      {
+        listingId,
+        versionId,
+        sourceSnapshotId: "snapshot-1",
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        approvedBy: context.actorId,
+      },
+    ]);
+    expect(calls).toContainEqual([
+      "audit",
+      expect.objectContaining({
+        action: "listing.bulk_update_approval_bound",
+        actorId: context.actorId,
+      }),
+    ]);
+  });
+
+  it("refuses confirmations from a previous source even when the client sends current source metadata", async () => {
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import-2",
+        contentDigest: "digest-2",
+      },
+      confirmation: {
+        ...fullyConfirmed!,
+        sourceImportId: "import-1",
+        rowDigest: sourceDigest,
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import-2",
+        expectedRowDigest: "digest-2",
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "confirmation_source_stale",
+    });
+    expect(
+      calls.filter(
+        (call) => Array.isArray(call) && call[0] === "getReviewSnapshot",
+      ),
+    ).toHaveLength(1);
+    expect(
+      calls.filter(
+        (call) =>
+          Array.isArray(call) && ["approve", "domainApprove"].includes(call[0]),
+      ),
+    ).toEqual([]);
+  });
+  it.each(["request", "checklist"])(
+    "rejects a lost import link from %s context before approval work",
+    async (binding) => {
+      const { handler, calls } = makeHandler({
+        platformProduct: {
+          origin: "created",
+          sourceImportId: null,
+          contentDigest: null,
+        },
+        confirmation:
+          binding === "checklist"
+            ? {
+                ...fullyConfirmed!,
+                sourceImportId: "import-1",
+                rowDigest: sourceDigest,
+              }
+            : fullyConfirmed,
+      });
+      const response = await handler(
+        request({
+          expectedVersionId: versionId,
+          confirmationLedgerRevision: 0,
+          ...(binding === "request"
+            ? { sourceImportId: "import-1", expectedRowDigest: sourceDigest }
+            : {}),
+        }),
+        routeContext(),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "source_origin_changed",
+      });
+      expect(
+        calls.filter(
+          (call) => Array.isArray(call) && call[0] === "getReviewSnapshot",
+        ),
+      ).toHaveLength(1);
+      expect(
+        calls.filter(
+          (call) =>
+            Array.isArray(call) &&
+            ["approve", "domainApprove"].includes(call[0]),
+        ),
+      ).toEqual([]);
+    },
+  );
 });

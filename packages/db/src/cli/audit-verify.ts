@@ -1,4 +1,4 @@
-﻿import postgres from "postgres";
+import postgres from "postgres";
 
 /**
  * The audited lifecycle a draft must be able to show, in order.
@@ -50,6 +50,8 @@ export const TENANT_TABLES = [
   "shopline_connections",
   "platform_products",
   "source_imports",
+  "source_row_snapshots",
+  "bulk_update_approval_receipts",
   "review_confirmations",
   "export_attempts",
   "import_results",

@@ -1,5 +1,10 @@
+import { artifactHash } from "../../../../../../lib/export-artifact";
 import type { AssetStore } from "@wukong/assets";
-import { BULK_FORM_XLSX_MIME_TYPE, createExportAssetKey } from "@wukong/assets";
+import {
+  AssetObjectMissingError,
+  BULK_FORM_XLSX_MIME_TYPE,
+  createExportAssetKey,
+} from "@wukong/assets";
 import type { ExportAttempt } from "@wukong/db";
 
 import {
@@ -73,6 +78,23 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
         );
       }
 
+      const legacy =
+        attempt.provenance == null &&
+        attempt.artifactSha256 == null &&
+        attempt.artifactStatus == null;
+      if (
+        !legacy &&
+        (attempt.artifactStatus !== "ready" ||
+          !attempt.provenance ||
+          !attempt.artifactSha256)
+      ) {
+        return jsonResponse(409, {
+          code: "export_artifact_not_ready",
+          message: "The export file is not ready for download.",
+          artifactStatus: attempt.artifactStatus,
+        });
+      }
+
       // Constructed outside the try/catch below: a throw here (malformed
       // workspaceId/exportAttemptId) is a genuine bug, not "object missing",
       // and must not be mischaracterized as the expected condition that
@@ -89,24 +111,7 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
           .getAssetStore()
           .readObject(session.workspaceId, assetKey);
       } catch (error) {
-        // Narrowed to the EXACT message MemoryAssetStore/S3AssetStore throw
-        // for "row exists, but no body was ever written under this key" --
-        // see the matching comment above each throw site in
-        // packages/assets/src/asset-store.ts and
-        // packages/assets/src/s3-asset-store.ts; if that message text ever
-        // changes, update it there too, or this narrowing silently stops
-        // matching. Anything else -- a transient R2/S3 outage, a network
-        // failure, a credential misconfiguration -- is NOT that case:
-        // rethrowing lets withRouteErrors's normal catch-all handle it (500
-        // + a report("internal_error", ...) trace for on-call), instead of
-        // this route silently telling the caller to "resubmit the export"
-        // for a problem resubmitting can't fix.
-        if (
-          !(error instanceof Error) ||
-          error.message !== "Asset object has no stored body"
-        ) {
-          throw error;
-        }
+        if (!(error instanceof AssetObjectMissingError)) throw error;
         // The one genuinely expected case: `export_attempts.ensure()`
         // committed but the asset-store write after it (see the comment
         // above the write in apps/web/app/api/listings/export/route.ts)
@@ -129,6 +134,13 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
         });
       }
 
+      if (!legacy && artifactHash(bytes) !== attempt.artifactSha256) {
+        return jsonResponse(409, {
+          code: "export_artifact_hash_mismatch",
+          message: "The stored export file does not match its recorded digest.",
+        });
+      }
+
       // `readObject`'s return type is `Uint8Array<ArrayBufferLike>` under
       // this repo's Node type augmentation, which `BodyInit` doesn't
       // structurally accept in TS 5.9's DOM lib (it wants
@@ -140,6 +152,7 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
         status: 200,
         headers: {
           "content-type": BULK_FORM_XLSX_MIME_TYPE,
+          "x-export-provenance": legacy ? "incomplete" : "complete",
           "content-disposition": `attachment; filename="export-${attempt.id}-${attempt.specVersion}.xlsx"`,
         },
       });

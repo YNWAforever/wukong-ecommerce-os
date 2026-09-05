@@ -80,12 +80,16 @@ export function ListingQueue({
                             aria-label={
                               eligible
                                 ? `選取 ${item.title}`
-                                : `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`
+                                : item.openBlockingFlagCount > 0
+                                  ? `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記`
+                                  : `${item.title} · 請開啟項目完成審核`
                             }
                             title={
                               eligible
                                 ? undefined
-                                : `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
+                                : item.openBlockingFlagCount > 0
+                                  ? `${item.title} · ${item.openBlockingFlagCount} 個未解決的合規標記 · ${item.openBlockingFlagCount} unresolved compliance flags`
+                                  : `${item.title} · 請開啟項目完成審核 · Open listing to complete review`
                             }
                             onChange={() => onToggle(item.id)}
                           />

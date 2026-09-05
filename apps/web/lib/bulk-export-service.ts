@@ -1,11 +1,15 @@
+import type {
+  ListingRepository,
+  ApprovalReceiptRepository,
+  SourceRowRepository,
+  PlatformProductRepository,
+  ReviewConfirmationRepository,
+  SourceImportRepository,
+} from "@wukong/db";
 import type { CanonicalListing } from "@wukong/core";
 import {
-  assertExportFreshness,
-  type AssertExportFreshnessDeps,
-  type FreshnessFailureReason,
-} from "@wukong/core";
-import {
   createBulkFormUpdate,
+  hashBulkFormHeaderContract,
   isBulkFormRawRow,
   ShoplineBulkFormError,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
@@ -17,28 +21,22 @@ import {
   readBulkFormSheet,
 } from "@wukong/shopline/bulk-form-xlsx";
 
-/**
- * The pure decision of which requested listings go into one multi-product
- * bulk-form export, and the row/enrichment each survivor contributes. No
- * database or HTTP here — every read comes through `deps`, mirroring how
- * `deliverBulkForm` in `delivery-service.ts` builds a single-listing export
- * row (same field mapping, same `isBulkFormRawRow` gate), scaled to many
- * listings behind one freshness-and-origin gate per listing.
- *
- * Known limitation (not fixable in this pure function): each survivor's
- * freshness check happens once, at that listing's own turn in the loop, but
- * `createBulkFormUpdate` runs once at the end for the whole batch. An early
- * survivor's platform-product row could change again while the rest of the
- * batch is still being read (each remaining listing does 2+ further awaited
- * reads), and nothing re-verifies it immediately before the final write.
- * Closing that gap needs a transaction or a final re-check at the caller's
- * I/O boundary — left for whoever wires the route/persistence layer around
- * this function.
- */
+import {
+  checkBulkUpdateEligibility,
+  type BulkUpdateEligibilityDeps,
+  type BulkUpdateEligibilityReason,
+  type BulkUpdateEvidence,
+  type BulkUpdateLink,
+} from "./bulk-update-eligibility";
+
+// Both Bulk Update entry points use this decision and workbook builder.
 export type ExportManifestOutcome =
   | "included"
   | "excluded_no_op"
   | "excluded_stale"
+  | "excluded_unapproved"
+  | "excluded_blocked"
+  | "excluded_unconfirmed"
   | "not_import_origin"
   | "raw_row_invalid"
   | "listing_not_found";
@@ -47,8 +45,7 @@ export type ExportManifestEntry = {
   listingId: string;
   versionId: string | null;
   outcome: ExportManifestOutcome;
-  /** Present only when `outcome` is `excluded_stale`. */
-  reason?: FreshnessFailureReason;
+  reason?: BulkUpdateEligibilityReason;
 };
 
 export type CreateBulkExportInput = {
@@ -64,46 +61,27 @@ export type CreateBulkExportInput = {
  * orchestration needs beyond what the freshness gate itself reads.
  * Structurally assignable wherever `PlatformProductLink` is expected.
  */
-export type BulkExportPlatformProductLink = {
-  remoteProductId: string;
-  rawRow: Record<string, string | null> | null;
-  origin: "import" | "created";
-  sourceImportId: string | null;
-  contentDigest: string | null;
-  connectionId: string;
-};
+export type BulkExportPlatformProductLink = BulkUpdateLink;
 
-/**
- * The only fields this orchestration reads from the active version's
- * content — same four (title/description/seo/tags) `deliverBulkForm` in
- * `delivery-service.ts` reads to build its single-listing export row. A
- * `Pick` rather than the full `CanonicalListing`, mirroring how
- * `BulkFormExportRow` in `@wukong/shopline`'s `bulk-form.ts` narrows to only
- * the fields `createBulkFormUpdate` actually touches.
- */
+/** Only the content fields consumed by the existing Bulk Update writer. */
 export type BulkExportListingContent = Pick<
   CanonicalListing,
   "title" | "description" | "seo" | "tags"
 >;
 
-export type CreateBulkExportDeps = {
-  getPlatformProductLink(
-    listingId: string,
-  ): Promise<BulkExportPlatformProductLink | null>;
+export type CreateBulkExportDeps = BulkUpdateEligibilityDeps & {
   getActiveVersion(
     listingId: string,
   ): Promise<{ id: string; content: BulkExportListingContent } | null>;
-  getSourceImportHeaderContractSha256(
-    sourceImportId: string,
-  ): Promise<string | null>;
-  currentHeaderContractSha256(): string;
 };
 
 export type CreateBulkExportResult = {
   manifest: ExportManifestEntry[];
+  evidence: BulkUpdateEvidence[];
   /** Count of listings actually written into the sheet — not raw cell-change count. */
   rowCount: number;
   specVersion: string;
+  headerContractSha256: string;
   body: Uint8Array;
 };
 
@@ -147,6 +125,7 @@ export async function createBulkExport(
   deps: CreateBulkExportDeps,
 ): Promise<CreateBulkExportResult> {
   const manifest: ExportManifestEntry[] = [];
+  const evidence: BulkUpdateEvidence[] = [];
   const rows: BulkFormExportRow[] = [];
   const enrichments: BulkFormEnrichment[] = [];
   // listingId -> remoteProductId, for the listings that made it into `rows`.
@@ -155,22 +134,8 @@ export async function createBulkExport(
   // subsequent import-origin listing can be checked against it.
   let sharedConnectionId: string | null = null;
 
-  // Forwards straight to `deps` so `assertExportFreshness`'s own re-read of
-  // the platform-product link and active version is a second, independent
-  // call from the one this function makes below — not a memoized echo of it.
-  // That is what lets it actually detect "the row moved between when we
-  // looked and when we verified" instead of comparing a value to itself.
-  const freshnessDeps: AssertExportFreshnessDeps = {
-    getPlatformProductLink: (listingId) =>
-      deps.getPlatformProductLink(listingId),
-    getActiveVersionId: async (listingId) =>
-      (await deps.getActiveVersion(listingId))?.id ?? null,
-    getSourceImportHeaderContractSha256: (sourceImportId) =>
-      deps.getSourceImportHeaderContractSha256(sourceImportId),
-    currentHeaderContractSha256: () => deps.currentHeaderContractSha256(),
-  };
-
-  for (const listingId of input.listingIds) {
+  // One stable order binds locks, workbook rows, manifest and approval evidence.
+  for (const listingId of [...input.listingIds].sort()) {
     const activeVersion = await deps.getActiveVersion(listingId);
     if (!activeVersion) {
       manifest.push({
@@ -181,22 +146,25 @@ export async function createBulkExport(
       continue;
     }
 
-    const link = await deps.getPlatformProductLink(listingId);
-    if (!link || link.origin !== "import") {
-      manifest.push({
+    const eligibility = await checkBulkUpdateEligibility(
+      {
+        workspaceId: input.workspaceId,
         listingId,
         versionId: activeVersion.id,
-        outcome: "not_import_origin",
-      });
+        freshnessAttested: input.freshnessAttested,
+      },
+      deps,
+    );
+    if (!eligibility.ok) {
+      manifest.push(
+        exclusionFor(listingId, activeVersion.id, eligibility.reason),
+      );
       continue;
     }
+    const { link } = eligibility;
 
-    // Checked early, before the freshness gate: fail fast with a clear
-    // "you're mixing stores" error rather than a confusing per-listing
-    // freshness error when the real mistake is picking listings from two
-    // different SHOPLINE connections. sourceImportId is deliberately NOT
-    // checked here -- two listings from different import batches of the
-    // SAME connection is a normal, expected case.
+    // Eligible rows in one workbook must target one store. Different import
+    // batches from that same store are allowed.
     if (sharedConnectionId === null) {
       sharedConnectionId = link.connectionId;
     } else if (link.connectionId !== sharedConnectionId) {
@@ -211,27 +179,6 @@ export async function createBulkExport(
       ]);
     }
 
-    const freshness = await assertExportFreshness(
-      {
-        workspaceId: input.workspaceId,
-        listingId,
-        expectedSourceImportId: link.sourceImportId ?? "",
-        expectedRowDigest: link.contentDigest ?? "",
-        expectedVersionId: activeVersion.id,
-        freshnessAttested: input.freshnessAttested,
-      },
-      freshnessDeps,
-    );
-    if (!freshness.ok) {
-      manifest.push({
-        listingId,
-        versionId: activeVersion.id,
-        outcome: "excluded_stale",
-        reason: freshness.reason,
-      });
-      continue;
-    }
-
     if (!link.rawRow || !isBulkFormRawRow(link.rawRow)) {
       manifest.push({
         listingId,
@@ -241,6 +188,7 @@ export async function createBulkExport(
       continue;
     }
 
+    evidence.push(eligibility.evidence);
     const { content } = activeVersion;
     rows.push({
       productId: link.remoteProductId,
@@ -298,7 +246,7 @@ export async function createBulkExport(
         // Every survivor was a no-op after all (createBulkFormUpdate's own
         // "zero net changes" guard fires when nothing in the whole batch
         // changed) — every survivor's manifest entry stays excluded_no_op,
-        // and we return an empty workbook rather than propagating this as a
+        // and we return no artifact bytes rather than propagating this as a
         // request error.
         update = null;
       } else {
@@ -323,6 +271,13 @@ export async function createBulkExport(
     }
   }
 
+  // Re-read after all candidate reads, before constructing artifact bytes.
+  // Callers recheck this captured evidence again at their mutation boundary.
+  const includedEvidence = evidence.filter((item) =>
+    changedProductIds.has(item.remoteProductId),
+  );
+  await recheckBulkExport(input, includedEvidence, deps);
+
   const specVersion = update?.specVersion ?? SHOPLINE_BULK_FORM_SPEC_VERSION;
   const body = update ? writeBulkFormWorkbook(update.sheet) : new Uint8Array(0);
 
@@ -339,5 +294,107 @@ export async function createBulkExport(
     (entry) => entry.outcome === "included",
   ).length;
 
-  return { manifest, rowCount, specVersion, body };
+  return {
+    manifest,
+    evidence: includedEvidence,
+    rowCount,
+    specVersion,
+    headerContractSha256: deps.currentHeaderContractSha256(),
+    body,
+  };
+}
+
+export function exclusionFor(
+  listingId: string,
+  versionId: string,
+  reason: BulkUpdateEligibilityReason,
+): ExportManifestEntry {
+  if (reason === "raw_row_invalid")
+    return { listingId, versionId, outcome: "raw_row_invalid" };
+  const outcome =
+    reason === "approval_required" || reason === "approval_binding_required"
+      ? "excluded_unapproved"
+      : reason === "blocking_flags"
+        ? "excluded_blocked"
+        : reason === "confirmation_required" ||
+            reason === "confirmation_changed"
+          ? "excluded_unconfirmed"
+          : reason === "not_import_origin"
+            ? "not_import_origin"
+            : "excluded_stale";
+  return { listingId, versionId, outcome, reason };
+}
+
+export class BulkUpdateEligibilityConflict extends Error {
+  constructor(readonly entry: ExportManifestEntry) {
+    super("Bulk Update review evidence changed; reload before exporting.");
+  }
+}
+
+export async function recheckBulkExport(
+  input: Pick<CreateBulkExportInput, "workspaceId" | "freshnessAttested">,
+  evidence: readonly BulkUpdateEvidence[],
+  deps: BulkUpdateEligibilityDeps,
+): Promise<void> {
+  for (const expected of evidence) {
+    const result = await checkBulkUpdateEligibility(
+      {
+        ...input,
+        listingId: expected.listingId,
+        versionId: expected.versionId,
+      },
+      deps,
+      expected,
+    );
+    if (!result.ok)
+      throw new BulkUpdateEligibilityConflict(
+        exclusionFor(expected.listingId, expected.versionId, result.reason),
+      );
+  }
+}
+
+/** Bind every authorization read to the caller's workspace transaction. */
+export function createBulkExportDeps(repositories: {
+  listings: Pick<ListingRepository, "getReviewSnapshot" | "lockReviewState">;
+  platformProducts: Pick<PlatformProductRepository, "getByListingId">;
+  reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
+  sourceImports: Pick<SourceImportRepository, "getById">;
+  sourceRows: Pick<SourceRowRepository, "getForProduct">;
+  approvalReceipts: Pick<ApprovalReceiptRepository, "getByVersionId">;
+}): CreateBulkExportDeps {
+  return {
+    async getActiveVersion(listingId) {
+      const snapshot = await repositories.listings.getReviewSnapshot(listingId);
+      return snapshot?.activeVersion ?? null;
+    },
+    async getReviewState(listingId) {
+      await repositories.listings.lockReviewState(listingId);
+      const snapshot = await repositories.listings.getReviewSnapshot(listingId);
+      if (!snapshot) return null;
+      return {
+        status: snapshot.listing.status,
+        // getReviewSnapshot can span multiple listing reads at READ COMMITTED.
+        // Never pair an older approved status with a different active version.
+        activeVersionId:
+          snapshot.listing.activeVersionId === snapshot.activeVersion?.id
+            ? snapshot.activeVersion.id
+            : null,
+        flags: snapshot.flags,
+      };
+    },
+    getApprovalReceipt: (versionId) =>
+      repositories.approvalReceipts.getByVersionId(versionId),
+    getSourceRow: (input) => repositories.sourceRows.getForProduct(input),
+    getReviewConfirmation: (versionId) =>
+      repositories.reviewConfirmations.getByVersionId(versionId),
+    getPlatformProductLink: (listingId) =>
+      repositories.platformProducts.getByListingId(listingId),
+    async getSourceImportHeaderContractSha256(sourceImportId) {
+      return (
+        (await repositories.sourceImports.getById(sourceImportId))
+          ?.headerContractSha256 ?? null
+      );
+    },
+    currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
+  };
 }
