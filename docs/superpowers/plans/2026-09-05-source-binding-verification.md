@@ -35,15 +35,15 @@ Date: 2026-09-05. Scope: continuation Task 3 only; Tasks 4–7 and merchant rele
 
 Commands ran from this worktree with Node 24.18.0 and the pinned manager via corepack.cmd pnpm@11.7.0.
 
-| Command | Result |
-| --- | --- |
-| corepack.cmd pnpm@11.7.0 format:runtime:check | Pass: 28 runtime files, no waived format debt |
+| Command                                          | Result                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| corepack.cmd pnpm@11.7.0 format:runtime:check    | Pass: 28 runtime files, no waived format debt                                     |
 | corepack.cmd pnpm@11.7.0 runtime:forbidden:check | Pass: 9 manifests, 216 source files, zero forbidden dependencies/imports/services |
-| corepack.cmd pnpm@11.7.0 lint | Pass: 14/14 Turbo tasks |
-| corepack.cmd pnpm@11.7.0 typecheck | Pass: 14/14 Turbo tasks |
-| corepack.cmd pnpm@11.7.0 test | Pass: 67 root tests plus 1,319 package tests; 843 web tests; 14/14 Turbo tasks |
-| corepack.cmd pnpm@11.7.0 build | Pass: 8/8 tasks; Next.js build and Worker dry-run only |
-| git diff --check | Pass |
+| corepack.cmd pnpm@11.7.0 lint                    | Pass: 14/14 Turbo tasks                                                           |
+| corepack.cmd pnpm@11.7.0 typecheck               | Pass: 14/14 Turbo tasks                                                           |
+| corepack.cmd pnpm@11.7.0 test                    | Pass: 67 root tests plus 1,319 package tests; 843 web tests; 14/14 Turbo tasks    |
+| corepack.cmd pnpm@11.7.0 build                   | Pass: 8/8 tasks; Next.js build and Worker dry-run only                            |
+| git diff --check                                 | Pass                                                                              |
 
 The final affected integration command was:
 

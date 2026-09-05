@@ -138,6 +138,8 @@ An all-excluded or all-no-op multi-export returns a manifest with rowCount 0
 and exportAttemptId null; it creates no object or successful export event.
 Single bulk_form requests must explicitly send freshnessAttested: true.
 
-These checks do not establish a durable approved-source receipt or atomic
-Postgres/object-store publication. Immutable source/approval binding, artifact
-hash/readiness and retry identity remain continuation Task 3.
+Durable approved-source receipts and pending/ready/failed artifact records
+now enforce source/approval binding, verified workbook hashes and retry identity;
+see Bulk Update source and artifact history above. Object-store publication is
+verified through the recoverable artifact lifecycle, not an atomic cross-store
+transaction. Merchant-side freshness and SHOPLINE acceptance remain unverified.
