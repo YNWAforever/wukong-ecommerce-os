@@ -221,6 +221,13 @@ describe("independent synthetic workbook fidelity", () => {
         sourceRow(),
       ]).rows,
     ).toHaveLength(0);
+    expect(
+      parseBulkForm([
+        headers.en,
+        [...headers.zh, "Unexpected column"],
+        sourceRow(),
+      ]).localeHeaderRow,
+    ).toBeNull();
   });
   it("accepts trailing blank formatting cells without extending the contract", () => {
     expect(
