@@ -487,3 +487,165 @@ it("retains an ambiguous retry through permission loss and restoration without a
     await view.close();
   }
 });
+
+it("keeps newer parent permission revocation while merging a newer receipt from an obsolete reload", async () => {
+  const reload = deferredResponse();
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({ result: { id: "result-2" } }))
+    .mockReturnValueOnce(reload.promise);
+  vi.stubGlobal("fetch", fetcher);
+  const view = await panelHarness();
+  try {
+    await act(async () =>
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click(),
+    );
+    await view.render({
+      ...reported(1, "accepted"),
+      capabilities: { ...detail.capabilities, canRecordImportResult: false },
+    });
+    await act(async () => reload.resolve(Response.json(reported(2))));
+    expect(view.container.querySelector("form")!.hidden).toBe(true);
+    expect(
+      view.container.querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .disabled,
+    ).toBe(true);
+    expect(view.container.textContent).toContain("rejection-2");
+    expect(count(view.container, "Rejected")).toBe("1");
+    await act(async () =>
+      view.container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await view.render(reported(1, "accepted"));
+    expect(view.container.querySelector("form")!.hidden).toBe(false);
+    expect(view.container.textContent).toContain("rejection-2");
+  } finally {
+    await view.close();
+  }
+});
+
+it("keeps newer parent artifact metadata while merging a newer receipt from an obsolete reload", async () => {
+  const reload = deferredResponse();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ result: { id: "result-2" } }))
+      .mockReturnValueOnce(reload.promise),
+  );
+  const view = await panelHarness();
+  try {
+    await act(async () =>
+      view.container
+        .querySelector<HTMLButtonElement>('button[type="submit"]')!
+        .click(),
+    );
+    await view.render({
+      ...reported(1, "accepted"),
+      attempt: {
+        ...detail.attempt,
+        artifactStatus: "failed",
+        artifactErrorCode: "artifact_hash_mismatch",
+      },
+    });
+    await act(async () => reload.resolve(Response.json(reported(2))));
+    expect(
+      view.container.querySelector(".connection-status")!.textContent,
+    ).toBe("Failed");
+    expect(view.container.querySelector('a[href$="/download"]')).toBeNull();
+    expect(view.container.textContent).toContain("rejection-2");
+    expect(count(view.container, "Rejected")).toBe("1");
+  } finally {
+    await view.close();
+  }
+});
+
+it("orders overlapping local metadata reads without discarding newer receipts in the older read", async () => {
+  const first = deferredResponse();
+  const second = deferredResponse();
+  const initial: WireExportReconciliationDetail = {
+    ...detail,
+    reconciliation: {
+      ...detail.reconciliation,
+      counts: {
+        requested: 2,
+        included: 2,
+        excluded: 0,
+        noOp: 0,
+        accepted: 0,
+        rejected: 0,
+        unreported: 2,
+      },
+      members: [
+        detail.reconciliation.members[0]!,
+        {
+          ...detail.reconciliation.members[0]!,
+          listingId: "listing-c",
+          versionId: "version-c",
+        },
+      ],
+    },
+  };
+  let reads = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_url, options) =>
+        options?.method === "POST"
+          ? Response.json({ result: { id: "result" } })
+          : ++reads === 1
+            ? first.promise
+            : second.promise,
+      ),
+  );
+  const view = await panelHarness(initial);
+  try {
+    const buttons = view.container.querySelectorAll<HTMLButtonElement>(
+      'button[type="submit"]',
+    );
+    await act(async () => buttons[0]!.click());
+    await act(async () => buttons[1]!.click());
+    await act(async () =>
+      second.resolve(
+        Response.json({
+          ...initial,
+          capabilities: {
+            ...initial.capabilities,
+            canRecordImportResult: false,
+          },
+          attempt: { ...initial.attempt, artifactStatus: "failed" },
+        }),
+      ),
+    );
+    await act(async () =>
+      first.resolve(
+        Response.json({
+          ...initial,
+          reconciliation: {
+            ...initial.reconciliation,
+            members: [
+              reported(2).reconciliation.members[0]!,
+              initial.reconciliation.members[1]!,
+            ],
+          },
+        }),
+      ),
+    );
+    expect(
+      view.container.querySelector(".connection-status")!.textContent,
+    ).toBe("Failed");
+    expect(view.container.querySelector('a[href$="/download"]')).toBeNull();
+    expect(view.container.textContent).toContain("rejection-2");
+    expect(count(view.container, "Rejected")).toBe("1");
+    expect(count(view.container, "Unreported")).toBe("1");
+  } finally {
+    await view.close();
+  }
+});

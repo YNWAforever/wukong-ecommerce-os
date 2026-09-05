@@ -8,7 +8,7 @@ import {
 } from "../lib/ui-copy";
 import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ImportResultForm,
   ImportResultHistory,
@@ -107,27 +107,46 @@ export function ExportReconciliationPanel({
 }) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
-  const [detail, setDetail] = useState(initialDetail);
-  const [previousParent, setPreviousParent] = useState(initialDetail);
+  const [view, setView] = useState({
+    detail: initialDetail,
+    parent: initialDetail,
+  });
+  const latestReload = useRef(0);
+  const { detail } = view;
   // Update during render so children never commit stale predecessor props. This
   // retains the same form instance and its in-flight/idempotency refs.
-  if (previousParent !== initialDetail) {
-    setPreviousParent(initialDetail);
-    setDetail((current) => mergeDetail(current, initialDetail));
+  if (view.parent !== initialDetail) {
+    setView((current) => ({
+      parent: initialDetail,
+      detail: mergeDetail(current.detail, initialDetail),
+    }));
   }
   async function reload() {
+    const request = ++latestReload.current;
     const response = await fetch(`/api/listings/export/${detail.attempt.id}`, {
       cache: "no-store",
     });
     if (!response.ok)
       throw new Error(`Unable to reload export status (${response.status})`);
     const incoming = (await response.json()) as WireExportReconciliationDetail;
-    setDetail((current) =>
-      current.attempt.id === detail.attempt.id &&
-      incoming.attempt.id === detail.attempt.id
-        ? mergeDetail(current, incoming)
-        : current,
-    );
+    setView((current) => {
+      if (
+        current.detail.attempt.id !== detail.attempt.id ||
+        incoming.attempt.id !== detail.attempt.id
+      )
+        return current;
+      // Metadata has no receipt revision. A parent refresh supersedes callbacks
+      // bound to older props; a later local request supersedes earlier requests.
+      // Obsolete reads can still contribute independently newer receipt evidence.
+      const ownsMetadata =
+        current.parent === initialDetail && request === latestReload.current;
+      return {
+        ...current,
+        detail: ownsMetadata
+          ? mergeDetail(current.detail, incoming)
+          : mergeDetail(incoming, current.detail),
+      };
+    });
   }
   const { attempt, reconciliation, capabilities } = detail;
   const ready = attempt.artifactStatus === "ready";
