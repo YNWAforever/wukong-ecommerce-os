@@ -36,3 +36,11 @@ The durable scan layer owns the one-second interval, five discovery-document bud
 Errors are bounded to `invalid_url`, `unsafe_address`, `origin_mismatch`, `too_many_redirects`, `invalid_redirect`, `unsupported_content_type`, `unsupported_encoding`, `body_too_large`, `deadline_exceeded`, `aborted`, and `transport_failed`; raw network details are not returned.
 
 The root integration config now includes only `apps/web/lib/website/**/*.integration.test.ts` in addition to its existing patterns. The web unit script already excludes all `*.integration.test.ts`. TLS integration tests require local OpenSSL to create ephemeral synthetic certificates; Git for Windows OpenSSL and Linux `openssl` are supported.
+
+## Controller baseline browser reproduction
+
+The unchanged import UI was exercised with an isolated synthetic signed-in operator and no connection. Import submission was disabled, administrator guidance was visible, and both Website URL and Preview products controls were absent. The reproduction test passed (1/1) and retained a screenshot under node_modules/.website-evidence/baseline. No merchant workbook or storefront was fetched.
+
+The synthetic web production build passed six tasks (five cached). An earlier build overlapped in-progress transport typing and failed on the subsequently fixed ProxyEnv type. The first scratch browser configuration resolved its server path relative to .superpowers/sdd and failed before tests; setting its explicit repository cwd resolved that harness issue. The unchanged reproduction then passed without assertion relaxation.
+
+A single read-only public robots-policy request through the protected Node transport returned HTTP 200/text/plain for https://www.opakcellar.com/robots.txt. This establishes local transport compatibility for that endpoint only; product extraction and full policy evaluation remain pending. No public product records were stored.
