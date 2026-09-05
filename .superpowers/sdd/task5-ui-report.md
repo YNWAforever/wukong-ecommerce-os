@@ -54,3 +54,9 @@
 - RED: the focused review run failed three assertions: freshness remained checked after selected IDs changed; a successful POST followed by failed detail GET hid `attempt-stable`; and durable rejected history omitted `Protected field rejected`/`Original row rejected`.
 - GREEN: `corepack.cmd pnpm@11.7.0 --filter @wukong/web test -- bulk-export-panel.test.tsx export-reconciliation-panel.test.tsx delivery-panel.test.tsx jobs-ledger-client.test.tsx` completed with 104 files / 878 tests passing, followed by a focused persisted-error-attempt case with 104 files / 879 tests passing. `corepack.cmd pnpm@11.7.0 --filter @wukong/web typecheck` passed.
 - Root owns the final combined build and real-browser rerun against the synthetic services.
+### Origin capability follow-up
+
+- Verified `delivery-service.ts` method `csv` always calls the 15-column `createShoplineCsv`; removed the invented imported-origin Update CSV/API controls.
+- Import-origin listings now expose only Bulk Update XLSX. Created-origin links expose Update via API plus Create CSV; unlinked listings expose Create via API plus Create CSV; unknown link origin fails closed.
+- RED: the origin regression saw `發布至 SHOPLINE` and `匯出 SHOPLINE CSV` on an approved imported listing.
+- GREEN: focused delivery run completed with 104 files / 879 tests passing; web typecheck passed.

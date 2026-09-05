@@ -53,6 +53,8 @@ describe("DeliveryPanel", () => {
     expect(markup).toContain("已連接");
     expect(markup).toContain("發布至 SHOPLINE");
     expect(markup).toContain("匯出 SHOPLINE CSV");
+    expect(markup).toContain("Create via API");
+    expect(markup).toContain("Create CSV");
     expect(markup).not.toContain('disabled=""');
   });
 
@@ -81,7 +83,7 @@ describe("DeliveryPanel", () => {
       canReview: true,
       remoteProductUrl: null,
       remoteProductId: null,
-      shoplineLink: { remoteProductId: "remote_existing_1" },
+      shoplineLink: { remoteProductId: "remote_existing_1", origin: "created" },
     };
     const markup = renderToStaticMarkup(
       <DeliveryPanel model={model} sku="OPAK-2024-RIES" />,
@@ -113,6 +115,10 @@ describe("DeliveryPanel", () => {
       />,
     );
     expect(imported).toContain("Generate Bulk Update XLSX");
+    expect(imported).not.toContain("發布至 SHOPLINE");
+    expect(imported).not.toContain("匯出 SHOPLINE CSV");
+    expect(imported).not.toContain("Create via API");
+    expect(imported).not.toContain("Create CSV");
     expect(imported).toContain("Record unlinked historical result");
     const created = renderToStaticMarkup(
       <DeliveryPanel
@@ -128,6 +134,8 @@ describe("DeliveryPanel", () => {
       />,
     );
     expect(created).toContain("Create CSV / API");
+    expect(created).toContain("Update via API");
+    expect(created).toContain("Create CSV");
     expect(created).not.toContain("Generate Bulk Update XLSX");
   });
   it("shows rejection and correction reasons in manual result history", () => {

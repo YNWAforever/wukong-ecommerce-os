@@ -49,13 +49,16 @@ export function DeliveryPanel({
   const connection = connectionCopy[model.connection];
   const [showHistorical, setShowHistorical] = useState(false);
   const imported = model.shoplineLink?.origin === "import";
+  const supportsCreateDelivery =
+    model.shoplineLink === null || model.shoplineLink.origin === "created";
   const approved = model.status === "approved" || model.status === "published";
   const canDeliver = approved && model.canReview;
   const canApiPublish =
+    supportsCreateDelivery &&
     canDeliver &&
     model.connection === "connected" &&
     model.status === "approved";
-  const csvEnabled = canDeliver;
+  const csvEnabled = supportsCreateDelivery && canDeliver;
 
   return (
     <section className="delivery-panel" aria-labelledby="delivery-heading">
@@ -73,30 +76,31 @@ export function DeliveryPanel({
         </span>
       </div>
       <p className="panel-intro">{connection.detail}</p>
-      <div className="delivery-actions">
-        <button
-          className="primary-button"
-          type="button"
-          onClick={onPublish}
-          disabled={!canApiPublish}
-        >
-          發布至 SHOPLINE{" "}
-          {imported ? <span>Update via API</span> : <span>Create via API</span>}
-        </button>
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={onCsv}
-          disabled={!csvEnabled}
-        >
-          匯出 SHOPLINE CSV{" "}
-          {imported ? (
-            <span>Update CSV fallback</span>
-          ) : (
-            <span>Create CSV · CSV fallback</span>
-          )}
-        </button>
-      </div>
+      {supportsCreateDelivery ? (
+        <div className="delivery-actions">
+          <button
+            className="primary-button"
+            type="button"
+            onClick={onPublish}
+            disabled={!canApiPublish}
+          >
+            發布至 SHOPLINE{" "}
+            {model.shoplineLink ? (
+              <span>Update via API</span>
+            ) : (
+              <span>Create via API</span>
+            )}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={onCsv}
+            disabled={!csvEnabled}
+          >
+            匯出 SHOPLINE CSV <span>Create CSV · CSV fallback</span>
+          </button>
+        </div>
+      ) : null}
       {!approved ? (
         <p className="helper-copy">
           批准版本後才能交付。{" "}
