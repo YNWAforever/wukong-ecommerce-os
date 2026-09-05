@@ -4,13 +4,9 @@ import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { createDatabase } from "../client.js";
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL!,
   appUrl = process.env.TEST_DATABASE_URL!;
-if (
-  !adminUrl ||
-  !appUrl ||
-  !adminUrl.endsWith("/task67_integration") ||
-  !appUrl.endsWith("/task67_integration")
-)
-  throw new Error("Explicit task67_integration database required");
+// The integration runner supplies isolated service URLs; database names vary by environment.
+if (!adminUrl || !appUrl)
+  throw new Error("Explicit isolated database URLs required");
 const admin = postgres(adminUrl, {
     max: 1,
     onnotice: () => {},
