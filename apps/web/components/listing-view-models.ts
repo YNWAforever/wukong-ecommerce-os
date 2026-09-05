@@ -69,7 +69,21 @@ export type DeliveryModel = {
   canReview: boolean;
   remoteProductUrl: string | null;
   remoteProductId: string | null;
-  shoplineLink: { remoteProductId: string } | null;
+  shoplineLink: {
+    remoteProductId: string;
+    origin?: "import" | "created";
+  } | null;
+  listingId?: string;
+  versionId?: string;
+  canRecordImportResult?: boolean;
+  historicalImportResults?: Array<{
+    id: string;
+    outcome: "accepted" | "rejected";
+    rejectReason: string | null;
+    correctionReason: string | null;
+    revision: number;
+    createdAt: string;
+  }>;
 };
 
 export const queueGroups: ReadonlyArray<{

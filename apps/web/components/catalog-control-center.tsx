@@ -11,6 +11,7 @@ import {
   catalogStatusTone,
 } from "./catalog-view-models";
 import styles from "./catalog-control-center.module.css";
+import { BulkExportPanel } from "./bulk-export-panel";
 
 const STATUS_TONE_CLASSES = {
   neutral: styles.statusNeutral,
@@ -23,6 +24,7 @@ const PAGE_SIZE = 25;
 
 const EMPTY_RESPONSE: CatalogPage = {
   items: [],
+  capabilities: { canGenerateBulkUpdate: false, canRecordImportResult: false },
   summary: {
     total: 0,
     linked: 0,
@@ -42,6 +44,7 @@ export function CatalogControlCenter() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -126,6 +129,21 @@ export function CatalogControlCenter() {
       </div>
 
       <div className={styles.controlPanel}>
+        <div className={styles.selectionBar} aria-live="polite">
+          <strong>{selectedIds.length} selected for Bulk Update</strong>
+          <button
+            type="button"
+            className={styles.pageButton}
+            disabled={selectedIds.length === 0}
+            onClick={() => setSelectedIds([])}
+          >
+            Clear selection
+          </button>
+        </div>
+        <BulkExportPanel
+          listingIds={selectedIds}
+          canGenerate={response.capabilities.canGenerateBulkUpdate}
+        />
         <div className={styles.toolbar}>
           <label className={styles.searchField}>
             <span>搜尋商品 Search catalog</span>
@@ -170,6 +188,9 @@ export function CatalogControlCenter() {
             <table className={styles.table} aria-label="商品列表">
               <thead>
                 <tr>
+                  <th scope="col">
+                    <span className={styles.visuallyHidden}>Select</span>
+                  </th>
                   <th scope="col">商品 Product</th>
                   <th scope="col">來源 Source</th>
                   <th scope="col">工作流程 Workflow</th>
@@ -184,6 +205,28 @@ export function CatalogControlCenter() {
                   const tone = catalogStatusTone(item.listingStatus);
                   return (
                     <tr key={item.id}>
+                      <td>
+                        {item.origin === "import" &&
+                        item.listingId &&
+                        response.capabilities.canGenerateBulkUpdate ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${item.sku ?? item.remoteProductId} for Bulk Update`}
+                            checked={selectedIds.includes(item.listingId)}
+                            onChange={(event) =>
+                              setSelectedIds((current) =>
+                                event.target.checked
+                                  ? current.includes(item.listingId!)
+                                    ? current
+                                    : [...current, item.listingId!]
+                                  : current.filter(
+                                      (id) => id !== item.listingId,
+                                    ),
+                              )
+                            }
+                          />
+                        ) : null}
+                      </td>
                       <td>
                         <strong className={styles.productTitle}>
                           {item.title}

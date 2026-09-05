@@ -1,6 +1,9 @@
 "use client";
 
 import type { DeliveryModel } from "./listing-view-models";
+import { BulkExportPanel } from "./bulk-export-panel";
+import { ImportResultForm } from "./import-result-form";
+import { useState } from "react";
 
 export type { DeliveryModel } from "./listing-view-models";
 
@@ -9,6 +12,7 @@ type DeliveryPanelProps = {
   sku?: string | null;
   onCsv?: () => void;
   onPublish?: () => void;
+  onResultRecorded?: () => void | Promise<void>;
 };
 
 const connectionCopy: Record<
@@ -40,8 +44,11 @@ export function DeliveryPanel({
   sku = null,
   onCsv,
   onPublish,
+  onResultRecorded,
 }: DeliveryPanelProps) {
   const connection = connectionCopy[model.connection];
+  const [showHistorical, setShowHistorical] = useState(false);
+  const imported = model.shoplineLink?.origin === "import";
   const approved = model.status === "approved" || model.status === "published";
   const canDeliver = approved && model.canReview;
   const canApiPublish =
@@ -111,6 +118,59 @@ export function DeliveryPanel({
             <span>This will create a new SHOPLINE product.</span>
           </p>
         )
+      ) : null}
+      {imported && model.listingId ? (
+        <BulkExportPanel
+          listingIds={[model.listingId]}
+          canGenerate={model.canReview}
+        />
+      ) : null}
+      {!imported && model.shoplineLink ? (
+        <p className="helper-copy">
+          Created-origin listing: use Create CSV / API delivery actions. Bulk
+          Update XLSX requires an imported source row.
+        </p>
+      ) : null}
+      {model.listingId && model.canRecordImportResult ? (
+        <div className="historical-report">
+          <button
+            type="button"
+            className="secondary-button"
+            aria-expanded={showHistorical}
+            onClick={() => setShowHistorical((value) => !value)}
+          >
+            Record unlinked historical result
+          </button>
+          {showHistorical ? (
+            <>
+              <p className="helper-copy">
+                Manual historical report — unlinked. It cannot close an export
+                reconciliation total.
+              </p>
+              {model.historicalImportResults?.length ? (
+                <details>
+                  <summary>Manual correction history</summary>
+                  <ol>
+                    {model.historicalImportResults.map((result) => (
+                      <li key={result.id}>
+                        Revision {result.revision}: {result.outcome}
+                        {result.correctionReason
+                          ? ` — ${result.correctionReason}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              ) : null}
+              <ImportResultForm
+                listingId={model.listingId}
+                mode="historical_manual"
+                latestResult={model.historicalImportResults?.[0] ?? null}
+                onRecorded={onResultRecorded}
+              />
+            </>
+          ) : null}
+        </div>
       ) : null}
       {model.remoteProductId ? (
         <p className="remote-link">

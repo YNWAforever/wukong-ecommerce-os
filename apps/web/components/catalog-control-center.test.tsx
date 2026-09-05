@@ -75,6 +75,10 @@ function pageResponse(
 ): CatalogPage {
   return {
     items,
+    capabilities: {
+      canGenerateBulkUpdate: false,
+      canRecordImportResult: false,
+    },
     summary: {
       total: 60,
       linked: 10,
@@ -418,6 +422,51 @@ describe("CatalogControlCenter", () => {
       expect(labelElement?.textContent).toBe(expectedLabels[index]);
     });
 
+    await unmount(root);
+  });
+  it("selects only reviewer-authorized imported linked listings for Bulk Update", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        pageResponse(
+          [
+            makeItem({
+              id: "imported",
+              listingId: "listing-imported",
+              sku: "SKU-IMPORT",
+              origin: "import",
+            }),
+            makeItem({
+              id: "created",
+              listingId: "listing-created",
+              sku: "SKU-CREATED",
+              origin: "created",
+            }),
+          ],
+          {
+            capabilities: {
+              canGenerateBulkUpdate: true,
+              canRecordImportResult: true,
+            },
+          },
+        ),
+      ),
+    );
+    const { container, root } = await mount(fetcher);
+    const imported = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Select SKU-IMPORT for Bulk Update"]',
+    );
+    expect(imported).not.toBeNull();
+    expect(
+      container.querySelector(
+        'input[aria-label="Select SKU-CREATED for Bulk Update"]',
+      ),
+    ).toBeNull();
+    await act(async () => imported!.click());
+    expect(container.textContent).toContain("1 selected for Bulk Update");
+    await act(async () =>
+      findButtonByText(container, "Clear selection")!.click(),
+    );
+    expect(container.textContent).toContain("0 selected for Bulk Update");
     await unmount(root);
   });
 });

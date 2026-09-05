@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import type { LedgerKind, NormalizedStatus } from "../lib/jobs-ledger";
+import {
+  ExportReconciliationPanel,
+  type WireExportReconciliationDetail,
+} from "./export-reconciliation-panel";
 
 // The wire shape of `LedgerEntry` (see lib/jobs-ledger.ts): `createdAt` is a
 // real `Date` server-side, but `jsonResponse` runs it through
@@ -30,6 +34,10 @@ type JobsMetrics = {
 type JobsResponse = {
   entries: WireLedgerEntry[];
   metrics: JobsMetrics;
+  exportReconciliations?: Array<
+    Omit<WireExportReconciliationDetail, "capabilities">
+  >;
+  capabilities?: WireExportReconciliationDetail["capabilities"];
 };
 
 type KindFilter = "all" | LedgerKind;
@@ -188,6 +196,27 @@ export function JobsLedgerClient() {
           </button>
         ))}
       </div>
+
+      {response.exportReconciliations?.length ? (
+        <section
+          className="export-reconciliations"
+          aria-label="Bulk Update XLSX reconciliations"
+        >
+          <h2>Bulk Update XLSX reconciliations</h2>
+          {response.exportReconciliations.map((detail) => (
+            <ExportReconciliationPanel
+              key={detail.attempt.id}
+              detail={{
+                ...detail,
+                capabilities: response.capabilities ?? {
+                  canGenerateBulkUpdate: false,
+                  canRecordImportResult: false,
+                },
+              }}
+            />
+          ))}
+        </section>
+      ) : null}
 
       {visibleEntries.length === 0 ? (
         <p className="helper-copy">

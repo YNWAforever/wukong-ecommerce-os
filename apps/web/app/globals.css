@@ -1571,3 +1571,73 @@ button:disabled {
   font-size: 12px;
   font-weight: 800;
 }
+
+.bulk-export-panel,
+.reconciliation-panel,
+.historical-report {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.freshness-attestation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 700;
+}
+.reconciliation-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.reconciliation-counts div {
+  padding: 8px;
+  background: var(--stone);
+  border-radius: 8px;
+}
+.reconciliation-counts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.reconciliation-counts dd {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+.reconciliation-members {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.reconciliation-members > li {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.result-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.result-form label {
+  display: grid;
+  gap: 5px;
+  font-weight: 700;
+}
+.result-form select,
+.result-form textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+}

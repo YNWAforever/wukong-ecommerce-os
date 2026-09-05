@@ -287,4 +287,109 @@ describe("JobsLedgerClient", () => {
     ).map((tile) => tile.textContent);
     expect(values).toEqual(["3", "1", "2", "120"]);
   });
+  it("renders mixed export reconciliation totals and correction history", async () => {
+    stubFetch({
+      entries: [],
+      metrics: SAMPLE_METRICS,
+      capabilities: {
+        canGenerateBulkUpdate: true,
+        canRecordImportResult: true,
+      },
+      exportReconciliations: [
+        {
+          attempt: {
+            id: "attempt-mixed",
+            artifactStatus: "ready",
+            rowCount: 2,
+            specVersion: "v1",
+            createdAt: "2026-08-06T00:00:00Z",
+          },
+          reconciliation: {
+            counts: {
+              requested: 3,
+              included: 2,
+              excluded: 0,
+              noOp: 1,
+              accepted: 1,
+              rejected: 1,
+              unreported: 0,
+            },
+            verificationStatus: "unverified",
+            members: [
+              {
+                listingId: "listing-a",
+                versionId: "version-a",
+                outcome: "included",
+                latestResult: {
+                  id: "r2",
+                  outcome: "accepted",
+                  rejectReason: null,
+                  correctionReason: "Merchant retried",
+                  revision: 2,
+                  createdAt: "2026-08-07T00:00:00Z",
+                },
+                history: [
+                  {
+                    id: "r2",
+                    outcome: "accepted",
+                    rejectReason: null,
+                    correctionReason: "Merchant retried",
+                    revision: 2,
+                    createdAt: "2026-08-07T00:00:00Z",
+                  },
+                  {
+                    id: "r1",
+                    outcome: "rejected",
+                    rejectReason: "Invalid",
+                    correctionReason: null,
+                    revision: 1,
+                    createdAt: "2026-08-06T00:00:00Z",
+                  },
+                ],
+              },
+              {
+                listingId: "listing-b",
+                versionId: "version-b",
+                outcome: "included",
+                latestResult: {
+                  id: "r3",
+                  outcome: "rejected",
+                  rejectReason: "Invalid",
+                  correctionReason: null,
+                  revision: 1,
+                  createdAt: "2026-08-06T00:00:00Z",
+                },
+                history: [
+                  {
+                    id: "r3",
+                    outcome: "rejected",
+                    rejectReason: "Invalid",
+                    correctionReason: null,
+                    revision: 1,
+                    createdAt: "2026-08-06T00:00:00Z",
+                  },
+                ],
+              },
+              {
+                listingId: "listing-c",
+                versionId: null,
+                outcome: "excluded_no_op",
+                reason: "No change",
+                latestResult: null,
+                history: [],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const { container } = await mountLedger();
+    expect(
+      container.querySelector('[data-export-attempt-id="attempt-mixed"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Correction history");
+    expect(container.textContent).toContain("Merchant retried");
+    expect(container.textContent).toContain("Accepted1");
+    expect(container.textContent).toContain("Rejected1");
+  });
 });

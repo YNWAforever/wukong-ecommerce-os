@@ -32,6 +32,7 @@ type ListingPermissions = {
   canResolveFlags: boolean;
   canApprove: boolean;
   canDeliver: boolean;
+  canRecordImportResult?: boolean;
 };
 
 // The wire shape of `ListingActivityEntry` (see lib/listing-activity-service.ts):
@@ -84,7 +85,10 @@ export type ListingViewResponse = {
     error: string | null;
   } | null;
   queueStatus: string | null;
-  shoplineLink: { remoteProductId: string } | null;
+  shoplineLink: {
+    remoteProductId: string;
+    origin: "import" | "created";
+  } | null;
   reviewConfirmation: {
     revision: number;
     fieldConfirmations: Record<string, boolean>;
@@ -93,6 +97,14 @@ export type ListingViewResponse = {
   sourceImportId: string | null;
   contentDigest: string | null;
   permissions: ListingPermissions;
+  historicalImportResults?: Array<{
+    id: string;
+    outcome: "accepted" | "rejected";
+    rejectReason: string | null;
+    correctionReason: string | null;
+    revision: number;
+    createdAt: string;
+  }>;
   activity: WireListingActivityEntry[];
 };
 
@@ -387,6 +399,11 @@ export function mapListingView(
       remoteProductUrl: null,
       remoteProductId: response.delivery?.remoteProductId ?? null,
       shoplineLink: response.shoplineLink,
+      listingId: response.listingId,
+      versionId: version.id,
+      canRecordImportResult:
+        response.permissions.canRecordImportResult ?? false,
+      historicalImportResults: response.historicalImportResults ?? [],
     },
     permissions: response.permissions,
     evidence: response.evidence.map((entry) => ({
@@ -819,6 +836,7 @@ export function ListingReviewClient({
             sku={content?.sku ?? null}
             onCsv={exportCsv}
             onPublish={publish}
+            onResultRecorded={() => load()}
           />
           <ActivityPanel entries={snapshot.activity} />
         </div>

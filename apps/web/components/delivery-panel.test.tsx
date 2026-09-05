@@ -94,4 +94,39 @@ describe("DeliveryPanel", () => {
     );
     expect(markup).not.toContain("此操作將建立新的 SHOPLINE 商品");
   });
+  it("separates imported Bulk Update from created-origin Create CSV and API delivery", () => {
+    const imported = renderToStaticMarkup(
+      <DeliveryPanel
+        model={{
+          connection: "connected",
+          status: "approved",
+          canReview: true,
+          remoteProductUrl: null,
+          remoteProductId: null,
+          listingId: "listing-1",
+          versionId: "version-1",
+          canRecordImportResult: true,
+          shoplineLink: { remoteProductId: "remote-1", origin: "import" },
+        }}
+        sku="SKU-1"
+      />,
+    );
+    expect(imported).toContain("Generate Bulk Update XLSX");
+    expect(imported).toContain("Record unlinked historical result");
+    const created = renderToStaticMarkup(
+      <DeliveryPanel
+        model={{
+          connection: "connected",
+          status: "approved",
+          canReview: true,
+          remoteProductUrl: null,
+          remoteProductId: null,
+          listingId: "listing-2",
+          shoplineLink: { remoteProductId: "remote-2", origin: "created" },
+        }}
+      />,
+    );
+    expect(created).toContain("Create CSV / API");
+    expect(created).not.toContain("Generate Bulk Update XLSX");
+  });
 });
