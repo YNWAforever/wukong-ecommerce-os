@@ -1,28 +1,48 @@
 -- Legacy rows are explicitly historical; no trusted export receipt is inferred.
-ALTER TABLE import_results ADD COLUMN mode text NOT NULL DEFAULT 'legacy_historical';
-ALTER TABLE import_results ADD COLUMN version_id uuid;
-ALTER TABLE import_results ADD COLUMN idempotency_key text;
-ALTER TABLE import_results ADD COLUMN supersedes_result_id uuid;
-ALTER TABLE import_results ADD COLUMN correction_reason text;
-ALTER TABLE import_results ADD COLUMN revision integer NOT NULL DEFAULT 1;
-ALTER TABLE import_results ADD CONSTRAINT import_results_mode_check CHECK(mode IN ('legacy_historical','historical_manual','export'));
-ALTER TABLE import_results ADD CONSTRAINT import_results_revision_check CHECK(revision > 0);
-ALTER TABLE import_results ADD CONSTRAINT import_results_binding_check CHECK(
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS mode text NOT NULL DEFAULT 'legacy_historical';
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS version_id uuid;
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS idempotency_key text;
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS supersedes_result_id uuid;
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS correction_reason text;
+ALTER TABLE import_results ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 1;
+DO $constraint$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='import_results'::regclass AND conname='import_results_mode_check') THEN
+ ALTER TABLE import_results ADD CONSTRAINT import_results_mode_check CHECK(mode IN ('legacy_historical','historical_manual','export'));
+ END IF;
+END $constraint$;
+DO $constraint$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='import_results'::regclass AND conname='import_results_revision_check') THEN
+ ALTER TABLE import_results ADD CONSTRAINT import_results_revision_check CHECK(revision > 0);
+ END IF;
+END $constraint$;
+DO $constraint$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='import_results'::regclass AND conname='import_results_binding_check') THEN
+ ALTER TABLE import_results ADD CONSTRAINT import_results_binding_check CHECK(
  (mode='legacy_historical' AND version_id IS NULL AND idempotency_key IS NULL AND supersedes_result_id IS NULL AND correction_reason IS NULL)
  OR (mode IN ('export','historical_manual') AND length(trim(idempotency_key)) BETWEEN 1 AND 200 AND idempotency_key IS NOT NULL
  AND ((mode='export' AND export_attempt_id IS NOT NULL AND version_id IS NOT NULL) OR (mode='historical_manual' AND export_attempt_id IS NULL AND version_id IS NULL))
  AND ((supersedes_result_id IS NULL AND correction_reason IS NULL AND revision=1) OR (supersedes_result_id IS NOT NULL AND correction_reason IS NOT NULL AND length(trim(correction_reason))>0 AND revision>1))
  AND ((outcome='accepted' AND reject_reason IS NULL) OR (outcome='rejected' AND reject_reason IS NOT NULL AND length(trim(reject_reason))>0))));
-CREATE UNIQUE INDEX import_results_workspace_id_uq ON import_results(workspace_id,id);
-CREATE UNIQUE INDEX import_results_idempotency_uq ON import_results(workspace_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
-CREATE UNIQUE INDEX import_results_export_revision_uq ON import_results(workspace_id,export_attempt_id,listing_id,revision) WHERE mode='export';
-CREATE UNIQUE INDEX import_results_manual_revision_uq ON import_results(workspace_id,listing_id,revision) WHERE mode='historical_manual';
-CREATE UNIQUE INDEX import_results_successor_uq ON import_results(workspace_id,supersedes_result_id) WHERE supersedes_result_id IS NOT NULL;
-ALTER TABLE import_results ADD CONSTRAINT import_results_version_fkey FOREIGN KEY(workspace_id,listing_id,version_id) REFERENCES listing_versions(workspace_id,listing_id,id) ON DELETE RESTRICT;
-ALTER TABLE import_results ADD CONSTRAINT import_results_predecessor_fkey FOREIGN KEY(workspace_id,supersedes_result_id) REFERENCES import_results(workspace_id,id) ON DELETE RESTRICT;
+ END IF;
+END $constraint$;
+CREATE UNIQUE INDEX IF NOT EXISTS import_results_workspace_id_uq ON import_results(workspace_id,id);
+CREATE UNIQUE INDEX IF NOT EXISTS import_results_idempotency_uq ON import_results(workspace_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS import_results_export_revision_uq ON import_results(workspace_id,export_attempt_id,listing_id,revision) WHERE mode='export';
+CREATE UNIQUE INDEX IF NOT EXISTS import_results_manual_revision_uq ON import_results(workspace_id,listing_id,revision) WHERE mode='historical_manual';
+CREATE UNIQUE INDEX IF NOT EXISTS import_results_successor_uq ON import_results(workspace_id,supersedes_result_id) WHERE supersedes_result_id IS NOT NULL;
+DO $constraint$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='import_results'::regclass AND conname='import_results_version_fkey') THEN
+ ALTER TABLE import_results ADD CONSTRAINT import_results_version_fkey FOREIGN KEY(workspace_id,listing_id,version_id) REFERENCES listing_versions(workspace_id,listing_id,id) ON DELETE RESTRICT;
+ END IF;
+END $constraint$;
+DO $constraint$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='import_results'::regclass AND conname='import_results_predecessor_fkey') THEN
+ ALTER TABLE import_results ADD CONSTRAINT import_results_predecessor_fkey FOREIGN KEY(workspace_id,supersedes_result_id) REFERENCES import_results(workspace_id,id) ON DELETE RESTRICT;
+ END IF;
+END $constraint$;
 -- Runtime reports are append only; existing workspace RLS continues to apply.
 REVOKE UPDATE, DELETE ON import_results FROM wukong_app;
-CREATE FUNCTION guard_import_result_insert() RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $guard$
+CREATE OR REPLACE FUNCTION guard_import_result_insert() RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $guard$
 DECLARE attempt export_attempts%ROWTYPE; previous import_results%ROWTYPE;
 BEGIN
  IF NEW.mode='legacy_historical' THEN RAISE EXCEPTION 'legacy report insertion is disabled'; END IF;
@@ -38,4 +58,19 @@ BEGIN
 END $guard$;
 REVOKE ALL ON FUNCTION guard_import_result_insert() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION guard_import_result_insert() TO wukong_app;
+DROP TRIGGER IF EXISTS import_results_insert_guard ON import_results;
 CREATE TRIGGER import_results_insert_guard BEFORE INSERT ON import_results FOR EACH ROW EXECUTE FUNCTION guard_import_result_insert();
+
+-- Older migrations regrant UPDATE/DELETE before this file runs. A persistent
+-- trigger keeps existing receipts immutable during replay and even if a later
+-- migration fails before this file can revoke those privileges again.
+CREATE OR REPLACE FUNCTION guard_import_result_mutation() RETURNS trigger
+LANGUAGE plpgsql SET search_path=public,pg_temp AS $immutable$
+BEGIN
+ RAISE EXCEPTION 'import results are append only';
+END $immutable$;
+REVOKE ALL ON FUNCTION guard_import_result_mutation() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION guard_import_result_mutation() TO wukong_app;
+DROP TRIGGER IF EXISTS import_results_immutable ON import_results;
+CREATE TRIGGER import_results_immutable BEFORE UPDATE OR DELETE ON import_results
+FOR EACH ROW EXECUTE FUNCTION guard_import_result_mutation();
