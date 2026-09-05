@@ -13,7 +13,19 @@ let cert: Buffer;
 let server: Server;
 let port: number;
 let seen: { host: string | undefined; sni: string | false | null }[] = [];
-let closed = 0;
+const requestEvents = new Map<
+  string,
+  { received: () => void; closed: (destroyed: boolean) => void }
+>();
+function observeRequest(path: string) {
+  const received = Promise.withResolvers<void>();
+  const closed = Promise.withResolvers<boolean>();
+  requestEvents.set(path, {
+    received: received.resolve,
+    closed: closed.resolve,
+  });
+  return { received: received.promise, closed: closed.promise };
+}
 beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "website-public-fetch-"));
   const openssl = existsSync("C:/Program Files/Git/usr/bin/openssl.exe")
@@ -48,15 +60,18 @@ beforeAll(async () => {
         host: req.headers.host,
         sni: (req.socket as import("node:tls").TLSSocket).servername,
       });
-      res.on("close", () => {
-        closed++;
-      });
+      const events = requestEvents.get(req.url ?? "");
+      if (events) {
+        requestEvents.delete(req.url!);
+        req.socket.once("close", () => events.closed(req.socket.destroyed));
+        events.received();
+      }
       res.setHeader("content-type", "text/html");
-      if (req.url === "/slow") {
+      if (req.url?.startsWith("/slow")) {
         res.write("start");
         return;
       }
-      if (req.url === "/large") {
+      if (req.url?.startsWith("/large")) {
         res.write(Buffer.alloc(2 * 1024 * 1024 + 1));
         return;
       }
@@ -146,32 +161,28 @@ describe("Node pinned TLS adapter", () => {
     }
   });
   it("destroys oversized response sockets", async () => {
-    const before = closed;
-    await expect(transport().fetch(input("/large"))).rejects.toHaveProperty(
-      "code",
-      "body_too_large",
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(closed).toBeGreaterThan(before);
+    const events = observeRequest("/large-overflow");
+    await expect(
+      transport().fetch(input("/large-overflow")),
+    ).rejects.toHaveProperty("code", "body_too_large");
+    await expect(events.closed).resolves.toBe(true);
   });
   it("cancels body and socket at the total deadline", async () => {
-    const before = closed;
-    await expect(transport().fetch(input("/slow"))).rejects.toHaveProperty(
-      "code",
-      "deadline_exceeded",
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(closed).toBeGreaterThan(before);
+    const events = observeRequest("/slow-deadline");
+    await expect(
+      transport().fetch(input("/slow-deadline")),
+    ).rejects.toHaveProperty("code", "deadline_exceeded");
+    await expect(events.closed).resolves.toBe(true);
   }, 15_000);
   it("cancels body and socket on caller abort", async () => {
+    const events = observeRequest("/slow-abort");
     const c = new AbortController();
-    const timer = setTimeout(() => c.abort(), 100);
-    try {
-      await expect(
-        transport().fetch(input("/slow", "store.example", c.signal)),
-      ).rejects.toHaveProperty("code", "aborted");
-    } finally {
-      clearTimeout(timer);
-    }
+    const rejection = expect(
+      transport().fetch(input("/slow-abort", "store.example", c.signal)),
+    ).rejects.toHaveProperty("code", "aborted");
+    await events.received;
+    c.abort();
+    await rejection;
+    await expect(events.closed).resolves.toBe(true);
   });
 });
