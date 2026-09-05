@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
+import { useLatestRequest } from "../lib/use-latest-request";
+import { SourceReadinessSummary } from "./source-readiness-summary";
 import {
   CATALOG_FILTERS,
   type CatalogFilter,
@@ -39,50 +41,33 @@ const EMPTY_RESPONSE: CatalogPage = {
 };
 
 export function CatalogControlCenter() {
-  const [data, setData] = useState<CatalogPage | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadCatalog() {
-      try {
-        const params = new URLSearchParams({
-          page: String(page),
-          pageSize: String(PAGE_SIZE),
-          q: query,
-          filter,
-        });
-        const response = await fetch(`/api/catalog?${params.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Unable to load catalog (${response.status})`);
-        }
-        setData((await response.json()) as CatalogPage);
-      } catch (loadError) {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        ) {
-          return;
-        }
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load catalog",
-        );
-      }
-    }
-
-    void loadCatalog();
-    return () => controller.abort();
-  }, [page, query, filter]);
+  const loadCatalog = useCallback(
+    async (signal: AbortSignal) => {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+        q: query,
+        filter,
+      });
+      const response = await fetch(`/api/catalog?${params.toString()}`, {
+        cache: "no-store",
+        signal,
+      });
+      if (!response.ok)
+        throw new Error(`Unable to load catalog (${response.status})`);
+      return (await response.json()) as CatalogPage;
+    },
+    [page, query, filter],
+  );
+  const { data, error, loading, stale, reload } = useLatestRequest(
+    loadCatalog,
+    "Unable to load catalog",
+  );
 
   const response = data ?? EMPTY_RESPONSE;
 
@@ -96,14 +81,16 @@ export function CatalogControlCenter() {
     setPage(1);
   }
 
-  if (error) {
+  if (!data && error) {
     return (
-      <p className="inline-warning" role="alert">
-        {error}
-      </p>
+      <div className="load-error" role="alert">
+        <p>{error}</p>
+        <button type="button" onClick={reload}>
+          Retry
+        </button>
+      </div>
     );
   }
-
   if (!data) {
     return (
       <p className="helper-copy" role="status">
@@ -113,7 +100,20 @@ export function CatalogControlCenter() {
   }
 
   return (
-    <section aria-label="商品控制中心">
+    <section aria-label="商品控制中心" aria-busy={loading}>
+      {error ? (
+        <div className="load-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={reload}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {stale ? (
+        <p className="refresh-status" role="status">
+          Refreshing results…
+        </p>
+      ) : null}
       <div className={styles.metrics}>
         <Metric value={response.summary.total} label="商品 Products" />
         <Metric value={response.summary.linked} label="已連結 Linked" />
@@ -194,6 +194,7 @@ export function CatalogControlCenter() {
                   <th scope="col">商品 Product</th>
                   <th scope="col">來源 Source</th>
                   <th scope="col">工作流程 Workflow</th>
+                  <th scope="col">Source readiness</th>
                   <th scope="col">阻塞 Blockers</th>
                   <th scope="col">
                     <span className={styles.visuallyHidden}>操作 Action</span>
@@ -251,6 +252,12 @@ export function CatalogControlCenter() {
                         >
                           {catalogStatusLabel(item.listingStatus)}
                         </span>
+                      </td>
+                      <td>
+                        <SourceReadinessSummary
+                          readiness={item.sourceReadiness}
+                          compact
+                        />
                       </td>
                       <td>
                         {item.openBlockingFlagCount === null ? (

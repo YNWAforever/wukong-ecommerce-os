@@ -1,4 +1,5 @@
 import type { ListingStatus } from "@wukong/core";
+import type { SourceReadiness } from "./source-readiness";
 
 import type { QueueItem, QueueStatus } from "../components/listing-view-models";
 
@@ -10,6 +11,7 @@ export type ListingReviewContext = {
 };
 
 export type ListingCollectionItem = {
+  sourceReadiness?: SourceReadiness;
   id: string;
   status: ListingStatus;
   target: "shopline";

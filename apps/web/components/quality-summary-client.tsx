@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useId } from "react";
 
 import type { QualitySummary } from "../lib/quality-summary";
+import { useLatestRequest } from "../lib/use-latest-request";
 
 type GapKey = keyof QualitySummary["gapCounts"];
 
@@ -32,56 +33,31 @@ function formatUsd(amountUsd: number): string {
 }
 
 export function QualitySummaryClient() {
-  const [data, setData] = useState<QualitySummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const totalAssessedLabelId = useId();
   const cleanLabelId = useId();
   const hasGapsLabelId = useId();
   const totalCostLabelId = useId();
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadSummary() {
-      try {
-        const response = await fetch("/api/quality", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(
-            `Unable to load quality summary (${response.status})`,
-          );
-        }
-        setData((await response.json()) as QualitySummary);
-      } catch (loadError) {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        ) {
-          return;
-        }
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load quality summary",
-        );
-      }
-    }
-
-    void loadSummary();
-    return () => controller.abort();
+  const load = useCallback(async (signal: AbortSignal) => {
+    const response = await fetch("/api/quality", { cache: "no-store", signal });
+    if (!response.ok)
+      throw new Error(`Unable to load quality summary (${response.status})`);
+    return (await response.json()) as QualitySummary;
   }, []);
+  const { data, error, loading, stale, reload } = useLatestRequest(
+    load,
+    "Unable to load quality summary",
+  );
 
-  if (error) {
+  if (!data && error)
     return (
-      <p className="inline-warning" role="alert">
-        {error}
-      </p>
+      <div className="load-error" role="alert">
+        <p>{error}</p>
+        <button type="button" onClick={reload}>
+          Retry
+        </button>
+      </div>
     );
-  }
-
   if (!data) {
     return (
       <p className="helper-copy" role="status">
@@ -91,7 +67,30 @@ export function QualitySummaryClient() {
   }
 
   return (
-    <section aria-label="內容品質摘要">
+    <section aria-label="內容品質摘要" aria-busy={loading}>
+      {error ? (
+        <div className="load-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={reload}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {stale ? (
+        <p className="refresh-status" role="status">
+          Refreshing quality summary…
+        </p>
+      ) : null}
+      <p className="helper-copy">
+        Workspace active versions: {data.totalAssessed} assessed of{" "}
+        {data.totalListings ?? data.totalAssessed}; {data.noActiveVersion ?? 0}{" "}
+        without an active version; {data.unassessableActiveVersion ?? 0}{" "}
+        unassessable. Counts were observed during a bounded scan
+        {data.scanStartedAt && data.scanCompletedAt
+          ? ` from ${data.scanStartedAt} to ${data.scanCompletedAt}`
+          : ""}
+        . AI cost covers all history for workspace listings.
+      </p>
       <div
         className="metric-strip quality-metric-strip"
         aria-label="內容品質統計"

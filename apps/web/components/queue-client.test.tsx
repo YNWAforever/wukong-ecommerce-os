@@ -75,7 +75,7 @@ describe("QueueClient", () => {
     const { container, root } = await mount(fetcher);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/listings",
+      "/api/listings?page=1&pageSize=100",
       expect.objectContaining({ cache: "no-store" }),
     );
     expect(container.textContent).toContain("Mosel Riesling Kabinett 2024");
@@ -179,7 +179,9 @@ describe("QueueClient", () => {
     });
 
     // The list reloads after a successful bulk-approve.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).toContain("listing_1");
 
@@ -219,7 +221,9 @@ describe("QueueClient", () => {
     expect(container.textContent).toContain("1 個項目已選取");
 
     // The list was not reloaded -- only the one initial /api/listings call.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
@@ -263,7 +267,9 @@ describe("QueueClient", () => {
     expect(container.querySelector(".bulk-result-list")).toBeNull();
     expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
 
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);

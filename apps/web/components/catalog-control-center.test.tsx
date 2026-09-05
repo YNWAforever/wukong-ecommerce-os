@@ -469,4 +469,56 @@ describe("CatalogControlCenter", () => {
     expect(container.textContent).toContain("0 selected for Bulk Update");
     await unmount(root);
   });
+
+  it("retries a transient filter load without resetting the selected filter", async () => {
+    const calls: URL[] = [];
+    let attentionLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = new URL(
+        typeof input === "string" ? input : input.toString(),
+        "http://localhost",
+      );
+      calls.push(url);
+      if (
+        url.searchParams.get("filter") === "attention" &&
+        attentionLoads++ === 0
+      ) {
+        return Promise.resolve(
+          Response.json({ code: "temporary" }, { status: 503 }),
+        );
+      }
+      return Promise.resolve(
+        Response.json(
+          pageResponse([
+            makeItem({
+              id:
+                url.searchParams.get("filter") === "attention"
+                  ? "recovered"
+                  : "initial",
+              title:
+                url.searchParams.get("filter") === "attention"
+                  ? "Recovered attention item"
+                  : "Initial item",
+            }),
+          ]),
+        ),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    await act(async () => {
+      findButtonByText(container, "需處理")!.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Unable to load catalog",
+    );
+    await act(async () => {
+      findButtonByText(container, "Retry")!.click();
+      await Promise.resolve();
+    });
+    expect(calls.at(-1)!.searchParams.get("filter")).toBe("attention");
+    expect(container.textContent).toContain("Recovered attention item");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await unmount(root);
+  });
 });

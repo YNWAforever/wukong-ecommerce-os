@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useId } from "react";
 import Link from "next/link";
 
 import type { ListingStatus } from "@wukong/core";
 
 import type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
+import { useLatestRequest } from "../lib/use-latest-request";
+import { SourceReadinessSummary } from "./source-readiness-summary";
 import {
   queueGroups,
   type QueueItem,
@@ -69,41 +71,32 @@ type ListListingsResponse = {
 };
 
 export function DashboardListingsClient() {
-  const [data, setData] = useState<ListListingsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const activeLabelId = useId();
   const inReviewLabelId = useId();
   const blockedLabelId = useId();
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/listings", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(`Unable to load listings (${response.status})`);
-        const body = (await response.json()) as ListListingsResponse;
-        setData(body);
-      })
-      .catch((loadError: unknown) => {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        )
-          return;
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load listings",
-        );
-      });
-    return () => controller.abort();
+  const load = useCallback(async (signal: AbortSignal) => {
+    const response = await fetch("/api/listings?page=1&pageSize=5", {
+      cache: "no-store",
+      signal,
+    });
+    if (!response.ok)
+      throw new Error(`Unable to load listings (${response.status})`);
+    return (await response.json()) as ListListingsResponse;
   }, []);
+  const { data, error, loading, stale, reload } = useLatestRequest(
+    load,
+    "Unable to load listings",
+  );
 
-  if (error)
+  if (!data && error)
     return (
-      <p className="inline-warning" role="alert">
-        {error}
-      </p>
+      <div className="load-error" role="alert">
+        <p>{error}</p>
+        <button type="button" onClick={reload}>
+          Retry
+        </button>
+      </div>
     );
   if (!data)
     return (
@@ -164,6 +157,13 @@ export function DashboardListingsClient() {
                     {item.title}
                   </Link>
                   <p>{item.subtitle}</p>
+                  <SourceReadinessSummary
+                    readiness={
+                      data.items.find((source) => source.id === item.id)
+                        ?.sourceReadiness
+                    }
+                    compact
+                  />
                   <time dateTime={item.updatedAt}>{item.updatedAt}</time>
                 </div>
                 <Link

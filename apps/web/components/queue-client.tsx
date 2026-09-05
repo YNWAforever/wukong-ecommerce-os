@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type {
   ListingCollectionItem,
   ListingReviewContext,
 } from "../lib/dashboard-queue-shared";
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
+import { useLatestRequest } from "../lib/use-latest-request";
 import { ListingQueue } from "./listing-queue";
 
 type BulkApproveResultItem =
@@ -32,8 +33,7 @@ function bulkErrorMessage(body: unknown): string {
 }
 
 export function QueueClient() {
-  const [items, setItems] = useState<ListingCollectionItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
   // Keep the context observed at selection, including after a partial-success
   // reload. Retrying a failed item must not silently approve refreshed data.
   const [selection, setSelection] = useState<Map<string, ListingReviewContext>>(
@@ -46,37 +46,28 @@ export function QueueClient() {
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkPending, setBulkPending] = useState(false);
 
-  const load = () => {
-    const controller = new AbortController();
-    fetch("/api/listings", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(`Unable to load listings (${response.status})`);
-        const body = (await response.json()) as {
-          items: ListingCollectionItem[];
-        };
-        setItems(body.items);
-      })
-      .catch((loadError: unknown) => {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        )
-          return;
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load listings",
-        );
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      const response = await fetch(`/api/listings?page=${page}&pageSize=100`, {
+        cache: "no-store",
+        signal,
       });
-    return controller;
-  };
-
-  useEffect(() => {
-    const controller = load();
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      if (!response.ok)
+        throw new Error(`Unable to load listings (${response.status})`);
+      return (await response.json()) as {
+        items: ListingCollectionItem[];
+        totalMatching: number;
+        page: number;
+        pageSize: number;
+      };
+    },
+    [page],
+  );
+  const { data, error, loading, stale, reload } = useLatestRequest(
+    load,
+    "Unable to load listings",
+  );
+  const items = data?.items ?? null;
 
   const toggleSelected = (id: string) => {
     setSelection((current) => {
@@ -136,7 +127,7 @@ export function QueueClient() {
         for (const id of approvedIds) next.delete(id);
         return next;
       });
-      load();
+      reload();
     } catch {
       // Covers both a rejected fetch() call (network failure) and a thrown
       // response.json() (malformed body) -- both reach this same fallback,
@@ -147,11 +138,14 @@ export function QueueClient() {
     }
   };
 
-  if (error)
+  if (!items && error)
     return (
-      <p className="inline-warning" role="alert">
-        {error}
-      </p>
+      <div className="load-error" role="alert">
+        <p>{error}</p>
+        <button type="button" onClick={reload}>
+          Retry
+        </button>
+      </div>
     );
   if (!items)
     return (

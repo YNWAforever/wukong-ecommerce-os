@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { LedgerKind, NormalizedStatus } from "../lib/jobs-ledger";
+import { useLatestRequest } from "../lib/use-latest-request";
 import {
   ExportReconciliationPanel,
   type WireExportReconciliationDetail,
@@ -38,6 +39,13 @@ type JobsResponse = {
     Omit<WireExportReconciliationDetail, "capabilities">
   >;
   capabilities?: WireExportReconciliationDetail["capabilities"];
+  page: number;
+  pageSize: number;
+  totalMatching: number;
+  total: number;
+  counts: Record<LedgerKind, number>;
+  scope: "workspace_all_history";
+  metricsScope: { windowDays: number; since: string };
 };
 
 type KindFilter = "all" | LedgerKind;
@@ -74,70 +82,41 @@ const STATUS_LABELS: Record<NormalizedStatus, string> = {
   cancelled: "已取消 Cancelled",
 };
 
-const EMPTY_RESPONSE: JobsResponse = {
-  entries: [],
-  metrics: {
-    publishRetries: 0,
-    versionConflicts: 0,
-    staleSourceRejections: 0,
-    importedRows: 0,
-  },
-};
-
 export function JobsLedgerClient() {
-  const [data, setData] = useState<JobsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadJobs() {
-      try {
-        const response = await fetch("/api/jobs", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error(`Unable to load jobs (${response.status})`);
-        }
-        setData((await response.json()) as JobsResponse);
-      } catch (loadError) {
-        if (
-          loadError instanceof DOMException &&
-          loadError.name === "AbortError"
-        ) {
-          return;
-        }
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to load jobs",
-        );
-      }
-    }
-
-    void loadJobs();
-    return () => controller.abort();
-  }, []);
-
-  const response = data ?? EMPTY_RESPONSE;
-  const visibleEntries = useMemo(
-    () =>
-      kindFilter === "all"
-        ? response.entries
-        : response.entries.filter((entry) => entry.kind === kindFilter),
-    [response.entries, kindFilter],
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: "50",
+      });
+      if (kindFilter !== "all") params.set("kind", kindFilter);
+      const response = await fetch(`/api/jobs?${params.toString()}`, {
+        cache: "no-store",
+        signal,
+      });
+      if (!response.ok)
+        throw new Error(`Unable to load jobs (${response.status})`);
+      return (await response.json()) as JobsResponse;
+    },
+    [page, kindFilter],
+  );
+  const { data, error, loading, stale, reload } = useLatestRequest(
+    load,
+    "Unable to load jobs",
   );
 
-  if (error) {
+  if (!data && error)
     return (
-      <p className="inline-warning" role="alert">
-        {error}
-      </p>
+      <div className="load-error" role="alert">
+        <p>{error}</p>
+        <button type="button" onClick={reload}>
+          Retry
+        </button>
+      </div>
     );
-  }
-
   if (!data) {
     return (
       <p className="helper-copy" role="status">
@@ -146,8 +125,36 @@ export function JobsLedgerClient() {
     );
   }
 
+  const response = data;
+  const visibleEntries =
+    kindFilter === "all"
+      ? response.entries
+      : response.entries.filter((entry) => entry.kind === kindFilter);
   return (
-    <section aria-label="作業記錄">
+    <section aria-label="作業記錄" aria-busy={loading}>
+      {error ? (
+        <div className="load-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={reload}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {stale ? (
+        <p className="refresh-status" role="status">
+          Refreshing jobs ledger…
+        </p>
+      ) : null}
+      {response.metricsScope ? (
+        <p className="helper-copy">
+          All-history workspace ledger. Metrics cover the{" "}
+          {response.metricsScope.windowDays}-day window since{" "}
+          <time dateTime={response.metricsScope.since}>
+            {response.metricsScope.since}
+          </time>
+          .
+        </p>
+      ) : null}
       <div className="metric-strip jobs-metric-strip" aria-label="作業指標統計">
         <div>
           <span className="metric-value">
@@ -190,7 +197,10 @@ export function JobsLedgerClient() {
               option.value === kindFilter ? "admin-tab active" : "admin-tab"
             }
             aria-pressed={option.value === kindFilter}
-            onClick={() => setKindFilter(option.value)}
+            onClick={() => {
+              setKindFilter(option.value);
+              setPage(1);
+            }}
           >
             {option.label}
           </button>
@@ -217,6 +227,33 @@ export function JobsLedgerClient() {
           ))}
         </section>
       ) : null}
+
+      <div className="pagination-controls" aria-label="Jobs pagination">
+        <button
+          type="button"
+          onClick={() => setPage((value) => Math.max(1, value - 1))}
+          disabled={page === 1 || loading}
+        >
+          Previous
+        </button>
+        <span>
+          Page {page}
+          {response.totalMatching !== undefined
+            ? ` · ${response.totalMatching} matching / ${response.total} total`
+            : ""}
+        </span>
+        <button
+          type="button"
+          onClick={() => setPage((value) => value + 1)}
+          disabled={
+            loading ||
+            response.pageSize === undefined ||
+            page * response.pageSize >= response.totalMatching
+          }
+        >
+          Next
+        </button>
+      </div>
 
       {visibleEntries.length === 0 ? (
         <p className="helper-copy">
@@ -245,6 +282,9 @@ export function JobsLedgerClient() {
                       {createdAt.toISOString()}
                     </time>
                   </div>
+                  {entry.kind === "export" ? (
+                    <ExportAttemptInspector attemptId={entry.id} />
+                  ) : null}
                   {entry.listingId ? (
                     <Link
                       className="jobs-row-link"
@@ -260,5 +300,50 @@ export function JobsLedgerClient() {
         </ul>
       )}
     </section>
+  );
+}
+
+function ExportAttemptInspector({ attemptId }: { attemptId: string }) {
+  const [opened, setOpened] = useState(false);
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!opened) return null;
+      const response = await fetch(`/api/listings/export/${attemptId}`, {
+        cache: "no-store",
+        signal,
+      });
+      if (!response.ok)
+        throw new Error(`Unable to load export attempt (${response.status})`);
+      return (await response.json()) as WireExportReconciliationDetail;
+    },
+    [attemptId, opened],
+  );
+  const { data, error, loading, reload } = useLatestRequest(
+    load,
+    "Unable to load export attempt",
+  );
+  if (!opened)
+    return (
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() => setOpened(true)}
+      >
+        Inspect export attempt
+      </button>
+    );
+  return (
+    <div className="export-attempt-detail">
+      {loading && !data ? <span role="status">Loading attempt…</span> : null}
+      {error ? (
+        <div role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={reload}>
+            Retry detail
+          </button>
+        </div>
+      ) : null}
+      {data ? <ExportReconciliationPanel detail={data} /> : null}
+    </div>
   );
 }

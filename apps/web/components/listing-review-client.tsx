@@ -8,7 +8,7 @@ import type {
   ReviewableListing,
 } from "@wukong/core";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ActivityPanel } from "./activity-panel";
 import { ComplianceFlags } from "./compliance-flags";
@@ -25,6 +25,8 @@ import type {
   ListingReviewModel,
 } from "./listing-view-models";
 import { ProductShotPanel, type BackgroundChoice } from "./product-shot-panel";
+import { SourceReadinessSummary } from "./source-readiness-summary";
+import type { SourceReadiness } from "../lib/source-readiness";
 
 type ListingPermissions = {
   canProcess: boolean;
@@ -65,6 +67,7 @@ type WireListingActivityEntry =
     };
 
 export type ListingViewResponse = {
+  sourceReadiness?: SourceReadiness;
   listingId: string;
   status: ListingStatus;
   activeVersion: {
@@ -507,17 +510,20 @@ export function ListingReviewClient({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const requestId = useRef(0);
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
+      const id = ++requestId.current;
       const response = await fetch(`/api/listings/${listingId}`, {
         cache: "no-store",
         signal,
       });
       if (!response.ok) throw await responseError(response);
       const next = (await response.json()) as ListingViewResponse;
+      if (requestId.current !== id) return;
       setSnapshot(next);
       setError(null);
       if (
@@ -616,9 +622,23 @@ export function ListingReviewClient({
   if (viewState.kind === "error")
     return (
       <div className="page-wrap">
-        <p className="inline-warning" role="alert">
-          {viewState.message}
-        </p>
+        <div className="load-error" role="alert">
+          <span>{viewState.message}</span>
+          <button
+            type="button"
+            onClick={() =>
+              void load().catch((cause: unknown) =>
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Unable to load listing.",
+                ),
+              )
+            }
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   if (viewState.kind === "processing" && snapshot)
@@ -634,6 +654,7 @@ export function ListingReviewClient({
             {message}
           </p>
         ) : null}
+        <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
         <ListingProcessingPanel
           status={viewState.status}
           enqueueState={processingState}
@@ -770,6 +791,7 @@ export function ListingReviewClient({
         <span aria-hidden="true">/</span>
         <span>{model.title}</span>
       </div>
+      <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
       <div className="review-header">
         <div>
           <p className="eyebrow">

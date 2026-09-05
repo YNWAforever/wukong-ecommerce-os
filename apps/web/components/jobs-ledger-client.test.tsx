@@ -118,7 +118,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/jobs",
+      "/api/jobs?page=1&pageSize=50",
       expect.objectContaining({ cache: "no-store" }),
     );
 
