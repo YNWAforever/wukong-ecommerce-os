@@ -83,9 +83,10 @@ export function QualitySummaryClient() {
       ) : null}
       <p className="helper-copy">
         Workspace active versions: {data.totalAssessed} assessed of{" "}
-        {data.totalListings ?? data.totalAssessed}; {data.noActiveVersion ?? 0}{" "}
-        without an active version; {data.unassessableActiveVersion ?? 0}{" "}
-        unassessable. Counts were observed during a bounded scan
+        {data.totalListings ?? "unavailable"};{" "}
+        {data.noActiveVersion ?? "unavailable"} without an active version;{" "}
+        {data.unassessableActiveVersion ?? "unavailable"} unassessable. Counts
+        were observed during a bounded scan
         {data.scanStartedAt && data.scanCompletedAt
           ? ` from ${data.scanStartedAt} to ${data.scanCompletedAt}`
           : ""}

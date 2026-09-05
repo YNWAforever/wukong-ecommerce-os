@@ -31,27 +31,25 @@ export function SourceReadinessSummary({
       <span>
         {REASONS[readiness.reason] ?? readiness.reason.replaceAll("_", " ")}
       </span>
-      {!compact ? (
-        <>
-          <span>Import: {readiness.sourceImportId ?? "not available"}</span>
-          <span>
-            Merchant-attested export time:{" "}
-            {readiness.merchantAttestedExportAt
-              ? new Intl.DateTimeFormat("en-HK", {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                  timeZone: "Asia/Hong_Kong",
-                }).format(new Date(readiness.merchantAttestedExportAt))
-              : "not available"}
-          </span>
-          <span>
-            Reviewed binding:{" "}
-            {reviewed
-              ? `revision ${reviewed.revision} · version ${reviewed.versionId}`
-              : "not available"}
-          </span>
-        </>
-      ) : null}
+      <>
+        <span>Import: {readiness.sourceImportId ?? "not available"}</span>
+        <span>
+          Merchant-attested export time:{" "}
+          {readiness.merchantAttestedExportAt
+            ? new Intl.DateTimeFormat("en-HK", {
+                dateStyle: "medium",
+                timeStyle: "short",
+                timeZone: "Asia/Hong_Kong",
+              }).format(new Date(readiness.merchantAttestedExportAt))
+            : "not available"}
+        </span>
+        <span>
+          Reviewed binding:{" "}
+          {reviewed
+            ? `revision ${reviewed.revision} · version ${reviewed.versionId} · import ${reviewed.sourceImportId ?? "not available"}`
+            : "not available"}
+        </span>
+      </>
       <small>
         Advisory only. Freshness is not attested and SHOPLINE acceptance is
         unverified.

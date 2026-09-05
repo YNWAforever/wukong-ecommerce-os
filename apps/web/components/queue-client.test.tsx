@@ -322,6 +322,8 @@ describe("QueueClient review context", () => {
         );
       }
       listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
       return Promise.resolve(
         Response.json({
           items: listLoads === 1 ? [eligibleItem, failedItem] : [refreshedItem],
@@ -337,10 +339,19 @@ describe("QueueClient review context", () => {
       expect(container.textContent).toContain("1 個項目已選取");
       expect(container.textContent).toContain("Review this listing again.");
       expect(
-        (container.querySelector('input[type="checkbox"]') as HTMLInputElement)
-          .checked,
-      ).toBe(true);
+        Array.from(
+          container.querySelectorAll<HTMLInputElement>(
+            'input[type="checkbox"]',
+          ),
+        ).filter((input) => input.checked),
+      ).toHaveLength(1);
       expect(listLoads).toBe(2);
+      expect(container.querySelector("[role=alert]")?.textContent).toContain(
+        "reload unavailable",
+      );
+      expect(findButtonByText(container, "批准 1")!.disabled).toBe(true);
+      await act(async () => findButtonByText(container, "Retry")!.click());
+      expect(container.querySelector("[role=alert]")).toBeNull();
 
       await act(async () => findButtonByText(container, "批准 1")!.click());
       expect(requests[1]).toEqual({
@@ -426,6 +437,8 @@ describe("QueueClient review context", () => {
         return Promise.resolve(new Response("not json", { status: 200 }));
       }
       listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
       return Promise.resolve(Response.json({ items: [eligibleItem] }));
     });
     const { container, root } = await mount(fetcher);
@@ -440,6 +453,98 @@ describe("QueueClient review context", () => {
       expect(container.textContent).toContain("1 個項目已選取");
       expect(container.querySelector(".bulk-result-list")).toBeNull();
       expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
+  });
+});
+
+describe("QueueClient pagination", () => {
+  it("reaches rows after 100, keeps prior-page contexts and caps the total selection at 50", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => ({
+      ...eligibleItem,
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+    let pendingResolve!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      pendingResolve = resolve;
+    });
+    const requests: {
+      items: { listingId: string; expectedVersionId: string }[];
+    }[] = [];
+    let loads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({ message: "test submission" }, { status: 409 }),
+        );
+      }
+      loads++;
+      const page = Number(
+        new URL(String(input), "http://localhost").searchParams.get("page"),
+      );
+      if (loads === 2) return pending;
+      return Promise.resolve(
+        Response.json({
+          items: rows.slice((page - 1) * 100, page * 100),
+          totalMatching: 101,
+          page,
+          pageSize: 100,
+        }),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () => findButtonByText(container, "Next")!.click());
+      expect(findButtonByText(container, "Next")!.disabled).toBe(true);
+      expect(container.textContent).toContain("Refreshing work queue");
+      await act(async () =>
+        pendingResolve(
+          Response.json({
+            items: [rows[100]],
+            totalMatching: 101,
+            page: 2,
+            pageSize: 100,
+          }),
+        ),
+      );
+      expect(container.textContent).toContain("Row 100");
+      expect(container.textContent).toContain("101 matching");
+      expect(findButtonByText(container, "Next")!.disabled).toBe(true);
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("2 selected");
+      rows[0] = {
+        ...rows[0]!,
+        reviewContext: {
+          ...eligibleItem.reviewContext,
+          expectedVersionId: "changed",
+        },
+      };
+      await act(async () => findButtonByText(container, "Previous")!.click());
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("50 selected");
+      await act(async () => findButtonByText(container, "批准 50")!.click());
+      expect(requests[0]!.items).toHaveLength(50);
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({ listingId: "row-100" }),
+      );
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({
+          listingId: "row-0",
+          expectedVersionId: "version_1",
+        }),
+      );
     } finally {
       await unmount(root);
     }

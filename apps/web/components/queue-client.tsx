@@ -85,9 +85,11 @@ export function QueueClient() {
 
   const selectAllEligible = (eligibleIds: string[]) => {
     setSelection((current) => {
-      const next = new Map<string, ListingReviewContext>();
+      const next = new Map(current);
       const itemsById = new Map(items?.map((item) => [item.id, item]));
-      for (const id of eligibleIds.slice(0, 50)) {
+      for (const id of eligibleIds) {
+        if (next.has(id)) continue;
+        if (next.size >= 50) break;
         const context = current.get(id) ?? itemsById.get(id)?.reviewContext;
         if (context) next.set(id, { ...context });
       }
@@ -165,13 +167,32 @@ export function QueueClient() {
     .map((item) => item.id);
 
   return (
-    <>
+    <section aria-label="Work queue" aria-busy={loading}>
+      {error ? (
+        <div className="load-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={reload} disabled={loading}>
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {stale ? (
+        <p role="status">Refreshing work queue… Showing previous results.</p>
+      ) : null}
+      <p>
+        Workspace listings: {data?.totalMatching ?? "unavailable"} matching ·
+        Showing page {data?.page ?? page}
+      </p>
       {selected.size > 0 ? (
         <div className="bulk-action-bar" role="region" aria-label="批量操作">
           <span>
             {selected.size} 個項目已選取 · {selected.size} selected
           </span>
-          <button type="button" onClick={runBulkApprove} disabled={bulkPending}>
+          <button
+            type="button"
+            onClick={runBulkApprove}
+            disabled={bulkPending || loading || Boolean(error)}
+          >
             {bulkPending
               ? "批准中… Approving…"
               : `批准 ${selected.size} 個上架項目`}
@@ -180,6 +201,7 @@ export function QueueClient() {
             type="button"
             className="secondary-button"
             onClick={clearSelection}
+            disabled={bulkPending || loading}
           >
             清除選取 Clear selection
           </button>
@@ -203,13 +225,39 @@ export function QueueClient() {
           )}
         </ul>
       ) : null}
-      <ListingQueue
-        items={queueItems}
-        selected={selected}
-        eligibleIds={eligibleIds}
-        onToggle={toggleSelected}
-        onSelectAllEligible={() => selectAllEligible(eligibleIds)}
-      />
-    </>
+      <fieldset
+        disabled={loading || bulkPending || Boolean(error)}
+        style={{ border: 0, padding: 0, margin: 0 }}
+      >
+        <ListingQueue
+          items={queueItems}
+          selected={selected}
+          eligibleIds={eligibleIds}
+          onToggle={toggleSelected}
+          onSelectAllEligible={() => selectAllEligible(eligibleIds)}
+        />
+      </fieldset>
+      <nav aria-label="Queue pagination">
+        <button
+          type="button"
+          onClick={() => setPage((current) => Math.max(1, current - 1))}
+          disabled={loading || bulkPending || page === 1}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => setPage((current) => current + 1)}
+          disabled={
+            loading ||
+            bulkPending ||
+            !data ||
+            page * data.pageSize >= data.totalMatching
+          }
+        >
+          Next
+        </button>
+      </nav>
+    </section>
   );
 }

@@ -34,7 +34,10 @@ export function useLatestRequest<T>(
       .finally(() => {
         if (requestId.current === id) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      ++requestId.current;
+      controller.abort();
+    };
   }, [load, errorFallback, revision]);
   return { data, error, loading, stale: loading && data !== null, reload };
 }

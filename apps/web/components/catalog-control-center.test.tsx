@@ -522,3 +522,51 @@ describe("CatalogControlCenter", () => {
     await unmount(root);
   });
 });
+
+it("keeps compact source provenance visible and disables page controls during a pending page", async () => {
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  const item = makeItem({
+    id: "source",
+    sourceReadiness: {
+      sourceImportId: "import-1",
+      merchantAttestedExportAt: "2026-09-05T04:00:00.000Z",
+      currentVersionId: "version-1",
+      reviewedBinding: {
+        versionId: "version-1",
+        sourceImportId: "import-1",
+        rowDigest: "digest",
+        revision: 3,
+      },
+      approvedBinding: null,
+      headerContractCurrent: true,
+      freshnessAttested: false as const,
+      eligible: false as const,
+      eligibleAfterAttestation: true,
+      reason: "not_attested" as const,
+      downstreamVerification: "unverified" as const,
+      scope: "advisory_current_read" as const,
+    },
+  });
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(pageResponse([item])))
+    .mockReturnValueOnce(pending);
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain("Import: import-1");
+    expect(container.textContent).toContain("Merchant-attested export time:");
+    expect(container.textContent).toContain("revision 3 · version version-1");
+    await act(async () => findButtonByText(container, "Next")!.click());
+    expect(findButtonByText(container, "Next")!.disabled).toBe(true);
+    expect(findButtonByText(container, "Previous")!.disabled).toBe(true);
+    await act(async () =>
+      resolve(Response.json(pageResponse([item], { page: 2 }))),
+    );
+    expect(findButtonByText(container, "Previous")!.disabled).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});

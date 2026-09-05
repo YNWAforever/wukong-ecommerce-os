@@ -31,6 +31,28 @@ function Harness({
   );
 }
 describe("useLatestRequest", () => {
+  it.each(["resolve", "reject"] as const)(
+    "aborts cleanup and ignores a late %s from a transport ignoring abort",
+    async (outcome) => {
+      const request = deferred<string>();
+      let signal!: AbortSignal;
+      const loader = (value: AbortSignal) => {
+        signal = value;
+        return request.promise;
+      };
+      const host = document.createElement("div");
+      const root = createRoot(host);
+      await act(async () => root.render(createElement(Harness, { loader })));
+      await act(async () => root.unmount());
+      expect(signal.aborted).toBe(true);
+      await act(async () => {
+        if (outcome === "resolve") request.resolve("late");
+        else request.reject(new Error("late"));
+      });
+      expect(host.textContent).toBe("");
+    },
+  );
+
   it("recovers on retry and clears the error", async () => {
     const first = deferred<string>(),
       second = deferred<string>();

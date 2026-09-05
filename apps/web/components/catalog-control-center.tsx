@@ -300,7 +300,7 @@ export function CatalogControlCenter() {
             type="button"
             className={styles.pageButton}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1}
+            disabled={loading || page === 1}
           >
             上一頁 Previous
           </button>
@@ -309,7 +309,7 @@ export function CatalogControlCenter() {
             type="button"
             className={styles.pageButton}
             onClick={() => setPage((current) => current + 1)}
-            disabled={response.totalMatching <= page * PAGE_SIZE}
+            disabled={loading || response.totalMatching <= page * PAGE_SIZE}
           >
             下一頁 Next
           </button>

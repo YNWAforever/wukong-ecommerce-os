@@ -517,22 +517,30 @@ export function ListingReviewClient({
   const load = useCallback(
     async (signal?: AbortSignal) => {
       const id = ++requestId.current;
-      const response = await fetch(`/api/listings/${listingId}`, {
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) throw await responseError(response);
-      const next = (await response.json()) as ListingViewResponse;
-      if (requestId.current !== id) return;
-      setSnapshot(next);
-      setError(null);
-      if (
-        next.status === "processing" ||
-        next.status === "needs_info" ||
-        next.status === "in_review" ||
-        next.status === "failed"
-      ) {
-        setProcessingState(undefined);
+      try {
+        const response = await fetch(`/api/listings/${listingId}`, {
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw await responseError(response);
+        const next = (await response.json()) as ListingViewResponse;
+        if (requestId.current !== id || signal?.aborted) return;
+        setSnapshot(next);
+        setError(null);
+        if (
+          next.status === "processing" ||
+          next.status === "needs_info" ||
+          next.status === "in_review" ||
+          next.status === "failed"
+        ) {
+          setProcessingState(undefined);
+        }
+      } catch (cause) {
+        if (requestId.current !== id || signal?.aborted) return;
+        setError(
+          cause instanceof Error ? cause.message : "Unable to load listing.",
+        );
+        throw cause;
       }
     },
     [listingId],
@@ -540,27 +548,19 @@ export function ListingReviewClient({
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal).catch((loadError: unknown) => {
-      if (loadError instanceof DOMException && loadError.name === "AbortError")
-        return;
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load listing.",
-      );
-    });
-    return () => controller.abort();
+    // load publishes request-scoped errors; imperative callers still reject.
+    void load(controller.signal).catch(() => {});
+    return () => {
+      ++requestId.current;
+      controller.abort();
+    };
   }, [load]);
 
   useEffect(() => {
     if (snapshot?.status !== "received" && snapshot?.status !== "processing")
       return;
     const timer = window.setInterval(() => {
-      load().catch((cause: unknown) => {
-        setError(
-          cause instanceof Error ? cause.message : "Unable to refresh listing.",
-        );
-      });
+      void load().catch(() => {});
     }, 3_000);
     return () => window.clearInterval(timer);
   }, [load, snapshot?.status]);
@@ -624,18 +624,7 @@ export function ListingReviewClient({
       <div className="page-wrap">
         <div className="load-error" role="alert">
           <span>{viewState.message}</span>
-          <button
-            type="button"
-            onClick={() =>
-              void load().catch((cause: unknown) =>
-                setError(
-                  cause instanceof Error
-                    ? cause.message
-                    : "Unable to load listing.",
-                ),
-              )
-            }
-          >
+          <button type="button" onClick={() => void load().catch(() => {})}>
             Retry
           </button>
         </div>
@@ -647,6 +636,9 @@ export function ListingReviewClient({
         {error ? (
           <p className="inline-warning" role="alert">
             {error}
+            <button type="button" onClick={() => void load().catch(() => {})}>
+              Retry
+            </button>
           </p>
         ) : null}
         {message ? (
@@ -809,6 +801,9 @@ export function ListingReviewClient({
       {error ? (
         <p className="inline-warning" role="alert">
           {error}
+          <button type="button" onClick={() => void load().catch(() => {})}>
+            Retry
+          </button>
         </p>
       ) : null}
       {message ? (

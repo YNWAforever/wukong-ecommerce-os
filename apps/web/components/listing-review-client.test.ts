@@ -308,6 +308,50 @@ function processingFetcher() {
 }
 
 describe("ListingReviewClient processing orchestration", () => {
+  it("ignores an obsolete poll rejection after a newer poll succeeds", async () => {
+    let rejectOld!: (cause: Error) => void;
+    const old = new Promise<Response>((_, reject) => {
+      rejectOld = reject;
+    });
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockReturnValueOnce(old)
+      .mockResolvedValueOnce(Response.json(processingSnapshot("processing")));
+    const { container } = await mountReview("queued");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(container.textContent).toContain("AI processing");
+    await act(async () => {
+      rejectOld(new Error("obsolete failure"));
+    });
+    expect(container.textContent).not.toContain("obsolete failure");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("rejects the current imperative refresh so a mutation cannot claim refresh success", async () => {
+    processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockResolvedValueOnce(
+        Response.json({ processing: { state: "queued", jobId: "job_1" } }),
+      )
+      .mockRejectedValueOnce(new Error("current refresh failed"));
+    const { container } = await mountReview("retry_required");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Start processing"))!
+        .click();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "current refresh failed",
+    );
+    expect(container.querySelector(".success-note")).toBeNull();
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
   });

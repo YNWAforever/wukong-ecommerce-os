@@ -132,6 +132,7 @@ export function DashboardListingsClient() {
       </div>
       <section
         className="queue-group dashboard-queue-teaser"
+        aria-busy={loading}
         aria-labelledby="queue-teaser-heading"
       >
         <div className="section-heading compact">
@@ -139,12 +140,27 @@ export function DashboardListingsClient() {
             <p className="eyebrow">
               工作佇列 <span>WORK QUEUE</span>
             </p>
-            <h2 id="queue-teaser-heading">最需要處理的項目</h2>
+            <h2 id="queue-teaser-heading">
+              最新五個項目 · Latest five listings
+            </h2>
           </div>
           <Link className="text-link" href="/queue">
             查看完整工作佇列 <span>View full queue</span>
           </Link>
         </div>
+        <p>
+          Bounded view of the latest five workspace listings, ordered within
+          this page. Summary metrics cover the full workspace.
+        </p>
+        {error ? (
+          <div role="alert">
+            {error}
+            <button type="button" onClick={reload}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+        {stale ? <p role="status">Refreshing latest listings…</p> : null}
         {teaserItems.length > 0 ? (
           <ul className="queue-list">
             {teaserItems.map((item) => (

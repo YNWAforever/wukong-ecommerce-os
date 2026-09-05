@@ -305,3 +305,54 @@ describe("DashboardListingsClient", () => {
     await unmount(root);
   });
 });
+
+it("discloses the latest-five bound while keeping full-workspace metrics and compact provenance", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      items: [
+        {
+          ...baseItem,
+          sourceReadiness: {
+            sourceImportId: "import-1",
+            merchantAttestedExportAt: "2026-09-05T04:00:00.000Z",
+            currentVersionId: "version-1",
+            reviewedBinding: {
+              versionId: "version-1",
+              sourceImportId: "import-1",
+              rowDigest: "digest",
+              revision: 3,
+            },
+            approvedBinding: null,
+            headerContractCurrent: true,
+            freshnessAttested: false as const,
+            eligible: false as const,
+            eligibleAfterAttestation: true,
+            reason: "not_attested" as const,
+            downstreamVerification: "unverified" as const,
+            scope: "advisory_current_read" as const,
+          },
+        },
+      ],
+      counts: { ...zeroCounts, failed: 200 },
+    }),
+  );
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain("Latest five listings");
+    expect(container.textContent).toContain(
+      "Bounded view of the latest five workspace listings",
+    );
+    expect(container.textContent).toContain(
+      "Summary metrics cover the full workspace",
+    );
+    expect(container.textContent).not.toContain("最需要處理的項目");
+    expect(container.querySelector(".metric-strip")?.textContent).toContain(
+      "200",
+    );
+    expect(container.textContent).toContain("Import: import-1");
+    expect(container.textContent).toContain("Merchant-attested export time:");
+    expect(container.textContent).toContain("revision 3 · version version-1");
+  } finally {
+    await unmount(root);
+  }
+});

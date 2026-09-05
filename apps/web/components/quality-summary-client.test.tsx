@@ -60,6 +60,14 @@ const SAMPLE_SUMMARY = {
 };
 
 describe("QualitySummaryClient", () => {
+  it("shows unavailable denominators instead of inventing totals or skipped counts", async () => {
+    stubFetch(SAMPLE_SUMMARY);
+    const { container } = await mountClient();
+    expect(container.textContent).toContain(
+      "42 assessed of unavailable; unavailable without an active version; unavailable unassessable",
+    );
+  });
+
   afterEach(async () => {
     for (const root of mountedRoots.splice(0)) {
       await act(async () => root.unmount());
