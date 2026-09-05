@@ -23,8 +23,10 @@ The bulk form is how Wukong reads existing platform listings in and writes
 enrichment back. Reading it is a total function over a cell matrix that reports
 issues instead of throwing. Writing it is a diff: only the eight enrichable
 content columns may change, the ten `DO NOT EDIT` columns are echoed verbatim,
-and stock delta columns are always reset to `+0` so a re-import never moves
-inventory.
+and stock delta columns retain blank values while nonblank values are reset to
+`+0`. Merchant acceptance of blank versus `+0` remains an authorized re-import
+UAT decision. This is normalized string-grid preservation, not preservation of
+original XLSX bytes, numeric cell types, styles or whitespace-only cells.
 
 Export writes back only through a listing's `platform_products` link — the
 join the importer records between a listing and the remote product it came
