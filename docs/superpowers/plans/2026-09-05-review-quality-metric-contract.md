@@ -1,6 +1,6 @@
 # Retained review quality metrics (contract v1)
 
-`GET /api/quality.reviewMetrics` reports **observations of retained workspace
+The `reviewMetrics` property returned by `GET /api/quality` reports **observations of retained workspace
 records**, not model accuracy, reviewer effort, rejection rate, or independently
 verified human activity. `ai_runs.output` is not used: its default `{}` supplies
 no model-output baseline. Existing active-version gaps and all-history AI cost

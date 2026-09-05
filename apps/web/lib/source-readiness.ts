@@ -6,9 +6,7 @@ import {
   type BulkUpdateLink,
 } from "./bulk-update-eligibility";
 type ReadinessDeps = BulkUpdateEligibilityDeps & {
-  getSourceImport(
-    id: string,
-  ): Promise<{
+  getSourceImport(id: string): Promise<{
     merchantAttestedExportAt: Date;
     headerContractSha256: string;
   } | null>;

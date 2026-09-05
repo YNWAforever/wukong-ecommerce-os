@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
@@ -290,9 +291,12 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   for (const [index, id] of listingIds.entries()) {
     await page.goto("/listings/" + id);
     await page
-      .getByRole("textbox", { name: /商品名稱（繁中）/ })
+      .getByRole("textbox", {
+        name: "Title (Traditional Chinese)",
+        exact: true,
+      })
       .fill("合成審核商品 " + (index + 1));
-    await page.getByRole("button", { name: /儲存草稿/ }).click();
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
     await expect(page.getByText(/Draft saved/)).toBeVisible();
     for (const key of [
       "nameZh",
@@ -321,7 +325,9 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       await box.click();
       await expect(box).toBeChecked();
     }
-    await page.getByRole("button", { name: /批准上架/ }).click();
+    await page
+      .getByRole("button", { name: "Approve listing", exact: true })
+      .click();
     await expect(page.getByText(/Listing approved/)).toBeVisible();
   }
   await page.goto("/catalog");
@@ -551,5 +557,23 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   } finally {
     await evidenceDb.end();
   }
+  const qualityResponse = await page.request.get("/api/quality");
+  expect(qualityResponse.status()).toBe(200);
+  const qualityMetrics = (await qualityResponse.json()).reviewMetrics;
+  // Two generated versions and two saved versions; each saved version was approved.
+  expect(qualityMetrics.approvalFraction).toMatchObject({
+    numerator: 2,
+    denominator: 4,
+    value: 0.5,
+  });
+  // Each saved version changed only the allowed Traditional Chinese name field.
+  expect(qualityMetrics.humanEditedFieldFraction).toMatchObject({
+    numerator: 2,
+    denominator: 16,
+    value: 0.125,
+  });
+  expect(qualityMetrics.creationToApprovalMs.denominator).toBe(2);
+  expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
+  await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
   expect(pageErrors).toEqual([]);
 });

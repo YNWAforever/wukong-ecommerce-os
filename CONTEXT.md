@@ -154,4 +154,12 @@ Operator reports bind to included manifest members and the exact exported versio
 
 Historical/manual entry is explicitly unlinked and cannot close attempt reconciliation. Its per-listing revision history is durable; legacy reports are never promoted into trusted export receipts. Migration 0017 preserves append-only reports and is replay-safe, including protection during earlier privilege regrants. It has only been rehearsed in disposable local databases.
 
-Task 5 verification: docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. Task 6 onward, production migration and deployment remain outside this slice.
+Task 5 verification: docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. Subsequent local Tasks 6/7 are described below; production migration and deployment remain unauthorized.
+
+## Workbook fidelity and catalog usability (local Tasks 6/7)
+
+Independent synthetic output comparison covers all 71 Bulk Update columns. Nonblank extra headers are refused; normalized blank stock deltas remain blank and nonblank deltas become +0. Raw Excel types/styles are not preserved, and merchant acceptance of neutral blanks is unverified. Runbooks retain exact source/artifact/digests and require current protected-field comparison plus authorization before restoration.
+
+Catalog/listing/Jobs reads have workspace-scoped counts and deterministic pagination; quality gaps scan all active versions in bounded batches with an observed interval. Source-readiness views use server evidence but never attest freshness or independently verify SHOPLINE acceptance. Read recovery preserves filters, observed selections and imperative refresh failures. The existing locale cookie drives affected pages/forms, HK formatting and keyboard-accessible shell/table behavior. Capability labels describe implementation maturity separately from operational verification.
+
+GET /api/quality adds retained-evidence reviewMetrics: version-cohort approval fraction, creation-to-first-approval elapsed time and qualified complete-content edit field-change fraction. Missing or over-limit edit evidence is explicitly unavailable; these are not model-quality or reviewer-effort metrics. See docs/superpowers/plans/2026-09-05-review-quality-metric-contract.md and docs/superpowers/plans/2026-09-05-fidelity-usability-verification.md for exact populations, limits and synthetic checks. No production migration, provider calls or SHOPLINE writes were authorized.
