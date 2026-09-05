@@ -1,0 +1,23 @@
+# Attempt evidence packet design
+
+Approved by the user on 2026-09-05. Develop in codex/attempt-evidence-packet from local 88c3b0b; preserve previous worktrees. No publication or operational rollout authority.
+
+## Contract
+
+A reviewer/admin/owner explicitly chooses one retained comparison for a ready attempt and previews a bounded evidence summary, then downloads versioned JSON. Never silently substitute the latest comparison. The packet contains the exact attempt/manifest/artifact digest, included version/source/approval references, all applicable export-mode operator receipt revisions and explicit missing outcomes, and the selected comparison with normalized retained evidence. Historical/unlinked/foreign/unrelated receipts are excluded. Operator reports and comparisons retain their separate meanings.
+
+Use authenticated workspace access. Read attempt, selected comparison and all relevant receipts in one database statement/snapshot, with a database as-of timestamp. Bound receipt collection to 1,000; retrieve a sentinel/count and refuse excess rather than truncate. Validate complete provenance/member/version/connection/digest bindings and selected comparison consistency. Verify delivered artifact bytes against its digest through the existing workspace asset store. No original XLSX bytes, credentials or unrelated catalog rows in the packet. Reject incomplete/corrupt/unavailable/foreign evidence safely. No new tables, migrations, providers or dependencies.
+
+A pure builder projects only defined packet fields and canonicalizes JSON recursively: object keys sorted with JavaScript string sort, arrays preserve explicitly deterministic order, JSON primitive encoding, no undefined/nonfinite numbers. Dates are ISO strings. The format names its canonicalization `sorted-json-v1` without claiming external standard conformance. Packet schemaVersion is `wukong-attempt-evidence-packet/v1`. SHA-256 covers canonical payload bytes; the digest field is outside that payload. The entire downloadable canonical JSON envelope is at most 3 MiB, checked before audit/response; never truncate. A separate snapshotSha256 excludes only the asOf field and binds the preview to the exact evidence contents.
+
+GET /api/listings/export/:id/evidence-packet?comparisonId=<UUID> returns a typed summary, asOf and snapshotSha256, not a download and no download audit. POST to the same route with {comparisonId,expectedSnapshotSha256} reauthenticates, reads a fresh coherent snapshot, verifies artifact bytes and refuses 409 if contents differ from preview. A new asOf alone does not invalidate preview. On success, write a content-free `shopline.export_evidence_packet_downloaded` audit event, then return canonical JSON with attachment filename and no-store headers. Audit failure fails closed. The event means a download response was prepared, not proof of client receipt. Repeated explicit downloads may have separate audit events; no new receipt or workflow state is created.
+
+## UI and limitations
+
+Add a small bilingual packet panel for the selected full comparison. Preview is explicit, includes receipt/comparison counts and exact comparison/attempt identity, and is invalidated when selection changes. Download must use the preview identity; changed evidence asks the operator to refresh and review, preserving selection. Inflight/unmount/request-order guards prevent duplicates or stale overwrite. Download errors retain recoverable preview state as appropriate. Revoke/hide controls with current role/ready state. Keep forms separate and narrow layouts usable.
+
+Display in preview and machine-readable packet: supplied snapshot; store/time operator-attested; normalized cells only; quantity deltas observational; no authenticated live SHOPLINE state, causality or stock-neutrality claim; not a UAT sign-off or merchant-write authorization. No source, approval, comparison, operator-report or publish mutation.
+
+## Validation
+
+Pure canonical/digest tests include shuffled object keys, ordered arrays, malformed JSON values and size boundary. Database tests prove coherent snapshot under concurrent receipt insertion, complete revisions/counts and foreign scope. Service/route tests cover exact selected binding, legacy/incomplete evidence, wrong version/product/source/digest, artifact missing/corrupt, excess receipts/bytes, preview conflict, roles, audit rollback/failure and no other writes. Browser verifies actual downloadable bytes independently, both digest and evidence IDs, exact comparison selection, preview invalidation/retry, both locales/mobile and unchanged prior state. Use isolated synthetic services only; finish with independent review, relevant full gates and service cleanup, leave local commits.
