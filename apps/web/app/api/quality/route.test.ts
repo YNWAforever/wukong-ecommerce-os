@@ -54,9 +54,14 @@ describe("GET /api/quality", () => {
           ) {
             calls.push(["forWorkspace", workspaceId]);
             return work({
+              reads: {
+                async scanListingIds() {
+                  return ["l1", "l2", "l3"];
+                },
+              },
               listings: {
-                async listRecent() {
-                  calls.push(["listings.listRecent"]);
+                async getByIds() {
+                  calls.push(["listings.getByIds"]);
                   return [
                     {
                       id: "l1",
@@ -85,7 +90,12 @@ describe("GET /api/quality", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({
+    expect(body).toMatchObject({
+      totalListings: 3,
+      noActiveVersion: 1,
+      unassessableActiveVersion: 0,
+      scope: "workspace_active_versions",
+      costScope: "all_history_for_workspace_listings",
       totalAssessed: 2,
       cleanCount: 1,
       hasGapsCount: 1,
@@ -102,7 +112,7 @@ describe("GET /api/quality", () => {
 
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
-      ["listings.listRecent"],
+      ["listings.getByIds"],
       ["aiRuns.sumCostForListings", ["l1", "l2", "l3"]],
     ]);
   });

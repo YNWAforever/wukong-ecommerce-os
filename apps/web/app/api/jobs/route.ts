@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   buildExportReconciliation,
   resultCapabilities,
@@ -14,17 +15,13 @@ import {
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 
-// Fetched generously from each of the 5 sources -- the merge-then-truncate
-// happens inside buildJobsLedger, not per source. Fetching fewer than the
-// display limit from any one source could wrongly under-represent a source
-// that happens to have more recent activity than the others.
-const SOURCE_FETCH_LIMIT = 100;
-
-// The page's fixed display limit -- matches the design's stated default.
-// This is a literal, never a value derived from request input: buildJobsLedger
-// throws outside [1, 100], and a route with no query params can't produce a
-// value outside that range by construction.
-const LEDGER_DISPLAY_LIMIT = 50;
+const querySchema = z.object({
+  page: z.coerce.number().int().min(1).max(21474836).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  kind: z
+    .enum(["batch", "publish_job", "pipeline_run", "export", "import_result"])
+    .optional(),
+});
 
 // 30 days: long enough to be a meaningful trend line on a page checked
 // periodically, short enough that the aggregate queries stay cheap without
@@ -50,13 +47,23 @@ type JobsRouteDeps = {
 };
 
 export function createJobsHandler(deps: JobsRouteDeps) {
-  return async function jobs(): Promise<Response> {
+  return async function jobs(request?: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
+      const query = querySchema.parse(
+        Object.fromEntries(
+          new URL(request?.url ?? "http://local/api/jobs").searchParams,
+        ),
+      );
       const since = new Date(Date.now() - METRICS_WINDOW_MS);
-      const { entries, metrics, exportReconciliations } = await deps
+      const { entries, metrics, exportReconciliations, page } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
+          const page = await repositories.reads.jobsPage(query);
+          const ids = (kind: string) =>
+            page.items
+              .filter((item) => item.kind === kind)
+              .map((item) => item.id);
           const [
             batches,
             publishJobs,
@@ -67,11 +74,11 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             reviewConflictsByReason,
             importSums,
           ] = await Promise.all([
-            repositories.enrichmentBatches.listForWorkspace(SOURCE_FETCH_LIMIT),
-            repositories.publishJobs.listForWorkspace(SOURCE_FETCH_LIMIT),
-            repositories.pipelineRuns.listForWorkspace(SOURCE_FETCH_LIMIT),
-            repositories.exportAttempts.listForWorkspace(SOURCE_FETCH_LIMIT),
-            repositories.importResults.listForWorkspace(SOURCE_FETCH_LIMIT),
+            repositories.enrichmentBatches.getByIds(ids("batch")),
+            repositories.publishJobs.getByIds(ids("publish_job")),
+            repositories.pipelineRuns.getByIds(ids("pipeline_run")),
+            repositories.exportAttempts.getByIds(ids("export")),
+            repositories.importResults.getByIds(ids("import_result")),
             repositories.audit.countByActionSince(
               "listing.publish_failed",
               since,
@@ -84,9 +91,12 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             repositories.audit.sumImportMetricsSince(since),
           ]);
 
+          const readyExports = exports.filter(
+            (attempt) => attempt.artifactStatus === "ready",
+          );
           const attemptResults =
             await repositories.importResults.listForExportAttempts(
-              exports.map((attempt) => attempt.id),
+              readyExports.map((attempt) => attempt.id),
             );
           let versionConflicts = 0;
           let staleSourceRejections = 0;
@@ -98,8 +108,12 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             }
           }
 
+          const ledgerOrder = new Map(
+            page.items.map((item, index) => [item.kind + ":" + item.id, index]),
+          );
           return {
-            exportReconciliations: exports.map((attempt) => ({
+            page,
+            exportReconciliations: readyExports.map((attempt) => ({
               attempt,
               reconciliation: buildExportReconciliation(
                 attempt,
@@ -108,7 +122,11 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             })),
             entries: buildJobsLedger(
               { batches, publishJobs, pipelineRuns, exports, importResults },
-              LEDGER_DISPLAY_LIMIT,
+              query.pageSize,
+            ).sort(
+              (a, b) =>
+                ledgerOrder.get(a.kind + ":" + a.id)! -
+                ledgerOrder.get(b.kind + ":" + b.id)!,
             ),
             metrics: {
               publishRetries,
@@ -121,6 +139,13 @@ export function createJobsHandler(deps: JobsRouteDeps) {
 
       return jsonResponse(200, {
         entries,
+        page: query.page,
+        pageSize: query.pageSize,
+        totalMatching: page.totalMatching,
+        total: page.total,
+        counts: page.counts,
+        scope: "workspace_all_history",
+        metricsScope: { windowDays: 30, since: since.toISOString() },
         metrics,
         exportReconciliations,
         capabilities: resultCapabilities(context.role),

@@ -50,6 +50,7 @@ export type ImportResultRepository = {
   create(
     input: CreateImportResultInput,
   ): Promise<ImportResult & { wasCreated: boolean }>;
+  getByIds(ids: readonly string[]): Promise<ImportResult[]>;
   listForWorkspace(limit?: number): Promise<ImportResult[]>;
   listHistoricalForListing(listingId: string): Promise<ImportResult[]>;
   listForExportAttempts(ids: readonly string[]): Promise<ImportResult[]>;
@@ -270,6 +271,20 @@ export function createImportResultRepository(
       if (!row) throw new Error("import result insert did not return a row");
       return { ...parse(row), wasCreated: true };
     },
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      return (
+        await transaction
+          .select(columns)
+          .from(importResults)
+          .where(and(workspace, inArray(importResults.id, [...ids])))
+          .orderBy(desc(importResults.createdAt), desc(importResults.id))
+          .limit(100)
+      ).map(parse);
+    },
+
     async listForWorkspace(limit = 100) {
       scope.assertOpen();
       if (!Number.isInteger(limit) || limit < 1 || limit > 100)

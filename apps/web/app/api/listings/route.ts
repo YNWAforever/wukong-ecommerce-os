@@ -1,3 +1,4 @@
+import { readSourceReadiness } from "../../../lib/source-readiness";
 import { z } from "zod";
 import type { WorkspaceRepositories } from "@wukong/db";
 
@@ -235,26 +236,68 @@ async function readQueueReviewContext(
   return reviewContext;
 }
 
+const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(21474836).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(100),
+  q: z.string().trim().optional(),
+  status: z
+    .enum([
+      "received",
+      "processing",
+      "needs_info",
+      "in_review",
+      "approved",
+      "publishing",
+      "published",
+      "publish_failed",
+      "failed",
+      "reopened",
+    ])
+    .optional(),
+});
 export function createListListingsHandler(deps: ListListingsDeps) {
-  return async function listListings(): Promise<Response> {
+  return async function listListings(request?: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const { items, counts } = await deps
+      const query = listQuerySchema.parse(
+        Object.fromEntries(
+          new URL(request?.url ?? "http://local/api/listings").searchParams,
+        ),
+      );
+      const { items, counts, totalMatching } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const items = await repositories.listings.listRecent(100);
+          const page = await repositories.reads.listingPage(query);
+          const hydrated = await repositories.listings.getByIds(page.ids);
+          const byId = new Map(hydrated.map((item) => [item.id, item]));
+          const items = page.ids.flatMap((id) =>
+            byId.has(id) ? [byId.get(id)!] : [],
+          );
           const counts = await repositories.listings.countByStatus();
           const reviewedItems = await Promise.all(
             items.map(async (item) => ({
               ...item,
               reviewContext: await readQueueReviewContext(item, repositories),
+              sourceReadiness: await readSourceReadiness(
+                repositories,
+                context.workspaceId,
+                item.id,
+              ),
             })),
           );
-          return { items: reviewedItems, counts };
+          return {
+            items: reviewedItems,
+            counts,
+            totalMatching: page.totalMatching,
+          };
         });
 
       return jsonResponse(200, {
         counts,
+        page: query.page,
+        pageSize: query.pageSize,
+        totalMatching,
+        scope: "workspace",
         items: items.map((item) => {
           const content = item.activeVersion?.content as
             | {
@@ -280,6 +323,7 @@ export function createListListingsHandler(deps: ListListingsDeps) {
             updatedAt,
             openBlockingFlagCount: item.openBlockingFlagCount,
             reviewContext: item.reviewContext,
+            sourceReadiness: item.sourceReadiness,
           };
         }),
       });

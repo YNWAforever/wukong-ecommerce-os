@@ -217,7 +217,15 @@ export function buildJobsLedger(
     // Descending, matching Task 1's listForWorkspace tiebreak convention
     // (desc(createdAt), desc(id)) -- keeps a same-instant tie ordered the
     // same way whether it's read via a repository directly or through here.
-    return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+    return a.id > b.id
+      ? -1
+      : a.id < b.id
+        ? 1
+        : a.kind > b.kind
+          ? -1
+          : a.kind < b.kind
+            ? 1
+            : 0;
   });
   return entries.slice(0, limit);
 }

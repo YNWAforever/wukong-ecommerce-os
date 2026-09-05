@@ -1,14 +1,9 @@
+import { readSourceReadiness } from "../../../lib/source-readiness";
 import { resultCapabilities } from "../../../lib/export-reconciliation";
 import { z } from "zod";
 
 import type { Database } from "@wukong/db";
-import type { ListingStatus } from "@wukong/core";
 
-import {
-  type CatalogItem,
-  filterCatalogItemsServer,
-  summarizeCatalog,
-} from "../../../lib/catalog-contract";
 import { getDatabase } from "../../../lib/intake-runtime";
 import {
   jsonResponse,
@@ -18,16 +13,8 @@ import {
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 
-const ATTENTION_STATUSES = new Set<ListingStatus>([
-  "needs_info",
-  "publish_failed",
-  "failed",
-]);
-
-const REVIEW_STATUSES = new Set<ListingStatus>(["in_review", "reopened"]);
-
 const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
+  page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   q: z.string().trim().optional(),
   filter: z
@@ -47,81 +34,36 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
       const url = new URL(request.url);
       const query = querySchema.parse(Object.fromEntries(url.searchParams));
 
-      const allItems = await deps
+      const result = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const products = await repositories.platformProducts.listRecent(5000);
-          const listingIds = [
-            ...new Set(
-              products
-                .map((product) => product.listingId)
-                .filter((id): id is string => id !== null),
-            ),
-          ];
-          const statuses =
-            await repositories.listings.statusesByIds(listingIds);
-          const linkedListings =
-            await repositories.listings.getByIds(listingIds);
-          const linkedListingById = new Map(
-            linkedListings.map((listing) => [listing.id, listing]),
+          const page = await repositories.reads.catalogPage(query);
+          const products = await repositories.platformProducts.getByIds(
+            page.items.map((item) => item.id),
           );
-
-          return products.map((product): CatalogItem => {
-            const linkedListing = product.listingId
-              ? linkedListingById.get(product.listingId)
-              : undefined;
-            const listingStatus = product.listingId
-              ? (statuses[product.listingId] ?? null)
-              : null;
-            const openBlockingFlagCount =
-              linkedListing?.openBlockingFlagCount ?? null;
-            const title =
-              linkedListing?.activeVersion?.content.title["zh-Hant"] ??
-              linkedListing?.activeVersion?.content.title.en ??
-              product.sku ??
-              product.remoteProductId;
-            const needsReview =
-              listingStatus !== null && REVIEW_STATUSES.has(listingStatus);
-            const needsAttention =
-              product.listingId === null ||
-              listingStatus === null ||
-              ATTENTION_STATUSES.has(listingStatus) ||
-              (openBlockingFlagCount ?? 0) > 0;
-
-            return {
-              id: product.id,
-              remoteProductId: product.remoteProductId,
-              origin: product.origin,
-              sku: product.sku,
-              listingId: product.listingId,
-              specVersion: product.specVersion,
-              title,
-              listingStatus,
-              openBlockingFlagCount,
-              needsReview,
-              needsAttention,
-              createdAt: product.createdAt.toISOString(),
-              updatedAt: product.updatedAt.toISOString(),
-              contentDigest: product.contentDigest,
-            };
-          });
+          const byId = new Map(
+            products.map((product) => [product.id, product]),
+          );
+          const items = await Promise.all(
+            page.items.map(async (item) => ({
+              ...item,
+              sourceReadiness: await readSourceReadiness(
+                repositories,
+                context.workspaceId,
+                item.listingId,
+                byId.get(item.id) ?? null,
+              ),
+            })),
+          );
+          return { ...page, items };
         });
-
-      const filtered = filterCatalogItemsServer(
-        allItems,
-        query.q,
-        query.filter,
-      );
-      const start = (query.page - 1) * query.pageSize;
-      const pageItems = filtered.slice(start, start + query.pageSize);
 
       return jsonResponse(200, {
         capabilities: resultCapabilities(context.role),
-        items: pageItems,
-        summary: summarizeCatalog(allItems),
+        ...result,
+        scope: "workspace",
         page: query.page,
         pageSize: query.pageSize,
-        totalMatching: filtered.length,
       });
     });
   };

@@ -1,3 +1,4 @@
+import { readSourceReadiness } from "../../../../lib/source-readiness";
 import type { AssetStore } from "@wukong/assets";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -120,6 +121,11 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           }
 
           return {
+            sourceReadiness: await readSourceReadiness(
+              repositories,
+              session.workspaceId,
+              id,
+            ),
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,

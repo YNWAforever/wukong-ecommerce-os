@@ -92,6 +92,7 @@ export type PublishJobRepository = {
   getByVersionId(versionId: string): Promise<PublishJob | null>;
   /** Newest-first, this workspace's publish jobs only. `limit` defaults to
    * 100 and must be between 1 and 100. */
+  getByIds(ids: readonly string[]): Promise<PublishJob[]>;
   listForWorkspace(limit?: number): Promise<PublishJob[]>;
   ensure(input: EnsurePublishJobInput): Promise<PublishJob>;
   markQueued(key: string): Promise<boolean>;
@@ -175,6 +176,35 @@ export function createPublishJobRepository(
         .orderBy(desc(publishJobs.createdAt))
         .limit(1);
       return toPublishJob(row);
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select()
+        .from(publishJobs)
+        .where(
+          and(
+            eq(publishJobs.workspaceId, workspaceId),
+            inArray(publishJobs.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(publishJobs.createdAt), desc(publishJobs.id))
+        .limit(100);
+      // `toPublishJob` returns null only when `versionId` is missing, which
+      // cannot happen for a row this repository created -- `ensure()` is the
+      // only insert path and always sets it. Filtered anyway so a future
+      // insert path (or a row someone created by hand) can't silently widen
+      // this list's element type into `PublishJob | null`.
+      return rows
+        .map(toPublishJob)
+        .filter((job): job is PublishJob => job !== null);
     },
 
     async listForWorkspace(limit = 100) {

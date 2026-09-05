@@ -1,3 +1,6 @@
+vi.mock("../../../../lib/source-readiness", () => ({
+  readSourceReadiness: async () => null,
+}));
 import { describe, expect, it, vi } from "vitest";
 
 import { createListingViewHandler } from "./route.js";

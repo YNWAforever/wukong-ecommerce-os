@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { and, desc, eq, sql, ne, isNotNull } from "drizzle-orm";
+import { inArray, and, desc, eq, sql, ne, isNotNull } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { exportAttempts } from "../schema.js";
@@ -88,6 +88,7 @@ export type ExportAttemptRepository = {
   }): Promise<ExportAttempt>;
   /** Newest-first, this workspace's export attempts only. `limit` defaults
    * to 100 and must be between 1 and 100. */
+  getByIds(ids: readonly string[]): Promise<ExportAttempt[]>;
   listForWorkspace(limit?: number): Promise<ExportAttempt[]>;
   /** Every export attempt whose manifest contains an entry for this listing,
    * newest first. Uses a jsonb containment check since `manifest` carries no
@@ -298,6 +299,28 @@ export function createExportAttemptRepository(
           createdAt: row.createdAt,
         };
       });
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(exportAttempts)
+        .where(
+          and(
+            eq(exportAttempts.workspaceId, workspaceId),
+            inArray(exportAttempts.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(exportAttempts.createdAt), desc(exportAttempts.id))
+        .limit(100);
+      return rows;
     },
 
     async listForWorkspace(limit = 100) {
