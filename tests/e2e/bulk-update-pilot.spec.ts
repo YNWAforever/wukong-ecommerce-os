@@ -1015,6 +1015,14 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
         "snapshotSha256",
       ].sort(),
     );
+    expect(downloadAudit!.metadata).toEqual({
+      comparisonId: matchingRecord.id,
+      exportAttemptId: attemptId,
+      payloadSha256: envelope.payloadSha256,
+      schemaVersion: "wukong-attempt-evidence-packet/v1",
+      snapshotSha256: downloadHttp.request().postDataJSON()
+        .expectedSnapshotSha256,
+    });
     const afterPacket = await (
       await page.request.get("/api/listings/export/" + attemptId)
     ).json();
