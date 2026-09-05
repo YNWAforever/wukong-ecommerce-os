@@ -49,4 +49,18 @@ Migration 0018 has been exercised only in local disposable databases. No product
 
 Commit `a367f4f` fixes the retained-file collapse/reopen mismatch by keeping controls mounted while hidden. It also gives safe bilingual correction instructions for known permanent workbook/evidence validation errors. Twenty-five focused tests passed. The full managed browser suite passed again (11 passed, 2 intentional skips), including real invalid-header 400 and oversized-evidence 413 responses, preserved native file/time/attestation before initial submission and after response loss, and unchanged evidence/audit totals. Production prebuild passed. Independent UI re-review found no remaining issues.
 
-Final unit rerun at `a367f4f`: `test` passed 1,666 tests (67 root + 1,599 package, including 1,017 web), 14 Turbo tasks. Final `typecheck` passed 14 tasks. Backend integration and migration source was unchanged after its complete passing run. Final whole-branch review and service cleanup are the remaining handoff checks.
+Final unit rerun at `a367f4f`: `test` passed 1,666 tests (67 root + 1,599 package, including 1,017 web), 14 Turbo tasks. Final `typecheck` passed 14 tasks. Backend integration and migration source was unchanged after its complete passing run. Subsequent whole-branch review and cleanup are recorded below.
+
+## Whole-branch review correction
+
+The whole-branch review reproduced a false match with a valid synthetic workbook: its Default tab pointed to sheet2 with a changed SKU while Archive pointed to sheet1 with the original SKU. The old independent name/lowest-numbered-sheet reads compared Archive. Commit `e46baf0` adds a comparison-only reader that resolves the actual Default worksheet through package and workbook relationships. Both delivered and supplied workbooks use it. Legacy import selection is unchanged. Missing, duplicate, external, unsafe and unsupported bindings fail before persistence.
+
+The actual service regression now records `differences_found` and the changed SKU; invalid relationship cases assert no persistence call. Shared Shopline tests passed 248 cases, including 20 new relationship cases; service/route tests passed 42. Independent whole-branch re-review found the issue resolved with no additional findings. No database or UI behavior changed in this correction.
+
+At final source commit `e46baf0`, the complete `test` gate passed 1,691 tests (67 root + 1,624 package, including 1,022 web), 14 Turbo tasks. The complete `build` gate passed 8 tasks. Final web typecheck and explicit formatting/diff checks also passed. The unchanged database implementation retains its 200-test integration and two-case migration rehearsal evidence.
+
+## Final handoff
+
+After `e46baf0`, `exec playwright test tests/e2e/bulk-update-pilot.spec.ts --grep "reviewer completes attended" --project=chromium --workers=1 --retries=0 --reporter=line --output=node_modules/.task8-evidence/reader-browser` passed (one attended journey, 1.8 minutes, exit 0). This exercised the final reader through real local export/comparison, invalid-header and oversized-evidence rejection, history, exact retry and unchanged report/audit assertions. The full 11-pass/2-skip browser run preceded the reader-only correction; shared-reader and full-unit regressions plus this final attended rerun cover that correction. The existing Wrangler teardown diagnostic appeared; health, ingress and queues completed, and Playwright exited successfully.
+
+All independent review findings are resolved. Synthetic PostgreSQL, MinIO, Mailpit, Next and Wrangler were stopped; final port checks cover 55445, 9012, 9013, 8026, 1026, 49217 and 8787. Synthetic evidence is retained in ignored local directories. Previous phase reports and other worktrees are preserved. The branch is committed locally for review, with no push or deployment.
