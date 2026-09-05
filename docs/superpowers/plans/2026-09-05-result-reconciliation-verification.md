@@ -14,6 +14,8 @@ Verified GitHub main before editing: 8ac82cb4402ad7ac2af4313a20e0181710f04dc6, m
 - The existing tenant-FK integration invariant exposed a missing export-version FK index. The index and declared schema now agree.
 - The synthetic browser completed import, attended Queue enrichment, editing, all confirmations and approval for two products, then failed at the missing catalog Bulk Update selector before UI implementation. A later browser regression reproduced the missing saved rejection explanation on Jobs reload; the final rerun passes.
 
+- Final review reproduced failed or malformed no-attempt responses being presented as completed zero-row exports, and missing stable zero-row counts/version context. Five focused cases failed before the correction; all nine component tests pass afterward. HTTP errors remain errors, valid zero-row summaries retain the submitted manifest, and persisted attempt recovery remains intact.
+
 ## Implementation
 
 Result recording binds to an included manifest listing and its immutable export version, with ready artifact and complete provenance requirements. Corrections append receipts linked to the observed predecessor. Exact retries replay the existing receipt without another audit event; conflicting payloads and stale corrections fail. Totals use included members and their complete relevant history, independently of the recent activity cap.
@@ -28,7 +30,7 @@ All commands ran in the isolated Task 5 worktree with Node 24.18.0 and pinned pn
 
 | Command                                                                                                                         | Result                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| test                                                                                                                            | 67 root Node tests plus 1,364 package tests passed; 14/14 Turbo tasks |
+| test                                                                                                                            | 67 root Node tests plus 1,369 package tests passed; 14/14 Turbo tasks |
 | test:integration                                                                                                                | 182 passed; one dedicated-migration placeholder skipped               |
 | exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/import-result-migrations.integration.test.ts | 2/2 passed separately with dedicated migration URLs                   |
 | build                                                                                                                           | 8/8 tasks passed, including local Worker dry-run bundling             |
@@ -36,7 +38,7 @@ All commands ran in the isolated Task 5 worktree with Node 24.18.0 and pinned pn
 | typecheck                                                                                                                       | 14/14 tasks passed                                                    |
 | format:runtime:check                                                                                                            | Passed, no format-debt waiver                                         |
 | runtime:forbidden:check                                                                                                         | Passed; zero forbidden dependencies, imports or services              |
-| exec playwright test tests/e2e/bulk-update-pilot.spec.ts --workers=1 --output=node_modules/.task5-evidence/browser-acceptance   | 3/3 Chromium tests passed, 18.9 seconds                               |
+| exec playwright test tests/e2e/bulk-update-pilot.spec.ts --workers=1 --output=node_modules/.task5-evidence/browser-acceptance   | 3/3 Chromium tests passed, 14.8 seconds                               |
 
 The normal integration gate uses explicit TEST_DATABASE_ADMIN_URL and TEST_DATABASE_URL for task5_integration on 127.0.0.1:55445. The destructive migration rehearsal uses separate TEST_MIGRATION_DATABASE_ADMIN_URL and TEST_MIGRATION_DATABASE_URL, requires loopback hosts and database task5_migration_review, and is intentionally skipped by the normal integration command. It proves fresh application, two full replays, retained receipts and append-only protection even during a simulated earlier privilege regrant.
 
@@ -46,7 +48,7 @@ The browser suite covers import time/retry and real viewer rejection; then two g
 
 Desktop and 375px mobile screenshots were inspected, with no horizontal document overflow. Local artifacts are under node_modules/.task5-evidence/browser-acceptance; logs are under node_modules/.task5-evidence. These generated artifacts and internal agent reports remain local.
 
-Backend and UI scoped reviews are approved after the fixes above. A final whole-branch review is recorded at handoff.
+Backend and UI scoped reviews are approved. The final whole-branch review found one UI P2; focused re-review approved its correction at c10db24. The full unit suite, build, lint, typecheck and three browser cases were rerun after that correction.
 
 ## Remaining source-binding limits
 
@@ -59,3 +61,5 @@ Backend and UI scoped reviews are approved after the fixes above. A final whole-
 ## Safety and isolation
 
 Only generated synthetic XLSX bytes were uploaded to the local runtime. PostgreSQL 17.11 on loopback port 55445 and native TLS MinIO on 9012 used task-owned data directories. Next.js and Wrangler ran locally on 49245 and 8787 with AI_PROVIDER=fake, SHOPLINE_ADAPTER=mock, SHOPLINE_PUBLISH_ENABLED=false. No real SHOPLINE writes, merchant seed, real workbook, paid provider or deployment was used.
+
+Task-owned Next.js, Wrangler, MinIO and PostgreSQL services were stopped after final acceptance. The branch and local evidence remain available for review.
