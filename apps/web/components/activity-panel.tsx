@@ -101,7 +101,7 @@ export function ActivityPanel({ entries }: { entries: ActivityPanelEntry[] }) {
                 <div className="flag-content">
                   <p>{summarize(entry, locale)}</p>
                   <div className="jobs-row-meta">
-                    <time dateTime={formatHkDate(entry.createdAt, locale)}>
+                    <time dateTime={entry.createdAt}>
                       {formatHkDate(entry.createdAt, locale)}
                     </time>
                   </div>

@@ -819,7 +819,7 @@ export function ListingReviewClient({
       ) : null}
       {message ? (
         <p className="success-note" role="status">
-          {message}
+          {localized(locale, ...message)}
         </p>
       ) : null}
       <div className="review-layout">

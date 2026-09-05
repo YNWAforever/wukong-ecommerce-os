@@ -160,9 +160,10 @@ export function ExportReconciliationPanel({
             {member.latestResult ? (
               <div>
                 <p>
-                  {t("操作員回報", "Operator reported")}{" "}
-                  {stateLabel(member.latestResult.outcome, locale)} ·{" "}
-                  {t("修訂", "revision")}{" "}
+                  {member.latestResult.outcome === "accepted"
+                    ? t("操作員回報接受", "Operator reported accepted")
+                    : t("操作員回報拒絕", "Operator reported rejected")}{" "}
+                  · {t("修訂", "revision")}{" "}
                   {formatNumber(member.latestResult.revision, locale)}
                 </p>
                 {member.latestResult.rejectReason ? (

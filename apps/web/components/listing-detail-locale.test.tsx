@@ -318,3 +318,68 @@ it.each(["en", "zh-Hant"] as const)(
     }
   },
 );
+
+import { ActivityPanel } from "./activity-panel";
+it.each(["en", "zh-Hant"] as const)(
+  "keeps activity ISO time and selected HK display in %s",
+  (locale) => {
+    preference.locale = locale;
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      createElement(ActivityPanel, {
+        entries: [
+          {
+            kind: "audit",
+            id: "audit-time",
+            action: "listing.approved",
+            metadata: {},
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const time = host.querySelector("time")!;
+    expect(time.getAttribute("datetime")).toBe("2026-01-01T00:00:00Z");
+    expect(time.textContent).toBe(
+      locale === "en" ? "1 Jan 2026, 8:00 am" : "2026年1月1日 上午8:00",
+    );
+  },
+);
+it.each(["en", "zh-Hant"] as const)(
+  "uses one exact operator qualifier for both outcomes in %s",
+  (locale) => {
+    preference.locale = locale;
+    for (const outcome of ["accepted", "rejected"] as const) {
+      const host = document.createElement("div");
+      host.innerHTML = renderToStaticMarkup(
+        createElement(ExportReconciliationPanel, {
+          detail: {
+            ...detail,
+            reconciliation: {
+              ...detail.reconciliation,
+              members: [
+                {
+                  ...detail.reconciliation.members[0]!,
+                  latestResult: { ...report, outcome },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      const result = host.querySelector(
+        ".reconciliation-members > li > div > p",
+      )!;
+      expect(result.textContent).toBe(
+        locale === "en"
+          ? `Operator reported ${outcome} · revision 1,234`
+          : `操作員回報${outcome === "accepted" ? "接受" : "拒絕"} · 修訂 1,234`,
+      );
+      expect(host.textContent).toContain(
+        locale === "en"
+          ? "Verification: Unverified — operator reports do not verify against a fresh SHOPLINE export."
+          : "驗證：未獨立核實 — 操作員回報並未與最新 SHOPLINE 匯出資料核對。",
+      );
+    }
+  },
+);

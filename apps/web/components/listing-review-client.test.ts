@@ -532,4 +532,51 @@ describe("ListingReviewClient processing orchestration", () => {
 });
 
 // Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
-vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+const preference = vi.hoisted(() => ({ locale: "en" as "en" | "zh-Hant" }));
+vi.mock("../lib/locale-context", () => ({
+  useLocale: () => preference.locale,
+}));
+
+it.each(["en", "zh-Hant"] as const)(
+  "renders draft success only in %s and updates it after a locale change",
+  async (locale) => {
+    preference.locale = locale;
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(response))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json(response));
+    const { container, root } = await mountReview();
+    try {
+      await act(async () => {
+        container
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+      });
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(fetcher.mock.calls[1]![1]?.method).toBe("PUT");
+      expect(
+        JSON.parse(fetcher.mock.calls[1]![1]?.body as string).baseVersionId,
+      ).toBe(response.activeVersion!.id);
+      expect(
+        container.querySelector('.success-note[role="status"]')?.textContent,
+      ).toBe(locale === "en" ? "Draft saved" : "草稿已儲存");
+      preference.locale = locale === "en" ? "zh-Hant" : "en";
+      await act(async () =>
+        root.render(
+          createElement(ListingReviewClient, { listingId: response.listingId }),
+        ),
+      );
+      expect(
+        container.querySelector('.success-note[role="status"]')?.textContent,
+      ).toBe(locale === "en" ? "草稿已儲存" : "Draft saved");
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    } finally {
+      await unmountReview(root);
+      container.remove();
+      preference.locale = "en";
+      vi.unstubAllGlobals();
+    }
+  },
+);
