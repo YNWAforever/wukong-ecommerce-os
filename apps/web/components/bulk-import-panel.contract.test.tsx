@@ -99,6 +99,14 @@ describe("browser import contract", () => {
         reject = rejectPromise;
       }),
     );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        connection: { shopDomain: "synthetic.myshopline.com" },
+        canImport: true,
+        canManageConnection: false,
+        credentialStorageConfigured: true,
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
     const container = document.createElement("div");
     document.body.append(container);
@@ -127,7 +135,8 @@ describe("browser import contract", () => {
       timeInput.dispatchEvent(new Event("input", { bubbles: true }));
       timeInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]![0]).toBe("/api/workspace/import-setup");
     await act(async () => {
       form.dispatchEvent(
         new Event("submit", { bubbles: true, cancelable: true }),
@@ -137,7 +146,7 @@ describe("browser import contract", () => {
       );
       await Promise.resolve();
     });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     await act(async () => {
       reject(new TypeError("offline"));
       await Promise.resolve();

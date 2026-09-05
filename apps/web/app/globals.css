@@ -1810,3 +1810,24 @@ button:disabled {
   flex-wrap: wrap;
   gap: 0.75rem;
 }
+
+.import-store-setup {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.import-store-setup h2,
+.import-store-setup p {
+  margin: 0;
+}
+.import-store-setup > button {
+  justify-self: start;
+}
+.import-store-setup .connection-form input {
+  min-width: 0;
+  width: 100%;
+}
