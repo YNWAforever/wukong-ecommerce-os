@@ -49,3 +49,20 @@ export type {
   ContentFreshnessResult,
   PlatformProductLink,
 } from "./content-freshness.js";
+
+export {
+  normalizeWebsiteUrl,
+  websiteUrlSchema,
+  websiteWarningsSchema,
+  websitePriceSchema,
+  websiteProductSchema,
+  websiteScanStateSchema,
+  websiteScanEnvelopeSchema,
+  robotsPolicySchema,
+} from "./website-catalog.js";
+export type {
+  WebsiteProduct,
+  WebsiteScanState,
+  WebsiteScanEnvelope,
+  RobotsPolicy,
+} from "./website-catalog.js";
