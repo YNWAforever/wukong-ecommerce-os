@@ -100,8 +100,8 @@ downloads require readiness and matching bytes. Legacy all-null provenance rows
 remain historical downloads explicitly marked incomplete.
 
 Single Bulk Update delivery uses the same durable eligibility rules but retains
-its direct workbook response; the operator journey through stable multi-export
-attempt references is Task 5. Generated XLSX is not proof of SHOPLINE acceptance
+its direct workbook response. The operator UI now uses stable multi-export
+attempt references for Bulk Update delivery and result reconciliation. Generated XLSX is not proof of SHOPLINE acceptance
 or of current merchant-side protected fields.
 
 ## Workspace roles
@@ -143,3 +143,13 @@ now enforce source/approval binding, verified workbook hashes and retry identity
 see Bulk Update source and artifact history above. Object-store publication is
 verified through the recoverable artifact lifecycle, not an atomic cross-store
 transaction. Merchant-side freshness and SHOPLINE acceptance remain unverified.
+
+## Bulk Update result reconciliation
+
+Catalog reviewers select imported listings and attest freshness for that exact selection. The UI generates through the shared multi-export API, retains the attempt reference across detail-loading failures and downloads only ready artifacts. Imported listings expose Bulk Update XLSX; Create CSV and API controls follow their separate origin capabilities.
+
+Operator reports bind to included manifest members and the exact exported version, rather than a later active version. Idempotency keys protect retries; corrections append against the observed predecessor. Jobs derives accepted/rejected/unreported totals from included members and complete relevant report history. Rejection and correction reasons remain visible after reload. All reports remain independently unverified against a fresh SHOPLINE export.
+
+Historical/manual entry is explicitly unlinked and cannot close attempt reconciliation. Its per-listing revision history is durable; legacy reports are never promoted into trusted export receipts. Migration 0017 preserves append-only reports and is replay-safe, including protection during earlier privilege regrants. It has only been rehearsed in disposable local databases.
+
+Task 5 verification: docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. Task 6 onward, production migration and deployment remain outside this slice.

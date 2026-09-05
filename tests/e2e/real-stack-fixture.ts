@@ -328,3 +328,17 @@ export async function signInBulkImportOperator(
   await page.getByRole("button", { name: "Sign in with password" }).click();
   await expect(page).toHaveURL(/\/listings\/import$/);
 }
+
+/** Unique local reviewer workspace for the attended Bulk Update journey. */
+export async function prepareBulkUpdateFixture() {
+  const fixture = await prepareBulkImportFixture();
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`UPDATE memberships SET role='reviewer' WHERE workspace_id=${fixture.workspaceId} AND user_id=${fixture.userId}`;
+    await admin`INSERT INTO prompt_versions(workspace_id,key,version,template,model) VALUES (${fixture.workspaceId},'listing-generation','1.0.0',${OPAK_PROMPT},'fake-listing-provider')`;
+    await admin`INSERT INTO shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) VALUES (${fixture.connectionId},${fixture.workspaceId},'synthetic-update.invalid','synthetic-disabled')`;
+  } finally {
+    await admin.end();
+  }
+  return fixture;
+}

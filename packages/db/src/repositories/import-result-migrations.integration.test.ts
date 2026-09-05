@@ -10,6 +10,8 @@ if (!adminUrl || !appUrl) {
   if (
     !adminUrl ||
     !appUrl ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(new URL(adminUrl).hostname) ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(new URL(appUrl).hostname) ||
     new URL(adminUrl).pathname !== "/task5_migration_review" ||
     new URL(appUrl).pathname !== "/task5_migration_review"
   )
