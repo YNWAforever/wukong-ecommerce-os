@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import { localized, formatNumber } from "../lib/ui-copy";
 
 import {
   allConfirmed,
@@ -52,6 +54,8 @@ export function ConfirmationChecklist({
   canConfirm = false,
   onChange,
 }: ConfirmationChecklistProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const totalItems =
     CONFIRMATION_FIELD_KEYS.length + CONFIRMATION_NEGATIVE_KEYS.length;
   const totalConfirmed =
@@ -81,21 +85,19 @@ export function ConfirmationChecklist({
     >
       <div className="section-heading compact">
         <div>
-          <p className="eyebrow">
-            審核確認 <span>REVIEW CONFIRMATION</span>
-          </p>
-          <h2 id="confirmations-heading">批准前需要確認</h2>
+          <p className="eyebrow">{t("審核確認", "Review confirmation")}</p>
+          <h2 id="confirmations-heading">
+            {t("批准前需要確認", "Confirm before approval")}
+          </h2>
         </div>
         <span className="flag-count">
-          {totalConfirmed} / {totalItems} 項已確認
+          {formatNumber(totalConfirmed, locale)} /{" "}
+          {formatNumber(totalItems, locale)} {t("項已確認", "confirmed")}
         </span>
       </div>
 
       <fieldset className="field-group">
-        <legend>
-          <span>AI 撰寫欄位</span>
-          <small>AI-written fields</small>
-        </legend>
+        <legend>{t("AI 撰寫欄位", "AI-written fields")}</legend>
         <ul className="flag-list">
           {CONFIRMATION_FIELD_KEYS.map((key) => {
             const label = FIELD_LABELS[key]!;
@@ -113,10 +115,7 @@ export function ConfirmationChecklist({
                   disabled={!canConfirm}
                   onChange={(event) => toggleField(key, event.target.checked)}
                 />
-                <label htmlFor={id}>
-                  <span>{label.zh}</span>
-                  <small>{label.en}</small>
-                </label>
+                <label htmlFor={id}>{t(label.zh, label.en)}</label>
               </li>
             );
           })}
@@ -124,10 +123,7 @@ export function ConfirmationChecklist({
       </fieldset>
 
       <fieldset className="field-group">
-        <legend>
-          <span>負面條件</span>
-          <small>Negative conditions</small>
-        </legend>
+        <legend>{t("負面條件", "Negative conditions")}</legend>
         <ul className="flag-list">
           {CONFIRMATION_NEGATIVE_KEYS.map((key) => {
             const label = NEGATIVE_LABELS[key]!;
@@ -147,10 +143,7 @@ export function ConfirmationChecklist({
                     toggleNegative(key, event.target.checked)
                   }
                 />
-                <label htmlFor={id}>
-                  <span>{label.zh}</span>
-                  <small>{label.en}</small>
-                </label>
+                <label htmlFor={id}>{t(label.zh, label.en)}</label>
               </li>
             );
           })}

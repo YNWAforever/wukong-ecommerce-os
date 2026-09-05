@@ -1,6 +1,14 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  formatHkDate,
+  formatNumber,
+  stateLabel,
+  safeUiError,
+} from "../lib/ui-copy";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 export type ImportResultReceipt = {
   id: string;
@@ -18,6 +26,8 @@ export function ImportResultHistory({
   label: string;
   results: readonly ImportResultReceipt[];
 }) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   if (results.length === 0) return null;
   return (
     <details>
@@ -25,12 +35,16 @@ export function ImportResultHistory({
       <ol>
         {results.map((result) => (
           <li key={result.id}>
-            Revision {result.revision}: {result.outcome}
+            {t("修訂", "Revision")} {formatNumber(result.revision, locale)}:{" "}
+            {stateLabel(result.outcome, locale)} ·{" "}
+            <time dateTime={result.createdAt}>
+              {formatHkDate(result.createdAt, locale)}
+            </time>
             {result.rejectReason
-              ? ` — Rejection reason: ${result.rejectReason}`
+              ? ` — ${t("拒絕原因：", "Rejection reason:")} ${result.rejectReason}`
               : ""}
             {result.correctionReason
-              ? ` — Correction reason: ${result.correctionReason}`
+              ? ` — ${t("更正原因：", "Correction reason:")} ${result.correctionReason}`
               : ""}
           </li>
         ))}
@@ -55,6 +69,9 @@ export function ImportResultForm({
   mode,
   onRecorded,
 }: ImportResultFormProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
+  const messageId = useId();
   const [outcome, setOutcome] = useState<"accepted" | "rejected">("accepted");
   const [rejectReason, setRejectReason] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
@@ -98,24 +115,15 @@ export function ImportResultForm({
         },
       );
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          message?: string;
-        } | null;
-        throw new Error(
-          body?.message ?? `Unable to record result (${response.status})`,
-        );
+        throw new Error(`Unable to record result (${response.status})`);
       }
-      setMessage(
-        "Operator result recorded. Independent verification remains unverified.",
-      );
+      setMessage("recorded");
       await onRecorded?.();
       keyRef.current = null;
       payloadRef.current = null;
     } catch (error) {
       setFailed(true);
-      setMessage(
-        error instanceof Error ? error.message : "Unable to record result",
-      );
+      setMessage(error instanceof Error ? error.message : "action_failed");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -128,28 +136,31 @@ export function ImportResultForm({
   return (
     <form
       className="result-form"
+      aria-busy={busy}
+      aria-describedby={message ? messageId : undefined}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
       }}
     >
       <label>
-        Outcome
+        {t("結果", "Outcome")}
         <select
           value={outcome}
           onChange={(event) =>
             setOutcome(event.target.value as "accepted" | "rejected")
           }
         >
-          <option value="accepted">Accepted</option>
-          <option value="rejected">Rejected</option>
+          <option value="accepted">{t("操作員回報接受", "Accepted")}</option>
+          <option value="rejected">{t("操作員回報拒絕", "Rejected")}</option>
         </select>
       </label>
       {outcome === "rejected" ? (
         <label>
-          Rejection reason
+          {t("拒絕原因", "Rejection reason")}
           <textarea
-            aria-label="Rejection reason"
+            aria-label={t("拒絕原因", "Rejection reason")}
+            aria-describedby={failed ? messageId : undefined}
             required
             value={rejectReason}
             onChange={(event) => setRejectReason(event.target.value)}
@@ -158,9 +169,10 @@ export function ImportResultForm({
       ) : null}
       {latestResult ? (
         <label>
-          Correction reason
+          {t("更正原因", "Correction reason")}
           <textarea
-            aria-label="Correction reason"
+            aria-label={t("更正原因", "Correction reason")}
+            aria-describedby={failed ? messageId : undefined}
             required
             value={correctionReason}
             onChange={(event) => setCorrectionReason(event.target.value)}
@@ -172,14 +184,24 @@ export function ImportResultForm({
         type="submit"
         disabled={busy || invalid}
       >
-        {latestResult ? "Record correction" : "Record operator result"}
+        {busy
+          ? t("正在記錄…", "Recording…")
+          : latestResult
+            ? t("記錄更正", "Record correction")
+            : t("記錄操作員結果", "Record operator result")}
       </button>
       {message ? (
         <p
+          id={messageId}
           className={failed ? "inline-warning" : "helper-copy"}
           role={failed ? "alert" : "status"}
         >
-          {message}
+          {failed
+            ? safeUiError(message, locale, "action")
+            : t(
+                "操作員結果已記錄，仍未經獨立核實。",
+                "Operator result recorded. Independent verification remains unverified.",
+              )}
         </p>
       ) : null}
     </form>

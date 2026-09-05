@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 
 import type { DeliveryModel } from "./listing-view-models";
 import { BulkExportPanel } from "./bulk-export-panel";
@@ -46,6 +48,8 @@ export function DeliveryPanel({
   onPublish,
   onResultRecorded,
 }: DeliveryPanelProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const connection = connectionCopy[model.connection];
   const [showHistorical, setShowHistorical] = useState(false);
   const imported = model.shoplineLink?.origin === "import";
@@ -64,18 +68,24 @@ export function DeliveryPanel({
     <section className="delivery-panel" aria-labelledby="delivery-heading">
       <div className="section-heading compact">
         <div>
-          <p className="eyebrow">
-            交付 <span>DELIVERY</span>
-          </p>
-          <h2 id="delivery-heading">上架方式</h2>
+          <p className="eyebrow">{t("交付", "Delivery")}</p>
+          <h2 id="delivery-heading">{t("上架方式", "Delivery methods")}</h2>
         </div>
         <span className={`connection-status ${connection.className}`}>
           <span aria-hidden="true" />
-          {connection.label}
-          <small>{connection.english}</small>
+          {t(connection.label, connection.english)}
         </span>
       </div>
-      <p className="panel-intro">{connection.detail}</p>
+      <p className="panel-intro">
+        {t(
+          connection.detail,
+          model.connection === "connected"
+            ? "The SHOPLINE connection is configured for delivery after approval."
+            : model.connection === "error"
+              ? "Connection validation failed. Check settings before retrying."
+              : "SHOPLINE is not connected. Create CSV remains a fallback for eligible listings.",
+        )}
+      </p>
       {supportsCreateDelivery ? (
         <div className="delivery-actions">
           <button
@@ -84,12 +94,9 @@ export function DeliveryPanel({
             onClick={onPublish}
             disabled={!canApiPublish}
           >
-            發布至 SHOPLINE{" "}
-            {model.shoplineLink ? (
-              <span>Update via API</span>
-            ) : (
-              <span>Create via API</span>
-            )}
+            {model.shoplineLink
+              ? t("透過 API 更新至 SHOPLINE", "Update via API")
+              : t("透過 API 建立至 SHOPLINE", "Create via API")}
           </button>
           <button
             className="secondary-button"
@@ -97,35 +104,35 @@ export function DeliveryPanel({
             onClick={onCsv}
             disabled={!csvEnabled}
           >
-            匯出 SHOPLINE CSV <span>Create CSV · CSV fallback</span>
+            {t("匯出 SHOPLINE 建立 CSV", "Create CSV · CSV fallback")}
           </button>
         </div>
       ) : null}
       {!approved ? (
         <p className="helper-copy">
-          批准版本後才能交付。{" "}
-          <span>Approval is required before delivery.</span>
+          {t("批准版本後才能交付。", "Approval is required before delivery.")}
         </p>
       ) : null}
       {!model.canReview ? (
         <p className="helper-copy">
-          需要審核員或管理員權限才能交付。{" "}
-          <span>Reviewer access required.</span>
+          {t("需要審核員或管理員權限才能交付。", "Reviewer access required.")}
         </p>
       ) : null}
       {canApiPublish ? (
         model.shoplineLink ? (
           <p className="helper-copy">
-            此操作將更新現有 SHOPLINE 商品{sku ? `「${sku}」` : ""}。{" "}
-            <span>
-              This will update the existing SHOPLINE product
-              {sku ? ` for ${sku}` : ""}.
-            </span>
+            {t(
+              "此操作將更新現有 SHOPLINE 商品",
+              "This will update the existing SHOPLINE product",
+            )}
+            {sku ? ` (${sku})` : ""}.
           </p>
         ) : (
           <p className="helper-copy">
-            此操作將建立新的 SHOPLINE 商品。{" "}
-            <span>This will create a new SHOPLINE product.</span>
+            {t(
+              "此操作將建立新的 SHOPLINE 商品。",
+              "This will create a new SHOPLINE product.",
+            )}
           </p>
         )
       ) : null}
@@ -137,8 +144,10 @@ export function DeliveryPanel({
       ) : null}
       {!imported && model.shoplineLink ? (
         <p className="helper-copy">
-          Created-origin listing: use Create CSV / API delivery actions. Bulk
-          Update XLSX requires an imported source row.
+          {t(
+            "此商品由系統建立，請使用建立 CSV 或 API 交付。批量更新 XLSX 需要匯入來源資料列。",
+            "Created-origin listing: use Create CSV / API delivery actions. Bulk Update XLSX requires an imported source row.",
+          )}
         </p>
       ) : null}
       {model.listingId && model.canRecordImportResult ? (
@@ -149,16 +158,18 @@ export function DeliveryPanel({
             aria-expanded={showHistorical}
             onClick={() => setShowHistorical((value) => !value)}
           >
-            Record unlinked historical result
+            {t("記錄未連結的歷史結果", "Record unlinked historical result")}
           </button>
           {showHistorical ? (
             <>
               <p className="helper-copy">
-                Manual historical report — unlinked. It cannot close an export
-                reconciliation total.
+                {t(
+                  "手動歷史回報 — 未連結，不能用作完成匯出結果對帳。",
+                  "Manual historical report — unlinked. It cannot close an export reconciliation total.",
+                )}
               </p>
               <ImportResultHistory
-                label="Manual correction history"
+                label={t("手動更正記錄", "Manual correction history")}
                 results={model.historicalImportResults ?? []}
               />
               <ImportResultForm
@@ -173,13 +184,14 @@ export function DeliveryPanel({
       ) : null}
       {model.remoteProductId ? (
         <p className="remote-link">
-          SHOPLINE product ID <code>{model.remoteProductId}</code>
+          {t("SHOPLINE 商品 ID", "SHOPLINE product ID")}{" "}
+          <code>{model.remoteProductId}</code>
         </p>
       ) : null}
       {model.remoteProductUrl ? (
         <p className="remote-link">
           <a href={model.remoteProductUrl} rel="noreferrer">
-            查看 SHOPLINE 商品 <span>View remote product</span> →
+            {t("查看 SHOPLINE 商品", "View remote product")} →
           </a>
         </p>
       ) : null}

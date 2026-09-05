@@ -387,10 +387,10 @@ describe("JobsLedgerClient", () => {
     expect(
       container.querySelector('[data-export-attempt-id="attempt-mixed"]'),
     ).not.toBeNull();
-    expect(container.textContent).toContain("Correction history");
+    expect(container.textContent).toContain("更正記錄");
     expect(container.textContent).toContain("Merchant retried");
-    expect(container.textContent).toContain("Rejection reason: Invalid");
-    expect(container.textContent).toContain("Accepted1");
-    expect(container.textContent).toContain("Rejected1");
+    expect(container.textContent).toContain("拒絕原因： Invalid");
+    expect(container.textContent).toContain("操作員回報接受1");
+    expect(container.textContent).toContain("操作員回報拒絕1");
   });
 });

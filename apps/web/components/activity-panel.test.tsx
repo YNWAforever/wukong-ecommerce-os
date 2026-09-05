@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ActivityPanel } from "./activity-panel";
 
@@ -75,7 +75,7 @@ describe("ActivityPanel", () => {
 
     const heading = container.querySelector('[role="heading"], h1, h2, h3');
     expect(heading).not.toBeNull();
-    expect(heading!.textContent).toMatch(/活動記錄|Activity/);
+    expect(heading!.textContent).toMatch(/此商品的完整記錄/);
 
     const items = container.querySelectorAll('[role="listitem"], li');
     expect(items.length).toBe(2);
@@ -115,7 +115,7 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(/已批准 Approved/);
+    expect(container.textContent).toMatch(/已批准/);
     expect(container.textContent).not.toContain("listing.approved");
 
     await unmount(root);
@@ -133,7 +133,7 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(/預算用盡 Budget exhausted/);
+    expect(container.textContent).toMatch(/預算用盡/);
     expect(container.textContent).not.toContain("budget_exhausted");
 
     await unmount(root);
@@ -150,15 +150,13 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(
-      /來源資料無效，未納入 Excluded, invalid source row/,
-    );
+    expect(container.textContent).toMatch(/來源資料無效，未納入/);
     expect(container.textContent).not.toContain("raw_row_invalid");
 
     await unmount(root);
   });
 
-  it("humanizes an unmapped audit action into readable prose instead of raw dots/underscores", async () => {
+  it("shows a safe localized label for an unmapped audit action", async () => {
     const entries: TestActivityEntry[] = [
       {
         kind: "audit",
@@ -170,7 +168,7 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toContain("some unknown action");
+    expect(container.textContent).toContain("其他活動記錄");
     expect(container.textContent).not.toContain("some.unknown.action");
     expect(container.textContent).not.toContain("_");
 
@@ -189,6 +187,9 @@ it("shows artifact failure separately from included membership", async () => {
       createdAt: "2026-09-05T00:00:00Z",
     },
   ]);
-  expect(container.textContent).toContain("file failed");
+  expect(container.textContent).toContain("失敗");
   await unmount(root);
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "zh-Hant" }));

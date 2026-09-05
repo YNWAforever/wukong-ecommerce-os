@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 
 import { useState } from "react";
 
@@ -25,6 +27,8 @@ export function ProductShotPanel({
   brandBackgroundColor,
   onChoiceChange,
 }: ProductShotPanelProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [choice, setChoice] = useState<BackgroundChoice>("white");
 
   const select = (next: BackgroundChoice) => {
@@ -39,19 +43,23 @@ export function ProductShotPanel({
     >
       <div className="section-heading">
         <div>
-          <p className="eyebrow">
-            商品照 <span>PRODUCT SHOT</span>
-          </p>
-          <h2 id="product-shot-heading">背景預覽</h2>
+          <p className="eyebrow">{t("商品照", "Product shot")}</p>
+          <h2 id="product-shot-heading">
+            {t("背景預覽", "Background preview")}
+          </h2>
         </div>
       </div>
       <div
         className="product-shot-preview"
         style={backgroundStyleFor(choice, brandBackgroundColor)}
       >
-        <img src={previewUrl} alt="商品照預覽" />
+        <img src={previewUrl} alt={t("商品照預覽", "Product shot preview")} />
       </div>
-      <div className="product-shot-toggle" role="group" aria-label="背景選擇">
+      <div
+        className="product-shot-toggle"
+        role="group"
+        aria-label={t("背景選擇", "Background choice")}
+      >
         <button
           type="button"
           className={
@@ -60,7 +68,7 @@ export function ProductShotPanel({
           aria-pressed={choice === "white"}
           onClick={() => select("white")}
         >
-          白底 White
+          {t("白底", "White")}
         </button>
         <button
           type="button"
@@ -70,12 +78,21 @@ export function ProductShotPanel({
           aria-pressed={choice === "brand"}
           disabled={!brandBackgroundColor}
           aria-label={
-            brandBackgroundColor ? undefined : "品牌背景 — 尚未設定品牌背景色"
+            brandBackgroundColor
+              ? undefined
+              : t(
+                  "品牌背景 — 尚未設定品牌背景色",
+                  "Brand background — brand color is not configured",
+                )
           }
-          title={brandBackgroundColor ? undefined : "尚未設定品牌背景色"}
+          title={
+            brandBackgroundColor
+              ? undefined
+              : t("尚未設定品牌背景色", "Brand color is not configured")
+          }
           onClick={() => select("brand")}
         >
-          品牌背景 Brand
+          {t("品牌背景", "Brand")}
         </button>
       </div>
     </section>

@@ -1737,3 +1737,21 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* Listing review grids must allow long source/version IDs to wrap at 375px. */
+.review-content,
+.review-layout > *,
+.field-control,
+.bulk-export-panel,
+.reconciliation-panel,
+.result-form,
+.result-form label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.review-page input,
+.review-page textarea,
+.result-form select {
+  min-width: 0;
+  max-width: 100%;
+}

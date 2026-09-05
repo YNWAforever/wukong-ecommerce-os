@@ -61,7 +61,7 @@ it("renders stable attempt/member selectors, counts, and ready-only download", (
   expect(markup).toContain('data-export-attempt-id="attempt-1"');
   expect(markup).toContain('data-listing-id="listing-a"');
   expect(markup).toContain("Unreported");
-  expect(markup).toContain("No content change");
+  expect(markup).toContain("No enrichable fields changed");
   expect(markup).toContain("/api/listings/export/attempt-1/download");
   expect(markup).toContain("Verification: Unverified");
   const rejected = {
@@ -210,7 +210,7 @@ it("reuses the idempotency key when an ambiguous result submission is retried", 
     await Promise.resolve();
   });
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "connection lost after submit",
+    "The action could not be completed. Please retry.",
   );
   await act(async () => {
     button.click();
@@ -229,3 +229,6 @@ it("reuses the idempotency key when an ambiguous result submission is retried", 
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));

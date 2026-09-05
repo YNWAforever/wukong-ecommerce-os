@@ -99,12 +99,14 @@ it("keeps exact mixed zero-row counts and member context bound to the submitted 
   expect(summary.textContent).toContain("No-op: 1");
   expect(summary.textContent).toContain("listing-no-op");
   expect(summary.textContent).toContain("version-no-op");
-  expect(summary.textContent).toContain("excluded_no_op");
+  expect(summary.textContent).toContain("Excluded, no changes");
   expect(summary.textContent).toContain("No enrichable fields changed");
   expect(summary.textContent).toContain("listing-stale");
   expect(summary.textContent).toContain("version-stale");
-  expect(summary.textContent).toContain("excluded_stale");
-  expect(summary.textContent).toContain("Imported source is stale");
+  expect(summary.textContent).toContain("Excluded, stale source");
+  expect(summary.textContent).toContain(
+    "Source and review evidence need to be checked again",
+  );
 
   await act(async () =>
     root.render(
@@ -174,7 +176,7 @@ it("gates generation on permission and explicit freshness, then preserves submit
       }),
     }),
   );
-  expect(container.textContent).toContain("No changes");
+  expect(container.textContent).toContain("No enrichable fields changed");
   expect(container.textContent).toContain("No artifact was created");
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
@@ -285,7 +287,7 @@ it("keeps a POST-created attempt visible and retries only its detail lookup", as
     await Promise.resolve();
   });
   expect(container.textContent).toContain("attempt-stable");
-  expect(container.textContent).toContain("pending");
+  expect(container.textContent).toContain("Pending");
   const retry = Array.from(container.querySelectorAll("button")).find(
     (button) => button.textContent?.includes("Retry attempt details"),
   )!;
@@ -343,9 +345,12 @@ it("shows the stable attempt carried by an artifact error response", async () =>
   expect(
     container.querySelector('[data-export-attempt-id="attempt-failed"]'),
   ).not.toBeNull();
-  expect(container.textContent).toContain("Artifact status: failed");
+  expect(container.textContent).toContain("Artifact status: Failed");
   expect(container.textContent).toContain("Retry attempt details");
   await act(async () => root.unmount());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));

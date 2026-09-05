@@ -66,6 +66,9 @@ export function safeUiError(
       : commonCopy[locale].readError;
 }
 const states: Record<string, readonly [string, string]> = {
+  open: ["開放中", "Open"],
+  completed: ["已完成", "Completed"],
+  budget_exhausted: ["預算用盡", "Budget exhausted"],
   received: ["已接收", "Received"],
   processing: ["處理中", "Processing"],
   needs_info: ["需要資料", "Needs information"],

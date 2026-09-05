@@ -1,4 +1,12 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  formatHkDate,
+  formatNumber,
+  stateLabel,
+} from "../lib/ui-copy";
+import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
 
 import { useState } from "react";
 import {
@@ -48,6 +56,8 @@ export function ExportReconciliationPanel({
 }: {
   detail: WireExportReconciliationDetail;
 }) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [detail, setDetail] = useState(initialDetail);
   async function reload() {
     const response = await fetch(`/api/listings/export/${detail.attempt.id}`, {
@@ -65,60 +75,73 @@ export function ExportReconciliationPanel({
       data-export-attempt-id={attempt.id}
     >
       <div className="jobs-row-header">
-        <h3>Bulk Update XLSX reconciliation</h3>
+        <h3>
+          {t("批量更新 XLSX 結果對帳", "Bulk Update XLSX reconciliation")}
+        </h3>
         <span
           className={`connection-status status-${ready ? "succeeded" : attempt.artifactStatus === "failed" ? "failed" : "pending"}`}
         >
-          {attempt.artifactStatus ?? "historical"}
+          {attempt.artifactStatus
+            ? stateLabel(attempt.artifactStatus, locale)
+            : t("歷史記錄", "Historical")}
         </span>
       </div>
       <p className="jobs-row-meta">
-        Attempt <code>{attempt.id}</code> · Spec {attempt.specVersion}
+        {t("匯出記錄", "Attempt")} <code>{attempt.id}</code> ·{" "}
+        {t("格式版本", "Spec")} {attempt.specVersion} ·{" "}
+        <time dateTime={attempt.createdAt}>
+          {formatHkDate(attempt.createdAt, locale)}
+        </time>
       </p>
       <dl className="reconciliation-counts">
         <div>
-          <dt>Requested</dt>
-          <dd>{reconciliation.counts.requested}</dd>
+          <dt>{t("要求", "Requested")}</dt>
+          <dd>{formatNumber(reconciliation.counts.requested, locale)}</dd>
         </div>
         <div>
-          <dt>Included</dt>
-          <dd>{reconciliation.counts.included}</dd>
+          <dt>{t("納入", "Included")}</dt>
+          <dd>{formatNumber(reconciliation.counts.included, locale)}</dd>
         </div>
         <div>
-          <dt>Excluded</dt>
-          <dd>{reconciliation.counts.excluded}</dd>
+          <dt>{t("排除", "Excluded")}</dt>
+          <dd>{formatNumber(reconciliation.counts.excluded, locale)}</dd>
         </div>
         <div>
-          <dt>No-op</dt>
-          <dd>{reconciliation.counts.noOp}</dd>
+          <dt>{t("無變更", "No-op")}</dt>
+          <dd>{formatNumber(reconciliation.counts.noOp, locale)}</dd>
         </div>
         <div>
-          <dt>Accepted</dt>
-          <dd>{reconciliation.counts.accepted}</dd>
+          <dt>{t("操作員回報接受", "Accepted")}</dt>
+          <dd>{formatNumber(reconciliation.counts.accepted, locale)}</dd>
         </div>
         <div>
-          <dt>Rejected</dt>
-          <dd>{reconciliation.counts.rejected}</dd>
+          <dt>{t("操作員回報拒絕", "Rejected")}</dt>
+          <dd>{formatNumber(reconciliation.counts.rejected, locale)}</dd>
         </div>
         <div>
-          <dt>Unreported</dt>
-          <dd>{reconciliation.counts.unreported}</dd>
+          <dt>{t("未回報", "Unreported")}</dt>
+          <dd>{formatNumber(reconciliation.counts.unreported, locale)}</dd>
         </div>
       </dl>
       <p className="helper-copy">
-        Verification: Unverified — operator reports do not verify against a
-        fresh SHOPLINE export.
+        {t(
+          "驗證：未獨立核實 — 操作員回報並未與最新 SHOPLINE 匯出資料核對。",
+          "Verification: Unverified — operator reports do not verify against a fresh SHOPLINE export.",
+        )}
       </p>
       {ready ? (
         <a
           className="secondary-button"
           href={`/api/listings/export/${attempt.id}/download`}
         >
-          Download Bulk Update XLSX
+          {t("下載批量更新 XLSX", "Download Bulk Update XLSX")}
         </a>
       ) : (
         <p className="helper-copy">
-          Artifact is not ready. Download and reporting are unavailable.
+          {t(
+            "檔案尚未準備好，無法下載或回報結果。",
+            "Artifact is not ready. Download and reporting are unavailable.",
+          )}
         </p>
       )}
       <ul className="reconciliation-members">
@@ -126,28 +149,34 @@ export function ExportReconciliationPanel({
           <li key={member.listingId} data-listing-id={member.listingId}>
             <p>
               <strong>{member.listingId}</strong> ·{" "}
-              {member.versionId ?? "No version"} · {member.outcome}
+              {member.versionId ?? t("未有版本", "No version")} ·{" "}
+              {outcomeLabel(member.outcome, locale)}
             </p>
             {member.reason ? (
-              <p className="helper-copy">{member.reason}</p>
+              <p className="helper-copy">
+                {manifestReasonLabel(member.reason, member.outcome, locale)}
+              </p>
             ) : null}
             {member.latestResult ? (
               <div>
                 <p>
-                  Operator reported {member.latestResult.outcome} · revision{" "}
-                  {member.latestResult.revision}
+                  {t("操作員回報", "Operator reported")}{" "}
+                  {stateLabel(member.latestResult.outcome, locale)} ·{" "}
+                  {t("修訂", "revision")}{" "}
+                  {formatNumber(member.latestResult.revision, locale)}
                 </p>
                 {member.latestResult.rejectReason ? (
                   <p className="helper-copy">
-                    Rejection reason: {member.latestResult.rejectReason}
+                    {t("拒絕原因：", "Rejection reason:")}{" "}
+                    {member.latestResult.rejectReason}
                   </p>
                 ) : null}
               </div>
             ) : member.outcome === "included" ? (
-              <p>Unreported</p>
+              <p>{t("未回報", "Unreported")}</p>
             ) : null}
             <ImportResultHistory
-              label="Correction history"
+              label={t("更正記錄", "Correction history")}
               results={member.history}
             />
             {ready &&

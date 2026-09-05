@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DeliveryPanel, type DeliveryModel } from "./delivery-panel";
 import { ImportResultHistory } from "./import-result-form";
@@ -17,9 +17,9 @@ describe("DeliveryPanel", () => {
     };
     const markup = renderToStaticMarkup(<DeliveryPanel model={model} />);
 
-    expect(markup).toContain("未連接");
+    expect(markup).toContain("Not connected");
     expect(markup).toContain("CSV fallback");
-    expect(markup).toContain("匯出 SHOPLINE CSV");
+    expect(markup).toContain("Create CSV");
     expect(markup).not.toContain("連接 SHOPLINE");
     expect(markup).not.toContain("remote.example");
   });
@@ -50,9 +50,9 @@ describe("DeliveryPanel", () => {
     };
     const markup = renderToStaticMarkup(<DeliveryPanel model={model} />);
 
-    expect(markup).toContain("已連接");
-    expect(markup).toContain("發布至 SHOPLINE");
-    expect(markup).toContain("匯出 SHOPLINE CSV");
+    expect(markup).toContain("Connected");
+    expect(markup).toContain("Create via API");
+    expect(markup).toContain("Create CSV");
     expect(markup).toContain("Create via API");
     expect(markup).toContain("Create CSV");
     expect(markup).not.toContain('disabled=""');
@@ -71,9 +71,11 @@ describe("DeliveryPanel", () => {
       <DeliveryPanel model={model} sku={null} />,
     );
 
-    expect(markup).toContain("此操作將建立新的 SHOPLINE 商品");
     expect(markup).toContain("This will create a new SHOPLINE product");
-    expect(markup).not.toContain("此操作將更新現有 SHOPLINE 商品");
+    expect(markup).toContain("This will create a new SHOPLINE product");
+    expect(markup).not.toContain(
+      "This will update the existing SHOPLINE product",
+    );
   });
 
   it("shows an update message naming the listing's sku when shoplineLink is present", () => {
@@ -90,12 +92,12 @@ describe("DeliveryPanel", () => {
     );
 
     expect(markup).toContain(
-      "此操作將更新現有 SHOPLINE 商品「OPAK-2024-RIES」",
+      "This will update the existing SHOPLINE product (OPAK-2024-RIES)",
     );
     expect(markup).toContain(
-      "This will update the existing SHOPLINE product for OPAK-2024-RIES",
+      "This will update the existing SHOPLINE product (OPAK-2024-RIES)",
     );
-    expect(markup).not.toContain("此操作將建立新的 SHOPLINE 商品");
+    expect(markup).not.toContain("This will create a new SHOPLINE product");
   });
   it("separates imported Bulk Update from created-origin Create CSV and API delivery", () => {
     const imported = renderToStaticMarkup(
@@ -115,8 +117,8 @@ describe("DeliveryPanel", () => {
       />,
     );
     expect(imported).toContain("Generate Bulk Update XLSX");
-    expect(imported).not.toContain("發布至 SHOPLINE");
-    expect(imported).not.toContain("匯出 SHOPLINE CSV");
+    expect(imported).not.toContain("Create via API");
+    expect(imported).not.toContain("Create CSV");
     expect(imported).not.toContain("Create via API");
     expect(imported).not.toContain("Create CSV");
     expect(imported).toContain("Record unlinked historical result");
@@ -159,3 +161,6 @@ describe("DeliveryPanel", () => {
     expect(markup).toContain("Correction reason: Corrected prior report");
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));

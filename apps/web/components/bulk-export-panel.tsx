@@ -1,6 +1,15 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  commonCopy,
+  formatNumber,
+  stateLabel,
+  safeUiError,
+} from "../lib/ui-copy";
+import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   ExportReconciliationPanel,
   type WireExportReconciliationDetail,
@@ -44,6 +53,9 @@ export function BulkExportPanel({
   listingIds: readonly string[];
   canGenerate: boolean;
 }) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
+  const errorId = useId();
   const currentSelection = useMemo(
     () => selectionIdentity(listingIds),
     [listingIds],
@@ -113,9 +125,7 @@ export function BulkExportPanel({
           await loadDetail(body.exportAttemptId);
           return;
         }
-        throw new Error(
-          body.message ?? `Unable to generate export (${response.status})`,
-        );
+        throw new Error(`Unable to generate export (${response.status})`);
       }
       if (body.exportAttemptId) {
         setResult(body);
@@ -157,10 +167,14 @@ export function BulkExportPanel({
     : 0;
 
   return (
-    <section className="bulk-export-panel" aria-label="Bulk Update XLSX export">
+    <section
+      className="bulk-export-panel"
+      aria-label={t("批量更新 XLSX 匯出", "Bulk Update XLSX export")}
+      aria-busy={busy || detailBusy}
+    >
       <p>
-        <strong>{listingIds.length}</strong> listing(s) selected for this
-        export.
+        <strong>{formatNumber(listingIds.length, locale)}</strong>{" "}
+        {t("項商品已選取作本次匯出。", "listing(s) selected for this export.")}
       </p>
       <label className="freshness-attestation">
         <input
@@ -170,22 +184,34 @@ export function BulkExportPanel({
             setAttestedSelection(event.target.checked ? currentSelection : null)
           }
         />{" "}
-        I confirm this SHOPLINE source export is still current.
+        {t(
+          "我確認此 SHOPLINE 來源匯出仍為最新版本。",
+          "I confirm this SHOPLINE source export is still current.",
+        )}
       </label>
       <button
         className="primary-button"
         type="button"
         disabled={!canGenerate || !attested || listingIds.length === 0 || busy}
+        aria-describedby={error ? errorId : undefined}
         onClick={() => void generate()}
       >
-        Generate Bulk Update XLSX
+        {busy
+          ? t("正在產生…", "Generating…")
+          : t("產生批量更新 XLSX", "Generate Bulk Update XLSX")}
       </button>
       {!canGenerate ? (
-        <p className="helper-copy">Reviewer access required.</p>
+        <p className="helper-copy">
+          {t("需要審核員權限。", "Reviewer access required.")}
+        </p>
       ) : null}
       {error ? (
-        <p className="inline-warning" role="alert">
-          {error}
+        <p className="inline-warning" role="alert" id={errorId}>
+          {safeUiError(
+            error,
+            locale,
+            result?.exportAttemptId ? "read" : "action",
+          )}
         </p>
       ) : null}
       {result?.exportAttemptId && !detail ? (
@@ -193,40 +219,57 @@ export function BulkExportPanel({
           className="reconciliation-panel"
           data-export-attempt-id={result.exportAttemptId}
         >
-          <h3>Bulk Update XLSX export attempt</h3>
+          <h3>
+            {t("批量更新 XLSX 匯出記錄", "Bulk Update XLSX export attempt")}
+          </h3>
           <p className="jobs-row-meta">
-            Attempt <code>{result.exportAttemptId}</code>
+            {t("匯出記錄", "Attempt")} <code>{result.exportAttemptId}</code>
           </p>
-          <p>Artifact status: {result.artifactStatus ?? "pending"}</p>
+          <p>
+            {t("檔案狀態：", "Artifact status:")}{" "}
+            {stateLabel(result.artifactStatus ?? "pending", locale)}
+          </p>
           <button
             className="secondary-button"
             type="button"
             disabled={detailBusy}
             onClick={() => void loadDetail(result.exportAttemptId!)}
           >
-            Retry attempt details
+            {detailBusy
+              ? commonCopy[locale].loading
+              : t("重試載入匯出記錄", "Retry attempt details")}
           </button>
         </article>
       ) : null}
       {completedZeroRow && completedCounts ? (
         <div className="manifest-summary" data-zero-row-export-summary>
-          <h3>Bulk Update XLSX export completed</h3>
+          <h3>
+            {t("批量更新 XLSX 匯出已完成", "Bulk Update XLSX export completed")}
+          </h3>
           <p>
-            No artifact was created because every requested listing was excluded
-            or unchanged.
+            {t(
+              "所有選取商品均被排除或沒有變更，因此未建立檔案。",
+              "No artifact was created because every requested listing was excluded or unchanged.",
+            )}
           </p>
           <p>
-            Requested: {completedCounts.requested} · Included:{" "}
-            {completedCounts.included} · Excluded: {excludedCount} · No-op:{" "}
-            {completedCounts.noOp}
+            {t("要求", "Requested")}:{" "}
+            {formatNumber(completedCounts.requested, locale)} ·{" "}
+            {t("納入", "Included")}:{" "}
+            {formatNumber(completedCounts.included, locale)} ·{" "}
+            {t("排除", "Excluded")}: {formatNumber(excludedCount, locale)} ·{" "}
+            {t("無變更", "No-op")}: {formatNumber(completedCounts.noOp, locale)}
           </p>
           <ul>
             {completedZeroRow.manifest.map((item) => (
               <li key={item.listingId} data-listing-id={item.listingId}>
-                Listing <code>{item.listingId}</code> · Version{" "}
-                <code>{item.versionId ?? "not available"}</code> · Outcome{" "}
-                <code>{item.outcome}</code> · Reason{" "}
-                {item.reason ?? "No reason provided"}
+                {t("商品", "Listing")} <code>{item.listingId}</code> ·{" "}
+                {t("版本", "Version")}{" "}
+                <code>{item.versionId ?? commonCopy[locale].unavailable}</code>{" "}
+                · {t("結果", "Outcome")}{" "}
+                <code>{outcomeLabel(item.outcome, locale)}</code> ·{" "}
+                {t("原因", "Reason")}{" "}
+                {manifestReasonLabel(item.reason, item.outcome, locale)}
               </li>
             ))}
           </ul>

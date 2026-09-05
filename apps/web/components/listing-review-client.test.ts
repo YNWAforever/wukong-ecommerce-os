@@ -364,7 +364,7 @@ describe("ListingReviewClient processing orchestration", () => {
     });
     expect(container.querySelector(".success-note")).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "imperative refresh failed",
+      "The action could not be completed. Please retry.",
     );
     expect(container.textContent).toContain("AI processing");
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
@@ -384,7 +384,7 @@ describe("ListingReviewClient processing orchestration", () => {
         .click();
     });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "current refresh failed",
+      "The action could not be completed. Please retry.",
     );
     expect(container.querySelector(".success-note")).toBeNull();
   });
@@ -403,8 +403,8 @@ describe("ListingReviewClient processing orchestration", () => {
   });
 
   it.each([
-    ["queued", "已加入處理佇列 · Queued for processing", false],
-    ["retry_required", "尚未開始處理 · Processing not started", true],
+    ["queued", "Queued for processing", false],
+    ["retry_required", "Processing not started", true],
   ] as const)(
     "binds initial %s state to the processing panel",
     async (initialProcessing, copy, hasStartButton) => {
@@ -456,9 +456,7 @@ describe("ListingReviewClient processing orchestration", () => {
       "/api/listings/00000000-0000-4000-8000-000000000101",
       expect.objectContaining({ cache: "no-store" }),
     );
-    expect(container.textContent).toContain(
-      "AI 正在建立商品資料 · AI processing",
-    );
+    expect(container.textContent).toContain("AI processing");
     expect(container.textContent).not.toContain("Start processing");
   });
 
@@ -522,7 +520,9 @@ describe("ListingReviewClient processing orchestration", () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("temporary network failure");
+    expect(container.textContent).toContain(
+      "Unable to load data. Please retry.",
+    );
 
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
     expect(fetcher).toHaveBeenCalledTimes(3);
@@ -530,3 +530,6 @@ describe("ListingReviewClient processing orchestration", () => {
     expect(container.textContent).toContain("AI processing");
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
