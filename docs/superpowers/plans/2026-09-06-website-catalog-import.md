@@ -16,7 +16,7 @@
 - Retain at most 20 canonical unique product URLs; five discovery documents; minimum one-second request interval; at most three redirects per request; 2 MiB decompressed HTML; 1 MiB sitemap/robots documents; ten-second total deadline per document including redirects/DNS/body.
 - No full-store scan, recurring synchronization, browser bypass, paid extraction/AI, real workbook upload, merchant seed, production migration/environment change/deployment or SHOPLINE write.
 - Local schema additions and synthetic migration/integration tests are authorized. Production rollout is separate.
-- Only operator/admin/owner may scan/save. Session supplies workspace ID. Server actions and RLS enforce isolation; every persistent domain mutation has a transactional audit event.
+- Operator-or-higher may scan/save, preserving the existing role hierarchy (operator, reviewer, admin, owner). Session supplies workspace ID. Server actions and RLS enforce isolation; every persistent domain mutation has a transactional audit event.
 - Website records never acquire connectionId, remoteProductId, sourceImportId, approval or export-ready state by inference.
 - Existing runtime is retained; do not add another hosted service or provision a new queue. Extend the existing listing queue with a strict website-message variant while preserving its legacy listing payload.
 - No automatic publication at completion. Record actual checks and unresolved live compatibility; retain the worktree for review.
@@ -223,7 +223,7 @@ export const websiteDocumentRequestSchema = websiteJobSchema
 // POST /api/website-scans/:id/save: {keys: string[]}.
 ```
 
-- [ ] Write failing route tests proving scan/save work without a connection or encryption key and reject unauthenticated/insufficient-role/cross-workspace access, invalid body, oversize body and unsupported URL. Require operator using existing role helper; do not assume reviewer meets operator in the role hierarchy without checking.
+- [ ] Write failing route tests proving scan/save work without a connection or encryption key and reject unauthenticated/insufficient-role/cross-workspace access, invalid body, oversize body and unsupported URL. Require operator using the existing role helper; active source confirms reviewer inherits operator capability. Deny viewer and cover every role in the test matrix.
 - [ ] Write consumer tests for legacy listing payload compatibility, website dispatch, duplicate delivery, notBefore delay, lease expiry, three-attempt exhaustion, lost-next-enqueue recovery and no AI/SHOPLINE invocation. Reuse listing queue with a strict discriminator only for the new variant; malformed website payload must never fall through into AI listing processing.
 - [ ] Internal Node route sets `runtime = 'nodejs'`. Enforce POST, JSON, maximum 4 KiB body, exact HMAC path/timestamp/body and active workspace/scan/revision/lease match before calling transport. Return only bounded parsed observation/discovery results, not raw HTML or secret diagnostics. Persist/cache a completed step result so replay of an identical signed callback cannot repeatedly scrape a page. Do not extend the internal HMAC privilege to any public route.
 - [ ] Worker callback uses only a configured trusted `WEBSITE_FETCH_BASE_URL`, with no redirects and no propagation of its HMAC headers to scraped sites. Missing configuration yields an actionable scan-unavailable error. Add the setting as optional so existing runtime checks do not break when website scanning is unused. Never derive callback origin from the submitted storefront URL or HTTP Host header.
@@ -264,7 +264,7 @@ export type WebsiteCatalogItem = {
 
 **Files:** create `apps/web/components/website-import-panel.tsx`, `website-import-panel.test.tsx`; modify `listing-intake-tabs.tsx`, `listing-intake-tabs.test.tsx`, `apps/web/app/(app)/listings/import/page.tsx`, `apps/web/app/globals.css`; create `tests/e2e/website-import.spec.ts`; modify `tests/e2e/real-stack-fixture.ts` and managed local server binding only where needed to inject synthetic fetch; update `CONTEXT.md`, `docs/runbooks/shopline-pilot-onboarding.md`, results file.
 
-- [ ] Write RED rendered test: no token/key/connection, type URL, start, poll, inspect 20-product-limit label, select a product and save. Add viewer/reviewer guidance, expired session, queued/running/partial/failed states, invalid URL, retry and stale response tests. Product description must display as text even when the fixture includes scripts.
+- [ ] Write RED rendered test: no token/key/connection, type URL, start, poll, inspect 20-product-limit label, select a product and save. Add viewer guidance, reviewer capability coverage, expired session, queued/running/partial/failed states, invalid URL, retry and stale response tests. Product description must display as text even when the fixture includes scripts.
 
 ```ts
 await user.type(screen.getByLabelText("Website URL"), "https://store.example/");
