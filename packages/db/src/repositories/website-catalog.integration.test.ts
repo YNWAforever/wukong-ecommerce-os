@@ -606,6 +606,18 @@ it("expires at fifteen minutes and exposes only bounded sweeper identities", asy
     ),
   ).toBeNull();
   expect((await run((r) => r.getScan(scan.id)))?.state).toBe("failed");
+  // Older scans may belong to previous runs or other suites. They must not
+  // prevent us from proving this scan is eligible without expecting top-ten inclusion.
+  for (let index = 0; index < 11; index++) {
+    await run((r) =>
+      r.createScan({
+        url: "https://store.example/",
+        requestedBy: ws + "op",
+        requestKey: randomUUID(),
+        now: new Date("2010-01-01T00:00:00Z"),
+      }),
+    );
+  }
   const due = await run((r) =>
     r.createScan({
       url: "https://store.example/",
@@ -615,8 +627,21 @@ it("expires at fifteen minutes and exposes only bounded sweeper identities", asy
     }),
   );
   const rows = await db.findStuckWebsiteScans({ maxRows: 10 });
-  expect(rows.length).toBeLessThanOrEqual(10);
-  expect(rows).toContainEqual({ workspaceId: ws, scanId: due.id, revision: 0 });
+  expect(rows).toHaveLength(10);
+  // Compare the global oldest batch separately from this workspace's eligibility.
+  const expected = await admin`
+    select workspace_id as "workspaceId", id as "scanId", revision
+    from website_scans
+    where state in ('queued','running')
+      and (deadline_at <= now() or (
+        next_eligible_at <= now()
+        and (lease_expires_at is null or lease_expires_at <= now())
+        and (dispatch_at is null or dispatch_at <= now() - interval '60 seconds')
+      ))
+    order by least(next_eligible_at,deadline_at),id
+    limit 10
+  `;
+  expect(rows).toEqual([...expected]);
   for (const row of rows)
     expect(Object.keys(row).sort()).toEqual([
       "revision",
@@ -631,9 +656,9 @@ it("expires at fifteen minutes and exposes only bounded sweeper identities", asy
     app_access: true,
   });
   expect(
-    (await run((r) => r.listDispatchable({ now, limit: 100 }))).some(
-      (r) => r.id === due.id,
-    ),
+    (
+      await run((r) => r.listDispatchable({ now: new Date(), limit: 100 }))
+    ).some((r) => r.id === due.id),
   ).toBe(true);
 });
 
