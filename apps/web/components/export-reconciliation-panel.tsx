@@ -1,4 +1,5 @@
 "use client";
+import { FreshExportVerificationPanel } from "./fresh-export-verification-panel";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -280,6 +281,9 @@ export function ExportReconciliationPanel({
           </li>
         ))}
       </ul>
+      {ready && capabilities.canGenerateBulkUpdate ? (
+        <FreshExportVerificationPanel key={attempt.id} attemptId={attempt.id} />
+      ) : null}
     </article>
   );
 }

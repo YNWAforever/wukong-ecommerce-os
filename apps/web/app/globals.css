@@ -1755,3 +1755,44 @@ button:disabled {
   min-width: 0;
   max-width: 100%;
 }
+
+.fresh-export-panel {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fresh-export-panel fieldset {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+  margin: 1rem 0;
+  min-width: 0;
+}
+.fresh-export-panel label:not(.checkbox-label) {
+  display: grid;
+  gap: 0.5rem;
+}
+.fresh-export-panel input:not([type="checkbox"]) {
+  width: 100%;
+  max-width: 32rem;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.fresh-export-panel button {
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.fresh-export-panel details {
+  margin: 0.75rem 0;
+}
+.fresh-export-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 28rem;
+  overflow: auto;
+  font-size: 0.8rem;
+}

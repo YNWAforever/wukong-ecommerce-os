@@ -536,11 +536,159 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ).history,
   ).toHaveLength(2);
 
+  // Compare supplied snapshots through the real browser form and immutable API.
+  const comparisonPath = `/api/listings/export/${attemptId}/verifications`;
+  const compare = ledgerAttempt.getByRole("region", {
+    name: "Fresh export comparison",
+  });
+  await compare
+    .getByRole("button", { name: "Compare fresh export", exact: true })
+    .click();
+  const compareFile = compare.getByLabel("Fresh SHOPLINE XLSX", {
+    exact: true,
+  });
+  const compareTime = compare.getByLabel(
+    "SHOPLINE export time (Hong Kong UTC+08:00)",
+    { exact: true },
+  );
+  const snapshotTime = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19);
+  const snapshotSheet = sheet.map((row) => row.map((cell) => cell ?? ""));
+  const matchingBytes = Buffer.from(
+    writeBulkFormWorkbook([
+      ...snapshotSheet.slice(0, 2),
+      ...snapshotSheet.slice(2).reverse(),
+    ]),
+  );
+  await compareFile.setInputFiles({
+    name: "matching-snapshot.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: matchingBytes,
+  });
+  await compareTime.fill(snapshotTime);
+  await compare
+    .getByLabel("I confirm this snapshot is from the same SHOPLINE store.", {
+      exact: true,
+    })
+    .check();
+  const compareSubmit = compare.getByRole("button", {
+    name: "Record snapshot comparison",
+    exact: true,
+  });
+  const matchesResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === comparisonPath &&
+      r.request().method() === "POST",
+  );
+  await compareSubmit.click();
+  const matches = await matchesResponse;
+  expect(matches.status()).toBe(201);
+  const matchingRecord = (await matches.json()).verification;
+  expect(matchingRecord.comparison).toMatchObject({
+    outcome: "matches_compared_fields",
+    counts: { expected: 2, matched: 2, differences: 0, missing: 0 },
+  });
+  expect(
+    matchingRecord.comparison.products.every(
+      (p: { fields: unknown[]; quantityDeltaObservations: unknown[] }) =>
+        p.fields.length === 69 && p.quantityDeltaObservations.length === 2,
+    ),
+  ).toBe(true);
+  const params = new URL(matches.request().url()).searchParams;
+  expect(params.get("sameStoreAttested")).toBe("true");
+  expect(params.get("merchantAttestedExportAt")).toBe(
+    new Date(snapshotTime + "+08:00").toISOString(),
+  );
+  const changedRow = [...snapshotSheet[2]!];
+  changedRow[skuIndex] = "observed-protected-sku";
+  const changedBytes = Buffer.from(
+    writeBulkFormWorkbook([...snapshotSheet.slice(0, 2), changedRow]),
+  );
+  await compareFile.setInputFiles({
+    name: "changed-missing.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: changedBytes,
+  });
+  let committedComparison: { id: string } | undefined;
+  await page.route(
+    "**" + comparisonPath + "?**",
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedComparison = (await response.json()).verification;
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await compareSubmit.click();
+  await expect(compare.getByRole("alert")).toContainText("Inputs are retained");
+  await expect(compareTime).toHaveValue(snapshotTime);
+  expect(
+    await compareFile.evaluate((e: HTMLInputElement) => e.files?.[0]?.name),
+  ).toBe("changed-missing.xlsx");
+  const comparisonRetry = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === comparisonPath &&
+      r.request().method() === "POST",
+  );
+  await compareSubmit.click();
+  const retriedComparison = await comparisonRetry;
+  expect(retriedComparison.status()).toBe(200);
+  const retriedBody = await retriedComparison.json();
+  expect(retriedBody).toMatchObject({
+    replayed: true,
+    verification: { id: committedComparison!.id },
+  });
+  expect(retriedBody.verification.comparison).toMatchObject({
+    outcome: "inconclusive",
+    counts: { expected: 2, differences: 1, missing: 1 },
+  });
+  const differentProduct = retriedBody.verification.comparison.products.find(
+    (p: { outcome: string }) => p.outcome === "differences",
+  );
+  expect(
+    differentProduct.fields.find((f: { column: string }) => f.column === "sku"),
+  ).toMatchObject({
+    category: "protected",
+    expected: sheet[2]![skuIndex],
+    observed: "observed-protected-sku",
+    different: true,
+  });
+  await page.reload();
+  await compare
+    .getByRole("button", { name: "Compare fresh export", exact: true })
+    .click();
+  await expect(compare).toContainText("per page; total 2");
+  await compare.getByRole("button", { name: /changed-missing.xlsx/ }).click();
+  await expect(
+    compare.locator(`[data-verification-id="${committedComparison!.id}"]`),
+  ).toBeVisible();
+  const retainedHistory = await (
+    await page.request.get(comparisonPath + "?page=1&pageSize=10")
+  ).json();
+  expect(retainedHistory.total).toBe(2);
+  const afterComparison = await (
+    await page.request.get("/api/listings/export/" + attemptId)
+  ).json();
+  expect(afterComparison.reconciliation.counts).toEqual(
+    detail.reconciliation.counts,
+  );
+  expect(afterComparison.reconciliation.verificationStatus).toBe("unverified");
   const evidenceDb = postgres(ADMIN_URL, { max: 1, prepare: false });
   try {
     const [audit] =
       await evidenceDb`SELECT count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='listing.shopline_import_result_recorded'`;
     expect(audit!.count).toBe(3);
+    const [comparisonAudit] =
+      await evidenceDb`SELECT count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='shopline.export_snapshot_compared'`;
+    expect(comparisonAudit!.count).toBe(2);
     const [publishes] =
       await evidenceDb`SELECT count(*)::int AS count FROM publish_jobs WHERE workspace_id=${operator.workspaceId}`;
     expect(publishes!.count).toBe(0);

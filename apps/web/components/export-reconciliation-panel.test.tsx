@@ -649,3 +649,28 @@ it("orders overlapping local metadata reads without discarding newer receipts in
     await view.close();
   }
 });
+
+it("only exposes fresh comparison for ready reviewer-capable attempts", () => {
+  const render = (value: WireExportReconciliationDetail) =>
+    renderToStaticMarkup(
+      createElement(ExportReconciliationPanel, { detail: value }),
+    );
+  expect(render(detail)).toContain("Compare fresh export");
+  expect(
+    render({
+      ...detail,
+      capabilities: {
+        ...detail.capabilities,
+        canGenerateBulkUpdate: false,
+        canRecordImportResult: true,
+      },
+    }),
+  ).not.toContain("Compare fresh export");
+  expect(
+    render({
+      ...detail,
+      attempt: { ...detail.attempt, artifactStatus: "pending" },
+    }),
+  ).not.toContain("Compare fresh export");
+  expect(render(detail)).not.toMatch(/<form[^>]*>[^]*<form/);
+});
