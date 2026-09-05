@@ -854,3 +854,114 @@ it("counts every product start, retains twenty observations, and finishes partia
   );
   expect(saved.savedIds).toHaveLength(1);
 });
+
+it("binds an unfetched canonical redirect to robots reapproval only", async () => {
+  const initial = await create();
+  const robots = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 0, now }),
+  ))!;
+  await run((r) => r.beginDocumentFetch({ ...robots, now }));
+  const policy = {
+    origin: "https://store.example/",
+    state: "ready" as const,
+    directives: [],
+    sitemapLinks: [],
+    crawlDelaySeconds: 1,
+    warnings: [],
+  };
+  const discovery = await run((r) =>
+    r.completeStep({
+      ...robots,
+      now: at(1),
+      observation: {
+        documentUrl: "https://store.example/robots.txt",
+        state: "running",
+        checkpoint: {
+          ...initial.checkpoint,
+          robotsPolicy: policy,
+          pending: { url: "https://store.example/", kind: "discovery" },
+          nextEligibleAt: at(2).toISOString(),
+        },
+      },
+    }),
+  );
+  const step = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 1, now: at(2) }),
+  ))!;
+  await run((r) => r.beginDocumentFetch({ ...step, now: at(2) }));
+  const observation = {
+    documentUrl: "https://store.example/",
+    redirectedTo: "https://www.store.example/",
+    state: "running" as const,
+    checkpoint: {
+      ...discovery.checkpoint,
+      canonicalOrigin: "https://www.store.example/",
+      pending: {
+        url: "https://www.store.example/robots.txt",
+        kind: "robots" as const,
+      },
+      nextEligibleAt: at(4).toISOString(),
+    },
+  };
+  await expect(
+    run((r) =>
+      r.completeStep({
+        ...step,
+        now: at(3),
+        observation: { ...observation, redirectedTo: "https://evil.example/" },
+      }),
+    ),
+  ).rejects.toThrow();
+  await expect(
+    run((r) =>
+      r.completeStep({
+        ...step,
+        now: at(3),
+        observation: {
+          ...observation,
+          checkpoint: {
+            ...observation.checkpoint,
+            preview: {
+              products: [
+                {
+                  ...product,
+                  key: "https://www.store.example/products/one",
+                  sourceUrl: "https://www.store.example/products/one",
+                },
+              ],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    ),
+  ).rejects.toThrow();
+  const reapproval = await run((r) =>
+    r.completeStep({ ...step, now: at(3), observation }),
+  );
+  expect(reapproval.checkpoint.pending?.kind).toBe("robots");
+  expect(reapproval.checkpoint.canonicalOrigin).toBe(
+    "https://www.store.example/",
+  );
+  const reapprovalStep = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 2, now: at(4) }),
+  ))!;
+  await run((r) => r.beginDocumentFetch({ ...reapprovalStep, now: at(4) }));
+  await expect(
+    run((r) =>
+      r.completeStep({
+        ...reapprovalStep,
+        now: at(5),
+        observation: {
+          ...observation,
+          documentUrl: "https://www.store.example/robots.txt",
+          redirectedTo: "https://store.example/",
+          checkpoint: {
+            ...reapproval.checkpoint,
+            nextEligibleAt: at(6).toISOString(),
+          },
+        },
+      }),
+    ),
+  ).rejects.toThrow();
+});

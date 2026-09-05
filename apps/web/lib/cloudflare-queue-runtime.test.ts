@@ -171,3 +171,30 @@ describe("Cloudflare queue ingress runtime", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+it("signs and sends website IDs through their distinct ingress path", async () => {
+  const fetch = vi.fn(
+    async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(null, { status: 202 }),
+  );
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.example",
+      QUEUE_INGRESS_SECRET: "synthetic-secret",
+    },
+    fetch,
+  });
+  const job = {
+    kind: "website_scan" as const,
+    workspaceId: "ws",
+    scanId: payload.draftId,
+    revision: 0,
+  };
+  await client.enqueue("/ingress/website-scans", job);
+  expect(String(fetch.mock.calls[0]?.[0])).toBe(
+    "https://worker.example/ingress/website-scans",
+  );
+  expect(
+    JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string),
+  ).toEqual(job);
+});

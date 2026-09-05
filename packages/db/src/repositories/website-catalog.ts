@@ -45,6 +45,7 @@ export type WebsiteCheckpoint = z.infer<typeof websiteCheckpointSchema>;
 export const websiteStepResultSchema = z
   .strictObject({
     documentUrl: websiteUrlSchema.nullable().optional(),
+    redirectedTo: websiteUrlSchema.optional(),
     state: z.enum(["running", "ready", "partial", "failed"]),
     checkpoint: websiteCheckpointSchema,
   })
@@ -159,7 +160,24 @@ function validateProgress(
       : !relatedOrigins(rootUrl(old.seedUrl), rootUrl(documentUrl)))
   )
     throw new Error("Foreign document origin");
+  const redirect = result.redirectedTo;
   if (
+    redirect &&
+    (pending.kind !== "discovery" ||
+      old.canonicalOrigin !== null ||
+      !documentUrl ||
+      rootUrl(documentUrl) !== rootUrl(old.seedUrl) ||
+      rootUrl(redirect) === rootUrl(documentUrl) ||
+      !relatedOrigins(redirect, old.seedUrl) ||
+      next.canonicalOrigin !== rootUrl(redirect) ||
+      result.state !== "running" ||
+      next.pending?.kind !== "robots" ||
+      next.pending.url !== new URL("robots.txt", rootUrl(redirect)).href ||
+      next.preview.products.length)
+  )
+    throw new Error("Invalid canonical redirect reapproval");
+  if (
+    !redirect &&
     next.canonicalOrigin &&
     old.canonicalOrigin === null &&
     (!documentUrl || rootUrl(documentUrl) !== next.canonicalOrigin)

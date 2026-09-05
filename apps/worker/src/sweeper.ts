@@ -1,4 +1,5 @@
-import { listingJobSchema } from "@wukong/jobs";
+import type { Database } from "@wukong/db";
+import { listingJobSchema, websiteJobSchema } from "@wukong/jobs";
 
 import { createWorkerDatabase } from "./cloudflare-runtime.js";
 import type { WorkerEnv } from "./worker-env.js";
@@ -9,7 +10,10 @@ import type { WorkerEnv } from "./worker-env.js";
 const SWEEP_OLDER_THAN_SECONDS = 300;
 const SWEEP_MAX_ROWS = 20;
 
-type SweeperDatabase = {
+type SweeperDatabase = Pick<
+  Database,
+  "findStuckWebsiteScans" | "forWorkspace"
+> & {
   findStuckListingJobs(input: {
     olderThanSeconds: number;
     maxRows: number;
@@ -67,6 +71,29 @@ export async function handleScheduled(
           }),
         );
       }
+    }
+    const websiteScans = await database.findStuckWebsiteScans({ maxRows: 10 });
+    for (const scan of websiteScans) {
+      const parsed = websiteJobSchema.safeParse({
+        kind: "website_scan",
+        ...scan,
+      });
+      if (!parsed.success) continue;
+      let status: "sent" | "failed" = "sent";
+      try {
+        await env.LISTING_QUEUE.send(parsed.data);
+        requeued++;
+      } catch {
+        status = "failed";
+        failed++;
+      }
+      await database.forWorkspace(scan.workspaceId, (repositories) =>
+        repositories.websiteCatalog.recordDispatch({
+          ...scan,
+          status,
+          now: new Date(),
+        }),
+      );
     }
     console.info(
       JSON.stringify({ event: "sweeper.completed", requeued, failed }),

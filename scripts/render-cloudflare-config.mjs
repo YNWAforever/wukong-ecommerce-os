@@ -56,6 +56,20 @@ if (s3ForcePathStyle !== "false") {
   throw new Error("S3_FORCE_PATH_STYLE must be false");
 }
 
+const websiteFetchBaseUrl = process.env.WEBSITE_FETCH_BASE_URL?.trim();
+if (websiteFetchBaseUrl) {
+  const url = new URL(websiteFetchBaseUrl);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("WEBSITE_FETCH_BASE_URL must be a trusted HTTPS origin");
+  }
+}
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({
   queue,
@@ -76,6 +90,9 @@ const wrangler = {
   observability: { enabled: true },
   secrets: { required: source.requiredSecrets },
   vars: {
+    ...(websiteFetchBaseUrl
+      ? { WEBSITE_FETCH_BASE_URL: websiteFetchBaseUrl }
+      : {}),
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,
     OPENAI_LISTING_MODEL: openAiListingModel,

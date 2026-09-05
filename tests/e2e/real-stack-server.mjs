@@ -71,6 +71,9 @@ const localWrangler = {
     },
   ],
   vars: {
+    ...(process.env.E2E_WEBSITE_FETCH_BASE_URL
+      ? { WEBSITE_FETCH_BASE_URL: process.env.E2E_WEBSITE_FETCH_BASE_URL }
+      : {}),
     QUEUE_INGRESS_SECRET: ingressSecret,
     BUILD_SHA: "local-e2e",
     SHOPLINE_ADAPTER: "mock",

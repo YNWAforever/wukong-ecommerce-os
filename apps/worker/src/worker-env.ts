@@ -1,15 +1,22 @@
 import type {
+  Hyperdrive,
+  Queue,
+  MessageBatch,
+} from "@cloudflare/workers-types";
+import type {
   ListingJob,
+  WebsiteJob,
   QueueMessage,
   ShoplinePublishJob,
 } from "@wukong/jobs";
 
 export type WorkerEnv = {
   HYPERDRIVE: Hyperdrive;
-  LISTING_QUEUE: Queue<ListingJob>;
+  LISTING_QUEUE: Queue<ListingJob | WebsiteJob>;
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
+  WEBSITE_FETCH_BASE_URL?: string;
   SHOPLINE_ADAPTER?: "disabled" | "mock" | "real";
   SHOPLINE_PUBLISH_ENABLED?: "true" | "false";
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;

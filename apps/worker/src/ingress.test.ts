@@ -269,3 +269,37 @@ describe("Cloudflare Worker ingress", () => {
     ]);
   });
 });
+
+it("accepts the strict website variant on the existing listing queue", async () => {
+  const bindings = env();
+  bindings.WEBSITE_FETCH_BASE_URL = "https://app.example";
+  const payload = {
+    kind: "website_scan",
+    workspaceId: "ws",
+    scanId: listing.draftId,
+    revision: 0,
+  };
+  const response = await handleIngress(
+    await signedRequest("/ingress/website-scans", payload),
+    bindings,
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(response.status).toBe(202);
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledWith(payload);
+  expect(bindings.SHOPLINE_QUEUE.send).not.toHaveBeenCalled();
+});
+it("refuses website ingress when its callback is not configured", async () => {
+  const response = await handleIngress(
+    await signedRequest("/ingress/website-scans", {
+      kind: "website_scan",
+      workspaceId: "ws",
+      scanId: listing.draftId,
+      revision: 0,
+    }),
+    env(),
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(response.status).toBe(503);
+});

@@ -16,12 +16,16 @@ export type PublicDocument = {
   text: string;
   capturedAt: string;
   retryAfterSeconds: number | null;
+  /** Validated initial canonical redirect; target has not been fetched. */
+  redirectedTo?: string;
 };
 export type PublicFetch = (input: {
   url: string;
   kind: DocumentKind;
   lockedOrigin: string | null;
   signal: AbortSignal;
+  /** Server-owned persisted robots policy, checked before each requested hop. */
+  approveUrl?: (url: string) => boolean;
 }) => Promise<PublicDocument>;
 export class PublicFetchError extends Error {
   constructor(readonly code: string) {
@@ -248,6 +252,8 @@ export function createPublicFetch(deps: PublicFetchDeps = {}): PublicFetch {
       let canonicalized = input.lockedOrigin !== null;
       for (let redirects = 0; ; redirects++) {
         signal.throwIfAborted();
+        if (input.approveUrl && !input.approveUrl(url.href))
+          fail("robots_disallowed");
         const hostname = url.hostname.replace(/^\[|\]$/g, "");
         const addresses = isIP(hostname)
           ? [{ address: hostname, family: isIP(hostname) }]
@@ -305,6 +311,17 @@ export function createPublicFetch(deps: PublicFetchDeps = {}): PublicFetch {
               next.hostname === url.hostname
             )
               fail("origin_mismatch");
+            if (input.kind === "discovery") {
+              return {
+                url: url.href,
+                redirectedTo: next.href,
+                status: response.status,
+                contentType: response.contentType,
+                text: "",
+                capturedAt: now().toISOString(),
+                retryAfterSeconds: null,
+              };
+            }
             origin = next.origin;
             canonicalized = true;
           }

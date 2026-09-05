@@ -114,7 +114,10 @@ describe("public document boundary", () => {
       status: 301,
       location: "https://www.store.example/a",
     } as ReturnType<typeof ok>);
-    expect((await s.fetch(input())).url).toBe("https://www.store.example/a");
+    expect(await s.fetch(input())).toMatchObject({
+      url: "https://store.example/",
+      redirectedTo: "https://www.store.example/a",
+    });
     await expect(
       s.fetch(
         input("https://www.store.example/p", {
@@ -322,3 +325,46 @@ it.each(["172800", "Tue, 08 Sep 2026 00:00:00 GMT"])(
     expect((await fetch(input())).retryAfterSeconds).toBe(172800);
   },
 );
+
+it("refuses a robots-disallowed product redirect before the target request", async () => {
+  const request = vi.fn(async () => ({
+    status: 302,
+    contentType: "text/html",
+    location: "/private/one",
+    body: [],
+  }));
+  const fetch = createPublicFetch({
+    resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+    request,
+  });
+  await expect(
+    fetch(
+      input("https://store.example/products/one", {
+        kind: "product",
+        lockedOrigin: "https://store.example/",
+        approveUrl: (url: string) =>
+          !new URL(url).pathname.startsWith("/private"),
+      }),
+    ),
+  ).rejects.toHaveProperty("code", "robots_disallowed");
+  expect(request).toHaveBeenCalledTimes(1);
+});
+it("returns initial canonical redirect evidence without fetching the unapproved host", async () => {
+  const request = vi.fn(async () => ({
+    status: 301,
+    contentType: "text/html",
+    location: "https://www.store.example/",
+    body: [],
+  }));
+  const resolve = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+  const fetch = createPublicFetch({ resolve, request });
+  const result = await fetch(input("https://store.example/"));
+  expect(result).toMatchObject({
+    url: "https://store.example/",
+    redirectedTo: "https://www.store.example/",
+    status: 301,
+    text: "",
+  });
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(resolve).toHaveBeenCalledTimes(1);
+});
