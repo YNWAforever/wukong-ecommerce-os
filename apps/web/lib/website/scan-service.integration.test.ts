@@ -252,3 +252,115 @@ describe("real database signed website orchestration", () => {
     );
   });
 });
+
+async function runReviewedFixture(
+  seedUrl: string,
+  documents: Record<string, string | { redirect: string }>,
+) {
+  const requests: string[] = [];
+  const publicFetch = createPublicFetch({
+    now: () => instant,
+    resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+    request: async (target) => {
+      const url = `https://${target.hostname}${target.path}`;
+      requests.push(url);
+      if (target.path === "/robots.txt")
+        return {
+          status: 200,
+          contentType: "text/plain",
+          body: ["User-agent: *\nDisallow: /private"],
+        };
+      const value = documents[url];
+      return typeof value === "string"
+        ? { status: 200, contentType: "text/html", body: [value] }
+        : value
+          ? {
+              status: 301,
+              contentType: "text/html",
+              location: value.redirect,
+              body: [],
+            }
+          : { status: 404, contentType: "text/html", body: [] };
+    },
+  });
+  const handler = createWebsiteDocumentHandler({
+    secret: () => secret,
+    now: () => instant,
+    getDatabase: () => database,
+    publicFetch,
+  });
+  const scan = await database.forWorkspace(workspaceId, (r) =>
+    r.websiteCatalog.createScan({
+      url: seedUrl,
+      requestedBy: actorId,
+      requestKey: randomUUID(),
+      now: instant,
+    }),
+  );
+  const queued: WebsiteJob[] = [jobFor(scan)];
+  const env: any = {
+    WEBSITE_FETCH_BASE_URL: "https://app.example",
+    QUEUE_INGRESS_SECRET: secret,
+    LISTING_QUEUE: {
+      send: async (job: WebsiteJob) => {
+        queued.push(job);
+      },
+    },
+  };
+  const fetch = async (url: RequestInfo | URL, init?: RequestInit) =>
+    handler(new Request(url, init));
+  for (let steps = 0; queued.length && steps < 32; steps++) {
+    const job = queued.shift()!,
+      row = (await read(scan.id))!;
+    instant = new Date(
+      Math.max(instant.getTime(), row.nextEligibleAt.getTime()),
+    );
+    expect(
+      await consumeWebsiteMessage(job, env, {
+        createDatabase: workerDb,
+        fetch,
+        now: () => instant,
+      }),
+    ).toBe("ack");
+  }
+  expect(queued).toHaveLength(0);
+  return { scan: (await read(scan.id))!, requests };
+}
+it("persists the full changed path and query across real DB robots reapproval", async () => {
+  const target = "https://www.store.example/new?colour=red";
+  const result = await runReviewedFixture("https://store.example/old", {
+    "https://store.example/old": { redirect: target },
+    [target]:
+      '<script type="application/ld+json">{"@type":"Product","name":"Changed path"}</script>',
+  });
+  expect(result.scan.state).toBe("ready");
+  expect(result.scan.checkpoint.preview.products[0]?.sourceUrl).toBe(target);
+  expect(result.requests).toEqual([
+    "https://store.example/robots.txt",
+    "https://store.example/old",
+    "https://www.store.example/robots.txt",
+    target,
+    target,
+  ]);
+});
+it("commits only actual fetched canonical product identity in the real DB", async () => {
+  const product =
+    '<link rel="canonical" href="/products/one"><script type="application/ld+json">{"@type":"Product","name":"Canonical one"}</script>';
+  const result = await runReviewedFixture("https://store.example/", {
+    "https://store.example/": '<a href="/products/one?ref=x">One</a>',
+    "https://store.example/products/one?ref=x": product,
+    "https://store.example/products/one": product,
+  });
+  expect(result.scan.state).toBe("ready");
+  expect(result.scan.checkpoint.preview.products).toHaveLength(1);
+  expect(result.scan.checkpoint.preview.products[0]?.sourceUrl).toBe(
+    "https://store.example/products/one",
+  );
+  expect(result.requests).toEqual([
+    "https://store.example/robots.txt",
+    "https://store.example/",
+    "https://store.example/products/one?ref=x",
+    "https://store.example/products/one",
+  ]);
+  expect(result.scan.productRequests).toBe(2);
+});

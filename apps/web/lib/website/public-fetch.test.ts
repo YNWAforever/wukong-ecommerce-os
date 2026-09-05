@@ -368,3 +368,100 @@ it("returns initial canonical redirect evidence without fetching the unapproved 
   expect(request).toHaveBeenCalledTimes(1);
   expect(resolve).toHaveBeenCalledTimes(1);
 });
+
+describe("redirect request crawl spacing", () => {
+  it.each([undefined, 0, 2.5])(
+    "spaces network starts by the applicable delay %s",
+    async (crawlDelaySeconds) => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+      });
+      try {
+        const starts: number[] = [];
+        const request = vi.fn(async () => {
+          starts.push(performance.now());
+          return starts.length < 3
+            ? { ...ok(), status: 302, location: "/next" }
+            : ok();
+        });
+        const fetch = createPublicFetch({
+          resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+          request,
+        });
+        const pending = fetch(
+          input("https://store.example/", { crawlDelaySeconds }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(starts).toHaveLength(1);
+        const delay = Math.max(1, crawlDelaySeconds ?? 1) * 1000;
+        await vi.advanceTimersByTimeAsync(delay - 1);
+        expect(starts).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(starts).toHaveLength(2);
+        await vi.advanceTimersByTimeAsync(delay);
+        expect(await pending).toHaveProperty("status", 200);
+        expect(starts).toEqual([0, delay, delay * 2]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it.each([12, 3000000])(
+    "does not shorten robots delay %s to fit the whole-document deadline",
+    async (crawlDelaySeconds) => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+      });
+      try {
+        const request = vi.fn(async () => ({
+          ...ok(),
+          status: 302,
+          location: "/next",
+        }));
+        const fetch = createPublicFetch({
+          resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+          request,
+        });
+        const result = fetch(
+          input("https://store.example/", { crawlDelaySeconds }),
+        ).catch((error) => error);
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(await result).toHaveProperty("code", "deadline_exceeded");
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("aborts a waiting redirect without another request or leaked timer", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "Date", "performance"],
+    });
+    try {
+      const controller = new AbortController();
+      const request = vi.fn(async () => ({
+        ...ok(),
+        status: 302,
+        location: "/next",
+      }));
+      const fetch = createPublicFetch({
+        resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+        request,
+      });
+      const result = fetch(
+        input("https://store.example/", {
+          signal: controller.signal,
+          crawlDelaySeconds: 3,
+        }),
+      ).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(1000);
+      controller.abort();
+      expect(await result).toHaveProperty("code", "aborted");
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -26,6 +26,8 @@ export type PublicFetch = (input: {
   signal: AbortSignal;
   /** Server-owned persisted robots policy, checked before each requested hop. */
   approveUrl?: (url: string) => boolean;
+  /** Server-owned robots delay; the minimum request interval is always one second. */
+  crawlDelaySeconds?: number;
 }) => Promise<PublicDocument>;
 export class PublicFetchError extends Error {
   constructor(readonly code: string) {
@@ -217,6 +219,27 @@ function nodeRequest(
       req.end();
     });
 }
+function waitForHop(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+    };
+    // Every caller has the original ten-second document deadline. A longer
+    // interval can only abort; do not overflow/clamp a timer into an early hop.
+    const timer =
+      ms >= 10_000
+        ? undefined
+        : setTimeout(() => {
+            signal.removeEventListener("abort", abort);
+            resolve();
+          }, Math.ceil(ms));
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
 function retryAfter(raw: string | undefined, now: Date): number | null {
   if (!raw) return null;
   const seconds = /^\d+$/.test(raw)
@@ -243,6 +266,11 @@ export function createPublicFetch(deps: PublicFetchDeps = {}): PublicFetch {
     const signal = controller.signal;
     let response: DocumentResponse | undefined;
     try {
+      const crawlDelay = input.crawlDelaySeconds ?? 1;
+      if (!Number.isFinite(crawlDelay) || crawlDelay < 0)
+        fail("invalid_crawl_delay");
+      const intervalMs = Math.max(1, crawlDelay) * 1000;
+      let lastRequestStartedAt: number | null = null;
       let url = normalize(input.url);
       let origin =
         input.lockedOrigin === null
@@ -268,6 +296,13 @@ export function createPublicFetch(deps: PublicFetchDeps = {}): PublicFetch {
         )
           fail("unsafe_address");
         const address = addresses[0]!;
+        if (lastRequestStartedAt !== null)
+          await waitForHop(
+            lastRequestStartedAt + intervalMs - performance.now(),
+            signal,
+          );
+        signal.throwIfAborted();
+        lastRequestStartedAt = performance.now();
         // Dispose even a late adapter response if the total deadline won the race.
         const pending = request({
           hostname,

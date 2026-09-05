@@ -71,7 +71,8 @@ export function advanceWebsiteDocument(
     }
     result.redirectedTo = document.redirectedTo;
     checkpoint.canonicalOrigin = root(document.redirectedTo);
-    checkpoint.discoveryUrls = [];
+    // Preserve the unfetched path/query in the existing bounded discovery queue.
+    checkpoint.discoveryUrls = [document.redirectedTo];
     checkpoint.candidateUrls = [];
     checkpoint.visitedUrls = [];
     return schedule(
@@ -106,10 +107,13 @@ export function advanceWebsiteDocument(
     );
     if (policy.state !== "ready") return finish(true);
     const origin = checkpoint.canonicalOrigin ?? root(checkpoint.seedUrl);
-    const seed = new URL(
-      new URL(checkpoint.seedUrl).pathname + new URL(checkpoint.seedUrl).search,
-      origin,
-    ).href;
+    const seed =
+      checkpoint.discoveryUrls[0] ??
+      new URL(
+        new URL(checkpoint.seedUrl).pathname +
+          new URL(checkpoint.seedUrl).search,
+        origin,
+      ).href;
     checkpoint.discoveryUrls = unique(
       [seed, ...policy.sitemapLinks.filter((url) => root(url) === origin)],
       5,
@@ -125,7 +129,7 @@ export function advanceWebsiteDocument(
     if (document && !checkpoint.canonicalOrigin)
       checkpoint.canonicalOrigin = root(actual);
     if (document && checkpoint.robotsPolicy?.origin !== root(actual)) {
-      checkpoint.discoveryUrls = [];
+      checkpoint.discoveryUrls = [actual];
       checkpoint.candidateUrls = [];
       checkpoint.visitedUrls = [];
       if (now >= scan.deadlineAt) {
@@ -170,7 +174,41 @@ export function advanceWebsiteDocument(
         20,
       );
       if (extracted.product) {
-        if (pending.kind === "product") {
+        const canonical = extracted.product.sourceUrl;
+        if (canonical !== actual) {
+          // A canonical tag is a discovery hint, not evidence from that URL.
+          // Fetch it as a separate budgeted product step before retaining identity.
+          if (!allowed(canonical)) warn(checkpoint, ["canonical_disallowed"]);
+          else if (
+            checkpoint.preview.products.some(
+              (product) => product.key === canonical,
+            )
+          ) {
+            // The immutable canonical observation already exists.
+          } else if (checkpoint.visitedUrls.includes(canonical)) {
+            warn(checkpoint, ["canonical_cycle"]);
+          } else {
+            const candidates =
+              pending.kind === "product"
+                ? checkpoint.candidateUrls.map((url) =>
+                    url === pending.url ? canonical : url,
+                  )
+                : checkpoint.candidateUrls;
+            checkpoint.candidateUrls = unique(candidates, 20);
+            if (
+              checkpoint.candidateUrls.includes(canonical) ||
+              checkpoint.candidateUrls.length < 20
+            ) {
+              checkpoint.candidateUrls = unique(
+                [...checkpoint.candidateUrls, canonical],
+                20,
+              );
+              if (now < scan.deadlineAt && scan.productRequests < 20)
+                return schedule(canonical, "product");
+              warn(checkpoint, ["scan_budget_reached"]);
+            } else warn(checkpoint, ["scan_budget_reached"]);
+          }
+        } else if (pending.kind === "product") {
           checkpoint.candidateUrls = unique(
             checkpoint.candidateUrls.map((url) =>
               url === pending.url ? actual : url,
@@ -211,13 +249,17 @@ export function advanceWebsiteDocument(
   if (policy?.state === "ready") {
     const candidate = checkpoint.candidateUrls.find(
       (url) =>
-        !checkpoint.visitedUrls.includes(url) && isRobotsAllowed(policy, url),
+        !checkpoint.visitedUrls.includes(url) &&
+        !checkpoint.preview.products.some((product) => product.key === url) &&
+        isRobotsAllowed(policy, url),
     );
     if (candidate && scan.productRequests < 20)
       return schedule(candidate, "product");
     const discovery = checkpoint.discoveryUrls.find(
       (url) =>
-        !checkpoint.visitedUrls.includes(url) && isRobotsAllowed(policy, url),
+        !checkpoint.visitedUrls.includes(url) &&
+        !checkpoint.preview.products.some((product) => product.key === url) &&
+        isRobotsAllowed(policy, url),
     );
     if (discovery && scan.discoveryRequests < 5)
       return schedule(discovery, "discovery");
@@ -228,7 +270,13 @@ export function advanceWebsiteDocument(
   }
   return finish(
     checkpoint.preview.warnings.some((w) =>
-      ["document_unavailable", "robots_disallowed"].includes(w),
+      [
+        "document_unavailable",
+        "robots_disallowed",
+        "canonical_disallowed",
+        "canonical_cycle",
+        "scan_budget_reached",
+      ].includes(w),
     ),
   );
 }
@@ -267,6 +315,8 @@ export function createWebsiteDocumentService(deps: {
           kind: step.kind,
           lockedOrigin: step.lockedOrigin,
           signal: AbortSignal.timeout(10_000),
+          crawlDelaySeconds:
+            scan.checkpoint.robotsPolicy?.crawlDelaySeconds ?? 1,
           approveUrl:
             step.kind === "robots"
               ? undefined

@@ -278,3 +278,164 @@ it("reports dispatch unavailability without exposing internal configuration", as
   const { publicWebsiteScan } = await import("./scan-service");
   expect(publicWebsiteScan(s).warnings).toContain("website_scan_unavailable");
 });
+
+it("resumes the full redirected path and query after canonical robots approval", () => {
+  const before = scan("discovery");
+  const target = "https://www.store.example/new?colour=red";
+  const redirected = advanceWebsiteDocument(
+    before,
+    { ...doc(origin + "old", "", 301), redirectedTo: target },
+    now,
+  );
+  expect(redirected.checkpoint.discoveryUrls).toEqual([target]);
+  const reapproval = {
+    ...before,
+    checkpoint: redirected.checkpoint,
+    nextEligibleAt: new Date(now.getTime() + 1000),
+  };
+  const approved = advanceWebsiteDocument(
+    reapproval,
+    {
+      ...doc("https://www.store.example/robots.txt", ""),
+      contentType: "text/plain",
+    },
+    new Date(now.getTime() + 1000),
+  );
+  expect(approved.checkpoint.pending).toEqual({
+    url: target,
+    kind: "discovery",
+  });
+});
+it("fetches canonical identity before retaining product evidence and stops canonical cycles", () => {
+  const before = scan("product");
+  before.checkpoint.pending!.url = origin + "products/one?ref=x";
+  before.checkpoint.candidateUrls = [before.checkpoint.pending!.url];
+  const html =
+    '<link rel="canonical" href="/products/one"><script type="application/ld+json">{"@type":"Product","name":"One"}</script>';
+  const next = advanceWebsiteDocument(
+    before,
+    doc(before.checkpoint.pending!.url, html),
+    now,
+  );
+  expect(next.checkpoint.preview.products).toEqual([]);
+  expect(next.checkpoint.pending).toEqual({
+    url: origin + "products/one",
+    kind: "product",
+  });
+  const canonical = {
+    ...before,
+    checkpoint: next.checkpoint,
+    productRequests: 2,
+  };
+  const cycle = advanceWebsiteDocument(
+    canonical,
+    doc(
+      origin + "products/one",
+      html.replace('/products/one"', '/products/one?ref=x"'),
+    ),
+    new Date(now.getTime() + 1000),
+  );
+  expect(cycle.state).toBe("failed");
+  expect(cycle.checkpoint.pending).toBeNull();
+  expect(cycle.checkpoint.preview.warnings).toContain("canonical_cycle");
+});
+
+it("does not refetch an already observed canonical identity", () => {
+  const html =
+    '<link rel="canonical" href="/products/one"><script type="application/ld+json">{"@type":"Product","name":"One"}</script>';
+  const before = scan("product");
+  const canonical = origin + "products/one";
+  before.checkpoint.preview = advanceWebsiteDocument(
+    before,
+    doc(canonical, html),
+    now,
+  ).checkpoint.preview;
+  before.checkpoint.pending!.url = canonical + "?ref=x";
+  before.checkpoint.candidateUrls = [before.checkpoint.pending!.url, canonical];
+  const result = advanceWebsiteDocument(
+    before,
+    doc(before.checkpoint.pending!.url, html),
+    now,
+  );
+  expect(result.state).toBe("ready");
+  expect(result.checkpoint.pending).toBeNull();
+  expect(result.checkpoint.preview.products).toEqual(
+    before.checkpoint.preview.products,
+  );
+});
+it("does not follow disallowed canonical identities or exceed the product budget", () => {
+  const html =
+    '<link rel="canonical" href="/private/one"><script type="application/ld+json">{"@type":"Product","name":"One"}</script>';
+  const denied = advanceWebsiteDocument(
+    scan("product"),
+    doc(origin + "products/one", html),
+    now,
+  );
+  expect(denied.state).toBe("failed");
+  expect(denied.checkpoint.preview.warnings).toContain("canonical_disallowed");
+  expect(denied.checkpoint.pending).toBeNull();
+  const before = scan("product");
+  before.productRequests = 20;
+  before.checkpoint.preview = advanceWebsiteDocument(
+    scan("product"),
+    doc(
+      origin + "products/saved",
+      '<script type="application/ld+json">{"@type":"Product","name":"Saved"}</script>',
+    ),
+    now,
+  ).checkpoint.preview;
+  const budget = advanceWebsiteDocument(
+    before,
+    doc(
+      origin + "products/one",
+      html.replace("/private/one", "/products/canonical"),
+    ),
+    now,
+  );
+  expect(budget.state).toBe("partial");
+  expect(budget.checkpoint.preview.products).toEqual(
+    before.checkpoint.preview.products,
+  );
+  expect(budget.checkpoint.pending).toBeNull();
+  expect(budget.checkpoint.preview.warnings).toContain("scan_budget_reached");
+});
+
+it("passes the persisted robots delay and path approval into protected transport", async () => {
+  const s = scan("product");
+  s.checkpoint.robotsPolicy!.crawlDelaySeconds = 2.5;
+  const publicFetch = vi.fn(
+    async (_input: Parameters<import("./public-fetch").PublicFetch>[0]) =>
+      doc(
+        s.checkpoint.pending!.url,
+        '<script type="application/ld+json">{"@type":"Product","name":"One"}</script>',
+      ),
+  );
+  const database = {
+    forWorkspace: async (_ws: string, work: any) =>
+      work({
+        websiteCatalog: {
+          beginDocumentFetch: async () => ({
+            status: "claimed",
+            scan: s,
+            step: { ...s.checkpoint.pending, lockedOrigin: origin },
+          }),
+          completeStep: async () => ({}),
+        },
+      }),
+  };
+  await createWebsiteDocumentService({
+    database: database as any,
+    publicFetch,
+    now: () => now,
+  })({
+    kind: "website_scan",
+    workspaceId: "ws",
+    scanId: s.id,
+    revision: 0,
+    leaseToken: s.id,
+  });
+  const input = publicFetch.mock.calls[0]![0];
+  expect(input.crawlDelaySeconds).toBe(2.5);
+  expect(input.approveUrl!(origin + "private/one")).toBe(false);
+  expect(input.approveUrl!(origin + "products/one")).toBe(true);
+});
