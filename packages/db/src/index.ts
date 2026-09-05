@@ -124,3 +124,7 @@ export {
 } from "./repositories/import-results.js";
 
 export * from "./repositories/export-verifications.js";
+export type {
+  ExportEvidenceSnapshot,
+  ExportEvidenceRepository,
+} from "./repositories/export-evidence.js";

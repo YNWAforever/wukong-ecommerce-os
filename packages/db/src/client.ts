@@ -1,4 +1,8 @@
 import {
+  createExportEvidenceRepository,
+  type ExportEvidenceRepository,
+} from "./repositories/export-evidence.js";
+import {
   createExportVerificationRepository,
   type ExportVerificationRepository,
 } from "./repositories/export-verifications.js";
@@ -94,6 +98,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  exportEvidence: ExportEvidenceRepository;
   exportVerifications: ExportVerificationRepository;
   reads: WorkspaceReadRepository;
   sourceRows: SourceRowRepository;
@@ -188,6 +193,11 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        exportEvidence: createExportEvidenceRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         exportVerifications: createExportVerificationRepository(
           transaction,
           workspaceId,
