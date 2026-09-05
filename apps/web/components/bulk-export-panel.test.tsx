@@ -5,6 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BulkExportPanel } from "./bulk-export-panel.js";
 
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
 it("gates generation on permission and explicit freshness, then preserves submitted ids", async () => {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
     Response.json({
@@ -58,5 +62,175 @@ it("gates generation on permission and explicit freshness, then preserves submit
   expect(container.textContent).toContain("No changes");
   expect(container.textContent).toContain("No artifact was created");
   await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it("invalidates freshness when the selected listing IDs change", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds: ["listing-a"],
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  expect(container.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
+    false,
+  );
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds: ["listing-a", "listing-b"],
+        canGenerate: true,
+      }),
+    ),
+  );
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(false);
+  expect(container.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
+    true,
+  );
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+});
+
+it("keeps a POST-created attempt visible and retries only its detail lookup", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        exportAttemptId: "attempt-stable",
+        artifactStatus: "pending",
+        rowCount: 1,
+        manifest: [],
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ message: "temporarily unavailable" }, { status: 503 }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        attempt: {
+          id: "attempt-stable",
+          artifactStatus: "ready",
+          rowCount: 1,
+          specVersion: "v1",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        reconciliation: {
+          counts: {
+            requested: 1,
+            included: 1,
+            excluded: 0,
+            noOp: 0,
+            accepted: 0,
+            rejected: 0,
+            unreported: 1,
+          },
+          verificationStatus: "unverified",
+          members: [],
+        },
+        capabilities: {
+          canGenerateBulkUpdate: true,
+          canRecordImportResult: true,
+        },
+      }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds: ["listing-a"],
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("button")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(container.textContent).toContain("attempt-stable");
+  expect(container.textContent).toContain("pending");
+  const retry = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent?.includes("Retry attempt details"),
+  )!;
+  await act(async () => {
+    retry.click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(fetcher.mock.calls[2]![0]).toBe("/api/listings/export/attempt-stable");
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+  vi.unstubAllGlobals();
+});
+
+it("shows the stable attempt carried by an artifact error response", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(
+        {
+          exportAttemptId: "attempt-failed",
+          artifactStatus: "failed",
+          message: "Upload verification failed",
+        },
+        { status: 503 },
+      ),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ message: "detail unavailable" }, { status: 503 }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds: ["listing-a"],
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("button")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(
+    container.querySelector('[data-export-attempt-id="attempt-failed"]'),
+  ).not.toBeNull();
+  expect(container.textContent).toContain("Artifact status: failed");
+  expect(container.textContent).toContain("Retry attempt details");
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });

@@ -64,6 +64,51 @@ it("renders stable attempt/member selectors, counts, and ready-only download", (
   expect(markup).toContain("No content change");
   expect(markup).toContain("/api/listings/export/attempt-1/download");
   expect(markup).toContain("Verification: Unverified");
+  const rejected = {
+    ...detail,
+    reconciliation: {
+      ...detail.reconciliation,
+      members: [
+        {
+          listingId: "listing-r",
+          versionId: "version-r",
+          outcome: "included",
+          latestResult: {
+            id: "result-2",
+            outcome: "rejected" as const,
+            rejectReason: "Protected field rejected",
+            correctionReason: "Corrected prior acceptance",
+            revision: 2,
+            createdAt: "2026-01-02T00:00:00Z",
+          },
+          history: [
+            {
+              id: "result-2",
+              outcome: "rejected" as const,
+              rejectReason: "Protected field rejected",
+              correctionReason: "Corrected prior acceptance",
+              revision: 2,
+              createdAt: "2026-01-02T00:00:00Z",
+            },
+            {
+              id: "result-1",
+              outcome: "rejected" as const,
+              rejectReason: "Original row rejected",
+              correctionReason: null,
+              revision: 1,
+              createdAt: "2026-01-01T00:00:00Z",
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const rejectedMarkup = renderToStaticMarkup(
+    createElement(ExportReconciliationPanel, { detail: rejected }),
+  );
+  expect(rejectedMarkup).toContain("Protected field rejected");
+  expect(rejectedMarkup).toContain("Original row rejected");
+  expect(rejectedMarkup).toContain("Corrected prior acceptance");
 });
 
 it("posts an export-bound rejected report and reloads detail", async () => {

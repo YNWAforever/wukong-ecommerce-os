@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ImportResultForm,
+  ImportResultHistory,
   type ImportResultReceipt,
 } from "./import-result-form";
 
@@ -131,34 +132,31 @@ export function ExportReconciliationPanel({
               <p className="helper-copy">{member.reason}</p>
             ) : null}
             {member.latestResult ? (
-              <p>
-                Operator reported {member.latestResult.outcome} · revision{" "}
-                {member.latestResult.revision}
-              </p>
+              <div>
+                <p>
+                  Operator reported {member.latestResult.outcome} · revision{" "}
+                  {member.latestResult.revision}
+                </p>
+                {member.latestResult.rejectReason ? (
+                  <p className="helper-copy">
+                    Rejection reason: {member.latestResult.rejectReason}
+                  </p>
+                ) : null}
+              </div>
             ) : member.outcome === "included" ? (
               <p>Unreported</p>
             ) : null}
-            {member.history.length > 1 ? (
-              <details>
-                <summary>Correction history</summary>
-                <ol>
-                  {member.history.map((result) => (
-                    <li key={result.id}>
-                      Revision {result.revision}: {result.outcome}
-                      {result.correctionReason
-                        ? ` — ${result.correctionReason}`
-                        : ""}
-                    </li>
-                  ))}
-                </ol>
-              </details>
-            ) : null}
+            <ImportResultHistory
+              label="Correction history"
+              results={member.history}
+            />
             {ready &&
             member.outcome === "included" &&
             member.versionId &&
             capabilities.canRecordImportResult ? (
               <ImportResultForm
                 listingId={member.listingId}
+                mode="export"
                 versionId={member.versionId}
                 exportAttemptId={attempt.id}
                 latestResult={member.latestResult}

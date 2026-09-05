@@ -389,6 +389,7 @@ describe("JobsLedgerClient", () => {
     ).not.toBeNull();
     expect(container.textContent).toContain("Correction history");
     expect(container.textContent).toContain("Merchant retried");
+    expect(container.textContent).toContain("Rejection reason: Invalid");
     expect(container.textContent).toContain("Accepted1");
     expect(container.textContent).toContain("Rejected1");
   });

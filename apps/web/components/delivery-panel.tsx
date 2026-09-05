@@ -2,7 +2,7 @@
 
 import type { DeliveryModel } from "./listing-view-models";
 import { BulkExportPanel } from "./bulk-export-panel";
-import { ImportResultForm } from "./import-result-form";
+import { ImportResultForm, ImportResultHistory } from "./import-result-form";
 import { useState } from "react";
 
 export type { DeliveryModel } from "./listing-view-models";
@@ -80,7 +80,8 @@ export function DeliveryPanel({
           onClick={onPublish}
           disabled={!canApiPublish}
         >
-          發布至 SHOPLINE <span>Publish</span>
+          發布至 SHOPLINE{" "}
+          {imported ? <span>Update via API</span> : <span>Create via API</span>}
         </button>
         <button
           className="secondary-button"
@@ -88,7 +89,12 @@ export function DeliveryPanel({
           onClick={onCsv}
           disabled={!csvEnabled}
         >
-          匯出 SHOPLINE CSV <span>CSV fallback</span>
+          匯出 SHOPLINE CSV{" "}
+          {imported ? (
+            <span>Update CSV fallback</span>
+          ) : (
+            <span>Create CSV · CSV fallback</span>
+          )}
         </button>
       </div>
       {!approved ? (
@@ -147,21 +153,10 @@ export function DeliveryPanel({
                 Manual historical report — unlinked. It cannot close an export
                 reconciliation total.
               </p>
-              {model.historicalImportResults?.length ? (
-                <details>
-                  <summary>Manual correction history</summary>
-                  <ol>
-                    {model.historicalImportResults.map((result) => (
-                      <li key={result.id}>
-                        Revision {result.revision}: {result.outcome}
-                        {result.correctionReason
-                          ? ` — ${result.correctionReason}`
-                          : ""}
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              ) : null}
+              <ImportResultHistory
+                label="Manual correction history"
+                results={model.historicalImportResults ?? []}
+              />
               <ImportResultForm
                 listingId={model.listingId}
                 mode="historical_manual"

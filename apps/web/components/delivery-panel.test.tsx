@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { DeliveryPanel, type DeliveryModel } from "./delivery-panel";
+import { ImportResultHistory } from "./import-result-form";
 
 describe("DeliveryPanel", () => {
   it("labels CSV as fallback when SHOPLINE is disconnected", () => {
@@ -128,5 +129,25 @@ describe("DeliveryPanel", () => {
     );
     expect(created).toContain("Create CSV / API");
     expect(created).not.toContain("Generate Bulk Update XLSX");
+  });
+  it("shows rejection and correction reasons in manual result history", () => {
+    const markup = renderToStaticMarkup(
+      <ImportResultHistory
+        label="Manual correction history"
+        results={[
+          {
+            id: "manual-2",
+            outcome: "rejected",
+            rejectReason: "SHOPLINE validation failed",
+            correctionReason: "Corrected prior report",
+            revision: 2,
+            createdAt: "2026-01-02T00:00:00Z",
+          },
+        ]}
+      />,
+    );
+    expect(markup).toContain("Manual correction history");
+    expect(markup).toContain("Rejection reason: SHOPLINE validation failed");
+    expect(markup).toContain("Correction reason: Corrected prior report");
   });
 });

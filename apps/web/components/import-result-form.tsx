@@ -11,21 +11,50 @@ export type ImportResultReceipt = {
   createdAt: string;
 };
 
+export function ImportResultHistory({
+  label,
+  results,
+}: {
+  label: string;
+  results: readonly ImportResultReceipt[];
+}) {
+  if (results.length === 0) return null;
+  return (
+    <details>
+      <summary>{label}</summary>
+      <ol>
+        {results.map((result) => (
+          <li key={result.id}>
+            Revision {result.revision}: {result.outcome}
+            {result.rejectReason
+              ? ` — Rejection reason: ${result.rejectReason}`
+              : ""}
+            {result.correctionReason
+              ? ` — Correction reason: ${result.correctionReason}`
+              : ""}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+type ImportResultFormProps = {
+  listingId: string;
+  latestResult?: ImportResultReceipt | null;
+  onRecorded?: () => void | Promise<void>;
+} & (
+  | { mode: "export"; versionId: string; exportAttemptId: string }
+  | { mode: "historical_manual"; versionId?: never; exportAttemptId?: never }
+);
+
 export function ImportResultForm({
   listingId,
   versionId,
   exportAttemptId,
   latestResult = null,
-  mode = "export",
+  mode,
   onRecorded,
-}: {
-  listingId: string;
-  versionId?: string;
-  exportAttemptId?: string;
-  latestResult?: ImportResultReceipt | null;
-  mode?: "export" | "historical_manual";
-  onRecorded?: () => void | Promise<void>;
-}) {
+}: ImportResultFormProps) {
   const [outcome, setOutcome] = useState<"accepted" | "rejected">("accepted");
   const [rejectReason, setRejectReason] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");

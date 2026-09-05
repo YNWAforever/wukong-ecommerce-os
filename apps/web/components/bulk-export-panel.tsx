@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ExportReconciliationPanel,
   type WireExportReconciliationDetail,
@@ -18,6 +18,11 @@ type ExportResponse = {
   rowCount?: number;
   message?: string;
 };
+
+function selectionIdentity(listingIds: readonly string[]): string {
+  return [...listingIds].sort().join("\u001f");
+}
+
 export function BulkExportPanel({
   listingIds,
   canGenerate,
@@ -25,14 +30,45 @@ export function BulkExportPanel({
   listingIds: readonly string[];
   canGenerate: boolean;
 }) {
-  const [attested, setAttested] = useState(false);
+  const currentSelection = useMemo(
+    () => selectionIdentity(listingIds),
+    [listingIds],
+  );
+  const [attestedSelection, setAttestedSelection] = useState<string | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
+  const [detailBusy, setDetailBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExportResponse | null>(null);
   const [detail, setDetail] = useState<WireExportReconciliationDetail | null>(
     null,
   );
   const inFlight = useRef(false);
+  const attested =
+    currentSelection.length > 0 && attestedSelection === currentSelection;
+
+  async function loadDetail(attemptId: string) {
+    setDetailBusy(true);
+    try {
+      const response = await fetch(`/api/listings/export/${attemptId}`, {
+        cache: "no-store",
+      });
+      if (!response.ok)
+        throw new Error(`Unable to load export status (${response.status})`);
+      setDetail((await response.json()) as WireExportReconciliationDetail);
+      setError(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Unable to load export status",
+      );
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
   async function generate() {
     if (
       inFlight.current ||
@@ -58,21 +94,11 @@ export function BulkExportPanel({
       });
       const body = (await response.json()) as ExportResponse;
       setResult(body);
-      if (!response.ok && !body.exportAttemptId)
+      if (body.exportAttemptId) {
+        await loadDetail(body.exportAttemptId);
+      } else if (!response.ok) {
         throw new Error(
           body.message ?? `Unable to generate export (${response.status})`,
-        );
-      if (body.exportAttemptId) {
-        const detailResponse = await fetch(
-          `/api/listings/export/${body.exportAttemptId}`,
-          { cache: "no-store" },
-        );
-        if (!detailResponse.ok)
-          throw new Error(
-            `Unable to load export status (${detailResponse.status})`,
-          );
-        setDetail(
-          (await detailResponse.json()) as WireExportReconciliationDetail,
         );
       }
     } catch (caught) {
@@ -84,6 +110,7 @@ export function BulkExportPanel({
       setBusy(false);
     }
   }
+
   return (
     <section className="bulk-export-panel" aria-label="Bulk Update XLSX export">
       <p>
@@ -94,7 +121,9 @@ export function BulkExportPanel({
         <input
           type="checkbox"
           checked={attested}
-          onChange={(event) => setAttested(event.target.checked)}
+          onChange={(event) =>
+            setAttestedSelection(event.target.checked ? currentSelection : null)
+          }
         />{" "}
         I confirm this SHOPLINE source export is still current.
       </label>
@@ -113,6 +142,26 @@ export function BulkExportPanel({
         <p className="inline-warning" role="alert">
           {error}
         </p>
+      ) : null}
+      {result?.exportAttemptId && !detail ? (
+        <article
+          className="reconciliation-panel"
+          data-export-attempt-id={result.exportAttemptId}
+        >
+          <h3>Bulk Update XLSX export attempt</h3>
+          <p className="jobs-row-meta">
+            Attempt <code>{result.exportAttemptId}</code>
+          </p>
+          <p>Artifact status: {result.artifactStatus ?? "pending"}</p>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={detailBusy}
+            onClick={() => void loadDetail(result.exportAttemptId!)}
+          >
+            Retry attempt details
+          </button>
+        </article>
       ) : null}
       {result && !result.exportAttemptId ? (
         <div className="manifest-summary">

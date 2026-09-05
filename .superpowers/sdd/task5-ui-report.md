@@ -40,3 +40,17 @@
 
 - Fixed a self-review issue where a successful POST followed by a failed detail refresh could have cleared the retry key too early. The key now remains stable until the persisted view refresh succeeds.
 - Real browser/E2E acceptance, combined build, and synthetic service orchestration are owned by the root agent and remain outside this component-only commit.
+
+## Review fixes
+
+- Bound freshness confirmation to the normalized selected-ID set, so any add/remove invalidates it immediately.
+- Preserved every POST-created attempt ID and artifact status when detail retrieval fails, with a retry action scoped to that same attempt. This also handles non-2xx artifact responses that carry a persisted attempt.
+- Rendered rejection reasons separately from correction reasons for latest receipts and every export/manual history revision.
+- Made Create via API/Create CSV and Update via API/Update CSV labels visible at the controls while retaining the existing bilingual action text.
+- Changed `ImportResultForm` to a discriminated prop union: export mode requires attempt/version IDs, historical mode forbids them.
+
+### Review TDD evidence
+
+- RED: the focused review run failed three assertions: freshness remained checked after selected IDs changed; a successful POST followed by failed detail GET hid `attempt-stable`; and durable rejected history omitted `Protected field rejected`/`Original row rejected`.
+- GREEN: `corepack.cmd pnpm@11.7.0 --filter @wukong/web test -- bulk-export-panel.test.tsx export-reconciliation-panel.test.tsx delivery-panel.test.tsx jobs-ledger-client.test.tsx` completed with 104 files / 878 tests passing, followed by a focused persisted-error-attempt case with 104 files / 879 tests passing. `corepack.cmd pnpm@11.7.0 --filter @wukong/web typecheck` passed.
+- Root owns the final combined build and real-browser rerun against the synthetic services.
