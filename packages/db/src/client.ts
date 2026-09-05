@@ -1,4 +1,8 @@
 import {
+  createWorkspaceReadRepository,
+  type WorkspaceReadRepository,
+} from "./repositories/workspace-reads.js";
+import {
   createSourceRowRepository,
   type SourceRowRepository,
 } from "./repositories/source-rows.js";
@@ -86,6 +90,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  reads: WorkspaceReadRepository;
   sourceRows: SourceRowRepository;
   approvalReceipts: ApprovalReceiptRepository;
   listings: ListingRepository;
@@ -178,6 +183,7 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        reads: createWorkspaceReadRepository(transaction, workspaceId, scope),
         sourceRows: createSourceRowRepository(transaction, workspaceId, scope),
         approvalReceipts: createApprovalReceiptRepository(
           transaction,

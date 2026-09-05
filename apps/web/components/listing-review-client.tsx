@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
 
 import type {
   CanonicalListing,
@@ -8,7 +10,7 @@ import type {
   ReviewableListing,
 } from "@wukong/core";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ActivityPanel } from "./activity-panel";
 import { ComplianceFlags } from "./compliance-flags";
@@ -25,6 +27,8 @@ import type {
   ListingReviewModel,
 } from "./listing-view-models";
 import { ProductShotPanel, type BackgroundChoice } from "./product-shot-panel";
+import { SourceReadinessSummary } from "./source-readiness-summary";
+import type { SourceReadiness } from "../lib/source-readiness";
 
 type ListingPermissions = {
   canProcess: boolean;
@@ -32,6 +36,7 @@ type ListingPermissions = {
   canResolveFlags: boolean;
   canApprove: boolean;
   canDeliver: boolean;
+  canRecordImportResult?: boolean;
 };
 
 // The wire shape of `ListingActivityEntry` (see lib/listing-activity-service.ts):
@@ -64,6 +69,7 @@ type WireListingActivityEntry =
     };
 
 export type ListingViewResponse = {
+  sourceReadiness?: SourceReadiness;
   listingId: string;
   status: ListingStatus;
   activeVersion: {
@@ -84,7 +90,10 @@ export type ListingViewResponse = {
     error: string | null;
   } | null;
   queueStatus: string | null;
-  shoplineLink: { remoteProductId: string } | null;
+  shoplineLink: {
+    remoteProductId: string;
+    origin: "import" | "created";
+  } | null;
   reviewConfirmation: {
     revision: number;
     fieldConfirmations: Record<string, boolean>;
@@ -93,6 +102,14 @@ export type ListingViewResponse = {
   sourceImportId: string | null;
   contentDigest: string | null;
   permissions: ListingPermissions;
+  historicalImportResults?: Array<{
+    id: string;
+    outcome: "accepted" | "rejected";
+    rejectReason: string | null;
+    correctionReason: string | null;
+    revision: number;
+    createdAt: string;
+  }>;
   activity: WireListingActivityEntry[];
 };
 
@@ -387,6 +404,11 @@ export function mapListingView(
       remoteProductUrl: null,
       remoteProductId: response.delivery?.remoteProductId ?? null,
       shoplineLink: response.shoplineLink,
+      listingId: response.listingId,
+      versionId: version.id,
+      canRecordImportResult:
+        response.permissions.canRecordImportResult ?? false,
+      historicalImportResults: response.historicalImportResults ?? [],
     },
     permissions: response.permissions,
     evidence: response.evidence.map((entry) => ({
@@ -470,12 +492,7 @@ export function applyListingFields(
 
 async function responseError(response: Response): Promise<Error> {
   const fallback = `Request failed (${response.status})`;
-  try {
-    const body = (await response.json()) as { message?: string };
-    return new Error(body.message || fallback);
-  } catch {
-    return new Error(fallback);
-  }
+  return new Error(fallback);
 }
 
 export function ListingReviewClient({
@@ -485,31 +502,51 @@ export function ListingReviewClient({
   listingId: string;
   initialProcessing?: "queued" | "retry_required";
 }) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [snapshot, setSnapshot] = useState<ListingViewResponse | null>(null);
   const [processingState, setProcessingState] = useState(initialProcessing);
+  const [errorKind, setErrorKind] = useState<"read" | "action">("read");
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<readonly [string, string] | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
+  const requestId = useRef(0);
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      const response = await fetch(`/api/listings/${listingId}`, {
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) throw await responseError(response);
-      const next = (await response.json()) as ListingViewResponse;
-      setSnapshot(next);
-      setError(null);
-      if (
-        next.status === "processing" ||
-        next.status === "needs_info" ||
-        next.status === "in_review" ||
-        next.status === "failed"
-      ) {
-        setProcessingState(undefined);
+      const id = ++requestId.current;
+      try {
+        const response = await fetch(`/api/listings/${listingId}`, {
+          cache: "no-store",
+          signal,
+        });
+        if (!response.ok) throw await responseError(response);
+        const next = (await response.json()) as ListingViewResponse;
+        if (requestId.current !== id || signal?.aborted) return;
+        setSnapshot(next);
+        setError(null);
+        if (
+          next.status === "processing" ||
+          next.status === "needs_info" ||
+          next.status === "in_review" ||
+          next.status === "failed"
+        ) {
+          setProcessingState(undefined);
+        }
+      } catch (cause) {
+        if (requestId.current === id && !signal?.aborted) {
+          setErrorKind("read");
+          setError(
+            cause instanceof Error ? cause.message : "Unable to load listing.",
+          );
+        }
+        // Background callers swallow rejection; imperative callers must observe it
+        // even when a newer request owns the displayed snapshot and load error.
+        throw cause;
       }
     },
     [listingId],
@@ -517,27 +554,19 @@ export function ListingReviewClient({
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal).catch((loadError: unknown) => {
-      if (loadError instanceof DOMException && loadError.name === "AbortError")
-        return;
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load listing.",
-      );
-    });
-    return () => controller.abort();
+    // load publishes request-scoped errors; imperative callers still reject.
+    void load(controller.signal).catch(() => {});
+    return () => {
+      ++requestId.current;
+      controller.abort();
+    };
   }, [load]);
 
   useEffect(() => {
     if (snapshot?.status !== "received" && snapshot?.status !== "processing")
       return;
     const timer = window.setInterval(() => {
-      load().catch((cause: unknown) => {
-        setError(
-          cause instanceof Error ? cause.message : "Unable to refresh listing.",
-        );
-      });
+      void load().catch(() => {});
     }, 3_000);
     return () => window.clearInterval(timer);
   }, [load, snapshot?.status]);
@@ -557,7 +586,7 @@ export function ListingReviewClient({
   }
 
   const run = useCallback(
-    async (work: () => Promise<void>, success: string) => {
+    async (work: () => Promise<void>, success: readonly [string, string]) => {
       setBusy(true);
       setError(null);
       setMessage(null);
@@ -565,6 +594,7 @@ export function ListingReviewClient({
         await work();
         setMessage(success);
       } catch (runError) {
+        setErrorKind("action");
         setError(
           runError instanceof Error
             ? runError.message
@@ -585,7 +615,7 @@ export function ListingReviewClient({
       if (!response.ok) throw await responseError(response);
       setProcessingState("queued");
       await load();
-    }, "已加入處理佇列 · Processing queued");
+    }, ["已加入處理佇列", "Processing queued"]);
   }
 
   const viewState = resolveListingViewState({
@@ -599,24 +629,31 @@ export function ListingReviewClient({
   if (viewState.kind === "error")
     return (
       <div className="page-wrap">
-        <p className="inline-warning" role="alert">
-          {viewState.message}
-        </p>
+        <div className="load-error" role="alert">
+          <span>{safeUiError(viewState.message, locale)}</span>
+          <button type="button" onClick={() => void load().catch(() => {})}>
+            {commonCopy[locale].retry}
+          </button>
+        </div>
       </div>
     );
   if (viewState.kind === "processing" && snapshot)
     return (
       <div className="page-wrap review-page" aria-busy={busy}>
         {error ? (
-          <p className="inline-warning" role="alert">
-            {error}
+          <p className="inline-warning" role="alert" id="listing-action-error">
+            {safeUiError(error, locale, errorKind)}
+            <button type="button" onClick={() => void load().catch(() => {})}>
+              {commonCopy[locale].retry}
+            </button>
           </p>
         ) : null}
         {message ? (
           <p className="success-note" role="status">
-            {message}
+            {localized(locale, ...message)}
           </p>
         ) : null}
+        <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
         <ListingProcessingPanel
           status={viewState.status}
           enqueueState={processingState}
@@ -630,7 +667,7 @@ export function ListingReviewClient({
     return (
       <div className="page-wrap">
         <p className="helper-copy" role="status">
-          正在載入商品資料… Loading listing…
+          {t("正在載入商品資料…", "Loading listing…")}
         </p>
       </div>
     );
@@ -651,7 +688,7 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, "草稿已儲存 · Draft saved");
+    }, ["草稿已儲存", "Draft saved"]);
   }
 
   async function approve() {
@@ -674,7 +711,7 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, "商品已批准 · Listing approved");
+    }, ["商品已批准", "Listing approved"]);
   }
 
   async function resolveFlag(flagId: string, reason: string) {
@@ -686,7 +723,7 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, "合規提示已處理 · Compliance flag resolved");
+    }, ["合規提示已處理", "Compliance flag resolved"]);
   }
 
   async function saveConfirmations(
@@ -708,7 +745,7 @@ export function ListingReviewClient({
       );
       if (!response.ok) throw await responseError(response);
       await load();
-    }, "確認狀態已更新 · Confirmation updated");
+    }, ["確認狀態已更新", "Confirmation updated"]);
   }
 
   async function exportCsv() {
@@ -731,7 +768,7 @@ export function ListingReviewClient({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
-    }, "CSV 已下載 · CSV downloaded");
+    }, ["CSV 已下載", "CSV downloaded"]);
   }
 
   async function publish() {
@@ -743,38 +780,46 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, "已加入 SHOPLINE 發布佇列 · Publish queued");
+    }, ["已加入 SHOPLINE 發布佇列", "Publish queued"]);
   }
 
   return (
     <div className="page-wrap review-page" aria-busy={busy}>
       <div className="breadcrumb">
-        <Link href="/dashboard">工作台</Link>
+        <Link href="/dashboard">{t("工作台", "Dashboard")}</Link>
         <span aria-hidden="true">/</span>
         <span>{model.title}</span>
       </div>
+      <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
       <div className="review-header">
         <div>
           <p className="eyebrow">
-            商品審核 <span>LISTING REVIEW · {model.id}</span>
+            {t("商品審核", "Listing review")} · <code>{model.id}</code>
           </p>
           <h1>{model.title}</h1>
-          <p className="lede">確認 AI 建議、核對來源，然後交由審核員批准。</p>
+          <p className="lede">
+            {t(
+              "確認 AI 建議、核對來源，然後交由審核員批准。",
+              "Review AI suggestions and source evidence before reviewer approval.",
+            )}
+          </p>
         </div>
         <span className={`review-status status-${model.status}`}>
           <span aria-hidden="true" />
-          {model.status}
-          <small>Current status</small>
+          {stateLabel(model.status, locale)}
         </span>
       </div>
       {error ? (
-        <p className="inline-warning" role="alert">
-          {error}
+        <p className="inline-warning" role="alert" id="listing-action-error">
+          {safeUiError(error, locale, errorKind)}
+          <button type="button" onClick={() => void load().catch(() => {})}>
+            {commonCopy[locale].retry}
+          </button>
         </p>
       ) : null}
       {message ? (
         <p className="success-note" role="status">
-          {message}
+          {localized(locale, ...message)}
         </p>
       ) : null}
       <div className="review-layout">
@@ -797,6 +842,8 @@ export function ListingReviewClient({
               snapshot.reviewConfirmation?.negativeConfirmations
             }
             onApprove={approve}
+            actionErrorId={error ? "listing-action-error" : undefined}
+            busy={busy}
             onSave={save}
           />
           <ConfirmationChecklist
@@ -819,6 +866,7 @@ export function ListingReviewClient({
             sku={content?.sku ?? null}
             onCsv={exportCsv}
             onPublish={publish}
+            onResultRecorded={() => load()}
           />
           <ActivityPanel entries={snapshot.activity} />
         </div>

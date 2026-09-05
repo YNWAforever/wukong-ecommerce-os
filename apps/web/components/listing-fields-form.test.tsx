@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CONFIRMATION_FIELD_KEYS,
@@ -123,7 +123,7 @@ describe("ListingFieldsForm", () => {
     const markup = renderToStaticMarkup(<ListingFieldsForm model={seoModel} />);
 
     expect(markup).toContain("SEO 與標籤");
-    expect(markup).toContain("SEO &amp; tags");
+    expect(markup).toContain("SEO 與標籤");
     expect(markup).toContain("SEO 標題（英文）");
     expect(markup).toContain("SEO 標題（繁中）");
     expect(markup).toContain("SEO 描述（英文）");
@@ -160,3 +160,6 @@ describe("ListingFieldsForm", () => {
     expect(markup).not.toContain('disabled=""');
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "zh-Hant" }));

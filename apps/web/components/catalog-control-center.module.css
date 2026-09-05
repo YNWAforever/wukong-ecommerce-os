@@ -114,8 +114,15 @@
 }
 
 .tableWrap {
+  /* Keep positioned accessible labels inside the horizontal scroll area. */
+  position: relative;
   width: 100%;
   overflow-x: auto;
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
 }
 
 .table {
@@ -365,4 +372,12 @@
     padding-left: 16px;
     padding-right: 16px;
   }
+}
+
+.selectionBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }

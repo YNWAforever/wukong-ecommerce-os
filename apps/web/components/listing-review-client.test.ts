@@ -308,6 +308,87 @@ function processingFetcher() {
 }
 
 describe("ListingReviewClient processing orchestration", () => {
+  it("ignores an obsolete poll rejection after a newer poll succeeds", async () => {
+    let rejectOld!: (cause: Error) => void;
+    const old = new Promise<Response>((_, reject) => {
+      rejectOld = reject;
+    });
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockReturnValueOnce(old)
+      .mockResolvedValueOnce(Response.json(processingSnapshot("processing")));
+    const { container } = await mountReview("queued");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(container.textContent).toContain("AI processing");
+    await act(async () => {
+      rejectOld(new Error("obsolete failure"));
+    });
+    expect(container.textContent).not.toContain("obsolete failure");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("rejects an imperative refresh superseded by a successful poll without claiming mutation success", async () => {
+    let rejectRefresh!: (cause: Error) => void;
+    const refresh = new Promise<Response>((_, reject) => {
+      rejectRefresh = reject;
+    });
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockResolvedValueOnce(
+        Response.json({ processing: { state: "queued", jobId: "job_1" } }),
+      )
+      .mockReturnValueOnce(refresh)
+      .mockResolvedValueOnce(Response.json(processingSnapshot("processing")));
+    const { container } = await mountReview("retry_required");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Start processing"))!
+        .click();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(container.textContent).toContain("AI processing");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => {
+      rejectRefresh(new Error("imperative refresh failed"));
+    });
+    expect(container.querySelector(".success-note")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "The action could not be completed. Please retry.",
+    );
+    expect(container.textContent).toContain("AI processing");
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("rejects the current imperative refresh so a mutation cannot claim refresh success", async () => {
+    processingFetcher()
+      .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
+      .mockResolvedValueOnce(
+        Response.json({ processing: { state: "queued", jobId: "job_1" } }),
+      )
+      .mockRejectedValueOnce(new Error("current refresh failed"));
+    const { container } = await mountReview("retry_required");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Start processing"))!
+        .click();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "The action could not be completed. Please retry.",
+    );
+    expect(container.querySelector(".success-note")).toBeNull();
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -322,8 +403,8 @@ describe("ListingReviewClient processing orchestration", () => {
   });
 
   it.each([
-    ["queued", "已加入處理佇列 · Queued for processing", false],
-    ["retry_required", "尚未開始處理 · Processing not started", true],
+    ["queued", "Queued for processing", false],
+    ["retry_required", "Processing not started", true],
   ] as const)(
     "binds initial %s state to the processing panel",
     async (initialProcessing, copy, hasStartButton) => {
@@ -375,9 +456,7 @@ describe("ListingReviewClient processing orchestration", () => {
       "/api/listings/00000000-0000-4000-8000-000000000101",
       expect.objectContaining({ cache: "no-store" }),
     );
-    expect(container.textContent).toContain(
-      "AI 正在建立商品資料 · AI processing",
-    );
+    expect(container.textContent).toContain("AI processing");
     expect(container.textContent).not.toContain("Start processing");
   });
 
@@ -441,7 +520,9 @@ describe("ListingReviewClient processing orchestration", () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("temporary network failure");
+    expect(container.textContent).toContain(
+      "Unable to load data. Please retry.",
+    );
 
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
     expect(fetcher).toHaveBeenCalledTimes(3);
@@ -449,3 +530,53 @@ describe("ListingReviewClient processing orchestration", () => {
     expect(container.textContent).toContain("AI processing");
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+const preference = vi.hoisted(() => ({ locale: "en" as "en" | "zh-Hant" }));
+vi.mock("../lib/locale-context", () => ({
+  useLocale: () => preference.locale,
+}));
+
+it.each(["en", "zh-Hant"] as const)(
+  "renders draft success only in %s and updates it after a locale change",
+  async (locale) => {
+    preference.locale = locale;
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(response))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json(response));
+    const { container, root } = await mountReview();
+    try {
+      await act(async () => {
+        container
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+      });
+      expect(fetcher).toHaveBeenCalledTimes(3);
+      expect(fetcher.mock.calls[1]![1]?.method).toBe("PUT");
+      expect(
+        JSON.parse(fetcher.mock.calls[1]![1]?.body as string).baseVersionId,
+      ).toBe(response.activeVersion!.id);
+      expect(
+        container.querySelector('.success-note[role="status"]')?.textContent,
+      ).toBe(locale === "en" ? "Draft saved" : "草稿已儲存");
+      preference.locale = locale === "en" ? "zh-Hant" : "en";
+      await act(async () =>
+        root.render(
+          createElement(ListingReviewClient, { listingId: response.listingId }),
+        ),
+      );
+      expect(
+        container.querySelector('.success-note[role="status"]')?.textContent,
+      ).toBe(locale === "en" ? "草稿已儲存" : "Draft saved");
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    } finally {
+      await unmountReview(root);
+      container.remove();
+      preference.locale = "en";
+      vi.unstubAllGlobals();
+    }
+  },
+);

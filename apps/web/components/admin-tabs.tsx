@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 
 import { useState } from "react";
 
@@ -17,11 +19,16 @@ const TABS: { id: AdminTab; label: string }[] = [
 ];
 
 export function AdminTabs() {
+  const locale = useLocale();
   const [active, setActive] = useState<AdminTab>("members");
 
   return (
     <div className="admin-tabs">
-      <div className="admin-tab-list" role="tablist" aria-label="管理區段">
+      <div
+        className="admin-tab-list"
+        role="tablist"
+        aria-label={localized(locale, "管理區段", "Admin sections")}
+      >
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -33,7 +40,21 @@ export function AdminTabs() {
             className={active === tab.id ? "admin-tab active" : "admin-tab"}
             onClick={() => setActive(tab.id)}
           >
-            {tab.label}
+            {localized(
+              locale,
+              {
+                members: "成員",
+                connection: "SHOPLINE 連線",
+                settings: "設定",
+                capabilities: "系統真相",
+              }[tab.id],
+              {
+                members: "Members",
+                connection: "SHOPLINE connection",
+                settings: "Settings",
+                capabilities: "System Truth",
+              }[tab.id],
+            )}
           </button>
         ))}
       </div>

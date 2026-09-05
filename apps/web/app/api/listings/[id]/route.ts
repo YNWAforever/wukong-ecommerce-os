@@ -1,3 +1,4 @@
+import { readSourceReadiness } from "../../../../lib/source-readiness";
 import type { AssetStore } from "@wukong/assets";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -39,6 +40,7 @@ const roleRank: Record<string, number> = {
 function listingPermissions(role: string) {
   const rank = roleRank[role] ?? 0;
   return {
+    canRecordImportResult: rank >= 20,
     canProcess: rank >= 20,
     canEdit: rank >= 20,
     canResolveFlags: rank >= 20,
@@ -119,6 +121,11 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           }
 
           return {
+            sourceReadiness: await readSourceReadiness(
+              repositories,
+              session.workspaceId,
+              id,
+            ),
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,
@@ -137,7 +144,10 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               : null,
             queueStatus: job?.status ?? null,
             shoplineLink: platformProductLink
-              ? { remoteProductId: platformProductLink.remoteProductId }
+              ? {
+                  remoteProductId: platformProductLink.remoteProductId,
+                  origin: platformProductLink.origin,
+                }
               : null,
             reviewConfirmation: reviewConfirmation
               ? {
@@ -151,6 +161,8 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             contentDigest: platformProductLink?.contentDigest ?? null,
             permissions: listingPermissions(session.role),
             activity,
+            historicalImportResults:
+              await repositories.importResults.listHistoricalForListing(id),
           };
         });
       return jsonResponse(200, result);

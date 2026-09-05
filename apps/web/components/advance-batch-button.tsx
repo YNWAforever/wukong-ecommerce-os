@@ -35,12 +35,12 @@ export async function submitAdvanceBatch(
   batchId: string,
   deps: AdvanceBatchDeps = { fetcher: fetch },
 ): Promise<AdvanceBatchOutcome> {
+  const { fetcher } = deps;
   let response: Response;
   try {
-    response = await deps.fetcher(
-      `/api/enrichment-batches/${batchId}/advance`,
-      { method: "POST" },
-    );
+    response = await fetcher(`/api/enrichment-batches/${batchId}/advance`, {
+      method: "POST",
+    });
   } catch {
     return {
       kind: "network_error",

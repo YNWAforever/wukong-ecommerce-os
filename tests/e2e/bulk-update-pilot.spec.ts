@@ -1,15 +1,21 @@
 import { expect, test } from "@playwright/test";
+import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { BULK_FORM_COLUMNS } from "../../packages/shopline/src/bulk-form.js";
-import { writeBulkFormWorkbook } from "../../packages/shopline/src/bulk-form-xlsx.js";
+import {
+  readBulkFormSheet,
+  writeBulkFormWorkbook,
+} from "../../packages/shopline/src/bulk-form-xlsx.js";
 import {
   ADMIN_URL,
   prepareBulkImportFixture,
+  prepareBulkUpdateFixture,
   signInBulkImportOperator,
 } from "./real-stack-fixture.js";
 
-// Task 4 covers import only. Enrichment/export/reconciliation are subsequent slices.
+// Import authorization and the attended Task 5 delivery journey use synthetic data.
 test.describe.configure({ mode: "serial" });
 let fixture: Awaited<ReturnType<typeof prepareBulkImportFixture>>;
 const filename = "合成目錄 &+?#.xlsx";
@@ -177,4 +183,397 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
   await expect(page.getByRole("status")).toContainText(
     "Operator access is required",
   );
+});
+
+test("reviewer completes attended Bulk Update and reconciles mixed operator reports", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  page.setDefaultTimeout(10_000);
+  const operator = await prepareBulkUpdateFixture();
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await signInBulkImportOperator(page, operator);
+  const rows = ["0001", "0002"].map((sku) => ({
+    ...defaults,
+    productId: "synthetic-update-" + sku,
+    sku,
+    nameEn: "Demo Estate Riesling wine 2024, Germany, Mosel, 750ml, 12.5% ABV",
+    nameZh: "",
+  }));
+  const input = Buffer.from(
+    writeBulkFormWorkbook([
+      BULK_FORM_COLUMNS.map((c) => c.en),
+      BULK_FORM_COLUMNS.map((c) => c.zh),
+      ...rows.map((row) =>
+        BULK_FORM_COLUMNS.map((c) => row[c.key as keyof typeof row] ?? ""),
+      ),
+    ]),
+  );
+  await page.locator("#bulk-import-file").setInputFiles({
+    name: "synthetic-task5.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: input,
+  });
+  const attested = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 16);
+  await page.locator("#merchant-attested-export-at").fill(attested);
+  const imported = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/import" &&
+      r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "開始匯入 Import" }).click();
+  expect((await imported).status()).toBe(201);
+  await page.goto("/batches");
+  await page.getByLabel(/Label/).fill("Synthetic attended update");
+  await page.getByLabel(/Budget/).fill("1");
+  await page.getByLabel(/Wave size/).fill("2");
+  const created = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/enrichment-batches" &&
+      r.request().method() === "POST",
+    { timeout: 10_000 },
+  );
+  await page.getByRole("button", { name: /Create batch/ }).click();
+  const createdResponse = await created;
+  expect(createdResponse.status()).toBe(201);
+  const { batchId, selected } = await createdResponse.json();
+  expect(selected).toBe(2);
+  await page.goto("/batches/" + batchId);
+  const advanced = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + batchId + "/advance") &&
+      r.request().method() === "POST",
+    { timeout: 10_000 },
+  );
+  await page.getByRole("button", { name: /Advance/ }).click();
+  expect((await advanced).status()).toBe(200);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  let listingIds: string[];
+  try {
+    await expect
+      .poll(
+        async () => {
+          const drafts =
+            await admin`SELECT id,status FROM listing_drafts WHERE workspace_id=${operator.workspaceId} ORDER BY created_at,id`;
+          return drafts.filter((d) => d.status === "in_review").length;
+        },
+        {
+          timeout: 60_000,
+          message: "Fake AI Queue must enrich both imported drafts",
+        },
+      )
+      .toBe(2);
+    const drafts =
+      await admin`SELECT id FROM listing_drafts WHERE workspace_id=${operator.workspaceId} ORDER BY created_at,id`;
+    listingIds = drafts.map((d) => d.id);
+  } finally {
+    await admin.end();
+  }
+
+  // The attended follow-up reconciles the completed wave without enqueueing more work.
+  const reconciledBatch = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + batchId + "/advance") &&
+      r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: /Advance/ }).click();
+  const batchResponse = await reconciledBatch;
+  expect(batchResponse.status()).toBe(200);
+  expect(await batchResponse.json()).toMatchObject({
+    status: "completed",
+    enqueued: 0,
+  });
+  await expect(page.getByText("succeeded: 2", { exact: true })).toBeVisible();
+  for (const [index, id] of listingIds.entries()) {
+    await page.goto("/listings/" + id);
+    await page
+      .getByRole("textbox", {
+        name: "Title (Traditional Chinese)",
+        exact: true,
+      })
+      .fill("合成審核商品 " + (index + 1));
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page.getByText(/Draft saved/)).toBeVisible();
+    for (const key of [
+      "nameZh",
+      "summaryEn",
+      "summaryZh",
+      "seoTitleEn",
+      "seoTitleZh",
+      "seoDescriptionEn",
+      "seoDescriptionZh",
+      "seoKeywords",
+    ]) {
+      const box = page.locator("#confirmation-field-" + key);
+      await box.click();
+      await expect(box).toBeChecked();
+    }
+    for (const key of [
+      "priceUnchanged",
+      "membershipUnchanged",
+      "categoryUnchanged",
+      "statusUnchanged",
+      "supplierUnchanged",
+      "quantityDeltaNeutral",
+      "noImageChange",
+    ]) {
+      const box = page.locator("#confirmation-negative-" + key);
+      await box.click();
+      await expect(box).toBeChecked();
+    }
+    await page
+      .getByRole("button", { name: "Approve listing", exact: true })
+      .click();
+    await expect(page.getByText(/Listing approved/)).toBeVisible();
+  }
+  await page.goto("/catalog");
+  await page.getByLabel("Select 0001 for Bulk Update", { exact: true }).check();
+  await page.getByLabel("Select 0002 for Bulk Update", { exact: true }).check();
+  const generate = page.getByRole("button", {
+    name: "Generate Bulk Update XLSX",
+    exact: true,
+  });
+  await expect(generate).toBeDisabled();
+  await page
+    .getByLabel("I confirm this SHOPLINE source export is still current.", {
+      exact: true,
+    })
+    .check();
+
+  await expect(generate).toBeEnabled();
+  const exportedResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/export" &&
+      r.request().method() === "POST",
+  );
+  await generate.click();
+  const exported = await exportedResponse;
+  expect(exported.status()).toBe(200);
+  const receipt = await exported.json();
+  expect(receipt.rowCount).toBe(2);
+  expect(receipt.artifactStatus).toBe("ready");
+  expect(receipt.manifest.map((m: { outcome: string }) => m.outcome)).toEqual([
+    "included",
+    "included",
+  ]);
+  const attemptId: string = receipt.exportAttemptId;
+  const attempt = page.locator('[data-export-attempt-id="' + attemptId + '"]');
+  await expect(attempt).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await attempt.getByRole("link", { name: /Download/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+  const bytes = await readFile((await download.path())!);
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+    receipt.artifactSha256,
+  );
+  const sheet = readBulkFormSheet(bytes);
+  expect(sheet).toHaveLength(4);
+  const skuIndex = BULK_FORM_COLUMNS.findIndex((c) => c.key === "sku");
+  const neutralIndex = BULK_FORM_COLUMNS.findIndex(
+    (c) => c.key === "updateQuantity",
+  );
+  const nameIndex = BULK_FORM_COLUMNS.findIndex((c) => c.key === "nameZh");
+  expect(
+    sheet
+      .slice(2)
+      .map((row) => row[skuIndex])
+      .sort(),
+  ).toEqual(["0001", "0002"]);
+  for (const row of sheet.slice(2)) {
+    expect(row[neutralIndex]).toBe("+0");
+    expect(row[nameIndex]).toMatch(/^合成審核商品 /);
+  }
+  await page.goto("/jobs");
+  const ledgerAttempt = page.locator(
+    '[data-export-attempt-id="' + attemptId + '"]',
+  );
+  await expect(ledgerAttempt).toBeVisible();
+  const first = ledgerAttempt.locator(
+    '[data-listing-id="' + listingIds[0] + '"]',
+  );
+  await first
+    .getByRole("combobox", { name: "Outcome", exact: true })
+    .selectOption("accepted");
+  const recorded = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + listingIds[0] + "/shopline-import-result") &&
+      r.request().method() === "POST",
+  );
+  await first
+    .getByRole("button", { name: "Record operator result", exact: true })
+    .click();
+  expect((await recorded).status()).toBe(201);
+  await expect(first).toContainText("Operator reported accepted");
+  const second = ledgerAttempt.locator(
+    '[data-listing-id="' + listingIds[1] + '"]',
+  );
+  await second
+    .getByRole("combobox", { name: "Outcome", exact: true })
+    .selectOption("rejected");
+  await second
+    .getByLabel("Rejection reason", { exact: true })
+    .fill("Synthetic SHOPLINE import rejected the row");
+  const rejected = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + listingIds[1] + "/shopline-import-result") &&
+      r.request().method() === "POST",
+  );
+  await second
+    .getByRole("button", { name: "Record operator result", exact: true })
+    .click();
+  expect((await rejected).status()).toBe(201);
+  await page.reload();
+  await expect(ledgerAttempt).toContainText("Operator reported accepted");
+  await expect(ledgerAttempt).toContainText(
+    "Synthetic SHOPLINE import rejected the row",
+  );
+  const jobs = await (await page.request.get("/api/jobs")).json();
+  const reconciled = jobs.exportReconciliations.find(
+    (entry: { attempt: { id: string } }) => entry.attempt.id === attemptId,
+  );
+  expect(reconciled.reconciliation.counts).toEqual({
+    requested: 2,
+    included: 2,
+    excluded: 0,
+    noOp: 0,
+    accepted: 1,
+    rejected: 1,
+    unreported: 0,
+  });
+  expect(reconciled.reconciliation.verificationStatus).toBe("unverified");
+  expect(
+    reconciled.reconciliation.members.every(
+      (member: { history: unknown[] }) => member.history.length === 1,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("task5-jobs-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("task5-jobs-mobile.png"),
+    fullPage: true,
+  });
+
+  // The first correction reaches the real server but its response is lost.
+  // Retry must reuse the logical key and preserve exactly two history rows.
+  const secondMember = reconciled.reconciliation.members.find(
+    (member: { listingId: string }) => member.listingId === listingIds[1],
+  );
+  const predecessor = secondMember.latestResult.id;
+  let committedCorrection: { id: string } | undefined;
+  let firstCorrectionKey: string | undefined;
+  await page.route(
+    "**/api/listings/" + listingIds[1] + "/shopline-import-result",
+    async (route) => {
+      firstCorrectionKey = route.request().postDataJSON().idempotencyKey;
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedCorrection = (await response.json()).result;
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await second
+    .getByRole("combobox", { name: "Outcome", exact: true })
+    .selectOption("accepted");
+  await second
+    .getByLabel("Correction reason", { exact: true })
+    .fill("Synthetic operator corrected the rejected report");
+  await second
+    .getByRole("button", { name: "Record correction", exact: true })
+    .click();
+  await expect(second.getByRole("alert")).toBeVisible();
+  const retry = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + listingIds[1] + "/shopline-import-result") &&
+      r.request().method() === "POST",
+  );
+  await second
+    .getByRole("button", { name: "Record correction", exact: true })
+    .click();
+  const retryResponse = await retry;
+  expect(retryResponse.status()).toBe(200);
+  expect(retryResponse.request().postDataJSON().idempotencyKey).toBe(
+    firstCorrectionKey,
+  );
+  expect(await retryResponse.json()).toMatchObject({
+    replayed: true,
+    result: { id: committedCorrection!.id, supersedesResultId: predecessor },
+  });
+  await page.reload();
+  await expect(second).toContainText(
+    "Synthetic operator corrected the rejected report",
+  );
+  await expect(second).toContainText(
+    "Synthetic SHOPLINE import rejected the row",
+  );
+  const detail = await (
+    await page.request.get("/api/listings/export/" + attemptId)
+  ).json();
+  expect(detail.reconciliation.counts).toMatchObject({
+    accepted: 2,
+    rejected: 0,
+    unreported: 0,
+  });
+  expect(detail.reconciliation.verificationStatus).toBe("unverified");
+  expect(
+    detail.reconciliation.members.find(
+      (member: { listingId: string }) => member.listingId === listingIds[1],
+    ).history,
+  ).toHaveLength(2);
+
+  const evidenceDb = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const [audit] =
+      await evidenceDb`SELECT count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='listing.shopline_import_result_recorded'`;
+    expect(audit!.count).toBe(3);
+    const [publishes] =
+      await evidenceDb`SELECT count(*)::int AS count FROM publish_jobs WHERE workspace_id=${operator.workspaceId}`;
+    expect(publishes!.count).toBe(0);
+    const aiRuns =
+      await evidenceDb`SELECT model,estimated_cost_usd FROM ai_runs WHERE workspace_id=${operator.workspaceId}`;
+    expect(aiRuns).toHaveLength(4);
+    expect(
+      aiRuns.every(
+        (run) =>
+          run.model === "fake-listing-provider" &&
+          Number(run.estimated_cost_usd) === 0,
+      ),
+    ).toBe(true);
+  } finally {
+    await evidenceDb.end();
+  }
+  const qualityResponse = await page.request.get("/api/quality");
+  expect(qualityResponse.status()).toBe(200);
+  const qualityMetrics = (await qualityResponse.json()).reviewMetrics;
+  // Two generated versions and two saved versions; each saved version was approved.
+  expect(qualityMetrics.approvalFraction).toMatchObject({
+    numerator: 2,
+    denominator: 4,
+    value: 0.5,
+  });
+  // Each saved version changed only the allowed Traditional Chinese name field.
+  expect(qualityMetrics.humanEditedFieldFraction).toMatchObject({
+    numerator: 2,
+    denominator: 16,
+    value: 0.125,
+  });
+  expect(qualityMetrics.creationToApprovalMs.denominator).toBe(2);
+  expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
+  await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
+  expect(pageErrors).toEqual([]);
 });

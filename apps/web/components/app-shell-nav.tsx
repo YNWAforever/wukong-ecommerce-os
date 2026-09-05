@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
+import { useLocalePreference } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 import { setLocaleCookie, type Locale } from "../lib/locale";
 
 export type NavItem = {
@@ -40,7 +42,9 @@ export function AppShellNav({
   initialLocale,
   onLocaleChange,
 }: AppShellNavProps) {
-  const [locale, setLocale] = useState<Locale>(initialLocale);
+  const preference = useLocalePreference();
+  const [fallbackLocale, setLocale] = useState<Locale>(initialLocale);
+  const locale = preference?.locale ?? fallbackLocale;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -55,17 +59,12 @@ export function AppShellNav({
   const navClassName = (item: NavItem) =>
     isActive(item.href) ? "active" : undefined;
   const label = (item: NavItem) =>
-    locale === "zh-Hant" ? (
-      <>
-        {item.labelZh} <span>{item.labelEn}</span>
-      </>
-    ) : (
-      <>{item.labelEn}</>
-    );
+    localized(locale, item.labelZh, item.labelEn);
 
   function changeLocale(next: Locale) {
     setLocale(next);
-    setLocaleCookie(next);
+    if (preference) preference.changeLocale(next);
+    else setLocaleCookie(next);
     onLocaleChange?.(next);
   }
 
@@ -86,6 +85,13 @@ export function AppShellNav({
     const drawer = drawerRef.current;
     if (!drawer) return;
 
+    const background = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "#main-content,.app-footer,.skip-link",
+      ),
+    );
+    const inertBefore = background.map((el) => el.hasAttribute("inert"));
+    background.forEach((el) => el.setAttribute("inert", ""));
     const focusable = () =>
       Array.from(drawer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 
@@ -113,6 +119,9 @@ export function AppShellNav({
     drawer.addEventListener("keydown", handleKeydown);
     return () => {
       drawer.removeEventListener("keydown", handleKeydown);
+      background.forEach((el, i) => {
+        if (!inertBefore[i]) el.removeAttribute("inert");
+      });
       triggerRef.current?.focus();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,7 +139,7 @@ export function AppShellNav({
           <Link
             className="brand-mark"
             href="/dashboard"
-            aria-label="Wukong home"
+            aria-label={localized(locale, "Wukong 首頁", "Wukong home")}
           >
             W
           </Link>
@@ -146,7 +155,7 @@ export function AppShellNav({
           className={
             isAdmin ? "app-sidebar" : "app-sidebar app-sidebar--no-admin-footer"
           }
-          aria-label="主要導覽"
+          aria-label={localized(locale, "主要導覽", "Main navigation")}
         >
           {navItems.map((item) => (
             <Link
@@ -167,7 +176,11 @@ export function AppShellNav({
           </div>
         ) : null}
 
-        <div className="locale-toggle" role="group" aria-label="介面語言">
+        <div
+          className="locale-toggle"
+          role="group"
+          aria-label={localized(locale, "介面語言", "Interface language")}
+        >
           <button
             type="button"
             data-testid="locale-toggle-zh"
@@ -186,7 +199,14 @@ export function AppShellNav({
           </button>
         </div>
 
-        <nav className="app-bottom-nav" aria-label="流動版主要導覽">
+        <nav
+          className="app-bottom-nav"
+          aria-label={localized(
+            locale,
+            "流動版主要導覽",
+            "Mobile main navigation",
+          )}
+        >
           {mobileNav.map((item) => (
             <Link
               key={item.href}
@@ -203,26 +223,16 @@ export function AppShellNav({
             aria-expanded={drawerOpen}
             onClick={openDrawer}
           >
-            {locale === "zh-Hant" ? (
-              <>
-                開啟導覽 <span>Open navigation</span>
-              </>
-            ) : (
-              "Open navigation"
-            )}
+            {localized(locale, "開啟導覽", "Open navigation")}
           </button>
         </nav>
 
         <div className="topbar-meta">
-          <span className="pilot-badge">PILOT</span>
+          <span className="pilot-badge">
+            {localized(locale, "試行", "PILOT")}
+          </span>
           <span className="operator-name">
-            {locale === "zh-Hant" ? (
-              <>
-                {roleLabelZh} <span>{roleLabelEn}</span>
-              </>
-            ) : (
-              roleLabelEn
-            )}
+            {localized(locale, roleLabelZh, roleLabelEn)}
           </span>
         </div>
       </div>
@@ -234,22 +244,22 @@ export function AppShellNav({
           ref={drawerRef}
           role="dialog"
           aria-modal="true"
-          aria-label={DRAWER_LABEL}
+          aria-label={localized(locale, DRAWER_LABEL, "Full mobile navigation")}
         >
           <button
             type="button"
             data-testid="drawer-close"
             onClick={closeDrawer}
           >
-            {locale === "zh-Hant" ? (
-              <>
-                關閉 <span>Close</span>
-              </>
-            ) : (
-              "Close"
-            )}
+            {localized(locale, "關閉", "Close")}
           </button>
-          <nav aria-label={DRAWER_LABEL}>
+          <nav
+            aria-label={localized(
+              locale,
+              DRAWER_LABEL,
+              "Full mobile navigation",
+            )}
+          >
             {fullNav.map((item) => (
               <Link
                 key={item.href}

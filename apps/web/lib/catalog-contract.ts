@@ -1,8 +1,10 @@
+import type { SourceReadiness } from "./source-readiness";
 import type { ListingStatus } from "@wukong/core";
 
 export type CatalogOrigin = "import" | "created";
 
 export type CatalogItem = {
+  sourceReadiness?: SourceReadiness;
   id: string;
   remoteProductId: string;
   origin: CatalogOrigin;
@@ -29,6 +31,11 @@ export type CatalogSummary = {
 };
 
 export type CatalogPage = {
+  scope?: "workspace";
+  capabilities: {
+    canGenerateBulkUpdate: boolean;
+    canRecordImportResult: boolean;
+  };
   items: CatalogItem[];
   summary: CatalogSummary;
   page: number;

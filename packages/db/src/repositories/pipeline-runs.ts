@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, lt, not, sql } from "drizzle-orm";
+import { inArray, and, desc, eq, exists, lt, not, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { listingPipelineRuns, listingPipelineSteps } from "../schema.js";
 
@@ -50,6 +50,7 @@ export type PipelineRunRepository = {
   getState(key: string): Promise<PipelineRunState | null>;
   /** Newest-first, this workspace's pipeline runs only. `limit` defaults to
    * 100 and must be between 1 and 100. */
+  getByIds(ids: readonly string[]): Promise<PipelineRunSummary[]>;
   listForWorkspace(limit?: number): Promise<PipelineRunSummary[]>;
   claimStep(input: {
     idempotencyKey: string;
@@ -276,6 +277,45 @@ export function createPipelineRunRepository(
         errorCode: run.errorCode,
         steps,
       };
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select({
+          id: listingPipelineRuns.id,
+          listingId: listingPipelineRuns.listingId,
+          versionId: listingPipelineRuns.versionId,
+          status: listingPipelineRuns.status,
+          errorCode: listingPipelineRuns.errorCode,
+          createdAt: listingPipelineRuns.createdAt,
+        })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            eq(listingPipelineRuns.workspaceId, workspaceId),
+            inArray(listingPipelineRuns.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(
+          desc(listingPipelineRuns.createdAt),
+          desc(listingPipelineRuns.id),
+        )
+        .limit(100);
+      return rows.map((row) => ({
+        id: row.id,
+        listingId: row.listingId,
+        versionId: row.versionId,
+        status: row.status as "started" | "succeeded" | "failed",
+        errorCode: row.errorCode,
+        createdAt: row.createdAt,
+      }));
     },
 
     async listForWorkspace(limit = 100) {

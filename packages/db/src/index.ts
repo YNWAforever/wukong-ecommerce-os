@@ -80,6 +80,7 @@ export type {
   CreateImportResultInput,
   ImportResult,
   ImportResultOutcome,
+  ImportResultMode,
   ImportResultRepository,
 } from "./repositories/import-results.js";
 export type {
@@ -116,3 +117,8 @@ export type {
   RecordApprovalReceiptInput,
   ApprovalReceiptRepository,
 } from "./repositories/approval-receipts.js";
+
+export {
+  ImportResultConflict,
+  validateExportResultBinding,
+} from "./repositories/import-results.js";

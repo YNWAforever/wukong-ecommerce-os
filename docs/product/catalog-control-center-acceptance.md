@@ -32,3 +32,16 @@
 - Remote-versus-local field comparison and reconciliation states.
 - Bulk enrichment, approval, publishing, and retry actions.
 - Cross-channel catalog comparison.
+
+## Existing-product Bulk Update acceptance — 2026-09-05
+
+This section extends the original read-only sprint above for the implemented catalog operations flow; the original deferred bulk-action list is historical scope, not the current source state. Task 5 source and synthetic verification are recorded in docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. This does not claim deployment or merchant UAT completion.
+
+- Catalog selection, source-bound confirmations/approval, ready artifact download and attempt-bound operator reporting use the existing workspace/role boundaries.
+- Workbook fidelity covers all 71 positions independently: eight permitted content changes, ten locked, 51 pass-through and two neutral deltas. The contract fixture supplies both ordered headers; the output sheet is Default. Extra nonempty header columns, renamed/reordered headers and variant identities are refused by the applicable parser contract.
+- Exact source lexical strings are distinguished from normalized raw rows and typed XLSX cells. Numeric types/styles are not preserved; whitespace-only cells become blanks. Tests must never label successful normalized reparse as byte/typed fidelity.
+- Blank deltas stay blank and nonblank deltas become +0. Merchant acceptance and stock neutrality remain an authorized UAT decision, not a passing-unit-test claim.
+- Leading-zero/alphanumeric IDs, empty optional identifiers, missing product identity, numeric lexical values, unlimited/negative stock and multiline content have synthetic coverage in packages/shopline/src/bulk-form-fidelity.test.ts.
+- Operator-reported accepted/rejected totals remain independently unverified. Historical/manual reports cannot close an export attempt.
+- Retain the pre-change source, exact delivered bytes/digest and current protected-field comparison before separately authorized merchant restoration. A stale whole-row re-import is never automatically safe.
+- Real attended, golden-set, shadow and full-catalog stages remain unchecked; use docs/runbooks/opak-uat-rollout.md for evidence and sign-off. Keep generated and merchant evidence private.

@@ -59,9 +59,10 @@ export async function submitCreateBatch(
   input: CreateBatchFormInput,
   deps: CreateBatchDeps = { fetcher: fetch },
 ): Promise<CreateBatchOutcome> {
+  const { fetcher } = deps;
   let response: Response;
   try {
-    response = await deps.fetcher("/api/enrichment-batches", {
+    response = await fetcher("/api/enrichment-batches", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),

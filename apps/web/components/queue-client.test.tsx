@@ -75,7 +75,7 @@ describe("QueueClient", () => {
     const { container, root } = await mount(fetcher);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/listings",
+      "/api/listings?page=1&pageSize=100",
       expect.objectContaining({ cache: "no-store" }),
     );
     expect(container.textContent).toContain("Mosel Riesling Kabinett 2024");
@@ -179,7 +179,9 @@ describe("QueueClient", () => {
     });
 
     // The list reloads after a successful bulk-approve.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).toContain("listing_1");
 
@@ -211,7 +213,7 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Bulk approve failed");
+    expect(alert!.textContent).toContain("操作未能完成，請重試。");
 
     // Selection is preserved -- the bulk-action-bar only renders while
     // selected.size > 0, and it must still be there after a failed attempt.
@@ -219,7 +221,9 @@ describe("QueueClient", () => {
     expect(container.textContent).toContain("1 個項目已選取");
 
     // The list was not reloaded -- only the one initial /api/listings call.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
@@ -235,7 +239,7 @@ describe("QueueClient", () => {
           Response.json(
             {
               code: "insufficient_role",
-              message: "Reviewer access is required.",
+              message: "你沒有權限執行此操作。",
             },
             { status: 403 },
           ),
@@ -258,12 +262,14 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Reviewer access is required.");
+    expect(alert!.textContent).toContain("你沒有權限執行此操作。");
 
     expect(container.querySelector(".bulk-result-list")).toBeNull();
     expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
 
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
@@ -307,7 +313,7 @@ describe("QueueClient review context", () => {
                 listingId: "listing_3",
                 ok: false,
                 code: "version_conflict",
-                message: "Review this listing again.",
+                message: "需要重新檢查來源及審核證據",
               },
             ],
             approved: requests.length === 1 ? 1 : 0,
@@ -316,6 +322,8 @@ describe("QueueClient review context", () => {
         );
       }
       listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
       return Promise.resolve(
         Response.json({
           items: listLoads === 1 ? [eligibleItem, failedItem] : [refreshedItem],
@@ -329,12 +337,23 @@ describe("QueueClient review context", () => {
       );
       await act(async () => findButtonByText(container, "批准 2")!.click());
       expect(container.textContent).toContain("1 個項目已選取");
-      expect(container.textContent).toContain("Review this listing again.");
+      expect(container.textContent).toContain(
+        "版本已變更，請重新載入商品、審核並重新選取。",
+      );
       expect(
-        (container.querySelector('input[type="checkbox"]') as HTMLInputElement)
-          .checked,
-      ).toBe(true);
+        Array.from(
+          container.querySelectorAll<HTMLInputElement>(
+            'input[type="checkbox"]',
+          ),
+        ).filter((input) => input.checked),
+      ).toHaveLength(1);
       expect(listLoads).toBe(2);
+      expect(container.querySelector("[role=alert]")?.textContent).toContain(
+        "無法載入資料，請重試。",
+      );
+      expect(findButtonByText(container, "批准 1")!.disabled).toBe(true);
+      await act(async () => findButtonByText(container, "重試")!.click());
+      expect(container.querySelector("[role=alert]")).toBeNull();
 
       await act(async () => findButtonByText(container, "批准 1")!.click());
       expect(requests[1]).toEqual({
@@ -420,6 +439,8 @@ describe("QueueClient review context", () => {
         return Promise.resolve(new Response("not json", { status: 200 }));
       }
       listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
       return Promise.resolve(Response.json({ items: [eligibleItem] }));
     });
     const { container, root } = await mount(fetcher);
@@ -429,11 +450,103 @@ describe("QueueClient review context", () => {
       );
       await act(async () => findButtonByText(container, "批准 1")!.click());
       expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-        "Bulk approve failed",
+        "操作未能完成，請重試。",
       );
       expect(container.textContent).toContain("1 個項目已選取");
       expect(container.querySelector(".bulk-result-list")).toBeNull();
       expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
+  });
+});
+
+describe("QueueClient pagination", () => {
+  it("reaches rows after 100, keeps prior-page contexts and caps the total selection at 50", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => ({
+      ...eligibleItem,
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+    let pendingResolve!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      pendingResolve = resolve;
+    });
+    const requests: {
+      items: { listingId: string; expectedVersionId: string }[];
+    }[] = [];
+    let loads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({ message: "test submission" }, { status: 409 }),
+        );
+      }
+      loads++;
+      const page = Number(
+        new URL(String(input), "http://localhost").searchParams.get("page"),
+      );
+      if (loads === 2) return pending;
+      return Promise.resolve(
+        Response.json({
+          items: rows.slice((page - 1) * 100, page * 100),
+          totalMatching: 101,
+          page,
+          pageSize: 100,
+        }),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () => findButtonByText(container, "下一頁")!.click());
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+      expect(container.textContent).toContain("正在更新工作佇列");
+      await act(async () =>
+        pendingResolve(
+          Response.json({
+            items: [rows[100]],
+            totalMatching: 101,
+            page: 2,
+            pageSize: 100,
+          }),
+        ),
+      );
+      expect(container.textContent).toContain("Row 100");
+      expect(container.textContent).toContain("符合 101 個");
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("2 個項目已選取");
+      rows[0] = {
+        ...rows[0]!,
+        reviewContext: {
+          ...eligibleItem.reviewContext,
+          expectedVersionId: "changed",
+        },
+      };
+      await act(async () => findButtonByText(container, "上一頁")!.click());
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("50 個項目已選取");
+      await act(async () => findButtonByText(container, "批准 50")!.click());
+      expect(requests[0]!.items).toHaveLength(50);
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({ listingId: "row-100" }),
+      );
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({
+          listingId: "row-0",
+          expectedVersionId: "version_1",
+        }),
+      );
     } finally {
       await unmount(root);
     }

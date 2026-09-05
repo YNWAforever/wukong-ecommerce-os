@@ -54,6 +54,7 @@ export type EnrichmentBatchRepository = {
   countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
   /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
    * must be between 1 and 100. */
+  getByIds(ids: readonly string[]): Promise<EnrichmentBatch[]>;
   listForWorkspace(limit?: number): Promise<EnrichmentBatch[]>;
   /** Moves up to `limit` pending items to `queued` and returns their draft IDs. */
   claimWave(batchId: string, limit: number): Promise<string[]>;
@@ -225,6 +226,28 @@ export function createEnrichmentBatchRepository(
       ) as EnrichmentBatchCounts;
       for (const row of rows) counts[row.status] = Number(row.total);
       return counts;
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(enrichmentBatches)
+        .where(
+          and(
+            eq(enrichmentBatches.workspaceId, workspaceId),
+            inArray(enrichmentBatches.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(enrichmentBatches.createdAt), desc(enrichmentBatches.id))
+        .limit(100);
+      return rows.map(toEnrichmentBatch);
     },
 
     async listForWorkspace(limit = 100) {

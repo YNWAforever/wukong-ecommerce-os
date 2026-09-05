@@ -1,4 +1,11 @@
-import { describe, expect, it } from "vitest";
+import {
+  filterCatalogItemsServer,
+  summarizeCatalog,
+} from "../../../lib/catalog-contract";
+vi.mock("../../../lib/source-readiness", () => ({
+  readSourceReadiness: async () => null,
+}));
+import { describe, expect, it, vi } from "vitest";
 
 import { createCatalogHandler } from "./route.js";
 
@@ -78,28 +85,57 @@ function makeHandler({
         ) {
           calls.push(["forWorkspace", workspaceId]);
           return work({
-            platformProducts: {
-              async listRecent(limit: number) {
-                calls.push(["platformProducts.listRecent", limit]);
-                return products;
+            reads: {
+              async catalogPage(query: any) {
+                calls.push(["reads.catalogPage", query]);
+                const all = products.map((p) => {
+                  const linked = p.listingId
+                    ? listingsById.get(p.listingId)
+                    : undefined;
+                  const status = p.listingId
+                    ? (statuses[p.listingId] ?? null)
+                    : null;
+                  const flags = linked?.openBlockingFlagCount ?? null;
+                  return {
+                    ...p,
+                    title:
+                      linked?.activeVersion?.content.title["zh-Hant"] ??
+                      linked?.activeVersion?.content.title.en ??
+                      p.sku ??
+                      p.remoteProductId,
+                    listingStatus: status,
+                    openBlockingFlagCount: flags,
+                    needsReview:
+                      status === "in_review" || status === "reopened",
+                    needsAttention:
+                      p.listingId === null ||
+                      status === null ||
+                      ["needs_info", "publish_failed", "failed"].includes(
+                        status,
+                      ) ||
+                      (flags ?? 0) > 0,
+                    createdAt: p.createdAt.toISOString(),
+                    updatedAt: p.updatedAt.toISOString(),
+                  };
+                });
+                const matching = filterCatalogItemsServer(
+                  all as never,
+                  query.q,
+                  query.filter,
+                );
+                return {
+                  items: matching.slice(
+                    (query.page - 1) * query.pageSize,
+                    query.page * query.pageSize,
+                  ),
+                  totalMatching: matching.length,
+                  summary: summarizeCatalog(all as never),
+                };
               },
             },
-            listings: {
-              async statusesByIds(ids: string[]) {
-                calls.push(["listings.statusesByIds", ids]);
-                return statuses;
-              },
-              // Deliberately no `listRecent` here: the route must not call
-              // it any more. If it did, this fake would throw
-              // "listings.listRecent is not a function" and every assertion
-              // below would fail.
+            platformProducts: {
               async getByIds(ids: string[]) {
-                calls.push(["listings.getByIds", ids]);
-                return ids
-                  .map((id) => listingsById.get(id))
-                  .filter(
-                    (listing): listing is FakeListing => listing !== undefined,
-                  );
+                return products.filter((p) => ids.includes(p.id));
               },
             },
           });
@@ -268,7 +304,7 @@ describe("GET /api/catalog", () => {
     ]);
   });
 
-  it("regression: resolves a linked listing's title via getByIds, not the 100-most-recent window", async () => {
+  it("returns the linked title from the full SQL catalog projection", async () => {
     // This listing is deliberately the only one in the fake's `listings`
     // store -- it stands in for a listing that a naive `listRecent(100)`
     // lookup would miss because it isn't among the globally most-recently
@@ -312,6 +348,18 @@ describe("GET /api/catalog", () => {
     // Not the degraded sku/remoteProductId fallback the bug used to produce.
     expect(body.items[0]?.title).not.toBe("OPAK-FALLBACK-SKU");
     expect(body.items[0]?.title).not.toBe("shopline-fallback-1");
-    expect(calls).toContainEqual(["listings.getByIds", [listingId]]);
+    expect(calls).toContainEqual([
+      "reads.catalogPage",
+      { page: 1, pageSize: 25, filter: "all" },
+    ]);
+  });
+});
+
+it("returns viewer reporting/generation capabilities from the server context", async () => {
+  const { handler } = makeHandler({ products: [] });
+  const body = await (await handler(buildRequest())).json();
+  expect(body.capabilities).toEqual({
+    canGenerateBulkUpdate: false,
+    canRecordImportResult: false,
   });
 });

@@ -106,7 +106,7 @@ describe("JobsLedgerClient", () => {
     // admin-connection-panel.test.tsx for the same convention.
     globalThis.fetch = vi.fn<typeof fetch>() as unknown as typeof fetch;
     const markup = renderToStaticMarkup(createElement(JobsLedgerClient));
-    expect(markup).toContain("Loading");
+    expect(markup).toContain("正在載入");
   });
 
   it("fetches /api/jobs and renders one row per entry, showing kind, summary, and rawStatus", async () => {
@@ -118,7 +118,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/jobs",
+      "/api/jobs?page=1&pageSize=50",
       expect.objectContaining({ cache: "no-store" }),
     );
 
@@ -155,7 +155,7 @@ describe("JobsLedgerClient", () => {
     expect(container.querySelectorAll(".flag-item").length).toBe(4);
 
     const exportButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("Export"),
+      (button) => button.textContent?.includes("匯出"),
     );
     expect(exportButton).not.toBeUndefined();
 
@@ -169,7 +169,7 @@ describe("JobsLedgerClient", () => {
     expect(container.textContent).not.toContain("AI pipeline run");
 
     const allButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("All"),
+      (button) => button.textContent?.includes("全部"),
     );
     await act(async () => {
       allButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -202,7 +202,7 @@ describe("JobsLedgerClient", () => {
 
     const importResultButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Import result"));
+    ).find((button) => button.textContent?.includes("匯入結果"));
     expect(importResultButton).not.toBeUndefined();
 
     await act(async () => {
@@ -222,7 +222,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Unable to load jobs",
+      "無法載入資料，請重試。",
     );
   });
 
@@ -235,7 +235,7 @@ describe("JobsLedgerClient", () => {
     const { container } = await mountLedger();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "network down",
+      "無法載入資料，請重試。",
     );
   });
 
@@ -286,5 +286,111 @@ describe("JobsLedgerClient", () => {
       container.querySelectorAll(".jobs-metric-strip .metric-value"),
     ).map((tile) => tile.textContent);
     expect(values).toEqual(["3", "1", "2", "120"]);
+  });
+  it("renders mixed export reconciliation totals and correction history", async () => {
+    stubFetch({
+      entries: [],
+      metrics: SAMPLE_METRICS,
+      capabilities: {
+        canGenerateBulkUpdate: true,
+        canRecordImportResult: true,
+      },
+      exportReconciliations: [
+        {
+          attempt: {
+            id: "attempt-mixed",
+            artifactStatus: "ready",
+            rowCount: 2,
+            specVersion: "v1",
+            createdAt: "2026-08-06T00:00:00Z",
+          },
+          reconciliation: {
+            counts: {
+              requested: 3,
+              included: 2,
+              excluded: 0,
+              noOp: 1,
+              accepted: 1,
+              rejected: 1,
+              unreported: 0,
+            },
+            verificationStatus: "unverified",
+            members: [
+              {
+                listingId: "listing-a",
+                versionId: "version-a",
+                outcome: "included",
+                latestResult: {
+                  id: "r2",
+                  outcome: "accepted",
+                  rejectReason: null,
+                  correctionReason: "Merchant retried",
+                  revision: 2,
+                  createdAt: "2026-08-07T00:00:00Z",
+                },
+                history: [
+                  {
+                    id: "r2",
+                    outcome: "accepted",
+                    rejectReason: null,
+                    correctionReason: "Merchant retried",
+                    revision: 2,
+                    createdAt: "2026-08-07T00:00:00Z",
+                  },
+                  {
+                    id: "r1",
+                    outcome: "rejected",
+                    rejectReason: "Invalid",
+                    correctionReason: null,
+                    revision: 1,
+                    createdAt: "2026-08-06T00:00:00Z",
+                  },
+                ],
+              },
+              {
+                listingId: "listing-b",
+                versionId: "version-b",
+                outcome: "included",
+                latestResult: {
+                  id: "r3",
+                  outcome: "rejected",
+                  rejectReason: "Invalid",
+                  correctionReason: null,
+                  revision: 1,
+                  createdAt: "2026-08-06T00:00:00Z",
+                },
+                history: [
+                  {
+                    id: "r3",
+                    outcome: "rejected",
+                    rejectReason: "Invalid",
+                    correctionReason: null,
+                    revision: 1,
+                    createdAt: "2026-08-06T00:00:00Z",
+                  },
+                ],
+              },
+              {
+                listingId: "listing-c",
+                versionId: null,
+                outcome: "excluded_no_op",
+                reason: "No change",
+                latestResult: null,
+                history: [],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const { container } = await mountLedger();
+    expect(
+      container.querySelector('[data-export-attempt-id="attempt-mixed"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("更正記錄");
+    expect(container.textContent).toContain("Merchant retried");
+    expect(container.textContent).toContain("拒絕原因： Invalid");
+    expect(container.textContent).toContain("操作員回報接受1");
+    expect(container.textContent).toContain("操作員回報拒絕1");
   });
 });

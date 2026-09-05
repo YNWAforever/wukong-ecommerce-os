@@ -1,3 +1,4 @@
+import type { ReviewQualityMetrics } from "./review-quality-metrics";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 import type { CanonicalListing } from "@wukong/core";
 
@@ -9,11 +10,20 @@ export type QualityAssessedListing = {
 };
 
 export type QualitySummary = {
+  reviewMetrics?: ReviewQualityMetrics;
   totalAssessed: number;
   cleanCount: number;
   hasGapsCount: number;
   gapCounts: Record<keyof BulkFormContentGaps, number>;
   totalCostUsd: number;
+  totalListings?: number;
+  noActiveVersion?: number;
+  unassessableActiveVersion?: number;
+  scope?: "workspace_active_versions";
+  costScope?: "all_history_for_workspace_listings";
+  consistency?: "bounded_scan";
+  scanStartedAt?: string;
+  scanCompletedAt?: string;
 };
 
 const EMPTY_GAP_COUNTS: Record<keyof BulkFormContentGaps, number> = {

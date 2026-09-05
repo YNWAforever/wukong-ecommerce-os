@@ -88,18 +88,24 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
     expect(await blocked.json()).toMatchObject({ code: "approval_required" });
   }
 
-  await expect(page.getByRole("heading", { name: "來源依據" })).toBeVisible({
+  await expect(
+    page.getByRole("heading", { name: "Source evidence" }),
+  ).toBeVisible({
     timeout: 45_000,
   });
-  await expect(page.getByRole("heading", { name: "商品欄位" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Listing fields" }),
+  ).toBeVisible();
   await expect(
     page.locator("blockquote").filter({ hasText: "SKU OPAK-DEMO-001" }),
   ).toBeVisible();
-  await expect(page.getByText(/沒有需要處理的合規提示/)).toBeVisible();
+  await expect(
+    page.getByText("No open compliance flags", { exact: true }),
+  ).toBeVisible();
 
-  const title = page.getByLabel("商品名稱（英文）");
+  const title = page.getByLabel("Title (English)", { exact: true });
   await title.fill("Opak Cellar Riesling 2024 — reviewed");
-  await page.getByRole("button", { name: /儲存草稿/ }).click();
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText(/Draft saved/)).toBeVisible();
   await expect(title).toHaveValue("Opak Cellar Riesling 2024 — reviewed");
 
@@ -142,11 +148,15 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
     await expect(checkbox).toBeChecked();
   }
 
-  await page.getByRole("button", { name: /批准上架/ }).click();
+  await page
+    .getByRole("button", { name: "Approve listing", exact: true })
+    .click();
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: /匯出 SHOPLINE CSV/ }).click();
+  await page
+    .getByRole("button", { name: "Create CSV · CSV fallback", exact: true })
+    .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-opak-\d{4}-\d{2}\.csv$/);
   const downloadPath = await download.path();
@@ -157,9 +167,15 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   const csvRows = csv.trimEnd().split("\r\n");
   const csvImageUrl = parseCsvRow(csvRows[1]!)[13];
   expect(csvImageUrl).toMatch(/^https?:\/\//);
-  const imageHead = await page.request.head(csvImageUrl!);
-  expect(imageHead.ok()).toBe(true);
-  expect(Number(imageHead.headers()["content-length"])).toBeGreaterThan(0);
+  // The CSV contains a presigned GET URL: verify the actual image download.
+  const imageResponse = await page.request.get(csvImageUrl!);
+  expect(imageResponse.ok()).toBe(true);
+  expect(imageResponse.headers()["content-type"]).toMatch(/^image\//);
+  const imageBytes = await imageResponse.body();
+  expect(imageBytes.byteLength).toBeGreaterThan(0);
+  expect(Number(imageResponse.headers()["content-length"])).toBe(
+    imageBytes.byteLength,
+  );
 
   const queuedResponse = page.waitForResponse(
     (response) =>
@@ -167,7 +183,9 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
       response.request().method() === "POST" &&
       response.status() === 202,
   );
-  await page.getByRole("button", { name: /發布至 SHOPLINE/ }).click();
+  await page
+    .getByRole("button", { name: "Create via API", exact: true })
+    .click();
   expect((await queuedResponse).status()).toBe(202);
   await expect(page.getByText(/Publish queued/)).toBeVisible();
 
@@ -198,7 +216,7 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   expect(expectedRemoteProductId).toMatch(/^mock_[a-f0-9]{16}$/);
 
   await page.reload();
-  await expect(page.locator(".review-status")).toContainText("published");
+  await expect(page.locator(".review-status")).toContainText("Published");
   await expect(page.getByText(expectedRemoteProductId)).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await writeFile("test-results/real-stack-draft-id.txt", draftId!, "utf8");

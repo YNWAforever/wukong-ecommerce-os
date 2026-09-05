@@ -901,17 +901,65 @@ export const importResults = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" })
       .notNull(),
     listingId: uuid("listing_id").notNull(),
-    /** Null when the recorded listing's bulk-form file came from the
-     * single-listing `deliver` (bulk_form) path, which persists no
-     * export_attempts row -- only the multi-product `/api/listings/export`
-     * route produces one to reference here. */
+    /** Null for explicitly unlinked historical/manual reports. */
     exportAttemptId: uuid("export_attempt_id"),
+    mode: text("mode").notNull().default("legacy_historical"),
+    versionId: uuid("version_id"),
+    idempotencyKey: text("idempotency_key"),
+    supersedesResultId: uuid("supersedes_result_id"),
+    correctionReason: text("correction_reason"),
+    revision: integer("revision").notNull().default(1),
     outcome: text("outcome").notNull(),
     rejectReason: text("reject_reason"),
     recordedBy: text("recorded_by").notNull(),
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("import_results_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("import_results_idempotency_uq")
+      .on(table.workspaceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    uniqueIndex("import_results_export_revision_uq")
+      .on(
+        table.workspaceId,
+        table.exportAttemptId,
+        table.listingId,
+        table.revision,
+      )
+      .where(sql`${table.mode} = 'export'`),
+    uniqueIndex("import_results_manual_revision_uq")
+      .on(table.workspaceId, table.listingId, table.revision)
+      .where(sql`${table.mode} = 'historical_manual'`),
+    uniqueIndex("import_results_successor_uq")
+      .on(table.workspaceId, table.supersedesResultId)
+      .where(sql`${table.supersedesResultId} IS NOT NULL`),
+    check(
+      "import_results_mode_check",
+      sql`${table.mode} IN ('legacy_historical', 'historical_manual', 'export')`,
+    ),
+    check("import_results_revision_check", sql`${table.revision} > 0`),
+    foreignKey({
+      name: "import_results_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "import_results_predecessor_fkey",
+      columns: [table.workspaceId, table.supersedesResultId],
+      foreignColumns: [table.workspaceId, table.id],
+    }).onDelete("restrict"),
+    index("import_results_workspace_listing_version_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.versionId,
+    ),
     index("import_results_workspace_listing_idx").on(
       table.workspaceId,
       table.listingId,

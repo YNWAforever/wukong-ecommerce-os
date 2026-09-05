@@ -15,8 +15,8 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("尚未開始處理 · Processing not started");
-    expect(markup).toContain("開始處理 · Start processing");
+    expect(markup).toContain("Processing not started");
+    expect(markup).toContain("Start processing");
   });
 
   it("offers processing when a received listing has no known enqueue outcome", () => {
@@ -43,13 +43,13 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("已加入處理佇列 · Queued for processing");
+    expect(markup).toContain("Queued for processing");
     expect(markup).not.toContain("Start processing");
   });
 
   it.each([
-    ["processing", "AI 正在建立商品資料 · AI processing"],
-    ["needs_info", "需要補充商品資料 · More information needed"],
+    ["processing", "AI processing"],
+    ["needs_info", "More information needed"],
   ] as const)("shows %s without a retry button", (status, copy) => {
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
@@ -74,8 +74,8 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("AI 處理未完成 · Processing failed");
-    expect(markup).toContain("來源檔案已保留");
+    expect(markup).toContain("Processing failed");
+    expect(markup).toContain("Source files are retained");
     expect(markup).not.toContain("Start processing");
   });
 
@@ -93,3 +93,6 @@ describe("ListingProcessingPanel", () => {
     expect(markup).not.toContain("Start processing");
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));

@@ -1,18 +1,21 @@
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
+import { readPageCopy } from "../../../lib/read-page-copy";
+import { commonCopy } from "../../../lib/ui-copy";
 import { JobsLedgerClient } from "../../../components/jobs-ledger-client";
 
-export default function JobsPage() {
+export default async function JobsPage() {
+  const locale = resolveLocale(
+    (await cookies()).get(LOCALE_COOKIE_NAME)?.value,
+  );
+  const copy = readPageCopy.jobs[locale];
   return (
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            Jobs ledger <span>ECOMMERCE OS CONTROL PLANE</span>
-          </p>
-          <h1>批次、發佈、AI 流程與匯出，一頁掌握所有內部作業。</h1>
-          <p className="lede">
-            查看批次任務、發佈工作、AI
-            處理流程與匯出紀錄的最新狀態，快速找出卡住或失敗的作業。
-          </p>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.title}</h1>
+          <p className="lede">{copy.description}</p>
         </div>
       </div>
       <JobsLedgerClient />

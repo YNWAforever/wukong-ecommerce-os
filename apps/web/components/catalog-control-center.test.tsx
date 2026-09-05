@@ -75,6 +75,10 @@ function pageResponse(
 ): CatalogPage {
   return {
     items,
+    capabilities: {
+      canGenerateBulkUpdate: false,
+      canRecordImportResult: false,
+    },
     summary: {
       total: 60,
       linked: 10,
@@ -403,13 +407,7 @@ describe("CatalogControlCenter", () => {
     const tiles = container.querySelectorAll('[role="group"]');
     expect(tiles.length).toBe(5);
 
-    const expectedLabels = [
-      "商品 Products",
-      "已連結 Linked",
-      "待審核 Needs review",
-      "需處理 Attention",
-      "已發佈 Published",
-    ];
+    const expectedLabels = ["商品", "已連結", "待審核", "需處理", "已發佈"];
 
     tiles.forEach((tile, index) => {
       const labelledBy = tile.getAttribute("aria-labelledby");
@@ -420,4 +418,147 @@ describe("CatalogControlCenter", () => {
 
     await unmount(root);
   });
+  it("selects only reviewer-authorized imported linked listings for Bulk Update", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        pageResponse(
+          [
+            makeItem({
+              id: "imported",
+              listingId: "listing-imported",
+              sku: "SKU-IMPORT",
+              origin: "import",
+            }),
+            makeItem({
+              id: "created",
+              listingId: "listing-created",
+              sku: "SKU-CREATED",
+              origin: "created",
+            }),
+          ],
+          {
+            capabilities: {
+              canGenerateBulkUpdate: true,
+              canRecordImportResult: true,
+            },
+          },
+        ),
+      ),
+    );
+    const { container, root } = await mount(fetcher);
+    const imported = container.querySelector<HTMLInputElement>(
+      'input[aria-label="選取 SKU-IMPORT 作批量更新"]',
+    );
+    expect(imported).not.toBeNull();
+    expect(
+      container.querySelector(
+        'input[aria-label="選取 SKU-CREATED 作批量更新"]',
+      ),
+    ).toBeNull();
+    await act(async () => imported!.click());
+    expect(container.textContent).toContain("已選取 1 個商品作批量更新");
+    await act(async () => findButtonByText(container, "清除選取")!.click());
+    expect(container.textContent).toContain("已選取 0 個商品作批量更新");
+    await unmount(root);
+  });
+
+  it("retries a transient filter load without resetting the selected filter", async () => {
+    const calls: URL[] = [];
+    let attentionLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      const url = new URL(
+        typeof input === "string" ? input : input.toString(),
+        "http://localhost",
+      );
+      calls.push(url);
+      if (
+        url.searchParams.get("filter") === "attention" &&
+        attentionLoads++ === 0
+      ) {
+        return Promise.resolve(
+          Response.json({ code: "temporary" }, { status: 503 }),
+        );
+      }
+      return Promise.resolve(
+        Response.json(
+          pageResponse([
+            makeItem({
+              id:
+                url.searchParams.get("filter") === "attention"
+                  ? "recovered"
+                  : "initial",
+              title:
+                url.searchParams.get("filter") === "attention"
+                  ? "Recovered attention item"
+                  : "Initial item",
+            }),
+          ]),
+        ),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    await act(async () => {
+      findButtonByText(container, "需處理")!.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "無法載入資料，請重試。",
+    );
+    await act(async () => {
+      findButtonByText(container, "重試")!.click();
+      await Promise.resolve();
+    });
+    expect(calls.at(-1)!.searchParams.get("filter")).toBe("attention");
+    expect(container.textContent).toContain("Recovered attention item");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await unmount(root);
+  });
+});
+
+it("keeps compact source provenance visible and disables page controls during a pending page", async () => {
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  const item = makeItem({
+    id: "source",
+    sourceReadiness: {
+      sourceImportId: "import-1",
+      merchantAttestedExportAt: "2026-09-05T04:00:00.000Z",
+      currentVersionId: "version-1",
+      reviewedBinding: {
+        versionId: "version-1",
+        sourceImportId: "import-1",
+        rowDigest: "digest",
+        revision: 3,
+      },
+      approvedBinding: null,
+      headerContractCurrent: true,
+      freshnessAttested: false as const,
+      eligible: false as const,
+      eligibleAfterAttestation: true,
+      reason: "not_attested" as const,
+      downstreamVerification: "unverified" as const,
+      scope: "advisory_current_read" as const,
+    },
+  });
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json(pageResponse([item])))
+    .mockReturnValueOnce(pending);
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain("匯入: import-1");
+    expect(container.textContent).toContain("商戶確認的匯出時間:");
+    expect(container.textContent).toContain("修訂 3 · 版本 version-1");
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+    expect(findButtonByText(container, "上一頁")!.disabled).toBe(true);
+    await act(async () =>
+      resolve(Response.json(pageResponse([item], { page: 2 }))),
+    );
+    expect(findButtonByText(container, "上一頁")!.disabled).toBe(false);
+  } finally {
+    await unmount(root);
+  }
 });

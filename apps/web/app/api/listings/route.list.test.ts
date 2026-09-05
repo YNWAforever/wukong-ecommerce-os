@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+vi.mock("../../../lib/source-readiness", () => ({
+  readSourceReadiness: async () => null,
+}));
+import { describe, expect, it, vi } from "vitest";
 
 import type { ListingStatus } from "@wukong/core";
 
@@ -60,9 +63,17 @@ describe("GET /api/listings", () => {
           ) {
             calls.push(["forWorkspace", workspaceId]);
             return work({
+              reads: {
+                async listingPage() {
+                  return {
+                    ids: ["00000000-0000-4000-8000-000000000101"],
+                    totalMatching: 1,
+                  };
+                },
+              },
               listings: {
-                async listRecent(limit: number) {
-                  calls.push(["listRecent", limit]);
+                async getByIds(ids: string[]) {
+                  calls.push(["getByIds", ids]);
                   return [
                     {
                       id: "00000000-0000-4000-8000-000000000101",
@@ -108,13 +119,18 @@ describe("GET /api/listings", () => {
           updatedAt: "2026-07-18T05:00:00.000Z",
           openBlockingFlagCount: 2,
           reviewContext: null,
+          sourceReadiness: null,
         },
       ],
       counts: { ...zeroCounts, in_review: 1 },
+      page: 1,
+      pageSize: 100,
+      totalMatching: 1,
+      scope: "workspace",
     });
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
-      ["listRecent", 100],
+      ["getByIds", ["00000000-0000-4000-8000-000000000101"]],
       ["countByStatus"],
     ]);
   });
@@ -152,8 +168,16 @@ describe("GET /api/listings", () => {
             work: (repositories: any) => Promise<T>,
           ) {
             return work({
+              reads: {
+                async listingPage() {
+                  return {
+                    ids: ["00000000-0000-4000-8000-000000000101"],
+                    totalMatching: 1,
+                  };
+                },
+              },
               listings: {
-                async listRecent() {
+                async getByIds() {
                   return [];
                 },
                 async countByStatus() {
@@ -213,8 +237,16 @@ async function collectionReviewContext(
         ) {
           expect(workspaceId).toBe("ws_opak");
           return work({
+            reads: {
+              async listingPage() {
+                return {
+                  ids: ["00000000-0000-4000-8000-000000000101"],
+                  totalMatching: 1,
+                };
+              },
+            },
             listings: {
-              async listRecent() {
+              async getByIds() {
                 return [
                   {
                     id: contextListingId,

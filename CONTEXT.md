@@ -23,8 +23,10 @@ The bulk form is how Wukong reads existing platform listings in and writes
 enrichment back. Reading it is a total function over a cell matrix that reports
 issues instead of throwing. Writing it is a diff: only the eight enrichable
 content columns may change, the ten `DO NOT EDIT` columns are echoed verbatim,
-and stock delta columns are always reset to `+0` so a re-import never moves
-inventory.
+and stock delta columns retain blank values while nonblank values are reset to
+`+0`. Merchant acceptance of blank versus `+0` remains an authorized re-import
+UAT decision. This is normalized string-grid preservation, not preservation of
+original XLSX bytes, numeric cell types, styles or whitespace-only cells.
 
 Export writes back only through a listing's `platform_products` link — the
 join the importer records between a listing and the remote product it came
@@ -100,8 +102,8 @@ downloads require readiness and matching bytes. Legacy all-null provenance rows
 remain historical downloads explicitly marked incomplete.
 
 Single Bulk Update delivery uses the same durable eligibility rules but retains
-its direct workbook response; the operator journey through stable multi-export
-attempt references is Task 5. Generated XLSX is not proof of SHOPLINE acceptance
+its direct workbook response. The operator UI now uses stable multi-export
+attempt references for Bulk Update delivery and result reconciliation. Generated XLSX is not proof of SHOPLINE acceptance
 or of current merchant-side protected fields.
 
 ## Workspace roles
@@ -143,3 +145,21 @@ now enforce source/approval binding, verified workbook hashes and retry identity
 see Bulk Update source and artifact history above. Object-store publication is
 verified through the recoverable artifact lifecycle, not an atomic cross-store
 transaction. Merchant-side freshness and SHOPLINE acceptance remain unverified.
+
+## Bulk Update result reconciliation
+
+Catalog reviewers select imported listings and attest freshness for that exact selection. The UI generates through the shared multi-export API, retains the attempt reference across detail-loading failures and downloads only ready artifacts. Imported listings expose Bulk Update XLSX; Create CSV and API controls follow their separate origin capabilities.
+
+Operator reports bind to included manifest members and the exact exported version, rather than a later active version. Idempotency keys protect retries; corrections append against the observed predecessor. Jobs derives accepted/rejected/unreported totals from included members and complete relevant report history. Rejection and correction reasons remain visible after reload. All reports remain independently unverified against a fresh SHOPLINE export.
+
+Historical/manual entry is explicitly unlinked and cannot close attempt reconciliation. Its per-listing revision history is durable; legacy reports are never promoted into trusted export receipts. Migration 0017 preserves append-only reports and is replay-safe, including protection during earlier privilege regrants. It has only been rehearsed in disposable local databases.
+
+Task 5 verification: docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. Subsequent local Tasks 6/7 are described below; production migration and deployment remain unauthorized.
+
+## Workbook fidelity and catalog usability (local Tasks 6/7)
+
+Independent synthetic output comparison covers all 71 Bulk Update columns. Nonblank extra headers are refused; normalized blank stock deltas remain blank and nonblank deltas become +0. Raw Excel types/styles are not preserved, and merchant acceptance of neutral blanks is unverified. Runbooks retain exact source/artifact/digests and require current protected-field comparison plus authorization before restoration.
+
+Catalog/listing/Jobs reads have workspace-scoped counts and deterministic pagination; quality gaps scan all active versions in bounded batches with an observed interval. Source-readiness views use server evidence but never attest freshness or independently verify SHOPLINE acceptance. Read recovery preserves filters, observed selections and imperative refresh failures. The existing locale cookie drives affected pages/forms, HK formatting and keyboard-accessible shell/table behavior. Capability labels describe implementation maturity separately from operational verification.
+
+GET /api/quality adds retained-evidence reviewMetrics: version-cohort approval fraction, creation-to-first-approval elapsed time and qualified complete-content edit field-change fraction. Missing or over-limit edit evidence is explicitly unavailable; these are not model-quality or reviewer-effort metrics. See docs/superpowers/plans/2026-09-05-review-quality-metric-contract.md and docs/superpowers/plans/2026-09-05-fidelity-usability-verification.md for exact populations, limits and synthetic checks. No production migration, provider calls or SHOPLINE writes were authorized.

@@ -40,9 +40,31 @@ describe("GET /api/jobs", () => {
           ) {
             calls.push(["forWorkspace", workspaceId]);
             return work({
+              reads: {
+                async jobsPage() {
+                  return {
+                    items: [
+                      { kind: "import_result", id: "ir1" },
+                      { kind: "export", id: "e1" },
+                      { kind: "pipeline_run", id: "pr1" },
+                      { kind: "publish_job", id: "p1" },
+                      { kind: "batch", id: "b1" },
+                    ],
+                    totalMatching: 5,
+                    total: 5,
+                    counts: {
+                      batch: 1,
+                      publish_job: 1,
+                      pipeline_run: 1,
+                      export: 1,
+                      import_result: 1,
+                    },
+                  };
+                },
+              },
               enrichmentBatches: {
-                async listForWorkspace(limit: number) {
-                  calls.push(["enrichmentBatches.listForWorkspace", limit]);
+                async getByIds(ids: string[]) {
+                  calls.push(["enrichmentBatches.getByIds", ids]);
                   return [
                     {
                       id: "b1",
@@ -57,8 +79,8 @@ describe("GET /api/jobs", () => {
                 },
               },
               publishJobs: {
-                async listForWorkspace(limit: number) {
-                  calls.push(["publishJobs.listForWorkspace", limit]);
+                async getByIds(ids: string[]) {
+                  calls.push(["publishJobs.getByIds", ids]);
                   return [
                     {
                       id: "p1",
@@ -79,8 +101,8 @@ describe("GET /api/jobs", () => {
                 },
               },
               pipelineRuns: {
-                async listForWorkspace(limit: number) {
-                  calls.push(["pipelineRuns.listForWorkspace", limit]);
+                async getByIds(ids: string[]) {
+                  calls.push(["pipelineRuns.getByIds", ids]);
                   return [
                     {
                       id: "pr1",
@@ -94,11 +116,12 @@ describe("GET /api/jobs", () => {
                 },
               },
               exportAttempts: {
-                async listForWorkspace(limit: number) {
-                  calls.push(["exportAttempts.listForWorkspace", limit]);
+                async getByIds(ids: string[]) {
+                  calls.push(["exportAttempts.getByIds", ids]);
                   return [
                     {
                       id: "e1",
+                      artifactStatus: "ready",
                       requestedBy: "user_1",
                       manifest: [
                         {
@@ -115,8 +138,21 @@ describe("GET /api/jobs", () => {
                 },
               },
               importResults: {
-                async listForWorkspace(limit: number) {
-                  calls.push(["importResults.listForWorkspace", limit]);
+                async listForExportAttempts() {
+                  return [
+                    {
+                      id: "old-receipt",
+                      listingId: "l3",
+                      versionId: "v3",
+                      exportAttemptId: "e1",
+                      mode: "export",
+                      outcome: "accepted",
+                      revision: 1,
+                    },
+                  ];
+                },
+                async getByIds(ids: string[]) {
+                  calls.push(["importResults.getByIds", ids]);
                   return [
                     {
                       id: "ir1",
@@ -161,6 +197,18 @@ describe("GET /api/jobs", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
+    expect(body.capabilities).toEqual({
+      canGenerateBulkUpdate: false,
+      canRecordImportResult: false,
+    });
+    expect(body.exportReconciliations[0].reconciliation.counts).toMatchObject({
+      included: 1,
+      accepted: 1,
+      unreported: 0,
+    });
+    expect(
+      body.exportReconciliations[0].reconciliation.members[0].latestResult.id,
+    ).toBe("old-receipt");
     // Newest-first: ir1 (08-05) > e1 (08-04) > pr1 (08-03) > p1 (08-02) > b1 (08-01).
     expect(body.entries.map((entry: { id: string }) => entry.id)).toEqual([
       "ir1",
@@ -179,11 +227,11 @@ describe("GET /api/jobs", () => {
 
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
-      ["enrichmentBatches.listForWorkspace", 100],
-      ["publishJobs.listForWorkspace", 100],
-      ["pipelineRuns.listForWorkspace", 100],
-      ["exportAttempts.listForWorkspace", 100],
-      ["importResults.listForWorkspace", 100],
+      ["enrichmentBatches.getByIds", ["b1"]],
+      ["publishJobs.getByIds", ["p1"]],
+      ["pipelineRuns.getByIds", ["pr1"]],
+      ["exportAttempts.getByIds", ["e1"]],
+      ["importResults.getByIds", ["ir1"]],
     ]);
   });
 
@@ -205,28 +253,53 @@ describe("GET /api/jobs", () => {
             work: (repositories: any) => Promise<T>,
           ) {
             return work({
+              reads: {
+                async jobsPage() {
+                  return {
+                    items: [
+                      { kind: "batch", id: "b1" },
+                      { kind: "publish_job", id: "p1" },
+                      { kind: "pipeline_run", id: "pr1" },
+                      { kind: "export", id: "e1" },
+                      { kind: "import_result", id: "ir1" },
+                    ],
+                    totalMatching: 5,
+                    total: 5,
+                    counts: {
+                      batch: 1,
+                      publish_job: 1,
+                      pipeline_run: 1,
+                      export: 1,
+                      import_result: 1,
+                    },
+                  };
+                },
+              },
               enrichmentBatches: {
-                async listForWorkspace() {
+                async getByIds() {
                   return [];
                 },
               },
               publishJobs: {
-                async listForWorkspace() {
+                async getByIds() {
                   return [];
                 },
               },
               pipelineRuns: {
-                async listForWorkspace() {
+                async getByIds() {
                   return [];
                 },
               },
               exportAttempts: {
-                async listForWorkspace() {
+                async getByIds() {
                   return [];
                 },
               },
               importResults: {
-                async listForWorkspace() {
+                async listForExportAttempts() {
+                  return [];
+                },
+                async getByIds() {
                   return [];
                 },
               },
