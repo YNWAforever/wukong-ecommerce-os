@@ -44,6 +44,18 @@ against it instead of creating a duplicate. Only `import`-origin rows carry a
 SKU, spec version, raw row, and content digest — a `created`-origin row has
 none of that, since there was no imported sheet to derive it from.
 
+## Bulk import browser contract
+
+/listings/import retains the selected workbook until a separate submit. Operators
+must explicitly enter SHOPLINE export time in Hong Kong UTC+08:00; the browser
+converts it to an ISO UTC instant and sends merchantAttestedExportAt plus the
+exact filename in URLSearchParams, with the raw workbook body. No timestamp is
+inferred from upload time or file metadata. Validation/API/network failures
+preserve file and time for retry; an in-flight guard prevents duplicate submits.
+Native fetch is invoked without the dependency object as its receiver.
+/listings/new remains the separate create-intake route. This attestation does
+not verify merchant-side freshness or replace source-bound approval eligibility.
+
 ## Bulk approve
 
 Bulk approve selects fully confirmed in_review listings with no open blocking
