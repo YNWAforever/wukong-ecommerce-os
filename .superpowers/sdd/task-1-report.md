@@ -59,3 +59,13 @@ Real DB guarantees checked: one evidence+audit for concurrent exact retry; first
 Independent spec/quality review is the next gate, owned by root after this commit. UI/E2E and full combined web suite remain root/Task2 gates. Services are root-owned and remain running for subsequent acceptance. Migration0018 has only been applied to guarded disposable local integration/rehearsal databases; operational DB and all production environments untouched by this task.
 
 Final DB unit rerun: GREEN 69 tests in 14 files. Final formatting check and git diff --cached --check passed. Implementation commit before report inclusion: 0ffbb409a6e74bc88d3a9f28f4bf74bf9a1e2f69 (report added by amend; use current HEAD for review).
+
+## Follow-up review fixes
+
+P2 repeated full-attempt validation removed: service validates once before artifact I/O and once again at commit boundary; repository independently validates once at persistence. Existing validateExportResultBinding checks every included version, and now uses a listing-indexed Map plus uniqueness Set checks rather than scanning the entire evidence array for each member. Requested-member semantics and all immutable checks remain intact. Shared helper change also preserves operator-report behavior.
+
+RED: --filter @wukong/web exec vitest run lib/fresh-export-verification.test.ts -t 'many-member' failed with 302 provenance reads for 150 products. GREEN: same regression now fewer than10 reads across both boundaries; full service+route focused suite37/37. Added 5000-member shared validator case proving a corrupt last-member version or duplicate is rejected even when checking the first member; shared binding+identity unit suites11/11. --filter @wukong/db build and --filter @wukong/web typecheck passed.
+
+Composite FK coverage RED: --filter @wukong/db exec vitest run src/repositories/listings.integration.test.ts -t 'workspace-consistent composite foreign keys' showed exactly one additional relationship export_verifications(workspace_id,export_attempt_id)->export_attempts. Added that relationship to the exhaustive inventory. Initial scripted edit missed CRLF and had no effect; verified/reapplied. GREEN final entire listings.integration.test.ts23/23 (16.65s). Combined affected DB integration before that inventory correction had export-verifications9/9 and import-results11/11 GREEN (total42/43 with only the known FK inventory failure). The combined process completed in25.74s and pg_stat_activity was empty; no shutdown stall reproduced, no service/data cleanup performed.
+
+Follow-up formatting and git diff --check passed. Dedicated follow-up commit; original implementation not amended.

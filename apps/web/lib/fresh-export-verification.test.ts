@@ -213,3 +213,48 @@ it("reports audit/DB failures safely and does not return a successful comparison
     code: "comparison_unavailable",
   });
 });
+
+it("validates a many-member attempt once at each service boundary, without rereading provenance per product", async () => {
+  const f = fixture();
+  const memberCount = 150;
+  const template = f.attempt.provenance.evidence[0];
+  f.attempt.manifest = Array.from({ length: memberCount }, (_, i) => ({
+    listingId: "listing-" + i,
+    versionId: "version-" + i,
+    outcome: "included",
+  }));
+  const evidence = f.attempt.manifest.map((m: any, i: number) => ({
+    ...template,
+    listingId: m.listingId,
+    versionId: m.versionId,
+    remoteProductId: String(i),
+  }));
+  f.attempt.rowCount = memberCount;
+  f.attempt.provenance.manifest = f.attempt.manifest;
+  f.attempt.provenance.rowOrder = f.attempt.manifest.map(
+    (m: any) => m.listingId,
+  );
+  let evidenceReads = 0;
+  Object.defineProperty(f.attempt.provenance, "evidence", {
+    enumerable: true,
+    get: () => {
+      evidenceReads++;
+      return evidence;
+    },
+  });
+  const workbook = writeBulkFormWorkbook([
+    BULK_FORM_COLUMNS.map((c) => c.en),
+    BULK_FORM_COLUMNS.map((c) => c.zh),
+    ...evidence.map((e: any) =>
+      BULK_FORM_COLUMNS.map((c) =>
+        c.key === "productId" ? e.remoteProductId : "",
+      ),
+    ),
+  ]);
+  f.attempt.artifactSha256 = artifactHash(workbook);
+  f.readObject.mockResolvedValue(workbook);
+  await f.service.record({ ...f.input, body: workbook });
+  expect(f.getById).toHaveBeenCalledTimes(2);
+  expect(f.ensure).toHaveBeenCalledTimes(1);
+  expect(evidenceReads).toBeLessThan(10);
+});

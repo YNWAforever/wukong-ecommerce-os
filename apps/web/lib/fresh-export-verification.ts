@@ -66,8 +66,14 @@ function binding(attempt: ExportAttempt | null, workspaceId: string) {
   const a = attempt!;
   const members = a.manifest.filter((m) => m.outcome === "included");
   if (!members.length) failure("export_provenance_incomplete");
-  for (const m of members)
-    validateExportResultBinding(a, workspaceId, m.listingId, m.versionId ?? "");
+  // This validator checks every included version, not only its requested member.
+  const member = members[0]!;
+  validateExportResultBinding(
+    a,
+    workspaceId,
+    member.listingId,
+    member.versionId ?? "",
+  );
   if (
     !a.artifactReadyAt ||
     !Number.isFinite(a.artifactReadyAt.getTime()) ||

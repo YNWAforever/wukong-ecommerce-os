@@ -126,13 +126,14 @@ export function createExportVerificationRepository(
       const members = attempt.manifest.filter((m) => m.outcome === "included");
       if (!members.length)
         throw new ImportResultConflict("export_provenance_incomplete");
-      for (const m of members)
-        validateExportResultBinding(
-          attempt,
-          workspaceId,
-          m.listingId,
-          m.versionId ?? "",
-        );
+      // Revalidate the whole immutable attempt once at the persistence boundary.
+      const member = members[0]!;
+      validateExportResultBinding(
+        attempt,
+        workspaceId,
+        member.listingId,
+        member.versionId ?? "",
+      );
       const evidence = attempt.provenance!.evidence as Array<{
         remoteProductId: string;
         connectionId: string;

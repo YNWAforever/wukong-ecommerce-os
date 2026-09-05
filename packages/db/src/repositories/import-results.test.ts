@@ -85,3 +85,40 @@ describe("export result binding", () => {
       ),
     ).toThrow());
 });
+
+it("validates every version and rejects duplicates even when asked about the first of 5000 members", () => {
+  const count = 5000;
+  const manifest = Array.from({ length: count }, (_, i) => ({
+    listingId: "listing-" + i,
+    versionId: "version-" + i,
+    outcome: "included" as const,
+  }));
+  const evidence = manifest.map((m) => ({
+    ...attempt.provenance.evidence[0],
+    listingId: m.listingId,
+    versionId: m.versionId,
+  }));
+  const large = {
+    ...attempt,
+    manifest,
+    rowCount: count,
+    provenance: {
+      ...attempt.provenance,
+      manifest,
+      rowOrder: manifest.map((m) => m.listingId),
+      evidence,
+    },
+  };
+  expect(() =>
+    validateExportResultBinding(large, "ws", "listing-0", "version-0"),
+  ).not.toThrow();
+  evidence[count - 1]!.versionId = "wrong-last-version";
+  expect(() =>
+    validateExportResultBinding(large, "ws", "listing-0", "version-0"),
+  ).toThrow("export_provenance_incomplete");
+  evidence[count - 1] = { ...evidence[0]! };
+  large.provenance.rowOrder = evidence.map((e) => e.listingId);
+  expect(() =>
+    validateExportResultBinding(large, "ws", "listing-0", "version-0"),
+  ).toThrow("export_provenance_incomplete");
+});

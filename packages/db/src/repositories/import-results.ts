@@ -102,6 +102,7 @@ export function validateExportResultBinding(
   if (!parsed.success || !hash.safeParse(attempt.artifactSha256).success)
     throw new ImportResultConflict("export_provenance_incomplete");
   const p = parsed.data;
+  const evidenceByListing = new Map(p.evidence.map((e) => [e.listingId, e]));
   if (
     p.workspaceId !== workspaceId ||
     p.specVersion !== attempt.specVersion ||
@@ -109,20 +110,20 @@ export function validateExportResultBinding(
     included.length !== attempt.rowCount ||
     new Set(included.map((x) => x.listingId)).size !== included.length ||
     p.evidence.length !== included.length ||
+    evidenceByListing.size !== p.evidence.length ||
     !isDeepStrictEqual(
       p.rowOrder,
       p.evidence.map((x) => x.listingId),
     ) ||
-    included.some(
-      (m) =>
-        p.evidence.filter(
-          (e) =>
-            e.listingId === m.listingId &&
-            e.versionId === m.versionId &&
-            e.specVersion === p.specVersion &&
-            e.headerContractSha256 === p.headerContractSha256,
-        ).length !== 1,
-    )
+    included.some((m) => {
+      const e = evidenceByListing.get(m.listingId);
+      return (
+        !e ||
+        e.versionId !== m.versionId ||
+        e.specVersion !== p.specVersion ||
+        e.headerContractSha256 !== p.headerContractSha256
+      );
+    })
   )
     throw new ImportResultConflict("export_provenance_incomplete");
   const member = included.find((x) => x.listingId === listingId);
