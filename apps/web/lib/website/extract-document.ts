@@ -153,6 +153,30 @@ export function extractDocument(
   if (canonicals.size === 1) canonical = [...canonicals][0]!;
   else if (canonicals.size > 1) warn("conflicting_canonical");
   const candidates: Obj[] = [];
+  const candidateFingerprints = new Set<string>();
+  // Wire size alone cannot bound repeated work on overlapping JSON subtrees.
+  // Shared budgets bound traversal and fingerprint work; the per-candidate cap
+  // also stops JSON.stringify before an attacker-controlled depth exhausts stack.
+  const structuredLimit = new Error("structured_data_limit");
+  let traversedValues = 0,
+    fingerprintValues = 0,
+    fingerprintCharacters = 0;
+  const fingerprint = (candidate: Obj): string => {
+    let candidateValues = 0;
+    return JSON.stringify(candidate, (key: string, value: unknown) => {
+      candidateValues++;
+      fingerprintValues++;
+      fingerprintCharacters +=
+        key.length + (typeof value === "string" ? value.length : 1);
+      if (
+        candidateValues > 512 ||
+        fingerprintValues > 25000 ||
+        fingerprintCharacters > 2 * 1024 * 1024
+      )
+        throw structuredLimit;
+      return value;
+    });
+  };
   for (const n of dom)
     if (
       "tagName" in n &&
@@ -164,20 +188,33 @@ export function extractDocument(
           ? n.childNodes.map((c) => ("value" in c ? c.value : "")).join("")
           : "";
       try {
-        const queue = list(JSON.parse(raw));
+        const queue: unknown[] = [];
+        const enqueue = (values: unknown[]) => {
+          if (traversedValues + queue.length + values.length > 10000)
+            throw structuredLimit;
+          for (const value of values) queue.push(value);
+        };
+        enqueue(list(JSON.parse(raw)));
         while (queue.length) {
+          traversedValues++;
           const o = object(queue.pop());
           if (!o) continue;
           if (hasType(o, "Product")) {
-            if (
-              !candidates.some((c) => JSON.stringify(c) === JSON.stringify(o))
-            )
+            const serialized = fingerprint(o);
+            if (!candidateFingerprints.has(serialized)) {
+              candidateFingerprints.add(serialized);
               candidates.push(o);
+            }
           }
-          if (Array.isArray(o["@graph"])) queue.push(...o["@graph"]);
-          if (hasType(o, "ProductGroup")) queue.push(...list(o.hasVariant));
+          if (Array.isArray(o["@graph"])) enqueue(o["@graph"]);
+          if (hasType(o, "ProductGroup")) enqueue(list(o.hasVariant));
         }
-      } catch {
+      } catch (error) {
+        if (error === structuredLimit) {
+          warn("structured_data_limit");
+          for (const candidate of candidates) link(candidate.url, "product");
+          return extractedDocumentSchema.parse(result);
+        }
         warn("invalid_json_ld");
       }
     }
@@ -335,6 +372,9 @@ export function extractDocument(
   if (imageUrls.length) fieldSources.imageUrls = source;
   const attributes: Record<string, string> = Object.create(null);
   const conflictingAttributes = new Set<string>();
+  // At most 30 original normalized values, bounded by the 2 MiB input document.
+  // Compare before output truncation so suffix conflicts remain visible.
+  const attributeValues = new Map<string, string>();
   const addAttribute = (rawKey: unknown, rawValue: unknown) => {
     const key = plain(rawKey),
       value = plain(typeof rawValue === "number" ? String(rawValue) : rawValue);
@@ -344,21 +384,22 @@ export function extractDocument(
       ["__proto__", "constructor", "prototype"].includes(key)
     )
       return;
-    if (Object.keys(attributes).length === 30) {
+    const normalizedKey = bounded(key, 100, "attribute_key");
+    if (conflictingAttributes.has(normalizedKey)) return;
+    if (attributeValues.has(normalizedKey)) {
+      if (attributeValues.get(normalizedKey) !== value) {
+        warn("conflicting_attributes");
+        delete attributes[normalizedKey];
+        attributeValues.delete(normalizedKey);
+        conflictingAttributes.add(normalizedKey);
+      }
+      return;
+    }
+    if (attributeValues.size === 30) {
       warn("attributes_truncated");
       return;
     }
-    const normalizedKey = bounded(key, 100, "attribute_key");
-    if (conflictingAttributes.has(normalizedKey)) return;
-    if (
-      attributes[normalizedKey] !== undefined &&
-      attributes[normalizedKey] !== value
-    ) {
-      warn("conflicting_attributes");
-      delete attributes[normalizedKey];
-      conflictingAttributes.add(normalizedKey);
-      return;
-    }
+    attributeValues.set(normalizedKey, value);
     attributes[normalizedKey] = bounded(value, 1000, "attribute_value");
   };
   if (data) {

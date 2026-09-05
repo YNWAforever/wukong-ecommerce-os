@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { extractDocument } from "./extract-document";
 const url = "https://store.example/products/sample",
   capturedAt = "2026-09-06T00:00:00Z";
@@ -254,4 +254,104 @@ it("does not silently overwrite contradictory attributes", () => {
   ).product;
   expect(p?.attributes.volume).toBeUndefined();
   expect(p?.warnings).toContain("conflicting_attributes");
+});
+
+describe("bounded structured work and attribute conflicts", () => {
+  it("serializes each flat candidate only once for deduplication", () => {
+    const candidateCount = 200;
+    const html = ld(
+      Array.from({ length: candidateCount }, (_, i) => ({
+        "@type": "Product",
+        name: `P${i}`,
+        url: `/products/${i}`,
+      })),
+    );
+    const stringify = vi.spyOn(JSON, "stringify");
+    try {
+      const r = extract(html);
+      const serializationCount = stringify.mock.calls.length;
+      expect(r.product).toBeNull();
+      expect(r.warnings).toContain("multiple_products");
+      expect(r.productLinks).toHaveLength(20);
+      expect(serializationCount).toBe(candidateCount);
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+  it("bounds a large flat document while preserving ambiguous product discovery", () => {
+    const html = ld(
+      Array.from({ length: 4000 }, (_, i) => ({
+        "@type": "Product",
+        name: `P${i}`,
+        url: `/products/${i}`,
+      })),
+    );
+    const boundedHtml =
+      html + "<!--" + "x".repeat(2 * 1024 * 1024 - html.length - 7) + "-->";
+    const r = extract(boundedHtml);
+    expect(r.product).toBeNull();
+    expect(r.productLinks).toHaveLength(20);
+    expect(r.warnings).toContain("multiple_products");
+  });
+  it("stops deep overlapping candidates with an explicit conservative warning", () => {
+    let nested: Record<string, unknown> = { "@type": "Product", name: "Leaf" };
+    for (let i = 0; i < 400; i++)
+      nested = { "@type": "Product", name: `P${i}`, "@graph": [nested] };
+    const r = extract(ld(nested));
+    expect(r.product).toBeNull();
+    expect(r.warnings).toContain("structured_data_limit");
+    expect(r.productLinks.length).toBeLessThanOrEqual(20);
+  });
+  it("does not select a preceding candidate when later traversal exceeds its budget", () => {
+    const r = extract(
+      ld({
+        "@graph": [
+          ...Array(12000).fill(null),
+          { "@type": "Product", name: "Last" },
+        ],
+      }),
+    );
+    expect(r.product).toBeNull();
+    expect(r.warnings).toContain("structured_data_limit");
+  });
+  it("removes conflicting existing values even after the thirty-key limit", () => {
+    const additionalProperty = Array.from({ length: 30 }, (_, i) => ({
+      name: `a${i}`,
+      value: "original",
+    }));
+    additionalProperty.push({ name: "a0", value: "contradiction" });
+    const p = extract(ld({ ...base, additionalProperty })).product;
+    expect(p?.attributes.a0).toBeUndefined();
+    expect(Object.keys(p?.attributes ?? {})).toHaveLength(29);
+    expect(p?.warnings).toContain("conflicting_attributes");
+  });
+  it("retains a repeated identical long value without a false conflict", () => {
+    const value = "v".repeat(1100);
+    const p = extract(
+      ld({
+        ...base,
+        additionalProperty: [
+          { name: "long", value },
+          { name: "long", value },
+        ],
+      }),
+    ).product;
+    expect(p?.attributes.long).toBe("v".repeat(1000));
+    expect(p?.warnings).toContain("attribute_value_truncated");
+    expect(p?.warnings).not.toContain("conflicting_attributes");
+  });
+  it("does not hide an actual conflict beyond a value's truncation boundary", () => {
+    const prefix = "v".repeat(1000);
+    const p = extract(
+      ld({
+        ...base,
+        additionalProperty: [
+          { name: "long", value: `${prefix}a` },
+          { name: "long", value: `${prefix}b` },
+        ],
+      }),
+    ).product;
+    expect(p?.attributes.long).toBeUndefined();
+    expect(p?.warnings).toContain("conflicting_attributes");
+  });
 });
