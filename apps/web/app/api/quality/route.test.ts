@@ -5,6 +5,7 @@ import { createQualityHandler } from "./route.js";
 describe("GET /api/quality", () => {
   it("requires an authenticated workspace session", async () => {
     const handler = createQualityHandler({
+      now: () => new Date("2026-09-05T00:00:00Z"),
       sessionContext: {
         async resolve() {
           return null;
@@ -37,6 +38,7 @@ describe("GET /api/quality", () => {
     };
 
     const handler = createQualityHandler({
+      now: () => new Date("2026-09-05T00:00:00Z"),
       sessionContext: {
         async resolve() {
           return {
@@ -55,6 +57,18 @@ describe("GET /api/quality", () => {
             calls.push(["forWorkspace", workspaceId]);
             return work({
               reads: {
+                async reviewQualityEvidence(start: string, end: string) {
+                  expect(start).toBe("2026-08-06T00:00:00.000Z");
+                  expect(end).toBe("2026-09-05T00:00:00.000Z");
+                  return {
+                    versions: 0,
+                    approved: 0,
+                    elapsedMs: 0,
+                    duplicateApprovals: 0,
+                    invalidApprovals: 0,
+                    edits: [],
+                  };
+                },
                 async scanListingIds() {
                   return ["l1", "l2", "l3"];
                 },
@@ -91,6 +105,10 @@ describe("GET /api/quality", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toMatchObject({
+      reviewMetrics: {
+        approvalFraction: { value: null, denominator: 0 },
+        humanEditedFieldFraction: { value: null },
+      },
       totalListings: 3,
       noActiveVersion: 1,
       unassessableActiveVersion: 0,

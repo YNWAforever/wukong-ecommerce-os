@@ -1,3 +1,7 @@
+import {
+  computeReviewMetrics,
+  reviewMetricWindow,
+} from "../../../lib/review-quality-metrics";
 import type { Database } from "@wukong/db";
 
 import { getDatabase } from "../../../lib/intake-runtime";
@@ -13,12 +17,15 @@ import type { SessionContextPort } from "../../../lib/session-context-port";
 type QualityRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase(): Database;
+  now?(): Date;
 };
 
 export function createQualityHandler(deps: QualityRouteDeps) {
   return async function quality(): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
+      const now = deps.now?.() ?? new Date();
+      const window = reviewMetricWindow(now);
       const summary = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
@@ -54,6 +61,13 @@ export function createQualityHandler(deps: QualityRouteDeps) {
           }
           return {
             ...summary,
+            reviewMetrics: computeReviewMetrics(
+              await repositories.reads.reviewQualityEvidence(
+                window.start,
+                window.end,
+              ),
+              now,
+            ),
             totalListings,
             noActiveVersion,
             unassessableActiveVersion,

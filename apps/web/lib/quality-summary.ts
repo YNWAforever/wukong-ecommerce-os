@@ -1,3 +1,4 @@
+import type { ReviewQualityMetrics } from "./review-quality-metrics";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 import type { CanonicalListing } from "@wukong/core";
 
@@ -9,6 +10,7 @@ export type QualityAssessedListing = {
 };
 
 export type QualitySummary = {
+  reviewMetrics?: ReviewQualityMetrics;
   totalAssessed: number;
   cleanCount: number;
   hasGapsCount: number;

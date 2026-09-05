@@ -147,7 +147,17 @@ describe("full read route contracts", () => {
     const sumCostForListings = vi.fn(async (ids: string[]) => ids.length);
     const response = await createQualityHandler(
       deps({
-        reads: { scanListingIds },
+        reads: {
+          scanListingIds,
+          reviewQualityEvidence: async () => ({
+            versions: 0,
+            approved: 0,
+            elapsedMs: 0,
+            duplicateApprovals: 0,
+            invalidApprovals: 0,
+            edits: [],
+          }),
+        },
         listings: { getByIds },
         aiRuns: { sumCostForListings },
       }),

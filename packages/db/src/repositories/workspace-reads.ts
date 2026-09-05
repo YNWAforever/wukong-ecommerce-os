@@ -1,3 +1,4 @@
+import { readReviewQualityEvidence } from "./review-quality.js";
 import { sql } from "drizzle-orm";
 import type { ListingStatus } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
@@ -74,6 +75,15 @@ export function createWorkspaceReadRepository(
   union all select id,'export',created_at from export_attempts where workspace_id=${workspaceId}
   union all select id,'import_result',created_at from import_results where workspace_id=${workspaceId}`;
   return {
+    reviewQualityEvidence(start: string, end: string) {
+      return readReviewQualityEvidence(
+        transaction,
+        workspaceId,
+        scope,
+        start,
+        end,
+      );
+    },
     async catalogPage(
       input: PageQuery & { q?: string; filter: CatalogFilter },
     ) {

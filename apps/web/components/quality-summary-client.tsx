@@ -1,4 +1,5 @@
 "use client";
+import { ReviewQualityMetricsPanel } from "./review-quality-metrics-panel";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -162,6 +163,7 @@ export function QualitySummaryClient() {
         </div>
       </div>
 
+      <ReviewQualityMetricsPanel metrics={data.reviewMetrics} />
       <table className="members-table">
         <thead>
           <tr>
