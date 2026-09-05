@@ -192,10 +192,7 @@ export function buildJobsLedger(
       normalizedStatus: result.outcome === "accepted" ? "succeeded" : "failed",
       rawStatus: result.outcome,
       createdAt: result.createdAt,
-      summary:
-        result.outcome === "accepted"
-          ? "Import accepted by SHOPLINE"
-          : `Import rejected: ${truncateRejectReason(result.rejectReason)}`,
+      summary: `${result.mode === "export" ? "Operator reported" : "Historical/manual operator reported"} ${result.outcome} (unverified)${result.outcome === "rejected" ? `: ${truncateRejectReason(result.rejectReason)}` : ""}`,
     })),
   ];
 

@@ -328,6 +328,12 @@ describe("buildJobsLedger", () => {
             listingId: "listing_1",
             exportAttemptId: null,
             outcome: "accepted",
+            mode: "legacy_historical",
+            versionId: null,
+            idempotencyKey: null,
+            supersedesResultId: null,
+            correctionReason: null,
+            revision: 1,
             rejectReason: null,
             recordedBy: "user_1",
             createdAt: new Date("2026-09-03T00:00:00.000Z"),
@@ -359,6 +365,12 @@ describe("buildJobsLedger", () => {
             listingId: "listing_2",
             exportAttemptId: null,
             outcome: "rejected",
+            mode: "legacy_historical",
+            versionId: null,
+            idempotencyKey: null,
+            supersedesResultId: null,
+            correctionReason: null,
+            revision: 1,
             rejectReason: "duplicate SKU",
             recordedBy: "user_1",
             createdAt: new Date("2026-09-03T00:00:00.000Z"),
@@ -388,6 +400,12 @@ describe("buildJobsLedger", () => {
             listingId: "listing_3",
             exportAttemptId: null,
             outcome: "rejected",
+            mode: "legacy_historical",
+            versionId: null,
+            idempotencyKey: null,
+            supersedesResultId: null,
+            correctionReason: null,
+            revision: 1,
             rejectReason: null,
             recordedBy: "user_1",
             createdAt: new Date("2026-09-03T00:00:00.000Z"),
@@ -396,7 +414,9 @@ describe("buildJobsLedger", () => {
       },
       10,
     );
-    expect(entries[0]!.summary).toBe("Import rejected: no reason given");
+    expect(entries[0]!.summary).toBe(
+      "Historical/manual operator reported rejected (unverified): no reason given",
+    );
   });
 
   it("truncates a long rejectReason in the summary instead of rendering it in full", () => {
@@ -413,6 +433,12 @@ describe("buildJobsLedger", () => {
             listingId: "listing_4",
             exportAttemptId: null,
             outcome: "rejected",
+            mode: "legacy_historical",
+            versionId: null,
+            idempotencyKey: null,
+            supersedesResultId: null,
+            correctionReason: null,
+            revision: 1,
             rejectReason: longReason,
             recordedBy: "user_1",
             createdAt: new Date("2026-09-03T00:00:00.000Z"),
@@ -422,9 +448,14 @@ describe("buildJobsLedger", () => {
       10,
     );
     const summary = entries[0]!.summary;
-    expect(summary).toBe(`Import rejected: ${"x".repeat(200)}…`);
+    expect(summary).toBe(
+      `Historical/manual operator reported rejected (unverified): ${"x".repeat(200)}…`,
+    );
     expect(summary).not.toContain(longReason);
-    expect(summary.length).toBeLessThan(longReason.length);
+    expect(summary.length).toBeLessThan(
+      longReason.length +
+        "Historical/manual operator reported rejected (unverified): ".length,
+    );
   });
 });
 

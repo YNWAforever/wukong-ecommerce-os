@@ -315,3 +315,12 @@ describe("GET /api/catalog", () => {
     expect(calls).toContainEqual(["listings.getByIds", [listingId]]);
   });
 });
+
+it("returns viewer reporting/generation capabilities from the server context", async () => {
+  const { handler } = makeHandler({ products: [] });
+  const body = await (await handler(buildRequest())).json();
+  expect(body.capabilities).toEqual({
+    canGenerateBulkUpdate: false,
+    canRecordImportResult: false,
+  });
+});

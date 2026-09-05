@@ -1,3 +1,4 @@
+import { resultCapabilities } from "../../../lib/export-reconciliation";
 import { z } from "zod";
 
 import type { Database } from "@wukong/db";
@@ -115,6 +116,7 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
       const pageItems = filtered.slice(start, start + query.pageSize);
 
       return jsonResponse(200, {
+        capabilities: resultCapabilities(context.role),
         items: pageItems,
         summary: summarizeCatalog(allItems),
         page: query.page,

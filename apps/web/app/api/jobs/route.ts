@@ -1,3 +1,7 @@
+import {
+  buildExportReconciliation,
+  resultCapabilities,
+} from "../../../lib/export-reconciliation";
 import type { Database } from "@wukong/db";
 
 import { getDatabase } from "../../../lib/intake-runtime";
@@ -50,7 +54,7 @@ export function createJobsHandler(deps: JobsRouteDeps) {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
       const since = new Date(Date.now() - METRICS_WINDOW_MS);
-      const { entries, metrics } = await deps
+      const { entries, metrics, exportReconciliations } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
           const [
@@ -80,6 +84,10 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             repositories.audit.sumImportMetricsSince(since),
           ]);
 
+          const attemptResults =
+            await repositories.importResults.listForExportAttempts(
+              exports.map((attempt) => attempt.id),
+            );
           let versionConflicts = 0;
           let staleSourceRejections = 0;
           for (const row of reviewConflictsByReason) {
@@ -91,6 +99,13 @@ export function createJobsHandler(deps: JobsRouteDeps) {
           }
 
           return {
+            exportReconciliations: exports.map((attempt) => ({
+              attempt,
+              reconciliation: buildExportReconciliation(
+                attempt,
+                attemptResults,
+              ),
+            })),
             entries: buildJobsLedger(
               { batches, publishJobs, pipelineRuns, exports, importResults },
               LEDGER_DISPLAY_LIMIT,
@@ -104,7 +119,12 @@ export function createJobsHandler(deps: JobsRouteDeps) {
           };
         });
 
-      return jsonResponse(200, { entries, metrics });
+      return jsonResponse(200, {
+        entries,
+        metrics,
+        exportReconciliations,
+        capabilities: resultCapabilities(context.role),
+      });
     });
   };
 }

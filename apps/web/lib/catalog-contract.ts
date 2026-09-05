@@ -29,6 +29,10 @@ export type CatalogSummary = {
 };
 
 export type CatalogPage = {
+  capabilities: {
+    canGenerateBulkUpdate: boolean;
+    canRecordImportResult: boolean;
+  };
   items: CatalogItem[];
   summary: CatalogSummary;
   page: number;

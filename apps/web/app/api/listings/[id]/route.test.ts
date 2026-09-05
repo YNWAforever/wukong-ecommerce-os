@@ -175,7 +175,12 @@ describe("GET /api/listings/[id]", () => {
       });
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ permissions });
+      expect(await response.json()).toMatchObject({
+        permissions: {
+          ...permissions,
+          canRecordImportResult: role !== "viewer",
+        },
+      });
     },
   );
 });
@@ -267,7 +272,7 @@ it("resolves shoplineLink from the platform product link when one exists", async
   const response = await handlerFor("reviewer", true, {
     platformProducts: {
       async getByListingId() {
-        return { remoteProductId: "remote_existing_1" };
+        return { remoteProductId: "remote_existing_1", origin: "import" };
       },
     },
   })(new Request("http://localhost"), {
@@ -276,7 +281,7 @@ it("resolves shoplineLink from the platform product link when one exists", async
 
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
-    shoplineLink: { remoteProductId: "remote_existing_1" },
+    shoplineLink: { remoteProductId: "remote_existing_1", origin: "import" },
   });
 });
 

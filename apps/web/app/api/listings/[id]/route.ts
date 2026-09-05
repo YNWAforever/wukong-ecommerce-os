@@ -39,6 +39,7 @@ const roleRank: Record<string, number> = {
 function listingPermissions(role: string) {
   const rank = roleRank[role] ?? 0;
   return {
+    canRecordImportResult: rank >= 20,
     canProcess: rank >= 20,
     canEdit: rank >= 20,
     canResolveFlags: rank >= 20,
@@ -137,7 +138,10 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               : null,
             queueStatus: job?.status ?? null,
             shoplineLink: platformProductLink
-              ? { remoteProductId: platformProductLink.remoteProductId }
+              ? {
+                  remoteProductId: platformProductLink.remoteProductId,
+                  origin: platformProductLink.origin,
+                }
               : null,
             reviewConfirmation: reviewConfirmation
               ? {

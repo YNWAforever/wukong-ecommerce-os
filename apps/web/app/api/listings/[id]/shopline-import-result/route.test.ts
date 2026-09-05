@@ -1,199 +1,230 @@
 import { describe, expect, it } from "vitest";
-
 import { createImportResultHandler } from "./route.js";
-
 const listingId = "11111111-1111-4111-8111-111111111111";
 const exportAttemptId = "22222222-2222-4222-8222-222222222222";
-
-function makeHandler(
-  overrides: {
-    role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
-    listingExists?: boolean;
-    exportAttemptExists?: boolean;
-    artifactStatus?: string;
-  } = {},
-) {
-  const role = overrides.role ?? "operator";
-  const listingExists = overrides.listingExists ?? true;
-  const exportAttemptExists = overrides.exportAttemptExists ?? true;
-
-  const auditEvents: unknown[] = [];
+const versionId = "33333333-3333-4333-8333-333333333333";
+function fixture(overrides: Record<string, unknown> = {}) {
   const created: unknown[] = [];
-
-  const repositories = {
-    listings: {
-      async getById(id: string) {
-        return listingExists ? { id } : null;
-      },
-    },
-    exportAttempts: {
-      async getById(id: string) {
-        return exportAttemptExists
-          ? {
-              id,
-              artifactStatus: overrides.artifactStatus,
-              provenance: overrides.artifactStatus ? { version: 1 } : null,
-            }
-          : null;
-      },
-    },
-    importResults: {
-      async create(input: unknown) {
-        const row = {
-          id: "created_1",
-          createdAt: new Date("2026-09-03T00:00:00.000Z"),
-          ...(input as Record<string, unknown>),
-        };
-        created.push(row);
-        return row;
-      },
-    },
-    audit: {
-      async write(event: unknown) {
-        auditEvents.push(event);
-      },
-    },
-  };
-
-  const deps = {
+  const audit: unknown[] = [];
+  const handler = createImportResultHandler({
     sessionContext: {
-      async resolve() {
-        return {
-          workspaceId: "ws_1",
-          actorId: "user_1",
-          role,
-        };
-      },
+      resolve: async () => ({
+        workspaceId: "ws",
+        actorId: "user",
+        role: "operator",
+      }),
     },
     getDatabase: () => ({
-      async forWorkspace(
-        _workspaceId: string,
-        work: (repos: unknown) => unknown,
-      ) {
-        return work(repositories);
-      },
+      forWorkspace: async (_ws: string, work: any) =>
+        work({
+          listings: { getById: async () => ({ id: listingId }) },
+          exportAttempts: {
+            getById: async () => ({
+              id: exportAttemptId,
+              artifactStatus: "ready",
+              artifactSha256: "a".repeat(64),
+              provenance: { identityVersion: 1 },
+              manifest: [],
+              ...overrides,
+            }),
+          },
+          importResults: {
+            create: async (input: any) => {
+              created.push(input);
+              return {
+                ...input,
+                id: "receipt",
+                createdAt: new Date(),
+                wasCreated: true,
+              };
+            },
+          },
+          audit: {
+            write: async (input: any) => {
+              audit.push(input);
+            },
+          },
+        }),
     }),
-  };
-
-  return {
-    handler: createImportResultHandler(deps as never),
-    auditEvents,
-    created,
-  };
+  } as never);
+  return { handler, created, audit };
 }
-
-function makeRequest(body: unknown) {
-  return new Request("http://localhost/api/listings/x/shopline-import-result", {
+const request = (body: unknown) =>
+  new Request("http://localhost/result", {
     method: "POST",
     body: JSON.stringify(body),
   });
-}
-
-function makeContext(id: string) {
-  return { params: Promise.resolve({ id }) };
-}
-
-describe("POST /api/listings/[id]/shopline-import-result", () => {
-  it("records an accepted outcome and writes an audit event", async () => {
-    const { handler, auditEvents, created } = makeHandler();
+const context = { params: Promise.resolve({ id: listingId }) };
+describe("trusted result recording boundary", () => {
+  it("rejects a same-workspace attempt that did not include the listing", async () => {
+    const { handler, created } = fixture();
     const response = await handler(
-      makeRequest({ outcome: "accepted" }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(201);
-    const body = await response.json();
-    expect(body.outcome).toBe("accepted");
-    expect(body.exportAttemptId).toBe(null);
-    expect(created).toHaveLength(1);
-    expect(auditEvents).toEqual([
-      expect.objectContaining({
-        action: "listing.shopline_import_result_recorded",
-        entityId: listingId,
-        metadata: { outcome: "accepted", exportAttemptId: null },
-      }),
-    ]);
-  });
-
-  it("records a rejected outcome with a reason", async () => {
-    const { handler } = makeHandler();
-    const response = await handler(
-      makeRequest({ outcome: "rejected", rejectReason: "duplicate SKU" }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(201);
-    const body = await response.json();
-    expect(body.outcome).toBe("rejected");
-  });
-
-  it("records an outcome against a specific exportAttemptId", async () => {
-    const { handler, auditEvents } = makeHandler();
-    const response = await handler(
-      makeRequest({ outcome: "accepted", exportAttemptId }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(201);
-    const body = await response.json();
-    expect(body.exportAttemptId).toBe(exportAttemptId);
-    expect(auditEvents).toEqual([
-      expect.objectContaining({
-        action: "listing.shopline_import_result_recorded",
-        entityId: listingId,
-        metadata: { outcome: "accepted", exportAttemptId },
-      }),
-    ]);
-  });
-
-  it("rejects a rejected outcome with no rejectReason as a 400", async () => {
-    const { handler } = makeHandler();
-    const response = await handler(
-      makeRequest({ outcome: "rejected" }),
-      makeContext(listingId),
+      request({ outcome: "accepted", exportAttemptId }),
+      context,
     );
     expect(response.status).toBe(400);
-  });
-
-  it("returns 404 for an unknown listing", async () => {
-    const { handler } = makeHandler({ listingExists: false });
-    const response = await handler(
-      makeRequest({ outcome: "accepted" }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(404);
-    const body = await response.json();
-    expect(body.code).toBe("listing_not_found");
-  });
-
-  it("returns 404 for an exportAttemptId not found in this workspace", async () => {
-    const { handler } = makeHandler({ exportAttemptExists: false });
-    const response = await handler(
-      makeRequest({ outcome: "accepted", exportAttemptId }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(404);
-    const body = await response.json();
-    expect(body.code).toBe("export_attempt_not_found");
-  });
-
-  it("returns 403 for a viewer role", async () => {
-    const { handler } = makeHandler({ role: "viewer" });
-    const response = await handler(
-      makeRequest({ outcome: "accepted" }),
-      makeContext(listingId),
-    );
-    expect(response.status).toBe(403);
-  });
-});
-
-it.each(["pending", "failed"])(
-  "does not attach an import outcome to a %s artifact",
-  async (artifactStatus) => {
-    const { handler, created, auditEvents } = makeHandler({ artifactStatus });
-    const response = await handler(
-      makeRequest({ outcome: "accepted", exportAttemptId }),
-      { params: Promise.resolve({ id: listingId }) },
-    );
-    expect(response.status).toBe(409);
     expect(created).toHaveLength(0);
-    expect(auditEvents).toHaveLength(0);
-  },
-);
+  });
+  it("requires explicit mode rather than interpreting old requests as trusted", async () => {
+    const { handler } = fixture();
+    expect(
+      (await handler(request({ outcome: "accepted" }), context)).status,
+    ).toBe(400);
+  });
+  it.each(["versionId", "idempotencyKey"])(
+    "requires %s for linked reporting",
+    async (field) => {
+      const { handler } = fixture();
+      const body: any = {
+        mode: "export",
+        outcome: "accepted",
+        exportAttemptId,
+        versionId,
+        idempotencyKey: "key",
+      };
+      delete body[field];
+      expect((await handler(request(body), context)).status).toBe(400);
+    },
+  );
+});
+import { ImportResultConflict } from "@wukong/db";
+import { vi } from "vitest";
+const exportBody = {
+  mode: "export",
+  exportAttemptId,
+  versionId,
+  idempotencyKey: "client-retry",
+  outcome: "accepted",
+};
+function recordingFixture(
+  options: {
+    role?: "viewer" | "operator" | "reviewer";
+    replayed?: boolean;
+    error?: ImportResultConflict;
+  } = {},
+) {
+  const create = vi.fn(async (input: unknown) => {
+    if (options.error) throw options.error;
+    return {
+      id: "receipt",
+      ...(input as object),
+      createdAt: new Date(),
+      wasCreated: !options.replayed,
+    };
+  });
+  const write = vi.fn();
+  const handler = createImportResultHandler({
+    sessionContext: {
+      resolve: async () => ({
+        workspaceId: "server-ws",
+        actorId: "actor",
+        role: options.role ?? "operator",
+      }),
+    },
+    getDatabase: () => ({
+      forWorkspace: async (_ws: string, work: any) =>
+        work({ importResults: { create }, audit: { write } }),
+    }),
+  } as never);
+  return { handler, create, write };
+}
+it("records one operator receipt and audits exact export context", async () => {
+  const { handler, create, write } = recordingFixture();
+  const response = await handler(request(exportBody), context);
+  expect(response.status).toBe(201);
+  expect(await response.json()).toMatchObject({
+    result: { mode: "export", versionId, exportAttemptId },
+    replayed: false,
+  });
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({ recordedBy: "actor", listingId, versionId }),
+  );
+  expect(write).toHaveBeenCalledOnce();
+});
+it("returns exact retries without duplicate audit", async () => {
+  const { handler, write } = recordingFixture({ replayed: true });
+  const response = await handler(request(exportBody), context);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ replayed: true });
+  expect(write).not.toHaveBeenCalled();
+});
+it.each([
+  "listing_not_in_export",
+  "export_version_mismatch",
+  "stale_import_result",
+  "idempotency_conflict",
+])("maps repository %s rejection and writes no audit", async (code) => {
+  const { handler, write } = recordingFixture({
+    error: new ImportResultConflict(code),
+  });
+  const response = await handler(request(exportBody), context);
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code });
+  expect(write).not.toHaveBeenCalled();
+});
+it("keeps foreign attempts inaccessible", async () => {
+  const { handler } = recordingFixture({
+    error: new ImportResultConflict("export_attempt_not_found", 404),
+  });
+  expect((await handler(request(exportBody), context)).status).toBe(404);
+});
+it("rejects viewers before recording", async () => {
+  const { handler, create } = recordingFixture({ role: "viewer" });
+  expect((await handler(request(exportBody), context)).status).toBe(403);
+  expect(create).not.toHaveBeenCalled();
+});
+it("requires a rejection reason and matching correction context", async () => {
+  const { handler, create } = recordingFixture();
+  expect(
+    (await handler(request({ ...exportBody, outcome: "rejected" }), context))
+      .status,
+  ).toBe(400);
+  expect(
+    (
+      await handler(
+        request({ ...exportBody, supersedesResultId: versionId }),
+        context,
+      )
+    ).status,
+  ).toBe(400);
+  expect(create).not.toHaveBeenCalled();
+});
+it("accepts explicit unlinked historical mode and prevents export fields there", async () => {
+  const { handler, create } = recordingFixture();
+  expect(
+    (
+      await handler(
+        request({ ...exportBody, mode: "historical_manual" }),
+        context,
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await handler(
+        request({
+          mode: "historical_manual",
+          outcome: "accepted",
+          idempotencyKey: "manual",
+        }),
+        context,
+      )
+    ).status,
+  ).toBe(201);
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      mode: "historical_manual",
+      exportAttemptId: null,
+      versionId: null,
+    }),
+  );
+});
+it("rejects unauthenticated sessions before opening storage", async () => {
+  const handler = createImportResultHandler({
+    sessionContext: { resolve: async () => null },
+    getDatabase: () => {
+      throw new Error("must not open");
+    },
+  });
+  expect((await handler(request(exportBody), context)).status).toBe(401);
+});

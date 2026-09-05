@@ -1,5 +1,5 @@
 import { z } from "zod";
-
+import { ImportResultConflict, type Database } from "@wukong/db";
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -12,118 +12,117 @@ import {
   requireWorkspaceRole,
 } from "../../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../../lib/session-context-port";
-
 type RouteContext = { params: Promise<{ id: string }> };
-
 type ImportResultRouteDeps = {
   sessionContext: SessionContextPort;
-  getDatabase: () => {
-    forWorkspace<T>(
-      workspaceId: string,
-      work: (repositories: any) => Promise<T>,
-    ): Promise<T>;
-  };
+  getDatabase(): Database;
 };
-
 const bodySchema = z
   .object({
+    mode: z.enum(["export", "historical_manual"]),
     outcome: z.enum(["accepted", "rejected"]),
-    rejectReason: z.string().min(1).max(2000).optional(),
+    rejectReason: z.string().trim().min(1).max(2000).optional(),
     exportAttemptId: z.string().uuid().optional(),
+    versionId: z.string().uuid().optional(),
+    idempotencyKey: z.string().trim().min(1).max(200),
+    supersedesResultId: z.string().uuid().optional(),
+    correctionReason: z.string().trim().min(1).max(2000).optional(),
   })
   .strict()
   .refine(
-    (body) => body.outcome !== "rejected" || body.rejectReason !== undefined,
-    { message: 'rejectReason is required when outcome is "rejected".' },
-  );
-
+    (b) =>
+      b.outcome === "rejected"
+        ? !!b.rejectReason
+        : b.rejectReason === undefined,
+    {
+      message:
+        "Rejected outcomes require a reason; accepted outcomes must omit it.",
+    },
+  )
+  .refine(
+    (b) =>
+      b.mode === "export"
+        ? !!b.exportAttemptId && !!b.versionId
+        : b.exportAttemptId === undefined && b.versionId === undefined,
+    {
+      message:
+        "Export reports require attempt and version; historical manual reports must be unlinked.",
+    },
+  )
+  .refine((b) => !!b.supersedesResultId === !!b.correctionReason, {
+    message: "Corrections require the observed receipt and a reason.",
+  });
 export function createImportResultHandler(deps: ImportResultRouteDeps) {
-  return async function importResultHandler(
+  return async function handler(
     request: Request,
     context: RouteContext,
   ): Promise<Response> {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
-      if (!requireWorkspaceRole("operator", session.role)) {
+      if (!requireWorkspaceRole("operator", session.role))
         throw new ApiError(
           403,
           "insufficient_role",
           "Operator access is required.",
         );
-      }
-
       const { id } = await context.params;
-      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      if (!z.uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
-      }
-
       const body = bodySchema.parse(await request.json());
-
-      const created = await deps
-        .getDatabase()
-        .forWorkspace(session.workspaceId, async (repositories) => {
-          const listing = await repositories.listings.getById(id);
-          if (!listing) {
-            throw new ApiError(404, "listing_not_found", "Listing not found.");
-          }
-
-          if (body.exportAttemptId) {
-            const attempt = await repositories.exportAttempts.getById(
-              body.exportAttemptId,
-            );
-            if (!attempt) {
-              throw new ApiError(
-                404,
-                "export_attempt_not_found",
-                "Export attempt not found.",
-              );
-            }
-            const legacy =
-              attempt.provenance == null &&
-              attempt.artifactStatus == null &&
-              attempt.artifactSha256 == null;
-            if (!legacy && attempt.artifactStatus !== "ready") {
-              throw new ApiError(
-                409,
-                "export_artifact_not_ready",
-                "The export artifact is not ready.",
-              );
-            }
-          }
-
-          const row = await repositories.importResults.create({
-            listingId: id,
-            exportAttemptId: body.exportAttemptId ?? null,
-            outcome: body.outcome,
-            rejectReason: body.rejectReason ?? null,
-            recordedBy: session.actorId,
-          });
-
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: id,
-            action: "listing.shopline_import_result_recorded",
-            metadata: {
+      try {
+        const result = await deps
+          .getDatabase()
+          .forWorkspace(session.workspaceId, async (repositories) => {
+            const row = await repositories.importResults.create({
+              mode: body.mode,
+              listingId: id.toLowerCase(),
+              exportAttemptId: body.exportAttemptId?.toLowerCase() ?? null,
+              versionId: body.versionId?.toLowerCase() ?? null,
+              idempotencyKey: body.idempotencyKey,
               outcome: body.outcome,
-              exportAttemptId: body.exportAttemptId ?? null,
-            },
+              rejectReason: body.rejectReason ?? null,
+              recordedBy: session.actorId,
+              supersedesResultId:
+                body.supersedesResultId?.toLowerCase() ?? null,
+              correctionReason: body.correctionReason ?? null,
+            });
+            if (row.wasCreated)
+              await repositories.audit.write({
+                workspaceId: session.workspaceId,
+                actorId: session.actorId,
+                entityId: id,
+                action: "listing.shopline_import_result_recorded",
+                metadata: {
+                  resultId: row.id,
+                  mode: row.mode,
+                  outcome: row.outcome,
+                  exportAttemptId: row.exportAttemptId,
+                  versionId: row.versionId,
+                  supersedesResultId: row.supersedesResultId,
+                  revision: row.revision,
+                },
+              });
+            return row;
           });
-
-          return row;
+        const { wasCreated, ...receipt } = result;
+        return jsonResponse(wasCreated ? 201 : 200, {
+          result: receipt,
+          replayed: !wasCreated,
         });
-
-      return jsonResponse(201, {
-        id: created.id,
-        listingId: created.listingId,
-        outcome: created.outcome,
-        exportAttemptId: created.exportAttemptId,
-        createdAt: created.createdAt.toISOString(),
-      });
+      } catch (error) {
+        if (error instanceof ImportResultConflict)
+          throw new ApiError(
+            error.status,
+            error.code,
+            error.status === 404
+              ? "Listing or export attempt not found."
+              : "The result could not be recorded. Refresh the export details and review the reporting context.",
+          );
+        throw error;
+      }
     });
   };
 }
-
 export const POST = createImportResultHandler({
   sessionContext: authSessionContext,
   getDatabase,

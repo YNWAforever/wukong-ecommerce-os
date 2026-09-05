@@ -115,6 +115,19 @@ describe("GET /api/jobs", () => {
                 },
               },
               importResults: {
+                async listForExportAttempts() {
+                  return [
+                    {
+                      id: "old-receipt",
+                      listingId: "l3",
+                      versionId: "v3",
+                      exportAttemptId: "e1",
+                      mode: "export",
+                      outcome: "accepted",
+                      revision: 1,
+                    },
+                  ];
+                },
                 async listForWorkspace(limit: number) {
                   calls.push(["importResults.listForWorkspace", limit]);
                   return [
@@ -161,6 +174,18 @@ describe("GET /api/jobs", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
+    expect(body.capabilities).toEqual({
+      canGenerateBulkUpdate: false,
+      canRecordImportResult: false,
+    });
+    expect(body.exportReconciliations[0].reconciliation.counts).toMatchObject({
+      included: 1,
+      accepted: 1,
+      unreported: 0,
+    });
+    expect(
+      body.exportReconciliations[0].reconciliation.members[0].latestResult.id,
+    ).toBe("old-receipt");
     // Newest-first: ir1 (08-05) > e1 (08-04) > pr1 (08-03) > p1 (08-02) > b1 (08-01).
     expect(body.entries.map((entry: { id: string }) => entry.id)).toEqual([
       "ir1",
@@ -226,6 +251,9 @@ describe("GET /api/jobs", () => {
                 },
               },
               importResults: {
+                async listForExportAttempts() {
+                  return [];
+                },
                 async listForWorkspace() {
                   return [];
                 },

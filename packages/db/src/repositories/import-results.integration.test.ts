@@ -1,191 +1,245 @@
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
+import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import { createDatabase } from "../index.js";
-
-const adminUrl =
-  process.env.TEST_DATABASE_ADMIN_URL ??
-  "postgres://wukong:wukong@localhost:54329/wukong";
-const appUrl =
-  process.env.TEST_DATABASE_URL ??
-  "postgres://wukong_app:wukong-app-local@localhost:54329/wukong";
-const ignoreNotice = (): void => undefined;
-
-const workspaceId = "ws_import_results";
-const otherWorkspaceId = "ws_import_results_other";
-const listingId = "11111111-1111-4111-8111-111111111111";
-
-describe("import results repository", () => {
-  const admin = postgres(adminUrl, {
-    max: 1,
-    onnotice: ignoreNotice,
-    prepare: false,
-  });
-  const database = createDatabase(appUrl, { migrationUrl: adminUrl });
-
-  beforeAll(async () => {
-    await admin.unsafe(`
-      DO $role$
-      BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN
-          CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local'
-            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
-        END IF;
-      END
-      $role$;
-    `);
-    await database.migrate();
-    await admin.unsafe("TRUNCATE TABLE workspaces, users CASCADE");
-    await admin.unsafe(`
-      INSERT INTO workspaces (id, name, profile) VALUES
-        ('${workspaceId}', '${workspaceId}', '{}'::jsonb),
-        ('${otherWorkspaceId}', '${otherWorkspaceId}', '{}'::jsonb);
-    `);
-    await admin.unsafe(`
-      INSERT INTO listing_drafts (id, workspace_id) VALUES
-        ('${listingId}', '${workspaceId}');
-    `);
-  });
-
-  afterAll(async () => {
-    await database.close();
-    await admin.end();
-  });
-
-  it("creates an import result and reads it back via listForWorkspace", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const created = await repositories.importResults.create({
-        listingId,
-        exportAttemptId: null,
-        outcome: "accepted",
-        rejectReason: null,
-        recordedBy: "user_1",
-      });
-      expect(created.outcome).toBe("accepted");
-      expect(created.exportAttemptId).toBeNull();
-
-      const listed = await repositories.importResults.listForWorkspace();
-      expect(listed.map((row) => row.id)).toContain(created.id);
+const adminUrl = process.env.TEST_DATABASE_ADMIN_URL;
+const appUrl = process.env.TEST_DATABASE_URL;
+if (!adminUrl || !appUrl)
+  throw new Error(
+    "Explicit isolated TEST_DATABASE_ADMIN_URL and TEST_DATABASE_URL required",
+  );
+const admin = postgres(adminUrl, {
+  max: 1,
+  onnotice: () => undefined,
+  prepare: false,
+});
+const db = createDatabase(appUrl, { migrationUrl: adminUrl });
+const listingId = "11111111-1111-4111-8111-111111111111",
+  versionId = "22222222-2222-4222-8222-222222222222",
+  otherVersion = "33333333-3333-4333-8333-333333333333";
+const manifest = [{ listingId, versionId, outcome: "included" as const }];
+const provenance = {
+  identityVersion: 1,
+  workspaceId: "ws_results",
+  freshnessAttested: true,
+  headerContractSha256: "b".repeat(64),
+  specVersion: "spec",
+  rowOrder: [listingId],
+  manifest,
+  evidence: [
+    {
+      listingId,
+      versionId,
+      approvalReceiptId: "receipt",
+      sourceSnapshotId: "source",
+      confirmationVersionId: versionId,
+      headerContractSha256: "b".repeat(64),
+      specVersion: "spec",
+      confirmationRevision: 1,
+      sourceImportId: "import",
+      rowDigest: "c".repeat(64),
+      remoteProductId: "remote",
+      connectionId: "connection",
+    },
+  ],
+};
+const base = {
+  mode: "export" as const,
+  listingId,
+  versionId,
+  idempotencyKey: "report",
+  outcome: "accepted" as const,
+  rejectReason: null,
+  recordedBy: "user",
+};
+async function attempt(overrides: Record<string, unknown> = {}) {
+  return db.forWorkspace("ws_results", async (r) => {
+    const a = await r.exportAttempts.ensure({
+      idempotencyKey: "export",
+      requestedBy: "user",
+      manifest,
+      rowCount: 1,
+      specVersion: "spec",
+      provenance,
+      artifactSha256: "a".repeat(64),
+      ...overrides,
+    });
+    return r.exportAttempts.markReady({
+      id: a.id,
+      artifactSha256: "a".repeat(64),
     });
   });
-
-  it("stores a reject reason for a rejected outcome", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const created = await repositories.importResults.create({
-        listingId,
-        exportAttemptId: null,
-        outcome: "rejected",
-        rejectReason: "SKU already exists on another product",
-        recordedBy: "user_1",
-      });
-      expect(created.outcome).toBe("rejected");
-      expect(created.rejectReason).toBe(
-        "SKU already exists on another product",
-      );
+}
+const create = (input: any) =>
+  db.forWorkspace("ws_results", (r) => r.importResults.create(input));
+beforeAll(async () => {
+  await db.migrate();
+});
+beforeEach(async () => {
+  await admin.unsafe("TRUNCATE workspaces,users CASCADE");
+  await admin`insert into workspaces(id,name,profile) values('ws_results','Results','{}'),('other','Other','{}')`;
+  await admin`insert into listing_drafts(id,workspace_id) values(${listingId},'ws_results')`;
+  await admin`insert into listing_versions(id,workspace_id,listing_id,sequence,content,created_by) values(${versionId},'ws_results',${listingId},1,'{}','user'),(${otherVersion},'ws_results',${listingId},2,'{}','user')`;
+});
+afterAll(async () => {
+  await db.close();
+  await admin.end();
+});
+describe("trusted results repository", () => {
+  it("rejects nonincluded and no-op members of same-workspace attempts", async () => {
+    const a = await attempt({
+      manifest: [{ listingId, versionId, outcome: "excluded_no_op" }],
     });
+    await expect(create({ ...base, exportAttemptId: a.id })).rejects.toThrow();
   });
-
-  it("never exposes an import result to another workspace", async () => {
-    const created = await database.forWorkspace(workspaceId, (repositories) =>
-      repositories.importResults.create({
-        listingId,
+  it("binds exported version even when a newer version exists; wrong exported version rejects", async () => {
+    const a = await attempt();
+    await expect(
+      create({ ...base, versionId: otherVersion, exportAttemptId: a.id }),
+    ).rejects.toThrow("export_version_mismatch");
+    expect((await create({ ...base, exportAttemptId: a.id })).versionId).toBe(
+      versionId,
+    );
+  });
+  it("returns one receipt for simultaneous exact retries; changed input conflicts", async () => {
+    const a = await attempt();
+    const input = { ...base, exportAttemptId: a.id };
+    const rows = await Promise.all([create(input), create(input)]);
+    expect(rows[0].id).toBe(rows[1].id);
+    expect(rows.filter((r) => r.wasCreated)).toHaveLength(1);
+    await expect(
+      create({ ...input, outcome: "rejected", rejectReason: "bad" }),
+    ).rejects.toThrow("idempotency_conflict");
+  });
+  it("preserves ordered corrections and rejects stale observed heads under concurrency", async () => {
+    const a = await attempt();
+    const first = await create({ ...base, exportAttemptId: a.id });
+    const correction = {
+      ...base,
+      exportAttemptId: a.id,
+      supersedesResultId: first.id,
+      correctionReason: "Corrected from SHOPLINE screen",
+      outcome: "rejected",
+      rejectReason: "Invalid SKU",
+    };
+    const settled = await Promise.allSettled([
+      create({ ...correction, idempotencyKey: "c1" }),
+      create({ ...correction, idempotencyKey: "c2" }),
+    ]);
+    expect(settled.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rows = await db.forWorkspace("ws_results", (r) =>
+      r.importResults.listForExportAttempts([a.id]),
+    );
+    expect(rows.map((r) => r.revision)).toEqual([2, 1]);
+    expect(rows[0]?.supersedesResultId).toBe(first.id);
+  });
+  it("rejects concurrent initial reports with different keys", async () => {
+    const a = await attempt();
+    const settled = await Promise.allSettled([
+      create({ ...base, exportAttemptId: a.id }),
+      create({ ...base, idempotencyKey: "other", exportAttemptId: a.id }),
+    ]);
+    expect(settled.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  });
+  it("keeps historical manual reports unlinked and outside attempt totals", async () => {
+    const a = await attempt();
+    await expect(
+      create({ ...base, mode: "historical_manual", exportAttemptId: a.id }),
+    ).rejects.toThrow();
+    await create({
+      ...base,
+      mode: "historical_manual",
+      versionId: null,
+      exportAttemptId: null,
+    });
+    expect(
+      await db.forWorkspace("ws_results", (r) =>
+        r.importResults.listForExportAttempts([a.id]),
+      ),
+    ).toEqual([]);
+  });
+  it("keeps old valid reports despite more than 100 newer unrelated reports", async () => {
+    const a = await attempt();
+    const row = await create({ ...base, exportAttemptId: a.id });
+    let latest: string | undefined;
+    for (let i = 0; i < 101; i++) {
+      const r = await create({
+        ...base,
+        mode: "historical_manual",
+        versionId: null,
         exportAttemptId: null,
-        outcome: "accepted",
-        rejectReason: null,
-        recordedBy: "user_1",
+        idempotencyKey: "manual" + i,
+        ...(latest
+          ? {
+              supersedesResultId: latest,
+              correctionReason: "synthetic correction",
+            }
+          : {}),
+      });
+      latest = r.id;
+    }
+    expect(
+      (
+        await db.forWorkspace("ws_results", (r) =>
+          r.importResults.listForWorkspace(),
+        )
+      ).some((r) => r.id === row.id),
+    ).toBe(false);
+    expect(
+      (
+        await db.forWorkspace("ws_results", (r) =>
+          r.importResults.listForExportAttempts([a.id]),
+        )
+      )[0]?.id,
+    ).toBe(row.id);
+  });
+  it("does not expose foreign attempts or their receipts", async () => {
+    const a = await attempt();
+    await create({ ...base, exportAttemptId: a.id });
+    expect(
+      await db.forWorkspace("other", (r) =>
+        r.importResults.listForExportAttempts([a.id]),
+      ),
+    ).toEqual([]);
+    expect(
+      await db.forWorkspace("other", (r) => r.exportAttempts.getById(a.id)),
+    ).toBeNull();
+  });
+  it("rejects non-ready and incomplete provenance attempts", async () => {
+    const a = await db.forWorkspace("ws_results", (r) =>
+      r.exportAttempts.ensure({
+        idempotencyKey: "pending",
+        requestedBy: "user",
+        manifest,
+        rowCount: 1,
+        specVersion: "spec",
+        provenance,
+        artifactSha256: "a".repeat(64),
       }),
     );
-
-    await database.forWorkspace(otherWorkspaceId, async (repositories) => {
-      const listed = await repositories.importResults.listForWorkspace();
-      expect(listed.map((row) => row.id)).not.toContain(created.id);
-    });
+    await expect(create({ ...base, exportAttemptId: a.id })).rejects.toThrow(
+      "export_artifact_not_ready",
+    );
+    await db.forWorkspace("ws_results", (r) =>
+      r.exportAttempts.markReady({ id: a.id, artifactSha256: "a".repeat(64) }),
+    );
+    await admin`update export_attempts set provenance='{"identityVersion":1}' where id=${a.id}`;
+    await expect(create({ ...base, exportAttemptId: a.id })).rejects.toThrow(
+      "export_provenance_incomplete",
+    );
   });
-
-  it("enforces the limit bounds on listForWorkspace", async () => {
-    await database.forWorkspace(workspaceId, async (repositories) => {
+  it("enforces RLS and append-only permissions at SQL boundary", async () => {
+    const a = await attempt();
+    const row = await create({ ...base, exportAttemptId: a.id });
+    const app = postgres(appUrl!, { max: 1 });
+    try {
       await expect(
-        repositories.importResults.listForWorkspace(0),
-      ).rejects.toThrow(/limit must be between 1 and 100/i);
-      await expect(
-        repositories.importResults.listForWorkspace(101),
-      ).rejects.toThrow(/limit must be between 1 and 100/i);
-    });
-  });
-
-  it("rejects a listingId that does not exist in this workspace (FK restrict)", async () => {
-    // The failing insert has to be the thing that makes the *whole*
-    // forWorkspace transaction reject, not something caught and swallowed
-    // inside its callback: once a statement inside a Postgres transaction
-    // violates a constraint, the transaction is aborted and every later
-    // statement (including the implicit COMMIT that a callback resolving
-    // "successfully" would trigger) fails too. Catching the rejection with
-    // `expect(...).rejects` *inside* the callback would let the callback
-    // resolve, and the doomed COMMIT that follows would then surface as an
-    // unhandled rejection instead of a clean assertion. Mirrors the only
-    // other FK-restrict assertion in this codebase
-    // (platform-products.integration.test.ts), which keeps the failing call
-    // outside any forWorkspace wrapper for the same reason.
-    await expect(
-      database.forWorkspace(workspaceId, (repositories) =>
-        repositories.importResults.create({
-          listingId: "99999999-9999-4999-8999-999999999999",
-          exportAttemptId: null,
-          outcome: "accepted",
-          rejectReason: null,
-          recordedBy: "user_1",
+        app.begin(async (tx) => {
+          await tx`select set_config('app.workspace_id','ws_results',true)`;
+          await tx`update import_results set outcome='rejected' where id=${row.id}`;
         }),
-      ),
-    ).rejects.toThrow();
-  });
-
-  it("links to a real export_attempts row in the same workspace", async () => {
-    const exportAttemptId = "33333333-3333-4333-8333-333333333333";
-    await admin.unsafe(`
-      INSERT INTO export_attempts
-        (id, workspace_id, idempotency_key, requested_by, manifest, row_count, spec_version, created_at)
-      VALUES
-        ('${exportAttemptId}', '${workspaceId}', 'idem_import_results_same_ws', 'user_1', '[]'::jsonb, 0, 'opak-2026-05', now());
-    `);
-
-    await database.forWorkspace(workspaceId, async (repositories) => {
-      const created = await repositories.importResults.create({
-        listingId,
-        exportAttemptId,
-        outcome: "accepted",
-        rejectReason: null,
-        recordedBy: "user_1",
-      });
-      expect(created.exportAttemptId).toBe(exportAttemptId);
-
-      const listed = await repositories.importResults.listForWorkspace();
-      const found = listed.find((row) => row.id === created.id);
-      expect(found?.exportAttemptId).toBe(exportAttemptId);
-    });
-  });
-
-  it("rejects an exportAttemptId that belongs to another workspace (FK restrict)", async () => {
-    const otherExportAttemptId = "44444444-4444-4444-8444-444444444444";
-    await admin.unsafe(`
-      INSERT INTO export_attempts
-        (id, workspace_id, idempotency_key, requested_by, manifest, row_count, spec_version, created_at)
-      VALUES
-        ('${otherExportAttemptId}', '${otherWorkspaceId}', 'idem_import_results_other_ws', 'user_1', '[]'::jsonb, 0, 'opak-2026-05', now());
-    `);
-
-    // Same "keep the failing call outside any forWorkspace wrapper" reasoning
-    // as the listingId FK-restrict test above: this must reject the whole
-    // transaction, not be caught inside the callback.
-    await expect(
-      database.forWorkspace(workspaceId, (repositories) =>
-        repositories.importResults.create({
-          listingId,
-          exportAttemptId: otherExportAttemptId,
-          outcome: "accepted",
-          rejectReason: null,
-          recordedBy: "user_1",
-        }),
-      ),
-    ).rejects.toThrow();
+      ).rejects.toThrow();
+    } finally {
+      await app.end();
+    }
   });
 });
