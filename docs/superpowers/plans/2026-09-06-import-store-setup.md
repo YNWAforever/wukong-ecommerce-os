@@ -14,16 +14,16 @@ Base main 691ac1285fc24b2750b92157b674bb3828e74bfa; branch codex/import-store-se
 
 Files: new apps/web/app/api/workspace/import-setup/route.ts and tests; new apps/web/components/import-store-setup-panel.tsx and tests; modify bulk-import-panel.tsx, admin-connection-panel.tsx and related tests/CSS as needed.
 
-- [ ] Write failing route tests for signed-in scoped summary and role capability matrix, no secret leakage, no-store, unauthenticated and invalid/missing key cases. Reuse assertShoplineEncryptionKey, expose only summary/capability booleans.
-- [ ] Write failing rendered integration test: disconnected admin selects workbook/time, opens setup inline, connects, keeps actual input File and timestamp, then imports with the original bytes. Include non-admin guidance, unavailable configuration before token entry, retry and no nested forms.
-- [ ] Run tests and record RED before implementing.
-- [ ] Implement read-only setup endpoint with injected dependencies. Keep existing admin connection GET/POST/PATCH privileges unchanged. Return minimal connected shop domain, canManageConnection, canImport and credentialStorageConfigured fields; do not return key/token/other tenant data.
-- [ ] Implement bilingual setup card with explicit configure/open/close and refresh actions; reuse connection component via completion callback. Unknown/missing connection disables upload submission but preserves file selection. Connected state permits import for operator-or-higher independently of encryption config. Handle auth/role failures and async unmounts safely.
-- [ ] Run affected route/component suites, web typecheck and formatting. Commit explicit feature/test files only and write ignored task11-implementation-report.md with exact evidence.
-- [ ] Independent spec and quality review; fix confirmed findings and recheck.
+- [x] Write failing route tests for signed-in scoped summary and role capability matrix, no secret leakage, no-store, unauthenticated and invalid/missing key cases. Reuse assertShoplineEncryptionKey, expose only summary/capability booleans.
+- [x] Write failing rendered integration test: disconnected admin selects workbook/time, opens setup inline, connects, keeps actual input File and timestamp, then imports with the original bytes. Include non-admin guidance, unavailable configuration before token entry, retry and no nested forms.
+- [x] Run tests and record RED before implementing.
+- [x] Implement read-only setup endpoint with injected dependencies. Keep existing admin connection GET/POST/PATCH privileges unchanged. Return minimal connected shop domain, canManageConnection, canImport and credentialStorageConfigured fields; do not return key/token/other tenant data.
+- [x] Implement bilingual setup card with explicit configure/open/close and refresh actions; reuse connection component via completion callback. Unknown/missing connection disables upload submission but preserves file selection. Connected state permits import for operator-or-higher independently of encryption config. Handle auth/role failures and async unmounts safely.
+- [x] Run affected route/component suites, web typecheck and formatting. Commit explicit feature/test files only and write ignored task11-implementation-report.md with exact evidence.
+- [x] Independent spec and quality review; fix confirmed findings and recheck.
 
 ## Task 2: Acceptance and handoff
 
-- [ ] Run full unit suite, typecheck, build and runtime formatting checks as appropriate. Synthetic browser verify both locales/narrow layout and selected-file preservation without merchant upload.
-- [ ] Update onboarding/context and results with actual checks and remaining production key/deployment boundary.
-- [ ] Independent whole-range review and clean local commit. Stop task-owned services; preserve old data/worktrees. Present finishing options without publishing automatically.
+- [x] Run full unit suite, typecheck, build and runtime formatting checks as appropriate. Synthetic browser verify both locales/narrow layout and selected-file preservation without merchant upload.
+- [x] Update onboarding/context and results with actual checks and remaining production key/deployment boundary.
+- [x] Independent whole-range review and clean local commit. Stop task-owned services; preserve old data/worktrees. Present finishing options without publishing automatically.
