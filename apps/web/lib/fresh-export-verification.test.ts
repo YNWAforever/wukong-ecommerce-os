@@ -258,3 +258,58 @@ it("validates a many-member attempt once at each service boundary, without rerea
   expect(f.ensure).toHaveBeenCalledTimes(1);
   expect(evidenceReads).toBeLessThan(10);
 });
+
+it("compares the actual Default relationship target rather than the numerically first archive sheet", async () => {
+  const { relationshipWorkbook } =
+    await import("../../../packages/shopline/fixtures/relationship-workbook.js");
+  const f = fixture();
+  const changed: string[][] = sheet.map((r) => [...r]);
+  changed[2]![BULK_FORM_COLUMNS.findIndex((c) => c.key === "sku")] = "CHANGED";
+  const response = await f.service.record({
+    ...f.input,
+    body: relationshipWorkbook(changed, sheet),
+  });
+  expect(response.verification.comparison.outcome).toBe("differences_found");
+  expect(
+    f.ensure.mock.calls[0]![0].comparison.products[0].fields.find(
+      (field: any) => field.column === "sku",
+    ),
+  ).toMatchObject({ observed: "CHANGED", different: true });
+});
+
+it.each(["missing", "duplicate", "external", "traversal"])(
+  "rejects invalid Default relationship %s before persisting evidence",
+  async (mode) => {
+    const { relationshipWorkbook } =
+      await import("../../../packages/shopline/fixtures/relationship-workbook.js");
+    const f = fixture();
+    const body = relationshipWorkbook(sheet, sheet, (parts) =>
+      mode === "missing"
+        ? parts.filter((p) => p.name !== "xl/_rels/workbook.xml.rels")
+        : parts.map((p) =>
+            p.name === "xl/_rels/workbook.xml.rels"
+              ? {
+                  ...p,
+                  text:
+                    mode === "duplicate"
+                      ? p.text.replace('Id="rId1"', 'Id="rId2"')
+                      : mode === "external"
+                        ? p.text.replace(
+                            'Id="rId2"',
+                            'Id="rId2" TargetMode="External"',
+                          )
+                        : p.text.replace(
+                            'Target="worksheets/sheet2.xml"',
+                            'Target="../sheet2.xml"',
+                          ),
+                }
+              : p,
+          ),
+    );
+    await expect(f.service.record({ ...f.input, body })).rejects.toMatchObject({
+      code: "comparison_workbook_invalid",
+      status: 400,
+    });
+    expect(f.ensure).not.toHaveBeenCalled();
+  },
+);

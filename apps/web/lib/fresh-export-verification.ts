@@ -15,10 +15,7 @@ import {
   hashBulkFormHeaderContract,
   SHOPLINE_BULK_FORM_SPEC_VERSION,
 } from "@wukong/shopline";
-import {
-  readBulkFormSheet,
-  readBulkFormSheetName,
-} from "@wukong/shopline/bulk-form-xlsx";
+import { readDefaultBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import { artifactHash } from "./export-artifact";
 import { ApiError } from "./route-support";
 export const MAX_VERIFICATION_UPLOAD_BYTES = 4 * 1024 * 1024;
@@ -155,13 +152,8 @@ export function createFreshExportVerificationService(deps: {
           failure("export_artifact_hash_mismatch");
         let deliveredSheet, suppliedSheet;
         try {
-          if (
-            readBulkFormSheetName(delivered!) !== "Default" ||
-            readBulkFormSheetName(input.body) !== "Default"
-          )
-            failure("comparison_workbook_invalid", 400);
-          deliveredSheet = readBulkFormSheet(delivered!);
-          suppliedSheet = readBulkFormSheet(input.body);
+          deliveredSheet = readDefaultBulkFormSheet(delivered!);
+          suppliedSheet = readDefaultBulkFormSheet(input.body);
         } catch {
           failure("comparison_workbook_invalid", 400);
         }
