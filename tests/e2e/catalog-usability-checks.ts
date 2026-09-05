@@ -105,11 +105,44 @@ export async function captureDeliveryLocaleMatrix(
           })
           .first(),
       ).toBeVisible();
+      const comparison = page.locator(
+        `[data-export-attempt-id="${attemptId}"] .fresh-export-panel`,
+      );
+      await comparison
+        .getByRole("button", {
+          name: locale === "en" ? "Compare fresh export" : "比較最新匯出",
+          exact: true,
+        })
+        .click();
+      await expect(
+        comparison.getByLabel(
+          locale === "en" ? "Fresh SHOPLINE XLSX" : "最新 SHOPLINE XLSX",
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await comparison
+        .getByRole("button", { name: /changed-missing.xlsx/ })
+        .click();
+      await expect(comparison.locator("[data-verification-id]")).toBeVisible();
+      await comparison
+        .getByRole("button", {
+          name: locale === "en" ? "Preview evidence packet" : "預覽證據資料包",
+          exact: true,
+        })
+        .click();
+      await expect(comparison.locator("[data-evidence-preview]")).toBeVisible();
+      await expect(
+        comparison.getByRole("button", {
+          name: locale === "en" ? "Download evidence JSON" : "下載證據 JSON",
+          exact: true,
+        }),
+      ).toBeEnabled();
+      await comparison.locator("details").first().locator("summary").click();
       await assertNoHorizontalOverflow(page);
       await assertSkipLink(page);
       if (size === "mobile") await assertDrawerKeyboardFlow(page);
       await page.screenshot({
-        path: testInfo.outputPath("task7-jobs-" + locale + "-" + size + ".png"),
+        path: testInfo.outputPath("task9-jobs-" + locale + "-" + size + ".png"),
         fullPage: true,
       });
       const detailLoaded = page.waitForResponse(

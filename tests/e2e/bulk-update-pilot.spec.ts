@@ -536,11 +536,236 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ).history,
   ).toHaveLength(2);
 
+  // Compare supplied snapshots through the real browser form and immutable API.
+  const comparisonPath = `/api/listings/export/${attemptId}/verifications`;
+  const compare = ledgerAttempt.getByRole("region", {
+    name: "Fresh export comparison",
+  });
+  await compare
+    .getByRole("button", { name: "Compare fresh export", exact: true })
+    .click();
+  const compareFile = compare.getByLabel("Fresh SHOPLINE XLSX", {
+    exact: true,
+  });
+  const compareTime = compare.getByLabel(
+    "SHOPLINE export time (Hong Kong UTC+08:00)",
+    { exact: true },
+  );
+  const snapshotTime = new Date(Date.now() + 8 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19);
+  const snapshotSheet = sheet.map((row) => row.map((cell) => cell ?? ""));
+  const matchingBytes = Buffer.from(
+    writeBulkFormWorkbook([
+      ...snapshotSheet.slice(0, 2),
+      ...snapshotSheet.slice(2).reverse(),
+    ]),
+  );
+  await compareFile.setInputFiles({
+    name: "matching-snapshot.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: matchingBytes,
+  });
+  await compareTime.fill(snapshotTime);
+  await compare
+    .getByLabel("I confirm this snapshot is from the same SHOPLINE store.", {
+      exact: true,
+    })
+    .check();
+  const compareSubmit = compare.getByRole("button", {
+    name: "Record snapshot comparison",
+    exact: true,
+  });
+  const compareToggle = compare.getByRole("button", {
+    name: "Compare fresh export",
+    exact: true,
+  });
+  const collapseAndReopenComparison = async (selectedName: string) => {
+    await compareToggle.click();
+    await expect(compareFile).toBeHidden();
+    await compareToggle.click();
+    await expect(compareFile).toBeVisible();
+    expect(
+      await compareFile.evaluate(
+        (element: HTMLInputElement) => element.files?.[0]?.name,
+      ),
+    ).toBe(selectedName);
+    await expect(compareTime).toHaveValue(snapshotTime);
+    await expect(
+      compare.getByLabel(
+        "I confirm this snapshot is from the same SHOPLINE store.",
+        { exact: true },
+      ),
+    ).toBeChecked();
+  };
+  const invalidHeader = snapshotSheet.map((row) => [...row]);
+  invalidHeader[0]![0] = "Invalid header";
+  const oversizedRow = snapshotSheet[2]!.map((cell, index) =>
+    ["productId", "variantId"].includes(BULK_FORM_COLUMNS[index]!.key)
+      ? cell
+      : "x".repeat(32767),
+  );
+  for (const invalid of [
+    {
+      name: "invalid-headers.xlsx",
+      buffer: Buffer.from(writeBulkFormWorkbook(invalidHeader)),
+      status: 400,
+      code: "comparison_workbook_invalid",
+      copy: "Choose a valid current SHOPLINE workbook",
+    },
+    {
+      name: "oversized-evidence.xlsx",
+      buffer: Buffer.from(
+        writeBulkFormWorkbook([...snapshotSheet.slice(0, 2), oversizedRow]),
+      ),
+      status: 413,
+      code: "comparison_input_too_large",
+      copy: "Use a smaller snapshot",
+    },
+  ]) {
+    await compareFile.setInputFiles({
+      name: invalid.name,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: invalid.buffer,
+    });
+    const invalidResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === comparisonPath &&
+        r.request().method() === "POST",
+    );
+    await compareSubmit.click();
+    const response = await invalidResponse;
+    expect(response.status()).toBe(invalid.status);
+    expect(await response.json()).toMatchObject({ code: invalid.code });
+    await expect(compare.getByRole("alert")).toContainText(invalid.copy);
+    expect(
+      await compareFile.evaluate(
+        (element: HTMLInputElement) => element.files?.[0]?.name,
+      ),
+    ).toBe(invalid.name);
+  }
+  await compareFile.setInputFiles({
+    name: "matching-snapshot.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: matchingBytes,
+  });
+  await collapseAndReopenComparison("matching-snapshot.xlsx");
+  const matchesResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === comparisonPath &&
+      r.request().method() === "POST",
+  );
+  await compareSubmit.click();
+  const matches = await matchesResponse;
+  expect(matches.status()).toBe(201);
+  const matchingRecord = (await matches.json()).verification;
+  expect(matchingRecord.comparison).toMatchObject({
+    outcome: "matches_compared_fields",
+    counts: { expected: 2, matched: 2, differences: 0, missing: 0 },
+  });
+  expect(
+    matchingRecord.comparison.products.every(
+      (p: { fields: unknown[]; quantityDeltaObservations: unknown[] }) =>
+        p.fields.length === 69 && p.quantityDeltaObservations.length === 2,
+    ),
+  ).toBe(true);
+  const params = new URL(matches.request().url()).searchParams;
+  expect(params.get("sameStoreAttested")).toBe("true");
+  expect(params.get("merchantAttestedExportAt")).toBe(
+    new Date(snapshotTime + "+08:00").toISOString(),
+  );
+  const changedRow = [...snapshotSheet[2]!];
+  changedRow[skuIndex] = "observed-protected-sku";
+  const changedBytes = Buffer.from(
+    writeBulkFormWorkbook([...snapshotSheet.slice(0, 2), changedRow]),
+  );
+  await compareFile.setInputFiles({
+    name: "changed-missing.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: changedBytes,
+  });
+  let committedComparison: { id: string } | undefined;
+  await page.route(
+    "**" + comparisonPath + "?**",
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committedComparison = (await response.json()).verification;
+      await route.abort("failed");
+    },
+    { times: 1 },
+  );
+  await compareSubmit.click();
+  await expect(compare.getByRole("alert")).toContainText("Inputs are retained");
+  await expect(compareTime).toHaveValue(snapshotTime);
+  expect(
+    await compareFile.evaluate((e: HTMLInputElement) => e.files?.[0]?.name),
+  ).toBe("changed-missing.xlsx");
+  await collapseAndReopenComparison("changed-missing.xlsx");
+  const comparisonRetry = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === comparisonPath &&
+      r.request().method() === "POST",
+  );
+  await compareSubmit.click();
+  const retriedComparison = await comparisonRetry;
+  expect(retriedComparison.status()).toBe(200);
+  const retriedBody = await retriedComparison.json();
+  expect(retriedBody).toMatchObject({
+    replayed: true,
+    verification: { id: committedComparison!.id },
+  });
+  expect(retriedBody.verification.comparison).toMatchObject({
+    outcome: "inconclusive",
+    counts: { expected: 2, differences: 1, missing: 1 },
+  });
+  const differentProduct = retriedBody.verification.comparison.products.find(
+    (p: { outcome: string }) => p.outcome === "differences",
+  );
+  expect(
+    differentProduct.fields.find((f: { column: string }) => f.column === "sku"),
+  ).toMatchObject({
+    category: "protected",
+    expected: sheet[2]![skuIndex],
+    observed: "observed-protected-sku",
+    different: true,
+  });
+  await page.reload();
+  await compare
+    .getByRole("button", { name: "Compare fresh export", exact: true })
+    .click();
+  await expect(compare).toContainText("per page; total 2");
+  await compare.getByRole("button", { name: /changed-missing.xlsx/ }).click();
+  await expect(
+    compare.locator(`[data-verification-id="${committedComparison!.id}"]`),
+  ).toBeVisible();
+  const retainedHistory = await (
+    await page.request.get(comparisonPath + "?page=1&pageSize=10")
+  ).json();
+  expect(retainedHistory.total).toBe(2);
+  const afterComparison = await (
+    await page.request.get("/api/listings/export/" + attemptId)
+  ).json();
+  expect(afterComparison.reconciliation.counts).toEqual(
+    detail.reconciliation.counts,
+  );
+  expect(afterComparison.reconciliation.verificationStatus).toBe("unverified");
   const evidenceDb = postgres(ADMIN_URL, { max: 1, prepare: false });
   try {
     const [audit] =
       await evidenceDb`SELECT count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='listing.shopline_import_result_recorded'`;
     expect(audit!.count).toBe(3);
+    const [comparisonAudit] =
+      await evidenceDb`SELECT count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='shopline.export_snapshot_compared'`;
+    expect(comparisonAudit!.count).toBe(2);
     const [publishes] =
       await evidenceDb`SELECT count(*)::int AS count FROM publish_jobs WHERE workspace_id=${operator.workspaceId}`;
     expect(publishes!.count).toBe(0);
@@ -556,6 +781,271 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ).toBe(true);
   } finally {
     await evidenceDb.end();
+  }
+  // Task 9: explicitly select the older matching comparison, despite a newer one.
+  await compare.getByRole("button", { name: /matching-snapshot.xlsx/ }).click();
+  const packet = compare.getByRole("region", {
+    name: "Evidence packet",
+    exact: true,
+  });
+  const previewButton = packet.getByRole("button", {
+    name: "Preview evidence packet",
+    exact: true,
+  });
+  const downloadButton = packet.getByRole("button", {
+    name: "Download evidence JSON",
+    exact: true,
+  });
+  const packetPath = `/api/listings/export/${attemptId}/evidence-packet`;
+  await expect(downloadButton).toBeDisabled();
+  const previewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === packetPath &&
+      r.request().method() === "GET",
+  );
+  await previewButton.click();
+  const previewHttp = await previewResponse;
+  expect(previewHttp.status()).toBe(200);
+  expect(new URL(previewHttp.url()).searchParams.get("comparisonId")).toBe(
+    matchingRecord.id,
+  );
+  const reviewed = await previewHttp.json();
+  expect(reviewed).toMatchObject({
+    comparisonId: matchingRecord.id,
+    exportAttemptId: attemptId,
+    receiptRevisionCount: 3,
+    unreportedMemberCount: 0,
+  });
+  expect(reviewed.payload).toBeUndefined();
+  const repeatedPreview = await page.request.get(
+    packetPath + "?comparisonId=" + matchingRecord.id,
+  );
+  expect((await repeatedPreview.json()).snapshotSha256).toBe(
+    reviewed.snapshotSha256,
+  );
+  const auditConnection = postgres(ADMIN_URL, { max: 1, prepare: false });
+  const auditState = async () =>
+    await auditConnection`SELECT action,count(*)::int AS count FROM audit_events WHERE workspace_id=${operator.workspaceId} GROUP BY action ORDER BY action`;
+  try {
+    const beforePacketAudit = await auditState();
+    expect(
+      beforePacketAudit.some(
+        (row) => row.action === "shopline.export_evidence_packet_downloaded",
+      ),
+    ).toBe(false);
+    // A genuine append-only receipt correction after preview must make POST stale.
+    const currentMember = detail.reconciliation.members.find(
+      (member: { listingId: string }) => member.listingId === listingIds[1],
+    );
+    const corrected = await page.request.post(
+      `/api/listings/${listingIds[1]}/shopline-import-result`,
+      {
+        data: {
+          mode: "export",
+          outcome: "accepted",
+          exportAttemptId: attemptId,
+          versionId: currentMember.versionId,
+          supersedesResultId: committedCorrection!.id,
+          correctionReason: "Synthetic evidence-packet stale-preview check",
+          idempotencyKey: crypto.randomUUID(),
+        },
+      },
+    );
+    expect(corrected.status()).toBe(201);
+    const correction = (await corrected.json()).result;
+    const staleResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === packetPath &&
+        r.request().method() === "POST",
+    );
+    await downloadButton.click();
+    const stale = await staleResponse;
+    expect(stale.status()).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      code: "evidence_snapshot_changed",
+    });
+    expect(stale.request().postDataJSON()).toEqual({
+      comparisonId: matchingRecord.id,
+      expectedSnapshotSha256: reviewed.snapshotSha256,
+    });
+    await expect(packet.getByRole("alert")).toContainText(
+      "Refresh the preview and review",
+    );
+    await expect(downloadButton).toBeDisabled();
+    await expect(
+      compare.locator(`[data-verification-id="${matchingRecord.id}"]`),
+    ).toBeVisible();
+    await previewButton.click();
+    await expect(downloadButton).toBeEnabled();
+    // Retryable unavailable response preserves the reviewed identity.
+    await page.route(
+      "**" + packetPath,
+      (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "evidence_packet_unavailable" }),
+        }),
+      { times: 1 },
+    );
+    await downloadButton.click();
+    await expect(packet.getByRole("alert")).toContainText("Please retry");
+    await expect(downloadButton).toBeEnabled();
+    const beforeDownloadAudit = await auditState();
+    const downloadEvent = page.waitForEvent("download");
+    const downloadResponse = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === packetPath &&
+        r.request().method() === "POST",
+    );
+    await downloadButton.click();
+    const download = await downloadEvent,
+      downloadHttp = await downloadResponse;
+    expect(downloadHttp.status()).toBe(200);
+    expect(downloadHttp.headers()["cache-control"]).toBe("no-store");
+    expect(downloadHttp.headers()["content-disposition"]).toContain(
+      `export-${attemptId}-comparison-${matchingRecord.id}-evidence.json`,
+    );
+    expect(download.suggestedFilename()).toBe(
+      `export-${attemptId}-comparison-${matchingRecord.id}-evidence.json`,
+    );
+    const jsonBytes = await readFile((await download.path())!);
+    expect(jsonBytes.byteLength).toBeLessThanOrEqual(3 * 1024 * 1024);
+    const envelope = JSON.parse(jsonBytes.toString("utf8"));
+    // Independent canonicalization: no production helper imported.
+    const sorted = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(sorted)
+        : value !== null && typeof value === "object"
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [
+                  key,
+                  sorted((value as Record<string, unknown>)[key]),
+                ]),
+            )
+          : value;
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(sorted(envelope.payload)))
+        .digest("hex"),
+    ).toBe(envelope.payloadSha256);
+    expect(jsonBytes.toString("utf8")).toBe(JSON.stringify(sorted(envelope)));
+    const { asOf: _asOf, ...snapshotPayload } = envelope.payload;
+    expect(
+      createHash("sha256")
+        .update(JSON.stringify(sorted(snapshotPayload)))
+        .digest("hex"),
+    ).toBe(downloadHttp.request().postDataJSON().expectedSnapshotSha256);
+    expect(envelope.payload.attempt).toMatchObject({
+      id: attemptId,
+      artifactSha256: matchingRecord.artifactSha256,
+    });
+    expect(envelope.payload.comparison).toMatchObject({
+      id: matchingRecord.id,
+      exportAttemptId: attemptId,
+      suppliedSha256: matchingRecord.suppliedSha256,
+    });
+    expect(envelope.payload.comparison.id).not.toBe(committedComparison!.id);
+    expect(envelope.payload.limitations).toEqual({
+      suppliedSnapshot: true,
+      storeAndTime: "operator_attested",
+      evidence: "normalized_cells_only",
+      quantityDeltas: "observational",
+      authenticatedLiveShoplineState: false,
+      causalityClaim: false,
+      stockNeutralityClaim: false,
+      uatSignOff: false,
+      merchantWriteAuthorization: false,
+    });
+    for (const member of envelope.payload.members) {
+      const binding = matchingRecord.provenance.evidence.find(
+        (e: { listingId: string }) => e.listingId === member.listingId,
+      );
+      expect(member).toMatchObject(binding);
+      const priorMember = detail.reconciliation.members.find(
+        (m: { listingId: string }) => m.listingId === member.listingId,
+      );
+      const expectedHistory = [
+        ...priorMember.history,
+        ...(member.listingId === listingIds[1] ? [correction] : []),
+      ].sort((a, b) => a.revision - b.revision);
+      expect(member.receipts.map((r: { id: string }) => r.id)).toEqual(
+        expectedHistory.map((r) => r.id),
+      );
+      member.receipts.forEach((r: Record<string, unknown>, index: number) => {
+        expect(r).toMatchObject({
+          listingId: member.listingId,
+          versionId: member.versionId,
+          exportAttemptId: attemptId,
+          revision: index + 1,
+          supersedesResultId:
+            index === 0 ? null : member.receipts[index - 1].id,
+        });
+        expect(r.recordedBy).toBeTruthy();
+        expect(r.createdAt).toBeTruthy();
+      });
+      expect(member.operatorOutcome).toBe("accepted");
+    }
+    expect(
+      envelope.payload.members.flatMap(
+        (m: { receipts: unknown[] }) => m.receipts,
+      ),
+    ).toHaveLength(4);
+    const afterDownloadAudit = await auditState();
+    expect(
+      afterDownloadAudit.filter(
+        (row) => row.action !== "shopline.export_evidence_packet_downloaded",
+      ),
+    ).toEqual(beforeDownloadAudit);
+    expect(
+      afterDownloadAudit.find(
+        (row) => row.action === "shopline.export_evidence_packet_downloaded",
+      )?.count,
+    ).toBe(1);
+    const [downloadAudit] =
+      await auditConnection`SELECT metadata FROM audit_events WHERE workspace_id=${operator.workspaceId} AND action='shopline.export_evidence_packet_downloaded'`;
+    expect(Object.keys(downloadAudit!.metadata).sort()).toEqual(
+      [
+        "comparisonId",
+        "exportAttemptId",
+        "payloadSha256",
+        "schemaVersion",
+        "snapshotSha256",
+      ].sort(),
+    );
+    expect(downloadAudit!.metadata).toEqual({
+      comparisonId: matchingRecord.id,
+      exportAttemptId: attemptId,
+      payloadSha256: envelope.payloadSha256,
+      schemaVersion: "wukong-attempt-evidence-packet/v1",
+      snapshotSha256: downloadHttp.request().postDataJSON()
+        .expectedSnapshotSha256,
+    });
+    const afterPacket = await (
+      await page.request.get("/api/listings/export/" + attemptId)
+    ).json();
+    expect(afterPacket.attempt).toEqual(afterComparison.attempt);
+    expect(afterPacket.reconciliation.counts).toEqual(
+      afterComparison.reconciliation.counts,
+    );
+    expect(
+      (
+        await (
+          await page.request.get(comparisonPath + "?page=1&pageSize=10")
+        ).json()
+      ).total,
+    ).toBe(2);
+    // Selection change removes the old preview and cannot immediately download.
+    await compare.getByRole("button", { name: /changed-missing.xlsx/ }).click();
+    await expect(downloadButton).toBeDisabled();
+    await compare
+      .getByRole("button", { name: /matching-snapshot.xlsx/ })
+      .click();
+    await expect(downloadButton).toBeDisabled();
+  } finally {
+    await auditConnection.end();
   }
   const qualityResponse = await page.request.get("/api/quality");
   expect(qualityResponse.status()).toBe(200);

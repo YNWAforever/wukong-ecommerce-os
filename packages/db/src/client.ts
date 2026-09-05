@@ -1,4 +1,12 @@
 import {
+  createExportEvidenceRepository,
+  type ExportEvidenceRepository,
+} from "./repositories/export-evidence.js";
+import {
+  createExportVerificationRepository,
+  type ExportVerificationRepository,
+} from "./repositories/export-verifications.js";
+import {
   createWorkspaceReadRepository,
   type WorkspaceReadRepository,
 } from "./repositories/workspace-reads.js";
@@ -90,6 +98,8 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  exportEvidence: ExportEvidenceRepository;
+  exportVerifications: ExportVerificationRepository;
   reads: WorkspaceReadRepository;
   sourceRows: SourceRowRepository;
   approvalReceipts: ApprovalReceiptRepository;
@@ -183,6 +193,16 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        exportEvidence: createExportEvidenceRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        exportVerifications: createExportVerificationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         reads: createWorkspaceReadRepository(transaction, workspaceId, scope),
         sourceRows: createSourceRowRepository(transaction, workspaceId, scope),
         approvalReceipts: createApprovalReceiptRepository(

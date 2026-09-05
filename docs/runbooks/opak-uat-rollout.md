@@ -45,7 +45,7 @@ All four real UAT stages remain unchecked by this source-only verification. Neve
 
 Use the catalog Bulk Update action to retain a stable export attempt, then download its exact ready artifact. Record each included member using the exported version, not its later active version. /jobs shows accepted/rejected/unreported totals and retained rejection/correction reasons. Retry with the same idempotency key; a correction appends against the observed preceding receipt and includes a reason.
 
-Historical/manual mode is explicitly unlinked and cannot close reconciliation for an export attempt. Even an all-accepted attempt remains independently unverified until the authorized fresh SHOPLINE export is compared. See onboarding section 7 for the request contract.
+Historical/manual mode is explicitly unlinked and cannot close reconciliation for an export attempt. Even an all-accepted attempt remains independently unverified. A separate fresh-export comparison records supplied-snapshot field evidence; store and export time remain operator-attested, and the comparison does not change that status or establish live acceptance. See onboarding section 7 for the request contract.
 
 ## 5. Merchant restoration procedure
 
@@ -62,3 +62,7 @@ Infrastructure rollback remains in production-readiness.md; it does not restore 
 Record stage, dates, product count, deployed revision and migration evidence; private evidence references for source/delivered/fresh-export digests and all-field comparisons; blank/+0 decision; attempt reconciliation including corrections; stage-scoped audit:verify aggregate result (zero missing actions and zero accessible foreign records); remaining defects; named Opak approver and explicit written advance/stop decision.
 
 No provider calls, production migration, deployment, merchant data import or SHOPLINE write is authorized by this document alone.
+
+## Attempt review packet
+
+The selected-comparison evidence packet can assemble the exact export references, applicable receipt revisions and normalized comparison for stage review. It records a database as-of time and payload digest; subsequent operator corrections require a refreshed preview. It does not select the latest comparison automatically or sign off a stage. Continue retaining authorized original workbooks and obtaining the written merchant decisions required above. Packet integrity is a payload hash, not proof of merchant origin, export time, causality, stock neutrality or client receipt.

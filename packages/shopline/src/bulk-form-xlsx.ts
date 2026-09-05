@@ -43,7 +43,10 @@ export class BulkFormWorkbookError extends Error {
   }
 }
 
-function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
+function readZipEntries(
+  bytes: Uint8Array,
+  rejectDuplicateNames = false,
+): Map<string, Uint8Array> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   let eocd = -1;
@@ -85,6 +88,8 @@ function readZipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
     const start = localOffset + 30 + localNameLength + localExtraLength;
     const raw = bytes.subarray(start, start + compressedSize);
 
+    if (rejectDuplicateNames && entries.has(name))
+      throw new BulkFormWorkbookError("workbook contains duplicate ZIP parts");
     if (method === 0) entries.set(name, raw);
     else if (method === 8) {
       // Cap THIS entry's own inflation at whatever remains of the total
@@ -225,8 +230,15 @@ function firstWorksheetName(entries: Map<string, Uint8Array>): string {
  */
 export function readBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
   const entries = readZipEntries(bytes);
+  return readWorksheet(entries, firstWorksheetName(entries));
+}
+
+function readWorksheet(
+  entries: Map<string, Uint8Array>,
+  path: string,
+): BulkFormSheet {
   const shared = readSharedStrings(entries);
-  const worksheet = entries.get(firstWorksheetName(entries));
+  const worksheet = entries.get(path);
   if (worksheet === undefined)
     throw new BulkFormWorkbookError("workbook contains no worksheet");
   const xml = new TextDecoder().decode(worksheet);
@@ -476,4 +488,161 @@ export function writeBulkFormWorkbook(
       data: encoder.encode(worksheetXml(sheet)),
     },
   ]);
+}
+
+// Comparisons need the same worksheet a spreadsheet application identifies as
+// Default. The legacy import reader above intentionally retains its old selection.
+const OFFICE_RELATIONSHIP =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/";
+function metadataXml(entries: Map<string, Uint8Array>, path: string): string {
+  const bytes = entries.get(path);
+  if (!bytes) throw new BulkFormWorkbookError("workbook metadata is missing");
+  const xml = new TextDecoder().decode(bytes);
+  if (/<!DOCTYPE|<!ENTITY|<!\[CDATA\[/i.test(xml))
+    throw new BulkFormWorkbookError("unsupported workbook metadata");
+  return xml.replace(/<!--[\s\S]*?-->/g, "");
+}
+function tagAttributes(tag: string): Map<string, string> {
+  const body = tag.replace(/^<[\w:]+\b/, "").replace(/\/?>$/, "");
+  const attributes = new Map<string, string>();
+  let cursor = 0;
+  for (const match of body.matchAll(
+    /([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g,
+  )) {
+    if (body.slice(cursor, match.index).trim() || attributes.has(match[1]!))
+      throw new BulkFormWorkbookError("ambiguous workbook attributes");
+    attributes.set(match[1]!, decodeXmlText(match[2] ?? match[3] ?? ""));
+    cursor = match.index + match[0].length;
+  }
+  if (body.slice(cursor).trim())
+    throw new BulkFormWorkbookError("malformed workbook attributes");
+  return attributes;
+}
+function requireMetadataNamespace(
+  xml: string,
+  root: "workbook" | "Relationships",
+  namespace: string,
+): void {
+  const tag = new RegExp(
+    "^\\s*(?:<\\?xml\\s[^?]*\\?>\\s*)?<" + root + "\\b[^>]*>",
+  ).exec(xml)?.[0];
+  if (!tag)
+    throw new BulkFormWorkbookError("unsupported workbook metadata root");
+  const attrs = tagAttributes(tag.replace(/^\s*<\?xml[\s\S]*?\?>/, "").trim());
+  if (
+    attrs.get("xmlns") !== namespace ||
+    (root === "workbook" &&
+      attrs.get("xmlns:r") !== OFFICE_RELATIONSHIP.slice(0, -1))
+  )
+    throw new BulkFormWorkbookError("unsupported workbook metadata namespace");
+}
+function relationshipMetadata(
+  entries: Map<string, Uint8Array>,
+  path: string,
+): Map<string, Map<string, string>> {
+  const xml = metadataXml(entries, path);
+  requireMetadataNamespace(
+    xml,
+    "Relationships",
+    "http://schemas.openxmlformats.org/package/2006/relationships",
+  );
+  const roots = [
+    ...xml.matchAll(/<Relationships\b[^>]*>([\s\S]*?)<\/Relationships>/g),
+  ];
+  if (roots.length !== 1)
+    throw new BulkFormWorkbookError("ambiguous workbook relationships");
+  const body = roots[0]![1]!;
+  const tags = [...body.matchAll(/<Relationship\b[^>]*\/>/g)];
+  if (body.replace(/<Relationship\b[^>]*\/>/g, "").trim())
+    throw new BulkFormWorkbookError("unsupported workbook relationships");
+  const relationships = new Map<string, Map<string, string>>();
+  for (const tag of tags) {
+    const attrs = tagAttributes(tag[0]),
+      id = attrs.get("Id");
+    if (!id || relationships.has(id))
+      throw new BulkFormWorkbookError(
+        "duplicate or missing relationship identity",
+      );
+    relationships.set(id, attrs);
+  }
+  return relationships;
+}
+/** Relationship-bound Default worksheet for evidence comparisons only. No numeric sheet fallback. */
+export function readDefaultBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
+  const entries = readZipEntries(bytes, true);
+  const packageRelationships = relationshipMetadata(entries, "_rels/.rels");
+  const documents = [...packageRelationships.values()].filter(
+    (r) => r.get("Type") === OFFICE_RELATIONSHIP + "officeDocument",
+  );
+  if (
+    documents.length !== 1 ||
+    !["xl/workbook.xml", "/xl/workbook.xml"].includes(
+      documents[0]!.get("Target") ?? "",
+    ) ||
+    (documents[0]!.get("TargetMode") &&
+      documents[0]!.get("TargetMode") !== "Internal")
+  )
+    throw new BulkFormWorkbookError("unsupported workbook relationship target");
+  const xml = metadataXml(entries, "xl/workbook.xml");
+  requireMetadataNamespace(
+    xml,
+    "workbook",
+    "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+  );
+  const roots = [...xml.matchAll(/<sheets\b[^>]*>([\s\S]*?)<\/sheets>/g)];
+  if (roots.length !== 1)
+    throw new BulkFormWorkbookError("ambiguous worksheet declarations");
+  const body = roots[0]![1]!,
+    tags = [...body.matchAll(/<sheet\b[^>]*\/>/g)];
+  if (body.replace(/<sheet\b[^>]*\/>/g, "").trim())
+    throw new BulkFormWorkbookError("unsupported worksheet declarations");
+  const ids = new Set<string>();
+  let selected: string | undefined;
+  for (const tag of tags) {
+    const attrs = tagAttributes(tag[0]),
+      id = attrs.get("r:id"),
+      name = attrs.get("name");
+    if (!id || !name || ids.has(id))
+      throw new BulkFormWorkbookError("ambiguous worksheet identity");
+    ids.add(id);
+    if (name === "Default") {
+      if (selected)
+        throw new BulkFormWorkbookError("duplicate Default worksheet");
+      selected = id;
+    }
+  }
+  if (!selected)
+    throw new BulkFormWorkbookError("workbook has no Default worksheet");
+  const relationships = relationshipMetadata(
+      entries,
+      "xl/_rels/workbook.xml.rels",
+    ),
+    relationship = relationships.get(selected);
+  const target = relationship?.get("Target") ?? "";
+  if (
+    !relationship ||
+    relationship.get("Type") !== OFFICE_RELATIONSHIP + "worksheet" ||
+    (relationship.get("TargetMode") &&
+      relationship.get("TargetMode") !== "Internal") ||
+    !/^(?:\/xl\/)?worksheets\/[A-Za-z0-9_-]+\.xml$/.test(target)
+  )
+    throw new BulkFormWorkbookError("invalid Default worksheet relationship");
+  const strings = [...relationships.values()].filter(
+    (r) => r.get("Type") === OFFICE_RELATIONSHIP + "sharedStrings",
+  );
+  if (
+    strings.length > 1 ||
+    (strings.length === 0 && entries.has("xl/sharedStrings.xml")) ||
+    strings.some(
+      (r) =>
+        !["sharedStrings.xml", "/xl/sharedStrings.xml"].includes(
+          r.get("Target") ?? "",
+        ) ||
+        (r.get("TargetMode") && r.get("TargetMode") !== "Internal") ||
+        !entries.has("xl/sharedStrings.xml"),
+    )
+  )
+    throw new BulkFormWorkbookError("unsupported shared string relationship");
+  const path = target.startsWith("/") ? target.slice(1) : "xl/" + target;
+  return readWorksheet(entries, path);
 }

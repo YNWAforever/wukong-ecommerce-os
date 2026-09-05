@@ -463,6 +463,11 @@ describe("workspace isolation", () => {
         "listing_drafts",
       ],
       [
+        "export_verifications",
+        ["workspace_id", "export_attempt_id"],
+        "export_attempts",
+      ],
+      [
         "field_evidence",
         ["workspace_id", "listing_version_id"],
         "listing_versions",

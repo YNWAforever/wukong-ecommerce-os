@@ -1331,3 +1331,46 @@ export const bulkUpdateApprovalReceipts = pgTable(
     }).onDelete("restrict"),
   ],
 );
+
+export const exportVerifications = pgTable(
+  "export_verifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    exportAttemptId: uuid("export_attempt_id").notNull(),
+    identityKey: text("identity_key").notNull(),
+    artifactSha256: text("artifact_sha256").notNull(),
+    suppliedSha256: text("supplied_sha256").notNull(),
+    merchantAttestedExportAt: timestamp("merchant_attested_export_at", {
+      withTimezone: true,
+    }).notNull(),
+    connectionId: text("connection_id").notNull(),
+    policyVersion: text("policy_version").$type<"fresh-export-v1">().notNull(),
+    filename: text("filename").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    provenance: jsonb("provenance").$type<Record<string, unknown>>().notNull(),
+    comparison: jsonb("comparison")
+      .$type<import("@wukong/shopline").FreshExportComparison>()
+      .notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.workspaceId, t.exportAttemptId],
+      foreignColumns: [exportAttempts.workspaceId, exportAttempts.id],
+      name: "export_verifications_attempt_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("export_verifications_identity_uq").on(
+      t.workspaceId,
+      t.identityKey,
+    ),
+    index("export_verifications_history_idx").on(
+      t.workspaceId,
+      t.exportAttemptId,
+      t.createdAt,
+      t.id,
+    ),
+  ],
+);

@@ -143,7 +143,7 @@ Use the attempt detail in /jobs to report each included member against its expor
 
 Requires operator access. A rejected outcome must include rejectReason; accepted outcomes omit it. Reuse the same idempotency key for an unchanged retry. Corrections use a new key and include supersedesResultId (the observed preceding receipt) and correctionReason. Reports append instead of replacing history, and rejection/correction explanations remain visible after reload.
 
-Historical entries use mode historical_manual and omit exportAttemptId/versionId; they remain explicitly unlinked and cannot reconcile an attempt. /jobs derives accepted/rejected/unreported totals from included members. All reports remain operator assertions, independently unverified against SHOPLINE. Only an authorized fresh-export comparison can establish actual merchant state.
+Historical entries use mode historical_manual and omit exportAttemptId/versionId; they remain explicitly unlinked and cannot reconcile an attempt. /jobs derives accepted/rejected/unreported totals from included members. All reports remain operator assertions, independently unverified against SHOPLINE. A fresh-export comparison records normalized evidence from a supplied snapshot; its store and export time remain operator-attested, and it does not independently establish live merchant state.
 
 ## 8. Approving many listings at once
 
@@ -194,3 +194,19 @@ No operator action changes: request delivery via `shopline_api` exactly as
 before. The create-vs-update decision is made automatically from the listing's
 recorded remote-product link, both when the request is made and again by the
 worker immediately before it calls SHOPLINE.
+
+### Fresh-export comparison
+
+For a ready attempt, a reviewer/admin/owner can open its separate comparison panel, select a later SHOPLINE workbook, enter its Hong Kong export time and attest the same store. The timestamp must be after artifact readiness and no later than the current time. Retry with the same file, timestamp and attestation after a network failure; identical evidence returns the original record.
+
+Review intended-content and protected-field differences, missing or ambiguous products, and quantity instruction observations separately. History is paged; select a record to inspect its full normalized evidence. Comparisons do not change operator accepted/rejected totals or their unverified status. A match means only that the compared normalized fields match the supplied snapshot.
+
+The system retains the supplied digest and normalized relevant rows, not the original supplied XLSX bytes. Retain authorized original workbooks in the approved private evidence location. This feature requires the reviewed code and migration 0018 to be deployed through a separately authorized rollout; local synthetic verification does not authorize that rollout.
+
+### Download an attempt evidence packet
+
+Open the exact comparison to review, preview its evidence packet, then download the JSON attachment. Review the selected comparison ID, receipt and member counts, and as-of time. A newer comparison is not chosen automatically. If receipts changed after preview, refresh and review the new summary before downloading. Unavailable requests can be retried while retaining the selection.
+
+The packet includes the selected normalized comparison and applicable operator receipt revisions, with explicit unreported members. It is bounded to 3 MiB and 1,000 receipt revisions; oversized evidence is refused. To check integrity, canonicalize the parsed payload using the declared sorted-json-v1 rules and compare its UTF-8 SHA-256 with payloadSha256. The hash detects payload changes; it is not an authenticated merchant signature.
+
+Retain the downloaded packet only in the approved private evidence location. It does not contain original supplied XLSX bytes, replace required merchant evidence, advance a UAT stage, or authorize a write. Store/time are operator-attested and reports remain independently unverified. A download audit records response preparation, not receipt by the reviewer. Use requires a separately authorized rollout of the reviewed code; this phase adds no migration.

@@ -54,6 +54,7 @@ export const TENANT_TABLES = [
   "bulk_update_approval_receipts",
   "review_confirmations",
   "export_attempts",
+  "export_verifications",
   "import_results",
   "enrichment_batches",
   "enrichment_batch_items",
