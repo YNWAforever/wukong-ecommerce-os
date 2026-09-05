@@ -102,6 +102,10 @@ it("propagates a real shell toggle to sibling chrome and cookie without losing s
   expect(el.querySelector("table")?.getAttribute("aria-label")).toBe(
     "商品列表",
   );
+  const scrollRegion = el.querySelector("table")!.parentElement!;
+  expect(scrollRegion.getAttribute("role")).toBe("region");
+  expect(scrollRegion.tabIndex).toBe(0);
+  expect(scrollRegion.getAttribute("aria-label")).toBe("商品列表，可水平捲動");
   await act(async () =>
     el
       .querySelector<HTMLInputElement>(
@@ -126,6 +130,9 @@ it("propagates a real shell toggle to sibling chrome and cookie without losing s
       'input[aria-label="Select SKU1 for Bulk Update"]',
     )?.checked,
   ).toBe(true);
+  expect(scrollRegion.getAttribute("aria-label")).toBe(
+    "Product list, horizontally scrollable",
+  );
   expect(el.textContent).toContain("1 selected for Bulk Update");
   expect(el.textContent).toContain(merchantTitle);
   expect(el.textContent).toContain("Source readiness unknown");
@@ -251,3 +258,159 @@ it("renders populated English dashboard, queue, job filters and all six quality 
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
 });
+
+it.each(["zh-Hant", "en"] as const)(
+  "renders a Hong Kong job timestamp with ISO datetime in %s",
+  async (locale) => {
+    const timestamp = "2026-09-04T16:30:00.000Z";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          entries: [
+            {
+              kind: "publish_job",
+              id: "job-midnight",
+              listingId: null,
+              normalizedStatus: "failed",
+              rawStatus: "failed",
+              createdAt: timestamp,
+              summary: "Synthetic job",
+            },
+          ],
+          metrics: {
+            publishRetries: 0,
+            versionConflicts: 0,
+            staleSourceRejections: 0,
+            importedRows: 0,
+          },
+          page: 1,
+          pageSize: 50,
+          totalMatching: 1,
+          total: 1,
+        }),
+      ),
+    );
+    const el = document.createElement("div");
+    const root = createRoot(el);
+    try {
+      await act(async () =>
+        root.render(
+          <LocaleProvider locale={locale}>
+            <JobsLedgerClient />
+          </LocaleProvider>,
+        ),
+      );
+      const time = el.querySelector("time")!;
+      expect(time).not.toBeNull();
+      expect(time.getAttribute("datetime")).toBe(timestamp);
+      const expected = new Intl.DateTimeFormat(
+        locale === "en" ? "en-HK" : "zh-HK",
+        { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Hong_Kong" },
+      ).format(new Date(timestamp));
+      expect(time.textContent).toBe(expected);
+      expect(time.textContent).not.toContain("2026-09-04T");
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(["zh-Hant", "en"] as const)(
+  "renders approval-specific queue remedies in %s",
+  async (locale) => {
+    const failures = [
+      ["source_snapshot_required", "重新匯入此商品", "Reimport this product"],
+      [
+        "approval_required",
+        "沒有可批准的 SHOPLINE 版本",
+        "No approvable SHOPLINE version is available",
+      ],
+      [
+        "confirmation_incomplete",
+        "完成確認清單",
+        "complete the confirmation checklist",
+      ],
+      [
+        "confirmation_ledger_stale",
+        "確認清單已變更",
+        "The confirmation checklist changed",
+      ],
+      ["version_conflict", "版本已變更", "The listing version changed"],
+      ["listing_not_found", "商品已不存在", "The listing no longer exists"],
+      [
+        "unknown_backend_code",
+        "重新載入佇列並檢查商品",
+        "Reload the queue and inspect the listing",
+      ],
+    ];
+    const items = failures.map(([code]) => ({
+      id: code,
+      status: "in_review",
+      target: "shopline",
+      title: code,
+      sku: code,
+      updatedAt: "2026-09-04T00:00:00Z",
+      openBlockingFlagCount: 0,
+      reviewContext: {
+        expectedVersionId: "version-1",
+        confirmationLedgerRevision: 1,
+      },
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        Response.json(
+          url === "/api/listings/bulk-approve"
+            ? {
+                results: failures.map(([code]) => ({
+                  listingId: code,
+                  ok: false,
+                  code,
+                  message: "UNSAFE SERVER DETAIL",
+                })),
+                approved: 0,
+                failed: failures.length,
+              }
+            : { items, page: 1, pageSize: 100, totalMatching: items.length },
+        ),
+      ),
+    );
+    const el = document.createElement("div");
+    const root = createRoot(el);
+    try {
+      await act(async () =>
+        root.render(
+          <LocaleProvider locale={locale}>
+            <QueueClient />
+          </LocaleProvider>,
+        ),
+      );
+      await act(async () => {
+        for (const checkbox of el.querySelectorAll<HTMLInputElement>(
+          'input[type="checkbox"]',
+        ))
+          checkbox.click();
+      });
+      const approve = [...el.querySelectorAll("button")].find((button) =>
+        button.textContent?.startsWith(locale === "en" ? "Approve " : "批准 "),
+      )!;
+      expect(approve).toBeDefined();
+      await act(async () => approve.click());
+      const results = el.querySelector(".bulk-result-list")!;
+      expect(results).not.toBeNull();
+      for (const [, zh, en] of failures)
+        expect(results.textContent).toContain(locale === "en" ? en : zh);
+      expect(results.textContent).not.toContain("UNSAFE SERVER DETAIL");
+      expect(results.textContent).not.toContain(
+        locale === "en"
+          ? "Approve the active version first"
+          : "需要先批准目前版本",
+      );
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);

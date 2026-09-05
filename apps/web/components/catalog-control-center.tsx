@@ -238,7 +238,16 @@ export function CatalogControlCenter() {
             </p>
           </div>
         ) : (
-          <div className={styles.tableWrap}>
+          <div
+            className={styles.tableWrap}
+            role="region"
+            aria-label={localized(
+              locale,
+              "商品列表，可水平捲動",
+              "Product list, horizontally scrollable",
+            )}
+            tabIndex={0}
+          >
             <table
               className={styles.table}
               aria-label={localized(locale, "商品列表", "Product list")}

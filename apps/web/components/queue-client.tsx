@@ -1,11 +1,8 @@
 "use client";
 import { useLocale } from "../lib/locale-context";
-import {
-  localized,
-  commonCopy,
-  safeUiError,
-  reasonLabel,
-} from "../lib/ui-copy";
+import { localized, commonCopy, safeUiError } from "../lib/ui-copy";
+
+import { approvalErrorLabel } from "../lib/approval-ui-copy";
 
 import { useCallback, useState } from "react";
 
@@ -256,7 +253,7 @@ export function QueueClient() {
               <li key={result.listingId}>✓ {result.listingId}</li>
             ) : (
               <li key={result.listingId}>
-                ✗ {result.listingId}: {reasonLabel(result.code, locale)}
+                ✗ {result.listingId}: {approvalErrorLabel(result.code, locale)}
               </li>
             ),
           )}

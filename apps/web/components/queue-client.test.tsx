@@ -337,7 +337,9 @@ describe("QueueClient review context", () => {
       );
       await act(async () => findButtonByText(container, "批准 2")!.click());
       expect(container.textContent).toContain("1 個項目已選取");
-      expect(container.textContent).toContain("需要重新檢查來源及審核證據");
+      expect(container.textContent).toContain(
+        "版本已變更，請重新載入商品、審核並重新選取。",
+      );
       expect(
         Array.from(
           container.querySelectorAll<HTMLInputElement>(

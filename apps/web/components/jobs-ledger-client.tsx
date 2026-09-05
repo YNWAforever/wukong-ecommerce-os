@@ -333,8 +333,8 @@ export function JobsLedgerClient() {
                   <div className="jobs-row-meta">
                     {localized(locale, "紀錄 ID", "Record ID")}: {entry.id} ·{" "}
                     {stateLabel(entry.normalizedStatus, locale)} ·{" "}
-                    <time dateTime={formatHkDate(createdAt, locale)}>
-                      {createdAt.toISOString()}
+                    <time dateTime={createdAt.toISOString()}>
+                      {formatHkDate(createdAt, locale)}
                     </time>
                   </div>
                   {entry.kind === "export" ? (
