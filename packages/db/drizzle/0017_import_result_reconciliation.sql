@@ -25,6 +25,7 @@ DO $constraint$ BEGIN
  AND ((outcome='accepted' AND reject_reason IS NULL) OR (outcome='rejected' AND reject_reason IS NOT NULL AND length(trim(reject_reason))>0))));
  END IF;
 END $constraint$;
+CREATE INDEX IF NOT EXISTS import_results_workspace_listing_version_idx ON import_results(workspace_id,listing_id,version_id);
 CREATE UNIQUE INDEX IF NOT EXISTS import_results_workspace_id_uq ON import_results(workspace_id,id);
 CREATE UNIQUE INDEX IF NOT EXISTS import_results_idempotency_uq ON import_results(workspace_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS import_results_export_revision_uq ON import_results(workspace_id,export_attempt_id,listing_id,revision) WHERE mode='export';

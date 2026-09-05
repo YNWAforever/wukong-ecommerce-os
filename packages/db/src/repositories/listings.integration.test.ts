@@ -475,6 +475,16 @@ describe("workspace isolation", () => {
       ],
       ["import_results", ["workspace_id", "listing_id"], "listing_drafts"],
       [
+        "import_results",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "import_results",
+        ["workspace_id", "supersedes_result_id"],
+        "import_results",
+      ],
+      [
         "listing_drafts",
         ["workspace_id", "active_version_id"],
         "listing_versions",

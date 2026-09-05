@@ -901,10 +901,7 @@ export const importResults = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" })
       .notNull(),
     listingId: uuid("listing_id").notNull(),
-    /** Null when the recorded listing's bulk-form file came from the
-     * single-listing `deliver` (bulk_form) path, which persists no
-     * export_attempts row -- only the multi-product `/api/listings/export`
-     * route produces one to reference here. */
+    /** Null for explicitly unlinked historical/manual reports. */
     exportAttemptId: uuid("export_attempt_id"),
     mode: text("mode").notNull().default("legacy_historical"),
     versionId: uuid("version_id"),
@@ -958,6 +955,11 @@ export const importResults = pgTable(
       columns: [table.workspaceId, table.supersedesResultId],
       foreignColumns: [table.workspaceId, table.id],
     }).onDelete("restrict"),
+    index("import_results_workspace_listing_version_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.versionId,
+    ),
     index("import_results_workspace_listing_idx").on(
       table.workspaceId,
       table.listingId,

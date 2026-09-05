@@ -181,3 +181,22 @@ describe("CreateBatchForm", () => {
     vi.unstubAllGlobals();
   });
 });
+
+// Chromium rejects a native fetch called with the dependency object as receiver.
+it("calls browser fetch without a dependency-object receiver", async () => {
+  const fetcher = async function (this: unknown) {
+    if (this !== undefined) throw new TypeError("Illegal invocation");
+    return Response.json({
+      batchId: "batch_1",
+      selected: 2,
+      budgetUsd: 1,
+      waveSize: 2,
+      status: "running",
+      enqueued: 2,
+      spentUsd: 0,
+    });
+  } as typeof fetch;
+  expect((await submitCreateBatch(validInput, { fetcher })).kind).toBe(
+    "success",
+  );
+});

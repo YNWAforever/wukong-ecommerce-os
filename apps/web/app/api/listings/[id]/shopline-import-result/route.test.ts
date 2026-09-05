@@ -56,7 +56,7 @@ const request = (body: unknown) =>
   });
 const context = { params: Promise.resolve({ id: listingId }) };
 describe("trusted result recording boundary", () => {
-  it("rejects a same-workspace attempt that did not include the listing", async () => {
+  it("rejects the legacy export request missing explicit mode, version and idempotency key", async () => {
     const { handler, created } = fixture();
     const response = await handler(
       request({ outcome: "accepted", exportAttemptId }),
