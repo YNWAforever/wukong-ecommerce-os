@@ -269,6 +269,14 @@ describe("BulkImportPanel", () => {
         { status: 201 },
       ),
     );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        connection: { shopDomain: "synthetic.myshopline.com" },
+        canImport: true,
+        canManageConnection: false,
+        credentialStorageConfigured: true,
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
 
     const container = document.createElement("div");

@@ -69,21 +69,10 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   });
   await expect(time).toHaveValue("");
   await expect(page.getByText(/UTC\+08:00/)).toBeVisible();
-  await expect(submit).toBeEnabled();
-  await submit.click();
-  await expect(page.getByRole("status")).toContainText(
-    "Enter the SHOPLINE export time.",
-  );
+  await expect(submit).toBeDisabled();
+  await expect(page.getByText(/administrator|管理員/).first()).toBeVisible();
   expect(requests).toHaveLength(0);
   await time.fill("2026-01-01T00:15");
-  const missingConnection = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/api/listings/import",
-  );
-  await submit.click();
-  expect((await missingConnection).status()).toBe(409);
-  await expect(page.getByRole("status")).toContainText(
-    "Connect a SHOPLINE store",
-  );
   await expect(time).toHaveValue("2026-01-01T00:15");
   expect(
     await file.evaluate(
@@ -94,15 +83,26 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
   try {
     await admin`INSERT INTO shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) VALUES (${fixture.connectionId},${fixture.workspaceId},'synthetic-import.invalid','synthetic-disabled')`;
+    await page
+      .getByRole("button", { name: /Refresh status|重新整理狀態/ })
+      .click();
+    await expect(submit).toBeEnabled();
+    await time.fill("");
+    await submit.click();
+    await expect(
+      page.locator("form.intake-form").getByRole("status"),
+    ).toContainText("Enter the SHOPLINE export time.");
+    expect(requests).toHaveLength(0);
+    await time.fill("2026-01-01T00:15");
     await page.route(
       "**/api/listings/import?**",
       (route) => route.abort("failed"),
       { times: 1 },
     );
     await submit.click();
-    await expect(page.getByRole("status")).toContainText(
-      "Could not reach the server",
-    );
+    await expect(
+      page.locator("form.intake-form").getByRole("status"),
+    ).toContainText("Could not reach the server");
     await expect(time).toHaveValue("2026-01-01T00:15");
     const success = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/listings/import",
@@ -175,14 +175,21 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
     buffer: workbook,
   });
   await page.locator("#merchant-attested-export-at").fill("2026-01-01T00:15");
-  const forbidden = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/api/listings/import",
+  await expect(
+    page.getByRole("button", { name: "開始匯入 Import" }),
+  ).toBeDisabled();
+  const forbidden = await page.request.post(
+    "/api/listings/import?filename=synthetic.xlsx&merchantAttestedExportAt=2025-12-31T16%3A15%3A00.000Z",
+    {
+      data: workbook,
+      headers: {
+        "content-type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    },
   );
-  await page.getByRole("button", { name: "開始匯入 Import" }).click();
-  expect((await forbidden).status()).toBe(403);
-  await expect(page.getByRole("status")).toContainText(
-    "Operator access is required",
-  );
+  expect(forbidden.status()).toBe(403);
+  expect(await forbidden.json()).toMatchObject({ code: "insufficient_role" });
 });
 
 test("reviewer completes attended Bulk Update and reconciles mixed operator reports", async ({
@@ -1066,4 +1073,126 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
   await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
   expect(pageErrors).toEqual([]);
+});
+
+test("admin sets up a store inline without losing the selected workbook", async ({
+  page,
+}, testInfo) => {
+  const setupFixture = await prepareBulkImportFixture();
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`UPDATE memberships SET role='admin' WHERE workspace_id=${setupFixture.workspaceId} AND user_id=${setupFixture.userId}`;
+    await page.route(
+      "**/api/workspace/import-setup",
+      async (route) => {
+        const response = await route.fetch();
+        const summary = await response.json();
+        await route.fulfill({
+          response,
+          json: { ...summary, credentialStorageConfigured: false },
+        });
+      },
+      { times: 1 },
+    );
+    await signInBulkImportOperator(page, setupFixture);
+    const file = page.locator("#bulk-import-file");
+    const time = page.locator("#merchant-attested-export-at");
+    const submit = page.getByRole("button", { name: "開始匯入 Import" });
+    await file.setInputFiles({
+      name: filename,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: workbook,
+    });
+    await time.fill("2026-01-01T00:15");
+    await expect(submit).toBeDisabled();
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await expect(
+      page.getByText(/credential storage|憑證儲存/i).first(),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: /Refresh status|重新整理狀態/ })
+      .click();
+    await page.getByRole("button", { name: /Set up store|設定商店/ }).click();
+    await expect(page.locator("form form")).toHaveCount(0);
+    await page.getByRole("button", { name: /Close setup|關閉設定/ }).click();
+    await expect(time).toHaveValue("2026-01-01T00:15");
+    expect(
+      await file.evaluate((el: HTMLInputElement) => el.files?.[0]?.name),
+    ).toBe(filename);
+    await page.getByRole("button", { name: /Set up store|設定商店/ }).click();
+    await page
+      .getByLabel("SHOPLINE 商店網域 SHOPLINE shop domain")
+      .fill("synthetic-inline-store.invalid");
+    await page
+      .getByLabel("SHOPLINE 存取權杖 SHOPLINE access token")
+      .fill("synthetic-token-no-provider-access");
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath("inline-store-setup-en-mobile.png"),
+      fullPage: true,
+    });
+    const connected = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/workspace/connection" &&
+        r.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "連線 Connect", exact: true })
+      .click();
+    expect((await connected).status()).toBe(200);
+    await expect(submit).toBeEnabled();
+    await expect(
+      page.getByText("synthetic-inline-store.invalid", { exact: true }),
+    ).toBeVisible();
+    await expect(time).toHaveValue("2026-01-01T00:15");
+    expect(
+      await file.evaluate((el: HTMLInputElement) => el.files?.[0]?.name),
+    ).toBe(filename);
+    const imported = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/listings/import",
+    );
+    await submit.click();
+    expect((await imported).status()).toBe(201);
+    const [source] =
+      await admin`SELECT workbook_sha256 FROM source_imports WHERE workspace_id=${setupFixture.workspaceId}`;
+    expect(source!.workbook_sha256).toBe(
+      createHash("sha256").update(workbook).digest("hex"),
+    );
+    const [audit] =
+      await admin`SELECT count(*)::int n FROM audit_events WHERE workspace_id=${setupFixture.workspaceId} AND action='workspace.connection_created'`;
+    expect(audit!.n).toBe(1);
+    for (const locale of ["en", "zh-Hant"]) {
+      await page
+        .context()
+        .addCookies([
+          { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
+        ]);
+      await page.reload();
+      await expect(
+        page.getByText("synthetic-inline-store.invalid", { exact: true }),
+      ).toBeVisible();
+      for (const width of [375, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+          )
+          .toBe(true);
+        await page.screenshot({
+          path: testInfo.outputPath(`inline-store-${locale}-${width}.png`),
+          fullPage: true,
+        });
+      }
+    }
+  } finally {
+    await admin.end();
+  }
 });

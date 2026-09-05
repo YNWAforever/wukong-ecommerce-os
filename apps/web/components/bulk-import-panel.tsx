@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { ImportStoreSetupPanel } from "./import-store-setup-panel";
 
 /** Matches MAX_UPLOAD_BYTES in apps/web/app/api/listings/import/route.ts:34. */
 export const MAX_BULK_IMPORT_BYTES = 4 * 1024 * 1024;
@@ -163,6 +164,7 @@ export function BulkImportPanel() {
   const [merchantExportTime, setMerchantExportTime] = useState("");
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+  const [importReady, setImportReady] = useState(false);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = event.target.files?.[0] ?? null;
@@ -172,7 +174,7 @@ export function BulkImportPanel() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submittingRef.current) return;
+    if (submittingRef.current || !importReady) return;
     if (!file) {
       setOutcome({
         kind: "validation_error",
@@ -200,65 +202,74 @@ export function BulkImportPanel() {
   }
 
   return (
-    <form className="intake-form" onSubmit={handleSubmit}>
-      <div className="upload-dropzone">
-        <label htmlFor="bulk-import-file" className="upload-label">
-          <span className="upload-title">匯入 SHOPLINE Bulk Update 匯出檔</span>
-          <span className="upload-subtitle">
-            上載最新匯出的 .xlsx 檔案 · 最多 4 MiB
-          </span>
-          <span className="secondary-button upload-button">
-            選擇檔案 <span>Select file</span>
-          </span>
+    <>
+      <ImportStoreSetupPanel onImportReadyChange={setImportReady} />
+      <form className="intake-form" onSubmit={handleSubmit}>
+        <div className="upload-dropzone">
+          <label htmlFor="bulk-import-file" className="upload-label">
+            <span className="upload-title">
+              匯入 SHOPLINE Bulk Update 匯出檔
+            </span>
+            <span className="upload-subtitle">
+              上載最新匯出的 .xlsx 檔案 · 最多 4 MiB
+            </span>
+            <span className="secondary-button upload-button">
+              選擇檔案 <span>Select file</span>
+            </span>
+          </label>
+          <input
+            id="bulk-import-file"
+            type="file"
+            accept=".xlsx"
+            disabled={busy}
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {file ? <p className="intake-message">已選擇：{file.name}</p> : null}
+
+        <label htmlFor="merchant-attested-export-at">
+          SHOPLINE 匯出時間（香港時間 UTC+08:00）
         </label>
         <input
-          id="bulk-import-file"
-          type="file"
-          accept=".xlsx"
+          id="merchant-attested-export-at"
+          type="datetime-local"
+          value={merchantExportTime}
           disabled={busy}
-          onChange={handleFileChange}
+          onChange={(event) => {
+            setMerchantExportTime(event.target.value);
+            setOutcome(null);
+          }}
         />
-      </div>
 
-      {file ? <p className="intake-message">已選擇：{file.name}</p> : null}
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={busy || !importReady}
+        >
+          {busy ? "匯入中…" : "開始匯入 Import"}
+        </button>
 
-      <label htmlFor="merchant-attested-export-at">
-        SHOPLINE 匯出時間（香港時間 UTC+08:00）
-      </label>
-      <input
-        id="merchant-attested-export-at"
-        type="datetime-local"
-        value={merchantExportTime}
-        disabled={busy}
-        onChange={(event) => {
-          setMerchantExportTime(event.target.value);
-          setOutcome(null);
-        }}
-      />
+        {outcome?.kind === "success" ? (
+          <ul className="file-list" aria-live="polite">
+            <li>
+              已解析 {outcome.parsedRows} 列 · 新增 {outcome.createdDrafts}{" "}
+              筆草稿 · 更新 {outcome.refreshedProducts} 筆
+            </li>
+            {outcome.issues.map((issue, index) => (
+              <li key={index}>{issue.message}</li>
+            ))}
+          </ul>
+        ) : null}
 
-      <button type="submit" className="primary-button" disabled={busy}>
-        {busy ? "匯入中…" : "開始匯入 Import"}
-      </button>
-
-      {outcome?.kind === "success" ? (
-        <ul className="file-list" aria-live="polite">
-          <li>
-            已解析 {outcome.parsedRows} 列 · 新增 {outcome.createdDrafts} 筆草稿
-            · 更新 {outcome.refreshedProducts} 筆
-          </li>
-          {outcome.issues.map((issue, index) => (
-            <li key={index}>{issue.message}</li>
-          ))}
-        </ul>
-      ) : null}
-
-      <p className="intake-message" role="status" aria-live="polite">
-        {busy
-          ? "匯入中…"
-          : outcome && outcome.kind !== "success"
-            ? outcome.message
-            : "選擇檔案並輸入 SHOPLINE 匯出時間後開始匯入。"}
-      </p>
-    </form>
+        <p className="intake-message" role="status" aria-live="polite">
+          {busy
+            ? "匯入中…"
+            : outcome && outcome.kind !== "success"
+              ? outcome.message
+              : "選擇檔案並輸入 SHOPLINE 匯出時間後開始匯入。"}
+        </p>
+      </form>
+    </>
   );
 }
