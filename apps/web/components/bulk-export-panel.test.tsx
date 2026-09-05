@@ -9,6 +9,121 @@ import { BulkExportPanel } from "./bulk-export-panel.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+async function submitExport(
+  root: ReturnType<typeof createRoot>,
+  container: HTMLDivElement,
+  listingIds: readonly string[],
+) {
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds,
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("button")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe.each([
+  [403, { message: "Reviewer access revoked" }],
+  [409, { message: "Eligibility changed", rowCount: 0, manifest: [] }],
+  [500, { message: "Server failure" }],
+  [200, { exportAttemptId: null, rowCount: 0 }],
+])("no-attempt response status %i", (status, body) => {
+  it("does not present an unsuccessful or malformed response as a completed zero-row export", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(Response.json(body, { status })),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await submitExport(root, container, ["listing-a"]);
+
+    expect(container.textContent).not.toContain(
+      "every requested listing was excluded or unchanged",
+    );
+    expect(container.textContent).not.toContain("Requested: 1");
+    expect(
+      container.querySelector("[data-zero-row-export-summary]"),
+    ).toBeNull();
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+});
+
+it("keeps exact mixed zero-row counts and member context bound to the submitted response", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      exportAttemptId: null,
+      rowCount: 0,
+      manifest: [
+        {
+          listingId: "listing-no-op",
+          versionId: "version-no-op",
+          outcome: "excluded_no_op",
+          reason: "No enrichable fields changed",
+        },
+        {
+          listingId: "listing-stale",
+          versionId: "version-stale",
+          outcome: "excluded_stale",
+          reason: "Imported source is stale",
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await submitExport(root, container, ["listing-no-op", "listing-stale"]);
+
+  const summary = container.querySelector("[data-zero-row-export-summary]")!;
+  expect(summary.textContent).toContain("Requested: 2");
+  expect(summary.textContent).toContain("Included: 0");
+  expect(summary.textContent).toContain("Excluded: 1");
+  expect(summary.textContent).toContain("No-op: 1");
+  expect(summary.textContent).toContain("listing-no-op");
+  expect(summary.textContent).toContain("version-no-op");
+  expect(summary.textContent).toContain("excluded_no_op");
+  expect(summary.textContent).toContain("No enrichable fields changed");
+  expect(summary.textContent).toContain("listing-stale");
+  expect(summary.textContent).toContain("version-stale");
+  expect(summary.textContent).toContain("excluded_stale");
+  expect(summary.textContent).toContain("Imported source is stale");
+
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listingIds: ["listing-new"],
+        canGenerate: true,
+      }),
+    ),
+  );
+
+  expect(summary.textContent).toContain("Requested: 2");
+  expect(summary.textContent).toContain("Excluded: 1");
+  expect(summary.textContent).toContain("No-op: 1");
+  expect(summary.textContent).toContain("version-stale");
+  expect(container.textContent).toContain("1 listing(s) selected");
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+  vi.unstubAllGlobals();
+});
 it("gates generation on permission and explicit freshness, then preserves submitted ids", async () => {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
     Response.json({

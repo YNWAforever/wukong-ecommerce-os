@@ -19,6 +19,20 @@ type ExportResponse = {
   message?: string;
 };
 
+function isCompletedZeroRowResponse(
+  response: ExportResponse,
+): response is ExportResponse & {
+  exportAttemptId: null;
+  rowCount: 0;
+  manifest: NonNullable<ExportResponse["manifest"]>;
+} {
+  return (
+    response.exportAttemptId === null &&
+    response.rowCount === 0 &&
+    Array.isArray(response.manifest)
+  );
+}
+
 function selectionIdentity(listingIds: readonly string[]): string {
   return [...listingIds].sort().join("\u001f");
 }
@@ -93,12 +107,24 @@ export function BulkExportPanel({
         }),
       });
       const body = (await response.json()) as ExportResponse;
-      setResult(body);
-      if (body.exportAttemptId) {
-        await loadDetail(body.exportAttemptId);
-      } else if (!response.ok) {
+      if (!response.ok) {
+        if (body.exportAttemptId) {
+          setResult(body);
+          await loadDetail(body.exportAttemptId);
+          return;
+        }
         throw new Error(
           body.message ?? `Unable to generate export (${response.status})`,
+        );
+      }
+      if (body.exportAttemptId) {
+        setResult(body);
+        await loadDetail(body.exportAttemptId);
+      } else if (isCompletedZeroRowResponse(body)) {
+        setResult(body);
+      } else {
+        throw new Error(
+          "The export response was incomplete; retry the export.",
         );
       }
     } catch (caught) {
@@ -110,6 +136,25 @@ export function BulkExportPanel({
       setBusy(false);
     }
   }
+
+  const completedZeroRow =
+    result && isCompletedZeroRowResponse(result) ? result : null;
+  const completedCounts = completedZeroRow
+    ? {
+        requested: completedZeroRow.manifest.length,
+        included: completedZeroRow.manifest.filter(
+          (item) => item.outcome === "included",
+        ).length,
+        noOp: completedZeroRow.manifest.filter(
+          (item) => item.outcome === "excluded_no_op",
+        ).length,
+      }
+    : null;
+  const excludedCount = completedCounts
+    ? completedCounts.requested -
+      completedCounts.included -
+      completedCounts.noOp
+    : 0;
 
   return (
     <section className="bulk-export-panel" aria-label="Bulk Update XLSX export">
@@ -163,16 +208,25 @@ export function BulkExportPanel({
           </button>
         </article>
       ) : null}
-      {result && !result.exportAttemptId ? (
-        <div className="manifest-summary">
+      {completedZeroRow && completedCounts ? (
+        <div className="manifest-summary" data-zero-row-export-summary>
+          <h3>Bulk Update XLSX export completed</h3>
           <p>
             No artifact was created because every requested listing was excluded
             or unchanged.
           </p>
+          <p>
+            Requested: {completedCounts.requested} · Included:{" "}
+            {completedCounts.included} · Excluded: {excludedCount} · No-op:{" "}
+            {completedCounts.noOp}
+          </p>
           <ul>
-            {result.manifest?.map((item) => (
-              <li key={item.listingId}>
-                {item.listingId}: {item.reason ?? item.outcome}
+            {completedZeroRow.manifest.map((item) => (
+              <li key={item.listingId} data-listing-id={item.listingId}>
+                Listing <code>{item.listingId}</code> · Version{" "}
+                <code>{item.versionId ?? "not available"}</code> · Outcome{" "}
+                <code>{item.outcome}</code> · Reason{" "}
+                {item.reason ?? "No reason provided"}
               </li>
             ))}
           </ul>
