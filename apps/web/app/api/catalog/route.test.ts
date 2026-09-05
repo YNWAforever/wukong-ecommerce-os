@@ -98,6 +98,7 @@ function makeHandler({
                   const flags = linked?.openBlockingFlagCount ?? null;
                   return {
                     ...p,
+                    sourceType: "platform" as const,
                     title:
                       linked?.activeVersion?.content.title["zh-Hant"] ??
                       linked?.activeVersion?.content.title.en ??
@@ -362,4 +363,47 @@ it("returns viewer reporting/generation capabilities from the server context", a
     canGenerateBulkUpdate: false,
     canRecordImportResult: false,
   });
+});
+
+it("website source pages skip platform hydration and readiness", async () => {
+  const website = {
+    sourceType: "website",
+    id: "website-only",
+    title: "Synthetic",
+    sourceUrl: "https://store.example/p",
+    canExport: false,
+  };
+  const hydrate = vi.fn(async (ids: string[]) => {
+    expect(ids).toEqual([]);
+    return [];
+  });
+  const handler = createCatalogHandler({
+    sessionContext: {
+      resolve: async () => ({
+        workspaceId: "own",
+        actorId: "v",
+        role: "viewer",
+      }),
+    },
+    getDatabase: () =>
+      ({
+        forWorkspace: async (_w: string, fn: any) =>
+          fn({
+            reads: {
+              catalogPage: async (query: any) => {
+                expect(query.filter).toBe("website");
+                return {
+                  items: [website],
+                  summary: { total: 1, website: 1 },
+                  totalMatching: 1,
+                };
+              },
+            },
+            platformProducts: { getByIds: hydrate },
+          }),
+      }) as never,
+  });
+  const response = await handler(buildRequest("filter=website"));
+  expect(response.status).toBe(200);
+  expect((await response.json()).items).toEqual([website]);
 });

@@ -270,4 +270,145 @@ describe("full workspace read boundaries", () => {
       await app.end();
     }
   });
+  it("paginates one scoped union of 30 platform and 21 website observations", async () => {
+    const mixed = "mixed-" + randomUUID(),
+      conn = randomUUID();
+    await admin`insert into workspaces(id,name,profile) values (${mixed},'synthetic mixed','{}')`;
+    await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${conn},${mixed},'synthetic.invalid','fixture')`;
+    await admin`insert into platform_products(workspace_id,connection_id,remote_product_id,origin,created_at,updated_at) select ${mixed},${conn},'Mixed '||i,'created','2026-01-01'::timestamptz+i*interval '2 seconds','2027-01-01' from generate_series(1,30) i`;
+    for (let i = 1; i <= 21; i++) {
+      const observation = {
+        key: `https://store.example/products/${i}`,
+        sourceUrl: `https://store.example/products/${i}`,
+        capturedAt: "2026-01-01T00:00:00Z",
+        title: `Mixed website ${i}`,
+        description: null,
+        imageUrls: [],
+        price: null,
+        availability: "unknown",
+        attributes: {},
+        fieldSources: {},
+        warnings: [],
+      };
+      const scan = randomUUID();
+      await admin`insert into website_scans(id,workspace_id,requested_url,requested_by,request_key,state,checkpoint,next_eligible_at,deadline_at) values (${scan},${mixed},'https://store.example/','synthetic',${scan},'ready',${admin.json({ preview: { products: [observation], warnings: [] } })},now(),now())`;
+      await admin`insert into website_products(workspace_id,canonical_source_url,source_scan_id,source_key,observation,saved_by,created_at) values (${mixed},${observation.key},${scan},${observation.key},${admin.json(observation)},'synthetic','2026-01-01'::timestamptz+${i === 21 ? 42 : i * 2 + 1}*interval '1 second')`;
+    }
+    await db.forWorkspace(mixed, async (r) => {
+      const pages = await Promise.all(
+        [1, 2, 3].map((page) =>
+          r.reads.catalogPage({ page, pageSize: 25, filter: "all" }),
+        ),
+      );
+      expect(pages.map((p) => p.items.length)).toEqual([25, 25, 1]);
+      expect(pages[0]!.summary).toMatchObject({
+        total: 51,
+        website: 21,
+        unlinked: 30,
+        needsAttention: 30,
+      });
+      const items = pages.flatMap((p) => p.items);
+      expect(new Set(items.map((i) => i.sourceType + ":" + i.id)).size).toBe(
+        51,
+      );
+      expect(items.map((i) => Date.parse(i.createdAt))).toEqual(
+        items.map((i) => Date.parse(i.createdAt)).sort((a, b) => b - a),
+      );
+      expect(items).toEqual(
+        [...items].sort(
+          (a, b) =>
+            Date.parse(b.createdAt) - Date.parse(a.createdAt) ||
+            a.sourceType.localeCompare(b.sourceType) ||
+            a.id.localeCompare(b.id),
+        ),
+      );
+      expect(
+        (await r.reads.catalogPage({ page: 2, pageSize: 25, filter: "all" }))
+          .items,
+      ).toEqual(pages[1]!.items);
+      expect(
+        (
+          await r.reads.catalogPage({
+            page: 2,
+            pageSize: 25,
+            filter: "all",
+            q: "Mixed",
+          })
+        ).items,
+      ).toHaveLength(25);
+      const website = await r.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "website",
+        q: "/products/21",
+      });
+      expect(website.totalMatching).toBe(1);
+      expect(website.items[0]).toMatchObject({
+        sourceType: "website",
+        title: "Mixed website 21",
+        canExport: false,
+      });
+      expect(website.items[0]).not.toHaveProperty("listingId");
+      expect(website.items[0]).not.toHaveProperty("remoteProductId");
+      const websiteId = website.items[0]!.id;
+      const detail = await r.reads.websiteProduct(websiteId);
+      expect(detail?.observation.title).toBe("Mixed website 21");
+      expect(await r.platformProducts.getByListingId(websiteId)).toBeNull();
+      expect(await r.listings.getReviewSnapshot(websiteId)).toBeNull();
+      await expect(r.listings.requireForPublish(websiteId)).rejects.toThrow(
+        /listing not found/i,
+      );
+      expect(
+        await db.forWorkspace(otherId, (foreign) =>
+          foreign.reads.websiteProduct(websiteId),
+        ),
+      ).toBeNull();
+      const { createExportListingsHandler } =
+        await import("../../../../apps/web/app/api/listings/export/route.js");
+      let artifactWrites = 0;
+      const exportResponse = await createExportListingsHandler({
+        sessionContext: {
+          resolve: async () => ({
+            workspaceId: mixed,
+            actorId: "synthetic",
+            role: "reviewer",
+          }),
+        },
+        getDatabase: () => db,
+        getAssetStore: () =>
+          ({
+            writeObject: async () => {
+              artifactWrites++;
+              throw new Error("Unexpected artifact");
+            },
+          }) as never,
+      })(
+        new Request("http://localhost/api/listings/export", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            listingIds: [websiteId],
+            freshnessAttested: true,
+          }),
+        }),
+      );
+      expect(exportResponse.status).toBe(200);
+      expect(await exportResponse.json()).toMatchObject({
+        rowCount: 0,
+        exportAttemptId: null,
+        manifest: [{ listingId: websiteId, outcome: "listing_not_found" }],
+      });
+      expect(artifactWrites).toBe(0);
+
+      expect(
+        (
+          await r.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "unlinked",
+          })
+        ).totalMatching,
+      ).toBe(30);
+    });
+  });
 });

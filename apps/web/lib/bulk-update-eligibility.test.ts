@@ -356,3 +356,15 @@ describe("promoted approval checklist ownership", () => {
     });
   });
 });
+
+it("website-only IDs cannot inherit approval or platform eligibility", async () => {
+  const { deps } = fixture();
+  deps.getReviewState = async () => null;
+  deps.getPlatformProductLink = async () => null;
+  expect(
+    await checkBulkUpdateEligibility(
+      { ...input, listingId: "website-only" },
+      deps,
+    ),
+  ).toEqual({ ok: false, reason: "version_mismatch" });
+});

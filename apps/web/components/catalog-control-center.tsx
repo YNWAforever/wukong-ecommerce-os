@@ -10,6 +10,7 @@ import {
 } from "../lib/ui-copy";
 
 import Link from "next/link";
+import { WebsiteProductDetail } from "./website-product-detail";
 import { useCallback, useId, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
@@ -37,6 +38,7 @@ const EMPTY_RESPONSE: CatalogPage = {
   capabilities: { canGenerateBulkUpdate: false, canRecordImportResult: false },
   summary: {
     total: 0,
+    website: 0,
     linked: 0,
     unlinked: 0,
     needsReview: 0,
@@ -51,6 +53,7 @@ const EMPTY_RESPONSE: CatalogPage = {
 export function CatalogControlCenter() {
   const locale = useLocale();
   const c = commonCopy[locale];
+  const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
   const [page, setPage] = useState(1);
@@ -131,7 +134,27 @@ export function CatalogControlCenter() {
           {localized(locale, "正在更新結果…", "Refreshing results…")}
         </p>
       ) : null}
+      {websiteDetailId ? (
+        <div>
+          <button type="button" onClick={() => setWebsiteDetailId(null)}>
+            {localized(locale, "關閉資料", "Close details")}
+          </button>
+          <WebsiteProductDetail key={websiteDetailId} id={websiteDetailId} />
+        </div>
+      ) : null}
       <div className={styles.metrics}>
+        <Metric
+          value={response.summary.website}
+          label={localized(locale, "網站商品", "Website products")}
+        />
+        <Metric
+          value={response.summary.unlinked}
+          label={localized(
+            locale,
+            "未連結的平台商品",
+            "Unlinked platform products",
+          )}
+        />
         <Metric
           value={response.summary.total}
           label={localized(locale, "商品", "Products")}
@@ -277,9 +300,38 @@ export function CatalogControlCenter() {
               </thead>
               <tbody>
                 {response.items.map((item) => {
+                  if (item.sourceType === "website")
+                    return (
+                      <tr key={`website:${item.id}`}>
+                        <td />
+                        <td>
+                          <strong className={styles.productTitle}>
+                            {item.title}
+                          </strong>
+                          <span className={styles.productMeta}>
+                            {item.sourceUrl}
+                          </span>
+                        </td>
+                        <td>{localized(locale, "網站", "Website")}</td>
+                        <td>{localized(locale, "僅供參考", "Read only")}</td>
+                        <td>
+                          {localized(locale, "不能匯出", "Cannot export")}
+                        </td>
+                        <td>—</td>
+                        <td>
+                          <button
+                            type="button"
+                            className={styles.pageButton}
+                            onClick={() => setWebsiteDetailId(item.id)}
+                          >
+                            {localized(locale, "查看資料", "View details")}
+                          </button>
+                        </td>
+                      </tr>
+                    );
                   const tone = catalogStatusTone(item.listingStatus);
                   return (
-                    <tr key={item.id}>
+                    <tr key={`platform:${item.id}`}>
                       <td>
                         {item.origin === "import" &&
                         item.listingId &&

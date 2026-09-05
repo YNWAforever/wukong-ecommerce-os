@@ -1200,3 +1200,20 @@ it("fresh source evidence and approval create a new attempt without replacing th
     (await exportAttempts.getById(second.exportAttemptId))?.artifactSha256,
   );
 });
+
+it("direct website IDs produce no bulk artifact, attempt or successful export audit", async () => {
+  const { handler, assetStore, audits, exportAttempts } = makeHandler();
+  const id = "00000000-0000-4000-8000-000000000901";
+  const response = await handler(
+    request({ listingIds: [id], freshnessAttested: true }),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body).toMatchObject({
+    rowCount: 0,
+    exportAttemptId: null,
+    manifest: [{ listingId: id, outcome: "listing_not_found" }],
+  });
+  expect(audits).toEqual([]);
+  expect(assetStore.calls).toEqual([]);
+});

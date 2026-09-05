@@ -1,17 +1,22 @@
 import type { ListingStatus } from "@wukong/core";
 
 export type CatalogFilter =
-  "all" | "attention" | "review" | "unlinked" | "published";
+  "website" | "all" | "attention" | "review" | "unlinked" | "published";
 
 export const CATALOG_FILTERS: ReadonlyArray<{
   value: CatalogFilter;
   labelZh: string;
   labelEn: string;
 }> = [
+  { value: "website", labelZh: "網站", labelEn: "Website" },
   { value: "all", labelZh: "全部", labelEn: "All" },
   { value: "attention", labelZh: "需處理", labelEn: "Attention" },
   { value: "review", labelZh: "待審核", labelEn: "Review" },
-  { value: "unlinked", labelZh: "未建立草稿", labelEn: "Unlinked" },
+  {
+    value: "unlinked",
+    labelZh: "平台未建立草稿",
+    labelEn: "Unlinked platform",
+  },
   { value: "published", labelZh: "已發佈", labelEn: "Published" },
 ];
 

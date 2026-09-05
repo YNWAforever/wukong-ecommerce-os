@@ -894,3 +894,37 @@ describe("POST /api/listings/[id]/deliver", () => {
     expect(json.code).toBe("no_remote_link");
   });
 });
+
+it.each(["csv", "bulk_form", "shopline_api"] as const)(
+  "rejects direct website IDs for %s before artifact or queue work",
+  async (method) => {
+    const runtime = makeDefaultRuntime();
+    runtime.repositories.listings.requireForPublish = async () => {
+      throw new Error("Listing not found");
+    };
+    Object.assign(runtime.repositories.listings, {
+      getReviewSnapshot: async () => null,
+      lockReviewState: async () => null,
+    });
+    const enqueue = vi.fn();
+    const handler = createDeliverListingHandler({
+      sessionContext: { resolve: async () => context },
+      delivery: defaultDelivery({ ingressClient: { enqueue } as never }),
+    });
+    const response = await handler(
+      new Request("http://localhost/api/listings/website/deliver", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method, freshnessAttested: true }),
+      }),
+      {
+        params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000901" }),
+      },
+    );
+    expect(response.status).toBe(404);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(runtime.repositories.publishJobs.ensure).not.toHaveBeenCalled();
+    expect(runtime.createReadUrl).not.toHaveBeenCalled();
+    expect(runtime.audits).toEqual([]);
+  },
+);
