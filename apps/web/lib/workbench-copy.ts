@@ -16,6 +16,11 @@ type Copy = {
   stale: string;
   observed: string;
   empty: string;
+  noWork: string;
+  noWorkReadonly: string;
+  exportAttempt: string;
+  countUnavailable: string;
+  reportedQualifier: string;
   all: string;
   kind: string;
   tasks: string;
@@ -49,6 +54,12 @@ export const workbenchCopy: Record<Locale, Copy> = {
     stale: "Stale — showing the last successful observation.",
     observed: "Observed",
     empty: "No tasks match these filters.",
+    noWork: "No work yet. Import products to get started.",
+    noWorkReadonly:
+      "No work yet. An operator can import products to get started.",
+    exportAttempt: "Export attempt",
+    countUnavailable: "Product count unavailable",
+    reportedQualifier: "Operator reported; not independently verified",
     all: "All sources",
     kind: "Task source",
     tasks: "tasks · not product count",
@@ -88,7 +99,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
       needs_info: "More information needed",
       review: "Content awaiting review",
       delivery: "Ready for delivery",
-      result_needed: "Import result not yet reported",
+      result_needed: "Import result needs attention",
       processing: "Processing",
       published: "Published",
       result_reported: "Import result reported",
@@ -110,6 +121,11 @@ export const workbenchCopy: Record<Locale, Copy> = {
     stale: "資料可能已過時 — 顯示上次成功讀取的資料。",
     observed: "觀察時間",
     empty: "沒有符合目前篩選條件的工作。",
+    noWork: "尚未有工作。匯入商品即可開始。",
+    noWorkReadonly: "尚未有工作。具備操作權限的成員可以匯入商品以開始。",
+    exportAttempt: "匯出記錄",
+    countUnavailable: "商品數量不可用",
+    reportedQualifier: "由操作人員回報；未經獨立驗證",
     all: "全部來源",
     kind: "工作來源",
     tasks: "項工作 · 並非商品數量",
@@ -149,7 +165,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
       needs_info: "需要補充資料",
       review: "內容等待審核",
       delivery: "準備交付",
-      result_needed: "匯入結果尚未回報",
+      result_needed: "匯入結果需要處理",
       processing: "處理中",
       published: "已發佈",
       result_reported: "已回報匯入結果",

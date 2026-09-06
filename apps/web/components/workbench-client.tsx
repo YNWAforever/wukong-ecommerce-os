@@ -138,7 +138,14 @@ export function WorkbenchClient() {
                 returnTo={workbenchUrl(query)}
               />
             ) : (
-              <p className="workbench-empty">{copy.empty}</p>
+              <p className="workbench-empty">
+                {!query.kind &&
+                Object.values(matching.counts).every((count) => count === 0)
+                  ? matching.capabilities.canImport
+                    ? copy.noWork
+                    : copy.noWorkReadonly
+                  : copy.empty}
+              </p>
             ))}
           <nav className="workbench-pagination" aria-label={copy.page}>
             <button

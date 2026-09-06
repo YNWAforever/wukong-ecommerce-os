@@ -2,13 +2,20 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Locale } from "../lib/locale";
 import { WorkbenchClient } from "./workbench-client";
-const navigation = vi.hoisted(() => ({ search: "", push: vi.fn() }));
+const navigation = vi.hoisted(() => ({
+  search: "",
+  push: vi.fn(),
+  locale: "en" as Locale,
+}));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(navigation.search),
   useRouter: () => ({ push: navigation.push }),
 }));
-vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+vi.mock("../lib/locale-context", () => ({
+  useLocale: () => navigation.locale,
+}));
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -71,6 +78,7 @@ afterEach(async () => {
   if (root) await act(async () => root.unmount());
   document.body.innerHTML = "";
   navigation.search = "";
+  navigation.locale = "en";
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -126,6 +134,7 @@ it("clears old query membership and ignores reversed responses on query-only nav
   expect(container.textContent).toContain("Current progress");
   expect(container.textContent).not.toContain("Late completed");
   navigation.search = "";
+  navigation.locale = "en";
   await render();
   expect(container.textContent).not.toContain("Current progress");
   expect(button("Needs attention").getAttribute("aria-pressed")).toBe("true");
@@ -163,4 +172,74 @@ it("links exact record with current context and hides import for viewers", async
   );
   expect(container.textContent).toContain("Read-only");
   expect(container.querySelector('a[href="/listings/import"]')).toBeNull();
+});
+
+for (const locale of ["en", "zh-Hant"] as const) {
+  it(`qualifies completed export evidence visibly in ${locale}`, async () => {
+    navigation.locale = locale;
+    const body = page();
+    Object.assign(body.items[0]!, {
+      id: "abcdef12-3456",
+      key: "export:abcdef12-3456",
+      kind: "export",
+      state: "completed",
+      reason: "result_reported",
+      title: null,
+      productCount: null,
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(body)));
+    await mount();
+    await settle();
+    const row = container.querySelector("li")!;
+    expect(row.textContent).toContain(
+      locale === "en"
+        ? "Operator reported; not independently verified"
+        : "由操作人員回報；未經獨立驗證",
+    );
+    expect(row.querySelector("h3")?.textContent).toBe(
+      locale === "en" ? "Export attempt abcdef12" : "匯出記錄 abcdef12",
+    );
+    expect(row.textContent).toContain(
+      locale === "en" ? "Product count unavailable" : "商品數量不可用",
+    );
+  });
+  for (const population of ["rejected", "unreported"]) {
+    it(`honestly describes ${population} export result attention in ${locale}`, async () => {
+      navigation.locale = locale;
+      const body = page();
+      Object.assign(body.items[0]!, {
+        kind: "export",
+        reason: "result_needed",
+        title: population,
+      });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(body)));
+      await mount();
+      await settle();
+      expect(container.querySelector("li")?.textContent).toContain(
+        locale === "en" ? "Import result needs attention" : "匯入結果需要處理",
+      );
+    });
+  }
+}
+it("distinguishes wholly empty workspace and respects viewer capability", async () => {
+  const body = page();
+  body.items = [];
+  body.totalMatching = 0;
+  body.counts = { attention: 0, progress: 0, completed: 0, unclassified: 0 };
+  body.capabilities.canImport = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() => Promise.resolve(response(body))),
+  );
+  await mount();
+  await settle();
+  expect(container.textContent).toContain(
+    "No work yet. An operator can import products to get started.",
+  );
+  expect(container.querySelector('a[href="/listings/import"]')).toBeNull();
+  navigation.search = "kind=export";
+  await render();
+  await settle();
+  expect(container.textContent).toContain("No tasks match these filters.");
+  expect(container.textContent).not.toContain("No work yet.");
 });

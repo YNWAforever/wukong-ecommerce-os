@@ -26,15 +26,25 @@ export function WorkbenchList({
         <li key={item.key} className="workbench-row">
           <div className="workbench-row-content">
             <span className="workbench-kind">{copy.kinds[item.kind]}</span>
-            <h3>{item.title || copy.untitled}</h3>
+            <h3>
+              {item.title ||
+                (item.kind === "export"
+                  ? `${copy.exportAttempt} ${item.id.slice(0, 8)}`
+                  : copy.untitled)}
+            </h3>
             <p>{copy.reasons[item.reason]}</p>
+            {item.reason === "result_reported" && (
+              <p>{copy.reportedQualifier}</p>
+            )}
             <div className="workbench-meta">
               {item.sourceLabel && <span>{item.sourceLabel} · </span>}
-              {item.productCount !== null && (
+              {item.productCount !== null ? (
                 <span>
                   {item.productCount.toLocaleString(locale)} {copy.products}{" "}
                   ·{" "}
                 </span>
+              ) : (
+                <span>{copy.countUnavailable} · </span>
               )}
               <span>
                 {item.timestampKind === "recorded"

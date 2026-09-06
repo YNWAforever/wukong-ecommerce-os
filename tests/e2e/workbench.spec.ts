@@ -105,7 +105,7 @@ test("retained counts exceed a page, exact review/export destinations and Back r
     route.fulfill({ status: 503, body: "{}" }),
   );
   await rows(page)
-    .filter({ hasText: "Import result not yet reported" })
+    .filter({ hasText: "Import result needs attention" })
     .getByRole("link")
     .click();
   await expect(page).toHaveURL(new RegExp(`attempt=${exportId}`));
@@ -353,3 +353,70 @@ for (const width of [390, 1440])
       fullPage: true,
     });
   });
+
+test("accepted export reports stay qualified and rejected or unreported results need attention in both locales", async ({
+  page,
+}) => {
+  const db = postgres(ADMIN_URL, { max: 1, prepare: false });
+  const acceptedId = randomUUID(),
+    rejectedId = randomUUID();
+  try {
+    // Retained synthetic evidence only. All receipt guards and constraints remain enabled.
+    // Each ready attempt includes the same exact listing/version as its one revision-1 receipt.
+    for (const [id, outcome] of [
+      [acceptedId, "accepted"],
+      [rejectedId, "rejected"],
+    ] as const) {
+      await db`insert into export_attempts(id,workspace_id,idempotency_key,requested_by,manifest,row_count,spec_version,artifact_status,artifact_ready_at,artifact_sha256,provenance)
+        select ${id},workspace_id,${randomUUID()},requested_by,manifest,row_count,spec_version,'ready',now(),artifact_sha256,
+          jsonb_build_object('identityVersion',1,'workspaceId',workspace_id,'freshnessAttested',true,'manifest',manifest,'evidence','[]'::jsonb)
+        from export_attempts where id=${exportId} and workspace_id=${fixture.workspaceId}`;
+      await db`insert into import_results(workspace_id,listing_id,version_id,export_attempt_id,mode,outcome,reject_reason,recorded_by,idempotency_key,revision)
+        select workspace_id,(manifest->0->>'listingId')::uuid,(manifest->0->>'versionId')::uuid,id,'export',${outcome},${outcome === "rejected" ? "Synthetic rejection" : null},${fixture.userId},${randomUUID()},1
+        from export_attempts where id=${id} and workspace_id=${fixture.workspaceId}`;
+    }
+  } finally {
+    await db.end();
+  }
+  for (const locale of ["en", "zh-Hant"] as const) {
+    await page
+      .context()
+      .addCookies([
+        { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
+      ]);
+    await page.goto("/dashboard?state=completed&kind=export");
+    const accepted = rows(page).filter({
+      has: page.locator(`a[href*="attempt=${acceptedId}"]`),
+    });
+    await expect(accepted).toBeVisible();
+    await expect(
+      accepted.getByText(
+        locale === "en"
+          ? "Operator reported; not independently verified"
+          : "由操作人員回報；未經獨立驗證",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(accepted.getByRole("heading")).toHaveText(
+      `${locale === "en" ? "Export attempt" : "匯出記錄"} ${acceptedId.slice(0, 8)}`,
+    );
+    await accepted.getByRole("link").click();
+    await expect(
+      page.locator(`[data-export-attempt-id="${acceptedId}"]`),
+    ).toBeVisible();
+    await page.goto("/dashboard?state=attention&kind=export");
+    for (const id of [exportId, rejectedId]) {
+      const row = rows(page).filter({
+        has: page.locator(`a[href*="attempt=${id}"]`),
+      });
+      await expect(
+        row.getByText(
+          locale === "en"
+            ? "Import result needs attention"
+            : "匯入結果需要處理",
+          { exact: true },
+        ),
+      ).toBeVisible();
+    }
+  }
+});
