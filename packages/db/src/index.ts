@@ -129,3 +129,9 @@ export type {
   ExportEvidenceRepository,
 } from "./repositories/export-evidence.js";
 export * from "./repositories/website-catalog.js";
+export type {
+  WorkbookSaveInput,
+  WorkbookSaveResult,
+  WorkbookCatalogProduct,
+  WorkbookCatalogRepository,
+} from "./repositories/workbook-catalog.js";

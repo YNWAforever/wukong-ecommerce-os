@@ -1,4 +1,8 @@
 import {
+  createWorkbookCatalogRepository,
+  type WorkbookCatalogRepository,
+} from "./repositories/workbook-catalog.js";
+import {
   createWebsiteCatalogRepository,
   type WebsiteCatalogRepository,
 } from "./repositories/website-catalog.js";
@@ -102,6 +106,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  workbookCatalog: WorkbookCatalogRepository;
   websiteCatalog: WebsiteCatalogRepository;
   exportEvidence: ExportEvidenceRepository;
   exportVerifications: ExportVerificationRepository;
@@ -201,6 +206,11 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        workbookCatalog: createWorkbookCatalogRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         websiteCatalog: createWebsiteCatalogRepository(
           transaction,
           workspaceId,

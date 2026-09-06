@@ -1468,3 +1468,65 @@ export const websiteProducts = pgTable(
     }),
   ],
 );
+
+export const workbookImports = pgTable(
+  "workbook_imports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    workbookSha256: text("workbook_sha256").notNull(),
+    filename: text("filename").notNull(),
+    sheetName: text("sheet_name").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    productBindings: jsonb("product_bindings")
+      .$type<Record<string, string>>()
+      .notNull(),
+    normalizedSheet: jsonb("normalized_sheet")
+      .$type<import("@wukong/shopline").BulkFormSheet>()
+      .notNull(),
+    specVersion: text("spec_version").notNull(),
+    inferredExportTime: jsonb("inferred_export_time").$type<
+      import("@wukong/shopline").InferredWorkbookTime
+    >(),
+    totalRows: integer("total_rows").notNull(),
+    eligibleProducts: integer("eligible_products").notNull(),
+    excludedRows: integer("excluded_rows").notNull(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("workbook_imports_workspace_id_uq").on(t.workspaceId, t.id),
+    uniqueIndex("workbook_imports_digest_uq").on(
+      t.workspaceId,
+      t.workbookSha256,
+    ),
+  ],
+);
+export const workbookProducts = pgTable(
+  "workbook_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    importId: uuid("import_id").notNull(),
+    rowNumber: integer("row_number").notNull(),
+    product: jsonb("product")
+      .$type<import("@wukong/shopline").WorkbookBaseProduct>()
+      .notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("workbook_products_row_uq").on(
+      t.workspaceId,
+      t.importId,
+      t.rowNumber,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.importId],
+      foreignColumns: [workbookImports.workspaceId, workbookImports.id],
+    }).onDelete("restrict"),
+  ],
+);
