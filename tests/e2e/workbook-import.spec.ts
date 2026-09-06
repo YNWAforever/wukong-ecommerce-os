@@ -1,7 +1,13 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Locator,
+} from "@playwright/test";
 import { ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import postgres from "postgres";
 import { BULK_FORM_COLUMNS } from "../../packages/shopline/src/bulk-form.js";
@@ -163,6 +169,43 @@ async function choose(page: Page, name = datedName) {
   );
   return body;
 }
+async function controlGeometry(control: Locator) {
+  return control.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return {
+      usable:
+        rect.top >= 0 &&
+        rect.bottom <= window.innerHeight &&
+        rect.left >= 0 &&
+        rect.right <= window.innerWidth &&
+        Boolean(hit && (hit === element || element.contains(hit))),
+      bounds: {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+      },
+      scrollY: window.scrollY,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      centerHit: hit?.tagName ?? null,
+      fixedNavigation: [...document.querySelectorAll("nav, [role=navigation]")]
+        .filter((nav) => getComputedStyle(nav).position === "fixed")
+        .map((nav) => {
+          const box = nav.getBoundingClientRect();
+          return {
+            top: box.top,
+            bottom: box.bottom,
+            left: box.left,
+            right: box.right,
+          };
+        }),
+    };
+  });
+}
 async function save(page: Page, label = "Import 23 products") {
   const response = page.waitForResponse(
     (response) => new URL(response.url()).pathname === "/api/workbook-imports",
@@ -175,7 +218,9 @@ async function save(page: Page, label = "Import 23 products") {
   const catalogLink = page.getByRole("link", {
     name: /^(View catalog|查看商品目錄)$/,
   });
-  await expect(catalogLink).toBeInViewport();
+  await expect
+    .poll(async () => (await controlGeometry(catalogLink)).usable)
+    .toBe(true);
   await expect(
     page.locator('[role="status"]').filter({ has: catalogLink }),
   ).toBeInViewport();
@@ -241,9 +286,9 @@ test("automatic sample imports all eligible products, retains excluded evidence,
         exact: true,
       }),
     ).toBeVisible();
-    await expect(page.locator("caption")).toContainText(
-      "showing 20 of 23 products",
-    );
+    await expect(
+      page.getByRole("table", { name: /^(Product preview|商品預覽)$/ }),
+    ).toHaveAccessibleDescription(/showing 20 of 23 products/);
     await expect(page.locator("table tbody tr")).toHaveCount(20);
     const issues = page.locator("details").filter({
       has: page.getByText("Row issues: 1 · 1 excluded", { exact: true }),
@@ -426,9 +471,9 @@ test("renamed workbook with unknown date retains its file across tabs and retrie
     eligibleProducts: 23,
     excludedRows: 1,
   });
-  await expect(page.locator("caption")).toContainText(
-    "showing 20 of 23 products",
-  );
+  await expect(
+    page.getByRole("table", { name: /^(Product preview|商品預覽)$/ }),
+  ).toHaveAccessibleDescription(/showing 20 of 23 products/);
   const warningIssues = page.locator("details").filter({
     has: page.getByText("Row issues: 24 · 1 excluded", { exact: true }),
   });
@@ -448,9 +493,9 @@ test("renamed workbook with unknown date retains its file across tabs and retrie
     .getByRole("tab", { name: "Supporting evidence", exact: true })
     .click();
   await page.getByRole("tab", { name: "Workbook", exact: true }).click();
-  await expect(page.locator("caption")).toContainText(
-    "showing 20 of 23 products",
-  );
+  await expect(
+    page.getByRole("table", { name: /^(Product preview|商品預覽)$/ }),
+  ).toHaveAccessibleDescription(/showing 20 of 23 products/);
   await page.route(
     "**/api/workbook-imports?**",
     (route) => route.abort("failed"),
@@ -512,17 +557,45 @@ for (const locale of ["en", "zh-Hant"] as const) {
         .click();
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
       await choose(page, renamedName);
-      await expect(page.locator("caption")).toContainText(
-        locale === "en" ? "showing 20 of 23" : "顯示 20 / 23",
+      await expect(
+        page.getByRole("table", { name: /^(Product preview|商品預覽)$/ }),
+      ).toHaveAccessibleDescription(
+        locale === "en" ? /showing 20 of 23/ : /顯示 20 \/ 23/,
       );
       await expect(page.locator("#merchant-attested-export-at")).toHaveCount(0);
-      await expect(
-        page.getByRole("button", {
-          name: locale === "en" ? "Import 23 products" : "匯入 23 個商品",
-          exact: true,
-        }),
-      ).toBeInViewport();
+      const importAction = page.getByRole("button", {
+        name: locale === "en" ? "Import 23 products" : "匯入 23 個商品",
+        exact: true,
+      });
+      const beforeScroll = await controlGeometry(importAction);
+      // Mobile headers can require a normal small scroll from the chooser.
+      // Never claim a tiny intersection behind fixed navigation is usable.
+      if (!beforeScroll.usable) await page.mouse.wheel(0, 240);
+      await expect
+        .poll(async () => (await controlGeometry(importAction)).usable)
+        .toBe(true);
+      const afterScroll = await controlGeometry(importAction);
+      await writeFile(
+        resolve(evidenceDir, `preview-action-geometry-${locale}-${width}.json`),
+        JSON.stringify(
+          {
+            beforeScroll,
+            afterScroll,
+            smallScrollNeeded: !beforeScroll.usable,
+          },
+          null,
+          2,
+        ),
+      );
+      await page.screenshot({
+        path: resolve(evidenceDir, `preview-action-${locale}-${width}.png`),
+        fullPage: false,
+      });
       await assertNoHorizontalOverflow(page);
+      await page.screenshot({
+        path: resolve(evidenceDir, `preview-viewport-${locale}-${width}.png`),
+        fullPage: false,
+      });
       await page.screenshot({
         path: resolve(evidenceDir, `preview-${locale}-${width}.png`),
         fullPage: true,
@@ -533,6 +606,69 @@ for (const locale of ["en", "zh-Hant"] as const) {
           locale === "en" ? "Import 23 products" : "匯入 23 個商品",
         ),
       ).toMatchObject({ importedProducts: 23, excludedRows: 1 });
+      // Browse real source values across all six columns through the scrollable
+      // region. Each cell must be reachable within the region, not merely in DOM.
+      const previewTable = page.getByRole("table", {
+        name: locale === "en" ? "Product preview" : "商品預覽",
+        exact: true,
+      });
+      const previewRegion = page.getByRole("region", {
+        name:
+          locale === "en"
+            ? "Product preview, horizontally scrollable"
+            : "商品預覽，可水平捲動",
+        exact: true,
+      });
+      await previewRegion.focus();
+      await expect(previewRegion).toBeFocused();
+      if (width === 375) {
+        await previewRegion.press("ArrowRight");
+        await expect
+          .poll(() => previewRegion.evaluate((element) => element.scrollLeft))
+          .toBeGreaterThan(0);
+      }
+      const firstCells = previewTable.locator("tbody tr").first().locator("td");
+      const values = [
+        "3",
+        "synthetic-product-0001",
+        "0001",
+        "合成葡萄酒 1",
+        "Synthetic wine 1",
+        "128.5",
+      ];
+      for (let index = 0; index < values.length; index++) {
+        const cell = firstCells.nth(index);
+        await cell.scrollIntoViewIfNeeded();
+        await expect(cell).toHaveText(values[index]!);
+        const reachable = await cell.evaluate((element) => {
+          const cellBounds = element.getBoundingClientRect();
+          const regionBounds = element
+            .closest('[role="region"]')!
+            .getBoundingClientRect();
+          return (
+            cellBounds.left >= regionBounds.left - 1 &&
+            cellBounds.right <= regionBounds.right + 1
+          );
+        });
+        expect(
+          reachable,
+          `Preview column ${index + 1} must fit within the attended horizontal scroll region`,
+        ).toBe(true);
+      }
+      await page.screenshot({
+        path: resolve(evidenceDir, `preview-table-${locale}-${width}.png`),
+        fullPage: false,
+      });
+      if (width === 375) {
+        expect(
+          await previewRegion.evaluate((element) => element.scrollLeft),
+        ).toBeGreaterThan(0);
+        await assertNoHorizontalOverflow(page);
+        await page.screenshot({
+          path: resolve(evidenceDir, `preview-scrolled-${locale}-${width}.png`),
+          fullPage: false,
+        });
+      }
       await page
         .getByRole("link", {
           name: locale === "en" ? "View catalog" : "查看商品目錄",
