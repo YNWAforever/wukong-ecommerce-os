@@ -17,6 +17,7 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   q: z.string().trim().optional(),
+  importId: z.uuid().optional(),
   filter: z
     .enum([
       "workbook",

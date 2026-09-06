@@ -708,3 +708,42 @@ it("shows workbook source details without platform checkboxes or draft links", a
     await unmount(root);
   }
 });
+
+it("keeps exact import scope across pagination", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  window.history.replaceState(
+    null,
+    "",
+    `/catalog?filter=workbook&importId=${id}`,
+  );
+  const calls: URL[] = [];
+  const { container, root } = await mount(makePagingFetcher(calls));
+  try {
+    expect(calls[0]!.searchParams.get("importId")).toBe(id);
+    expect(calls[0]!.searchParams.get("filter")).toBe("workbook");
+    expect(container.textContent).toContain("此匯入");
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("2");
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(id);
+  } finally {
+    await unmount(root);
+    window.history.replaceState(null, "", "/");
+  }
+});
+
+it("restores validated catalog page and search from the URL", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/catalog?page=2&q=old&filter=workbook",
+  );
+  const calls: URL[] = [];
+  const { root } = await mount(makePagingFetcher(calls));
+  try {
+    expect(calls[0]!.searchParams.get("page")).toBe("2");
+    expect(calls[0]!.searchParams.get("q")).toBe("old");
+  } finally {
+    await unmount(root);
+    window.history.replaceState(null, "", "/");
+  }
+});

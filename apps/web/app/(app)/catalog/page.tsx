@@ -1,3 +1,4 @@
+import { serializeDestinationQuery } from "../../../lib/workbench-navigation";
 import { cookies } from "next/headers";
 import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
 import { readPageCopy } from "../../../lib/read-page-copy";
@@ -6,7 +7,12 @@ import Link from "next/link";
 
 import { CatalogControlCenter } from "../../../components/catalog-control-center";
 
-export default async function CatalogPage() {
+export default async function CatalogPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
+  const initialSearch = serializeDestinationQuery((await searchParams) ?? {});
   const locale = resolveLocale(
     (await cookies()).get(LOCALE_COOKIE_NAME)?.value,
   );
@@ -23,7 +29,7 @@ export default async function CatalogPage() {
           {commonCopy[locale].createDraft}
         </Link>
       </div>
-      <CatalogControlCenter />
+      <CatalogControlCenter initialSearch={initialSearch} />
     </div>
   );
 }

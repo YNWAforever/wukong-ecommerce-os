@@ -1,4 +1,10 @@
 "use client";
+import {
+  exactQueryId,
+  initialDestinationSearch,
+  withWorkbenchReturn,
+} from "../lib/workbench-navigation";
+import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -80,10 +86,65 @@ const KIND_FILTERS: ReadonlyArray<{
 // pills), and cancelled is navy -- the one status none of the other pills on
 // this branch needed a color for yet.
 
-export function JobsLedgerClient() {
+export function JobsLedgerClient({
+  initialSearch,
+}: { initialSearch?: string } = {}) {
+  const locale = useLocale();
+  const [params] = useState(() => initialDestinationSearch(initialSearch));
+  const attempt = params.get("attempt");
+  const attemptId = exactQueryId(attempt);
+  const returnTo = params.get("returnTo");
+  return (
+    <>
+      {returnTo ? <WorkbenchReturnLink returnTo={returnTo} /> : null}
+      {attempt ? (
+        <Link
+          className="jobs-row-link"
+          href={withWorkbenchReturn("/jobs", returnTo)}
+        >
+          {localized(locale, "所有作業", "All jobs")}
+        </Link>
+      ) : null}
+      {attemptId ? (
+        <section
+          aria-label={localized(
+            locale,
+            "指定匯出紀錄",
+            "Selected export attempt",
+          )}
+        >
+          <h2>
+            {localized(locale, "指定匯出紀錄", "Selected export attempt")}
+          </h2>
+          <ExportAttemptInspector attemptId={attemptId} initiallyOpened />
+        </section>
+      ) : attempt ? (
+        <p role="alert">
+          {localized(
+            locale,
+            "匯出紀錄連結無效。",
+            "Invalid export attempt link.",
+          )}
+        </p>
+      ) : null}
+      <JobsLedger initialKind={params.get("kind")} returnTo={returnTo} />
+    </>
+  );
+}
+function JobsLedger({
+  initialKind,
+  returnTo,
+}: {
+  initialKind: string | null;
+  returnTo: string | null;
+}) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>(
+    () =>
+      KIND_FILTERS.find((option) => option.value === initialKind)?.value ??
+      "all",
+  );
   const [page, setPage] = useState(1);
 
   const load = useCallback(
@@ -343,7 +404,10 @@ export function JobsLedgerClient() {
                   {entry.listingId ? (
                     <Link
                       className="jobs-row-link"
-                      href={`/listings/${entry.listingId}`}
+                      href={withWorkbenchReturn(
+                        `/listings/${entry.listingId}`,
+                        returnTo,
+                      )}
                     >
                       {localized(locale, "查看上架流程", "View listing")}
                     </Link>
@@ -358,10 +422,16 @@ export function JobsLedgerClient() {
   );
 }
 
-function ExportAttemptInspector({ attemptId }: { attemptId: string }) {
+function ExportAttemptInspector({
+  attemptId,
+  initiallyOpened = false,
+}: {
+  attemptId: string;
+  initiallyOpened?: boolean;
+}) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const [opened, setOpened] = useState(false);
+  const [opened, setOpened] = useState(initiallyOpened);
   const load = useCallback(
     async (signal: AbortSignal) => {
       if (!opened) return null;

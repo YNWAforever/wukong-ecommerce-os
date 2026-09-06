@@ -451,3 +451,16 @@ it("accepts workbook filter and enriches source readiness only for platform IDs"
   expect(response.status).toBe(200);
   expect((await response.json()).items).toEqual([workbook]);
 });
+
+it("validates and passes the exact import ID to the scoped repository", async () => {
+  const { handler, calls } = makeHandler({ products: [] });
+  const id = "11111111-1111-4111-8111-111111111111";
+  expect((await handler(buildRequest(`importId=${id}`))).status).toBe(200);
+  expect(calls).toContainEqual([
+    "reads.catalogPage",
+    expect.objectContaining({ importId: id }),
+  ]);
+  const before = calls.length;
+  expect((await handler(buildRequest("importId=../foreign"))).status).toBe(400);
+  expect(calls.length).toBe(before);
+});

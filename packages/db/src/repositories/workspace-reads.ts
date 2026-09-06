@@ -120,7 +120,11 @@ export function createWorkspaceReadRepository(
       );
     },
     async catalogPage(
-      input: PageQuery & { q?: string; filter: CatalogFilter },
+      input: PageQuery & {
+        q?: string;
+        filter: CatalogFilter;
+        importId?: string;
+      },
     ) {
       scope.assertOpen();
       const skip = offset(input);
@@ -137,7 +141,10 @@ export function createWorkspaceReadRepository(
       )
         throw new Error("invalid catalog filter");
       const q = (input.q ?? "").trim().toLocaleLowerCase();
-      const match = sql`(${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
+      const importMatch = input.importId
+        ? sql`("sourceType"='workbook' and id in (select id from workbook_products where workspace_id=${workspaceId} and import_id=${input.importId}::uuid))`
+        : sql`true`;
+      const match = sql`${importMatch} and (${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
     and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
       // One statement gives counts and page a common MVCC snapshot, including empty pages.
       const rows =

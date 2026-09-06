@@ -1,4 +1,10 @@
 "use client";
+import {
+  exactQueryId,
+  initialDestinationSearch,
+  withWorkbenchReturn,
+} from "../lib/workbench-navigation";
+import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -52,14 +58,29 @@ const EMPTY_RESPONSE: CatalogPage = {
   totalMatching: 0,
 };
 
-export function CatalogControlCenter() {
+export function CatalogControlCenter({
+  initialSearch,
+}: { initialSearch?: string } = {}) {
+  const [params] = useState(() => initialDestinationSearch(initialSearch));
+  const importId = exactQueryId(params.get("importId"));
+  const invalidImport = params.has("importId") && !importId;
+  const returnTo = params.get("returnTo");
   const locale = useLocale();
   const c = commonCopy[locale];
   const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<CatalogFilter>("all");
-  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState(params.get("q") ?? "");
+  const [filter, setFilter] = useState<CatalogFilter>(
+    () =>
+      CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
+        ?.value ?? "all",
+  );
+  const [page, setPage] = useState(() => {
+    const value = params.get("page");
+    return value && /^[1-9][0-9]*$/.test(value) && Number(value) <= 21474836
+      ? Number(value)
+      : 1;
+  });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const loadCatalog = useCallback(
@@ -70,6 +91,8 @@ export function CatalogControlCenter() {
         q: query,
         filter,
       });
+      if (invalidImport) throw new Error("Invalid import link");
+      if (importId) params.set("importId", importId);
       const response = await fetch(`/api/catalog?${params.toString()}`, {
         cache: "no-store",
         signal,
@@ -78,7 +101,7 @@ export function CatalogControlCenter() {
         throw new Error(`Unable to load catalog (${response.status})`);
       return (await response.json()) as CatalogPage;
     },
-    [page, query, filter],
+    [page, query, filter, importId, invalidImport],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     loadCatalog,
@@ -97,9 +120,13 @@ export function CatalogControlCenter() {
     setPage(1);
   }
 
+  const returnLink = returnTo ? (
+    <WorkbenchReturnLink returnTo={returnTo} />
+  ) : null;
   if (!data && error) {
     return (
       <div className="load-error" role="alert">
+        {returnLink}
         <p>{safeUiError(error, locale)}</p>
         <button type="button" onClick={reload}>
           {c.retry}
@@ -110,6 +137,7 @@ export function CatalogControlCenter() {
   if (!data) {
     return (
       <p className="helper-copy" role="status">
+        {returnLink}
         {localized(
           locale,
           "正在載入商品控制中心…",
@@ -124,6 +152,16 @@ export function CatalogControlCenter() {
       aria-label={localized(locale, "商品控制中心", "Catalog control center")}
       aria-busy={loading}
     >
+      {returnLink}
+      {importId ? (
+        <p className="helper-copy">
+          {localized(
+            locale,
+            "此匯入的商品。摘要數字涵蓋整個工作區。",
+            "This import. Summary counts cover the entire workspace.",
+          )}
+        </p>
+      ) : null}
       {error ? (
         <div className="load-error" role="alert">
           <span>{safeUiError(error, locale)}</span>
@@ -465,7 +503,10 @@ export function CatalogControlCenter() {
                         {item.listingId ? (
                           <Link
                             className={styles.actionLink}
-                            href={`/listings/${item.listingId}`}
+                            href={withWorkbenchReturn(
+                              `/listings/${item.listingId}`,
+                              returnTo,
+                            )}
                           >
                             {localized(locale, "開啟流程", "Open")}
                           </Link>

@@ -39,3 +39,20 @@ describe("workbenchDestination", () => {
     },
   );
 });
+
+it.each(["listing", "export", "website_scan", "workbook_import"] as const)(
+  "preserves canonical dashboard state for %s",
+  (kind) => {
+    const url = new URL(
+      workbenchDestination(
+        item(kind, "id"),
+        "/dashboard?state=attention&page=2&secret=drop",
+      ),
+      "https://example.test",
+    );
+    expect(url.searchParams.get("returnTo")).toBe(
+      "/dashboard?state=attention&page=2",
+    );
+    expect(url.toString()).not.toContain("secret");
+  },
+);
