@@ -271,6 +271,34 @@ export function createProductShotRuntime(
   env: WorkerEnv,
   config: CloudflareRuntimeConfig = {},
 ) {
+  const syntheticScenariosRaw = (
+    env as WorkerEnv & { PRODUCT_SHOT_SYNTHETIC_SCENARIO?: string }
+  ).PRODUCT_SHOT_SYNTHETIC_SCENARIO?.trim();
+  if (
+    syntheticScenariosRaw &&
+    (env.PRODUCT_SHOT_PROVIDER !== "fake" || env.BUILD_SHA !== "local-e2e")
+  )
+    throw new Error("PRODUCT_SHOT_SYNTHETIC_SCENARIO is test-only");
+  let syntheticScenarios: Record<
+    string,
+    "definitive_failure" | "ambiguous_completion"
+  > = {};
+  if (syntheticScenariosRaw) {
+    const parsed: unknown = JSON.parse(syntheticScenariosRaw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("PRODUCT_SHOT_SYNTHETIC_SCENARIO is invalid");
+    for (const [sourceDigest, scenario] of Object.entries(parsed)) {
+      if (
+        !/^[a-f0-9]{64}$/.test(sourceDigest) ||
+        !["definitive_failure", "ambiguous_completion"].includes(
+          String(scenario),
+        )
+      )
+        throw new Error("PRODUCT_SHOT_SYNTHETIC_SCENARIO is invalid");
+      syntheticScenarios[sourceDigest] = scenario as
+        "definitive_failure" | "ambiguous_completion";
+    }
+  }
   const settings = readProductShotRuntimeConfig({
     PRODUCT_SHOT_PROVIDER: env.PRODUCT_SHOT_PROVIDER,
     PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY:
@@ -297,6 +325,11 @@ export function createProductShotRuntime(
       if (settings.providerName === "fake")
         return {
           async generateProductShot() {
+            const syntheticScenario = syntheticScenarios[identity.sourceDigest];
+            if (syntheticScenario === "definitive_failure")
+              throw new ProductShotProviderError("rejected");
+            if (syntheticScenario === "ambiguous_completion")
+              throw new ProductShotProviderError("outcome_unknown");
             return {
               cutoutPng: new Uint8Array(
                 Buffer.from(

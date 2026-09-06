@@ -239,6 +239,58 @@ describe("independent product shot runtime", () => {
     await runtime.close();
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    ["definitive_failure", "rejected"],
+    ["ambiguous_completion", "outcome_unknown"],
+  ] as const)(
+    "allows the explicit synthetic fixture to produce %s",
+    async (scenario, code) => {
+      const runtime = createProductShotRuntime(
+        {
+          BUILD_SHA: "local-e2e",
+          PRODUCT_SHOT_PROVIDER: "fake",
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: JSON.stringify({
+            ["a".repeat(64)]: scenario,
+          }),
+        } as never,
+        {
+          databaseFactory: () =>
+            ({ forWorkspace: vi.fn(), close: vi.fn(async () => {}) }) as never,
+          assetStoreFactory: () => ({}) as never,
+        },
+      );
+      const provider = runtime.dependencies.providerFor({
+        providerVersion: "fake:1.0.0",
+        renderVersion: "white-v1",
+        sourceDigest: "a".repeat(64),
+      } as never);
+      await expect(
+        provider.generateProductShot({
+          assets: [{ id: "a", mimeType: "image/png", readUrl: "" }],
+        }),
+      ).rejects.toMatchObject({ code });
+      await runtime.close();
+    },
+  );
+
+  it("refuses synthetic scenario controls for non-fake providers", () => {
+    expect(() =>
+      createProductShotRuntime(
+        {
+          BUILD_SHA: "local-e2e",
+          PRODUCT_SHOT_PROVIDER: "photoroom",
+          PHOTOROOM_API_KEY: "inherited-real-key",
+          PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "1",
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: "definitive_failure",
+        } as never,
+        {
+          databaseFactory: () => ({}) as never,
+          assetStoreFactory: () => ({}) as never,
+        },
+      ),
+    ).toThrow("PRODUCT_SHOT_SYNTHETIC_SCENARIO is test-only");
+  });
 });
 
 it("accepts the repository maximum daily product shot allowance", () => {

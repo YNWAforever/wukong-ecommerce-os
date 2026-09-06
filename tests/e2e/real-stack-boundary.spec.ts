@@ -40,6 +40,9 @@ test("release harness crosses the Wrangler Worker and Queue boundary", async () 
   expect(fixtureSource).not.toMatch(
     /publishApprovedProduct|completeMockShoplinePublish/,
   );
+  expect(fixtureSource).toMatch(
+    /ListObjectsV2Command\(\{[\s\S]*Prefix: `ws\/\$\{OPAK_WORKSPACE_ID\}\/`/,
+  );
   expect(serverSource).toMatch(/wrangler.+dev/s);
   expect(serverSource).toMatch(/const SENSITIVE_BINDINGS = new Set/);
   expect(serverSource).toMatch(/ANSI_ESCAPE_PATTERN/);
@@ -65,6 +68,13 @@ test("release harness crosses the Wrangler Worker and Queue boundary", async () 
   );
   expect(serverSource).toMatch(/waitForTlsPort/);
   expect(serverSource).toMatch(/NODE_EXTRA_CA_CERTS/);
+  expect(serverSource).toMatch(
+    /PRODUCT_SHOT_PROVIDER: productShotFixtureEnabled \? "fake" : "disabled"/,
+  );
+  expect(serverSource).toMatch(/delete runtimeEnv\.PHOTOROOM_API_KEY/);
+  expect(serverSource).toMatch(/delete workerEnv\.PHOTOROOM_API_KEY/);
+  expect(serverSource).toMatch(/https\.createServer/);
+  expect(serverSource).toMatch(/public-image-proxy/);
   expect(composeSource).toMatch(/minio-tls:/);
   expect(composeSource).toContain("./.wrangler/caddy-data:/data");
   expect(composeSource).toMatch(/method HEAD/);
