@@ -42,6 +42,7 @@ export const TENANT_TABLES = [
   "product_shot_selections",
   "product_shot_daily_dispatches",
   "product_shot_publications",
+  "product_shot_approval_urls",
   "website_scans",
   "website_scan_steps",
   "website_products",

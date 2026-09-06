@@ -65,5 +65,9 @@ it("loads the additive product-shot migration with forced RLS and narrow publica
     "GRANT UPDATE(revoked_at,revoked_by) ON product_shot_publications",
   );
   expect(migration?.sql).toContain("storage_key text NOT NULL");
-  expect(migration?.sql).not.toContain("SECURITY DEFINER");
+  expect(migration?.sql).toContain(
+    "SECURITY DEFINER SET search_path=pg_catalog",
+  );
+  expect(migration?.sql).toContain("TO wukong_image_lookup USING(true)");
+  expect(migration?.sql).toContain("product_shot_approval_urls");
 });

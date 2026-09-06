@@ -18,8 +18,23 @@ export type ResolveListingImageUrlsInput = {
   assetStore: Pick<AssetStore, "createReadUrl">;
   /** Omitted for in-app reads; set only for URLs leaving the app in a file. */
   readTtlMs?: number;
+  publication?: {
+    versionId: string;
+    resolveApprovedProductImage(input: {
+      workspaceId: string;
+      listingId: string;
+      versionId: string;
+      assetId: string;
+    }): Promise<string>;
+  };
 };
 
+export class ProductImageApprovalRequiredError extends Error {
+  constructor() {
+    super("Approve the current product image before exporting.");
+    this.name = "ProductImageApprovalRequiredError";
+  }
+}
 export class ImageResolutionError extends Error {
   constructor() {
     super("Listing images are unavailable for delivery");
@@ -34,10 +49,25 @@ export async function resolveListingImageUrls({
   sourceAssets,
   assetStore,
   readTtlMs,
+  publication,
 }: ResolveListingImageUrlsInput): Promise<string[]> {
   const requestedIds = [...imageAssetIds];
   if (new Set(requestedIds).size !== requestedIds.length) {
     throw new ImageResolutionError();
+  }
+  if (publication) {
+    if (requestedIds.length !== 1)
+      throw new ProductImageApprovalRequiredError();
+    return Promise.all(
+      requestedIds.map((assetId) =>
+        publication.resolveApprovedProductImage({
+          workspaceId,
+          listingId: draftId,
+          versionId: publication.versionId,
+          assetId,
+        }),
+      ),
+    );
   }
   if (requestedIds.length === 0) return [];
 

@@ -543,6 +543,7 @@ describe("publishApprovedProduct", () => {
       workspaceId,
       draftId,
       canonicalListing.imageAssetIds,
+      versionId,
     );
   });
 
@@ -567,10 +568,12 @@ describe("publishApprovedProduct", () => {
       resolveImageUrls,
     });
 
-    expect(resolveImageUrls).toHaveBeenCalledWith(workspaceId, draftId, [
-      "asset_b",
-      "asset_a",
-    ]);
+    expect(resolveImageUrls).toHaveBeenCalledWith(
+      workspaceId,
+      draftId,
+      ["asset_b", "asset_a"],
+      versionId,
+    );
     expect(harness.connector.createProduct).toHaveBeenCalledWith(
       expect.objectContaining({
         product: expect.objectContaining({
@@ -938,4 +941,30 @@ describe("publishApprovedProduct", () => {
       sourceImportId: existingSourceImportId,
     });
   });
+});
+
+it("records terminal publication rejection without SHOPLINE calls or a retry lease", async () => {
+  const harness = makeTransactionAwareHarness();
+  harness.resolveImageUrls.mockRejectedValueOnce(
+    Object.assign(new Error("image_approval_required"), {
+      name: "ProductShotConflict",
+      code: "image_approval_required",
+    }),
+  );
+  await expect(
+    publishApprovedProduct(publishInput(), harness),
+  ).rejects.toMatchObject({ code: "not_approved" });
+  expect(harness.state.jobs[0]).toMatchObject({
+    status: "failed",
+    error: "not_approved",
+    leaseToken: null,
+  });
+  expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  expect(harness.connector.updateProduct).not.toHaveBeenCalled();
+  expect(harness.audits).toContainEqual(
+    expect.objectContaining({
+      action: "listing.publish_policy_rejected",
+      metadata: expect.objectContaining({ reason: "image_approval_required" }),
+    }),
+  );
 });

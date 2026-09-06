@@ -163,6 +163,17 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
       } catch (error) {
         if (
           error instanceof Error &&
+          ((error.name === "ProductShotConflict" &&
+            (error as { code?: string }).code === "image_approval_required") ||
+            error.name === "ProductImageApprovalRequiredError")
+        )
+          throw new ApiError(
+            409,
+            "image_approval_required",
+            "Approve the current product image and restore its publication before exporting.",
+          );
+        if (
+          error instanceof Error &&
           /listing not found|foreign listing/i.test(error.message)
         )
           throw new ApiError(404, "listing_not_found", "Listing not found.");
@@ -193,11 +204,29 @@ export function defaultDelivery(
             return deliverListing(input, {
               bulkUpdate: createBulkExportDeps(repositories),
               listings: repositories.listings,
-              imageUrls: (workspaceId, draftId, imageAssetIds) =>
+              imageUrls: async (
+                workspaceId,
+                draftId,
+                imageAssetIds,
+                versionId,
+              ) =>
                 resolveListingImageUrls({
                   workspaceId,
                   draftId,
                   imageAssetIds,
+                  publication:
+                    (await repositories.productShots.requiresWorkflow({
+                      listingId: draftId,
+                      provider: process.env.PRODUCT_SHOT_PROVIDER,
+                    }))
+                      ? {
+                          versionId,
+                          resolveApprovedProductImage: (value) =>
+                            repositories.productShots.resolveApprovedProductImage(
+                              value,
+                            ),
+                        }
+                      : undefined,
                   sourceAssets: repositories.sourceAssets,
                   assetStore,
                   // The operator downloads this file and uploads it to SHOPLINE
@@ -231,11 +260,23 @@ export function defaultDelivery(
         async (repositories) => {
           return prepareShoplineDelivery(input, {
             listings: repositories.listings,
-            imageUrls: (workspaceId, draftId, imageAssetIds) =>
+            imageUrls: async (workspaceId, draftId, imageAssetIds, versionId) =>
               resolveListingImageUrls({
                 workspaceId,
                 draftId,
                 imageAssetIds,
+                publication: (await repositories.productShots.requiresWorkflow({
+                  listingId: draftId,
+                  provider: process.env.PRODUCT_SHOT_PROVIDER,
+                }))
+                  ? {
+                      versionId,
+                      resolveApprovedProductImage: (value) =>
+                        repositories.productShots.resolveApprovedProductImage(
+                          value,
+                        ),
+                    }
+                  : undefined,
                 sourceAssets: repositories.sourceAssets,
                 assetStore,
               }),

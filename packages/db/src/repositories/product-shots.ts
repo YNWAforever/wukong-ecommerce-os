@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   PRODUCT_SHOT_LIMITS,
+  usesProductShotWorkflow,
   type ShotCandidate,
   type ShotIdentity,
   type ShotObservation,
@@ -14,6 +15,7 @@ import {
   productShotAttempts as attempts,
   productShotSelections as selections,
   productShotPublications as publications,
+  productShotApprovalUrls as approvalUrls,
   sourceAssets,
 } from "../schema.js";
 import { createAuditWriter } from "./audit.js";
@@ -38,10 +40,10 @@ export type ProductShotAttempt = ShotIdentity & {
   createdAt: Date;
   updatedAt: Date;
 };
-export type ProductShotPublication = Omit<
-  PublicationRow,
-  "token" | "tokenHash"
-> & { publicationToken: string };
+export type ProductShotPublication = Omit<PublicationRow, "tokenHash"> & {
+  publicationToken: string;
+  publicUrl: string;
+};
 /** Metadata written by trusted byte-validation services, never copied from request JSON. */
 export type ProductShotOutputMetadata = {
   role: "product_shot_cutout" | "product_shot_candidate";
@@ -61,6 +63,17 @@ export type ProductShotClaim =
   | { kind: "claimed"; leaseToken: string; sourceAssetId: string }
   | { kind: "skip" | "budget_exhausted" | "outcome_unknown" };
 export interface ProductShotRepository {
+  requiresWorkflow(input: {
+    listingId: string;
+    provider?: string;
+  }): Promise<boolean>;
+  resolveApprovedProductImage(input: {
+    workspaceId: string;
+    listingId: string;
+    versionId: string;
+    assetId: string;
+  }): Promise<string>;
+
   ensure(
     input: ShotIdentity & { actorId: string; explicitFreshAttempt: boolean },
   ): Promise<{ attemptId: string }>;
@@ -160,9 +173,42 @@ function sameCandidate(a: ShotCandidate, b: ShotCandidate): boolean {
     a.lowResolution === b.lowResolution
   );
 }
-function readPublication(row: PublicationRow): ProductShotPublication {
-  const { token, tokenHash: _hash, ...rest } = row;
-  return { ...rest, publicationToken: token };
+function readPublication(
+  row: PublicationRow,
+  publicUrl: string,
+): ProductShotPublication {
+  const { tokenHash: _hash, ...rest } = row;
+  return {
+    ...rest,
+    publicationToken: new URL(publicUrl).pathname.slice(
+      "/product-images/".length,
+      -4,
+    ),
+    publicUrl,
+  };
+}
+function publicationUrl(token: string, origin: string | undefined): string {
+  let url: URL;
+  try {
+    url = new URL(origin ?? "");
+  } catch {
+    return conflict("publication_origin_required");
+  }
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== "/" ||
+    (url.protocol !== "https:" &&
+      !(
+        process.env.NODE_ENV !== "production" &&
+        url.protocol === "http:" &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      ))
+  )
+    return conflict("publication_origin_invalid");
+  return new URL("/product-images/" + token + ".jpg", url.origin).href;
 }
 
 /** All operations use the caller's short workspace transaction. Never do I/O in it.
@@ -172,6 +218,7 @@ export function createProductShotRepository(
   tx: WorkspaceTransaction,
   workspaceId: string,
   scope: WorkspaceScope,
+  publicOrigin?: string,
 ): ProductShotRepository {
   if (!workspaceId.trim()) throw new Error("workspaceId must not be empty");
   const audit = createAuditWriter(tx, workspaceId, scope);
@@ -342,7 +389,21 @@ export function createProductShotRepository(
       );
     if (existing) {
       if (existing.revokedAt) return conflict("publication_revoked");
-      return { publicationToken: existing.token, reused: true };
+      const [binding] = await tx
+        .select()
+        .from(approvalUrls)
+        .where(
+          and(
+            eq(approvalUrls.workspaceId, workspaceId),
+            eq(approvalUrls.publicationId, existing.id),
+          ),
+        );
+      if (!binding) return conflict("publication_url_missing");
+      return {
+        publicationToken: readPublication(existing, binding.publicUrl)
+          .publicationToken,
+        reused: true,
+      };
     }
     const [asset] = await tx
       .select({ storageKey: sourceAssets.storageKey })
@@ -355,24 +416,32 @@ export function createProductShotRepository(
       )
       .for("share");
     if (!asset) return conflict("candidate_not_found");
-    const token = randomBytes(32).toString("hex");
-    await tx.insert(publications).values({
-      workspaceId,
-      listingId: row.listingId,
-      attemptId: row.id,
-      versionId,
-      observedVersionId,
-      assetId: image.assetId,
-      storageKey: asset.storageKey,
-      candidateDigest: image.digest,
-      sourceAssetId: row.sourceAssetId,
-      sourceDigest: row.sourceDigest,
-      providerVersion: row.providerVersion,
-      renderVersion: row.renderVersion,
-      token,
-      tokenHash: createHash("sha256").update(token).digest("hex"),
-      actorId,
-    });
+    const token = randomBytes(32).toString("base64url");
+    const publicUrl = publicationUrl(token, publicOrigin);
+    const [publication] = await tx
+      .insert(publications)
+      .values({
+        workspaceId,
+        listingId: row.listingId,
+        attemptId: row.id,
+        versionId,
+        observedVersionId,
+        assetId: image.assetId,
+        storageKey: asset.storageKey,
+        candidateDigest: image.digest,
+        sourceAssetId: row.sourceAssetId,
+        sourceDigest: row.sourceDigest,
+        providerVersion: row.providerVersion,
+        renderVersion: row.renderVersion,
+        size: image.size,
+        tokenHash: createHash("sha256").update(token).digest("hex"),
+        actorId,
+      })
+      .returning();
+    if (!publication) return conflict("publication_insert_failed");
+    await tx
+      .insert(approvalUrls)
+      .values({ workspaceId, publicationId: publication.id, publicUrl });
     await event(
       row,
       "approved",
@@ -387,6 +456,84 @@ export function createProductShotRepository(
     return { publicationToken: token, reused: false };
   }
   return {
+    async requiresWorkflow(input) {
+      await lockListing(input.listingId);
+      const shot = await this.currentForListing(input.listingId);
+      if (shot) return true;
+      if (
+        !usesProductShotWorkflow({
+          hasSelection: false,
+          hasLegacyCutout: false,
+          provider: input.provider,
+        })
+      )
+        return false;
+      const assets = await tx
+        .select({ kind: sourceAssets.kind, metadata: sourceAssets.metadata })
+        .from(sourceAssets)
+        .where(
+          and(
+            eq(sourceAssets.workspaceId, workspaceId),
+            eq(sourceAssets.listingId, input.listingId),
+          ),
+        );
+      const hasLegacyCutout = assets.some(
+        (a) =>
+          a.kind === "image/png" &&
+          (a.metadata as Record<string, unknown>).role ===
+            "product_shot_cutout",
+      );
+      return usesProductShotWorkflow({
+        hasSelection: false,
+        hasLegacyCutout,
+        provider: input.provider,
+      });
+    },
+    async resolveApprovedProductImage(input) {
+      if (input.workspaceId !== workspaceId)
+        return conflict("image_approval_required");
+      const listing = await lockListing(input.listingId);
+      const selected = await this.currentForListing(input.listingId);
+      if (
+        !["approved", "publishing", "published", "publish_failed"].includes(
+          listing.status,
+        ) ||
+        listing.activeVersionId !== input.versionId ||
+        !selected ||
+        selected.state !== "approved" ||
+        selected.candidate?.assetId !== input.assetId
+      )
+        return conflict("image_approval_required");
+      const [version] = await tx
+        .select()
+        .from(listingVersions)
+        .where(
+          and(
+            eq(listingVersions.workspaceId, workspaceId),
+            eq(listingVersions.listingId, input.listingId),
+            eq(listingVersions.id, input.versionId),
+          ),
+        );
+      if (
+        !version ||
+        !Array.isArray(version.content.imageAssetIds) ||
+        version.content.imageAssetIds.length !== 1 ||
+        version.content.imageAssetIds[0] !== input.assetId
+      )
+        return conflict("image_approval_required");
+      const publication = await this.approvedForAsset(input);
+      if (
+        !publication ||
+        publication.attemptId !== selected.attemptId ||
+        publication.candidateDigest !== selected.candidate.digest ||
+        publication.sourceAssetId !== selected.sourceAssetId ||
+        publication.sourceDigest !== selected.sourceDigest ||
+        publication.providerVersion !== selected.providerVersion ||
+        publication.renderVersion !== selected.renderVersion
+      )
+        return conflict("image_approval_required");
+      return publication.publicUrl;
+    },
     async get(attemptId) {
       scope.assertOpen();
       const [row] = await tx
@@ -688,6 +835,11 @@ export function createProductShotRepository(
         return conflict("stale_candidate");
       await source(row);
       await output(row, row.candidateAssetId, "product_shot_candidate");
+      if (row.state !== "approved")
+        await tx
+          .update(attempts)
+          .set({ state: "approved", updatedAt: new Date() })
+          .where(byAttempt(row.id));
       const result = await publish(
         row,
         input.expectedVersionId,
@@ -706,11 +858,6 @@ export function createProductShotRepository(
           },
           input.actorId,
         );
-      if (row.state !== "approved")
-        await tx
-          .update(attempts)
-          .set({ state: "approved", updatedAt: new Date() })
-          .where(byAttempt(row.id));
       return { publicationToken: result.publicationToken };
     },
     async bindApprovedVersion(input) {
@@ -722,7 +869,10 @@ export function createProductShotRepository(
         .where(
           and(
             eq(publications.workspaceId, workspaceId),
-            eq(publications.token, input.publicationToken),
+            eq(
+              publications.tokenHash,
+              createHash("sha256").update(input.publicationToken).digest("hex"),
+            ),
           ),
         );
       if (
@@ -793,7 +943,17 @@ export function createProductShotRepository(
         )
         .orderBy(desc(publications.createdAt))
         .limit(1);
-      return publication ? readPublication(publication) : null;
+      if (!publication) return null;
+      const [binding] = await tx
+        .select()
+        .from(approvalUrls)
+        .where(
+          and(
+            eq(approvalUrls.workspaceId, workspaceId),
+            eq(approvalUrls.publicationId, publication.id),
+          ),
+        );
+      return binding ? readPublication(publication, binding.publicUrl) : null;
     },
     async revoke(input) {
       scope.assertOpen();
@@ -804,7 +964,10 @@ export function createProductShotRepository(
         .where(
           and(
             eq(publications.workspaceId, workspaceId),
-            eq(publications.token, input.publicationToken),
+            eq(
+              publications.tokenHash,
+              createHash("sha256").update(input.publicationToken).digest("hex"),
+            ),
           ),
         );
       if (!publication) return conflict("publication_not_found");

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase } from "../client.js";
@@ -15,7 +15,10 @@ const admin = postgres(adminUrl, {
   onnotice: () => {},
 });
 const app = postgres(appUrl, { max: 3, prepare: false, onnotice: () => {} });
-const db = createDatabase(appUrl, { migrationUrl: adminUrl });
+const db = createDatabase(appUrl, {
+  migrationUrl: adminUrl,
+  publicImageOrigin: "https://images.example.invalid",
+});
 const digest = (letter = "a") => letter.repeat(64);
 
 beforeAll(async () => {
@@ -382,7 +385,7 @@ describe("durable product shots", () => {
       ),
     );
     expect(a).toEqual(b);
-    expect(a!.publicationToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(a!.publicationToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(
       (
         await admin`select status from listing_drafts where id=${f.listingId}`
@@ -394,7 +397,7 @@ describe("durable product shots", () => {
     await expect(
       app.begin(async (tx) => {
         await tx`select set_config('app.workspace_id',${f.workspaceId},true)`;
-        await tx`update product_shot_publications set candidate_digest=${digest("d")} where token=${a!.publicationToken}`;
+        await tx`update product_shot_publications set candidate_digest=${digest("d")} where token_hash=${createHash("sha256").update(a!.publicationToken).digest("hex")}`;
       }),
     ).rejects.toThrow();
   });
@@ -579,7 +582,7 @@ it("pins referenced asset metadata and storage identity and rejects incomplete S
     admin`update product_shot_attempts set candidate_width=null where id=${shot.attemptId}`,
   ).rejects.toThrow();
   await expect(
-    admin`update product_shot_publications set token=${digest("e")} where token=${published.publicationToken}`,
+    admin`update product_shot_publications set token_hash=${digest("e")} where token_hash=${createHash("sha256").update(published.publicationToken).digest("hex")}`,
   ).rejects.toThrow("immutable");
 });
 
@@ -624,6 +627,7 @@ it("denies viewer mutations, operator image approval, foreign output SQL and uns
     "product_shot_selections",
     "product_shot_daily_dispatches",
     "product_shot_publications",
+    "product_shot_approval_urls",
   ]) {
     expect(await app.unsafe(`select * from ${table}`)).toHaveLength(0);
     const [policy] =
@@ -810,4 +814,237 @@ it("requires renewed exact acceptance when reselecting historical approved A aft
   expect(
     await admin`select action from audit_events where entity_id=${f.listingId} and action='product_shot.approved'`,
   ).toHaveLength(2);
+});
+
+it("publishes hash-only coordinates through a non-superuser RLS function owner", async () => {
+  const f = await fixture();
+  const shot = await ready(f);
+  const result = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approve(shot.observation),
+  );
+  expect(result.publicationToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  const tokenHash = createHash("sha256")
+    .update(result.publicationToken)
+    .digest("hex");
+  const [row] =
+    await admin`select * from product_shot_publications where token_hash=${tokenHash}`;
+  expect(row).not.toHaveProperty("token");
+  expect(await db.lookupPublishedImage(result.publicationToken)).toEqual({
+    workspaceId: f.workspaceId,
+    storageKey: row!.storage_key,
+    digest: shot.image.digest,
+    size: shot.image.size,
+  });
+  const [owner] =
+    await admin`select r.rolsuper,r.rolbypassrls,r.rolcanlogin,p.prosecdef,p.proconfig from pg_proc p join pg_roles r on r.oid=p.proowner where p.proname='lookup_published_product_image'`;
+  expect(owner).toMatchObject({
+    rolsuper: false,
+    rolbypassrls: false,
+    rolcanlogin: false,
+    prosecdef: true,
+  });
+  expect(owner!.proconfig).toContain("search_path=pg_catalog");
+  const [grants] =
+    await admin`select has_function_privilege('wukong_app','public.lookup_published_product_image(text)','EXECUTE') as app, has_function_privilege('public','public.lookup_published_product_image(text)','EXECUTE') as everyone`;
+  expect(grants).toEqual({ app: true, everyone: false });
+  expect(await app`select * from product_shot_attempts`).toEqual([]);
+  expect(await app`select * from source_assets`).toEqual([]);
+  expect(await app`select * from product_shot_approval_urls`).toEqual([]);
+  const binding = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approvedForAsset({
+      listingId: f.listingId,
+      versionId: f.versionId,
+      assetId: shot.image.assetId,
+    }),
+  );
+  expect(binding!.publicUrl).toBe(
+    "https://images.example.invalid/product-images/" +
+      result.publicationToken +
+      ".jpg",
+  );
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.revoke({ ...result, actorId: f.actorId }),
+  );
+  expect(await db.lookupPublishedImage(result.publicationToken)).toBeNull();
+});
+
+it("requires exact current publication for exports while retaining historical URLs", async () => {
+  const f = await fixture();
+  const shot = await ready(f);
+  const resolve = (assetId = shot.image.assetId, versionId = f.versionId) =>
+    db.forWorkspace(f.workspaceId, (r) =>
+      r.productShots.resolveApprovedProductImage({
+        workspaceId: f.workspaceId,
+        listingId: f.listingId,
+        versionId,
+        assetId,
+      }),
+    );
+  await expect(resolve()).rejects.toThrow("image_approval_required");
+  const p = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approve(shot.observation),
+  );
+  await expect(resolve()).rejects.toThrow("image_approval_required");
+  await admin`update listing_drafts set status='approved' where id=${f.listingId}`;
+  await admin`update listing_versions set content=${admin.json({ imageAssetIds: [shot.image.assetId] })} where id=${f.versionId}`;
+  expect(await resolve()).toContain(p.publicationToken + ".jpg");
+  for (const assetId of [
+    f.sourceAssetId,
+    (await f.get(shot.attemptId))!.cutoutAssetId!,
+    randomUUID(),
+  ])
+    await expect(resolve(assetId)).rejects.toThrow("image_approval_required");
+  await expect(resolve(shot.image.assetId, randomUUID())).rejects.toThrow(
+    "image_approval_required",
+  );
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.ensure({
+      ...f.identity,
+      actorId: f.actorId,
+      explicitFreshAttempt: true,
+    }),
+  );
+  await expect(resolve()).rejects.toThrow("image_approval_required");
+  expect(await db.lookupPublishedImage(p.publicationToken)).not.toBeNull();
+});
+
+it("SQL rejects original, cutout and unapproved candidate publication targets and foreign URL writes", async () => {
+  const f = await fixture();
+  const shot = await ready(f);
+  const current = (await f.get(shot.attemptId))!;
+  const insert = (assetId: string) =>
+    app.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id',${f.workspaceId},true)`;
+      await tx`insert into product_shot_publications(workspace_id,listing_id,attempt_id,observed_version_id,version_id,asset_id,storage_key,candidate_digest,size,source_asset_id,source_digest,provider_version,render_version,token_hash,actor_id)
+  select ${f.workspaceId},${f.listingId},${shot.attemptId},${f.versionId},${f.versionId},id,storage_key,${shot.image.digest},${shot.image.size},${f.sourceAssetId},${f.sourceDigest},${f.providerVersion},${f.renderVersion},${digest("e")},${f.actorId} from source_assets where id=${assetId}`;
+    });
+  for (const assetId of [
+    f.sourceAssetId,
+    current.cutoutAssetId!,
+    shot.image.assetId,
+  ])
+    await expect(insert(assetId)).rejects.toThrow(
+      "publication approval binding invalid",
+    );
+  const approved = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approve(shot.observation),
+  );
+  for (const assetId of [f.sourceAssetId, current.cutoutAssetId!])
+    await expect(insert(assetId)).rejects.toThrow(
+      "publication approval binding invalid",
+    );
+  const binding = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approvedForAsset({
+      listingId: f.listingId,
+      versionId: f.versionId,
+      assetId: shot.image.assetId,
+    }),
+  );
+  const other = await fixture();
+  await expect(
+    app.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id',${other.workspaceId},true)`;
+      await tx`insert into product_shot_approval_urls(workspace_id,publication_id,public_url) values (${other.workspaceId},${binding!.id},${binding!.publicUrl})`;
+    }),
+  ).rejects.toThrow();
+  await expect(app`set role wukong_image_lookup`).rejects.toThrow();
+  await expect(
+    admin`delete from product_shot_approval_urls where publication_id=${binding!.id}`,
+  ).rejects.toThrow("immutable");
+  expect(
+    await db.lookupPublishedImage(approved.publicationToken),
+  ).not.toBeNull();
+});
+it("requires configured secure origin without committing approval or publication", async () => {
+  const f = await fixture();
+  const shot = await ready(f);
+  for (const origin of [
+    "",
+    "http://public.example",
+    "https://user:pass@example.invalid",
+    "https://images.example.invalid/path",
+  ]) {
+    const invalid = createDatabase(appUrl!, { publicImageOrigin: origin });
+    try {
+      await expect(
+        invalid.forWorkspace(f.workspaceId, (r) =>
+          r.productShots.approve(shot.observation),
+        ),
+      ).rejects.toThrow(/publication_origin/);
+    } finally {
+      await invalid.close();
+    }
+    expect((await f.get(shot.attemptId))!.state).toBe("candidate_ready");
+  }
+  expect(
+    await admin`select id from product_shot_publications where attempt_id=${shot.attemptId}`,
+  ).toHaveLength(0);
+});
+
+it("uses the same server workflow rule before selection and after provider disablement", async () => {
+  const f = await fixture();
+  const requires = (provider: string) =>
+    db.forWorkspace(f.workspaceId, (r) =>
+      r.productShots.requiresWorkflow({ listingId: f.listingId, provider }),
+    );
+  expect(await requires("fake")).toBe(true);
+  expect(await requires("photoroom")).toBe(true);
+  expect(await requires("disabled")).toBe(false);
+  await asset(f.workspaceId, f.listingId, "image/png", {
+    role: "product_shot_cutout",
+  });
+  expect(await requires("fake")).toBe(false);
+  await f.ensure();
+  expect(await requires("disabled")).toBe(true);
+});
+
+it("serializes export workflow classification with first selection", async () => {
+  const f = await fixture();
+  let release!: () => void, entered!: () => void;
+  const pause = new Promise<void>((r) => (release = r)),
+    started = new Promise<void>((r) => (entered = r));
+  const reading = db.forWorkspace(f.workspaceId, async (r) => {
+    const result = await r.productShots.requiresWorkflow({
+      listingId: f.listingId,
+      provider: "disabled",
+    });
+    entered();
+    await pause;
+    return result;
+  });
+  await started;
+  let selected = false;
+  const selection = f.ensure().then(() => {
+    selected = true;
+  });
+  try {
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(selected).toBe(false);
+  } finally {
+    release();
+    await reading;
+    await selection;
+  }
+});
+
+it("rejects a loopback HTTP origin in production", async () => {
+  const f = await fixture();
+  const shot = await ready(f);
+  const previous = process.env.NODE_ENV;
+  const production = createDatabase(appUrl!, {
+    publicImageOrigin: "http://localhost:3000",
+  });
+  process.env.NODE_ENV = "production";
+  try {
+    await expect(
+      production.forWorkspace(f.workspaceId, (r) =>
+        r.productShots.approve(shot.observation),
+      ),
+    ).rejects.toThrow("publication_origin_invalid");
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+    await production.close();
+  }
+  expect((await f.get(shot.attemptId))!.state).toBe("candidate_ready");
 });

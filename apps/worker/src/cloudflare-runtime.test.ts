@@ -68,7 +68,10 @@ describe("Cloudflare runtime", () => {
         },
       ]),
     };
-    const repositories = { sourceAssets };
+    const repositories = {
+      sourceAssets,
+      productShots: { requiresWorkflow: async () => false },
+    };
     const database = {
       close: vi.fn(async () => undefined),
       forWorkspace: vi.fn(
@@ -246,4 +249,46 @@ it("accepts the repository maximum daily product shot allowance", () => {
       PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
     }).dailyLimit,
   ).toBe(2147483647);
+});
+
+it("rechecks versioned publication for queued SHOPLINE images and never signs source", async () => {
+  const resolveApprovedProductImage = vi.fn(
+    async () => "https://images.example/final.jpg",
+  );
+  const createReadUrl = vi.fn();
+  const repositories = {
+    productShots: {
+      requiresWorkflow: async () => true,
+      resolveApprovedProductImage,
+    },
+    sourceAssets: { getByIds: vi.fn() },
+  };
+  const runtime = createCloudflareRuntime(
+    { AI_PROVIDER: "fake", PRODUCT_SHOT_PROVIDER: "fake" } as never,
+    {
+      databaseFactory: () =>
+        ({
+          forWorkspace: async (_ws: string, work: any) => work(repositories),
+          close: async () => {},
+        }) as never,
+      assetStoreFactory: () => ({ createReadUrl }) as never,
+      providerFactory: () => ({}) as never,
+    },
+  );
+  expect(
+    await runtime.resolveImageUrls("ws", "listing", ["final"], "version"),
+  ).toEqual(["https://images.example/final.jpg"]);
+  expect(resolveApprovedProductImage).toHaveBeenCalledWith({
+    workspaceId: "ws",
+    listingId: "listing",
+    versionId: "version",
+    assetId: "final",
+  });
+  expect(createReadUrl).not.toHaveBeenCalled();
+  resolveApprovedProductImage.mockRejectedValueOnce(
+    new Error("image_approval_required"),
+  );
+  await expect(
+    runtime.resolveImageUrls("ws", "listing", ["final"], "version"),
+  ).rejects.toThrow("image_approval_required");
 });

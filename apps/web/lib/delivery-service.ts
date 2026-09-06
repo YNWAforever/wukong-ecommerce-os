@@ -69,6 +69,7 @@ export type DeliveryDeps = {
     workspaceId: string,
     draftId: string,
     assetIds: readonly string[],
+    versionId: string,
   ): Promise<readonly string[]>;
   audit: {
     write(event: {
@@ -190,6 +191,7 @@ export function createDeliverySnapshotReader(
             input.workspaceId,
             input.draftId,
             listing.activeVersion.content.imageAssetIds,
+            listing.activeVersion.id,
           )
         : [];
     return {
@@ -217,6 +219,7 @@ async function withResolvedImageUrls(
       snapshot.listing.workspaceId,
       snapshot.listing.draftId,
       activeVersion.content.imageAssetIds,
+      activeVersion.id,
     ),
   };
 }

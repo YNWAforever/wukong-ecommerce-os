@@ -522,6 +522,11 @@ describe("workspace isolation", () => {
         "source_imports",
       ],
       [
+        "product_shot_approval_urls",
+        ["workspace_id", "publication_id"],
+        "product_shot_publications",
+      ],
+      [
         "product_shot_attempts",
         ["workspace_id", "listing_id"],
         "listing_drafts",

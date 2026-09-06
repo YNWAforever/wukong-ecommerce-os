@@ -74,3 +74,5 @@ export type {
   WebsiteScanEnvelope,
   RobotsPolicy,
 } from "./website-catalog.js";
+
+export { usesProductShotWorkflow } from "./product-shot.js";

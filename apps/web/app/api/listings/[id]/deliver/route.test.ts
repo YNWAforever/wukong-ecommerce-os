@@ -170,6 +170,7 @@ function makeDefaultRuntime(
     connectionId: "00000000-0000-4000-8000-000000000301",
   };
   const repositories = {
+    productShots: { requiresWorkflow: async () => false },
     listings: {
       async requireForPublish() {
         order.push("listing");
@@ -583,6 +584,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     };
     const sourceAssets = { getByIds: vi.fn(async () => imageAssets) };
     const repositories = {
+      productShots: { requiresWorkflow: async () => false },
       listings: {
         async requireForPublish() {
           return {
@@ -928,3 +930,79 @@ it.each(["csv", "bulk_form", "shopline_api"] as const)(
     expect(runtime.audits).toEqual([]);
   },
 );
+
+it("returns actionable publication feedback without exposing capability URLs", async () => {
+  const handler = createDeliverListingHandler({
+    sessionContext: { resolve: async () => context },
+    delivery: {
+      deliver: async () => {
+        throw Object.assign(new Error("Approve the product image"), {
+          name: "ProductImageApprovalRequiredError",
+        });
+      },
+    },
+  });
+  const result = await handler(
+    new Request("https://app.example", {
+      method: "POST",
+      body: JSON.stringify({ method: "csv" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+  expect(result.status).toBe(409);
+  expect(await result.json()).toMatchObject({
+    code: "image_approval_required",
+    message: expect.stringContaining("Approve the current product image"),
+  });
+});
+
+it("default CSV composition emits the versioned public JPEG and blocks revoked publication", async () => {
+  const f = makeDefaultRuntime({ imageAssetIds: ["candidate"] });
+  const resolveApprovedProductImage = vi.fn(
+    async () =>
+      "https://images.example/product-images/" + "a".repeat(43) + ".jpg",
+  );
+  Object.assign(f.repositories.productShots, {
+    requiresWorkflow: async () => true,
+    resolveApprovedProductImage,
+  });
+  const input = {
+    workspaceId: context.workspaceId,
+    actorId: context.actorId,
+    draftId: listingId,
+    method: "csv" as const,
+  };
+  const result = await defaultDelivery().deliver(input);
+  expect(result.kind).toBe("csv");
+  if (result.kind !== "csv") throw new Error("CSV missing");
+  expect(result.body).toContain("https://images.example/product-images/");
+  expect(resolveApprovedProductImage).toHaveBeenCalledWith({
+    workspaceId: context.workspaceId,
+    listingId,
+    versionId,
+    assetId: "candidate",
+  });
+  expect(f.createReadUrl).not.toHaveBeenCalled();
+  resolveApprovedProductImage.mockRejectedValueOnce(
+    Object.assign(new Error("image_approval_required"), {
+      name: "ProductShotConflict",
+      code: "image_approval_required",
+    }),
+  );
+  const handler = createDeliverListingHandler({
+    sessionContext: { resolve: async () => context },
+    delivery: defaultDelivery(),
+  });
+  expect(
+    (
+      await handler(
+        new Request("https://app.example", {
+          method: "POST",
+          body: '{"method":"csv"}',
+        }),
+        { params: Promise.resolve({ id: listingId }) },
+      )
+    ).status,
+  ).toBe(409);
+  expect(f.createReadUrl).not.toHaveBeenCalled();
+});

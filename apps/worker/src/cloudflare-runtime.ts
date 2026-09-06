@@ -1,3 +1,4 @@
+import { productImagePublicationForDelivery } from "./shopline-runtime.js";
 import { createHash } from "node:crypto";
 import type { ProductShotPipelineDeps } from "./product-shot-pipeline.js";
 import {
@@ -33,6 +34,7 @@ export type CloudflareRuntime = {
     workspaceId: string,
     draftId: string,
     imageAssetIds: readonly string[],
+    versionId?: string,
   ): Promise<readonly string[]>;
   close(): Promise<void>;
 };
@@ -152,12 +154,17 @@ export function createCloudflareRuntime(
   return {
     database,
     dependencies,
-    resolveImageUrls: (workspaceId, draftId, imageAssetIds) =>
+    resolveImageUrls: (workspaceId, draftId, imageAssetIds, versionId) =>
       database.forWorkspace(workspaceId, async (repositories) =>
         resolveListingImageUrls({
           workspaceId,
           draftId,
           imageAssetIds,
+          publication: await productImagePublicationForDelivery(repositories, {
+            listingId: draftId,
+            versionId,
+            provider: env.PRODUCT_SHOT_PROVIDER,
+          }),
           sourceAssets: repositories.sourceAssets,
           assetStore,
         }),

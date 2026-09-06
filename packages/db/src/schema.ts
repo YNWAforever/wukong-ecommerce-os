@@ -1680,7 +1680,7 @@ export const productShotPublications = pgTable(
     sourceDigest: text("source_digest").notNull(),
     providerVersion: text("provider_version").notNull(),
     renderVersion: text("render_version").notNull(),
-    token: text("token").notNull().unique(),
+    size: integer("size").notNull(),
     tokenHash: text("token_hash").notNull().unique(),
     actorId: text("actor_id").notNull(),
     createdAt: timestamps.createdAt,
@@ -1688,6 +1688,10 @@ export const productShotPublications = pgTable(
     revokedBy: text("revoked_by"),
   },
   (t) => [
+    uniqueIndex("product_shot_publications_workspace_id_uq").on(
+      t.workspaceId,
+      t.id,
+    ),
     uniqueIndex("product_shot_publications_binding_uq").on(
       t.workspaceId,
       t.attemptId,
@@ -1748,5 +1752,26 @@ export const productShotPublications = pgTable(
         ],
       }).onDelete("restrict"),
     ),
+  ],
+);
+
+export const productShotApprovalUrls = pgTable(
+  "product_shot_approval_urls",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    publicationId: uuid("publication_id").notNull(),
+    publicUrl: text("public_url").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.publicationId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.publicationId],
+      foreignColumns: [
+        productShotPublications.workspaceId,
+        productShotPublications.id,
+      ],
+    }).onDelete("restrict"),
   ],
 );

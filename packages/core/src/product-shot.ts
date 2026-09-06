@@ -49,3 +49,16 @@ export function nextShotAction(input: {
     return "confirm_charge";
   return "dispatch";
 }
+
+/** Shared pure server/worker workflow decision. Provider readiness never relaxes acceptance. */
+export function usesProductShotWorkflow(input: {
+  hasSelection: boolean;
+  hasLegacyCutout: boolean;
+  provider?: string;
+}): boolean {
+  return (
+    input.hasSelection ||
+    (!input.hasLegacyCutout &&
+      ["fake", "photoroom"].includes(input.provider ?? ""))
+  );
+}

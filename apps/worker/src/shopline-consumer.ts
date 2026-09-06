@@ -48,6 +48,7 @@ type ShoplineRuntime = {
     workspaceId: string,
     draftId: string,
     imageAssetIds: readonly string[],
+    versionId: string,
   ): Promise<readonly string[]>;
   close(): Promise<void>;
 };
@@ -240,8 +241,13 @@ export async function consumeShoplineMessage(
             work(publishRepositories(repositories, workspaceId)),
           );
         },
-        resolveImageUrls: (workspaceId, draftId, imageAssetIds) =>
-          runtime.resolveImageUrls(workspaceId, draftId, imageAssetIds),
+        resolveImageUrls: (workspaceId, draftId, imageAssetIds, versionId) =>
+          runtime.resolveImageUrls(
+            workspaceId,
+            draftId,
+            imageAssetIds,
+            versionId,
+          ),
       },
     );
     return "ack";
