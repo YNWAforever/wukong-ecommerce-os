@@ -1,28 +1,40 @@
 import Link from "next/link";
-
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
+import { localized } from "../../../../lib/ui-copy";
+import { authSessionContext } from "../../../../lib/session-context";
 import { ListingIntakeTabs } from "../../../../components/listing-intake-tabs";
-
-export default function ListingImportPage() {
+export default async function ListingImportPage() {
+  const locale = resolveLocale(
+    (await cookies()).get(LOCALE_COOKIE_NAME)?.value,
+  );
+  const session = await authSessionContext.resolve();
+  const title = localized(locale, "商品目錄匯入", "Catalog import");
   return (
     <div className="page-wrap narrow-page">
       <div className="breadcrumb">
-        <Link href="/dashboard">工作台</Link>
+        <Link href="/dashboard">
+          {localized(locale, "工作台", "Dashboard")}
+        </Link>
         <span aria-hidden="true">/</span>
-        <span>SHOPLINE 匯入</span>
+        <span>{title}</span>
       </div>
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            SHOPLINE 匯入 <span>BULK UPDATE IMPORT</span>
-          </p>
-          <h1>SHOPLINE 商品目錄匯入</h1>
+          <p className="eyebrow">{title}</p>
+          <h1>{title}</h1>
           <p className="lede">
-            匯入最新的 SHOPLINE Bulk Update
-            匯出檔，更新現有商品；新商品建立為獨立流程，不在此頁面提供。
+            {localized(
+              locale,
+              "貼上公開網站網址以預覽商品，或選擇 SHOPLINE 試算表匯入現有商品。",
+              "Preview products from a public website, or choose a SHOPLINE workbook to import existing products.",
+            )}
           </p>
         </div>
       </div>
-      <ListingIntakeTabs />
+      <ListingIntakeTabs
+        canScan={Boolean(session && session.role !== "viewer")}
+      />
     </div>
   );
 }

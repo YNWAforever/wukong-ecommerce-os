@@ -48,6 +48,27 @@ export function WebsiteProductObservation({
 }) {
   const locale = useLocale();
   const source = normalizeWebsiteUrl(p.sourceUrl);
+  const labels: Record<string, [string, string]> = {
+    title: ["商品名稱", "Product title"],
+    description: ["描述", "Description"],
+    price: ["價格", "Price"],
+    availability: ["供應狀況", "Availability"],
+    imageUrls: ["圖片", "Images"],
+    attributes: ["屬性", "Attributes"],
+    brand: ["品牌", "Brand"],
+    sku: ["商品編號", "SKU"],
+    sourceUrl: ["來源網址", "Source URL"],
+    capturedAt: ["擷取時間", "Captured"],
+  };
+  const label = (key: string) =>
+    labels[key] ? localized(locale, ...labels[key]) : key;
+  const availability = {
+    in_stock: localized(locale, "有現貨", "In stock"),
+    out_of_stock: localized(locale, "缺貨", "Out of stock"),
+    preorder: localized(locale, "預購", "Preorder"),
+    unknown: localized(locale, "未確認", "Unknown"),
+  };
+
   return (
     <article>
       <h3>{p.title}</h3>
@@ -75,45 +96,60 @@ export function WebsiteProductObservation({
         <dt>{localized(locale, "價格", "Price")}</dt>
         <dd>{p.price ? `${p.price.amount} ${p.price.currency}` : "—"}</dd>
         <dt>{localized(locale, "供應狀況", "Availability")}</dt>
-        <dd>{p.availability}</dd>
+        <dd>{availability[p.availability]}</dd>
       </dl>
-      <h4>{localized(locale, "圖片來源", "Image sources")}</h4>
-      <ul>
-        {p.imageUrls
-          .map((url) => normalizeWebsiteUrl(url))
-          .filter((url): url is string => url !== null)
-          .map((url) => (
-            <li key={url}>
-              <a href={url} target="_blank" rel="noreferrer noopener">
-                {url}
-              </a>
-            </li>
+      <details className="website-evidence">
+        <summary>{localized(locale, "來源證據", "Source evidence")}</summary>
+        <h4>{localized(locale, "圖片來源", "Image sources")}</h4>
+        <ul>
+          {p.imageUrls
+            .map((url) => normalizeWebsiteUrl(url))
+            .filter((url): url is string => url !== null)
+            .map((url) => (
+              <li key={url}>
+                <a href={url} target="_blank" rel="noreferrer noopener">
+                  {url}
+                </a>
+              </li>
+            ))}
+        </ul>
+        <h4>{localized(locale, "屬性", "Attributes")}</h4>
+        <dl>
+          {Object.entries(p.attributes).map(([key, value]) => (
+            <div key={key}>
+              <dt>{label(key)}</dt>
+              <dd>{value}</dd>
+            </div>
           ))}
-      </ul>
-      <h4>{localized(locale, "屬性", "Attributes")}</h4>
-      <dl>
-        {Object.entries(p.attributes).map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      <h4>{localized(locale, "欄位來源", "Field sources")}</h4>
-      <dl>
-        {Object.entries(p.fieldSources).map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      <h4>{localized(locale, "注意事項", "Warnings")}</h4>
-      <ul>
-        {p.warnings.map((warning, i) => (
-          <li key={i}>{warning}</li>
-        ))}
-      </ul>
+        </dl>
+        <h4>{localized(locale, "欄位來源", "Field sources")}</h4>
+        <dl>
+          {Object.entries(p.fieldSources).map(([key, value]) => (
+            <div key={key}>
+              <dt>{label(key)}</dt>
+              <dd>
+                {value === "json_ld"
+                  ? localized(
+                      locale,
+                      "JSON-LD 結構化資料",
+                      "JSON-LD structured data",
+                    )
+                  : localized(locale, "網頁 HTML", "Page HTML")}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+      {p.warnings.length > 0 && (
+        <>
+          <h4>{localized(locale, "注意事項", "Warnings")}</h4>
+          <ul>
+            {p.warnings.map((warning, i) => (
+              <li key={i}>{warning}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </article>
   );
 }

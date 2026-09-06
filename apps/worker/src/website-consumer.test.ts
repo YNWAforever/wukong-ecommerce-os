@@ -66,7 +66,7 @@ describe("website queue consumer", () => {
     expect(await consumeWebsiteMessage(job, s.env, s.deps)).toBe("ack");
     const [url, init] = s.fetch.mock.calls[0] as any;
     expect(String(url)).toBe("https://app.example" + WEBSITE_DOCUMENT_PATH);
-    expect(init.redirect).toBe("error");
+    expect(init.redirect).toBe("manual");
     expect(JSON.parse(init.body)).toEqual({ ...job, leaseToken: job.scanId });
     expect(
       await verifyQueueRequest({
@@ -175,3 +175,28 @@ it("schedules the deadline before a crawl delay extending past it", async () => 
     retryAfterSeconds: 900,
   });
 });
+
+it.each([301, 302, 303, 307, 308])(
+  "refuses callback redirect %s without sending another revision",
+  async (status) => {
+    const s = setup();
+    const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      if (init?.redirect !== "manual")
+        throw new Error("Workerd accepts only manual or follow");
+      return new Response(null, {
+        status,
+        headers: { location: "https://other.example/" },
+      });
+    });
+    expect(
+      await consumeWebsiteMessage(job, s.env, {
+        ...s.deps,
+        fetch: fetcher as typeof fetch,
+      }),
+    ).toEqual({ retryAfterSeconds: 60 });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]![1]?.redirect).toBe("manual");
+    expect(s.send).not.toHaveBeenCalled();
+    expect(s.recordDispatch).not.toHaveBeenCalled();
+  },
+);

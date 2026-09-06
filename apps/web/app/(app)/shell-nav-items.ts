@@ -8,8 +8,8 @@ export const SHELL_NAV_ITEMS: NavItem[] = [
   { href: "/listings/new", labelZh: "建立草稿", labelEn: "New listing" },
   {
     href: "/listings/import",
-    labelZh: "SHOPLINE 匯入",
-    labelEn: "Bulk import",
+    labelZh: "商品目錄匯入",
+    labelEn: "Catalog import",
   },
   { href: "/batches", labelZh: "批次", labelEn: "Batches" },
   { href: "/jobs", labelZh: "內部作業", labelEn: "Jobs" },

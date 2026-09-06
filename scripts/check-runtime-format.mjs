@@ -46,10 +46,6 @@ const knownFormatDebt = new Map([
     "packages/db/src/publish-jobs-schema.test.ts",
     "8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8",
   ],
-  [
-    "packages/jobs/src/cloudflare-queue.ts",
-    "1f17ed387564268afbdf82c4354a04d7e27b0525d0d2a5dfc613c925796f1b43",
-  ],
 ]);
 
 export function knownFormatDebtEntries() {

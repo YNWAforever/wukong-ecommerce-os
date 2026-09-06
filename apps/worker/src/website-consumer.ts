@@ -116,7 +116,8 @@ export async function consumeWebsiteMessage(
     try {
       response = await (deps.fetch ?? globalThis.fetch)(callback, {
         method: "POST",
-        redirect: "error",
+        // Workerd supports manual, not error; the status allowlist below rejects redirects.
+        redirect: "manual",
         headers: {
           "content-type": "application/json",
           "x-wukong-timestamp": String(timestamp),
