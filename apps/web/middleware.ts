@@ -11,7 +11,7 @@ const publicPaths = [
 ];
 
 function isPublicPath(pathname: string): boolean {
-  if (/^\/product-images\/[A-Za-z0-9_-]{43}\.jpg$/.test(pathname)) return true;
+  if (/^\/product-images\/[^/]*\.jpg$/.test(pathname)) return true;
   return publicPaths.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );

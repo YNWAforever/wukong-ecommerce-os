@@ -323,3 +323,223 @@ it("adjacent product-shot approval still requires a server session", async () =>
   expect(getDatabase).not.toHaveBeenCalled();
   expect(getAssetStore).not.toHaveBeenCalled();
 });
+
+import { createCloudflareRuntime } from "../../../../../../worker/src/cloudflare-runtime";
+import { consumeShoplineMessage } from "../../../../../../worker/src/shopline-consumer";
+import {
+  hashCanonicalListing,
+  shoplinePublishIdempotencyKey,
+  type CommerceConnector,
+} from "@wukong/shopline";
+import type { Database, WorkspaceRepositories } from "@wukong/db";
+
+async function queuedImageFixture() {
+  const f = await fixture();
+  const view = await prepareProductShot(f.input, deps);
+  await approveProductShot(
+    { ...f.input, candidateDigest: view.candidateDigest! },
+    deps,
+  );
+  const response = await createApproveListingHandler(f.routeDeps)(
+    new Request("http://localhost", {
+      method: "POST",
+      body: JSON.stringify({
+        expectedVersionId: f.input.expectedVersionId,
+        confirmationLedgerRevision: 0,
+      }),
+    }),
+    { params: Promise.resolve({ id: f.input.listingId }) },
+  );
+  expect(response.status).toBe(200);
+  const versionId = (await response.json()).versionId as string;
+  const connectionId = randomUUID();
+  await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${connectionId},${f.input.workspaceId},'synthetic.invalid','synthetic-only')`;
+  const key = shoplinePublishIdempotencyKey(
+    f.input.workspaceId,
+    versionId,
+    "create",
+  );
+  const candidate = (await f.get())!.candidate!;
+  const publication = await db.forWorkspace(f.input.workspaceId, async (r) => {
+    const listing = await r.listings.requireForPublish(f.input.listingId);
+    await r.publishJobs.ensure({
+      listingId: f.input.listingId,
+      versionId,
+      connectionId,
+      idempotencyKey: key,
+      payloadDigest: hashCanonicalListing(listing.activeVersion!.content),
+    });
+    await r.publishJobs.markQueued(key);
+    return r.productShots.approvedForAsset({
+      listingId: f.input.listingId,
+      versionId,
+      assetId: candidate.assetId,
+    });
+  });
+  const replacement = await f.source();
+  const change = (kind: string) =>
+    db.forWorkspace(f.input.workspaceId, async (r) => {
+      if (kind === "selection")
+        await r.productShots.ensure({
+          ...f.identity,
+          sourceAssetId: replacement,
+        });
+      else
+        await r.productShots.revoke({
+          publicationToken: publication!.publicationToken,
+          actorId: f.input.actorId,
+        });
+    });
+  return {
+    f,
+    key,
+    change,
+    job: {
+      workspaceId: f.input.workspaceId,
+      draftId: f.input.listingId,
+      versionId,
+      connectionId,
+    },
+  };
+}
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+function fakePublishConnector() {
+  return {
+    verifyConnection: vi.fn(async () => ({ merchantId: "synthetic" })),
+    createProduct: vi.fn(async () => ({ remoteProductId: "synthetic-remote" })),
+    updateProduct: vi.fn(async () => {}),
+    getProductStatus: vi.fn(async () => ({ exists: false, status: null })),
+  } satisfies CommerceConnector;
+}
+it.each(["selection", "revocation"])(
+  "holds the real worker publication lock through its publish claim against %s",
+  async (kind) => {
+    const x = await queuedImageFixture();
+    const reached = deferred(),
+      release = deferred();
+    let resolved = false,
+      paused = false,
+      changed = false;
+    const database = {
+      forWorkspace: <T>(
+        ws: string,
+        work: (r: WorkspaceRepositories) => Promise<T>,
+      ) =>
+        db.forWorkspace(ws, (r) =>
+          work({
+            ...r,
+            shoplineConnections: {
+              ...r.shoplineConnections,
+              async getById(id: string) {
+                if (resolved && !paused) {
+                  paused = true;
+                  reached.resolve();
+                  await release.promise;
+                }
+                return r.shoplineConnections.getById(id);
+              },
+            },
+          }),
+        ),
+      close: async () => {},
+    } as Database;
+    const runtime = createCloudflareRuntime(
+      { AI_PROVIDER: "fake", PRODUCT_SHOT_PROVIDER: "fake" } as never,
+      {
+        databaseFactory: () => database,
+        assetStoreFactory: () => store,
+        providerFactory: () => ({}) as never,
+      },
+    );
+    const connector = fakePublishConnector();
+    const publishing = consumeShoplineMessage(x.job, {} as never, {
+      createRuntime: () => ({
+        ...runtime,
+        async resolveImageUrls(
+          ...args: Parameters<typeof runtime.resolveImageUrls>
+        ) {
+          const urls = await runtime.resolveImageUrls(...args);
+          resolved = true;
+          return urls;
+        },
+      }),
+      connectorFactory: async () => connector,
+    });
+    await Promise.race([
+      reached.promise,
+      publishing.then(() => {
+        throw new Error("Worker completed before the preparation barrier");
+      }),
+    ]);
+    const mutation = x.change(kind).then(() => {
+      changed = true;
+    });
+    let observed = "pending";
+    try {
+      await expect
+        .poll(async () => {
+          const waits =
+            await admin`select pid from pg_stat_activity where datname=current_database() and cardinality(pg_blocking_pids(pid)) > 0`;
+          observed = changed
+            ? "committed"
+            : waits.length
+              ? "blocked"
+              : "pending";
+          return observed;
+        })
+        .not.toBe("pending");
+      expect(observed).toBe("blocked");
+      expect(connector.createProduct).not.toHaveBeenCalled();
+    } finally {
+      release.resolve();
+      await Promise.all([publishing, mutation]);
+    }
+    expect(connector.createProduct).toHaveBeenCalledOnce();
+    expect(
+      await db.forWorkspace(x.job.workspaceId, (r) =>
+        r.publishJobs.getByIdempotencyKey(x.key),
+      ),
+    ).toMatchObject({ status: "published", leaseToken: null });
+  },
+);
+it.each(["selection", "revocation"])(
+  "rejects %s committed before worker publication preparation without a connector call",
+  async (kind) => {
+    const x = await queuedImageFixture();
+    await x.change(kind);
+    const runtime = createCloudflareRuntime(
+      { AI_PROVIDER: "fake", PRODUCT_SHOT_PROVIDER: "fake" } as never,
+      {
+        databaseFactory: () =>
+          ({
+            forWorkspace: db.forWorkspace,
+            close: async () => {},
+          }) as Database,
+        assetStoreFactory: () => store,
+        providerFactory: () => ({}) as never,
+      },
+    );
+    const connector = fakePublishConnector();
+    expect(
+      await consumeShoplineMessage(x.job, {} as never, {
+        createRuntime: () => runtime,
+        connectorFactory: async () => connector,
+      }),
+    ).toBe("ack");
+    expect(connector.createProduct).not.toHaveBeenCalled();
+    const job = await db.forWorkspace(x.job.workspaceId, (r) =>
+      r.publishJobs.getByIdempotencyKey(x.key),
+    );
+    expect(job).toMatchObject({
+      status: "failed",
+      error: "not_approved",
+      leaseToken: null,
+    });
+  },
+);

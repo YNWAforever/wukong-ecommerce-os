@@ -35,6 +35,10 @@ export type CloudflareRuntime = {
     draftId: string,
     imageAssetIds: readonly string[],
     versionId?: string,
+    scopedRepositories?: Pick<
+      WorkspaceRepositories,
+      "sourceAssets" | "productShots"
+    >,
   ): Promise<readonly string[]>;
   close(): Promise<void>;
 };
@@ -154,8 +158,19 @@ export function createCloudflareRuntime(
   return {
     database,
     dependencies,
-    resolveImageUrls: (workspaceId, draftId, imageAssetIds, versionId) =>
-      database.forWorkspace(workspaceId, async (repositories) =>
+    resolveImageUrls: (
+      workspaceId,
+      draftId,
+      imageAssetIds,
+      versionId,
+      scopedRepositories,
+    ) => {
+      const resolve = async (
+        repositories: Pick<
+          WorkspaceRepositories,
+          "sourceAssets" | "productShots"
+        >,
+      ) =>
         resolveListingImageUrls({
           workspaceId,
           draftId,
@@ -167,8 +182,11 @@ export function createCloudflareRuntime(
           }),
           sourceAssets: repositories.sourceAssets,
           assetStore,
-        }),
-      ),
+        });
+      return scopedRepositories
+        ? resolve(scopedRepositories)
+        : database.forWorkspace(workspaceId, resolve);
+    },
     close: () => database.close(),
   };
 }

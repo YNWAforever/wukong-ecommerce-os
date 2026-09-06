@@ -544,6 +544,7 @@ describe("publishApprovedProduct", () => {
       draftId,
       canonicalListing.imageAssetIds,
       versionId,
+      harness.repos,
     );
   });
 
@@ -573,6 +574,7 @@ describe("publishApprovedProduct", () => {
       draftId,
       ["asset_b", "asset_a"],
       versionId,
+      harness.repos,
     );
     expect(harness.connector.createProduct).toHaveBeenCalledWith(
       expect.objectContaining({

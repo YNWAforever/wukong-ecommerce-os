@@ -285,6 +285,27 @@ it("rechecks versioned publication for queued SHOPLINE images and never signs so
     assetId: "final",
   });
   expect(createReadUrl).not.toHaveBeenCalled();
+  const scopedRepositories = {
+    ...repositories,
+    productShots: {
+      requiresWorkflow: async () => true,
+      resolveApprovedProductImage: vi.fn(
+        async () => "https://images.example/scoped.jpg",
+      ),
+    },
+  };
+  expect(
+    await runtime.resolveImageUrls(
+      "ws",
+      "listing",
+      ["final"],
+      "version",
+      scopedRepositories as never,
+    ),
+  ).toEqual(["https://images.example/scoped.jpg"]);
+  expect(
+    scopedRepositories.productShots.resolveApprovedProductImage,
+  ).toHaveBeenCalledOnce();
   resolveApprovedProductImage.mockRejectedValueOnce(
     new Error("image_approval_required"),
   );

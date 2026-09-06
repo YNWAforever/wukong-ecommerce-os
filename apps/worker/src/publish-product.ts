@@ -72,6 +72,11 @@ export type PublishJobRecord = {
 };
 
 export type PublishRepositories = {
+  /** Production composition supplies the repositories owned by this transaction. */
+  imageRepositories?: Pick<
+    import("@wukong/db").WorkspaceRepositories,
+    "sourceAssets" | "productShots"
+  >;
   listings: {
     requireForPublish(id: string): Promise<PublishListingSnapshot>;
     beginPublish(
@@ -153,6 +158,7 @@ export type PublishDependencies = {
     draftId: string,
     imageAssetIds: readonly string[],
     versionId: string,
+    repositories: PublishRepositories,
   ) => Promise<readonly string[]>;
 };
 
@@ -399,6 +405,7 @@ export async function publishApprovedProduct(
           input.draftId,
           listing.activeVersion?.content.imageAssetIds ?? [],
           input.expectedVersionId,
+          repositories,
         );
       } catch (cause) {
         if (
