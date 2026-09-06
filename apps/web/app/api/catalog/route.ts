@@ -18,7 +18,15 @@ const querySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   q: z.string().trim().optional(),
   filter: z
-    .enum(["website", "all", "attention", "review", "unlinked", "published"])
+    .enum([
+      "workbook",
+      "website",
+      "all",
+      "attention",
+      "review",
+      "unlinked",
+      "published",
+    ])
     .default("all"),
 });
 
@@ -48,7 +56,7 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           );
           const items = await Promise.all(
             page.items.map(async (item) =>
-              item.sourceType === "website"
+              item.sourceType !== "platform"
                 ? item
                 : {
                     ...item,

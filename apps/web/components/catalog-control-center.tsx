@@ -10,6 +10,7 @@ import {
 } from "../lib/ui-copy";
 
 import Link from "next/link";
+import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
 import { useCallback, useId, useState } from "react";
 
@@ -39,6 +40,7 @@ const EMPTY_RESPONSE: CatalogPage = {
   summary: {
     total: 0,
     website: 0,
+    workbook: 0,
     linked: 0,
     unlinked: 0,
     needsReview: 0,
@@ -53,6 +55,7 @@ const EMPTY_RESPONSE: CatalogPage = {
 export function CatalogControlCenter() {
   const locale = useLocale();
   const c = commonCopy[locale];
+  const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
@@ -142,7 +145,19 @@ export function CatalogControlCenter() {
           <WebsiteProductDetail key={websiteDetailId} id={websiteDetailId} />
         </div>
       ) : null}
+      {workbookDetailId ? (
+        <div>
+          <button type="button" onClick={() => setWorkbookDetailId(null)}>
+            {localized(locale, "關閉資料", "Close details")}
+          </button>
+          <WorkbookProductDetail key={workbookDetailId} id={workbookDetailId} />
+        </div>
+      ) : null}
       <div className={styles.metrics}>
+        <Metric
+          value={response.summary.workbook}
+          label={localized(locale, "試算表商品", "Workbook products")}
+        />
         <Metric
           value={response.summary.website}
           label={localized(locale, "網站商品", "Website products")}
@@ -300,6 +315,42 @@ export function CatalogControlCenter() {
               </thead>
               <tbody>
                 {response.items.map((item) => {
+                  if (item.sourceType === "workbook")
+                    return (
+                      <tr key={`workbook:${item.id}`}>
+                        <td />
+                        <td>
+                          <strong className={styles.productTitle}>
+                            {item.title}
+                          </strong>
+                          <span className={styles.productMeta}>
+                            {item.sku} · {item.sourceProductId}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={styles.originBadge}>
+                            {localized(locale, "試算表", "Workbook")}
+                          </span>
+                        </td>
+                        <td>{localized(locale, "僅供參考", "Read only")}</td>
+                        <td>
+                          {localized(locale, "不能匯出", "Cannot export")}
+                        </td>
+                        <td>—</td>
+                        <td>
+                          <button
+                            type="button"
+                            className={styles.pageButton}
+                            onClick={() => {
+                              setWebsiteDetailId(null);
+                              setWorkbookDetailId(item.id);
+                            }}
+                          >
+                            {localized(locale, "查看資料", "View details")}
+                          </button>
+                        </td>
+                      </tr>
+                    );
                   if (item.sourceType === "website")
                     return (
                       <tr key={`website:${item.id}`}>
@@ -322,7 +373,10 @@ export function CatalogControlCenter() {
                           <button
                             type="button"
                             className={styles.pageButton}
-                            onClick={() => setWebsiteDetailId(item.id)}
+                            onClick={() => {
+                              setWorkbookDetailId(null);
+                              setWebsiteDetailId(item.id);
+                            }}
                           >
                             {localized(locale, "查看資料", "View details")}
                           </button>

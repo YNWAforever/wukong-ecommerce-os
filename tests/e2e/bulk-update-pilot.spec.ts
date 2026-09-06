@@ -50,6 +50,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await signInBulkImportOperator(page, fixture);
+  await page.locator("#connected-shopline-update > summary").click();
   const requests: string[] = [];
   page.on("request", (request) => {
     if (
@@ -168,6 +169,7 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
     await admin.end();
   }
   await signInBulkImportOperator(page, fixture);
+  await page.locator("#connected-shopline-update > summary").click();
   await page.locator("#bulk-import-file").setInputFiles({
     name: filename,
     mimeType:
@@ -201,6 +203,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await signInBulkImportOperator(page, operator);
+  await page.locator("#connected-shopline-update > summary").click();
   const rows = ["0001", "0002"].map((sku) => ({
     ...defaults,
     productId: "synthetic-update-" + sku,
@@ -1095,6 +1098,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
       { times: 1 },
     );
     await signInBulkImportOperator(page, setupFixture);
+    await page.locator("#connected-shopline-update > summary").click();
     const file = page.locator("#bulk-import-file");
     const time = page.locator("#merchant-attested-export-at");
     const submit = page.getByRole("button", { name: "開始匯入 Import" });
@@ -1180,6 +1184,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
           exact: true,
         })
         .click();
+      await page.locator("#connected-shopline-update > summary").click();
       await expect(
         page.getByText("synthetic-inline-store.invalid", { exact: true }),
       ).toBeVisible();

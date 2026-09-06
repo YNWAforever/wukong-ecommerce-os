@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
+import { WorkbookImportPanel } from "./workbook-import-panel";
 import { BulkImportPanel } from "./bulk-import-panel";
 import { NewProductBlockedPanel } from "./new-product-blocked-panel";
 import { SupportingEvidencePanel } from "./supporting-evidence-panel";
@@ -10,6 +11,7 @@ type IntakeTab = "website" | "bulk" | "evidence" | "create";
 export function ListingIntakeTabs({ canScan = true }: { canScan?: boolean }) {
   const locale = useLocale();
   const [active, setActive] = useState<IntakeTab>("website");
+  const [connectedVisited, setConnectedVisited] = useState(false);
   const [workbookVisited, setWorkbookVisited] = useState(false);
   const tabs: { id: IntakeTab; label: string }[] = [
     { id: "website", label: localized(locale, "網站", "Website") },
@@ -77,7 +79,26 @@ export function ListingIntakeTabs({ canScan = true }: { canScan?: boolean }) {
           {tab.id === "website" && active === "website" ? (
             <WebsiteImportPanel canScan={canScan} />
           ) : null}
-          {tab.id === "bulk" && workbookVisited ? <BulkImportPanel /> : null}
+          {tab.id === "bulk" && workbookVisited ? (
+            <>
+              <WorkbookImportPanel canImport={canScan} />
+              <details
+                id="connected-shopline-update"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) setConnectedVisited(true);
+                }}
+              >
+                <summary>
+                  {localized(
+                    locale,
+                    "已連接 SHOPLINE 更新",
+                    "Connected SHOPLINE update",
+                  )}
+                </summary>
+                {connectedVisited ? <BulkImportPanel /> : null}
+              </details>
+            </>
+          ) : null}
           {tab.id === "evidence" && active === "evidence" ? (
             <SupportingEvidencePanel />
           ) : null}

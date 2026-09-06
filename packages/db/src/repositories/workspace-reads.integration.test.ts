@@ -1,4 +1,9 @@
 import postgres from "postgres";
+import {
+  BULK_FORM_COLUMNS,
+  prepareWorkbookBase,
+  hashBulkFormHeaderContract,
+} from "@wukong/shopline";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { createDatabase, type WorkspaceRepositories } from "../client.js";
@@ -270,7 +275,7 @@ describe("full workspace read boundaries", () => {
       await app.end();
     }
   });
-  it("paginates one scoped union of 30 platform and 21 website observations", async () => {
+  it("paginates one scoped union of 30 platform, 21 website and 27 workbook products", async () => {
     const mixed = "mixed-" + randomUUID(),
       conn = randomUUID();
     await admin`insert into workspaces(id,name,profile) values (${mixed},'synthetic mixed','{}')`;
@@ -294,22 +299,54 @@ describe("full workspace read boundaries", () => {
       await admin`insert into website_scans(id,workspace_id,requested_url,requested_by,request_key,state,checkpoint,next_eligible_at,deadline_at) values (${scan},${mixed},'https://store.example/','synthetic',${scan},'ready',${admin.json({ preview: { products: [observation], warnings: [] } })},now(),now())`;
       await admin`insert into website_products(workspace_id,canonical_source_url,source_scan_id,source_key,observation,saved_by,created_at) values (${mixed},${observation.key},${scan},${observation.key},${admin.json(observation)},'synthetic','2026-01-01'::timestamptz+${i === 21 ? 42 : i * 2 + 1}*interval '1 second')`;
     }
+    // Immutable workbook fixtures remain in their own isolated synthetic workspaces.
+    const workbookForeign = "workbook-foreign-" + randomUUID();
+    await admin`insert into workspaces(id,name,profile) values (${workbookForeign},'synthetic foreign workbook','{}')`;
+    const actor = mixed + "-operator";
+    await admin`insert into users(id,email) values (${actor},${actor + "@example.test"})`;
+    await admin`insert into memberships(workspace_id,user_id,role) values (${mixed},${actor},'operator'),(${workbookForeign},${actor},'operator')`;
+    const sheet = [
+      BULK_FORM_COLUMNS.map((c) => c.en),
+      BULK_FORM_COLUMNS.map((c) => c.zh),
+      ...Array.from({ length: 27 }, (_, i) =>
+        BULK_FORM_COLUMNS.map((c) =>
+          c.key === "productId"
+            ? "000" + i
+            : c.key === "sku"
+              ? "WORKBOOK-SKU-" + i
+              : c.key === "nameEn"
+                ? "Mixed workbook " + i
+                : "",
+        ),
+      ),
+    ];
+    const save = {
+      filename: "synthetic.xlsx",
+      workbookSha256: randomUUID().replaceAll("-", "").repeat(2),
+      headerContractSha256: hashBulkFormHeaderContract(),
+      sheetName: "Default",
+      prepared: prepareWorkbookBase(sheet, "synthetic.xlsx"),
+      actorId: actor,
+    };
+    await db.forWorkspace(mixed, (r) => r.workbookCatalog.save(save));
+    await db.forWorkspace(workbookForeign, (r) => r.workbookCatalog.save(save));
     await db.forWorkspace(mixed, async (r) => {
       const pages = await Promise.all(
-        [1, 2, 3].map((page) =>
+        [1, 2, 3, 4].map((page) =>
           r.reads.catalogPage({ page, pageSize: 25, filter: "all" }),
         ),
       );
-      expect(pages.map((p) => p.items.length)).toEqual([25, 25, 1]);
+      expect(pages.map((p) => p.items.length)).toEqual([25, 25, 25, 3]);
       expect(pages[0]!.summary).toMatchObject({
-        total: 51,
+        total: 78,
+        workbook: 27,
         website: 21,
         unlinked: 30,
         needsAttention: 30,
       });
       const items = pages.flatMap((p) => p.items);
       expect(new Set(items.map((i) => i.sourceType + ":" + i.id)).size).toBe(
-        51,
+        78,
       );
       expect(items.map((i) => Date.parse(i.createdAt))).toEqual(
         items.map((i) => Date.parse(i.createdAt)).sort((a, b) => b - a),
@@ -336,6 +373,202 @@ describe("full workspace read boundaries", () => {
           })
         ).items,
       ).toHaveLength(25);
+      const workbook = await r.reads.catalogPage({
+        page: 2,
+        pageSize: 25,
+        filter: "workbook",
+      });
+      expect(workbook.totalMatching).toBe(27);
+      expect(workbook.items).toHaveLength(2);
+      for (const q of ["WORKBOOK-SKU-26", "00026", "Mixed workbook 26"]) {
+        const found = await r.reads.catalogPage({
+          page: 1,
+          pageSize: 25,
+          filter: "workbook",
+          q,
+        });
+        expect(found.totalMatching).toBe(1);
+        expect(found.items[0]).toMatchObject({
+          sourceType: "workbook",
+          title: "Mixed workbook 26",
+          sku: "WORKBOOK-SKU-26",
+          sourceProductId: "00026",
+          canExport: false,
+        });
+      }
+      for (const filter of [
+        "attention",
+        "review",
+        "unlinked",
+        "published",
+        "website",
+      ] as const) {
+        const filtered = await r.reads.catalogPage({
+          page: 1,
+          pageSize: 100,
+          filter,
+        });
+        expect(filtered.items.every((i) => i.sourceType !== "workbook")).toBe(
+          true,
+        );
+        expect(filtered.summary.workbook).toBe(27);
+      }
+      const workbookId = workbook.items[0]!.id;
+      expect(workbook.items[0]).not.toHaveProperty("listingId");
+      expect(workbook.items[0]).not.toHaveProperty("remoteProductId");
+      expect(await r.platformProducts.getByIds([workbookId])).toEqual([]);
+      expect(await r.listings.getReviewSnapshot(workbookId)).toBeNull();
+      const { createWorkbookProductHandler } =
+        await import("../../../../apps/web/app/api/workbook-products/[id]/route.js");
+      for (const [workspace, status] of [
+        [mixed, 200],
+        [workbookForeign, 404],
+      ] as const) {
+        const response = await createWorkbookProductHandler({
+          sessionContext: {
+            resolve: async () => ({
+              workspaceId: workspace,
+              actorId: actor,
+              role: "viewer",
+            }),
+          },
+          getDatabase: () => db,
+        })(
+          new Request(
+            "http://localhost/api/workbook-products/" +
+              workbookId +
+              "?workspaceId=" +
+              mixed,
+          ),
+          { params: Promise.resolve({ id: workbookId }) },
+        );
+        expect(response.status).toBe(status);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      }
+      const { createExportListingsHandler: exportWorkbook } =
+        await import("../../../../apps/web/app/api/listings/export/route.js");
+      const sessionContext = {
+        resolve: async () => ({
+          workspaceId: mixed,
+          actorId: actor,
+          role: "reviewer" as const,
+        }),
+      };
+      let sideEffects = 0;
+      const forbidden = async () => {
+        sideEffects++;
+        throw new Error("Unexpected artifact or job");
+      };
+      const refused = await exportWorkbook({
+        sessionContext,
+        getDatabase: () => db,
+        getAssetStore: () => ({ writeObject: forbidden }) as never,
+      })(
+        new Request("http://localhost/api/listings/export", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            listingIds: [workbookId],
+            freshnessAttested: true,
+          }),
+        }),
+      );
+      expect(await refused.json()).toMatchObject({
+        rowCount: 0,
+        exportAttemptId: null,
+        manifest: [{ listingId: workbookId, outcome: "listing_not_found" }],
+      });
+      const { createDeliverListingHandler } =
+        await import("../../../../apps/web/app/api/listings/[id]/deliver/route.js");
+      const { deliverListing } =
+        await import("../../../../apps/web/lib/delivery-service.js");
+      const { createBulkExportDeps } =
+        await import("../../../../apps/web/lib/bulk-export-service.js");
+      const deliver = createDeliverListingHandler({
+        sessionContext,
+        delivery: {
+          deliver: (input) =>
+            db.forWorkspace(mixed, (repos) =>
+              deliverListing(input, {
+                listings: repos.listings,
+                bulkUpdate: createBulkExportDeps(repos),
+                audit: repos.audit,
+                imageUrls: forbidden,
+                publisher: { enqueue: forbidden },
+              }),
+            ),
+        },
+      });
+      for (const method of ["csv", "shopline_api", "bulk_form"]) {
+        const response = await deliver(
+          new Request(
+            "http://localhost/api/listings/" + workbookId + "/deliver",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ method, freshnessAttested: true }),
+            },
+          ),
+          { params: Promise.resolve({ id: workbookId }) },
+        );
+        expect([404, 409]).toContain(response.status);
+      }
+      const { createEnrichmentBatchHandler } =
+        await import("../../../../apps/web/app/api/enrichment-batches/route.js");
+      const { createEnrichmentBatchService } =
+        await import("../../../../apps/web/lib/enrichment-batch-service.js");
+      const enrichment = createEnrichmentBatchService({
+        getDatabase: () => db,
+        publisher: { enqueue: forbidden },
+      });
+      const enrich = createEnrichmentBatchHandler({
+        sessionContext,
+        createBatch: enrichment.createBatch,
+      });
+      for (const gap of [
+        "untranslatedName",
+        "untranslatedSeoTitle",
+        "seoTitleMirrorsName",
+        "seoDescriptionMirrorsSeoTitle",
+        "keywordsMirrorName",
+        "summaryMissing",
+      ]) {
+        const response = await enrich(
+          new Request("http://localhost/api/enrichment-batches", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              label: "Synthetic workbook exclusion",
+              gap,
+              budgetUsd: 1,
+              waveSize: 1,
+            }),
+          }),
+        );
+        expect(response.status).toBe(422);
+        expect(await response.json()).toMatchObject({ code: "empty_cohort" });
+      }
+      expect(
+        (await r.reads.listingPage({ page: 1, pageSize: 25 })).totalMatching,
+      ).toBe(0);
+      expect(sideEffects).toBe(0);
+      for (const table of [
+        "export_attempts",
+        "publish_jobs",
+        "enrichment_batches",
+      ])
+        expect(
+          Number(
+            (
+              await admin.unsafe(
+                "select count(*)::int n from " +
+                  table +
+                  " where workspace_id=$1",
+                [mixed],
+              )
+            )[0]!.n,
+          ),
+        ).toBe(0);
       const website = await r.reads.catalogPage({
         page: 1,
         pageSize: 25,
