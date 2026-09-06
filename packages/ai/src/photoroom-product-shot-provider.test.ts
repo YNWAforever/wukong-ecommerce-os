@@ -6,6 +6,12 @@ import {
 } from "./photoroom-product-shot-provider.js";
 
 const PNG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
+const SELECTED_PNG = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+Xn6V5QAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
 
 function asset(id = "selected") {
   return {
@@ -50,7 +56,7 @@ async function caught(promise: Promise<unknown>) {
 
 describe("PhotoroomProductShotProvider", () => {
   it("uploads exactly the selected source bytes as PNG output request", async () => {
-    const selected = new Uint8Array([4, 5, 6, 7]);
+    const selected = SELECTED_PNG;
     const fetch = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(PNG, { headers: { "content-type": "image/png" } }),
@@ -158,6 +164,26 @@ describe("PhotoroomProductShotProvider", () => {
     expect(error).toMatchObject({ code: "invalid_output" });
   });
 
+  it("preserves invalid output classification when overflow cancellation rejects", async () => {
+    const chunk = new Uint8Array(10 * 1024 * 1024 + 1);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        return Promise.reject(new Error("private cancellation detail"));
+      },
+    });
+    const fetch = vi.fn(
+      async () =>
+        new Response(stream, { headers: { "content-type": "image/png" } }),
+    ) as unknown as typeof globalThis.fetch;
+    const error = await caught(
+      provider({ fetch }).generateProductShot({ assets: [asset()] }),
+    );
+    expect(error).toMatchObject({ code: "invalid_output" });
+    expect(String(error)).not.toContain("private cancellation detail");
+  });
   it.each([
     ["image/jpeg", PNG],
     ["image/png", new Uint8Array([1, 2, 3])],
@@ -172,15 +198,40 @@ describe("PhotoroomProductShotProvider", () => {
     expect(error).toMatchObject({ code: "invalid_output" });
   });
 
-  it("classifies a connection timeout as outcome unknown without retrying", async () => {
-    const fetch = vi.fn(async () => {
-      throw new DOMException("private timeout detail", "AbortError");
-    }) as unknown as typeof globalThis.fetch;
-    const error = await caught(
-      provider({ fetch }).generateProductShot({ assets: [asset()] }),
-    );
-    expect(error).toMatchObject({ code: "outcome_unknown" });
-    expect(String(error)).not.toContain("private timeout detail");
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it("aborts the dispatched request after the connection timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const timeoutController = new AbortController();
+      const timeout = vi
+        .spyOn(AbortSignal, "timeout")
+        .mockImplementation((ms) => {
+          setTimeout(() => timeoutController.abort(), ms);
+          return timeoutController.signal;
+        });
+      let suppliedSignal: AbortSignal | undefined;
+      const fetch = vi.fn(
+        async (_input: RequestInfo | URL, init?: RequestInit) => {
+          suppliedSignal = init?.signal ?? undefined;
+          return await new Promise<Response>((_resolve, reject) => {
+            suppliedSignal?.addEventListener("abort", () => {
+              reject(new DOMException("private timeout detail", "AbortError"));
+            });
+          });
+        },
+      ) as unknown as typeof globalThis.fetch;
+      const pending = caught(
+        provider({ fetch }).generateProductShot({ assets: [asset()] }),
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      const error = await pending;
+      expect(timeout).toHaveBeenCalledExactlyOnceWith(30_000);
+      expect(suppliedSignal).toBe(timeoutController.signal);
+      expect(suppliedSignal?.aborted).toBe(true);
+      expect(error).toMatchObject({ code: "outcome_unknown" });
+      expect(String(error)).not.toContain("private timeout detail");
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -54,7 +54,7 @@ async function readBoundedResponse(
     if (item.done) break;
     size += item.value.byteLength;
     if (size > limit) {
-      await reader.cancel();
+      await reader.cancel().catch(() => undefined);
       throw new ProductShotProviderError("invalid_output");
     }
     chunks.push(item.value);
