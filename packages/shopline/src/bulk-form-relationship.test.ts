@@ -153,3 +153,62 @@ it.each(["namespace", "unbound", "duplicate-attribute"])(
     expect(() => readDefaultBulkFormSheet(bytes)).toThrow();
   },
 );
+
+it.each(["", " \n\t"])(
+  "accepts empty paired sheet tags with whitespace %j",
+  (space) => {
+    const bytes = relationshipWorkbook([["selected"]], [["archive"]], (parts) =>
+      parts.map((part) =>
+        part.name === "xl/workbook.xml"
+          ? {
+              ...part,
+              text: part.text.replace(
+                /<sheet\b([^>]*)\/>/g,
+                `<sheet$1>${space}</sheet>`,
+              ),
+            }
+          : part,
+      ),
+    );
+    expect(readDefaultBulkFormSheet(bytes)).toEqual([["selected"]]);
+    expect(readBulkFormSheet(bytes)).toEqual([["archive"]]);
+  },
+);
+
+it.each(["unexpected text", "<unexpected/>"])(
+  "rejects nonempty paired sheet content %s",
+  (content) => {
+    const bytes = relationshipWorkbook([["selected"]], [["archive"]], (parts) =>
+      parts.map((part) =>
+        part.name === "xl/workbook.xml"
+          ? {
+              ...part,
+              text: part.text.replace(
+                /<sheet\b([^>]*)\/>/g,
+                `<sheet$1>${content}</sheet>`,
+              ),
+            }
+          : part,
+      ),
+    );
+    expect(() => readDefaultBulkFormSheet(bytes)).toThrow(
+      "unsupported worksheet declarations",
+    );
+  },
+);
+
+it("rejects duplicate Default identities across paired and self-closing tags", () => {
+  const bytes = relationshipWorkbook([["selected"]], [["archive"]], (parts) =>
+    parts.map((part) =>
+      part.name === "xl/workbook.xml"
+        ? {
+            ...part,
+            text: part.text
+              .replace(/<sheet\b([^>]*)\/>/, "<sheet$1></sheet>")
+              .replace('name="Archive"', 'name="Default"'),
+          }
+        : part,
+    ),
+  );
+  expect(() => readDefaultBulkFormSheet(bytes)).toThrow();
+});
