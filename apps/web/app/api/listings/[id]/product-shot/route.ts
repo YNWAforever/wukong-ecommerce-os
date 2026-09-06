@@ -15,6 +15,8 @@ import {
   approveProductShot,
 } from "../../../../../lib/product-shot-service";
 import {
+  attachProductShotSourceFromProcess,
+  type ProductShotAttachInput,
   requestProductShotFromProcess,
   type ProductShotRequestInput,
   type ProductShotRequestResult,
@@ -27,12 +29,21 @@ export type ProductShotRouteDeps = {
   requestShot?: (
     input: ProductShotRequestInput,
   ) => Promise<ProductShotRequestResult>;
+  attachShot?: (
+    input: ProductShotAttachInput,
+  ) => Promise<ProductShotRequestResult>;
 };
 const sourceBody = z
   .object({
     sourceAssetId: z.uuid().optional(),
     expectedVersionId: z.uuid(),
     explicitFreshAttempt: z.boolean().default(false),
+  })
+  .strict();
+const attachBody = z
+  .object({
+    sourceAssetId: z.uuid(),
+    expectedVersionId: z.uuid(),
   })
   .strict();
 const prepareBody = z
@@ -43,7 +54,7 @@ const approvalBody = prepareBody
   .strict();
 export function createProductShotHandler(
   deps: ProductShotRouteDeps,
-  action: "read" | "request" | "prepare" | "approve",
+  action: "read" | "request" | "attach" | "prepare" | "approve",
 ) {
   return async (
     request: Request,
@@ -87,6 +98,15 @@ export function createProductShotHandler(
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           return reply(
             await (deps.requestShot ?? requestProductShotFromProcess)({
+              ...scope,
+              ...body,
+            }),
+          );
+        }
+        if (action === "attach") {
+          const body = attachBody.parse(await request.json());
+          return reply(
+            await (deps.attachShot ?? attachProductShotSourceFromProcess)({
               ...scope,
               ...body,
             }),

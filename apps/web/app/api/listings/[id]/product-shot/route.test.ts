@@ -11,6 +11,7 @@ const request = (data: any = body) =>
 const context = { params: Promise.resolve({ id: id(1) }) };
 function fixture(role: string | null = "operator") {
   const requestShot = vi.fn(async () => ({ state: "queued" }));
+  const attachShot = vi.fn(async () => ({ state: "queued" }));
   const repos: any = {
     listings: {
       getReviewSnapshot: async () => ({
@@ -34,8 +35,9 @@ function fixture(role: string | null = "operator") {
     }),
     getAssetStore: () => ({}),
     requestShot,
+    attachShot,
   };
-  return { deps, requestShot, repos };
+  return { deps, requestShot, attachShot, repos };
 }
 describe("strict scoped product shot routes", () => {
   it.each([
@@ -100,6 +102,47 @@ describe("strict scoped product shot routes", () => {
     expect(f.requestShot).toHaveBeenCalledWith(
       expect.objectContaining({ explicitFreshAttempt: true }),
     );
+  });
+  it("strictly attaches with the server workspace and role", async () => {
+    const f = fixture();
+    const response = await createProductShotHandler(f.deps, "attach")(
+      request({
+        sourceAssetId: id(3),
+        expectedVersionId: id(2),
+      }),
+      context,
+    );
+    expect(response.status).toBe(200);
+    expect(f.attachShot).toHaveBeenCalledWith({
+      workspaceId: "ws",
+      actorId: "actor",
+      listingId: id(1),
+      sourceAssetId: id(3),
+      expectedVersionId: id(2),
+    });
+  });
+  it.each([
+    [null, 401],
+    ["viewer", 403],
+  ])("rejects attachment role %s", async (role, status) => {
+    const f = fixture(role);
+    expect(
+      (await createProductShotHandler(f.deps, "attach")(request(body), context))
+        .status,
+    ).toBe(status);
+    expect(f.attachShot).not.toHaveBeenCalled();
+  });
+  it("rejects untrusted attachment fields", async () => {
+    const f = fixture();
+    expect(
+      (
+        await createProductShotHandler(f.deps, "attach")(
+          request({ ...body, workspaceId: "foreign" }),
+          context,
+        )
+      ).status,
+    ).toBe(400);
+    expect(f.attachShot).not.toHaveBeenCalled();
   });
   it.each(["prepare", "approve"] as const)(
     "rejects malformed %s identity",

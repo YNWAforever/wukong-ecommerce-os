@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ProductShotView } from "../lib/product-shot-service";
+import { uploadSourceAsset } from "../lib/browser-asset-upload";
 import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
 const statusCopy: Record<string, readonly [string, string]> = {
@@ -34,6 +35,11 @@ const statusCopy: Record<string, readonly [string, string]> = {
     "Product image processing is not configured",
   ],
 };
+const replacementImageTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 export function ProductShotReview({
   listingId,
   canOperate,
@@ -56,7 +62,8 @@ export function ProductShotReview({
     [selected, setSelected] = useState("");
   const scope = useRef<AbortController | null>(null),
     sequence = useRef(0),
-    auto = useRef(new Set<string>());
+    auto = useRef(new Set<string>()),
+    replaceInput = useRef<HTMLInputElement | null>(null);
   const load = useCallback(
     async (signal: AbortSignal) => {
       const revision = ++sequence.current;
@@ -128,6 +135,49 @@ export function ProductShotReview({
       }
     },
     [listingId, load],
+  );
+  const replacePhoto = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.currentTarget.files?.[0];
+      event.currentTarget.value = "";
+      const signal = scope.current?.signal;
+      if (
+        !file ||
+        !signal ||
+        signal.aborted ||
+        !view?.expectedVersionId ||
+        !replacementImageTypes.has(file.type)
+      ) {
+        if (file) setError(true);
+        return;
+      }
+      ++sequence.current;
+      setBusy(true);
+      setError(false);
+      try {
+        const sourceAssetId = await uploadSourceAsset(file);
+        if (signal.aborted) return;
+        const response = await fetch(
+          `/api/listings/${listingId}/product-shot/source`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              sourceAssetId,
+              expectedVersionId: view.expectedVersionId,
+            }),
+            signal,
+          },
+        );
+        if (!response.ok) throw new Error("source_attach_failed");
+        await load(signal);
+      } catch {
+        if (!signal.aborted) setError(true);
+      } finally {
+        if (!signal.aborted) setBusy(false);
+      }
+    },
+    [listingId, load, view?.expectedVersionId],
   );
   useEffect(() => {
     if (
@@ -266,6 +316,30 @@ export function ProductShotReview({
             "Low-resolution photo. The subject has not been enlarged.",
           )}
         </p>
+      ) : null}
+      {canOperate && view.expectedVersionId ? (
+        <div>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busy}
+            onClick={() => replaceInput.current?.click()}
+          >
+            {t("\u66f4\u63db\u76f8\u7247", "Replace photo")}
+          </button>
+          <input
+            ref={replaceInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            aria-label={t(
+              "\u66f4\u63db\u5546\u54c1\u76f8\u7247\u6a94\u6848",
+              "Replacement photo file",
+            )}
+            disabled={busy}
+            onChange={(event) => void replacePhoto(event)}
+            hidden
+          />
+        </div>
       ) : null}
       {canOperate && view.sources?.length > 1 ? (
         <fieldset disabled={busy}>

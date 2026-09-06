@@ -443,12 +443,22 @@ export async function productShotDatabaseView(listingId: string) {
     >`
       select id,state,call_count as "callCount",source_asset_id as "sourceAssetId"
       from product_shot_attempts where workspace_id=${OPAK_WORKSPACE_ID} and listing_id=${listingId} order by generation`;
+    const sources = await admin<Array<{ id: string; storageKey: string }>>`
+      select id,storage_key as "storageKey"
+      from source_assets
+      where workspace_id=${OPAK_WORKSPACE_ID}
+        and listing_id=${listingId}
+        and (
+          metadata->>'role' is null
+          or metadata->>'role' not like 'product_shot_%'
+        )
+      order by created_at,id`;
     const [publication] = await admin<Array<{ publicUrl: string }>>`
       select u.public_url as "publicUrl" from product_shot_publications p
       join product_shot_approval_urls u on u.workspace_id=p.workspace_id and u.publication_id=p.id
       where p.workspace_id=${OPAK_WORKSPACE_ID} and p.listing_id=${listingId}
       order by p.created_at desc limit 1`;
-    return { attempts, publicUrl: publication?.publicUrl ?? null };
+    return { attempts, sources, publicUrl: publication?.publicUrl ?? null };
   } finally {
     await admin.end();
   }

@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryAssetStore } from "@wukong/assets";
 import type { Database } from "@wukong/db";
 import {
+  attachProductShotSource,
   requestProductShot,
   requestProductShotFromProcess,
 } from "./product-shot-request.js";
@@ -222,4 +223,199 @@ it("rejects repeated fresh-charge action once a queued attempt already exists", 
     ),
   ).rejects.toMatchObject({ code: "fresh_attempt_not_allowed" });
   expect(f.ensure).not.toHaveBeenCalled();
+});
+
+describe("same-draft source attachment", () => {
+  function attachFixture(
+    asset: {
+      id: string;
+      workspaceId: string;
+      listingId: string | null;
+      kind: string;
+      metadata: Record<string, unknown>;
+    } | null,
+    snapshot: {
+      listing: { activeVersionId: string; status: string };
+      activeVersion: { id: string };
+    } | null = {
+      listing: { activeVersionId: id(20), status: "in_review" },
+      activeVersion: { id: id(20) },
+    },
+  ) {
+    let transactionOpen = false;
+    const attachToListing = vi.fn(
+      async (_listingId: string, _assetIds: string[]) => {},
+    );
+    const auditWrite = vi.fn(async () => {});
+    const requestShot = vi.fn(async () => {
+      expect(transactionOpen).toBe(false);
+      return { state: "queued", attemptId: id(90) };
+    });
+    const repositories = {
+      listings: {
+        lockReviewState: vi.fn(async () => {}),
+        getReviewSnapshot: vi.fn(async () => snapshot),
+      },
+      sourceAssets: {
+        getByIds: vi.fn(async () => (asset ? [asset] : [])),
+        attachToListing,
+      },
+      audit: { write: auditWrite },
+    };
+    const forWorkspace: Database["forWorkspace"] = async (_workspace, work) => {
+      transactionOpen = true;
+      try {
+        return await work(repositories as never);
+      } finally {
+        transactionOpen = false;
+      }
+    };
+    return {
+      attachToListing,
+      auditWrite,
+      requestShot,
+      repositories,
+      deps: { forWorkspace, requestShot },
+    };
+  }
+
+  const attachInput = {
+    workspaceId: "ws",
+    listingId: id(1),
+    actorId: "actor",
+    sourceAssetId: id(30),
+    expectedVersionId: id(20),
+  };
+  const validAsset = {
+    id: id(30),
+    workspaceId: "ws",
+    listingId: null,
+    kind: "image/png",
+    metadata: {},
+  };
+
+  it("commits an audited scoped attachment before requesting only image work", async () => {
+    const f = attachFixture(validAsset);
+    await expect(attachProductShotSource(attachInput, f.deps)).resolves.toEqual(
+      { state: "queued", attemptId: id(90) },
+    );
+    expect(f.repositories.listings.lockReviewState).toHaveBeenCalledWith(id(1));
+    expect(f.attachToListing).toHaveBeenCalledWith(id(1), [id(30)]);
+    expect(f.auditWrite).toHaveBeenCalledWith({
+      workspaceId: "ws",
+      actorId: "actor",
+      entityId: id(1),
+      action: "product_shot.source_attached",
+      metadata: { sourceAssetId: id(30) },
+    });
+    expect(f.requestShot).toHaveBeenCalledWith({
+      ...attachInput,
+      explicitFreshAttempt: false,
+    });
+  });
+
+  it("resumes a same-draft attachment without another attach or audit", async () => {
+    const f = attachFixture({ ...validAsset, listingId: id(1) });
+    await attachProductShotSource(attachInput, f.deps);
+    expect(f.attachToListing).not.toHaveBeenCalled();
+    expect(f.auditWrite).not.toHaveBeenCalled();
+    expect(f.requestShot).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a committed attachment recoverable when the source request fails", async () => {
+    const recoverable = {
+      ...validAsset,
+      listingId: null as string | null,
+    };
+    const f = attachFixture(recoverable);
+    f.attachToListing.mockImplementation(async (listingId: string) => {
+      recoverable.listingId = listingId;
+    });
+    f.requestShot
+      .mockRejectedValueOnce(new Error("queue_unavailable"))
+      .mockResolvedValueOnce({ state: "queued", attemptId: id(90) });
+
+    await expect(attachProductShotSource(attachInput, f.deps)).rejects.toThrow(
+      "queue_unavailable",
+    );
+    await expect(attachProductShotSource(attachInput, f.deps)).resolves.toEqual(
+      { state: "queued", attemptId: id(90) },
+    );
+    expect(f.attachToListing).toHaveBeenCalledOnce();
+    expect(f.auditWrite).toHaveBeenCalledOnce();
+    expect(f.requestShot).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["foreign", null],
+    ["another draft", { ...validAsset, listingId: id(2) }],
+    ["non-image", { ...validAsset, kind: "application/pdf" }],
+    [
+      "derived image",
+      { ...validAsset, metadata: { role: "product_shot_candidate" } },
+    ],
+  ])(
+    "rejects a %s asset before attachment or request",
+    async (_name, asset) => {
+      const f = attachFixture(asset);
+      await expect(
+        attachProductShotSource(attachInput, f.deps),
+      ).rejects.toMatchObject({ code: "source_asset_unavailable" });
+      expect(f.attachToListing).not.toHaveBeenCalled();
+      expect(f.requestShot).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [
+      "stale version",
+      {
+        listing: { activeVersionId: id(21), status: "in_review" },
+        activeVersion: { id: id(21) },
+      },
+      "version_conflict",
+    ],
+    [
+      "publishing",
+      {
+        listing: { activeVersionId: id(20), status: "publishing" },
+        activeVersion: { id: id(20) },
+      },
+      "listing_publishing",
+    ],
+  ])("rejects %s before attachment", async (_name, snapshot, code) => {
+    const f = attachFixture(validAsset, snapshot);
+    await expect(
+      attachProductShotSource(attachInput, f.deps),
+    ).rejects.toMatchObject({ code });
+    expect(f.attachToListing).not.toHaveBeenCalled();
+    expect(f.requestShot).not.toHaveBeenCalled();
+  });
+});
+
+it("rejects publishing after source I/O at the final request fence", async () => {
+  const f = await fixture();
+  let checks = 0;
+  const base = f.deps.forWorkspace;
+  f.deps.forWorkspace = async (ws, fn) =>
+    base(ws, (r) =>
+      fn({
+        ...r,
+        listings: {
+          lockReviewState: async () => {},
+          getReviewSnapshot: async () => ({
+            listing: {
+              activeVersionId: id(20),
+              status: ++checks > 1 ? "publishing" : "in_review",
+            },
+            activeVersion: { id: id(20) },
+          }),
+        },
+      } as never),
+    );
+  await expect(
+    requestProductShot({ ...input, expectedVersionId: id(20) }, f.deps),
+  ).rejects.toMatchObject({ code: "listing_publishing" });
+  expect(f.ensure).not.toHaveBeenCalled();
+  expect(f.enqueue).not.toHaveBeenCalled();
 });

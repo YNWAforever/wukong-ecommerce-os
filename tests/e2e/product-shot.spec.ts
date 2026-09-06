@@ -52,6 +52,8 @@ const copy = {
     failed: "Image processing failed. You can start a fresh attempt.",
     charge: "I understand a fresh attempt may incur another charge.",
     fresh: "Start a fresh attempt",
+    replace: "Replace photo",
+    replaceFile: "Replacement photo file",
   },
   "zh-Hant": {
     heading: "白底商品照審閱",
@@ -67,6 +69,8 @@ const copy = {
     failed: "商品照處理失敗，可開始新嘗試",
     charge: "我明白新嘗試可能再次收費。",
     fresh: "開始新嘗試",
+    replace: "\u66f4\u63db\u76f8\u7247",
+    replaceFile: "\u66f4\u63db\u5546\u54c1\u76f8\u7247\u6a94\u6848",
   },
 } as const;
 
@@ -110,8 +114,23 @@ for (const locale of ["en", "zh-Hant"] as const) {
     test.setTimeout(120_000);
     await signInWithLocale(page, locale);
     const t = copy[locale];
-    const one = await createProductShotListing([PRODUCT_SHOT_PNGS.success]);
-    await page.goto(`/listings/${one.listingId}`);
+    await page.goto("/listings/new");
+    await page.locator("#listing-files").setInputFiles({
+      name: `browser-original-${locale}.png`,
+      mimeType: "image/png",
+      buffer: PRODUCT_SHOT_PNGS.success,
+    });
+    await page
+      .locator("#listing-note")
+      .fill(
+        `Synthetic Estate Riesling wine 2024, Germany, Mosel, Riesling, 750ml, 12.5% ABV, SKU SHOT-${locale === "en" ? "EN" : "ZH"}-001, HK$288, stock 12`,
+      );
+    await page.getByRole("button", { name: /Create listing draft/ }).click();
+    await expect(page).toHaveURL(
+      /\/listings\/[0-9a-f-]{36}\?processing=queued$/i,
+    );
+    const listingId = page.url().match(/\/listings\/([0-9a-f-]{36})/i)?.[1];
+    expect(listingId).toBeTruthy();
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
     await expect(page.getByRole("heading", { name: t.heading })).toBeVisible();
     await expect(page.getByText(t.compare)).toBeVisible({ timeout: 60_000 });
@@ -119,11 +138,19 @@ for (const locale of ["en", "zh-Hant"] as const) {
     await expect(page.getByAltText(t.final)).toBeVisible();
 
     const beforeListing = await page.request
-      .get(`/api/listings/${one.listingId}`)
+      .get(`/api/listings/${listingId}`)
       .then((r) => r.json());
     const beforeShot = await page.request
-      .get(`/api/listings/${one.listingId}/product-shot`)
+      .get(`/api/listings/${listingId}/product-shot`)
       .then((r) => r.json());
+    const uploaded = await productShotDatabaseView(listingId!);
+    expect(uploaded.sources).toHaveLength(1);
+    const one = {
+      listingId: listingId!,
+      versionId: beforeShot.expectedVersionId as string,
+      sources: uploaded.sources.map((source) => source.id),
+      sourceKeys: uploaded.sources.map((source) => source.storageKey),
+    };
     expect(
       (await productShotDatabaseView(one.listingId)).attempts[0]?.callCount,
     ).toBe(1);
@@ -151,6 +178,53 @@ for (const locale of ["en", "zh-Hant"] as const) {
       .then((r) => r.json());
     expect(afterListing.activeVersion).toEqual(beforeListing.activeVersion);
     expect(afterShot.candidateDigest).toBe(beforeShot.candidateDigest);
+
+    await page.getByRole("button", { name: t.accept }).click();
+    await expect(page.getByText(t.accepted)).toBeVisible();
+    const initialSourceAssetId = afterShot.sourceAssetId as string;
+    const replaceButton = page.getByRole("button", { name: t.replace });
+    await replaceButton.focus();
+    await expect(replaceButton).toBeFocused();
+    await page.getByLabel(t.replaceFile).setInputFiles({
+      name: `browser-replacement-${locale}.png`,
+      mimeType: "image/png",
+      buffer: PRODUCT_SHOT_PNGS.success,
+    });
+    await expect
+      .poll(
+        async () =>
+          page.request
+            .get(`/api/listings/${one.listingId}/product-shot`)
+            .then((response) => response.json())
+            .then((view) => view.sourceAssetId),
+        { timeout: 60_000 },
+      )
+      .not.toBe(initialSourceAssetId);
+    await expect(page.getByAltText(t.final)).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByRole("button", { name: t.accept })).toBeVisible();
+    const replacementShot = await page.request
+      .get(`/api/listings/${one.listingId}/product-shot`)
+      .then((response) => response.json());
+    expect(replacementShot.state).toBe("candidate_ready");
+    const replacementListing = await page.request
+      .get(`/api/listings/${one.listingId}`)
+      .then((response) => response.json());
+    expect(replacementListing.activeVersion).toEqual(
+      beforeListing.activeVersion,
+    );
+    const replaced = await productShotDatabaseView(one.listingId);
+    expect(replaced.sources).toHaveLength(2);
+    expect(replaced.attempts.map((attempt) => attempt.callCount)).toEqual([
+      1, 1,
+    ]);
+    await page.reload();
+    await expect(page.getByAltText(t.final)).toBeVisible();
+    expect(
+      await page.request
+        .get(`/api/listings/${one.listingId}/product-shot`)
+        .then((response) => response.json())
+        .then((view) => view.sourceAssetId),
+    ).toBe(replacementShot.sourceAssetId);
 
     const several = await createProductShotListing([
       PRODUCT_SHOT_PNGS.success,

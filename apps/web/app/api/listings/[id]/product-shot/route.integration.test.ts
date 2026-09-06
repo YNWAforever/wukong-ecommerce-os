@@ -9,7 +9,10 @@ import {
   approveProductShot,
   readProductShot,
 } from "../../../../../lib/product-shot-service";
-import { requestProductShot } from "../../../../../lib/product-shot-request";
+import {
+  attachProductShotSource,
+  requestProductShot,
+} from "../../../../../lib/product-shot-request";
 import { createApproveListingHandler } from "../approve/route";
 import { createBulkApproveHandler } from "../../bulk-approve/route";
 import {
@@ -176,6 +179,25 @@ const req = (body: unknown) =>
     method: "POST",
     body: JSON.stringify(body),
   });
+
+async function createUnattachedPng(workspaceId: string, color = "#0055aaff") {
+  const bytes = await sharp({
+    create: { width: 18, height: 36, channels: 4, background: color },
+  })
+    .png()
+    .toBuffer();
+  const assetId = randomUUID();
+  const key = `ws/${workspaceId}/sources/${assetId}/replacement.png`;
+  await store.writeObject(workspaceId, key, bytes, "image/png");
+  const asset = await db.forWorkspace(workspaceId, (r) =>
+    r.sourceAssets.create({
+      storageKey: key,
+      kind: "image/png",
+      metadata: { size: bytes.length, mimeType: "image/png" },
+    }),
+  );
+  return { asset, bytes, key };
+}
 it("concurrent real database/private S3 prepares converge on one immutable JPEG", async () => {
   const f = await fixture();
   const [a, b] = await Promise.all([
@@ -356,6 +378,152 @@ it("source replacement rejects in-flight prepare and preserves historical accept
     ).status,
   ).toBe(409);
   expect(queue).toHaveBeenCalledOnce();
+});
+
+it("real scoped attachment preserves copy and history while selecting only the new image job", async () => {
+  const f = await fixture();
+  const ready = await prepareProductShot(f.input, deps);
+  await approveProductShot(
+    { ...f.input, candidateDigest: ready.candidateDigest! },
+    deps,
+  );
+  const previous = (await f.get())!;
+  const publication = await db.forWorkspace(f.input.workspaceId, (r) =>
+    r.productShots.approvedForAsset({
+      listingId: f.input.listingId,
+      versionId: f.input.expectedVersionId,
+      assetId: previous.candidate!.assetId,
+    }),
+  );
+  const before = await db.forWorkspace(f.input.workspaceId, (r) =>
+    r.listings.getReviewSnapshot(f.input.listingId),
+  );
+  const replacement = await createUnattachedPng(f.input.workspaceId);
+  const enqueue = vi.fn(async () => ({ accepted: true as const }));
+  const result = await attachProductShotSource(
+    {
+      workspaceId: f.input.workspaceId,
+      listingId: f.input.listingId,
+      actorId: f.input.actorId,
+      sourceAssetId: replacement.asset.id,
+      expectedVersionId: f.input.expectedVersionId,
+    },
+    {
+      forWorkspace: db.forWorkspace,
+      requestShot: (input) =>
+        requestProductShot(input, {
+          ...deps,
+          providerName: "fake",
+          enqueue,
+        }),
+    },
+  );
+
+  expect(result.state).toBe("queued");
+  expect(enqueue).toHaveBeenCalledOnce();
+  const selected = (await f.get())!;
+  expect(selected).toMatchObject({
+    state: "queued",
+    sourceAssetId: replacement.asset.id,
+    candidate: null,
+  });
+  const after = await db.forWorkspace(f.input.workspaceId, (r) =>
+    r.listings.getReviewSnapshot(f.input.listingId),
+  );
+  expect(after?.activeVersion).toEqual(before?.activeVersion);
+  expect(
+    await db.forWorkspace(f.input.workspaceId, (r) =>
+      r.productShots.approvedForAsset({
+        listingId: f.input.listingId,
+        versionId: f.input.expectedVersionId,
+        assetId: previous.candidate!.assetId,
+      }),
+    ),
+  ).toMatchObject({
+    publicationToken: publication!.publicationToken,
+    revokedAt: null,
+  });
+  expect(
+    await db.forWorkspace(f.input.workspaceId, (r) =>
+      r.sourceAssets.getByIds([replacement.asset.id]),
+    ),
+  ).toMatchObject([{ listingId: f.input.listingId }]);
+  expect(
+    await admin`select action,metadata from audit_events where workspace_id=${f.input.workspaceId} and entity_id=${f.input.listingId} and action='product_shot.source_attached'`,
+  ).toMatchObject([
+    {
+      action: "product_shot.source_attached",
+      metadata: { sourceAssetId: replacement.asset.id },
+    },
+  ]);
+});
+
+it("real RLS attachment rejects foreign and stale sources without moving either asset", async () => {
+  const f = await fixture(false);
+  const local = await createUnattachedPng(f.input.workspaceId);
+  const foreignWorkspaceId = "shot_foreign_" + randomUUID();
+  await admin`insert into workspaces(id,name,profile) values (${foreignWorkspaceId},'Foreign synthetic','{}')`;
+  const foreign = await createUnattachedPng(foreignWorkspaceId, "#990055ff");
+  const requestShot = vi.fn(async () => ({ state: "queued" }));
+  const input = {
+    workspaceId: f.input.workspaceId,
+    listingId: f.input.listingId,
+    actorId: f.input.actorId,
+    expectedVersionId: f.input.expectedVersionId,
+  };
+
+  await expect(
+    attachProductShotSource(
+      { ...input, sourceAssetId: foreign.asset.id },
+      { forWorkspace: db.forWorkspace, requestShot },
+    ),
+  ).rejects.toMatchObject({ code: "source_asset_unavailable" });
+  await expect(
+    attachProductShotSource(
+      {
+        ...input,
+        sourceAssetId: local.asset.id,
+        expectedVersionId: randomUUID(),
+      },
+      { forWorkspace: db.forWorkspace, requestShot },
+    ),
+  ).rejects.toMatchObject({ code: "version_conflict" });
+  expect(requestShot).not.toHaveBeenCalled();
+  expect(
+    await db.forWorkspace(f.input.workspaceId, (r) =>
+      r.sourceAssets.getByIds([local.asset.id]),
+    ),
+  ).toMatchObject([{ listingId: null }]);
+  expect(
+    await db.forWorkspace(foreignWorkspaceId, (r) =>
+      r.sourceAssets.getByIds([foreign.asset.id]),
+    ),
+  ).toMatchObject([{ listingId: null }]);
+});
+
+it("real attachment fails closed while publishing", async () => {
+  const f = await fixture(false);
+  const replacement = await createUnattachedPng(f.input.workspaceId);
+  await admin`update listing_drafts set status='publishing' where workspace_id=${f.input.workspaceId} and id=${f.input.listingId}`;
+  const requestShot = vi.fn(async () => ({ state: "queued" }));
+  await expect(
+    attachProductShotSource(
+      {
+        workspaceId: f.input.workspaceId,
+        listingId: f.input.listingId,
+        actorId: f.input.actorId,
+        sourceAssetId: replacement.asset.id,
+        expectedVersionId: f.input.expectedVersionId,
+      },
+      { forWorkspace: db.forWorkspace, requestShot },
+    ),
+  ).rejects.toMatchObject({ code: "listing_publishing" });
+  expect(requestShot).not.toHaveBeenCalled();
+  expect(
+    await db.forWorkspace(f.input.workspaceId, (r) =>
+      r.sourceAssets.getByIds([replacement.asset.id]),
+    ),
+  ).toMatchObject([{ listingId: null }]);
 });
 
 it("concurrent explicit fresh actions after unknown outcome create only one queued generation", async () => {

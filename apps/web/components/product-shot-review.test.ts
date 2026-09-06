@@ -43,6 +43,245 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 describe("exact image review", () => {
+  it("uploads and attaches one replacement image before selecting it on the same draft", async () => {
+    const replacement = new File(["replacement"], "replacement.png", {
+      type: "image/png",
+    });
+    let reads = 0;
+    const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url === "/api/assets/presign") {
+        return Response.json(
+          {
+            key: "ws/ws/sources/replacement/input.png",
+            uploadUrl: "https://storage.example/replacement",
+          },
+          { status: 201 },
+        );
+      }
+      if (url === "https://storage.example/replacement") {
+        return new Response(null, { status: 200 });
+      }
+      if (url === "/api/assets/finalize") {
+        return Response.json(
+          { assetId: "10000000-0000-4000-8000-000000000099" },
+          { status: 201 },
+        );
+      }
+      if (url === "/api/listings/listing/product-shot/source") {
+        return Response.json({ state: "queued", attemptId: "next-attempt" });
+      }
+      reads += 1;
+      return Response.json(
+        reads === 1
+          ? base
+          : {
+              ...base,
+              state: "queued",
+              attemptId: "next-attempt",
+              sourceAssetId: "10000000-0000-4000-8000-000000000099",
+              sourcePreviewUrl: "/replacement.png",
+              candidatePreviewUrl: null,
+              candidateDigest: null,
+              sources: [
+                ...base.sources,
+                {
+                  assetId: "10000000-0000-4000-8000-000000000099",
+                  previewUrl: "/replacement.png",
+                },
+              ],
+            },
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(ProductShotReview, {
+          listingId: "listing",
+          canOperate: true,
+          canApprove: true,
+        }),
+      );
+    });
+
+    const replaceButton = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Replace photo",
+    )!;
+    replaceButton.focus();
+    expect(document.activeElement).toBe(replaceButton);
+    const input = host.querySelector<HTMLInputElement>(
+      'input[type="file"][accept="image/jpeg,image/png,image/webp"]',
+    );
+    expect(input).not.toBeNull();
+    const transfer = new DataTransfer();
+    transfer.items.add(replacement);
+    input!.files = transfer.files;
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(
+          ([url]) => url === "/api/listings/listing/product-shot/source",
+        ),
+      ).toBe(true),
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/assets/presign",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          fileName: "replacement.png",
+          mimeType: "image/png",
+          size: replacement.size,
+        }),
+      }),
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://storage.example/replacement",
+      expect.objectContaining({ method: "PUT", body: replacement }),
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/listings/listing/product-shot/source",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          sourceAssetId: "10000000-0000-4000-8000-000000000099",
+          expectedVersionId: "version",
+        }),
+      }),
+    );
+    expect(
+      host.querySelector('img[alt="Original photo"]')?.getAttribute("src"),
+    ).toBe("/replacement.png");
+  });
+
+  it("keeps the current draft image when replacement upload fails", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === "/api/assets/presign") {
+        return Response.json(
+          {
+            key: "ws/ws/sources/replacement/input.png",
+            uploadUrl: "https://storage.example/replacement",
+          },
+          { status: 201 },
+        );
+      }
+      if (url === "https://storage.example/replacement") {
+        return Response.json({ message: "Upload rejected" }, { status: 403 });
+      }
+      return Response.json(base);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(ProductShotReview, {
+          listingId: "listing",
+          canOperate: true,
+          canApprove: true,
+        }),
+      );
+    });
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(["replacement"], "replacement.png", { type: "image/png" }),
+    );
+    input.files = transfer.files;
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(host.querySelector('[role="alert"]')).not.toBeNull(),
+    );
+
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).endsWith("/product-shot/source"),
+      ),
+    ).toBe(false);
+    expect(
+      host.querySelector('img[alt="Original photo"]')?.getAttribute("src"),
+    ).toBe("/original.png");
+  });
+
+  it("reloads a committed attachment after its source request response fails", async () => {
+    const replacementId = "10000000-0000-4000-8000-000000000099";
+    let reads = 0;
+    const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url === "/api/assets/presign") {
+        return Response.json(
+          {
+            key: "ws/ws/sources/replacement/input.png",
+            uploadUrl: "https://storage.example/replacement",
+          },
+          { status: 201 },
+        );
+      }
+      if (url === "https://storage.example/replacement")
+        return new Response(null, { status: 200 });
+      if (url === "/api/assets/finalize")
+        return Response.json({ assetId: replacementId }, { status: 201 });
+      if (
+        url === "/api/listings/listing/product-shot/source" &&
+        options?.method === "POST"
+      )
+        return Response.json({ code: "queue_unavailable" }, { status: 503 });
+      reads += 1;
+      return Response.json(
+        reads === 1
+          ? base
+          : {
+              ...base,
+              sources: [
+                ...base.sources,
+                { assetId: replacementId, previewUrl: "/replacement.png" },
+              ],
+            },
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(
+        createElement(ProductShotReview, {
+          listingId: "listing",
+          canOperate: true,
+          canApprove: true,
+        }),
+      );
+    });
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File(["replacement"], "replacement.png", { type: "image/png" }),
+    );
+    input.files = transfer.files;
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() =>
+      expect(host.querySelector('[role="alert"]')).not.toBeNull(),
+    );
+    const reload = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reload",
+    )!;
+    await act(async () => reload.click());
+
+    expect(
+      host.querySelector(`input[type="radio"][value="${replacementId}"]`),
+    ).not.toBeNull();
+    expect(host.textContent).toContain("Use this photo");
+  });
+
   it("shows original and persisted JPEG with accessible white-only approval", async () => {
     const fetcher = await mount();
     expect(

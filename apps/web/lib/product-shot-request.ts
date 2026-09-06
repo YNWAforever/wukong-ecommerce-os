@@ -16,6 +16,19 @@ export type ProductShotRequestInput = {
   explicitFreshAttempt?: boolean;
 };
 export type ProductShotRequestResult = { state: string; attemptId?: string };
+export type ProductShotAttachInput = {
+  workspaceId: string;
+  listingId: string;
+  actorId: string;
+  sourceAssetId: string;
+  expectedVersionId: string;
+};
+export type ProductShotAttachDeps = {
+  forWorkspace: Database["forWorkspace"];
+  requestShot: (
+    input: ProductShotRequestInput,
+  ) => Promise<ProductShotRequestResult>;
+};
 export type ProductShotRequestDeps = {
   forWorkspace: Database["forWorkspace"];
   assetStore: AssetStore;
@@ -27,6 +40,95 @@ export type ProductShotRequestDeps = {
   ) => Promise<{ width: number; height: number }>;
 };
 export const PRODUCT_SHOT_RENDER_VERSION = "white-v1";
+
+function assertMutableObservedVersion(
+  snapshot: Awaited<
+    ReturnType<
+      Parameters<
+        Parameters<Database["forWorkspace"]>[1]
+      >[0]["listings"]["getReviewSnapshot"]
+    >
+  >,
+  expectedVersionId: string,
+): void {
+  if (!snapshot?.activeVersion)
+    throw new ApiError(404, "listing_not_found", "Listing not found.");
+  if (
+    snapshot.activeVersion.id !== expectedVersionId ||
+    snapshot.listing.activeVersionId !== expectedVersionId
+  )
+    throw new ApiError(
+      409,
+      "version_conflict",
+      "Reload the listing before changing its image.",
+    );
+  if (snapshot.listing.status === "publishing")
+    throw new ApiError(
+      409,
+      "listing_publishing",
+      "Wait for publishing to finish before changing the image.",
+    );
+}
+
+export async function attachProductShotSource(
+  input: ProductShotAttachInput,
+  deps: ProductShotAttachDeps,
+): Promise<ProductShotRequestResult> {
+  await deps.forWorkspace(input.workspaceId, async (repositories) => {
+    await repositories.listings.lockReviewState(input.listingId);
+    const snapshot = await repositories.listings.getReviewSnapshot(
+      input.listingId,
+    );
+    assertMutableObservedVersion(snapshot, input.expectedVersionId);
+    const [asset] = await repositories.sourceAssets.getByIds([
+      input.sourceAssetId,
+    ]);
+    const metadata =
+      typeof asset?.metadata === "object" && asset.metadata !== null
+        ? (asset.metadata as Record<string, unknown>)
+        : {};
+    if (
+      !asset ||
+      asset.workspaceId !== input.workspaceId ||
+      (asset.listingId !== null && asset.listingId !== input.listingId) ||
+      !["image/jpeg", "image/png", "image/webp"].includes(asset.kind) ||
+      (typeof metadata.role === "string" &&
+        metadata.role.startsWith("product_shot_"))
+    )
+      throw new ApiError(
+        422,
+        "source_asset_unavailable",
+        "Choose a finalized image available to this listing.",
+      );
+    if (asset.listingId === input.listingId) return;
+    try {
+      await repositories.sourceAssets.attachToListing(input.listingId, [
+        input.sourceAssetId,
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message ===
+          "One or more source assets are missing or already associated"
+      )
+        throw new ApiError(
+          409,
+          "source_asset_conflict",
+          "Reload the listing before attaching this image.",
+        );
+      throw error;
+    }
+    await repositories.audit.write({
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      entityId: input.listingId,
+      action: "product_shot.source_attached",
+      metadata: { sourceAssetId: input.sourceAssetId },
+    });
+  });
+  return deps.requestShot({ ...input, explicitFreshAttempt: false });
+}
+
 /** Called only with server-resolved workspace/actor and validated route inputs. */
 export async function requestProductShot(
   input: ProductShotRequestInput,
@@ -41,15 +143,7 @@ export async function requestProductShot(
     const snapshot = await r.listings.getReviewSnapshot(input.listingId);
     if (!snapshot?.activeVersion)
       throw new ApiError(404, "listing_not_found", "Listing not found.");
-    if (
-      snapshot.activeVersion.id !== input.expectedVersionId ||
-      snapshot.listing.activeVersionId !== input.expectedVersionId
-    )
-      throw new ApiError(
-        409,
-        "version_conflict",
-        "Reload the listing before changing its image.",
-      );
+    assertMutableObservedVersion(snapshot, input.expectedVersionId);
   };
   const existing = await deps.forWorkspace(input.workspaceId, async (r) => {
     await assertObservedVersion(r);
@@ -184,5 +278,14 @@ export async function requestProductShotFromProcess(
     assetStore: getAssetStore(),
     enqueue: (job) =>
       createCloudflareIngressClient().enqueue(PRODUCT_SHOT_INGRESS_PATH, job),
+  });
+}
+
+export async function attachProductShotSourceFromProcess(
+  input: ProductShotAttachInput,
+): Promise<ProductShotRequestResult> {
+  return attachProductShotSource(input, {
+    forWorkspace: getDatabase().forWorkspace,
+    requestShot: requestProductShotFromProcess,
   });
 }
