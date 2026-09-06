@@ -2116,9 +2116,6 @@ button:disabled {
   .workbench-layout {
     grid-template-columns: minmax(0, 1fr);
   }
-  .workbench-guidance {
-    display: none;
-  }
 }
 @media (max-width: 600px) {
   .workbench-header {

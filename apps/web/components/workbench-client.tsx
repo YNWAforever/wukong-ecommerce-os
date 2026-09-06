@@ -164,7 +164,7 @@ export function WorkbenchClient() {
           </nav>
         </section>
         <aside className="workbench-guidance">
-          <details open>
+          <details>
             <summary>{copy.guidance}</summary>
             <ol>
               {copy.steps.map((step) => (
