@@ -229,10 +229,12 @@ export function readProductShotRuntimeConfig(
       : 0;
   if (
     (budget || providerName === "photoroom") &&
-    (!Number.isSafeInteger(dailyLimit) || dailyLimit <= 0)
+    (!Number.isSafeInteger(dailyLimit) ||
+      dailyLimit <= 0 ||
+      dailyLimit > 2_147_483_647)
   )
     throw new Error(
-      "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be a positive finite integer",
+      "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be an integer from 1 to 2147483647",
     );
   if (providerName === "photoroom")
     required(env.PHOTOROOM_API_KEY, "PHOTOROOM_API_KEY");

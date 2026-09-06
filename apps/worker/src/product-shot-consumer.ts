@@ -18,13 +18,16 @@ export async function consumeProductShotMessage(
     await runProductShot(parsed.data, runtime.dependencies);
     return "ack";
   } catch (error) {
-    return {
-      retryAfterSeconds:
-        error instanceof ProductShotBusyError ||
-        error instanceof ProductShotBudgetError
-          ? error.retryAfterSeconds
-          : 30,
-    };
+    if (
+      error instanceof ProductShotBusyError ||
+      error instanceof ProductShotBudgetError
+    )
+      return { retryAfterSeconds: error.retryAfterSeconds };
+    console.error("product_shot_consumer_failure", {
+      category: runtime ? "processing_failed" : "runtime_initialization_failed",
+      attemptId: parsed.data.attemptId,
+    });
+    return { retryAfterSeconds: 30 };
   } finally {
     await runtime?.close().catch(() => undefined);
   }

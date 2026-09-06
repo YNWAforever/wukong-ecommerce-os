@@ -77,6 +77,7 @@ async function fixture() {
   };
   return {
     job,
+    actorId,
     deps,
     generateProductShot,
     get: () =>
@@ -111,4 +112,57 @@ it("retains timeout as outcome_unknown across real repository redelivery", async
     callCount: 1,
   });
   expect(f.generateProductShot).toHaveBeenCalledOnce();
+});
+
+it("reconciles expired historical A once after selecting B without another provider call", async () => {
+  const f = await fixture();
+  const now = new Date();
+  const claim = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.productShots.claim({
+      attemptId: f.job.attemptId,
+      dailyLimit: 5,
+      now,
+    }),
+  );
+  expect(claim.kind).toBe("claimed");
+  const a = (await f.get())!;
+  const sourceB = randomUUID();
+  const key = `ws/${f.job.workspaceId}/sources/${sourceB}/input.png`;
+  await admin`insert into source_assets(id,workspace_id,listing_id,storage_key,kind,metadata) values (${sourceB},${f.job.workspaceId},${f.job.draftId},${key},'image/png','{}')`;
+  const b = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.productShots.ensure({
+      workspaceId: f.job.workspaceId,
+      listingId: f.job.draftId,
+      actorId: f.actorId,
+      sourceAssetId: sourceB,
+      sourceDigest: a.sourceDigest,
+      providerVersion: a.providerVersion,
+      renderVersion: a.renderVersion,
+      explicitFreshAttempt: false,
+    }),
+  );
+  expect(b.attemptId).not.toBe(a.attemptId);
+  f.deps.now = () => new Date(+a.leaseExpiresAt! + 1);
+  await Promise.all([
+    runProductShot(f.job, f.deps),
+    runProductShot(f.job, f.deps),
+  ]);
+  await runProductShot(f.job, f.deps);
+  expect(await f.get()).toMatchObject({
+    state: "outcome_unknown",
+    callCount: 1,
+    leaseToken: null,
+  });
+  expect(
+    await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.productShots.currentForListing(f.job.draftId),
+    ),
+  ).toMatchObject({ attemptId: b.attemptId, state: "queued", callCount: 0 });
+  expect(
+    await admin`select action from audit_events where entity_id=${f.job.draftId} and action='product_shot.outcome_unknown'`,
+  ).toHaveLength(1);
+  expect(
+    await admin`select action from audit_events where entity_id=${f.job.draftId} and action='product_shot.dispatched'`,
+  ).toHaveLength(1);
+  expect(f.generateProductShot).not.toHaveBeenCalled();
 });

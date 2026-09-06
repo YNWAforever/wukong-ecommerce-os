@@ -260,3 +260,52 @@ it("refuses a truncated deterministic PNG checkpoint", async () => {
   expect(f.shots.saveCutout).not.toHaveBeenCalled();
   expect(f.provider.generateProductShot).not.toHaveBeenCalled();
 });
+
+it("reconciles an expired historical lease once without claiming or dispatching again", async () => {
+  const f = await fixture();
+  await f.shots.claim();
+  f.replace();
+  f.expire();
+  await runProductShot(job, f.deps);
+  await runProductShot(job, f.deps);
+  expect(f.row.state).toBe("outcome_unknown");
+  expect(f.shots.finishFailure).toHaveBeenCalledExactlyOnceWith({
+    attemptId: job.attemptId,
+    leaseToken: id(4),
+    code: "outcome_unknown",
+    unknown: true,
+  });
+  expect(f.shots.claim).toHaveBeenCalledOnce();
+  expect(f.provider.generateProductShot).not.toHaveBeenCalled();
+});
+it.each(["cutout_ready", "outcome_unknown"] as const)(
+  "accepts a concurrent %s transition during expiry reconciliation",
+  async (state) => {
+    const f = await fixture();
+    await f.shots.claim();
+    f.expire();
+    f.shots.finishFailure.mockImplementationOnce(async () => {
+      f.row.state = state;
+      f.row.leaseToken = null;
+      if (state === "cutout_ready") f.row.cutoutAssetId = id(5);
+      throw new Error("lease_lost");
+    });
+    await expect(runProductShot(job, f.deps)).resolves.toBeUndefined();
+    expect(f.row.state).toBe(state);
+    expect(f.shots.finishFailure).toHaveBeenCalledOnce();
+    expect(f.provider.generateProductShot).not.toHaveBeenCalled();
+  },
+);
+it("retries an unexpected expiry reconciliation failure while the attempt remains processing", async () => {
+  const f = await fixture();
+  await f.shots.claim();
+  f.expire();
+  f.shots.finishFailure.mockRejectedValueOnce(
+    new Error("database_unavailable"),
+  );
+  await expect(runProductShot(job, f.deps)).rejects.toThrow(
+    "database_unavailable",
+  );
+  expect(f.row.state).toBe("processing");
+  expect(f.provider.generateProductShot).not.toHaveBeenCalled();
+});

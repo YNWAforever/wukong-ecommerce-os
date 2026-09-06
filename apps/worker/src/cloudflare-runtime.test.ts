@@ -173,7 +173,17 @@ describe("independent product shot runtime", () => {
       providerName: "disabled",
       dailyLimit: 0,
     });
-    for (const budget of [undefined, "", "0", "-1", "1.5", "Infinity", "NaN"]) {
+    for (const budget of [
+      undefined,
+      "",
+      "0",
+      "-1",
+      "1.5",
+      "Infinity",
+      "NaN",
+      "2147483648",
+      "9007199254740991",
+    ]) {
       expect(() =>
         readProductShotRuntimeConfig({
           PRODUCT_SHOT_PROVIDER: "photoroom",
@@ -226,4 +236,14 @@ describe("independent product shot runtime", () => {
     await runtime.close();
     expect(close).toHaveBeenCalledOnce();
   });
+});
+
+it("accepts the repository maximum daily product shot allowance", () => {
+  expect(
+    readProductShotRuntimeConfig({
+      PRODUCT_SHOT_PROVIDER: "photoroom",
+      PHOTOROOM_API_KEY: "synthetic",
+      PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
+    }).dailyLimit,
+  ).toBe(2147483647);
 });

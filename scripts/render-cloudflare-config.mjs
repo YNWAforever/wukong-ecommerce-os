@@ -81,10 +81,12 @@ const shotBudget =
   process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
 if (
   (shotBudget || productShotProvider === "photoroom") &&
-  (!Number.isSafeInteger(Number(shotBudget)) || Number(shotBudget) <= 0)
+  (!Number.isSafeInteger(Number(shotBudget)) ||
+    Number(shotBudget) <= 0 ||
+    Number(shotBudget) > 2_147_483_647)
 )
   throw new Error(
-    "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be a positive finite integer",
+    "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be an integer from 1 to 2147483647",
   );
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({

@@ -1,3 +1,14 @@
+const runtimeMocks = vi.hoisted(() => ({
+  getDatabase: vi.fn(() => ({
+    forWorkspace: async (_ws: string, fn: (r: any) => Promise<unknown>) =>
+      fn({
+        productShots: { currentForListing: async () => null },
+        sourceAssets: { listForListing: async () => [] },
+      }),
+  })),
+  getAssetStore: vi.fn(() => ({})),
+}));
+vi.mock("./intake-runtime.js", () => runtimeMocks);
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryAssetStore } from "@wukong/assets";
@@ -131,14 +142,38 @@ describe("independent selected-source request", () => {
   });
 });
 
-it("refuses knowingly unavailable enabled-flow configuration before creating attempts", async () => {
+it.each([
+  ["photoroom", ""],
+  ["photoroom", "2147483648"],
+  ["photoroom", "9007199254740991"],
+  ["fake", "2147483648"],
+])(
+  "refuses unavailable %s budget %s before opening runtime",
+  async (provider, budget) => {
+    runtimeMocks.getDatabase.mockClear();
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", provider);
+    vi.stubEnv("PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY", budget);
+    vi.stubEnv("QUEUE_INGRESS_URL", "https://queue.example");
+    vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
+    try {
+      expect(await requestProductShotFromProcess(input)).toEqual({
+        state: "setup_required",
+      });
+      expect(runtimeMocks.getDatabase).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
+
+it("accepts the maximum repository budget before opening request runtime", async () => {
   vi.stubEnv("PRODUCT_SHOT_PROVIDER", "photoroom");
-  vi.stubEnv("PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY", "");
+  vi.stubEnv("PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY", "2147483647");
   vi.stubEnv("QUEUE_INGRESS_URL", "https://queue.example");
   vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
   try {
     expect(await requestProductShotFromProcess(input)).toEqual({
-      state: "setup_required",
+      state: "no_source",
     });
   } finally {
     vi.unstubAllEnvs();

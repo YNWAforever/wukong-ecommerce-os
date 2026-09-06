@@ -163,15 +163,33 @@ export async function runProductShot(
         Math.max(1, Math.ceil((+row.leaseExpiresAt - +deps.now()) / 1000) + 1),
       );
     }
-    // claim records expired dispatched leases as unknown; it cannot bill again.
-    await deps.forWorkspace(job.workspaceId, (r) =>
-      r.productShots.claim({
-        attemptId: job.attemptId,
-        dailyLimit: deps.dailyLimit,
-        now: deps.now(),
-        estimatedCostUsd: deps.estimatedCostUsd,
-      }),
-    );
+    // Reconcile only the original lease, including historical selections.
+    // A fresh claim would skip replaced attempts and is never needed here.
+    try {
+      await deps.forWorkspace(job.workspaceId, (r) =>
+        r.productShots.finishFailure({
+          attemptId: job.attemptId,
+          leaseToken: row.leaseToken!,
+          code: "outcome_unknown",
+          unknown: true,
+        }),
+      );
+    } catch (error) {
+      // A checkpoint or another expiry delivery may have won the lease race.
+      const current = await read();
+      if (
+        current &&
+        [
+          "cutout_ready",
+          "candidate_ready",
+          "approved",
+          "failed",
+          "outcome_unknown",
+        ].includes(current.state)
+      )
+        return;
+      throw error;
+    }
     return;
   }
   if (deps.providerName === "disabled") return;

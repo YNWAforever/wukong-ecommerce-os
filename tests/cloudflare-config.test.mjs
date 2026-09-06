@@ -324,7 +324,15 @@ test("product shots default disabled and live mode validates budget with secret-
     readJson(".wrangler/wrangler.generated.jsonc").vars.PRODUCT_SHOT_PROVIDER,
     "disabled",
   );
-  for (const value of ["", "0", "-1", "1.5", "Infinity"])
+  for (const value of [
+    "",
+    "0",
+    "-1",
+    "1.5",
+    "Infinity",
+    "2147483648",
+    "9007199254740991",
+  ])
     assert.notEqual(
       render({
         PRODUCT_SHOT_PROVIDER: "photoroom",
@@ -335,13 +343,16 @@ test("product shots default disabled and live mode validates budget with secret-
   assert.notEqual(render({ PRODUCT_SHOT_PROVIDER: "other" }).status, 0);
   const result = render({
     PRODUCT_SHOT_PROVIDER: "photoroom",
-    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "3",
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
     PHOTOROOM_API_KEY: "must-not-render",
   });
   assert.equal(result.status, 0, result.stderr);
   const config = readJson(".wrangler/wrangler.generated.jsonc");
   assert.ok(config.secrets.required.includes("PHOTOROOM_API_KEY"));
-  assert.equal(config.vars.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY, "3");
+  assert.equal(
+    config.vars.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
+    "2147483647",
+  );
   assert.ok(!JSON.stringify(config).includes("must-not-render"));
   assert.equal(render().status, 0);
 });

@@ -121,12 +121,12 @@ export async function requestProductShotFromProcess(
     !process.env.QUEUE_INGRESS_SECRET?.trim()
   )
     return { state: "setup_required" };
-  const budget = Number(
-    process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
-  );
+  const configuredBudget =
+    process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
+  const budget = Number(configuredBudget);
   if (
-    providerName === "photoroom" &&
-    (!Number.isSafeInteger(budget) || budget <= 0)
+    (configuredBudget || providerName === "photoroom") &&
+    (!Number.isSafeInteger(budget) || budget <= 0 || budget > 2_147_483_647)
   )
     return { state: "setup_required" };
   return requestProductShot(input, {
