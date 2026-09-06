@@ -1,14 +1,8 @@
 export type WorkbenchKind =
-  | "listing"
-  | "export"
-  | "website_scan"
-  | "workbook_import";
+  "listing" | "export" | "website_scan" | "workbook_import";
 
 export type WorkbenchState =
-  | "attention"
-  | "progress"
-  | "completed"
-  | "unclassified";
+  "attention" | "progress" | "completed" | "unclassified";
 
 export type WorkbenchQuery = {
   state: WorkbenchState;
@@ -52,6 +46,27 @@ export type WorkbenchPage = {
   page: number;
   pageSize: number;
 };
+
+const WORKBENCH_STATE_BY_REASON: Record<WorkbenchReason, WorkbenchState> = {
+  failed: "attention",
+  needs_info: "attention",
+  review: "attention",
+  delivery: "attention",
+  result_needed: "attention",
+  processing: "progress",
+  published: "completed",
+  result_reported: "completed",
+  preview_ready: "completed",
+  preview_partial: "completed",
+  imported: "completed",
+  unknown: "unclassified",
+};
+
+export function workbenchStateForReason(
+  reason: WorkbenchReason,
+): WorkbenchState {
+  return WORKBENCH_STATE_BY_REASON[reason];
+}
 
 export function classifyListing(status: string): WorkbenchReason {
   switch (status) {

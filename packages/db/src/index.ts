@@ -138,6 +138,7 @@ export type {
 
 export {
   classifyListing,
+  workbenchStateForReason,
   type WorkbenchItem,
   type WorkbenchKind,
   type WorkbenchPage,
