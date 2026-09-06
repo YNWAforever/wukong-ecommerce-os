@@ -1,3 +1,4 @@
+import { zipOf } from "../../../packages/shopline/fixtures/synthetic-workbook";
 import { describe, expect, it, vi } from "vitest";
 import { BULK_FORM_COLUMNS } from "@wukong/shopline";
 import { writeBulkFormWorkbook } from "@wukong/shopline/bulk-form-xlsx";
@@ -51,7 +52,7 @@ describe("workbook parser", () => {
     async (filename) => {
       const readSheet = vi.fn();
       await expect(
-        createWorkbookParser({ readSheet, readSheetName: () => "Default" })(
+        createWorkbookParser({ readSheet })(
           request(new Uint8Array([1]), filename),
         ),
       ).rejects.toMatchObject({ code: "invalid_filename" });
@@ -61,7 +62,7 @@ describe("workbook parser", () => {
   it("caps streamed bytes without content length before parsing", async () => {
     const readSheet = vi.fn();
     await expect(
-      createWorkbookParser({ readSheet, readSheetName: () => "Default" })(
+      createWorkbookParser({ readSheet })(
         request(new Uint8Array(4 * 1024 * 1024 + 1)),
       ),
     ).rejects.toMatchObject({ status: 413, code: "upload_too_large" });
@@ -76,7 +77,6 @@ describe("workbook parser", () => {
       await expect(
         createWorkbookParser({
           readSheet: () => rows,
-          readSheetName: () => "Default",
         })(request(new Uint8Array([1]))),
       ).rejects.toMatchObject({ code });
     }
@@ -86,7 +86,6 @@ describe("workbook parser", () => {
     for (const row of rows.slice(2)) row[0] = "";
     const parsed = await createWorkbookParser({
       readSheet: () => rows,
-      readSheetName: () => "Default",
     })(request(new Uint8Array([1])));
     expect(workbookPreview(parsed)).toMatchObject({
       eligibleProducts: 0,
@@ -105,7 +104,6 @@ it("returns an actionable error for oversized normalized source or product evide
     await expect(
       createWorkbookParser({
         readSheet: () => rows,
-        readSheetName: () => "Default",
       })(request(new Uint8Array([1]))),
     ).rejects.toMatchObject({
       status: 413,
@@ -147,4 +145,146 @@ it("maps PostgreSQL JSONB size constraints to an actionable error", async () => 
       code: "workbook_evidence_too_large",
     });
   }
+});
+
+function reorderedWorkbook(
+  names: readonly [string, string] = ["Default", "Archive"],
+) {
+  const originalSheet = sheet();
+  originalSheet[2]![0] = "ARCHIVE-PRODUCT";
+  const bytes = writeBulkFormWorkbook(originalSheet);
+  const parts: { name: string; text: string }[] = [];
+  const decoder = new TextDecoder(),
+    view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 0;
+  while (view.getUint32(offset, true) === 0x04034b50) {
+    const size = view.getUint32(offset + 18, true),
+      nameLength = view.getUint16(offset + 26, true),
+      extraLength = view.getUint16(offset + 28, true);
+    const dataStart = offset + 30 + nameLength + extraLength;
+    parts.push({
+      name: decoder.decode(bytes.slice(offset + 30, offset + 30 + nameLength)),
+      text: decoder.decode(bytes.slice(dataStart, dataStart + size)),
+    });
+    offset = dataStart + size;
+  }
+  const workbook = parts.find((p) => p.name === "xl/workbook.xml")!;
+  workbook.text = workbook.text.replace(
+    /<sheets>[\s\S]*?<\/sheets>/,
+    `<sheets><sheet name="${names[0]}" sheetId="2" r:id="rId2"/><sheet name="${names[1]}" sheetId="1" r:id="rId1"/></sheets>`,
+  );
+  const relationships = parts.find(
+    (p) => p.name === "xl/_rels/workbook.xml.rels",
+  )!;
+  relationships.text = relationships.text.replace(
+    "</Relationships>",
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>',
+  );
+  const types = parts.find((p) => p.name === "[Content_Types].xml")!;
+  types.text = types.text.replace(
+    "</Types>",
+    '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+  );
+  parts.push({
+    name: "xl/worksheets/sheet2.xml",
+    text: parts
+      .find((p) => p.name === "xl/worksheets/sheet1.xml")!
+      .text.replaceAll("ARCHIVE-PRODUCT", "CURRENT-PRODUCT"),
+  });
+  return zipOf(parts);
+}
+it("binds Default rows and retained source name through the workbook relationship", async () => {
+  const bytes = reorderedWorkbook();
+  const parsed = await createWorkbookParser()(request(bytes));
+  expect(parsed.sheetName).toBe("Default");
+  expect(parsed.prepared.products[0]!.productId).toBe("CURRENT-PRODUCT");
+  expect(parsed.prepared.sheet[2]![0]).toBe("CURRENT-PRODUCT");
+  expect(workbookPreview(parsed).products[0]!.productId).toBe(
+    "CURRENT-PRODUCT",
+  );
+});
+it.each([
+  ["Current", "Archive"],
+  ["Default", "Default"],
+] as const)(
+  "safely rejects ambiguous or missing Default declarations %s/%s",
+  async (first, second) => {
+    const bytes = reorderedWorkbook([first, second]);
+    await expect(createWorkbookParser()(request(bytes))).rejects.toMatchObject({
+      status: 400,
+      code: "upload_not_a_workbook",
+    });
+    const sessionContext = {
+      resolve: async () => ({
+        workspaceId: "trusted",
+        actorId: "op",
+        role: "operator" as const,
+      }),
+    };
+    const { createWorkbookPreviewHandler } =
+      await import("../app/api/workbook-imports/preview/route");
+    const { createWorkbookSaveHandler } =
+      await import("../app/api/workbook-imports/route");
+    const saveWorkbook = vi.fn();
+    for (const handler of [
+      createWorkbookPreviewHandler({
+        sessionContext,
+        parseWorkbook: createWorkbookParser(),
+      }),
+      createWorkbookSaveHandler({
+        sessionContext,
+        parseWorkbook: createWorkbookParser(),
+        saveWorkbook,
+      }),
+    ]) {
+      const response = await handler(request(bytes));
+      expect(response.status).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.json()).toEqual({
+        code: "upload_not_a_workbook",
+        message:
+          "Choose a readable SHOPLINE XLSX workbook with its Default sheet.",
+      });
+    }
+    expect(saveWorkbook).not.toHaveBeenCalled();
+  },
+);
+
+it("saves relationship-selected Default rows with their matching source name", async () => {
+  const bytes = reorderedWorkbook(),
+    parsed = await createWorkbookParser()(request(bytes));
+  const { createWorkbookSaveHandler } =
+    await import("../app/api/workbook-imports/route");
+  const saveWorkbook = vi.fn(async () => ({
+    importId: "saved",
+    importedProducts: 1,
+    alreadyImportedProducts: 0,
+    excludedRows: 0,
+  }));
+  const handler = createWorkbookSaveHandler({
+    sessionContext: {
+      resolve: async () => ({
+        workspaceId: "trusted",
+        actorId: "op",
+        role: "operator",
+      }),
+    },
+    parseWorkbook: createWorkbookParser(),
+    saveWorkbook,
+  });
+  const saveRequest = request(bytes);
+  saveRequest.headers.set("x-workbook-sha256", parsed.workbookSha256);
+  saveRequest.headers.set(
+    "x-workbook-header-sha256",
+    parsed.headerContractSha256,
+  );
+  expect((await handler(saveRequest)).status).toBe(201);
+  expect(saveWorkbook).toHaveBeenCalledWith(
+    expect.objectContaining({
+      sheetName: "Default",
+      prepared: expect.objectContaining({
+        products: [expect.objectContaining({ productId: "CURRENT-PRODUCT" })],
+      }),
+    }),
+  );
 });

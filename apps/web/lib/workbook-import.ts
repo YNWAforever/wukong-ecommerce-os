@@ -7,10 +7,7 @@ import {
   type BulkFormSheet,
   type WorkbookBaseProduct,
 } from "@wukong/shopline";
-import {
-  readBulkFormSheet,
-  readBulkFormSheetName,
-} from "@wukong/shopline/bulk-form-xlsx";
+import { readDefaultBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import { ApiError } from "./route-support";
 
 export type ParsedWorkbook = Omit<WorkbookSaveInput, "actorId">;
@@ -60,8 +57,7 @@ async function readUpload(request: Request): Promise<Uint8Array> {
 export function createWorkbookParser(
   deps: {
     readSheet(bytes: Uint8Array): BulkFormSheet;
-    readSheetName(bytes: Uint8Array): string;
-  } = { readSheet: readBulkFormSheet, readSheetName: readBulkFormSheetName },
+  } = { readSheet: readDefaultBulkFormSheet },
 ): WorkbookParser {
   return async (request) => {
     const filename = new URL(request.url).searchParams.get("filename");
@@ -72,10 +68,11 @@ export function createWorkbookParser(
         "Provide the original .xlsx filename, up to 255 characters.",
       );
     const bytes = await readUpload(request);
-    let sheet: BulkFormSheet, sheetName: string;
+    let sheet: BulkFormSheet;
+    // The strict reader resolves the named Default relationship, never ZIP order.
+    const sheetName = "Default";
     try {
       sheet = deps.readSheet(bytes);
-      sheetName = deps.readSheetName(bytes);
     } catch {
       throw new ApiError(
         400,
