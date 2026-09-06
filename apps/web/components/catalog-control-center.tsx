@@ -118,7 +118,7 @@ export function CatalogControlCenter({
       });
       if (!response.ok)
         throw new Error(`Unable to load catalog (${response.status})`);
-      return (await response.json()) as CatalogPage;
+      return { importId, page: (await response.json()) as CatalogPage };
     },
     [page, query, filter, importId, invalidImport],
   );
@@ -127,7 +127,12 @@ export function CatalogControlCenter({
     "Unable to load catalog",
   );
 
-  const response = data ?? EMPTY_RESPONSE;
+  // Retain same-import refresh results, but never relabel another import's rows.
+  // Keep the surrounding detail/export forms mounted during scope changes.
+  const response =
+    data && !invalidImport && data.importId === importId
+      ? data.page
+      : EMPTY_RESPONSE;
 
   function handleQueryChange(value: string) {
     setQuery(value);
