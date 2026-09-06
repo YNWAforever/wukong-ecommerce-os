@@ -1,10 +1,15 @@
-import type { CanonicalListing, ListingFacts } from "@wukong/core";
+import type {
+  CanonicalListing,
+  ListingFacts,
+  ProductShotState,
+} from "@wukong/core";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -371,6 +376,11 @@ export const sourceAssets = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("source_assets_workspace_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
     uniqueIndex("source_assets_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -1528,5 +1538,179 @@ export const workbookProducts = pgTable(
       columns: [t.workspaceId, t.importId],
       foreignColumns: [workbookImports.workspaceId, workbookImports.id],
     }).onDelete("restrict"),
+  ],
+);
+
+export const productShotAttempts = pgTable(
+  "product_shot_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    sourceAssetId: uuid("source_asset_id").notNull(),
+    sourceDigest: text("source_digest").notNull(),
+    providerVersion: text("provider_version").notNull(),
+    renderVersion: text("render_version").notNull(),
+    generation: integer("generation").notNull(),
+    state: text("state").$type<ProductShotState>().notNull().default("queued"),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    callCount: integer("call_count").notNull().default(0),
+    estimatedCostUsd: numeric("estimated_cost_usd", {
+      precision: 14,
+      scale: 6,
+    }),
+    cutoutAssetId: uuid("cutout_asset_id"),
+    cutoutDigest: text("cutout_digest"),
+    candidateAssetId: uuid("candidate_asset_id"),
+    candidateDigest: text("candidate_digest"),
+    candidateWidth: integer("candidate_width"),
+    candidateHeight: integer("candidate_height"),
+    candidateSize: integer("candidate_size"),
+    candidateLowResolution: boolean("candidate_low_resolution"),
+    errorCode: text("error_code"),
+    actorId: text("actor_id").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("product_shot_attempts_workspace_listing_id_uq").on(
+      t.workspaceId,
+      t.listingId,
+      t.id,
+    ),
+    uniqueIndex("product_shot_attempts_identity_generation_uq").on(
+      t.workspaceId,
+      t.listingId,
+      t.sourceAssetId,
+      t.sourceDigest,
+      t.providerVersion,
+      t.renderVersion,
+      t.generation,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+    ...[t.sourceAssetId, t.cutoutAssetId, t.candidateAssetId].map((assetId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, assetId],
+        foreignColumns: [
+          sourceAssets.workspaceId,
+          sourceAssets.listingId,
+          sourceAssets.id,
+        ],
+      }).onDelete("restrict"),
+    ),
+    check(
+      "product_shot_attempts_state_check",
+      sql`${t.state} IN ('queued','processing','cutout_ready','candidate_ready','approved','failed','outcome_unknown')`,
+    ),
+  ],
+);
+
+export const productShotSelections = pgTable(
+  "product_shot_selections",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    attemptId: uuid("attempt_id").notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.listingId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.listingId, t.attemptId],
+      foreignColumns: [
+        productShotAttempts.workspaceId,
+        productShotAttempts.listingId,
+        productShotAttempts.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const productShotDailyDispatches = pgTable(
+  "product_shot_daily_dispatches",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    dispatchDay: date("dispatch_day").notNull(),
+    dispatchedCount: integer("dispatched_count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.dispatchDay] })],
+);
+
+export const productShotPublications = pgTable(
+  "product_shot_publications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    attemptId: uuid("attempt_id").notNull(),
+    observedVersionId: uuid("observed_version_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    storageKey: text("storage_key").notNull(),
+    candidateDigest: text("candidate_digest").notNull(),
+    sourceAssetId: uuid("source_asset_id").notNull(),
+    sourceDigest: text("source_digest").notNull(),
+    providerVersion: text("provider_version").notNull(),
+    renderVersion: text("render_version").notNull(),
+    token: text("token").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: text("revoked_by"),
+  },
+  (t) => [
+    uniqueIndex("product_shot_publications_binding_uq").on(
+      t.workspaceId,
+      t.attemptId,
+      t.versionId,
+      t.candidateDigest,
+    ),
+    index("product_shot_publications_asset_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.versionId,
+      t.assetId,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.listingId, t.attemptId],
+      foreignColumns: [
+        productShotAttempts.workspaceId,
+        productShotAttempts.listingId,
+        productShotAttempts.id,
+      ],
+    }).onDelete("restrict"),
+    ...[t.observedVersionId, t.versionId].map((versionId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, versionId],
+        foreignColumns: [
+          listingVersions.workspaceId,
+          listingVersions.listingId,
+          listingVersions.id,
+        ],
+      }).onDelete("restrict"),
+    ),
+    ...[t.assetId, t.sourceAssetId].map((assetId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, assetId],
+        foreignColumns: [
+          sourceAssets.workspaceId,
+          sourceAssets.listingId,
+          sourceAssets.id,
+        ],
+      }).onDelete("restrict"),
+    ),
   ],
 );

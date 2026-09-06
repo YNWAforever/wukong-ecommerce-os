@@ -51,3 +51,19 @@ it("adds durable publish-job lease columns and the tenant lease index", async ()
   expect(migration?.sql).toContain("workspace_id, status, lease_expires_at");
   expect(migration?.sql).toContain("pending_enqueue");
 });
+
+it("loads the additive product-shot migration with forced RLS and narrow publication mutations", async () => {
+  const migrations = await loadSqlMigrations(
+    new URL("../drizzle/", import.meta.url),
+  );
+  const migration = migrations.find(
+    ({ name }) => name === "0021_product_shots.sql",
+  );
+  expect(migration).toBeDefined();
+  expect(migration?.sql).toContain("FORCE ROW LEVEL SECURITY");
+  expect(migration?.sql).toContain(
+    "GRANT UPDATE(revoked_at,revoked_by) ON product_shot_publications",
+  );
+  expect(migration?.sql).toContain("storage_key text NOT NULL");
+  expect(migration?.sql).not.toContain("SECURITY DEFINER");
+});

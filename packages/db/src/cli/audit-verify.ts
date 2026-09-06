@@ -38,6 +38,10 @@ export const REQUIRED_AUDIT_SEQUENCE = [
  * literals from this module, never user input, so interpolating them is safe.
  */
 export const TENANT_TABLES = [
+  "product_shot_attempts",
+  "product_shot_selections",
+  "product_shot_daily_dispatches",
+  "product_shot_publications",
   "website_scans",
   "website_scan_steps",
   "website_products",
@@ -126,8 +130,10 @@ export async function verifyAudit(
   try {
     return await client.begin(async (transaction) => {
       await transaction`select set_config('app.workspace_id', ${input.workspaceId}, true)`;
-      const auditRows = await transaction<{ action: string }[]>`
-        select action
+      const auditRows = await transaction<
+        { action: string; metadata: Record<string, unknown> }[]
+      >`
+        select action, metadata
         from audit_events
         where workspace_id = ${input.workspaceId} and entity_id = ${input.draftId}
         order by created_at asc, id asc
@@ -156,6 +162,17 @@ export async function verifyAudit(
       const actions = auditRows.map((row) => row.action);
       const aiRunTasks = aiRows.map((row) => row.task);
       const missingActions = requiredSequenceMissing(actions);
+      const shots = await transaction<ProductShotAuditAttempt[]>`
+        select id, state, dispatched_at as "dispatchedAt", cutout_asset_id as "cutoutAssetId", candidate_asset_id as "candidateAssetId"
+        from product_shot_attempts where workspace_id=${input.workspaceId} and listing_id::text=${input.draftId}
+      `;
+      const shotPublications = await transaction<ProductShotAuditPublication[]>`
+        select id, attempt_id as "attemptId", version_id as "versionId", revoked_at as "revokedAt"
+        from product_shot_publications where workspace_id=${input.workspaceId} and listing_id::text=${input.draftId}
+      `;
+      missingActions.push(
+        ...productShotAuditMissing(shots, shotPublications, auditRows),
+      );
       for (const task of ["extract", "generate"] as const) {
         if (!aiRunTasks.includes(task)) missingActions.push(`ai_runs.${task}`);
       }
@@ -309,4 +326,86 @@ export async function verifyWebsiteAudit(input: {
   } finally {
     await client.end();
   }
+}
+
+type ProductShotAuditAttempt = {
+  id: string;
+  state: string;
+  dispatchedAt: Date | null;
+  cutoutAssetId: string | null;
+  candidateAssetId: string | null;
+};
+type ProductShotAuditPublication = {
+  id: string;
+  attemptId: string;
+  versionId: string;
+  revokedAt: Date | null;
+};
+/** Optional image workflow: verify retained checkpoints by attempt and exact version,
+ * so one successful attempt cannot hide a missing event on another attempt. */
+export function productShotAuditMissing(
+  attempts: readonly ProductShotAuditAttempt[],
+  publications: readonly ProductShotAuditPublication[],
+  events: readonly {
+    action: string;
+    metadata: Record<string, unknown> | null;
+  }[],
+): string[] {
+  const missing: string[] = [];
+  const has = (
+    action: string,
+    attemptId: string,
+    versionId?: string,
+    publicationId?: string,
+  ) =>
+    events.some(
+      (event) =>
+        event.action === "product_shot." + action &&
+        event.metadata?.attemptId === attemptId &&
+        (versionId === undefined || event.metadata.versionId === versionId) &&
+        (publicationId === undefined ||
+          event.metadata.publicationId === publicationId),
+    );
+  for (const attempt of attempts) {
+    const required = ["requested"];
+    if (attempt.dispatchedAt) required.push("dispatched");
+    if (attempt.cutoutAssetId) required.push("cutout_saved");
+    if (attempt.candidateAssetId) required.push("candidate_saved");
+    if (attempt.state === "failed" || attempt.state === "outcome_unknown")
+      required.push(attempt.state);
+    for (const action of required)
+      if (!has(action, attempt.id))
+        missing.push(`product_shot.${action}:${attempt.id}`);
+  }
+  for (const publication of publications) {
+    if (!has("approved", publication.attemptId, publication.versionId))
+      missing.push(`product_shot.approved:${publication.id}`);
+    if (
+      publication.revokedAt &&
+      !has(
+        "revoked",
+        publication.attemptId,
+        publication.versionId,
+        publication.id,
+      )
+    )
+      missing.push(`product_shot.revoked:${publication.id}`);
+  }
+  const attemptIds = new Set(attempts.map((attempt) => attempt.id));
+  const replaced = new Set(
+    events
+      .filter(
+        (event) =>
+          event.action === "product_shot.source_replaced" &&
+          typeof event.metadata?.attemptId === "string" &&
+          typeof event.metadata.previousAttemptId === "string" &&
+          event.metadata.attemptId !== event.metadata.previousAttemptId &&
+          attemptIds.has(event.metadata.attemptId) &&
+          attemptIds.has(event.metadata.previousAttemptId),
+      )
+      .map((event) => event.metadata!.attemptId),
+  );
+  if (replaced.size < attempts.length - 1)
+    missing.push("product_shot.source_replaced");
+  return missing;
 }
