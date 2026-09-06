@@ -73,6 +73,24 @@ export function createReviewConfirmationsHandler(
             );
           }
 
+          const invalidation =
+            await repositories.listings.invalidateApprovalForConfirmationChange(
+              id,
+              body.versionId,
+              {
+                workspaceId: session.workspaceId,
+                actorId: session.actorId,
+                entityId: id,
+              },
+              repositories.audit,
+            );
+          if (invalidation === "publishing") {
+            throw new ApiError(
+              409,
+              "listing_publishing",
+              "Confirmations cannot change while delivery is in progress.",
+            );
+          }
           // create-origin listings have no platform_products link, so the
           // digest and import id the ledger records for them are both null.
           const platformProduct =

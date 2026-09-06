@@ -174,4 +174,56 @@ describe("listing review edits guard in-flight states", () => {
     );
     expect(after?.status).toBe("reopened");
   });
+
+  it.each(["approved", "published", "publish_failed"])(
+    "reopens %s when its current confirmation ledger changes",
+    async (status) => {
+      const { listingId, versionId } = await seedListing(status);
+      const result = await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.invalidateApprovalForConfirmationChange(
+          listingId,
+          versionId,
+          contextFor(listingId),
+          repos.audit,
+        ),
+      );
+      const after = await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.getById(listingId),
+      );
+      expect(result).toBe("reopened");
+      expect(after?.status).toBe("reopened");
+      expect(after?.activeVersionId).toBe(versionId);
+    },
+  );
+
+  it("fails closed while publishing and keeps the in-flight status", async () => {
+    const { listingId, versionId } = await seedListing("publishing");
+    const result = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.invalidateApprovalForConfirmationChange(
+        listingId,
+        versionId,
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+    const after = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getById(listingId),
+    );
+    expect(result).toBe("publishing");
+    expect(after?.status).toBe("publishing");
+  });
+
+  it("rejects a confirmation write observed against a superseded version", async () => {
+    const { listingId } = await seedListing("approved");
+    await expect(
+      forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.invalidateApprovalForConfirmationChange(
+          listingId,
+          "00000000-0000-4000-8000-000000000999",
+          contextFor(listingId),
+          repos.audit,
+        ),
+      ),
+    ).rejects.toThrow("stale review version");
+  });
 });

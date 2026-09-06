@@ -106,6 +106,12 @@ export type ListingRepository = {
     context: AuditContext,
     audit: AuditWriter,
   ): Promise<void>;
+  invalidateApprovalForConfirmationChange(
+    id: string,
+    versionId: string,
+    context: AuditContext,
+    audit: AuditWriter,
+  ): Promise<"unchanged" | "reopened" | "publishing">;
   editReview(
     id: string,
     baseVersionId: string,
@@ -720,6 +726,45 @@ export function createListingRepository(
       });
     },
 
+    async invalidateApprovalForConfirmationChange(
+      id,
+      versionId,
+      context,
+      audit,
+    ) {
+      scope.assertOpen();
+      await this.lockReviewState(id);
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== versionId)
+        throw new Error("stale review version");
+      if (listing.status === "publishing") return "publishing";
+      if (
+        !(["approved", "published", "publish_failed"] as const).includes(
+          listing.status as "approved" | "published" | "publish_failed",
+        )
+      )
+        return "unchanged";
+      const next = await transitionListing(
+        listing.status,
+        "reopen",
+        context,
+        audit,
+      );
+      const updated = await transaction
+        .update(listingDrafts)
+        .set({ status: next, updatedAt: new Date() })
+        .where(
+          and(
+            byId(id),
+            eq(listingDrafts.status, listing.status),
+            eq(listingDrafts.activeVersionId, versionId),
+          ),
+        )
+        .returning({ id: listingDrafts.id });
+      if (updated.length !== 1)
+        throw new Error("listing changed while updating confirmations");
+      return "reopened";
+    },
     async editReview(
       id,
       baseVersionId,
