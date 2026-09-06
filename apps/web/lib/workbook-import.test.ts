@@ -1,3 +1,5 @@
+import { createWorkbookPreviewHandler } from "../app/api/workbook-imports/preview/route";
+import { createWorkbookSaveHandler } from "../app/api/workbook-imports/route";
 import { zipOf } from "../../../packages/shopline/fixtures/synthetic-workbook";
 import { describe, expect, it, vi } from "vitest";
 import { BULK_FORM_COLUMNS } from "@wukong/shopline";
@@ -221,10 +223,6 @@ it.each([
         role: "operator" as const,
       }),
     };
-    const { createWorkbookPreviewHandler } =
-      await import("../app/api/workbook-imports/preview/route");
-    const { createWorkbookSaveHandler } =
-      await import("../app/api/workbook-imports/route");
     const saveWorkbook = vi.fn();
     for (const handler of [
       createWorkbookPreviewHandler({
@@ -253,8 +251,6 @@ it.each([
 it("saves relationship-selected Default rows with their matching source name", async () => {
   const bytes = reorderedWorkbook(),
     parsed = await createWorkbookParser()(request(bytes));
-  const { createWorkbookSaveHandler } =
-    await import("../app/api/workbook-imports/route");
   const saveWorkbook = vi.fn(async () => ({
     importId: "saved",
     importedProducts: 1,
