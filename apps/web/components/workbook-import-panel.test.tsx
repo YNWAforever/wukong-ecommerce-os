@@ -375,3 +375,42 @@ it("automatically opens blocking reasons when no products are eligible", async (
   expect(disclosure.textContent).toContain("Variant rows unsupported");
   expect(button("Import 0 products").disabled).toBe(true);
 });
+
+it.each([
+  { importedProducts: 21, alreadyImportedProducts: 0, excludedRows: 1 },
+  { importedProducts: 0, alreadyImportedProducts: 21, excludedRows: 1 },
+])(
+  "replaces the top import action with visible completion for $importedProducts new and $alreadyImportedProducts existing products",
+  async (result) => {
+    await mount(
+      vi
+        .fn()
+        .mockResolvedValueOnce(json(preview()))
+        .mockResolvedValueOnce(json(result)),
+    );
+    await select();
+    await click("Import 21 products");
+    const summary = container
+      .querySelector('a[href="/catalog"]')!
+      .closest('[role="status"]')!;
+    expect(
+      summary.compareDocumentPosition(container.querySelector("table")!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(summary.previousElementSibling?.textContent).toContain(
+      "21 eligible",
+    );
+    expect(summary.textContent).toContain(
+      `${result.importedProducts} imported`,
+    );
+    expect(summary.textContent).toContain(
+      `${result.alreadyImportedProducts} already imported`,
+    );
+    expect(summary.textContent).toContain("1 excluded");
+    expect(
+      [...container.querySelectorAll("button")].some((b) =>
+        b.textContent?.includes("Import 21 products"),
+      ),
+    ).toBe(false);
+  },
+);

@@ -247,6 +247,17 @@ export function WorkbookImportPanel({
               `${preview.totalRows} rows · ${preview.eligibleProducts} eligible · ${preview.excludedRows} excluded · ${preview.totalIssues} issues`,
             )}
           </p>
+          {result && (
+            <div role="status">
+              <p>
+                {t(
+                  `${result.importedProducts} 個已匯入，${result.alreadyImportedProducts} 個先前已匯入，${result.excludedRows} 列已排除。`,
+                  `${result.importedProducts} imported · ${result.alreadyImportedProducts} already imported · ${result.excludedRows} excluded`,
+                )}
+              </p>
+              <a href="/catalog">{t("查看商品目錄", "View catalog")}</a>
+            </div>
+          )}
           {!result && (
             <button
               type="button"
@@ -363,17 +374,6 @@ export function WorkbookImportPanel({
             </dl>
           </details>
         </>
-      )}
-      {result && (
-        <div role="status">
-          <p>
-            {t(
-              `${result.importedProducts} 個已匯入，${result.alreadyImportedProducts} 個先前已匯入，${result.excludedRows} 列已排除。`,
-              `${result.importedProducts} imported · ${result.alreadyImportedProducts} already imported · ${result.excludedRows} excluded`,
-            )}
-          </p>
-          <a href="/catalog">{t("查看商品目錄", "View catalog")}</a>
-        </div>
       )}
     </section>
   );
