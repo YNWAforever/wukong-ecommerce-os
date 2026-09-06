@@ -382,7 +382,7 @@ test("accepted export reports stay qualified and rejected or unreported results 
     await page
       .context()
       .addCookies([
-        { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
+        { name: "locale", value: locale, url: new URL("/", page.url()).href },
       ]);
     await page.goto("/dashboard?state=completed&kind=export");
     const accepted = rows(page).filter({
@@ -402,7 +402,12 @@ test("accepted export reports stay qualified and rejected or unreported results 
     );
     await accepted.getByRole("link").click();
     await expect(
-      page.locator(`[data-export-attempt-id="${acceptedId}"]`),
+      page
+        .getByRole("region", {
+          name: locale === "en" ? "Selected export attempt" : "指定匯出紀錄",
+          exact: true,
+        })
+        .locator(`[data-export-attempt-id="${acceptedId}"]`),
     ).toBeVisible();
     await page.goto("/dashboard?state=attention&kind=export");
     for (const id of [exportId, rejectedId]) {
