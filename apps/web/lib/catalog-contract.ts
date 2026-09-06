@@ -32,9 +32,21 @@ export type WebsiteCatalogItem = {
   updatedAt: string;
   canExport: false;
 };
-export type CatalogItem = PlatformCatalogItem | WebsiteCatalogItem;
+export type WorkbookCatalogItem = {
+  sourceType: "workbook";
+  id: string;
+  title: string;
+  sku: string;
+  sourceProductId: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type CatalogItem =
+  PlatformCatalogItem | WebsiteCatalogItem | WorkbookCatalogItem;
 export type CatalogSummary = {
   website: number;
+  workbook: number;
   total: number;
   linked: number;
   unlinked: number;
@@ -61,6 +73,7 @@ export function summarizeCatalog(
 ): CatalogSummary {
   return {
     total: items.length,
+    workbook: items.filter((item) => item.sourceType === "workbook").length,
     website: items.filter((item) => item.sourceType === "website").length,
     linked: items.filter(
       (item) => item.sourceType === "platform" && item.listingId !== null,
@@ -91,11 +104,26 @@ export function summarizeCatalog(
 export function filterCatalogItemsServer(
   items: readonly CatalogItem[],
   query: string | undefined,
-  filter: "website" | "all" | "attention" | "review" | "unlinked" | "published",
+  filter:
+    | "workbook"
+    | "website"
+    | "all"
+    | "attention"
+    | "review"
+    | "unlinked"
+    | "published",
 ): CatalogItem[] {
   const normalizedQuery = (query ?? "").trim().toLocaleLowerCase();
 
   return items.filter((item) => {
+    if (item.sourceType === "workbook")
+      return (
+        (filter === "all" || filter === "workbook") &&
+        (!normalizedQuery ||
+          [item.title, item.sku, item.sourceProductId].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ))
+      );
     if (item.sourceType === "website")
       return (
         (filter === "all" || filter === "website") &&

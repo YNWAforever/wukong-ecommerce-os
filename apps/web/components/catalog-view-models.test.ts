@@ -16,3 +16,9 @@ it("offers a distinct website filter and names the platform-only unlinked cohort
     "Unlinked platform",
   );
 });
+
+it("offers a workbook filter", () => {
+  expect(CATALOG_FILTERS.find((f) => f.value === "workbook")?.labelEn).toBe(
+    "Workbook",
+  );
+});

@@ -46,9 +46,36 @@ against it instead of creating a duplicate. Only `import`-origin rows carry a
 SKU, spec version, raw row, and content digest — a `created`-origin row has
 none of that, since there was no imported sheet to derive it from.
 
-## Bulk import browser contract
+## Workbook catalog base import
 
-/listings/import retains the selected workbook until a separate submit. Operators
+The Workbook tab on /listings/import previews a supported XLSX immediately after
+selection, then imports all eligible rows after one explicit Import action. It
+requires operator access but no SHOPLINE connection, store URL or export-time
+input. The preview samples at most 20 products and reports full eligible/excluded
+counts; the supported limits are 4 MiB and 5,000 data rows. Existing parser rules
+exclude variants, duplicate Product IDs and rows missing required identifiers;
+their normalized source rows remain in immutable evidence.
+The declared Default worksheet is selected through its workbook relationship, so
+its rows and recorded sheet name cannot disagree. Missing or ambiguous Default
+sheets fail validation.
+
+The preview endpoint is stateless. Save reparses the original bytes and compares
+the preview's byte/header digests before writing workspace-scoped workbook_imports
+and workbook_products in one transaction with a counts-only audit. Identical bytes
+in one workspace return the original import; changed bytes create a separate source.
+Stored products are bound to their immutable source's eligible row digests.
+
+A recognizable filename date is optional, unverified local text with unknown
+timezone. It never sets merchantAttestedExportAt or freshness approval. Workbook
+products have their own catalog source and detail view, without listing drafts,
+platform links or export authority. IDs and SKUs from a workbook do not establish
+store ownership or support merging with another source. Migration 0020 is required
+before deploying code that reads the new catalog tables; local verification does
+not authorize that rollout.
+
+## Connected SHOPLINE import browser contract
+
+The optional Connected SHOPLINE update section on /listings/import retains the selected workbook until a separate submit. Operators
 must explicitly enter SHOPLINE export time in Hong Kong UTC+08:00; the browser
 converts it to an ISO UTC instant and sends merchantAttestedExportAt plus the
 exact filename in URLSearchParams, with the raw workbook body. No timestamp is

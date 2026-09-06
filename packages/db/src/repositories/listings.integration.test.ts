@@ -557,6 +557,7 @@ describe("workspace isolation", () => {
       ],
       ["website_products", ["workspace_id", "source_scan_id"], "website_scans"],
       ["website_scan_steps", ["workspace_id", "scan_id"], "website_scans"],
+      ["workbook_products", ["workspace_id", "import_id"], "workbook_imports"],
     ];
     const rows = await admin`
       select

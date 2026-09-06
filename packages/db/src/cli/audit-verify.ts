@@ -41,6 +41,8 @@ export const TENANT_TABLES = [
   "website_scans",
   "website_scan_steps",
   "website_products",
+  "workbook_imports",
+  "workbook_products",
   "memberships",
   "workspace_invites",
   "listing_drafts",

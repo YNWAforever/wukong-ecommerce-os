@@ -5,7 +5,13 @@ import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 
 export type PageQuery = { page: number; pageSize: number };
 export type CatalogFilter =
-  "website" | "all" | "attention" | "review" | "unlinked" | "published";
+  | "workbook"
+  | "website"
+  | "all"
+  | "attention"
+  | "review"
+  | "unlinked"
+  | "published";
 export type LedgerKind =
   "batch" | "publish_job" | "pipeline_run" | "export" | "import_result";
 export type PlatformCatalogReadItem = {
@@ -35,9 +41,21 @@ export type WebsiteCatalogReadItem = {
   updatedAt: string;
   canExport: false;
 };
-export type CatalogReadItem = PlatformCatalogReadItem | WebsiteCatalogReadItem;
+export type WorkbookCatalogReadItem = {
+  sourceType: "workbook";
+  id: string;
+  title: string;
+  sku: string;
+  sourceProductId: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type CatalogReadItem =
+  PlatformCatalogReadItem | WebsiteCatalogReadItem | WorkbookCatalogReadItem;
 export type CatalogReadSummary = {
   website: number;
+  workbook: number;
   total: number;
   linked: number;
   unlinked: number;
@@ -74,15 +92,17 @@ export function createWorkspaceReadRepository(
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
    coalesce(d.status in ('in_review','reopened'),false) as "needsReview",
    (p.listing_id is null or d.id is null or d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0) as "needsAttention",
-   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest"
+   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId"
   from platform_products p
   left join listing_drafts d on d.id=p.listing_id and d.workspace_id=${workspaceId}
   left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId}
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
   where p.workspace_id=${workspaceId}
-  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null
-  from website_products w where w.workspace_id=${workspaceId}`;
+  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null
+  from website_products w where w.workspace_id=${workspaceId}
+  union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
+  from workbook_products w where w.workspace_id=${workspaceId}`;
   const ledger = sql`
   select id,'batch'::text kind,created_at from enrichment_batches where workspace_id=${workspaceId}
   union all select id,'publish_job',created_at from publish_jobs where workspace_id=${workspaceId}
@@ -108,6 +128,7 @@ export function createWorkspaceReadRepository(
         ![
           "all",
           "website",
+          "workbook",
           "attention",
           "review",
           "unlinked",
@@ -116,8 +137,8 @@ export function createWorkspaceReadRepository(
       )
         throw new Error("invalid catalog filter");
       const q = (input.q ?? "").trim().toLocaleLowerCase();
-      const match = sql`(${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
-    and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
+      const match = sql`(${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
+    and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
       // One statement gives counts and page a common MVCC snapshot, including empty pages.
       const rows =
         await transaction.execute(sql`with catalog as materialized (${catalog}), matching as (select * from catalog where ${match}),
@@ -125,13 +146,22 @@ export function createWorkspaceReadRepository(
     select (select coalesce(jsonb_agg(to_jsonb(page) order by "createdAt" desc,"sourceType",id),'[]') from page) items,
      (select count(*)::int from matching) as "totalMatching",
      jsonb_build_object('total',count(*)::int,'linked',count(*) filter(where "listingId" is not null)::int,
-      'website',count(*) filter(where "sourceType"='website')::int,'unlinked',count(*) filter(where "sourceType"='platform' and "listingId" is null)::int,'needsReview',count(*) filter(where "needsReview")::int,
+      'workbook',count(*) filter(where "sourceType"='workbook')::int,'website',count(*) filter(where "sourceType"='website')::int,'unlinked',count(*) filter(where "sourceType"='platform' and "listingId" is null)::int,'needsReview',count(*) filter(where "needsReview")::int,
       'needsAttention',count(*) filter(where "needsAttention")::int,'published',count(*) filter(where "listingStatus"='published')::int) summary from catalog`);
       const row = rows[0]!;
       return {
-        items: (
-          row.items as Array<PlatformCatalogReadItem | WebsiteCatalogReadItem>
-        ).map((item) => {
+        items: (row.items as CatalogReadItem[]).map((item) => {
+          if (item.sourceType === "workbook")
+            return {
+              sourceType: "workbook" as const,
+              id: item.id,
+              title: item.title,
+              sku: item.sku,
+              sourceProductId: item.sourceProductId,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+              canExport: false as const,
+            };
           if (item.sourceType === "website")
             return {
               sourceType: "website" as const,
@@ -146,10 +176,12 @@ export function createWorkspaceReadRepository(
           const {
             sourceUrl: _url,
             capturedAt: _capture,
+            sourceProductId: _source,
             ...platform
           } = item as PlatformCatalogReadItem & {
             sourceUrl: null;
             capturedAt: null;
+            sourceProductId: null;
           };
           return platform;
         }),

@@ -407,3 +407,47 @@ it("website source pages skip platform hydration and readiness", async () => {
   expect(response.status).toBe(200);
   expect((await response.json()).items).toEqual([website]);
 });
+
+it("accepts workbook filter and enriches source readiness only for platform IDs", async () => {
+  const workbook = {
+    sourceType: "workbook",
+    id: "book",
+    title: "Workbook",
+    sku: "001",
+    sourceProductId: "0002",
+    canExport: false,
+  };
+  const hydrate = vi.fn(async (ids: string[]) => {
+    expect(ids).toEqual([]);
+    return [];
+  });
+  const handler = createCatalogHandler({
+    sessionContext: {
+      resolve: async () => ({
+        workspaceId: "own",
+        actorId: "viewer",
+        role: "viewer",
+      }),
+    },
+    getDatabase: () =>
+      ({
+        forWorkspace: async (_w: string, fn: any) =>
+          fn({
+            reads: {
+              catalogPage: async (query: any) => {
+                expect(query.filter).toBe("workbook");
+                return {
+                  items: [workbook],
+                  summary: { total: 1, workbook: 1 },
+                  totalMatching: 1,
+                };
+              },
+            },
+            platformProducts: { getByIds: hydrate },
+          }),
+      }) as never,
+  });
+  const response = await handler(buildRequest("filter=workbook"));
+  expect(response.status).toBe(200);
+  expect((await response.json()).items).toEqual([workbook]);
+});

@@ -86,6 +86,7 @@ function pageResponse(
     },
     summary: {
       website: 0,
+      workbook: 0,
       total: 60,
       linked: 10,
       unlinked: 50,
@@ -411,9 +412,10 @@ describe("CatalogControlCenter", () => {
     const { container, root } = await mount(fetcher);
 
     const tiles = container.querySelectorAll('[role="group"]');
-    expect(tiles.length).toBe(7);
+    expect(tiles.length).toBe(8);
 
     const expectedLabels = [
+      "試算表商品",
       "網站商品",
       "未連結的平台商品",
       "商品",
@@ -644,6 +646,63 @@ it("keeps selected platform listings through website filtering, failure and reco
           'tbody input[type="checkbox"]',
         ) as HTMLInputElement
       )?.checked,
+    ).toBe(true);
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("shows workbook source details without platform checkboxes or draft links", async () => {
+  const workbook: CatalogItem = {
+    sourceType: "workbook",
+    id: "book",
+    title: "Workbook product",
+    sku: "001",
+    sourceProductId: "0002",
+    canExport: false,
+    createdAt: "2026-09-06T00:00:00Z",
+    updatedAt: "2026-09-06T00:00:00Z",
+  };
+  const fetcher = vi.fn(async (url: string) =>
+    url.startsWith("/api/workbook-products/")
+      ? Response.json({
+          id: "book",
+          sourceType: "workbook",
+          canExport: false,
+          product: {
+            title: { en: "Stored workbook", "zh-Hant": "原始商品" },
+            sku: "001",
+            productId: "0002",
+            priceHkd: 10,
+            raw: {},
+          },
+          source: {
+            filename: "stored.xlsx",
+            sheetName: "Default",
+            inferredExportTime: null,
+          },
+        })
+      : Response.json(
+          pageResponse([workbook], {
+            capabilities: {
+              canGenerateBulkUpdate: true,
+              canRecordImportResult: true,
+            },
+          }),
+        ),
+  );
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain("Workbook product");
+    expect(
+      container.querySelectorAll("tbody input[type=checkbox]"),
+    ).toHaveLength(0);
+    expect(container.querySelector('tbody a[href="/listings/new"]')).toBeNull();
+    expect(container.textContent).toContain("試算表");
+    await act(async () => findButtonByText(container, "查看資料")!.click());
+    expect(container.textContent).toContain("stored.xlsx");
+    expect(
+      fetcher.mock.calls.some(([url]) => url === "/api/workbook-products/book"),
     ).toBe(true);
   } finally {
     await unmount(root);

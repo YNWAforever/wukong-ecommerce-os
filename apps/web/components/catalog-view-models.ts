@@ -1,7 +1,13 @@
 import type { ListingStatus } from "@wukong/core";
 
 export type CatalogFilter =
-  "website" | "all" | "attention" | "review" | "unlinked" | "published";
+  | "workbook"
+  | "website"
+  | "all"
+  | "attention"
+  | "review"
+  | "unlinked"
+  | "published";
 
 export const CATALOG_FILTERS: ReadonlyArray<{
   value: CatalogFilter;
@@ -9,6 +15,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{
   labelEn: string;
 }> = [
   { value: "website", labelZh: "網站", labelEn: "Website" },
+  { value: "workbook", labelZh: "試算表", labelEn: "Workbook" },
   { value: "all", labelZh: "全部", labelEn: "All" },
   { value: "attention", labelZh: "需處理", labelEn: "Attention" },
   { value: "review", labelZh: "待審核", labelEn: "Review" },
