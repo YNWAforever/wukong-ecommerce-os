@@ -146,3 +146,8 @@ export {
   type WorkbenchReason,
   type WorkbenchState,
 } from "./repositories/workbench-contract.js";
+
+export {
+  createWorkbenchReadRepository,
+  type WorkbenchReadRepository,
+} from "./repositories/workbench-reads.js";
