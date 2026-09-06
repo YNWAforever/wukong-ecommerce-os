@@ -240,6 +240,11 @@ export function advanceWebsiteDocument(
           : "document_unavailable",
       ]);
     if (document?.status === 429) return finish(true);
+    if (document?.status === 503 && document.retryAfterSeconds !== null) {
+      // This bounded preview does not automatically resume a server-requested backoff.
+      warn(checkpoint, ["website_backoff_requested"]);
+      return finish(true);
+    }
   }
   if (now >= scan.deadlineAt) {
     warn(checkpoint, ["scan_deadline"]);

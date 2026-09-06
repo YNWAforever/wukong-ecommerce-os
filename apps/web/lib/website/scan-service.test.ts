@@ -439,3 +439,55 @@ it("passes the persisted robots delay and path approval into protected transport
   expect(input.approveUrl!(origin + "private/one")).toBe(false);
   expect(input.approveUrl!(origin + "products/one")).toBe(true);
 });
+
+describe("503 Retry-After scan backoff", () => {
+  it.each([
+    ["product", 2, false],
+    ["product", 2, true],
+    ["product", 3600, false],
+    ["product", 3600, true],
+    ["discovery", 2, false],
+    ["discovery", 2, true],
+    ["discovery", 3600, false],
+    ["discovery", 3600, true],
+  ] as const)(
+    "terminates %s with Retry-After %s and retained preview %s",
+    (kind, retryAfterSeconds, retainPreview) => {
+      const before = scan(kind);
+      before.checkpoint.canonicalOrigin = origin;
+      before.checkpoint.candidateUrls = [
+        origin + "products/one",
+        origin + "products/next",
+      ];
+      before.checkpoint.discoveryUrls = [origin + "sitemap.xml"];
+      if (retainPreview) {
+        before.checkpoint.preview = advanceWebsiteDocument(
+          scan("product"),
+          doc(
+            origin + "products/saved",
+            '<script type="application/ld+json">{"@type":"Product","name":"Saved preview"}</script>',
+          ),
+          now,
+        ).checkpoint.preview;
+      }
+      const retained = structuredClone(before.checkpoint.preview.products);
+      const result = advanceWebsiteDocument(
+        before,
+        {
+          ...doc(before.checkpoint.pending!.url, "", 503),
+          retryAfterSeconds,
+        },
+        now,
+      );
+      expect(result.state).toBe(retainPreview ? "partial" : "failed");
+      expect(result.checkpoint.pending).toBeNull();
+      expect(result.checkpoint.preview.products).toEqual(retained);
+      expect(result.checkpoint.preview.warnings).toContain(
+        "website_backoff_requested",
+      );
+      expect(result.checkpoint.nextEligibleAt).toBe(
+        before.checkpoint.nextEligibleAt,
+      );
+    },
+  );
+});
