@@ -45,7 +45,10 @@ including uncertain outcomes.
 Image acceptance binds the current source, observed listing version, candidate
 digest and render/provider identity. Changing sources invalidates acceptance,
 even when returning to a previously accepted source. Factual approval is still
-required. A shared server policy blocks image-carrying delivery until the current
+required. A confirmation-ledger change reopens an approved listing in the same
+transaction, under the listing lock; mutations during publishing fail closed.
+Saved images remain available for reapproval without processing again.
+A shared server policy blocks image-carrying delivery until the current
 version has a matching unrevoked publication; the Worker validates under the
 same transaction lock as its publish preparation.
 

@@ -10,7 +10,7 @@ Upload one actual bottle photo with the listing. One eligible photo is selected 
 
 Review the saved finished JPEG beside the original. Check the label, bottle edges, cap and transparent glass. Background removal can remove real foreground detail; automated checks cannot certify visual accuracy. A low-resolution notice indicates the image has not been enlarged to disguise missing detail.
 
-Approve the exact candidate before exporting it. Listing factual confirmations and blocking flags still apply. Replacing the main photo invalidates its current image approval. Previously published image versions remain available for already downloaded exports.
+Approve the exact candidate before exporting it. Listing factual confirmations and blocking flags still apply. Replacing the main photo invalidates its current image approval. Previously published image versions remain available for already downloaded exports. Saving factual confirmations after approval writes a new confirmation revision and reopens the listing for review, even when values are unchanged; reapprove before another export. This reuses the saved image and does not trigger another provider call.
 
 ## Administrator configuration
 
@@ -83,3 +83,14 @@ disabled, preserving their original approval contract. Use one worker and zero
 retries; record both runs. A single provider mode cannot represent both contracts.
 Fixture objects and workspaces are scoped per run so retained audit/image records
 from earlier synthetic runs remain intact.
+
+For the local HTTPS image check, prepare a locally issued certificate valid for
+`localhost` and its matching private key at
+`node_modules/.photoroom-services/certs/public.crt` and `private.key`.
+The fixture trusts the existing local CA at
+`.wrangler/caddy-data/caddy/pki/authorities/local/root.crt`; the leaf certificate
+must chain to that CA. These are generated local test materials, not deployment
+credentials, and remain untracked. Keep ports 49217 (app), 49218 (image HTTPS
+proxy) and 8787 (Worker) free before starting the fixture. Use the isolated
+Postgres, object storage and mail settings from the local-development runbook;
+never point the fixture at merchant or production services.
