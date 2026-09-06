@@ -90,6 +90,8 @@ function routeContext() {
 }
 
 function makeHandler(options: {
+  assets?: any[];
+  shot?: any;
   role?: "viewer" | "operator" | "reviewer" | "admin";
   status?: "in_review" | "approved" | "published" | "reopened";
   flags?: Array<{
@@ -125,6 +127,10 @@ function makeHandler(options: {
           work: (repos: any) => Promise<T>,
         ) {
           return work({
+            sourceAssets: { listForListing: async () => options.assets ?? [] },
+            productShots: {
+              currentForListing: async () => options.shot ?? null,
+            },
             listings: {
               async lockReviewState() {},
               async getReviewSnapshot(id: string) {
@@ -1653,4 +1659,70 @@ describe("POST /api/listings/[id]/approve", () => {
       ).toEqual([]);
     },
   );
+});
+
+describe("new-workflow pre-selection approval", () => {
+  it.each([
+    ["multiple originals", "fake", 2],
+    ["missing dispatch setup", "photoroom", 1],
+    ["single original before request", "fake", 1],
+  ])(
+    "blocks %s without an accepted candidate",
+    async (_label, provider, count) => {
+      vi.stubEnv("PRODUCT_SHOT_PROVIDER", provider);
+      vi.stubEnv("QUEUE_INGRESS_URL", "");
+      vi.stubEnv("QUEUE_INGRESS_SECRET", "");
+      try {
+        const { handler, calls } = makeHandler({
+          assets: Array.from({ length: Number(count) }, (_, i) => ({
+            id: `source-${i}`,
+            kind: "image/png",
+            metadata: {},
+          })),
+        });
+        const response = await handler(request(), routeContext());
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          code: "image_approval_required",
+        });
+        expect(calls.some((c: any) => c[0] === "domainApprove")).toBe(false);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+  it.each(["disabled", "legacy cutout"])(
+    "preserves %s approval",
+    async (mode) => {
+      vi.stubEnv(
+        "PRODUCT_SHOT_PROVIDER",
+        mode === "disabled" ? "disabled" : "fake",
+      );
+      try {
+        const { handler } = makeHandler({
+          assets:
+            mode === "disabled"
+              ? []
+              : [
+                  {
+                    kind: "image/png",
+                    metadata: { role: "product_shot_cutout" },
+                  },
+                ],
+        });
+        expect((await handler(request(), routeContext())).status).toBe(200);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+  it("keeps an existing selection gated after provider disablement", async () => {
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", "disabled");
+    try {
+      const { handler } = makeHandler({ shot: { state: "candidate_ready" } });
+      expect((await handler(request(), routeContext())).status).toBe(409);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

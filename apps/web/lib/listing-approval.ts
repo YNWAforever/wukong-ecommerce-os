@@ -1,3 +1,4 @@
+import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
   approveListing as domainApprove,
   assertApprovalFreshness,
@@ -338,9 +339,18 @@ export async function approveOne(
 
   // Re-read current selection under the listing review lock.
   const shot = await repositories.productShots?.currentForListing(id);
+  // Enabled installations require acceptance even before source selection or
+  // dispatch setup. Read legacy assets only when they can affect this decision.
+  const hasLegacyCutout =
+    !shot &&
+    usesProductShotWorkflow({ hasSelection: false, hasLegacyCutout: false })
+      ? Boolean((await findProductShotAssets(id, repositories)).cutout)
+      : false;
   let imagePublication: { publicationToken: string } | null = null;
-  if (shot) {
-    if (shot.state !== "approved" || !shot.candidate)
+  if (
+    usesProductShotWorkflow({ hasSelection: Boolean(shot), hasLegacyCutout })
+  ) {
+    if (!shot || shot.state !== "approved" || !shot.candidate)
       throw new ApiError(
         409,
         "image_approval_required",

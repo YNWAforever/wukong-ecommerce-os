@@ -68,6 +68,8 @@ function confirmed(listingId: string) {
   };
 }
 type Row = {
+  assets?: any[];
+  shot?: any;
   versionId?: string;
   draftVersionId?: string;
   missing?: boolean;
@@ -88,6 +90,12 @@ function makeHandler(
   const entered: string[] = [];
   const domainApproval = vi.fn();
   const repositoriesFor = (pending: string[] = [], events: unknown[] = []) => ({
+    sourceAssets: {
+      listForListing: async (id: string) => options.rows?.[id]?.assets ?? [],
+    },
+    productShots: {
+      currentForListing: async (id: string) => options.rows?.[id]?.shot ?? null,
+    },
     listings: {
       async lockReviewState() {},
       async getReviewSnapshot(id: string) {
@@ -529,4 +537,72 @@ describe("POST /api/listings/bulk-approve", () => {
       ),
     ).rejects.toMatchObject({ status: 400, code: "review_context_required" });
   });
+});
+
+it.each([
+  ["multiple originals", "fake", 2],
+  ["missing dispatch setup", "photoroom", 1],
+  ["single original before request", "fake", 1],
+])(
+  "bulk approval blocks %s without image acceptance while preserving legacy rows",
+  async (_label, provider, count) => {
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", provider);
+    vi.stubEnv("QUEUE_INGRESS_URL", "");
+    vi.stubEnv("QUEUE_INGRESS_SECRET", "");
+    try {
+      const f = makeHandler({
+        rows: {
+          [id1]: {
+            assets: Array.from({ length: Number(count) }, (_, i) => ({
+              id: `source-${i}`,
+              kind: "image/png",
+              metadata: {},
+            })),
+          },
+          [id2]: {
+            assets: [
+              { kind: "image/png", metadata: { role: "product_shot_cutout" } },
+            ],
+          },
+        },
+      });
+      const response = await f.handler(
+        request({ items: [item(id1), item(id2)] }),
+      );
+      expect(await response.json()).toMatchObject({
+        approved: 1,
+        failed: 1,
+        results: [
+          { listingId: id1, code: "image_approval_required" },
+          { listingId: id2, ok: true },
+        ],
+      });
+      expect(f.committed).toEqual([id2]);
+      expect(f.domainApproval).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
+it("bulk approval preserves disabled legacy and still gates an existing selection", async () => {
+  vi.stubEnv("PRODUCT_SHOT_PROVIDER", "disabled");
+  try {
+    const f = makeHandler({
+      rows: { [id2]: { shot: { state: "candidate_ready" } } },
+    });
+    const response = await f.handler(
+      request({ items: [item(id1), item(id2)] }),
+    );
+    expect(await response.json()).toMatchObject({
+      approved: 1,
+      failed: 1,
+      results: [
+        { listingId: id1, ok: true },
+        { listingId: id2, code: "image_approval_required" },
+      ],
+    });
+    expect(f.committed).toEqual([id1]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

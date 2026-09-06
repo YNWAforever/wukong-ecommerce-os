@@ -1,3 +1,4 @@
+import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
 import { readSourceReadiness } from "../../../../lib/source-readiness";
 import type { AssetStore } from "@wukong/assets";
 
@@ -103,12 +104,12 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               (asset.metadata as Record<string, unknown> | null)?.role ===
                 "product_shot_cutout",
           );
-          const productShotWorkflow =
-            Boolean(await repositories.productShots?.currentForListing(id)) ||
-            (!cutout &&
-              ["fake", "photoroom"].includes(
-                process.env.PRODUCT_SHOT_PROVIDER ?? "",
-              ));
+          const productShotWorkflow = usesProductShotWorkflow({
+            hasSelection: Boolean(
+              await repositories.productShots?.currentForListing(id),
+            ),
+            hasLegacyCutout: Boolean(cutout),
+          });
           let productShot: {
             previewUrl: string;
             brandBackgroundColor: string | null;

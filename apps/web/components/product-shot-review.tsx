@@ -67,6 +67,7 @@ export function ProductShotReview({
       if (!response.ok) throw new Error("read_failed");
       const next = await response.json();
       if (!signal.aborted && revision === sequence.current) {
+        setError(false);
         setView(next);
         setSelected(
           next.sourceAssetId ??
@@ -177,7 +178,10 @@ export function ProductShotReview({
           type="button"
           onClick={() => {
             const signal = scope.current?.signal;
-            if (signal) void load(signal).catch(() => setError(true));
+            if (signal)
+              void load(signal).catch(() => {
+                if (!signal.aborted) setError(true);
+              });
           }}
         >
           {t("重試", "Retry")}
@@ -216,9 +220,9 @@ export function ProductShotReview({
             onClick={() => {
               const signal = scope.current?.signal;
               if (signal)
-                void load(signal)
-                  .then(() => setError(false))
-                  .catch(() => setError(true));
+                void load(signal).catch(() => {
+                  if (!signal.aborted) setError(true);
+                });
             }}
           >
             {t("重新載入", "Reload")}

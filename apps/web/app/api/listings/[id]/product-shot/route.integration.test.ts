@@ -35,7 +35,7 @@ afterAll(async () => {
   await db.close();
   await admin.end();
 });
-async function fixture() {
+async function fixture(initializeAttempt = true) {
   const workspaceId = "shot_review_" + randomUUID(),
     listingId = randomUUID(),
     versionId = randomUUID(),
@@ -94,37 +94,42 @@ async function fixture() {
     renderVersion: "white-v1",
     explicitFreshAttempt: false,
   };
-  const { attemptId } = await db.forWorkspace(workspaceId, (r) =>
-    r.productShots.ensure(identity),
-  );
-  const claimed = await db.forWorkspace(workspaceId, (r) =>
-    r.productShots.claim({ attemptId, dailyLimit: 5, now: new Date() }),
-  );
-  if (claimed.kind !== "claimed") throw new Error("claim failed");
-  const cutoutKey = `ws/${workspaceId}/sources/${attemptId}/cutout.png`;
-  await store.writeObject(workspaceId, cutoutKey, png, "image/png");
-  await db.forWorkspace(workspaceId, async (r) => {
-    const asset = await r.sourceAssets.create({
-      storageKey: cutoutKey,
-      kind: "image/png",
-      metadata: {
-        role: "product_shot_cutout",
+  let attemptId: string = randomUUID();
+  if (initializeAttempt) {
+    ({ attemptId } = await db.forWorkspace(workspaceId, (r) =>
+      r.productShots.ensure(identity),
+    ));
+    const claimed = await db.forWorkspace(workspaceId, (r) =>
+      r.productShots.claim({ attemptId, dailyLimit: 5, now: new Date() }),
+    );
+    if (claimed.kind !== "claimed") throw new Error("claim failed");
+    const cutoutKey = `ws/${workspaceId}/sources/${attemptId}/cutout.png`;
+    await store.writeObject(workspaceId, cutoutKey, png, "image/png");
+    await db.forWorkspace(workspaceId, async (r) => {
+      const asset = await r.sourceAssets.create({
+        storageKey: cutoutKey,
+        kind: "image/png",
+        metadata: {
+          role: "product_shot_cutout",
+          attemptId,
+          sourceAssetId,
+          sourceDigest: digest,
+          providerVersion: identity.providerVersion,
+          renderVersion: identity.renderVersion,
+          digest,
+          mimeType: "image/png",
+          size: png.length,
+        },
+      });
+      await r.sourceAssets.attachToListing(listingId, [asset.id]);
+      await r.productShots.saveCutout({
         attemptId,
-        sourceAssetId,
-        sourceDigest: digest,
-        providerVersion: identity.providerVersion,
-        renderVersion: identity.renderVersion,
-        digest,
-        mimeType: "image/png",
-        size: png.length,
-      },
+        leaseToken: claimed.leaseToken,
+        assetId: asset.id,
+      });
     });
-    await r.sourceAssets.attachToListing(listingId, [asset.id]);
-    await r.productShots.saveCutout({
-      attemptId,
-      leaseToken: claimed.leaseToken,
-      assetId: asset.id,
-    });
+  }
+  await db.forWorkspace(workspaceId, async (r) => {
     await r.reviewConfirmations.upsert({
       listingId,
       versionId,
@@ -390,3 +395,46 @@ it("concurrent explicit fresh actions after unknown outcome create only one queu
     generation: 3,
   });
 });
+
+it.each(["single", "bulk"] as const)(
+  "%s real approval blocks multiple originals before any attempt exists",
+  async (mode) => {
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", "fake");
+    try {
+      const f = await fixture(false);
+      await f.source();
+      expect(await f.get()).toBeNull();
+      const item = {
+        listingId: f.input.listingId,
+        expectedVersionId: f.input.expectedVersionId,
+        confirmationLedgerRevision: 0,
+      };
+      const response =
+        mode === "single"
+          ? await createApproveListingHandler(f.routeDeps)(req(item), {
+              params: Promise.resolve({ id: f.input.listingId }),
+            })
+          : await createBulkApproveHandler(f.routeDeps)(req({ items: [item] }));
+      expect(await response.json()).toMatchObject(
+        mode === "single"
+          ? { code: "image_approval_required" }
+          : {
+              approved: 0,
+              failed: 1,
+              results: [{ code: "image_approval_required" }],
+            },
+      );
+      const snapshot = await db.forWorkspace(f.input.workspaceId, (r) =>
+        r.listings.getReviewSnapshot(f.input.listingId),
+      );
+      expect(snapshot?.listing.status).toBe("in_review");
+      expect(snapshot?.activeVersion?.id).toBe(f.input.expectedVersionId);
+      expect(
+        await admin`select id from audit_events where entity_id=${f.input.listingId} and action='listing.approved'`,
+      ).toHaveLength(0);
+      expect(await f.get()).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);

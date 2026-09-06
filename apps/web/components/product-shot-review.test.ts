@@ -218,3 +218,87 @@ it("aborts old listing reads and never renders an old candidate after navigation
       ?.getAttribute("src"),
   ).toBe("/new.jpg");
 });
+
+it.each(["not_requested", "cutout_ready"])(
+  "recovers the initial GET error and resumes automatic %s work",
+  async (state) => {
+    let reads = 0;
+    const fetcher = vi.fn(async (_url: any, options: any) => {
+      if (options?.method === "POST") return Response.json({});
+      if (++reads === 1) return Response.json({}, { status: 503 });
+      return Response.json(
+        reads === 2
+          ? {
+              ...base,
+              state,
+              attemptId: state === "not_requested" ? null : "attempt",
+              candidatePreviewUrl: null,
+            }
+          : base,
+      );
+    });
+    vi.stubGlobal("fetch", fetcher);
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root.render(
+        createElement(ProductShotReview, {
+          listingId: "listing",
+          canOperate: true,
+          canApprove: true,
+        }),
+      ),
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Unable to load",
+    );
+    await act(async () => host.querySelector("button")!.click());
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    const posts = fetcher.mock.calls.filter((c) => c[1]?.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]![0]).toBe(
+      `/api/listings/listing/product-shot${state === "cutout_ready" ? "/prepare" : ""}`,
+    );
+    expect(JSON.parse(posts[0]![1].body)).toMatchObject({
+      expectedVersionId: "version",
+      ...(state === "cutout_ready"
+        ? { attemptId: "attempt" }
+        : { sourceAssetId: "source", explicitFreshAttempt: false }),
+    });
+  },
+);
+
+it("does not clear the current listing error when an old retry succeeds after navigation", async () => {
+  let oldReads = 0;
+  let resolveRetry!: (r: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url.includes("/old/") && ++oldReads > 1)
+        return new Promise<Response>((r) => {
+          resolveRetry = r;
+        });
+      return Response.json({}, { status: 503 });
+    }),
+  );
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const render = (listingId: string) =>
+    root.render(
+      createElement(ProductShotReview, {
+        listingId,
+        canOperate: true,
+        canApprove: true,
+      }),
+    );
+  await act(async () => render("old"));
+  await act(async () => host.querySelector("button")!.click());
+  await act(async () => render("new"));
+  await act(async () => resolveRetry(Response.json(base)));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Unable to load",
+  );
+  expect(host.querySelector("img")).toBeNull();
+});
