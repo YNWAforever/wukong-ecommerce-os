@@ -1,6 +1,6 @@
 # Workbook base import with minimal input
 
-Status: approved by the user on 2026-09-06. This records the user's request to remove export-time confirmation and reduce form fields. It does not claim implementation or production rollout.
+Status: approved and implemented locally on 2026-09-06, with synthetic test verification and independent source review. See the implementation results report for exact checks and source-binding limits. Production migration and rollout are not included.
 
 Verified source baseline: GitHub main and the active checkout both at 49e84a3b21c9d384dd5b6f1019441322931fbb48 on 2026-09-06.
 
@@ -40,7 +40,7 @@ Do not populate merchantAttestedExportAt from inferred metadata or set any fresh
 
 Create a workspace-scoped workbook source and base-catalog records without fabricating a SHOPLINE connection. Preserve product and variant IDs from the sheet as source identifiers; they do not, by themselves, establish the owning store or an authorized remote-product link. A filename-derived source label is display metadata only.
 
-Reuse the existing deterministic workbook parser and header/row preservation rules. Keep immutable imported evidence separate from any later working edits. New base records must be visible in the catalog with a Workbook source badge and usable detail view; preview-only records do not satisfy this design.
+Reuse the existing deterministic workbook parser and header/row preservation rules. Select the declared Default worksheet through its internal workbook relationship, keeping parsed rows and the recorded sheet name bound together; reject missing or ambiguous Default sheets instead of falling back to ZIP numbering. Keep immutable imported evidence separate from any later working edits. New base records must be visible in the catalog with a Workbook source badge and usable detail view; preview-only records do not satisfy this design.
 
 Use the exact workbook digest and workspace identity for repeated-file deduplication. A retry or re-upload of identical bytes returns the existing import result. Scope row identity to its workbook source and preserve variants. A changed workbook must not overwrite a different source, a reviewed listing or a website record by matching only filename, title, SKU or a remote ID with unknown store identity. Reconciliation across changed sources is a separate explicit operation and not a prerequisite for the first base import.
 
@@ -63,4 +63,3 @@ No automatic AI enrichment, SHOPLINE writes, website crawl, remote image downloa
 Use only synthetic workbooks and isolated services for tests. Cover recognized/renamed/missing-date/malformed-date workbooks; no connection or encryption key; role and workspace isolation; automatic preview; all-eligible default import; repeated-file idempotency; variant/row preservation; stale responses; retries; actionable invalid/oversized/unsupported file errors; catalog visibility; and server-side rejection of unsupported export/publication attempts. Existing connected-import and source-bound review/export regression checks must remain green.
 
 Do not upload the supplied merchant workbook for tests. No production migration, deployment, provider activation or merchant-data seeding is included in this design approval. Present any required additive migration and rollout separately after source verification.
-
