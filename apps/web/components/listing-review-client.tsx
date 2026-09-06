@@ -26,6 +26,7 @@ import type {
   ListingField,
   ListingReviewModel,
 } from "./listing-view-models";
+import { ProductShotReview } from "./product-shot-review";
 import { ProductShotPanel, type BackgroundChoice } from "./product-shot-panel";
 import { SourceReadinessSummary } from "./source-readiness-summary";
 import type { SourceReadiness } from "../lib/source-readiness";
@@ -80,6 +81,7 @@ export type ListingViewResponse = {
   evidence: FieldEvidence[];
   flags: ComplianceFlag[];
   connection: "connected" | "disconnected" | "error";
+  productShotWorkflow?: boolean;
   productShot: {
     previewUrl: string;
     brandBackgroundColor: string | null;
@@ -825,7 +827,14 @@ export function ListingReviewClient({
       <div className="review-layout">
         <EvidencePanel evidence={evidence} />
         <div className="review-content">
-          {snapshot.productShot ? (
+          {snapshot.productShotWorkflow ? (
+            <ProductShotReview
+              key={`${listingId}:${model.versionId}`}
+              listingId={listingId}
+              canOperate={permissions.canProcess}
+              canApprove={permissions.canApprove}
+            />
+          ) : snapshot.productShot ? (
             <ProductShotPanel
               previewUrl={snapshot.productShot.previewUrl}
               brandBackgroundColor={snapshot.productShot.brandBackgroundColor}

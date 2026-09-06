@@ -179,3 +179,47 @@ it("accepts the maximum repository budget before opening request runtime", async
     vi.unstubAllEnvs();
   }
 });
+
+it("rejects a version change during source decode in the final locked selection transaction", async () => {
+  const f = await fixture();
+  let version = id(20);
+  let locked = false;
+  const base = f.deps.forWorkspace;
+  f.deps.forWorkspace = async (ws, fn) =>
+    base(ws, (r) =>
+      fn({
+        ...r,
+        listings: {
+          lockReviewState: async () => {
+            locked = true;
+          },
+          getReviewSnapshot: async () => ({
+            listing: { activeVersionId: version },
+            activeVersion: { id: version },
+          }),
+        },
+      } as never),
+    );
+  f.validateSource.mockImplementationOnce(async () => {
+    version = id(21);
+    return { width: 10, height: 20 };
+  });
+  await expect(
+    requestProductShot({ ...input, expectedVersionId: id(20) }, f.deps),
+  ).rejects.toMatchObject({ code: "version_conflict" });
+  expect(locked).toBe(true);
+  expect(f.ensure).not.toHaveBeenCalled();
+  expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("rejects repeated fresh-charge action once a queued attempt already exists", async () => {
+  const f = await fixture();
+  f.setCurrent({ attemptId: id(9), sourceAssetId: id(2), state: "queued" });
+  await expect(
+    requestProductShot(
+      { ...input, sourceAssetId: id(2), explicitFreshAttempt: true },
+      f.deps,
+    ),
+  ).rejects.toMatchObject({ code: "fresh_attempt_not_allowed" });
+  expect(f.ensure).not.toHaveBeenCalled();
+});

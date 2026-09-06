@@ -407,3 +407,16 @@ it("returns durable manual history from the authorized listing read", async () =
   expect((await response.json()).historicalImportResults).toEqual(history);
   expect(listHistoricalForListing).toHaveBeenCalledWith(listingId);
 });
+
+it("marks enabled workflow so disabled legacy screens do not fetch new review state", async () => {
+  vi.stubEnv("PRODUCT_SHOT_PROVIDER", "fake");
+  try {
+    const response = await handlerFor("reviewer")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+    expect((await response.json()).productShotWorkflow).toBe(true);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

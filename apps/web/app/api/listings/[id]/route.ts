@@ -103,11 +103,17 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               (asset.metadata as Record<string, unknown> | null)?.role ===
                 "product_shot_cutout",
           );
+          const productShotWorkflow =
+            Boolean(await repositories.productShots?.currentForListing(id)) ||
+            (!cutout &&
+              ["fake", "photoroom"].includes(
+                process.env.PRODUCT_SHOT_PROVIDER ?? "",
+              ));
           let productShot: {
             previewUrl: string;
             brandBackgroundColor: string | null;
           } | null = null;
-          if (cutout) {
+          if (cutout && !productShotWorkflow) {
             const profile = await repositories.workspaces.requireProfile();
             const read = await deps
               .getAssetStore()
@@ -134,6 +140,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             flags: snapshot.flags,
             connection,
             productShot,
+            productShotWorkflow,
             delivery: job
               ? {
                   status: job.status,

@@ -766,3 +766,48 @@ it("counts explicit unknown outcomes and trusted cost estimates while UTC budget
       .kind,
   ).toBe("claimed");
 });
+
+it("requires renewed exact acceptance when reselecting historical approved A after B without revoking A publication", async () => {
+  const f = await fixture();
+  const a = await ready(f);
+  const publication = await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approve(a.observation),
+  );
+  const sourceB = await asset(f.workspaceId, f.listingId, "image/jpeg", {});
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.ensure({
+      ...f.identity,
+      sourceAssetId: sourceB,
+      actorId: f.actorId,
+      explicitFreshAttempt: false,
+    }),
+  );
+  expect((await f.ensure()).attemptId).toBe(a.attemptId);
+  expect(await f.get(a.attemptId)).toMatchObject({
+    state: "candidate_ready",
+    candidate: a.image,
+    callCount: 1,
+  });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.productShots.approvedForAsset({
+        listingId: f.listingId,
+        versionId: f.versionId,
+        assetId: a.image.assetId,
+      }),
+    ),
+  ).toMatchObject({
+    publicationToken: publication.publicationToken,
+    revokedAt: null,
+  });
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.productShots.approve(a.observation),
+  );
+  expect(await f.get(a.attemptId)).toMatchObject({
+    state: "approved",
+    callCount: 1,
+  });
+  expect(
+    await admin`select action from audit_events where entity_id=${f.listingId} and action='product_shot.approved'`,
+  ).toHaveLength(2);
+});

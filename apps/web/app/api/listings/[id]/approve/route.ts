@@ -264,6 +264,12 @@ export function createApproveListingHandler(deps: ApprovalRouteDeps) {
         const lookup = await db.forWorkspace(
           session.workspaceId,
           async (repositories) => {
+            if (await repositories.productShots?.currentForListing(id))
+              return {
+                cutout: null,
+                priorFinalAssetIds: [],
+                brandBackgroundColor: null,
+              };
             const { cutout, priorFinalAssetIds } = await findProductShotAssets(
               id,
               repositories,

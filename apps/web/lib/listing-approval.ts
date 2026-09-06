@@ -5,6 +5,7 @@ import {
   type CanonicalListing,
 } from "@wukong/core";
 import type {
+  ProductShotRepository,
   AuditWriter,
   SourceRowRepository,
   SourceRowSnapshot,
@@ -36,6 +37,10 @@ import { ApiError } from "./route-support";
  * that's not a barrier to calling these functions from there.
  */
 export type ApproveOneRepositories = {
+  productShots?: Pick<
+    ProductShotRepository,
+    "currentForListing" | "approvedForAsset" | "bindApprovedVersion"
+  >;
   listings: Pick<
     ListingRepository,
     | "lockReviewState"
@@ -331,7 +336,43 @@ export async function approveOne(
 
   let versionIdToApprove: string = snapshot.activeVersion.id;
 
-  if (deps.precomputedFinalAsset) {
+  // Re-read current selection under the listing review lock.
+  const shot = await repositories.productShots?.currentForListing(id);
+  let imagePublication: { publicationToken: string } | null = null;
+  if (shot) {
+    if (shot.state !== "approved" || !shot.candidate)
+      throw new ApiError(
+        409,
+        "image_approval_required",
+        "Review and accept the final product image before approving the listing.",
+      );
+    imagePublication = await repositories.productShots!.approvedForAsset({
+      listingId: id,
+      versionId: snapshot.activeVersion.id,
+      assetId: shot.candidate.assetId,
+    });
+    if (!imagePublication)
+      throw new ApiError(
+        409,
+        "image_approval_required",
+        "Accept the image for the current listing version.",
+      );
+    const newVersion = await repositories.listings.appendVersion(
+      id,
+      {
+        ...snapshot.activeVersion.content,
+        imageAssetIds: [shot.candidate.assetId],
+      } as CanonicalListing,
+      auditContext,
+      repositories.audit,
+    );
+    await repositories.listings.replaceEvidence(
+      newVersion.id,
+      snapshot.evidence,
+    );
+    await repositories.listings.replaceFlags(newVersion.id, snapshot.flags);
+    versionIdToApprove = newVersion.id;
+  } else if (deps.precomputedFinalAsset) {
     const { storageKey, priorFinalAssetIds } = deps.precomputedFinalAsset;
     const finalAsset = await repositories.sourceAssets.create({
       storageKey,
@@ -403,6 +444,14 @@ export async function approveOne(
         auditContext,
         repositories.audit,
       );
+    }
+    if (imagePublication) {
+      await repositories.productShots!.bindApprovedVersion({
+        publicationToken: imagePublication.publicationToken,
+        expectedVersionId: snapshot.activeVersion.id,
+        versionId: approved.versionId,
+        actorId: auditContext.actorId,
+      });
     }
     if (sourceRow) {
       const receipt = await repositories.approvalReceipts.record({

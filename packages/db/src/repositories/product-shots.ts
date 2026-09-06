@@ -342,7 +342,7 @@ export function createProductShotRepository(
       );
     if (existing) {
       if (existing.revokedAt) return conflict("publication_revoked");
-      return { publicationToken: existing.token };
+      return { publicationToken: existing.token, reused: true };
     }
     const [asset] = await tx
       .select({ storageKey: sourceAssets.storageKey })
@@ -356,25 +356,23 @@ export function createProductShotRepository(
       .for("share");
     if (!asset) return conflict("candidate_not_found");
     const token = randomBytes(32).toString("hex");
-    await tx
-      .insert(publications)
-      .values({
-        workspaceId,
-        listingId: row.listingId,
-        attemptId: row.id,
-        versionId,
-        observedVersionId,
-        assetId: image.assetId,
-        storageKey: asset.storageKey,
-        candidateDigest: image.digest,
-        sourceAssetId: row.sourceAssetId,
-        sourceDigest: row.sourceDigest,
-        providerVersion: row.providerVersion,
-        renderVersion: row.renderVersion,
-        token,
-        tokenHash: createHash("sha256").update(token).digest("hex"),
-        actorId,
-      });
+    await tx.insert(publications).values({
+      workspaceId,
+      listingId: row.listingId,
+      attemptId: row.id,
+      versionId,
+      observedVersionId,
+      assetId: image.assetId,
+      storageKey: asset.storageKey,
+      candidateDigest: image.digest,
+      sourceAssetId: row.sourceAssetId,
+      sourceDigest: row.sourceDigest,
+      providerVersion: row.providerVersion,
+      renderVersion: row.renderVersion,
+      token,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      actorId,
+    });
     await event(
       row,
       "approved",
@@ -386,7 +384,7 @@ export function createProductShotRepository(
       },
       actorId,
     );
-    return { publicationToken: token };
+    return { publicationToken: token, reused: false };
   }
   return {
     async get(attemptId) {
@@ -476,6 +474,13 @@ export function createProductShotRepository(
       }
       if (!row) return conflict("attempt_not_found");
       if (current?.attemptId !== row.id) {
+        // Selecting an earlier exact candidate reuses pixels, not its acceptance.
+        // Immutable historical publications remain valid and are never revoked here.
+        if (row.state === "approved")
+          await tx
+            .update(attempts)
+            .set({ state: "candidate_ready", updatedAt: new Date() })
+            .where(byAttempt(row.id));
         await tx
           .insert(selections)
           .values({ workspaceId, listingId: row.listingId, attemptId: row.id })
@@ -689,12 +694,24 @@ export function createProductShotRepository(
         input.expectedVersionId,
         input.actorId,
       );
+      if (row.state !== "approved" && result.reused)
+        await event(
+          row,
+          "approved",
+          {
+            versionId: input.expectedVersionId,
+            observedVersionId: input.expectedVersionId,
+            candidateDigest: row.candidateDigest,
+            assetId: row.candidateAssetId,
+          },
+          input.actorId,
+        );
       if (row.state !== "approved")
         await tx
           .update(attempts)
           .set({ state: "approved", updatedAt: new Date() })
           .where(byAttempt(row.id));
-      return result;
+      return { publicationToken: result.publicationToken };
     },
     async bindApprovedVersion(input) {
       scope.assertOpen();
@@ -752,12 +769,13 @@ export function createProductShotRepository(
       if (!fresh || fresh.revokedAt) return conflict("publication_revoked");
       await source(row);
       await output(row, publication.assetId, "product_shot_candidate");
-      return publish(
+      const result = await publish(
         row,
         input.versionId,
         input.expectedVersionId,
         input.actorId,
       );
+      return { publicationToken: result.publicationToken };
     },
     async approvedForAsset(input) {
       scope.assertOpen();

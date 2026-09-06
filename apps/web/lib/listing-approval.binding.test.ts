@@ -200,3 +200,63 @@ describe("durable Bulk Update approval binding", () => {
     ]);
   });
 });
+
+it("requires current exact image approval before factual approval", async () => {
+  const f = fixture();
+  const repos = {
+    ...f.repos,
+    productShots: {
+      currentForListing: async () => ({
+        state: "candidate_ready",
+        candidate: { assetId: "exact" },
+      }),
+    },
+  };
+  await expect(
+    approveOne("listing-1", f.context, repos as never, f.deps),
+  ).rejects.toMatchObject({ code: "image_approval_required" });
+  expect(f.calls).not.toContain("approve");
+});
+it("promotes exact JPEG identity and binds publication after promotion without creating a legacy asset", async () => {
+  const f = fixture();
+  let content: any;
+  let binding: any;
+  const repos = {
+    ...f.repos,
+    productShots: {
+      currentForListing: async () => ({
+        state: "approved",
+        candidate: { assetId: "exact", digest: "a".repeat(64) },
+      }),
+      approvedForAsset: async () => ({
+        publicationToken: "token",
+        candidateDigest: "a".repeat(64),
+      }),
+      bindApprovedVersion: async (i: any) => {
+        f.calls.push("bind");
+        binding = i;
+      },
+    },
+    listings: {
+      ...f.repos.listings,
+      appendVersion: async (_id: string, c: any) => {
+        content = c;
+        return { id: "version-final" };
+      },
+    },
+  };
+  const result = await approveOne(
+    "listing-1",
+    f.context,
+    repos as never,
+    f.deps,
+  );
+  expect(content.imageAssetIds).toEqual(["exact"]);
+  expect(result.versionId).toBe("version-final");
+  expect(f.calls.indexOf("bind")).toBeGreaterThan(f.calls.indexOf("promote"));
+  expect(binding).toMatchObject({
+    expectedVersionId: "version-1",
+    versionId: "version-final",
+    publicationToken: "token",
+  });
+});

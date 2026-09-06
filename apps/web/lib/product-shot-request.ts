@@ -1,3 +1,4 @@
+import { ApiError } from "./route-support";
 import { createHash } from "node:crypto";
 import { PRODUCT_SHOT_LIMITS } from "@wukong/core";
 import type { AssetStore } from "@wukong/assets";
@@ -11,6 +12,7 @@ export type ProductShotRequestInput = {
   listingId: string;
   actorId: string;
   sourceAssetId?: string;
+  expectedVersionId?: string;
   explicitFreshAttempt?: boolean;
 };
 export type ProductShotRequestResult = { state: string; attemptId?: string };
@@ -31,9 +33,37 @@ export async function requestProductShot(
   deps: ProductShotRequestDeps,
 ): Promise<ProductShotRequestResult> {
   if (deps.providerName === "disabled") return { state: "setup_required" };
-  const existing = await deps.forWorkspace(input.workspaceId, (r) =>
-    r.productShots.currentForListing(input.listingId),
-  );
+  const assertObservedVersion = async (
+    r: Parameters<Parameters<Database["forWorkspace"]>[1]>[0],
+  ) => {
+    if (!input.expectedVersionId) return;
+    await r.listings.lockReviewState(input.listingId);
+    const snapshot = await r.listings.getReviewSnapshot(input.listingId);
+    if (!snapshot?.activeVersion)
+      throw new ApiError(404, "listing_not_found", "Listing not found.");
+    if (
+      snapshot.activeVersion.id !== input.expectedVersionId ||
+      snapshot.listing.activeVersionId !== input.expectedVersionId
+    )
+      throw new ApiError(
+        409,
+        "version_conflict",
+        "Reload the listing before changing its image.",
+      );
+  };
+  const existing = await deps.forWorkspace(input.workspaceId, async (r) => {
+    await assertObservedVersion(r);
+    return r.productShots.currentForListing(input.listingId);
+  });
+  if (
+    input.explicitFreshAttempt &&
+    (!existing || !["failed", "outcome_unknown"].includes(existing.state))
+  )
+    throw new ApiError(
+      409,
+      "fresh_attempt_not_allowed",
+      "Reload the image state before requesting a fresh attempt.",
+    );
   if (
     existing &&
     existing.providerVersion === `${deps.providerName}:1.0.0` &&
@@ -84,17 +114,36 @@ export async function requestProductShot(
   if (bytes.length > PRODUCT_SHOT_LIMITS.inputBytes)
     throw new Error("input_too_large");
   await (deps.validateSource ?? validateProductShotSource)(bytes, source.kind);
-  const { attemptId } = await deps.forWorkspace(input.workspaceId, (r) =>
-    r.productShots.ensure({
-      workspaceId: input.workspaceId,
-      listingId: input.listingId,
-      actorId: input.actorId,
-      sourceAssetId: source.id,
-      sourceDigest: createHash("sha256").update(bytes).digest("hex"),
-      providerVersion: `${deps.providerName}:1.0.0`,
-      renderVersion: PRODUCT_SHOT_RENDER_VERSION,
-      explicitFreshAttempt: input.explicitFreshAttempt ?? false,
-    }),
+  const { attemptId } = await deps.forWorkspace(
+    input.workspaceId,
+    async (r) => {
+      await assertObservedVersion(r);
+      if (input.explicitFreshAttempt) {
+        await r.listings.lockReviewState(input.listingId);
+        const current = await r.productShots.currentForListing(input.listingId);
+        if (
+          !current ||
+          current.attemptId !== existing?.attemptId ||
+          current.sourceAssetId !== source.id ||
+          !["failed", "outcome_unknown"].includes(current.state)
+        )
+          throw new ApiError(
+            409,
+            "fresh_attempt_not_allowed",
+            "Reload the image state before requesting a fresh attempt.",
+          );
+      }
+      return r.productShots.ensure({
+        workspaceId: input.workspaceId,
+        listingId: input.listingId,
+        actorId: input.actorId,
+        sourceAssetId: source.id,
+        sourceDigest: createHash("sha256").update(bytes).digest("hex"),
+        providerVersion: `${deps.providerName}:1.0.0`,
+        renderVersion: PRODUCT_SHOT_RENDER_VERSION,
+        explicitFreshAttempt: input.explicitFreshAttempt ?? false,
+      });
+    },
   );
   const row = await deps.forWorkspace(input.workspaceId, (r) =>
     r.productShots.get(attemptId),
