@@ -1,4 +1,10 @@
 "use client";
+import {
+  exactQueryId,
+  initialDestinationSearch,
+  withWorkbenchReturn,
+} from "../lib/workbench-navigation";
+import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -10,7 +16,7 @@ import {
 } from "../lib/ui-copy";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { LedgerKind, NormalizedStatus } from "../lib/jobs-ledger";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -80,11 +86,92 @@ const KIND_FILTERS: ReadonlyArray<{
 // pills), and cancelled is navy -- the one status none of the other pills on
 // this branch needed a color for yet.
 
-export function JobsLedgerClient() {
+export function JobsLedgerClient({
+  initialSearch,
+}: { initialSearch?: string } = {}) {
+  const locale = useLocale();
+  const params = useMemo(
+    () => initialDestinationSearch(initialSearch),
+    [initialSearch],
+  );
+  const attempt = params.get("attempt");
+  const attemptId = exactQueryId(attempt);
+  const returnTo = params.get("returnTo");
+  return (
+    <>
+      {returnTo ? <WorkbenchReturnLink returnTo={returnTo} /> : null}
+      {attempt ? (
+        <Link
+          className="jobs-row-link"
+          href={withWorkbenchReturn("/jobs", returnTo)}
+        >
+          {localized(locale, "所有作業", "All jobs")}
+        </Link>
+      ) : null}
+      {attemptId ? (
+        <section
+          aria-label={localized(
+            locale,
+            "指定匯出紀錄",
+            "Selected export attempt",
+          )}
+        >
+          <h2>
+            {localized(locale, "指定匯出紀錄", "Selected export attempt")}
+          </h2>
+          <ExportAttemptInspector
+            key={attemptId}
+            attemptId={attemptId}
+            initiallyOpened
+          />
+        </section>
+      ) : attempt ? (
+        <p role="alert">
+          {localized(
+            locale,
+            "匯出紀錄連結無效。",
+            "Invalid export attempt link.",
+          )}
+        </p>
+      ) : null}
+      <JobsLedger
+        initialKind={params.get("kind")}
+        initialPage={params.get("page")}
+        returnTo={returnTo}
+      />
+    </>
+  );
+}
+function JobsLedger({
+  initialKind,
+  initialPage,
+  returnTo,
+}: {
+  initialKind: string | null;
+  initialPage: string | null;
+  returnTo: string | null;
+}) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
-  const [page, setPage] = useState(1);
+  const destinationKind =
+    KIND_FILTERS.find((option) => option.value === initialKind)?.value ?? "all";
+  const destinationPage =
+    initialPage &&
+    /^[1-9][0-9]*$/.test(initialPage) &&
+    Number(initialPage) <= 21474836
+      ? Number(initialPage)
+      : 1;
+  const destination = `${destinationKind}:${destinationPage}`;
+  const [previousDestination, setPreviousDestination] = useState(destination);
+  const [kindFilter, setKindFilter] = useState<KindFilter>(destinationKind);
+  const [page, setPage] = useState(destinationPage);
+  // Apply navigation before committing a fetch with the previous URL's filters.
+  // Other stateful panels stay mounted and retain their local form state.
+  if (previousDestination !== destination) {
+    setPreviousDestination(destination);
+    setKindFilter(destinationKind);
+    setPage(destinationPage);
+  }
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -343,7 +430,10 @@ export function JobsLedgerClient() {
                   {entry.listingId ? (
                     <Link
                       className="jobs-row-link"
-                      href={`/listings/${entry.listingId}`}
+                      href={withWorkbenchReturn(
+                        `/listings/${entry.listingId}`,
+                        returnTo,
+                      )}
                     >
                       {localized(locale, "查看上架流程", "View listing")}
                     </Link>
@@ -358,10 +448,16 @@ export function JobsLedgerClient() {
   );
 }
 
-function ExportAttemptInspector({ attemptId }: { attemptId: string }) {
+function ExportAttemptInspector({
+  attemptId,
+  initiallyOpened = false,
+}: {
+  attemptId: string;
+  initiallyOpened?: boolean;
+}) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const [opened, setOpened] = useState(false);
+  const [opened, setOpened] = useState(initiallyOpened);
   const load = useCallback(
     async (signal: AbortSignal) => {
       if (!opened) return null;

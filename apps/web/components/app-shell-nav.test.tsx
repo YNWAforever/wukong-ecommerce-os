@@ -4,8 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pathnameMock = vi.fn<() => string>(() => "/dashboard");
-vi.mock("next/navigation", () => ({ usePathname: () => pathnameMock() }));
+const searchParamsMock = vi.fn(() => new URLSearchParams());
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathnameMock(),
+  useSearchParams: () => searchParamsMock(),
+}));
 import { AppShellNav, type NavItem } from "./app-shell-nav.js";
+import { SHELL_NAV_ITEMS } from "../app/(app)/shell-nav-items";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -31,6 +36,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   pathnameMock.mockReturnValue("/dashboard");
+  searchParamsMock.mockReturnValue(new URLSearchParams());
 });
 
 afterEach(() => {
@@ -454,4 +460,103 @@ it("makes main/footer inert while the drawer is open and restores their previous
   expect(footer.hasAttribute("inert")).toBe(true);
   main.remove();
   footer.remove();
+});
+
+describe("grouped operator navigation", () => {
+  function renderShell() {
+    render(
+      <AppShellNav
+        navItems={SHELL_NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Synthetic"
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="en"
+      />,
+    );
+  }
+  const hrefs = (selector: string) =>
+    Array.from(container.querySelectorAll(`${selector} a`)).map((a) =>
+      a.getAttribute("href"),
+    );
+  it("keeps the four workflow destinations primary and all existing tools discoverable", () => {
+    renderShell();
+    expect(hrefs('.app-sidebar [aria-label="Primary"]')).toEqual([
+      "/dashboard",
+      "/catalog",
+      "/listings/import",
+      "/jobs?kind=export",
+    ]);
+    expect(hrefs('.app-sidebar [aria-label="Tools"]')).toEqual([
+      "/queue",
+      "/batches",
+      "/listings/new",
+      "/jobs",
+      "/quality",
+      "/system-map",
+    ]);
+    expect(hrefs(".app-bottom-nav")).toEqual([
+      "/dashboard",
+      "/catalog",
+      "/listings/import",
+      "/jobs?kind=export",
+    ]);
+    expect(container.querySelector(".app-sidebar")!.textContent).toContain(
+      "Workbench",
+    );
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="drawer-trigger"]')!
+        .click(),
+    );
+    expect(hrefs('.app-drawer [aria-label="Tools"]')).toEqual(
+      hrefs('.app-sidebar [aria-label="Tools"]'),
+    );
+    expect(container.querySelector('.app-drawer a[href="/admin"]')).toBeNull();
+  });
+  it.each([
+    ["kind=export", "/jobs?kind=export"],
+    [
+      "kind=export&attempt=00000000-0000-4000-8000-000000000001&page=2",
+      "/jobs?kind=export",
+    ],
+    ["", "/jobs"],
+    ["kind=pipeline", "/jobs"],
+    ["kind=invalid", "/jobs"],
+    ["kind=exporting", "/jobs"],
+  ])("selects exactly one Jobs destination for %s", (query, expected) => {
+    pathnameMock.mockReturnValue("/jobs");
+    searchParamsMock.mockReturnValue(new URLSearchParams(query));
+    renderShell();
+    expect(
+      Array.from(container.querySelectorAll(".app-sidebar a.active")).map((a) =>
+        a.getAttribute("href"),
+      ),
+    ).toEqual([expected]);
+    expect(
+      container
+        .querySelector('.app-sidebar a[aria-current="page"]')
+        ?.getAttribute("href"),
+    ).toBe(expected);
+  });
+  it("updates selection after query-only navigation and localizes group labels", () => {
+    pathnameMock.mockReturnValue("/jobs");
+    renderShell();
+    searchParamsMock.mockReturnValue(new URLSearchParams("kind=export"));
+    renderShell();
+    expect(
+      container.querySelector(".app-sidebar a.active")!.getAttribute("href"),
+    ).toBe("/jobs?kind=export");
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="locale-toggle-zh"]')!
+        .click(),
+    );
+    expect(
+      container.querySelector('.app-sidebar [aria-label="工具"]'),
+    ).not.toBeNull();
+    expect(container.querySelector(".app-sidebar")!.textContent).toContain(
+      "工作台",
+    );
+  });
 });

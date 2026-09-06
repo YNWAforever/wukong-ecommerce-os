@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { useLocalePreference } from "../lib/locale-context";
@@ -12,6 +12,7 @@ export type NavItem = {
   href: string;
   labelZh: string;
   labelEn: string;
+  group?: "primary" | "tools";
 };
 
 type AppShellNavProps = {
@@ -50,16 +51,60 @@ export function AppShellNav({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
 
-  const fullNav = isAdmin ? [...navItems, ADMIN_ITEM] : navItems;
-  const mobileNav = navItems.slice(0, MOBILE_NAV_COUNT);
-  // A nested route (e.g. "/listings/new/step-2") should still highlight its
-  // top-level nav item, not just an exact pathname match.
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(`${href}/`);
+  const searchParams = useSearchParams();
+  const primaryNav = navItems.filter((item) => item.group !== "tools");
+  const toolsNav = navItems.filter((item) => item.group === "tools");
+  const mobileNav = primaryNav.slice(0, MOBILE_NAV_COUNT);
+  const isActive = (href: string) => {
+    const [itemPath, query] = href.split("?");
+    if (pathname !== itemPath && !pathname.startsWith(`${itemPath}/`))
+      return false;
+    if (itemPath === "/jobs") {
+      const exportSelected = searchParams.get("kind") === "export";
+      return (
+        (new URLSearchParams(query).get("kind") === "export") === exportSelected
+      );
+    }
+    return true;
+  };
   const navClassName = (item: NavItem) =>
     isActive(item.href) ? "active" : undefined;
   const label = (item: NavItem) =>
     localized(locale, item.labelZh, item.labelEn);
+
+  function navGroups(inDrawer = false) {
+    return (["primary", "tools"] as const).map((group) => {
+      const items = group === "primary" ? primaryNav : toolsNav;
+      if (items.length === 0) return null;
+      const groupLabel =
+        group === "primary"
+          ? localized(locale, "主要", "Primary")
+          : localized(locale, "工具", "Tools");
+      return (
+        <div
+          key={group}
+          className="app-nav-group"
+          role="group"
+          aria-label={groupLabel}
+        >
+          <span className="app-nav-group-label" aria-hidden="true">
+            {groupLabel}
+          </span>
+          {items.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={navClassName(item)}
+              aria-current={isActive(item.href) ? "page" : undefined}
+              onClick={inDrawer ? closeDrawer : undefined}
+            >
+              {label(item)}
+            </Link>
+          ))}
+        </div>
+      );
+    });
+  }
 
   function changeLocale(next: Locale) {
     setLocale(next);
@@ -157,20 +202,16 @@ export function AppShellNav({
           }
           aria-label={localized(locale, "主要導覽", "Main navigation")}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={navClassName(item)}
-            >
-              {label(item)}
-            </Link>
-          ))}
+          {navGroups()}
         </nav>
 
         {isAdmin ? (
           <div className="app-sidebar-admin">
-            <Link href="/admin" className={navClassName(ADMIN_ITEM)}>
+            <Link
+              href="/admin"
+              className={navClassName(ADMIN_ITEM)}
+              aria-current={isActive("/admin") ? "page" : undefined}
+            >
               {label(ADMIN_ITEM)}
             </Link>
           </div>
@@ -212,6 +253,7 @@ export function AppShellNav({
               key={item.href}
               href={item.href}
               className={navClassName(item)}
+              aria-current={isActive(item.href) ? "page" : undefined}
             >
               {label(item)}
             </Link>
@@ -260,16 +302,17 @@ export function AppShellNav({
               "Full mobile navigation",
             )}
           >
-            {fullNav.map((item) => (
+            {navGroups(true)}
+            {isAdmin ? (
               <Link
-                key={item.href}
-                href={item.href}
-                className={navClassName(item)}
+                href="/admin"
+                className={navClassName(ADMIN_ITEM)}
+                aria-current={isActive("/admin") ? "page" : undefined}
                 onClick={closeDrawer}
               >
-                {label(item)}
+                {label(ADMIN_ITEM)}
               </Link>
-            ))}
+            ) : null}
           </nav>
         </div>
       ) : null}

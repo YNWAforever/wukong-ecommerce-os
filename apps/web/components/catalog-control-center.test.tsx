@@ -14,13 +14,16 @@ import { CatalogControlCenter } from "./catalog-control-center.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-async function mount(fetcher: ReturnType<typeof vi.fn>) {
+async function mount(
+  fetcher: ReturnType<typeof vi.fn>,
+  initialSearch?: string,
+) {
   vi.stubGlobal("fetch", fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root: Root = createRoot(container);
   await act(async () => {
-    root.render(createElement(CatalogControlCenter));
+    root.render(<CatalogControlCenter initialSearch={initialSearch} />);
   });
   await act(async () => {
     await Promise.resolve();
@@ -704,6 +707,188 @@ it("shows workbook source details without platform checkboxes or draft links", a
     expect(
       fetcher.mock.calls.some(([url]) => url === "/api/workbook-products/book"),
     ).toBe(true);
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("keeps exact import scope across pagination", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  window.history.replaceState(
+    null,
+    "",
+    `/catalog?filter=workbook&importId=${id}`,
+  );
+  const calls: URL[] = [];
+  const { container, root } = await mount(makePagingFetcher(calls));
+  try {
+    expect(calls[0]!.searchParams.get("importId")).toBe(id);
+    expect(calls[0]!.searchParams.get("filter")).toBe("workbook");
+    expect(container.textContent).toContain("此匯入");
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("2");
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(id);
+  } finally {
+    await unmount(root);
+    window.history.replaceState(null, "", "/");
+  }
+});
+
+it("restores validated catalog page and search from the URL", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/catalog?page=2&q=old&filter=workbook",
+  );
+  const calls: URL[] = [];
+  const { root } = await mount(makePagingFetcher(calls));
+  try {
+    expect(calls[0]!.searchParams.get("page")).toBe("2");
+    expect(calls[0]!.searchParams.get("q")).toBe("old");
+  } finally {
+    await unmount(root);
+    window.history.replaceState(null, "", "/");
+  }
+});
+it("updates import, search, filter and page when the destination query changes", async () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+  const calls: URL[] = [];
+  const { root, container } = await mount(
+    makePagingFetcher(calls),
+    `importId=${a}&filter=workbook&q=first&page=2`,
+  );
+  try {
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(a);
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("2");
+    await act(async () =>
+      root.render(
+        <CatalogControlCenter
+          initialSearch={`importId=${b}&filter=workbook&q=second&page=3`}
+        />,
+      ),
+    );
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(b);
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("second");
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("3");
+    expect(container.textContent).toContain("Page 3 item");
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={"filter=all&page=1"} />),
+    );
+    expect(calls.at(-1)!.searchParams.has("importId")).toBe(false);
+    expect(calls.at(-1)!.searchParams.get("filter")).toBe("all");
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("");
+    expect(container.textContent).not.toContain("此匯入");
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("hides rows from another import through pending, failure and retry while preserving the export form", async () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+  let resolveRefresh!: (response: Response) => void;
+  let resolveB!: (response: Response) => void;
+  let resolveRetry!: (response: Response) => void;
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(
+        pageResponse(
+          [
+            makeItem({
+              id: "a",
+              title: "Import A row",
+              listingId: "listing-a",
+            }),
+          ],
+          {
+            capabilities: {
+              canGenerateBulkUpdate: true,
+              canRecordImportResult: true,
+            },
+          },
+        ),
+      ),
+    )
+    .mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    )
+    .mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveB = resolve;
+      }),
+    )
+    .mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        resolveRetry = resolve;
+      }),
+    );
+  const { root, container } = await mount(fetcher, `importId=${a}`);
+  try {
+    expect(container.textContent).toContain("Import A row");
+    const search = container.querySelector('input[type="search"]');
+    await act(async () =>
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    const attestation = container.querySelector(
+      'section section input[type="checkbox"]',
+    ) as HTMLInputElement;
+    await act(async () => attestation.click());
+    expect(attestation.checked).toBe(true);
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(container.textContent).toContain("Import A row");
+    expect(container.textContent).toContain("正在更新結果");
+    await act(async () =>
+      resolveRefresh(
+        Response.json(
+          pageResponse(
+            [makeItem({ id: "a2", title: "Import A refreshed row" })],
+            { page: 2 },
+          ),
+        ),
+      ),
+    );
+    expect(container.textContent).toContain("Import A refreshed row");
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={`importId=${b}`} />),
+    );
+    expect(container.textContent).not.toContain("Import A");
+    expect(container.querySelector('input[type="search"]')).toBe(search);
+    expect(
+      container.querySelector('section section input[type="checkbox"]'),
+    ).toBe(attestation);
+    expect(attestation.checked).toBe(true);
+    await act(async () => resolveB(new Response("", { status: 503 })));
+    expect(container.textContent).not.toContain("Import A");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('input[type="search"]')).toBe(search);
+    expect(
+      container.querySelector('section section input[type="checkbox"]'),
+    ).toBe(attestation);
+    expect(attestation.checked).toBe(true);
+    await act(async () => findButtonByText(container, "重試")!.click());
+    expect(container.textContent).not.toContain("Import A");
+    await act(async () =>
+      resolveRetry(
+        Response.json(
+          pageResponse([makeItem({ id: "b", title: "Import B row" })]),
+        ),
+      ),
+    );
+    expect(container.textContent).toContain("Import B row");
+    expect(container.textContent).not.toContain("Import A");
+    expect(container.querySelector('input[type="search"]')).toBe(search);
+    expect(
+      container.querySelector('section section input[type="checkbox"]'),
+    ).toBe(attestation);
+    expect(attestation.checked).toBe(true);
   } finally {
     await unmount(root);
   }

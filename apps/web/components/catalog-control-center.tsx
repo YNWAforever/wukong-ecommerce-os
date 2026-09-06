@@ -1,4 +1,10 @@
 "use client";
+import {
+  exactQueryId,
+  initialDestinationSearch,
+  withWorkbenchReturn,
+} from "../lib/workbench-navigation";
+import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -12,7 +18,7 @@ import {
 import Link from "next/link";
 import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -52,14 +58,48 @@ const EMPTY_RESPONSE: CatalogPage = {
   totalMatching: 0,
 };
 
-export function CatalogControlCenter() {
+export function CatalogControlCenter({
+  initialSearch,
+}: { initialSearch?: string } = {}) {
+  const params = useMemo(
+    () => initialDestinationSearch(initialSearch),
+    [initialSearch],
+  );
+  const importId = exactQueryId(params.get("importId"));
+  const invalidImport = params.has("importId") && !importId;
+  const returnTo = params.get("returnTo");
   const locale = useLocale();
   const c = commonCopy[locale];
   const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<CatalogFilter>("all");
-  const [page, setPage] = useState(1);
+  const destinationQuery = params.get("q") ?? "";
+  const destinationFilter =
+    CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
+      ?.value ?? "all";
+  const pageValue = params.get("page");
+  const destinationPage =
+    pageValue &&
+    /^[1-9][0-9]*$/.test(pageValue) &&
+    Number(pageValue) <= 21474836
+      ? Number(pageValue)
+      : 1;
+  const destination = JSON.stringify([
+    params.get("importId"),
+    destinationQuery,
+    destinationFilter,
+    destinationPage,
+  ]);
+  const [previousDestination, setPreviousDestination] = useState(destination);
+  const [query, setQuery] = useState(destinationQuery);
+  const [filter, setFilter] = useState<CatalogFilter>(destinationFilter);
+  const [page, setPage] = useState(destinationPage);
+  // Synchronize URL-owned controls without remounting detail or export forms.
+  if (previousDestination !== destination) {
+    setPreviousDestination(destination);
+    setQuery(destinationQuery);
+    setFilter(destinationFilter);
+    setPage(destinationPage);
+  }
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const loadCatalog = useCallback(
@@ -70,22 +110,29 @@ export function CatalogControlCenter() {
         q: query,
         filter,
       });
+      if (invalidImport) throw new Error("Invalid import link");
+      if (importId) params.set("importId", importId);
       const response = await fetch(`/api/catalog?${params.toString()}`, {
         cache: "no-store",
         signal,
       });
       if (!response.ok)
         throw new Error(`Unable to load catalog (${response.status})`);
-      return (await response.json()) as CatalogPage;
+      return { importId, page: (await response.json()) as CatalogPage };
     },
-    [page, query, filter],
+    [page, query, filter, importId, invalidImport],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     loadCatalog,
     "Unable to load catalog",
   );
 
-  const response = data ?? EMPTY_RESPONSE;
+  // Retain same-import refresh results, but never relabel another import's rows.
+  // Keep the surrounding detail/export forms mounted during scope changes.
+  const response =
+    data && !invalidImport && data.importId === importId
+      ? data.page
+      : EMPTY_RESPONSE;
 
   function handleQueryChange(value: string) {
     setQuery(value);
@@ -97,9 +144,13 @@ export function CatalogControlCenter() {
     setPage(1);
   }
 
+  const returnLink = returnTo ? (
+    <WorkbenchReturnLink returnTo={returnTo} />
+  ) : null;
   if (!data && error) {
     return (
       <div className="load-error" role="alert">
+        {returnLink}
         <p>{safeUiError(error, locale)}</p>
         <button type="button" onClick={reload}>
           {c.retry}
@@ -110,6 +161,7 @@ export function CatalogControlCenter() {
   if (!data) {
     return (
       <p className="helper-copy" role="status">
+        {returnLink}
         {localized(
           locale,
           "正在載入商品控制中心…",
@@ -124,6 +176,16 @@ export function CatalogControlCenter() {
       aria-label={localized(locale, "商品控制中心", "Catalog control center")}
       aria-busy={loading}
     >
+      {returnLink}
+      {importId ? (
+        <p className="helper-copy">
+          {localized(
+            locale,
+            "此匯入的商品。摘要數字涵蓋整個工作區。",
+            "This import. Summary counts cover the entire workspace.",
+          )}
+        </p>
+      ) : null}
       {error ? (
         <div className="load-error" role="alert">
           <span>{safeUiError(error, locale)}</span>
@@ -465,7 +527,10 @@ export function CatalogControlCenter() {
                         {item.listingId ? (
                           <Link
                             className={styles.actionLink}
-                            href={`/listings/${item.listingId}`}
+                            href={withWorkbenchReturn(
+                              `/listings/${item.listingId}`,
+                              returnTo,
+                            )}
                           >
                             {localized(locale, "開啟流程", "Open")}
                           </Link>

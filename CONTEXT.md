@@ -1,5 +1,33 @@
 # Domain Context
 
+## Operations workbench
+
+`/dashboard` is a read-only operations worklist. Its workspace-scoped repository
+returns counts and paginated membership from one SQL snapshot over retained
+listings, export attempts, website scans and successful workbook imports. Counts
+cover all history under the selected kind, rather than the displayed page. Unknown
+states remain explicitly unclassified. An import task count and its affected
+product count are different measures.
+
+The three main states are needs attention, in progress and completed. Completed
+exports are labelled operator-reported results, not verified SHOPLINE acceptance;
+completed scans describe previews, not saved or published products. Independent
+workbook products gain no listing approval or export binding from this view.
+
+Localized row links preserve validated dashboard return context. Jobs opens the
+exact export attempt independently of its history page; Catalog accepts an exact
+workbook import scope. Changing that identity cannot retain another import's rows
+or another attempt's reconciliation panel. Existing detailed screens still own
+review versions, source binding, receipt validation and every mutation.
+
+Primary navigation is Workbench, Catalog, Imports and Exports & results. Work
+Queue, Batches, New listing, All Jobs, Quality and System map remain in Tools;
+admin navigation remains role gated. The UI uses the existing locale cookie,
+reactive URL filters, request cancellation, explicit stale/observed labels and
+focus/retry refresh without polling. No schema migration or new provider behavior
+is introduced. Verification is recorded in
+`docs/superpowers/plans/2026-09-06-operations-workbench-results.md`.
+
 ## Shopline delivery
 
 Shopline delivery is the listing decision that determines whether a specific

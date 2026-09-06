@@ -10,6 +10,7 @@ const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh }),
   usePathname: () => "/catalog",
+  useSearchParams: () => new URLSearchParams(),
 }));
 import { createRoot } from "react-dom/client";
 import { describe, it, expect, vi } from "vitest";

@@ -328,8 +328,12 @@ describe("full workspace read boundaries", () => {
       prepared: prepareWorkbookBase(sheet, "synthetic.xlsx"),
       actorId: actor,
     };
-    await db.forWorkspace(mixed, (r) => r.workbookCatalog.save(save));
-    await db.forWorkspace(workbookForeign, (r) => r.workbookCatalog.save(save));
+    const savedImport = await db.forWorkspace(mixed, (r) =>
+      r.workbookCatalog.save(save),
+    );
+    const savedForeignImport = await db.forWorkspace(workbookForeign, (r) =>
+      r.workbookCatalog.save(save),
+    );
     await db.forWorkspace(mixed, async (r) => {
       const pages = await Promise.all(
         [1, 2, 3, 4].map((page) =>
@@ -413,6 +417,32 @@ describe("full workspace read boundaries", () => {
         );
         expect(filtered.summary.workbook).toBe(27);
       }
+      await r.workbookCatalog.save({
+        ...save,
+        filename: "newer.xlsx",
+        workbookSha256: randomUUID().replaceAll("-", "").repeat(2),
+        prepared: prepareWorkbookBase(sheet.slice(0, 3), "newer.xlsx"),
+      });
+      const selectedImport = await r.reads.catalogPage({
+        page: 2,
+        pageSize: 25,
+        filter: "all",
+        importId: savedImport.importId,
+      });
+      expect(selectedImport.totalMatching).toBe(27);
+      expect(selectedImport.items).toHaveLength(2);
+      expect(
+        selectedImport.items.every((item) => item.sourceType === "workbook"),
+      ).toBe(true);
+      expect(selectedImport.summary.total).toBe(79);
+      const foreignImport = await r.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "all",
+        importId: savedForeignImport.importId,
+      });
+      expect(foreignImport.totalMatching).toBe(0);
+      expect(foreignImport.items).toEqual([]);
       const workbookId = workbook.items[0]!.id;
       expect(workbook.items[0]).not.toHaveProperty("listingId");
       expect(workbook.items[0]).not.toHaveProperty("remoteProductId");

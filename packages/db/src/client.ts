@@ -1,4 +1,8 @@
 import {
+  createWorkbenchReadRepository,
+  type WorkbenchReadRepository,
+} from "./repositories/workbench-reads.js";
+import {
   createWorkbookCatalogRepository,
   type WorkbookCatalogRepository,
 } from "./repositories/workbook-catalog.js";
@@ -106,6 +110,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  workbench: WorkbenchReadRepository;
   workbookCatalog: WorkbookCatalogRepository;
   websiteCatalog: WebsiteCatalogRepository;
   exportEvidence: ExportEvidenceRepository;
@@ -206,6 +211,11 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        workbench: createWorkbenchReadRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         workbookCatalog: createWorkbookCatalogRepository(
           transaction,
           workspaceId,

@@ -9,6 +9,7 @@ vi.mock("next/headers", () => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
   usePathname: () => "/catalog",
+  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("../lib/session-context", () => ({
   authSessionContext: { resolve: async () => null },

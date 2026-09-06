@@ -157,7 +157,7 @@ test("read pages support both locales and keyboard navigation at desktop and 375
       await page.setViewportSize({ width, height: 1000 });
       for (const [route, api] of [
         ["catalog", "/api/catalog"],
-        ["dashboard", "/api/listings"],
+        ["dashboard", "/api/workbench"],
         ["queue", "/api/listings"],
         ["quality", "/api/quality"],
         ["system-map", null],
@@ -169,7 +169,11 @@ test("read pages support both locales and keyboard navigation at desktop and 375
             )
           : Promise.resolve();
         await page.goto(
-          route === "received-detail" ? "/listings/" + receivedId : "/" + route,
+          route === "received-detail"
+            ? "/listings/" + receivedId
+            : route === "dashboard"
+              ? "/dashboard?state=progress"
+              : "/" + route,
         );
         await loaded;
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
@@ -181,12 +185,16 @@ test("read pages support both locales and keyboard navigation at desktop and 375
           .innerText();
         if (locale === "en") headings.set(route, heading);
         else expect(heading).not.toBe(headings.get(route));
-        if (
-          route === "catalog" ||
-          route === "dashboard" ||
-          route === "received-detail"
-        ) {
+        if (route === "catalog" || route === "received-detail") {
           await expect(main).toContainText(sourceImportId);
+        }
+        if (route === "dashboard") {
+          await expect(main.getByRole("heading", { level: 1 })).toHaveText(
+            locale === "en" ? "Workbench" : "工作台",
+          );
+          await expect(
+            main.locator(`a[href^="/listings/${receivedId}?"]`),
+          ).toBeVisible();
         }
         if (route === "catalog" && width === 375) {
           const region = main.getByRole("region", {

@@ -135,3 +135,19 @@ export type {
   WorkbookCatalogProduct,
   WorkbookCatalogRepository,
 } from "./repositories/workbook-catalog.js";
+
+export {
+  classifyListing,
+  workbenchStateForReason,
+  type WorkbenchItem,
+  type WorkbenchKind,
+  type WorkbenchPage,
+  type WorkbenchQuery,
+  type WorkbenchReason,
+  type WorkbenchState,
+} from "./repositories/workbench-contract.js";
+
+export {
+  createWorkbenchReadRepository,
+  type WorkbenchReadRepository,
+} from "./repositories/workbench-reads.js";
