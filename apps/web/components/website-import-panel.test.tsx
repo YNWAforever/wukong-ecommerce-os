@@ -257,3 +257,127 @@ it.each([
   expect(container.textContent).not.toContain("document_unavailable");
   expect(container.textContent).not.toContain("unknown_diagnostic");
 });
+
+function failedPollThenDeferredReads() {
+  const reads: {
+    resolve: (response: Response) => void;
+    signal: AbortSignal;
+  }[] = [];
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json(scan("queued")))
+    .mockRejectedValueOnce(new Error("poll unavailable"))
+    .mockImplementation(
+      (_url, init) =>
+        new Promise<Response>((resolve) =>
+          reads.push({ resolve, signal: init.signal }),
+        ),
+    );
+  return { fetcher, reads };
+}
+async function retryFailedPoll(fetcher: ReturnType<typeof vi.fn>) {
+  await mount(fetcher);
+  await input("https://store.example/");
+  await click("Preview products");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1500);
+  });
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  await click("Retry scan");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+it("keeps one slow retry in flight across polling intervals and preserves terminal selection", async () => {
+  vi.useFakeTimers();
+  const { fetcher, reads } = failedPollThenDeferredReads();
+  await retryFailedPoll(fetcher);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4500);
+  });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(reads).toHaveLength(1);
+  await act(async () => reads[0]!.resolve(json(scan("ready"))));
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4500);
+  });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(container.textContent).toContain("Preview ready");
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(true);
+});
+it("cancels every outstanding read when a slow retry is unmounted", async () => {
+  vi.useFakeTimers();
+  const { fetcher, reads } = failedPollThenDeferredReads();
+  await retryFailedPoll(fetcher);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4500);
+  });
+  await act(async () => root.unmount());
+  expect(reads.length).toBeGreaterThan(0);
+  expect(reads.every((read) => read.signal.aborted)).toBe(true);
+  const count = fetcher.mock.calls.length;
+  await act(async () => {
+    reads.forEach((read) => read.resolve(json(scan("running"))));
+    await vi.advanceTimersByTimeAsync(4500);
+  });
+  expect(fetcher).toHaveBeenCalledTimes(count);
+});
+it("ignores reversed completion of an aborted slow retry after a new preview is selected", async () => {
+  vi.useFakeTimers();
+  const { fetcher, reads } = failedPollThenDeferredReads();
+  await retryFailedPoll(fetcher);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await input("https://other.example/");
+  fetcher.mockResolvedValueOnce(
+    json({ ...scan("ready", "two"), sourceUrl: "https://other.example/" }),
+  );
+  await click("Preview products");
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    reads.forEach((read) => read.resolve(json(scan("running", "one"))));
+    await vi.advanceTimersByTimeAsync(4500);
+  });
+  expect(container.textContent).toContain("Preview ready");
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(true);
+  expect(window.location.search).toBe("?scan=two");
+  expect(reads.every((read) => read.signal.aborted)).toBe(true);
+});
+it("does not roll a selected terminal preview back when deferred reads finish newest first", async () => {
+  vi.useFakeTimers();
+  const { fetcher, reads } = failedPollThenDeferredReads();
+  await retryFailedPoll(fetcher);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await act(async () => reads.at(-1)!.resolve(json(scan("ready"))));
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  await act(async () => {
+    reads.slice(0, -1).forEach((read) => read.resolve(json(scan("queued"))));
+  });
+  expect(container.textContent).toContain("Preview ready");
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(true);
+});

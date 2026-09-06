@@ -61,6 +61,9 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
   const [saved, setSaved] = useState<number | null>(null);
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
+  const pollRequest = useRef<AbortController | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollSequence = useRef(0);
   const pending = useRef(false);
   const requestKey = useRef<string | null>(null);
   function persist(id: string | null) {
@@ -73,8 +76,16 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       next.pathname + next.search + next.hash,
     );
   }
+  function cancelPolling() {
+    if (pollTimer.current !== null) clearTimeout(pollTimer.current);
+    pollTimer.current = null;
+    ++pollSequence.current;
+    pollRequest.current?.abort();
+    pollRequest.current = null;
+  }
   function invalidate() {
     ++generation.current;
+    cancelPolling();
     request.current?.abort();
     pending.current = false;
     setBusy(false);
@@ -86,10 +97,28 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       setKeys([]);
     }
   }
+  // Every read (restore, retry and continuation) enters through this scheduler.
+  function schedulePoll(id: string, delay: number) {
+    if (pollTimer.current !== null) clearTimeout(pollTimer.current);
+    pollTimer.current = null;
+    if (pollRequest.current) return;
+    pollTimer.current = setTimeout(() => {
+      pollTimer.current = null;
+      void load(id);
+    }, delay);
+  }
   async function load(id: string) {
+    if (pollRequest.current) return;
     const version = generation.current;
+    const sequence = ++pollSequence.current;
     const controller = new AbortController();
-    request.current = controller;
+    pollRequest.current = controller;
+    const current = () =>
+      version === generation.current &&
+      sequence === pollSequence.current &&
+      pollRequest.current === controller &&
+      !controller.signal.aborted;
+    let continuePolling = false;
     try {
       const response = await fetch(
         `/api/website-scans/${encodeURIComponent(id)}`,
@@ -97,31 +126,31 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       );
       if (!response.ok) throw response.status;
       const next = (await response.json()) as Scan;
-      if (version !== generation.current || controller.signal.aborted) return;
+      if (!current()) return;
       setUrl(next.sourceUrl);
       accept(next);
       setError(null);
+      continuePolling = next.state === "queued" || next.state === "running";
     } catch (cause) {
-      if (version === generation.current && !controller.signal.aborted)
-        setError(typeof cause === "number" ? cause : 500);
+      if (current()) setError(typeof cause === "number" ? cause : 500);
+    } finally {
+      const accepted = current();
+      if (pollRequest.current === controller) pollRequest.current = null;
+      // Start the next interval only after this request has settled successfully.
+      if (accepted && continuePolling) schedulePoll(id, 1500);
     }
   }
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("scan");
-    if (id && /^[a-zA-Z0-9-]{1,80}$/.test(id)) void load(id);
+    if (id && /^[a-zA-Z0-9-]{1,80}$/.test(id)) schedulePoll(id, 0);
     return () => {
       ++generation.current;
+      cancelPolling();
       request.current?.abort();
     };
     // A persisted scan is restored only on mount; editing the URL starts a new generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => {
-    if (!scan || !["queued", "running"].includes(scan.state) || error) return;
-    const timer = setTimeout(() => void load(scan.id), 1500);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scan, error]);
   async function start() {
     if (!canScan || pending.current) return;
     const normalized = normalizeWebsiteUrl(url);
@@ -156,6 +185,8 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
       requestKey.current = null;
       accept(next);
       persist(next.id);
+      if (next.state === "queued" || next.state === "running")
+        schedulePoll(next.id, 1500);
     } catch (cause) {
       if (version === generation.current && !controller.signal.aborted)
         setError(typeof cause === "number" ? cause : 500);
@@ -335,7 +366,7 @@ export function WebsiteImportPanel({ canScan = true }: { canScan?: boolean }) {
           onClick={() => {
             if (active && error) {
               setError(null);
-              void load(scan!.id);
+              schedulePoll(scan!.id, 0);
             } else void start();
           }}
         >
