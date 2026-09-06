@@ -1,4 +1,6 @@
 import {
+  PRODUCT_SHOT_INGRESS_PATH,
+  productShotJobSchema,
   LISTING_INGRESS_PATH,
   WEBSITE_INGRESS_PATH,
   websiteJobSchema,
@@ -92,6 +94,7 @@ export async function handleIngress(
     return Response.json(await authenticatedWorkerHealth(env));
   }
   if (
+    path !== PRODUCT_SHOT_INGRESS_PATH &&
     path !== LISTING_INGRESS_PATH &&
     path !== SHOPLINE_INGRESS_PATH &&
     path !== WEBSITE_INGRESS_PATH
@@ -135,7 +138,12 @@ export async function handleIngress(
     return response(400);
   }
 
-  if (path === WEBSITE_INGRESS_PATH) {
+  if (path === PRODUCT_SHOT_INGRESS_PATH) {
+    const parsed = productShotJobSchema.safeParse(input);
+    if (!parsed.success) return response(400);
+    if (typeof env.LISTING_QUEUE?.send !== "function") return response(503);
+    await env.LISTING_QUEUE.send(parsed.data);
+  } else if (path === WEBSITE_INGRESS_PATH) {
     const parsed = websiteJobSchema.safeParse(input);
     if (!parsed.success) return response(400);
     if (

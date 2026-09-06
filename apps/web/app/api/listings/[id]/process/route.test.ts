@@ -19,6 +19,11 @@ type HandlerOptions = {
   pipelineState?: "started" | "succeeded" | "failed" | null;
   enqueueError?: boolean;
   unexpectedError?: boolean;
+  shotRequest?: (input: {
+    workspaceId: string;
+    listingId: string;
+    actorId: string;
+  }) => Promise<{ state: string }>;
 };
 
 // What createListingPublisher actually throws: every ingress failure leaves it
@@ -97,6 +102,7 @@ function handlerFor(options: HandlerOptions = {}) {
       },
     }),
     publisher: { enqueue },
+    requestProductShot: options.shotRequest,
   });
 
   return { handler, enqueue, listing, pipelineRunKeys, reopenedKeys };
@@ -267,5 +273,33 @@ describe("POST /api/listings/[id]/process", () => {
       404,
     );
     expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+it("enqueues selected-source work even when text queueing fails", async () => {
+  const shotRequest = vi.fn(async () => ({ state: "queued" }));
+  const { handler } = handlerFor({ enqueueError: true, shotRequest });
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    expect((await handler(request, context())).status).toBe(503);
+    expect(shotRequest).toHaveBeenCalledWith({
+      workspaceId: "ws_opak",
+      listingId,
+      actorId: "user_1",
+    });
+  } finally {
+    logged.mockRestore();
+  }
+});
+it("keeps text processing independent when image setup or enqueue fails", async () => {
+  const shotRequest = vi.fn(async () => {
+    throw new Error("queue_unavailable");
+  });
+  const { handler, enqueue } = handlerFor({ shotRequest });
+  const result = await handler(request, context());
+  expect(result.status).toBe(202);
+  expect(enqueue).toHaveBeenCalledOnce();
+  expect(await result.json()).toMatchObject({
+    productShot: { state: "request_failed" },
   });
 });

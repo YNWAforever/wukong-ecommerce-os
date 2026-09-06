@@ -7,6 +7,12 @@ import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
 
 const root = new URL("../", import.meta.url);
 
+export function productShotSecretNames(base, provider) {
+  if (!["disabled", "fake", "photoroom"].includes(provider))
+    throw new Error("PRODUCT_SHOT_PROVIDER is invalid");
+  return provider === "photoroom" ? [...base, "PHOTOROOM_API_KEY"] : base;
+}
+
 export function compareSecretNames(requiredNames, configuredNames) {
   const required = [...new Set(requiredNames)].sort();
   const configured = [...new Set(configuredNames)].sort();
@@ -112,12 +118,13 @@ function main() {
     process.stderr.write(`${decision.warning}\n`);
     return;
   }
-  verifyExactSecretNames(
+  const requiredNames = productShotSecretNames(
     source.requiredSecrets,
-    parseSecretNames(result.stdout),
+    process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider,
   );
+  verifyExactSecretNames(requiredNames, parseSecretNames(result.stdout));
   process.stdout.write(
-    `Worker secret preflight passed for ${selected.worker}: ${source.requiredSecrets.length} exact names\n`,
+    `Worker secret preflight passed for ${selected.worker}: ${requiredNames.length} exact names\n`,
   );
 }
 

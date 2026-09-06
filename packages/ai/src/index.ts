@@ -22,6 +22,7 @@ export {
   UnsupportedAssetError,
 } from "./openai-listing-provider.js";
 export {
+  PHOTOROOM_ESTIMATED_COST_USD,
   PHOTOROOM_OUTPUT_LIMIT_BYTES,
   PHOTOROOM_PRODUCT_SHOT_MODEL,
   PHOTOROOM_PRODUCT_SHOT_VERSION,

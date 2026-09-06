@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { ProductShotPipelineDeps } from "./product-shot-pipeline.js";
 import {
   S3AssetStore,
   readS3RuntimeConfig,
@@ -5,6 +7,9 @@ import {
 } from "@wukong/assets";
 import {
   FakeListingProvider,
+  PhotoroomProductShotProvider,
+  PHOTOROOM_ESTIMATED_COST_USD,
+  ProductShotProviderError,
   OpenAIListingProvider,
   type ListingAIProvider,
 } from "@wukong/ai";
@@ -204,4 +209,115 @@ export async function authenticatedWorkerHealth(
     authenticated: true,
     checks: { hyperdriveConnects },
   } as const;
+}
+
+export function readProductShotRuntimeConfig(
+  env: Readonly<Record<string, string | undefined>>,
+): { providerName: "disabled" | "fake" | "photoroom"; dailyLimit: number } {
+  const providerName = env.PRODUCT_SHOT_PROVIDER?.trim() || "disabled";
+  if (
+    providerName !== "disabled" &&
+    providerName !== "fake" &&
+    providerName !== "photoroom"
+  )
+    throw new Error("PRODUCT_SHOT_PROVIDER is invalid");
+  const budget = env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
+  const dailyLimit = budget
+    ? Number(budget)
+    : providerName === "fake"
+      ? 100
+      : 0;
+  if (
+    (budget || providerName === "photoroom") &&
+    (!Number.isSafeInteger(dailyLimit) || dailyLimit <= 0)
+  )
+    throw new Error(
+      "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be a positive finite integer",
+    );
+  if (providerName === "photoroom")
+    required(env.PHOTOROOM_API_KEY, "PHOTOROOM_API_KEY");
+  return { providerName, dailyLimit };
+}
+
+/** Image consumption never constructs a listing AI provider. */
+export function createProductShotRuntime(
+  env: WorkerEnv,
+  config: CloudflareRuntimeConfig = {},
+) {
+  const settings = readProductShotRuntimeConfig({
+    PRODUCT_SHOT_PROVIDER: env.PRODUCT_SHOT_PROVIDER,
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY:
+      env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
+    PHOTOROOM_API_KEY: env.PHOTOROOM_API_KEY,
+  });
+  const assetStore = (config.assetStoreFactory ?? createAssetStore)(env);
+  const database = (config.databaseFactory ?? createWorkerDatabase)(env);
+  const dependencies: ProductShotPipelineDeps = {
+    ...settings,
+    estimatedCostUsd:
+      settings.providerName === "photoroom" ? PHOTOROOM_ESTIMATED_COST_USD : 0,
+    assetStore,
+    forWorkspace: database.forWorkspace.bind(database),
+    now: () => new Date(),
+    providerFor(identity) {
+      if (settings.providerName === "disabled")
+        throw new Error("product_shot_disabled");
+      if (
+        identity.providerVersion !== `${settings.providerName}:1.0.0` ||
+        identity.renderVersion !== "white-v1"
+      )
+        throw new ProductShotProviderError("rejected");
+      if (settings.providerName === "fake")
+        return {
+          async generateProductShot() {
+            return {
+              cutoutPng: new Uint8Array(
+                Buffer.from(
+                  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAgCAYAAAAbifjMAAAAKUlEQVR4nGPQCKhgoAQzDE8D/hPAowaMGjBqwKgBowaMLAMYSMHDwAAAzPqfX45/w+sAAAAASUVORK5CYII=",
+                  "base64",
+                ),
+              ),
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                estimatedCostUsd: 0,
+                latencyMs: 0,
+                model: "fake-product-shot",
+                promptVersion: "1.0.0",
+              },
+            };
+          },
+        };
+      return new PhotoroomProductShotProvider({
+        apiKey: required(env.PHOTOROOM_API_KEY, "PHOTOROOM_API_KEY"),
+        fetch: globalThis.fetch,
+        now: Date.now,
+        async readSource(assetId) {
+          if (assetId !== identity.sourceAssetId)
+            throw new ProductShotProviderError("rejected");
+          const [asset] = await database.forWorkspace(
+            identity.workspaceId,
+            (r) => r.sourceAssets.getByIds([assetId]),
+          );
+          if (
+            !asset ||
+            asset.listingId !== identity.listingId ||
+            asset.workspaceId !== identity.workspaceId
+          )
+            throw new ProductShotProviderError("rejected");
+          const bytes = await assetStore.readObject(
+            identity.workspaceId,
+            asset.storageKey,
+          );
+          if (
+            createHash("sha256").update(bytes).digest("hex") !==
+            identity.sourceDigest
+          )
+            throw new ProductShotProviderError("rejected");
+          return { bytes, mimeType: asset.kind };
+        },
+      });
+    },
+  };
+  return { dependencies, close: () => database.close() };
 }

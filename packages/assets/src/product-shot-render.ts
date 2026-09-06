@@ -141,3 +141,30 @@ export async function renderProductShot(
   }
   throw renderError("output_too_large");
 }
+
+/** Node-only source validation before any external image dispatch. */
+export async function validateProductShotSource(
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<{ width: number; height: number }> {
+  if (bytes.byteLength > PRODUCT_SHOT_LIMITS.inputBytes)
+    throw renderError("input_too_large");
+  try {
+    const metadata = await sharp(Buffer.from(bytes), {
+      limitInputPixels: PRODUCT_SHOT_LIMITS.inputPixels,
+      failOn: "error",
+    }).metadata();
+    if (
+      !["image/png", "image/jpeg", "image/webp"].includes(mimeType) ||
+      `image/${metadata.format}` !== mimeType ||
+      (metadata.pages ?? 1) !== 1
+    )
+      throw renderError("invalid_image");
+    const decoded = await decodeCutout(bytes);
+    return { width: decoded.width, height: decoded.height };
+  } catch (error) {
+    if (error instanceof Error && error.message === "input_too_large")
+      throw error;
+    throw renderError("invalid_image", error);
+  }
+}

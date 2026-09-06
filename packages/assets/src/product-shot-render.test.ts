@@ -1,7 +1,10 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
-import { renderProductShot } from "./product-shot-render.js";
+import {
+  renderProductShot,
+  validateProductShotSource,
+} from "./product-shot-render.js";
 
 async function makeCutout(
   options: {
@@ -160,4 +163,22 @@ describe("renderProductShot", () => {
       .toBuffer();
     await expect(renderProductShot(input)).rejects.toThrow("input_too_large");
   });
+});
+
+it("validates and fully decodes selected originals before provider dispatch", async () => {
+  await expect(
+    validateProductShotSource(await makeCutout(), "image/png"),
+  ).resolves.toEqual({ width: 200, height: 200 });
+  await expect(
+    validateProductShotSource(new Uint8Array([1, 2]), "image/png"),
+  ).rejects.toThrow("invalid_image");
+  await expect(
+    validateProductShotSource(await makeCutout(), "image/jpeg"),
+  ).rejects.toThrow("invalid_image");
+  await expect(
+    validateProductShotSource(
+      new Uint8Array(10 * 1024 * 1024 + 1),
+      "image/png",
+    ),
+  ).rejects.toThrow("input_too_large");
 });

@@ -8,6 +8,8 @@ import {
   authenticatedWorkerHealth,
   createCloudflareRuntime,
   createWorkerDatabase,
+  createProductShotRuntime,
+  readProductShotRuntimeConfig,
 } from "./cloudflare-runtime.js";
 import type { WorkerEnv } from "./worker-env.js";
 
@@ -162,5 +164,66 @@ describe("authenticatedWorkerHealth", () => {
     });
 
     expect(health.checks.hyperdriveConnects).toBe(true);
+  });
+});
+
+describe("independent product shot runtime", () => {
+  it("defaults disabled and requires live key and positive finite integer budget", () => {
+    expect(readProductShotRuntimeConfig({})).toMatchObject({
+      providerName: "disabled",
+      dailyLimit: 0,
+    });
+    for (const budget of [undefined, "", "0", "-1", "1.5", "Infinity", "NaN"]) {
+      expect(() =>
+        readProductShotRuntimeConfig({
+          PRODUCT_SHOT_PROVIDER: "photoroom",
+          PHOTOROOM_API_KEY: "synthetic",
+          PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: budget,
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      readProductShotRuntimeConfig({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2",
+      }),
+    ).toThrow("PHOTOROOM_API_KEY");
+    expect(() =>
+      readProductShotRuntimeConfig({ PRODUCT_SHOT_PROVIDER: "other" }),
+    ).toThrow();
+    expect(
+      readProductShotRuntimeConfig({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PHOTOROOM_API_KEY: "synthetic",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2",
+      }),
+    ).toMatchObject({ providerName: "photoroom", dailyLimit: 2 });
+  });
+  it("creates an image-only fake runtime without an OpenAI key or listing provider", async () => {
+    const close = vi.fn(async () => {}),
+      providerFactory = vi.fn(() => {
+        throw new Error("text must be independent");
+      });
+    const runtime = createProductShotRuntime(
+      { PRODUCT_SHOT_PROVIDER: "fake" } as never,
+      {
+        databaseFactory: () => ({ forWorkspace: vi.fn(), close }) as never,
+        assetStoreFactory: () => ({}) as never,
+        providerFactory,
+      },
+    );
+    const provider = runtime.dependencies.providerFor({
+      providerVersion: "fake:1.0.0",
+      renderVersion: "white-v1",
+    } as never);
+    const output = await provider.generateProductShot({
+      assets: [{ id: "a", mimeType: "image/png", readUrl: "" }],
+    });
+    expect([...output.cutoutPng.slice(0, 8)]).toEqual([
+      137, 80, 78, 71, 13, 10, 26, 10,
+    ]);
+    expect(providerFactory).not.toHaveBeenCalled();
+    await runtime.close();
+    expect(close).toHaveBeenCalledOnce();
   });
 });

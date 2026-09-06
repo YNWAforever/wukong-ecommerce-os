@@ -1,4 +1,5 @@
 import {
+  PRODUCT_SHOT_INGRESS_PATH,
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   signQueueRequest,
@@ -22,12 +23,12 @@ describe("Cloudflare queue ingress runtime", () => {
     const ingress = null as unknown as CloudflareIngressClient;
 
     if (false) {
-      // @ts-expect-error The SHOPLINE ingress message never carries the persisted digest.
       void ingress.enqueue(SHOPLINE_INGRESS_PATH, {
         workspaceId: "ws_opak",
         draftId: "00000000-0000-4000-8000-000000000001",
         versionId: "00000000-0000-4000-8000-000000000002",
         connectionId: "00000000-0000-4000-8000-000000000003",
+        // @ts-expect-error The SHOPLINE ingress message never carries the persisted digest.
         payloadDigest: "must-not-cross-ingress",
       });
     }
@@ -197,4 +198,34 @@ it("signs and sends website IDs through their distinct ingress path", async () =
   expect(
     JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string),
   ).toEqual(job);
+});
+
+it("signs a strict independent product-shot envelope", async () => {
+  const fetch = vi.fn(async () => new Response(null, { status: 202 }));
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://queue.example",
+      QUEUE_INGRESS_SECRET: "s".repeat(32),
+    },
+    fetch,
+  });
+  const shot = {
+    kind: "product_shot" as const,
+    workspaceId: "ws",
+    draftId: payload.draftId,
+    attemptId: payload.draftId,
+  };
+  await client.enqueue(PRODUCT_SHOT_INGRESS_PATH, shot);
+  expect(
+    JSON.parse(
+      (fetch.mock.calls[0] as unknown as [unknown, RequestInit])[1]
+        .body as string,
+    ),
+  ).toEqual(shot);
+  await expect(
+    client.enqueue(PRODUCT_SHOT_INGRESS_PATH, {
+      ...shot,
+      storageKey: "private",
+    } as never),
+  ).rejects.toMatchObject({ reason: "invalid_payload" });
 });

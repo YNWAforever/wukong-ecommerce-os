@@ -1,3 +1,8 @@
+import {
+  requestProductShotFromProcess,
+  type ProductShotRequestInput,
+  type ProductShotRequestResult,
+} from "../../../../../lib/product-shot-request";
 import { type ListingJob } from "@wukong/jobs";
 
 import { getDatabase } from "../../../../../lib/intake-runtime";
@@ -29,6 +34,9 @@ type ProcessListingRouteDeps = {
     ): Promise<T>;
   };
   publisher: ListingPublisher;
+  requestProductShot?: (
+    input: ProductShotRequestInput,
+  ) => Promise<ProductShotRequestResult>;
 };
 
 export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
@@ -111,9 +119,23 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
       // with 503 queue_unavailable and logs which failure it was. Catching it
       // here to rethrow a generic ApiError discarded that reason, and labelled
       // any unrelated fault a queue problem as well.
-      const job = await deps.publisher.enqueue(input);
+      const [textResult, shotResult] = await Promise.allSettled([
+        deps.publisher.enqueue(input),
+        deps.requestProductShot?.({
+          workspaceId: session.workspaceId,
+          listingId: id,
+          actorId: session.actorId,
+        }) ?? Promise.resolve(undefined),
+      ]);
+      if (textResult.status === "rejected") throw textResult.reason;
+      const job = textResult.value;
+      const productShot =
+        shotResult.status === "fulfilled"
+          ? shotResult.value
+          : { state: "request_failed" };
       return jsonResponse(202, {
         processing: { state: "queued", jobId: job.id },
+        ...(productShot ? { productShot } : {}),
       });
     });
   };
@@ -123,4 +145,5 @@ export const POST = createProcessListingHandler({
   sessionContext: authSessionContext,
   getDatabase,
   publisher: listingPublisher,
+  requestProductShot: requestProductShotFromProcess,
 });

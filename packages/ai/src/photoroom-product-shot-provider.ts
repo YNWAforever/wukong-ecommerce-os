@@ -6,6 +6,7 @@ import type {
 
 export const PHOTOROOM_PRODUCT_SHOT_MODEL = "photoroom-remove-background";
 export const PHOTOROOM_PRODUCT_SHOT_VERSION = "1.0.0";
+export const PHOTOROOM_ESTIMATED_COST_USD = 0.02;
 export const PHOTOROOM_REQUEST_TIMEOUT_MS = 30_000;
 export const PHOTOROOM_OUTPUT_LIMIT_BYTES = 10 * 1024 * 1024;
 const PHOTOROOM_INPUT_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -140,7 +141,7 @@ export class PhotoroomProductShotProvider implements ProductShotProvider {
       usage: {
         inputTokens: 0,
         outputTokens: 0,
-        estimatedCostUsd: 0.02,
+        estimatedCostUsd: PHOTOROOM_ESTIMATED_COST_USD,
         latencyMs: safeLatency(startedAt, this.config.now()),
         model: PHOTOROOM_PRODUCT_SHOT_MODEL,
         promptVersion: PHOTOROOM_PRODUCT_SHOT_VERSION,

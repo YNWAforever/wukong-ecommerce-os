@@ -160,6 +160,8 @@ export type PipelineDependencies = {
   ): Promise<T>;
   assetInputs(assets: PipelineAsset[]): Promise<ExtractionAsset[]>;
   ai: ListingAIProvider;
+  /** Legacy opt-in only. Durable product_shot messages own the new workflow.
+   * createCloudflareRuntime deliberately never supplies this dependency. */
   productShot?: ProductShotProvider;
   assetStore?: {
     writeObject(
