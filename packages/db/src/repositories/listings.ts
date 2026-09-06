@@ -111,7 +111,7 @@ export type ListingRepository = {
     versionId: string,
     context: AuditContext,
     audit: AuditWriter,
-  ): Promise<"unchanged" | "reopened" | "publishing">;
+  ): Promise<"unchanged" | "reopened" | "publishing" | "stale">;
   editReview(
     id: string,
     baseVersionId: string,
@@ -735,8 +735,7 @@ export function createListingRepository(
       scope.assertOpen();
       await this.lockReviewState(id);
       const listing = await this.requireById(id);
-      if (listing.activeVersionId !== versionId)
-        throw new Error("stale review version");
+      if (listing.activeVersionId !== versionId) return "stale";
       if (listing.status === "publishing") return "publishing";
       if (
         !(["approved", "published", "publish_failed"] as const).includes(

@@ -30,7 +30,7 @@ function makeHandler(
     role?: "viewer" | "operator" | "reviewer" | "admin";
     activeVersionId?: string | null;
     snapshotExists?: boolean;
-    invalidation?: "unchanged" | "reopened" | "publishing";
+    invalidation?: "unchanged" | "reopened" | "publishing" | "stale";
     platformProduct?: {
       sourceImportId: string | null;
       contentDigest: string | null;
@@ -207,6 +207,22 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
     ]);
   });
 
+  it("maps a version that becomes stale after the snapshot to 409", async () => {
+    const { handler, calls } = makeHandler({ invalidation: "stale" });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: false },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "stale_version" });
+    expect(
+      calls.some((call) => Array.isArray(call) && call[0] === "upsert"),
+    ).toBe(false);
+  });
   it("fails closed without updating confirmations while publishing", async () => {
     const { handler, calls } = makeHandler({ invalidation: "publishing" });
     const response = await handler(

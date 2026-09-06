@@ -84,6 +84,13 @@ export function createReviewConfirmationsHandler(
               },
               repositories.audit,
             );
+          if (invalidation === "stale") {
+            throw new ApiError(
+              409,
+              "stale_version",
+              "Listing changed; reload before confirming review fields.",
+            );
+          }
           if (invalidation === "publishing") {
             throw new ApiError(
               409,

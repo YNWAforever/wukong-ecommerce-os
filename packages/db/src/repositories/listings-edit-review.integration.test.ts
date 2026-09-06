@@ -224,6 +224,6 @@ describe("listing review edits guard in-flight states", () => {
           repos.audit,
         ),
       ),
-    ).rejects.toThrow("stale review version");
+    ).resolves.toBe("stale");
   });
 });
