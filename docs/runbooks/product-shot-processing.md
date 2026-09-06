@@ -2,11 +2,13 @@
 
 ## Release status
 
-The Photoroom workflow is being implemented under `docs/superpowers/plans/2026-09-07-photoroom-product-shot.md`. This runbook describes the implemented operational contract. Consult the phase result document for completed verification before activation; the presence of this file is not evidence of a production rollout.
+The Photoroom workflow was implemented and verified locally under `docs/superpowers/plans/2026-09-07-photoroom-product-shot.md`. This runbook describes the implemented operational contract. Consult the phase result document for completed verification before activation; the presence of this file is not evidence of a production rollout.
 
 ## Operator workflow
 
 Upload one actual bottle photo with the listing. One eligible photo is selected automatically; where a draft contains several photos, select one main photo. The background is white and requires no configuration. The original remains private.
+
+Use Replace photo on the saved draft to upload a new JPEG, PNG or WebP. This keeps the draft and its copy, changes the main photo, and processes only the image. If processing cannot start after upload, reload the saved draft and select the attached photo to resume; do not create another draft.
 
 Review the saved finished JPEG beside the original. Check the label, bottle edges, cap and transparent glass. Background removal can remove real foreground detail; automated checks cannot certify visual accuracy. A low-resolution notice indicates the image has not been enlarged to disguise missing detail.
 
@@ -48,7 +50,7 @@ If the provider is not configured or the allowance is exhausted, correct the adm
 
 ## Public image contract
 
-Only approved final artifacts may be served through `/product-images/<token>.jpg`. Originals, cutouts and unapproved candidates keep authenticated access. The public route streams the image; it does not hand a merchant an expiring private presigned URL.
+Only approved final artifacts may be served through `/product-images/<token>.jpg`. Originals, cutouts and unapproved candidates keep authenticated access. The public route returns the stored JPEG after checking its publication binding, digest and size; it does not hand a merchant an expiring private presigned URL. The storage adapter currently buffers the object before the size check, so an oversized object substituted through privileged storage access can consume memory before rejection.
 
 Each immutable publication pins the final object against orphan cleanup. Keep the configured public origin and publication records available while merchants rely on exported URLs. Explicit revocation can break external references and is separate from replacing a draft photo. Do not delete historical image objects as part of routine draft cleanup.
 

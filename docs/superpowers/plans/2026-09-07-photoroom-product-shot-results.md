@@ -1,7 +1,7 @@
 # Photoroom product-shot implementation results
 
 Date: 2026-09-07
-Status: All seven task reviews approved; final repository checks and whole-branch review pending.
+Status: All seven tasks and final replacement review approved; final repository checks passed. Ready for branch integration review; not deployed.
 Branch: `codex/photoroom-product-shots`.
 Baseline main: `fe64fb80ff5b1ff6d8efa4962828170b68adcfc2`.
 
@@ -11,7 +11,7 @@ One actual uploaded photo feeds a bounded background-removal adapter. Durable
 queue attempts retain leases and private cutout checkpoints. A Node-only renderer
 saves the exact white JPEG for review without inventing foreground detail or
 enlarging the subject. The operator compares that candidate with the private
-original; factual listing approval remains separately required.
+original; factual listing approval remains separately required. Replace photo uploads a new original into the same saved draft, preserves its copy and version, and queues only image processing. A committed upload remains recoverable after a request failure.
 
 Approval binds the observed listing version, selected source, provider/render
 identity and candidate digest. Changing sources invalidates current acceptance,
@@ -22,7 +22,7 @@ retains its existing factual and source-binding rules.
 
 Approved JPEG capabilities use 32 random bytes encoded as 43 base64url characters.
 A narrowly privileged database function exposes only the immutable publication
-record. The public route validates bounded object bytes and digest before serving;
+record. The public route validates the object size and digest after a buffered read;
 invalid, missing, revoked or substituted images return 404. Original objects stay
 private.
 
@@ -45,6 +45,8 @@ publishing fail closed; a version changed while waiting for the lock returns
 | 6. Stable image publication     | `3be890d`, `0d33952`            | Approved      |
 | 7. Browser/runtime acceptance   | `5d6fc6c`, `de6125b`, `5f660af` | Approved      |
 
+Final whole-branch review found one missing operator action. Commit `528f347` adds same-draft upload/replacement; focused re-review approved the repair with no new Critical or Important findings. The earlier public-buffering Minor is documented below and remains nonblocking.
+
 ## Reproduced failures and repairs
 
 - Response-stream cancellation could turn known oversized provider output into an uncertain outcome. The adapter preserves invalid-output classification.
@@ -56,34 +58,34 @@ publishing fail closed; a version changed while waiting for the lock returns
 - A legitimately approved, image-bound listing still exported CSV with HTTP 200 after a confirmation PATCH withdrew its facts. The repair reopens the same active version transactionally and blocks export until reapproval. Both languages exercise this causal regression.
 - A version changed between snapshot read and row-lock acquisition could become an internal error. A typed stale result now maps to 409 before confirmation upsert; unrelated errors still propagate.
 
+- A one-photo draft could not upload a replacement through review. The component regression failed before the control existed, and server regressions failed before attachment and publishing fences existed. Shared upload, a scoped idempotent attachment transaction, post-commit image processing, and genuine bilingual browser uploads now cover this path.
+
 ## Verification
 
 Commands use `corepack.cmd pnpm@11.7.0` in the execution worktree, with isolated
 synthetic service settings. No production environment was used.
 
+Final source checkpoint: `528f34752753991a33ec41b10b7b495aac98e6d6`.
+
 | Check                                   | Verified result                                                                                         |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `pnpm typecheck`                        | 14/14 tasks after approval invalidation; web/DB typechecks also passed after final stale mapping        |
-| `pnpm lint`                             | 14/14 tasks after approval invalidation                                                                 |
-| `pnpm test`                             | 14/14 tasks, including 1480 web tests, after approval invalidation                                      |
-| `pnpm test:integration`                 | 300 passed, 3 intentional destructive-migration skips; 38 passed files, 2 skipped files; 151.20 seconds |
-| `pnpm build`                            | 8/8 tasks after approval invalidation; Worker build is a dry run                                        |
-| `pnpm format:runtime:check`             | Passed at the recorded checkpoint; final changed-document check pending                                 |
-| `pnpm runtime:forbidden:check`          | Zero forbidden dependencies, imports or runtime files/services                                          |
+| `pnpm typecheck`                        | 14/14 tasks passed                                                                                      |
+| `pnpm lint`                             | 14/14 tasks passed                                                                                      |
+| `pnpm test`                             | 14/14 tasks passed, including 1498 web tests                                                            |
+| `pnpm test:integration`                 | 303 passed, 3 intentional destructive-migration skips; 38 passed files, 2 skipped files; 199.03 seconds |
+| `pnpm build`                            | 8/8 tasks passed; Worker build is a dry run                                                             |
+| `pnpm format:runtime:check`             | 95 files, zero waived debt                                                                              |
+| `pnpm runtime:forbidden:check`          | 9 manifests and 304 source files; zero forbidden dependencies, imports or files/services                |
 | Worker bundle and map inspection        | No sharp, libvips or Node product-shot renderer references                                              |
-| Final stale-mapping focused regression  | Route 11/11, real DB 9/9, web/DB typechecks passed                                                      |
-| `pnpm --filter @wukong/db audit:verify` | Zero missing actions and zero accessible foreign records                                                |
-
-A final full type/lint/unit/build run on `5f660af` is in progress. The integration
-suite above includes the approval repair; the later HTTP mapping was verified by
-the focused route and real-database tests.
+| Replacement focused regressions         | 62 unit/component tests and 11 real database/private-storage tests passed                               |
+| `pnpm --filter @wukong/db audit:verify` | Zero missing actions and zero accessible foreign records at the retained audit checkpoint               |
 
 Browser commands all used `--workers=1 --retries=0`:
 
-- `playwright test tests/e2e/product-shot.spec.ts`: 4/4 passed in 1.5 minutes. English and Traditional Chinese each run the complete success/replacement/reuse/privacy/eligibility workflow and the definite/uncertain retry workflow.
+- `playwright test tests/e2e/product-shot.spec.ts`: 4/4 passed after the replacement repair. English and Traditional Chinese each create a draft through a real synthetic file upload, replace its photo through another upload on that same draft, and verify preserved copy/version, renewed image acceptance and reload persistence. Existing reuse/privacy/eligibility and definite/uncertain retry checks remain.
 - `playwright test tests/e2e/workbench.spec.ts tests/e2e/catalog-usability.spec.ts tests/e2e/bulk-update-pilot.spec.ts`: 13/13 passed again after the approval repair, in 1.6 minutes.
 - `playwright test tests/e2e/real-stack-boundary.spec.ts`: 3 passed, 1 intentional POSIX-only skip on Windows.
-- `playwright test tests/e2e/listing-pilot.spec.ts`: 1/1 passed, retaining a complete synthetic audit trail.
+- `playwright test tests/e2e/listing-pilot.spec.ts`: 1/1 passed again after shared upload extraction. The earlier complete synthetic audit trail is retained.
 
 The image suite uses `WUKONG_PRODUCT_SHOT_E2E=1`, which pins guarded fake processing
 and strips inherited Photoroom credentials. The legacy trio runs with this opt-in
@@ -107,7 +109,7 @@ tables have enabled and forced RLS in the fresh browser database.
 
 Live processing remains disabled. No real Photoroom call, merchant image/workbook
 upload, paid provider use, production migration, deployment or SHOPLINE write was
-performed. Whole-branch review and final owned-service cleanup are still pending.
+performed. The required same-draft replacement repair is complete and approved. Owned synthetic Postgres, MinIO and Mailpit services were stopped after the final checks; their data and browser artifacts were retained. The branch and worktree remain available for review; nothing was pushed or merged.
 
 Actual bottle/glass/label quality, account-specific pricing and billing, live
 credentials/configuration, managed-database role-creation and ownership privileges,
@@ -115,3 +117,10 @@ and merchant SHOPLINE acceptance remain unverified. New-product XLSX and merchan
 pricing/SKU/category rules require separate work. Activation requires its own
 authorization and verification. Operator setup and recovery are documented in
 `docs/runbooks/product-shot-processing.md`.
+
+The whole-branch review also noted a nonblocking storage-hardening limitation:
+anonymous image retrieval buffers the stored object before comparing its actual
+size with the bounded publication record. Normal published artifacts are bounded;
+an oversized object substituted through privileged storage access or corruption
+could use more memory before rejection. No approval bypass was found. Bounded
+streaming reads remain a separate hardening opportunity.
