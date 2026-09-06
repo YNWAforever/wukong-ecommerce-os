@@ -2,19 +2,35 @@ import type { NavItem } from "../../components/app-shell-nav";
 import type { WorkspaceRole } from "../../lib/session-context";
 
 export const SHELL_NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", labelZh: "總覽", labelEn: "Overview" },
+  { href: "/dashboard", labelZh: "工作台", labelEn: "Workbench" },
   { href: "/catalog", labelZh: "商品中心", labelEn: "Catalog" },
-  { href: "/queue", labelZh: "工作佇列", labelEn: "Work Queue" },
-  { href: "/listings/new", labelZh: "建立草稿", labelEn: "New listing" },
+  { href: "/listings/import", labelZh: "匯入", labelEn: "Imports" },
   {
-    href: "/listings/import",
-    labelZh: "商品目錄匯入",
-    labelEn: "Catalog import",
+    href: "/jobs?kind=export",
+    labelZh: "匯出與結果",
+    labelEn: "Exports & results",
   },
-  { href: "/batches", labelZh: "批次", labelEn: "Batches" },
-  { href: "/jobs", labelZh: "內部作業", labelEn: "Jobs" },
-  { href: "/system-map", labelZh: "系統地圖", labelEn: "System map" },
-  { href: "/quality", labelZh: "內容品質", labelEn: "Quality" },
+  {
+    href: "/queue",
+    labelZh: "工作佇列",
+    labelEn: "Work Queue",
+    group: "tools",
+  },
+  { href: "/batches", labelZh: "批次", labelEn: "Batches", group: "tools" },
+  {
+    href: "/listings/new",
+    labelZh: "建立草稿",
+    labelEn: "New listing",
+    group: "tools",
+  },
+  { href: "/jobs", labelZh: "所有作業", labelEn: "All Jobs", group: "tools" },
+  { href: "/quality", labelZh: "內容品質", labelEn: "Quality", group: "tools" },
+  {
+    href: "/system-map",
+    labelZh: "系統地圖",
+    labelEn: "System map",
+    group: "tools",
+  },
 ];
 
 export const ROLE_LABELS: Record<WorkspaceRole, { zh: string; en: string }> = {

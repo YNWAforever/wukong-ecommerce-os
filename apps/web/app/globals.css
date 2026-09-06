@@ -237,6 +237,23 @@ button:disabled {
   background: var(--stone);
   border-right: 1px solid var(--line);
 }
+.topbar .app-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.topbar .app-nav-group + .app-nav-group {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.topbar .app-nav-group-label {
+  padding: 4px 12px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
 .topbar .app-sidebar a {
   min-height: 44px;
   display: inline-flex;
