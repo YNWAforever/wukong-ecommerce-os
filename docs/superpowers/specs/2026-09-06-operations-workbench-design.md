@@ -1,7 +1,7 @@
 # Operations Workbench — first-slice design
 
 Date: 2026-09-06
-Status: Approved direction and behavior; written specification awaiting user review.
+Status: Written specification approved by the user on 2026-09-06; implementation planning authorized.
 Source baseline: main 0a25e701e04238f24f3c73bf6761da0b01dcca00.
 
 ## Problem and outcome
