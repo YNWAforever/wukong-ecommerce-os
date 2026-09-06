@@ -150,9 +150,7 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
-  lookupPublishedImage(
-    token: string,
-  ): Promise<{
+  lookupPublishedImage(token: string): Promise<{
     workspaceId: string;
     storageKey: string;
     digest: string;

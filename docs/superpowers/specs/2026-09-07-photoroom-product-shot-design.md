@@ -1,7 +1,7 @@
 # Photoroom single-photo product-shot design
 
 Date: 2026-09-07
-Status: Design decisions approved in conversation; written specification awaiting user review.
+Status: Written specification approved by the user; implementation authorized through the seven-task plan.
 Baseline: origin/main fe64fb80ff5b1ff6d8efa4962828170b68adcfc2.
 
 ## Purpose and approved scope
