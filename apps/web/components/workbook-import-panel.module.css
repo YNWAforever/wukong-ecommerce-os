@@ -25,6 +25,8 @@
 }
 .tableWrap table {
   width: 100%;
+  min-width: 760px;
+  overflow-wrap: normal;
   border-collapse: collapse;
 }
 .tableWrap th,
@@ -32,10 +34,6 @@
   text-align: left;
   padding: 0.75rem;
   border-bottom: 1px solid var(--line);
-}
-.tableWrap caption {
-  text-align: left;
-  padding-bottom: 0.75rem;
 }
 .panel dl {
   overflow-wrap: anywhere;

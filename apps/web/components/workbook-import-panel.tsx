@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { WorkbookSaveResult } from "@wukong/db";
 import type { workbookPreview } from "../lib/workbook-import";
 import type { BulkFormIssueCode } from "@wukong/shopline";
@@ -39,6 +39,7 @@ export function WorkbookImportPanel({
   canImport?: boolean;
 }) {
   const locale = useLocale();
+  const previewDescriptionId = useId();
   const t = (zh: string, en: string) => localized(locale, zh, en);
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState<Preview | null>(null),
@@ -278,6 +279,12 @@ export function WorkbookImportPanel({
               )}
             </button>
           )}
+          <p id={previewDescriptionId}>
+            {t(
+              `預覽樣本：顯示 ${preview.products.length} / ${preview.eligibleProducts} 個商品（最多 20 個）；匯入將包括全部可匯入商品。`,
+              `Preview sample: showing ${preview.products.length} of ${preview.eligibleProducts} products (maximum 20); import includes every eligible product.`,
+            )}
+          </p>
           <div
             className={styles.tableWrap}
             role="region"
@@ -287,13 +294,10 @@ export function WorkbookImportPanel({
             )}
             tabIndex={0}
           >
-            <table>
-              <caption>
-                {t(
-                  `預覽樣本：顯示 ${preview.products.length} / ${preview.eligibleProducts} 個商品（最多 20 個）；匯入將包括全部可匯入商品。`,
-                  `Preview sample: showing ${preview.products.length} of ${preview.eligibleProducts} products (maximum 20); import includes every eligible product.`,
-                )}
-              </caption>
+            <table
+              aria-label={t("商品預覽", "Product preview")}
+              aria-describedby={previewDescriptionId}
+            >
               <thead>
                 <tr>
                   {[

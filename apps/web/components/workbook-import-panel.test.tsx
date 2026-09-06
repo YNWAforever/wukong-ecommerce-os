@@ -414,3 +414,22 @@ it.each([
     ).toBe(false);
   },
 );
+
+it("names the preview table and keeps its full-import description outside the scroll region", async () => {
+  await mount(vi.fn().mockResolvedValue(json(preview())));
+  await select();
+  const table = container.querySelector("table")!;
+  expect(table.getAttribute("aria-label")).toBe("Product preview");
+  const description = document.getElementById(
+    table.getAttribute("aria-describedby")!,
+  );
+  expect(description?.textContent).toContain("showing 1 of 21 products");
+  expect(description?.textContent).toContain(
+    "import includes every eligible product",
+  );
+  expect(description?.closest('[role="region"]')).toBeNull();
+  expect(
+    description!.compareDocumentPosition(table) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
