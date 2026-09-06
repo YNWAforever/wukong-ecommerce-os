@@ -3,7 +3,11 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
-import type { CatalogItem, CatalogPage } from "../lib/catalog-contract";
+import type {
+  CatalogItem,
+  PlatformCatalogItem,
+  CatalogPage,
+} from "../lib/catalog-contract";
 import { CatalogControlCenter } from "./catalog-control-center.js";
 
 (
@@ -49,9 +53,10 @@ function findButtonByText(
 }
 
 function makeItem(
-  overrides: Partial<CatalogItem> & { id: string },
+  overrides: Partial<PlatformCatalogItem> & { id: string },
 ): CatalogItem {
   return {
+    sourceType: "platform",
     remoteProductId: `remote-${overrides.id}`,
     origin: "import",
     sku: "OPAK-SKU",
@@ -80,6 +85,7 @@ function pageResponse(
       canRecordImportResult: false,
     },
     summary: {
+      website: 0,
       total: 60,
       linked: 10,
       unlinked: 50,
@@ -405,9 +411,17 @@ describe("CatalogControlCenter", () => {
     const { container, root } = await mount(fetcher);
 
     const tiles = container.querySelectorAll('[role="group"]');
-    expect(tiles.length).toBe(5);
+    expect(tiles.length).toBe(7);
 
-    const expectedLabels = ["商品", "已連結", "待審核", "需處理", "已發佈"];
+    const expectedLabels = [
+      "網站商品",
+      "未連結的平台商品",
+      "商品",
+      "已連結",
+      "待審核",
+      "需處理",
+      "已發佈",
+    ];
 
     tiles.forEach((tile, index) => {
       const labelledBy = tile.getAttribute("aria-labelledby");
@@ -558,6 +572,79 @@ it("keeps compact source provenance visible and disables page controls during a 
       resolve(Response.json(pageResponse([item], { page: 2 }))),
     );
     expect(findButtonByText(container, "上一頁")!.disabled).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("keeps selected platform listings through website filtering, failure and recovery without website checkboxes", async () => {
+  const website: CatalogItem = {
+    sourceType: "website",
+    id: "web-only",
+    title: "Website observation",
+    sourceUrl: "https://store.example/p",
+    capturedAt: "2026-09-06T00:00:00Z",
+    createdAt: "2026-09-06T00:00:00Z",
+    updatedAt: "2026-09-06T00:00:00Z",
+    canExport: false,
+  };
+  const platform = makeItem({ id: "platform-one", listingId: "listing-one" });
+  let fail = true;
+  const fetcher = vi.fn(async (url: string) => {
+    const websiteFilter =
+      new URL(url, "http://localhost").searchParams.get("filter") === "website";
+    if (websiteFilter && fail) return new Response("", { status: 500 });
+    return Response.json(
+      pageResponse(websiteFilter ? [website] : [platform, website], {
+        capabilities: {
+          canGenerateBulkUpdate: true,
+          canRecordImportResult: true,
+        },
+      }),
+    );
+  });
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(
+      container.querySelectorAll('tbody input[type="checkbox"]'),
+    ).toHaveLength(1);
+    await act(async () => {
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).click();
+    });
+    const selected = container.querySelector(
+      'tbody input[type="checkbox"]',
+    ) as HTMLInputElement;
+    expect(selected.checked).toBe(true);
+    await act(async () => {
+      findButtonByText(container, "網站")!.click();
+    });
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    fail = false;
+    await act(async () => {
+      findButtonByText(container, "重試")?.click();
+    });
+    expect(container.textContent).toContain("Website observation");
+    expect(
+      container.querySelectorAll('tbody input[type="checkbox"]'),
+    ).toHaveLength(0);
+    await act(async () => {
+      (
+        container.querySelector(
+          'button[aria-pressed="false"]',
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      )?.checked,
+    ).toBe(true);
   } finally {
     await unmount(root);
   }

@@ -3,7 +3,8 @@ import type { ListingStatus } from "@wukong/core";
 
 export type CatalogOrigin = "import" | "created";
 
-export type CatalogItem = {
+export type PlatformCatalogItem = {
+  sourceType: "platform";
   sourceReadiness?: SourceReadiness;
   id: string;
   remoteProductId: string;
@@ -21,7 +22,19 @@ export type CatalogItem = {
   contentDigest: string | null;
 };
 
+export type WebsiteCatalogItem = {
+  sourceType: "website";
+  id: string;
+  title: string;
+  sourceUrl: string;
+  capturedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type CatalogItem = PlatformCatalogItem | WebsiteCatalogItem;
 export type CatalogSummary = {
+  website: number;
   total: number;
   linked: number;
   unlinked: number;
@@ -48,12 +61,23 @@ export function summarizeCatalog(
 ): CatalogSummary {
   return {
     total: items.length,
-    linked: items.filter((item) => item.listingId !== null).length,
-    unlinked: items.filter((item) => item.listingId === null).length,
-    needsReview: items.filter((item) => item.needsReview).length,
-    needsAttention: items.filter((item) => item.needsAttention).length,
-    published: items.filter((item) => item.listingStatus === "published")
-      .length,
+    website: items.filter((item) => item.sourceType === "website").length,
+    linked: items.filter(
+      (item) => item.sourceType === "platform" && item.listingId !== null,
+    ).length,
+    unlinked: items.filter(
+      (item) => item.sourceType === "platform" && item.listingId === null,
+    ).length,
+    needsReview: items.filter(
+      (item) => item.sourceType === "platform" && item.needsReview,
+    ).length,
+    needsAttention: items.filter(
+      (item) => item.sourceType === "platform" && item.needsAttention,
+    ).length,
+    published: items.filter(
+      (item) =>
+        item.sourceType === "platform" && item.listingStatus === "published",
+    ).length,
   };
 }
 
@@ -67,11 +91,19 @@ export function summarizeCatalog(
 export function filterCatalogItemsServer(
   items: readonly CatalogItem[],
   query: string | undefined,
-  filter: "all" | "attention" | "review" | "unlinked" | "published",
+  filter: "website" | "all" | "attention" | "review" | "unlinked" | "published",
 ): CatalogItem[] {
   const normalizedQuery = (query ?? "").trim().toLocaleLowerCase();
 
   return items.filter((item) => {
+    if (item.sourceType === "website")
+      return (
+        (filter === "all" || filter === "website") &&
+        (!normalizedQuery ||
+          [item.title, item.sourceUrl].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ))
+      );
     const matchesFilter =
       filter === "all" ||
       (filter === "attention" && item.needsAttention) ||

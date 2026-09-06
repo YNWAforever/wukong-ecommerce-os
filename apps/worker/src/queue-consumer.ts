@@ -1,4 +1,8 @@
 import {
+  consumeWebsiteMessage as defaultConsumeWebsiteMessage,
+  type WebsiteConsumerOutcome,
+} from "./website-consumer.js";
+import {
   consumeListingMessage as defaultConsumeListingMessage,
   LISTING_MAX_ATTEMPTS,
 } from "./listing-consumer.js";
@@ -30,6 +34,10 @@ type ListingAttempt = {
 };
 
 type QueueDependencies = {
+  consumeWebsiteMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<WebsiteConsumerOutcome>;
   consumeListingMessage?: (
     payload: unknown,
     env: WorkerEnv,
@@ -72,10 +80,18 @@ export async function handleQueue(
   const consume =
     dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
   for (const message of batch.messages) {
-    const outcome = await consume(message.body, env, {
-      attempt: message.attempts,
-      maxAttempts: LISTING_MAX_ATTEMPTS,
-    });
+    const website =
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "kind" in message.body;
+    const outcome = website
+      ? await (
+          dependencies.consumeWebsiteMessage ?? defaultConsumeWebsiteMessage
+        )(message.body, env)
+      : await consume(message.body, env, {
+          attempt: message.attempts,
+          maxAttempts: LISTING_MAX_ATTEMPTS,
+        });
     if (outcome === "ack") message.ack();
     else message.retry({ delaySeconds: outcome.retryAfterSeconds });
   }

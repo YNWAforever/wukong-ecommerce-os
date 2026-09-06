@@ -293,3 +293,25 @@ test("restores preview configuration for downstream CI gates", () => {
   assert.equal(config.vars.SHOPLINE_ADAPTER, "mock");
   assert.equal(config.vars.SHOPLINE_PUBLISH_ENABLED, "false");
 });
+
+test("renders optional trusted website callback origin without requiring it for legacy runtime", () => {
+  const result = render({ WEBSITE_FETCH_BASE_URL: "https://web.example" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.WEBSITE_FETCH_BASE_URL,
+    "https://web.example",
+  );
+  assert.equal(
+    render({ WEBSITE_FETCH_BASE_URL: "http://web.example" }).status,
+    1,
+  );
+  assert.equal(
+    render({ WEBSITE_FETCH_BASE_URL: "https://web.example/path" }).status,
+    1,
+  );
+  assert.equal(render().status, 0);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.WEBSITE_FETCH_BASE_URL,
+    undefined,
+  );
+});

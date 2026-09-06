@@ -259,3 +259,77 @@ describe.skipIf(!adminUrl)("tenant table coverage", () => {
     }
   });
 });
+
+import { verifyWebsiteAudit } from "./audit-verify.js";
+
+describe.skipIf(!process.env.TEST_DATABASE_ADMIN_URL || !runtimeUrl)(
+  "website audit lifecycle",
+  () => {
+    it("verifies scan events independently and probes all website tables", async () => {
+      const database = createDatabase(runtimeUrl!, { migrationUrl: adminUrl });
+      const admin = postgres(adminUrl!, { prepare: false, onnotice: () => {} });
+      const workspaceId = `website_audit_${randomUUID()}`,
+        actorId = `actor_${randomUUID()}`;
+      try {
+        await database.migrate();
+        await admin`insert into workspaces(id,name,profile) values (${workspaceId},'Synthetic website audit','{}')`;
+        await admin`insert into users(id,email) values (${actorId},${actorId + "@example.test"})`;
+        await admin`insert into memberships(workspace_id,user_id,role) values (${workspaceId},${actorId},'reviewer')`;
+        const now = new Date();
+        const scan = await database.forWorkspace(workspaceId, (r) =>
+          r.websiteCatalog.createScan({
+            url: "https://store.example/",
+            requestedBy: actorId,
+            requestKey: randomUUID(),
+            now,
+          }),
+        );
+        const step = (await database.forWorkspace(workspaceId, (r) =>
+          r.websiteCatalog.claimStep({ scanId: scan.id, revision: 0, now }),
+        ))!;
+        await database.forWorkspace(workspaceId, (r) =>
+          r.websiteCatalog.beginDocumentFetch({ ...step, now }),
+        );
+        await database.forWorkspace(workspaceId, (r) =>
+          r.websiteCatalog.completeStep({
+            ...step,
+            now,
+            observation: {
+              state: "failed",
+              checkpoint: { ...scan.checkpoint, pending: null },
+            },
+          }),
+        );
+        const result = await verifyWebsiteAudit({
+          workspaceId,
+          scanId: scan.id,
+          url: runtimeUrl!,
+        });
+        expect(result.missingActions).toEqual([]);
+        expect(result.passed).toBe(true);
+        expect(TENANT_TABLES).toEqual(
+          expect.arrayContaining([
+            "website_scans",
+            "website_scan_steps",
+            "website_products",
+          ]),
+        );
+        const missing = await verifyWebsiteAudit({
+          workspaceId,
+          scanId: randomUUID(),
+          url: runtimeUrl!,
+        });
+        expect(missing.passed).toBe(false);
+        const foreign = await verifyWebsiteAudit({
+          workspaceId: "website_nonexistent",
+          scanId: scan.id,
+          url: runtimeUrl!,
+        });
+        expect(foreign.accessibleForeignRecordCount).toBe(0);
+      } finally {
+        await database.close();
+        await admin.end();
+      }
+    });
+  },
+);

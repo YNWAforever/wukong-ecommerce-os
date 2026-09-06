@@ -71,6 +71,8 @@ const localWrangler = {
     },
   ],
   vars: {
+    WEBSITE_FETCH_BASE_URL:
+      process.env.E2E_WEBSITE_FETCH_BASE_URL ?? "http://127.0.0.1:49219",
     QUEUE_INGRESS_SECRET: ingressSecret,
     BUILD_SHA: "local-e2e",
     SHOPLINE_ADAPTER: "mock",
@@ -457,6 +459,16 @@ async function runServer() {
     await waitForTlsPort("localhost", 9012);
     await access(localCaPath);
 
+    if (!process.env.E2E_WEBSITE_FETCH_BASE_URL) {
+      start("website-callback", [
+        "--filter",
+        "@wukong/db",
+        "exec",
+        "node",
+        "../../tests/e2e/website-callback-runner.mjs",
+      ]);
+      await waitFor("http://127.0.0.1:49219/health", "Website callback");
+    }
     start(
       "wrangler",
       [

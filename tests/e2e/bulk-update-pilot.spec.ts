@@ -1174,6 +1174,12 @@ test("admin sets up a store inline without losing the selected workbook", async 
           { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
         ]);
       await page.reload();
+      await page
+        .getByRole("tab", {
+          name: locale === "en" ? "Workbook" : "試算表",
+          exact: true,
+        })
+        .click();
       await expect(
         page.getByText("synthetic-inline-store.invalid", { exact: true }),
       ).toBeVisible();

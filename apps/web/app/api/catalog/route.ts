@@ -18,7 +18,7 @@ const querySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   q: z.string().trim().optional(),
   filter: z
-    .enum(["all", "attention", "review", "unlinked", "published"])
+    .enum(["website", "all", "attention", "review", "unlinked", "published"])
     .default("all"),
 });
 
@@ -39,21 +39,27 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
         .forWorkspace(context.workspaceId, async (repositories) => {
           const page = await repositories.reads.catalogPage(query);
           const products = await repositories.platformProducts.getByIds(
-            page.items.map((item) => item.id),
+            page.items
+              .filter((item) => item.sourceType === "platform")
+              .map((item) => item.id),
           );
           const byId = new Map(
             products.map((product) => [product.id, product]),
           );
           const items = await Promise.all(
-            page.items.map(async (item) => ({
-              ...item,
-              sourceReadiness: await readSourceReadiness(
-                repositories,
-                context.workspaceId,
-                item.listingId,
-                byId.get(item.id) ?? null,
-              ),
-            })),
+            page.items.map(async (item) =>
+              item.sourceType === "website"
+                ? item
+                : {
+                    ...item,
+                    sourceReadiness: await readSourceReadiness(
+                      repositories,
+                      context.workspaceId,
+                      item.listingId,
+                      byId.get(item.id) ?? null,
+                    ),
+                  },
+            ),
           );
           return { ...page, items };
         });

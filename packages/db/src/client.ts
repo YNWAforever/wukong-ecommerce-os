@@ -1,4 +1,8 @@
 import {
+  createWebsiteCatalogRepository,
+  type WebsiteCatalogRepository,
+} from "./repositories/website-catalog.js";
+import {
   createExportEvidenceRepository,
   type ExportEvidenceRepository,
 } from "./repositories/export-evidence.js";
@@ -98,6 +102,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  websiteCatalog: WebsiteCatalogRepository;
   exportEvidence: ExportEvidenceRepository;
   exportVerifications: ExportVerificationRepository;
   reads: WorkspaceReadRepository;
@@ -135,6 +140,9 @@ export type Database = {
    * not forWorkspace: wukong_app cannot enumerate tenants, so this calls a
    * SECURITY DEFINER function (0007_stuck_listing_sweeper.sql) instead.
    */
+  findStuckWebsiteScans(input: {
+    maxRows: number;
+  }): Promise<Array<{ workspaceId: string; scanId: string; revision: number }>>;
   findStuckListingJobs(input: {
     olderThanSeconds: number;
     maxRows: number;
@@ -193,6 +201,11 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        websiteCatalog: createWebsiteCatalogRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         exportEvidence: createExportEvidenceRepository(
           transaction,
           workspaceId,
@@ -313,6 +326,17 @@ export function createDatabase(
       // Deliberately not forWorkspace: this proves the connection answers, and
       // must not open a tenant transaction or set a workspace GUC.
       await client`select 1`;
+    },
+    async findStuckWebsiteScans({ maxRows }) {
+      if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > 10)
+        throw new Error("Website sweeper maxRows must be 1..10");
+      const rows =
+        await client`select * from sweeper_find_website_scans(${maxRows})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        scanId: String(row.scan_id),
+        revision: Number(row.revision),
+      }));
     },
     async findStuckListingJobs({ olderThanSeconds, maxRows }) {
       const rows = await client`

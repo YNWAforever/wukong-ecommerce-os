@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { z } from "zod";
+import type { WebsiteJob } from "./website-queue.js";
 
 const safeId = z
   .string()
@@ -32,7 +33,7 @@ export const shoplinePublishJobSchema = z
 
 export type ListingJob = z.infer<typeof listingJobSchema>;
 export type ShoplinePublishJob = z.infer<typeof shoplinePublishJobSchema>;
-export type QueueMessage = ListingJob | ShoplinePublishJob;
+export type QueueMessage = ListingJob | ShoplinePublishJob | WebsiteJob;
 
 type SignInput = {
   secret: string;
@@ -77,8 +78,7 @@ function isConstantTimeEqual(expected: string, received: string): boolean {
   let difference = expectedBytes.length ^ receivedBytes.length;
 
   for (let index = 0; index < length; index += 1) {
-    difference |=
-      (expectedBytes[index] ?? 0) ^ (receivedBytes[index] ?? 0);
+    difference |= (expectedBytes[index] ?? 0) ^ (receivedBytes[index] ?? 0);
   }
 
   return difference === 0;
@@ -88,10 +88,16 @@ export async function verifyQueueRequest(input: VerifyInput): Promise<boolean> {
   if (!/^\d+$/.test(input.timestamp)) return false;
 
   const timestamp = Number(input.timestamp);
-  if (!Number.isSafeInteger(timestamp) || input.timestamp !== String(timestamp)) {
+  if (
+    !Number.isSafeInteger(timestamp) ||
+    input.timestamp !== String(timestamp)
+  ) {
     return false;
   }
-  if (!Number.isFinite(input.nowSeconds) || Math.abs(input.nowSeconds - timestamp) > 300) {
+  if (
+    !Number.isFinite(input.nowSeconds) ||
+    Math.abs(input.nowSeconds - timestamp) > 300
+  ) {
     return false;
   }
 

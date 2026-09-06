@@ -1374,3 +1374,97 @@ export const exportVerifications = pgTable(
     ),
   ],
 );
+
+export const websiteScans = pgTable(
+  "website_scans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    requestedUrl: text("requested_url").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    requestKey: text("request_key").notNull(),
+    state: text("state").notNull(),
+    checkpoint: jsonb("checkpoint")
+      .$type<import("./repositories/website-catalog.js").WebsiteCheckpoint>()
+      .notNull(),
+    revision: integer("revision").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    discoveryRequests: integer("discovery_requests").notNull().default(0),
+    productRequests: integer("product_requests").notNull().default(0),
+    robotsRequests: integer("robots_requests").notNull().default(0),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    nextEligibleAt: timestamp("next_eligible_at", {
+      withTimezone: true,
+    }).notNull(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+    dispatchStatus: text("dispatch_status").notNull().default("pending"),
+    dispatchAttempts: integer("dispatch_attempts").notNull().default(0),
+    dispatchAt: timestamp("dispatch_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    uniqueIndex("website_scans_workspace_id_uq").on(t.workspaceId, t.id),
+    uniqueIndex("website_scans_request_uq").on(t.workspaceId, t.requestKey),
+  ],
+);
+export const websiteScanSteps = pgTable(
+  "website_scan_steps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    scanId: uuid("scan_id").notNull(),
+    revision: integer("revision").notNull(),
+    leaseToken: uuid("lease_token").notNull(),
+    requestState: text("request_state").notNull(),
+    result:
+      jsonb("result").$type<
+        import("./repositories/website-catalog.js").WebsiteStepResult
+      >(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("website_steps_revision_uq").on(
+      t.workspaceId,
+      t.scanId,
+      t.revision,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.scanId],
+      foreignColumns: [websiteScans.workspaceId, websiteScans.id],
+    }),
+  ],
+);
+export const websiteProducts = pgTable(
+  "website_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    canonicalSourceUrl: text("canonical_source_url").notNull(),
+    sourceScanId: uuid("source_scan_id").notNull(),
+    sourceKey: text("source_key").notNull(),
+    observation: jsonb("observation")
+      .$type<import("@wukong/core").WebsiteProduct>()
+      .notNull(),
+    savedBy: text("saved_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    index("website_products_scan_idx").on(t.workspaceId, t.sourceScanId),
+    uniqueIndex("website_products_source_uq").on(
+      t.workspaceId,
+      t.canonicalSourceUrl,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.sourceScanId],
+      foreignColumns: [websiteScans.workspaceId, websiteScans.id],
+    }),
+  ],
+);

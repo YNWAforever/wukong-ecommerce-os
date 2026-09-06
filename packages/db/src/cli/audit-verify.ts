@@ -38,6 +38,9 @@ export const REQUIRED_AUDIT_SEQUENCE = [
  * literals from this module, never user input, so interpolating them is safe.
  */
 export const TENANT_TABLES = [
+  "website_scans",
+  "website_scan_steps",
+  "website_products",
   "memberships",
   "workspace_invites",
   "listing_drafts",
@@ -224,4 +227,84 @@ if (
   void main().then((exitCode) => {
     process.exitCode = exitCode;
   });
+}
+
+/** Website observations have their own lifecycle; no listing approval/export is inferred. */
+export async function verifyWebsiteAudit(input: {
+  workspaceId: string;
+  scanId: string;
+  url: string;
+}) {
+  if (!input.workspaceId.trim() || !input.scanId.trim())
+    throw new Error("workspace and scan are required");
+  const client = postgres(input.url, {
+    connect_timeout: 10,
+    max: 1,
+    prepare: false,
+  });
+  try {
+    return await client.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id',${input.workspaceId},true)`;
+      const [scan] =
+        await tx`select state from website_scans where workspace_id=${input.workspaceId} and id=${input.scanId}`;
+      const events =
+        await tx`select action,metadata from audit_events where workspace_id=${input.workspaceId} and entity_id=${input.scanId}`;
+      const steps =
+        await tx`select revision from website_scan_steps where workspace_id=${input.workspaceId} and scan_id=${input.scanId} and request_state='completed'`;
+      const products =
+        await tx`select id from website_products where workspace_id=${input.workspaceId} and source_scan_id=${input.scanId}`;
+      const missingActions: string[] = [];
+      if (!scan) missingActions.push("website.scan_missing");
+      if (!events.some((e) => e.action === "website.scan_created"))
+        missingActions.push("website.scan_created");
+      for (const step of steps)
+        if (
+          !events.some(
+            (e) =>
+              e.action === "website.scan_step_completed" &&
+              e.metadata?.revision === step.revision,
+          )
+        )
+          missingActions.push(`website.scan_step_completed.${step.revision}`);
+      if (
+        scan &&
+        ["ready", "partial", "failed"].includes(String(scan.state)) &&
+        !events.some((e) => e.action === "website.scan_finished")
+      )
+        missingActions.push("website.scan_finished");
+      for (const product of products)
+        if (
+          !events.some(
+            (e) =>
+              e.action === "website.products_saved" &&
+              Array.isArray(e.metadata?.productIds) &&
+              e.metadata.productIds.includes(product.id),
+          )
+        )
+          missingActions.push(`website.products_saved.${product.id}`);
+      const probe = [
+        `select 'workspaces' as source,count(*)::bigint as count from workspaces where id<>$1`,
+        ...TENANT_TABLES.map(
+          (t) => `select '${t}',count(*) from ${t} where workspace_id<>$1`,
+        ),
+      ].join(" union all ");
+      const foreign = await tx.unsafe<{ source: string; count: number }[]>(
+        `select source,count::int from (${probe}) counts where count>0`,
+        [input.workspaceId],
+      );
+      return {
+        workspaceId: input.workspaceId,
+        scanId: input.scanId,
+        missingActions,
+        accessibleForeignRecordCount: foreign.reduce(
+          (n, r) => n + toCount(r),
+          0,
+        ),
+        accessibleForeignTables: foreign.map((r) => r.source),
+        passed: missingActions.length === 0 && foreign.length === 0,
+      };
+    });
+  } finally {
+    await client.end();
+  }
 }

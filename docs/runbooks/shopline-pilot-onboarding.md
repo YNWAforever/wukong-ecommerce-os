@@ -213,6 +213,16 @@ Retain the downloaded packet only in the approved private evidence location. It 
 
 ### Store setup on the import page
 
-On `/listings/import`, use the store-status card before submitting a workbook. An admin/owner can choose **Set up store**, enter the store domain and access token in the inline form, and connect without navigating away. The selected workbook and Hong Kong export time remain in place. Use **Refresh status** if another administrator connected the store.
+On `/listings/import`, choose **Workbook** and use the store-status card before submitting a workbook. An admin/owner can choose **Set up store**, enter the store domain and access token in the inline form, and connect without navigating away. The selected workbook and Hong Kong export time remain in place. Use **Refresh status** if another administrator connected the store.
 
 If you lack administrator access, the card explains who must complete setup. If credential storage is unavailable, ask the system administrator to configure the server before entering a token. The form does not offer tokenless registration, and connecting a store does not enable SHOPLINE writes. Existing connected stores can still import spreadsheets when credential storage is unavailable because this operation does not decrypt the token.
+
+### Preview a website catalog
+
+Open **Catalog import**, keep **Website** selected and paste the public HTTPS storefront URL. Choose **Preview products**, inspect the bounded preview (at most 20 products), select the observations to retain and choose **Save selected products**. Operator access or higher is required; no SHOPLINE account, token or credential-encryption key is required. The page URL retains the scan ID for reload.
+
+A partial preview may omit products or fields. Review the warnings and actual source/capture time. **Retry scan** keeps the previous preview visible but unavailable for selection until the replacement scan finishes. Changing the storefront clears previous selections. Saved website observations appear in Catalog and remain read-only; they do not establish platform IDs, inventory quantities, export readiness or publication authority.
+
+Choose **Workbook** to use the existing SHOPLINE import and inline store setup. The selected workbook and export time remain mounted when switching import choices. Website preview does not change workbook, supporting-evidence or new-product safeguards.
+
+Production rollout is separate: migration 0019, the existing queue's signed Node callback and trusted HTTPS WEBSITE_FETCH_BASE_URL must be configured and verified under an authorized release. Local synthetic browser success and a bounded single-product compatibility probe do not establish whole-store or deployed-host compatibility.

@@ -1,5 +1,7 @@
 import {
   LISTING_INGRESS_PATH,
+  WEBSITE_INGRESS_PATH,
+  websiteJobSchema,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
   shoplinePublishJobSchema,
@@ -89,7 +91,11 @@ export async function handleIngress(
     if (!authenticated) return response(401);
     return Response.json(await authenticatedWorkerHealth(env));
   }
-  if (path !== LISTING_INGRESS_PATH && path !== SHOPLINE_INGRESS_PATH) {
+  if (
+    path !== LISTING_INGRESS_PATH &&
+    path !== SHOPLINE_INGRESS_PATH &&
+    path !== WEBSITE_INGRESS_PATH
+  ) {
     return response(404);
   }
   if (request.method !== "POST") return response(405);
@@ -129,7 +135,16 @@ export async function handleIngress(
     return response(400);
   }
 
-  if (path === LISTING_INGRESS_PATH) {
+  if (path === WEBSITE_INGRESS_PATH) {
+    const parsed = websiteJobSchema.safeParse(input);
+    if (!parsed.success) return response(400);
+    if (
+      !env.WEBSITE_FETCH_BASE_URL?.trim() ||
+      typeof env.LISTING_QUEUE?.send !== "function"
+    )
+      return response(503);
+    await env.LISTING_QUEUE.send(parsed.data);
+  } else if (path === LISTING_INGRESS_PATH) {
     const parsed = listingJobSchema.safeParse(input);
     if (!parsed.success) return response(400);
     if (typeof env.LISTING_QUEUE?.send !== "function") return response(503);

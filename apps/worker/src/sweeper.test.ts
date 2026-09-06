@@ -20,6 +20,7 @@ const job = {
 function makeDatabase(jobs: unknown[]) {
   return {
     findStuckListingJobs: vi.fn(async () => jobs),
+    findStuckWebsiteScans: vi.fn(async () => []),
     close: vi.fn(async () => undefined),
   };
 }
@@ -131,4 +132,51 @@ describe("handleScheduled", () => {
     expect(send).not.toHaveBeenCalled();
     expect(database.close).toHaveBeenCalled();
   });
+});
+
+it("reconciles the oldest bounded website scan identities on the existing queue", async () => {
+  const send = vi.fn();
+  const recordDispatch = vi.fn();
+  const websiteJob = { workspaceId: "ws", scanId: job.draftId, revision: 2 };
+  const database = {
+    ...makeDatabase([]),
+    findStuckWebsiteScans: vi.fn(async () => [websiteJob]),
+    forWorkspace: async (ws: string, work: any) => {
+      expect(ws).toBe("ws");
+      return work({ websiteCatalog: { recordDispatch } });
+    },
+  };
+  await handleScheduled(undefined as never, env(send), undefined as never, {
+    createDatabase: () => database as never,
+  });
+  expect(database.findStuckWebsiteScans).toHaveBeenCalledWith({ maxRows: 10 });
+  expect(send).toHaveBeenCalledWith({ kind: "website_scan", ...websiteJob });
+  expect(recordDispatch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      scanId: websiteJob.scanId,
+      revision: 2,
+      status: "sent",
+    }),
+  );
+});
+it("records failed website recovery dispatch for the next bounded sweep", async () => {
+  const send = vi.fn(async () => {
+    throw new Error("unavailable");
+  });
+  const recordDispatch = vi.fn();
+  const database = {
+    ...makeDatabase([]),
+    findStuckWebsiteScans: vi.fn(async () => [
+      { workspaceId: "ws", scanId: job.draftId, revision: 0 },
+    ]),
+    forWorkspace: async (_ws: string, work: any) =>
+      work({ websiteCatalog: { recordDispatch } }),
+  };
+  await handleScheduled(undefined as never, env(send), undefined as never, {
+    createDatabase: () => database as never,
+  });
+  expect(recordDispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ status: "failed" }),
+  );
+  expect(database.close).toHaveBeenCalledOnce();
 });

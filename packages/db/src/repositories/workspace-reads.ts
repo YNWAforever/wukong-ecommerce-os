@@ -1,14 +1,15 @@
 import { readReviewQualityEvidence } from "./review-quality.js";
 import { sql } from "drizzle-orm";
-import type { ListingStatus } from "@wukong/core";
+import type { ListingStatus, WebsiteProduct } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 
 export type PageQuery = { page: number; pageSize: number };
 export type CatalogFilter =
-  "all" | "attention" | "review" | "unlinked" | "published";
+  "website" | "all" | "attention" | "review" | "unlinked" | "published";
 export type LedgerKind =
   "batch" | "publish_job" | "pipeline_run" | "export" | "import_result";
-export type CatalogReadItem = {
+export type PlatformCatalogReadItem = {
+  sourceType: "platform";
   id: string;
   remoteProductId: string;
   origin: "import" | "created";
@@ -24,7 +25,19 @@ export type CatalogReadItem = {
   updatedAt: string;
   contentDigest: string | null;
 };
+export type WebsiteCatalogReadItem = {
+  sourceType: "website";
+  id: string;
+  title: string;
+  sourceUrl: string;
+  capturedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type CatalogReadItem = PlatformCatalogReadItem | WebsiteCatalogReadItem;
 export type CatalogReadSummary = {
+  website: number;
   total: number;
   linked: number;
   unlinked: number;
@@ -56,7 +69,7 @@ export function createWorkspaceReadRepository(
   scope: WorkspaceScope,
 ) {
   const catalog = sql`
-  select p.id, p.remote_product_id as "remoteProductId",p.origin,p.sku,p.listing_id as "listingId",
+  select 'platform'::text as "sourceType",null::text as "sourceUrl",null::text as "capturedAt", p.id, p.remote_product_id as "remoteProductId",p.origin,p.sku,p.listing_id as "listingId",
    p.spec_version as "specVersion",coalesce(v.content->'title'->>'zh-Hant',v.content->'title'->>'en',p.sku,p.remote_product_id) as title,
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
    coalesce(d.status in ('in_review','reopened'),false) as "needsReview",
@@ -67,7 +80,9 @@ export function createWorkspaceReadRepository(
   left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId}
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
-  where p.workspace_id=${workspaceId}`;
+  where p.workspace_id=${workspaceId}
+  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null
+  from website_products w where w.workspace_id=${workspaceId}`;
   const ledger = sql`
   select id,'batch'::text kind,created_at from enrichment_batches where workspace_id=${workspaceId}
   union all select id,'publish_job',created_at from publish_jobs where workspace_id=${workspaceId}
@@ -90,29 +105,73 @@ export function createWorkspaceReadRepository(
       scope.assertOpen();
       const skip = offset(input);
       if (
-        !["all", "attention", "review", "unlinked", "published"].includes(
-          input.filter,
-        )
+        ![
+          "all",
+          "website",
+          "attention",
+          "review",
+          "unlinked",
+          "published",
+        ].includes(input.filter)
       )
         throw new Error("invalid catalog filter");
       const q = (input.q ?? "").trim().toLocaleLowerCase();
-      const match = sql`(${input.filter}='all' or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
-    and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
+      const match = sql`(${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
+    and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
       // One statement gives counts and page a common MVCC snapshot, including empty pages.
       const rows =
         await transaction.execute(sql`with catalog as materialized (${catalog}), matching as (select * from catalog where ${match}),
-    page as (select * from matching order by "updatedAt" desc,id desc limit ${input.pageSize} offset ${skip})
-    select (select coalesce(jsonb_agg(to_jsonb(page) order by "updatedAt" desc,id desc),'[]') from page) items,
+    page as (select * from matching order by "createdAt" desc,"sourceType",id limit ${input.pageSize} offset ${skip})
+    select (select coalesce(jsonb_agg(to_jsonb(page) order by "createdAt" desc,"sourceType",id),'[]') from page) items,
      (select count(*)::int from matching) as "totalMatching",
      jsonb_build_object('total',count(*)::int,'linked',count(*) filter(where "listingId" is not null)::int,
-      'unlinked',count(*) filter(where "listingId" is null)::int,'needsReview',count(*) filter(where "needsReview")::int,
+      'website',count(*) filter(where "sourceType"='website')::int,'unlinked',count(*) filter(where "sourceType"='platform' and "listingId" is null)::int,'needsReview',count(*) filter(where "needsReview")::int,
       'needsAttention',count(*) filter(where "needsAttention")::int,'published',count(*) filter(where "listingStatus"='published')::int) summary from catalog`);
       const row = rows[0]!;
       return {
-        items: row.items as CatalogReadItem[],
+        items: (
+          row.items as Array<PlatformCatalogReadItem | WebsiteCatalogReadItem>
+        ).map((item) => {
+          if (item.sourceType === "website")
+            return {
+              sourceType: "website" as const,
+              id: item.id,
+              title: item.title,
+              sourceUrl: item.sourceUrl,
+              capturedAt: item.capturedAt,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+              canExport: false as const,
+            };
+          const {
+            sourceUrl: _url,
+            capturedAt: _capture,
+            ...platform
+          } = item as PlatformCatalogReadItem & {
+            sourceUrl: null;
+            capturedAt: null;
+          };
+          return platform;
+        }),
         totalMatching: Number(row.totalMatching),
         summary: row.summary as CatalogReadSummary,
       };
+    },
+    async websiteProduct(id: string) {
+      scope.assertOpen();
+      const rows = await transaction.execute(
+        sql`select id,observation,created_at as "createdAt" from website_products where workspace_id=${workspaceId} and id=${id}::uuid`,
+      );
+      const row = rows[0];
+      return row
+        ? {
+            sourceType: "website" as const,
+            id: String(row.id),
+            observation: row.observation as WebsiteProduct,
+            createdAt: new Date(String(row.createdAt)).toISOString(),
+            canExport: false as const,
+          }
+        : null;
     },
     async listingPage(
       input: PageQuery & { status?: ListingStatus; q?: string },

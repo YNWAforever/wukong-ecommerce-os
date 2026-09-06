@@ -1,5 +1,8 @@
 import {
   LISTING_INGRESS_PATH,
+  WEBSITE_INGRESS_PATH,
+  websiteJobSchema,
+  type WebsiteJob,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
   shoplinePublishJobSchema,
@@ -9,6 +12,10 @@ import {
 } from "@wukong/jobs";
 
 export type CloudflareIngressClient = {
+  enqueue(
+    path: typeof WEBSITE_INGRESS_PATH,
+    payload: WebsiteJob,
+  ): Promise<{ accepted: true }>;
   enqueue(
     path: typeof LISTING_INGRESS_PATH,
     payload: ListingJob,
@@ -53,8 +60,11 @@ export function createCloudflareIngressClient(
   options: Options = {},
 ): CloudflareIngressClient {
   async function enqueue(
-    path: typeof LISTING_INGRESS_PATH | typeof SHOPLINE_INGRESS_PATH,
-    payload: ListingJob | ShoplinePublishJob,
+    path:
+      | typeof LISTING_INGRESS_PATH
+      | typeof SHOPLINE_INGRESS_PATH
+      | typeof WEBSITE_INGRESS_PATH,
+    payload: ListingJob | ShoplinePublishJob | WebsiteJob,
   ): Promise<{ accepted: true }> {
     try {
       const env = options.env ?? process.env;
@@ -66,7 +76,9 @@ export function createCloudflareIngressClient(
           ? listingJobSchema
           : path === SHOPLINE_INGRESS_PATH
             ? shoplinePublishJobSchema
-            : null;
+            : path === WEBSITE_INGRESS_PATH
+              ? websiteJobSchema
+              : null;
       if (!schema) throw queueUnavailable("unsupported_path");
 
       let body: string;
