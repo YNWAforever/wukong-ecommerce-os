@@ -522,6 +522,56 @@ describe("workspace isolation", () => {
         "source_imports",
       ],
       [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "candidate_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "cutout_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "source_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "attempt_id"],
+        "product_shot_attempts",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "observed_version_id"],
+        "listing_versions",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "source_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "product_shot_selections",
+        ["workspace_id", "listing_id", "attempt_id"],
+        "product_shot_attempts",
+      ],
+      [
         "publish_jobs",
         ["workspace_id", "connection_id"],
         "shopline_connections",

@@ -1581,6 +1581,16 @@ export const productShotAttempts = pgTable(
       t.listingId,
       t.id,
     ),
+    index("product_shot_attempts_cutout_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.cutoutAssetId,
+    ),
+    index("product_shot_attempts_candidate_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.candidateAssetId,
+    ),
     uniqueIndex("product_shot_attempts_identity_generation_uq").on(
       t.workspaceId,
       t.listingId,
@@ -1623,6 +1633,12 @@ export const productShotSelections = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.workspaceId, t.listingId] }),
+    index("product_shot_selections_attempt_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.attemptId,
+    ),
+
     foreignKey({
       columns: [t.workspaceId, t.listingId, t.attemptId],
       foreignColumns: [
@@ -1683,6 +1699,26 @@ export const productShotPublications = pgTable(
       t.listingId,
       t.versionId,
       t.assetId,
+    ),
+    index("product_shot_publications_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.assetId,
+    ),
+    index("product_shot_publications_attempt_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.attemptId,
+    ),
+    index("product_shot_publications_observed_version_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.observedVersionId,
+    ),
+    index("product_shot_publications_source_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.sourceAssetId,
     ),
     foreignKey({
       columns: [t.workspaceId, t.listingId, t.attemptId],

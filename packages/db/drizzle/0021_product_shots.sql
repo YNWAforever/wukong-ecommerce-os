@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS product_shot_attempts (
  CHECK(state NOT IN ('candidate_ready','approved') OR candidate_asset_id IS NOT NULL),
  CHECK(candidate_asset_id IS NULL OR (candidate_asset_id<>source_asset_id AND candidate_asset_id<>cutout_asset_id))
 );
+CREATE INDEX IF NOT EXISTS product_shot_attempts_cutout_asset_fk_idx ON product_shot_attempts(workspace_id,listing_id,cutout_asset_id);
+CREATE INDEX IF NOT EXISTS product_shot_attempts_candidate_asset_fk_idx ON product_shot_attempts(workspace_id,listing_id,candidate_asset_id);
 CREATE TABLE IF NOT EXISTS product_shot_selections (
  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
  listing_id uuid NOT NULL, attempt_id uuid NOT NULL,
@@ -44,6 +46,7 @@ CREATE TABLE IF NOT EXISTS product_shot_selections (
  PRIMARY KEY(workspace_id,listing_id),
  FOREIGN KEY(workspace_id,listing_id,attempt_id) REFERENCES product_shot_attempts(workspace_id,listing_id,id) ON DELETE RESTRICT
 );
+CREATE INDEX IF NOT EXISTS product_shot_selections_attempt_fk_idx ON product_shot_selections(workspace_id,listing_id,attempt_id);
 CREATE TABLE IF NOT EXISTS product_shot_daily_dispatches (
  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE RESTRICT,
  dispatch_day date NOT NULL, dispatched_count integer NOT NULL CHECK(dispatched_count>0),
@@ -70,6 +73,10 @@ CREATE TABLE IF NOT EXISTS product_shot_publications (
  UNIQUE(workspace_id,attempt_id,version_id,candidate_digest)
 );
 CREATE INDEX IF NOT EXISTS product_shot_publications_asset_idx ON product_shot_publications(workspace_id,listing_id,version_id,asset_id);
+CREATE INDEX IF NOT EXISTS product_shot_publications_asset_fk_idx ON product_shot_publications(workspace_id,listing_id,asset_id);
+CREATE INDEX IF NOT EXISTS product_shot_publications_attempt_fk_idx ON product_shot_publications(workspace_id,listing_id,attempt_id);
+CREATE INDEX IF NOT EXISTS product_shot_publications_observed_version_fk_idx ON product_shot_publications(workspace_id,listing_id,observed_version_id);
+CREATE INDEX IF NOT EXISTS product_shot_publications_source_asset_fk_idx ON product_shot_publications(workspace_id,listing_id,source_asset_id);
 
 DO $rls$ DECLARE t text; BEGIN
  FOREACH t IN ARRAY ARRAY['product_shot_attempts','product_shot_selections','product_shot_daily_dispatches','product_shot_publications'] LOOP
