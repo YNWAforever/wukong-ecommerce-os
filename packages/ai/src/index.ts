@@ -21,11 +21,24 @@ export {
   ProviderRefusalError,
   UnsupportedAssetError,
 } from "./openai-listing-provider.js";
+export {
+  PHOTOROOM_OUTPUT_LIMIT_BYTES,
+  PHOTOROOM_PRODUCT_SHOT_MODEL,
+  PHOTOROOM_PRODUCT_SHOT_VERSION,
+  PHOTOROOM_REQUEST_TIMEOUT_MS,
+  PhotoroomProductShotProvider,
+  ProductShotProviderError,
+} from "./photoroom-product-shot-provider.js";
+export type {
+  PhotoroomProductShotProviderConfig,
+  ProductShotProviderErrorCode,
+} from "./photoroom-product-shot-provider.js";
 export type {
   ModelPricing,
   OpenAIListingProviderConfig,
   ResponsesClientPort,
 } from "./openai-listing-provider.js";
+
 export {
   EXTRACTION_PROMPT,
   GENERATION_PROMPT,
