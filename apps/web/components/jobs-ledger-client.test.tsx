@@ -539,3 +539,117 @@ it("updates exact attempt to All jobs and follows changed URL pages without remo
   );
   await act(async () => root.unmount());
 });
+
+it("clears previous exact attempt during navigation and failure, retries the new attempt, and preserves return-only form state", async () => {
+  const attemptA = "11111111-1111-4111-8111-111111111111";
+  const attemptB = "22222222-2222-4222-8222-222222222222";
+  const detail = (id: string) => ({
+    attempt: {
+      id,
+      artifactStatus: "ready",
+      rowCount: 1,
+      specVersion: "v1",
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    reconciliation: {
+      counts: {
+        requested: 1,
+        included: 1,
+        excluded: 0,
+        noOp: 0,
+        accepted: 0,
+        rejected: 0,
+        unreported: 1,
+      },
+      verificationStatus: "unverified",
+      members: [
+        {
+          listingId: "listing-a",
+          versionId: "version-a",
+          outcome: "included",
+          latestResult: null,
+          history: [],
+        },
+      ],
+    },
+    capabilities: { canGenerateBulkUpdate: false, canRecordImportResult: true },
+  });
+  let finishB!: (response: Response) => void;
+  const pendingB = new Promise<Response>((resolve) => {
+    finishB = resolve;
+  });
+  let bRequests = 0;
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    if (String(input).startsWith("/api/jobs?"))
+      return Response.json({ entries: [], metrics: SAMPLE_METRICS });
+    if (String(input) === `/api/listings/export/${attemptA}`)
+      return Response.json(detail(attemptA));
+    if (String(input) === `/api/listings/export/${attemptB}`) {
+      bRequests += 1;
+      return bRequests === 1 ? pendingB : Response.json(detail(attemptB));
+    }
+    throw new Error(`Unexpected request: ${input}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { container, root } = await mountLedger(`attempt=${attemptA}`);
+  try {
+    const aPanel = container.querySelector(
+      `[data-export-attempt-id="${attemptA}"]`,
+    );
+    expect(aPanel).not.toBeNull();
+    const outcome = aPanel!.querySelector("select")!;
+    await act(async () => {
+      outcome.value = "rejected";
+      outcome.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () =>
+      root.render(
+        <JobsLedgerClient
+          initialSearch={`attempt=${attemptA}&returnTo=%2Fdashboard%3Fpage%3D2`}
+        />,
+      ),
+    );
+    expect(
+      container.querySelector(`[data-export-attempt-id="${attemptA}"]`),
+    ).toBe(aPanel);
+    expect(aPanel!.querySelector("select")?.value).toBe("rejected");
+    expect(aPanel!.querySelector("textarea")).not.toBeNull();
+    await act(async () =>
+      root.render(<JobsLedgerClient initialSearch={`attempt=${attemptB}`} />),
+    );
+    expect(
+      container.querySelector(`[data-export-attempt-id="${attemptA}"]`),
+    ).toBeNull();
+    expect(
+      container.querySelector(".export-attempt-detail [role=status]"),
+    ).not.toBeNull();
+    await act(async () => {
+      finishB(Response.json({}, { status: 404 }));
+    });
+    await settleEffects();
+    expect(
+      container.querySelector(`[data-export-attempt-id="${attemptA}"]`),
+    ).toBeNull();
+    expect(
+      container.querySelector(".export-attempt-detail [role=alert]"),
+    ).not.toBeNull();
+    const retry = container.querySelector<HTMLButtonElement>(
+      ".export-attempt-detail [role=alert] button",
+    )!;
+    await act(async () => retry.click());
+    await settleEffects();
+    expect(bRequests).toBe(2);
+    expect(
+      container.querySelector(`[data-export-attempt-id="${attemptB}"]`),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(`[data-export-attempt-id="${attemptA}"]`),
+    ).toBeNull();
+    expect(
+      container.querySelector(".export-attempt-detail [role=alert]"),
+    ).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

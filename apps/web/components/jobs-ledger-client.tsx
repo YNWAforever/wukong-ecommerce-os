@@ -119,7 +119,11 @@ export function JobsLedgerClient({
           <h2>
             {localized(locale, "指定匯出紀錄", "Selected export attempt")}
           </h2>
-          <ExportAttemptInspector attemptId={attemptId} initiallyOpened />
+          <ExportAttemptInspector
+            key={attemptId}
+            attemptId={attemptId}
+            initiallyOpened
+          />
         </section>
       ) : attempt ? (
         <p role="alert">
