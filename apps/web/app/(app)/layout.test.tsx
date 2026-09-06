@@ -3,17 +3,18 @@ import { describe, expect, it } from "vitest";
 import { ROLE_LABELS, SHELL_NAV_ITEMS } from "./shell-nav-items.js";
 
 describe("SHELL_NAV_ITEMS", () => {
-  it("has exactly the 9 routes that exist on this branch, in order", () => {
+  it("keeps the primary workflow and all existing tools in the approved order", () => {
     expect(SHELL_NAV_ITEMS.map((item) => item.href)).toEqual([
       "/dashboard",
       "/catalog",
-      "/queue",
-      "/listings/new",
       "/listings/import",
+      "/jobs?kind=export",
+      "/queue",
       "/batches",
+      "/listings/new",
       "/jobs",
-      "/system-map",
       "/quality",
+      "/system-map",
     ]);
   });
 });

@@ -432,13 +432,5 @@ it("explains the exact one-statement projection over a multi-page population", a
     }>;
     expect(plan[0]!.Plan["Actual Rows"]).toBe(1);
     expect(plan[0]!["Execution Time"]).toBeGreaterThanOrEqual(0);
-    console.info(
-      JSON.stringify({
-        event: "workbench_synthetic_explain",
-        statements,
-        tasks: result.totalMatching,
-        plan: plan[0],
-      }),
-    );
   });
 });

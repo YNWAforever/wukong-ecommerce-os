@@ -22,19 +22,19 @@
 
 ## Confirmed source map
 
-| Existing path | Responsibility |
-| --- | --- |
-| `packages/db/src/client.ts` | `WorkspaceRepositories`, scoped repository construction |
-| `packages/db/src/schema.ts` | listing, export, scan and workbook retained fields |
-| `packages/db/src/repositories/workspace-reads.ts` | current paginated catalog and Jobs read patterns |
-| `packages/db/src/repositories/website-catalog.ts` | queued/running/ready/partial/failed scan lifecycle |
-| `packages/db/src/repositories/workbook-catalog.ts` | immutable successful imports; no preview-failure persistence |
-| `apps/web/lib/export-reconciliation.ts` | exact included listing/version and latest revision receipt rules |
-| `apps/web/lib/use-latest-request.ts` | cancellation and superseded-request protection; stale flag currently only covers loading |
-| `apps/web/components/jobs-ledger-client.tsx` | existing Jobs filters, attempt inspection; no initial URL kind state yet |
-| `apps/web/app/api/catalog/route.ts` | catalog query validation; no import ID filter yet |
-| `apps/web/app/(app)/shell-nav-items.ts` | existing primary route list |
-| `tests/e2e/real-stack-fixture.ts` | isolated authenticated browser fixtures |
+| Existing path                                      | Responsibility                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `packages/db/src/client.ts`                        | `WorkspaceRepositories`, scoped repository construction                                  |
+| `packages/db/src/schema.ts`                        | listing, export, scan and workbook retained fields                                       |
+| `packages/db/src/repositories/workspace-reads.ts`  | current paginated catalog and Jobs read patterns                                         |
+| `packages/db/src/repositories/website-catalog.ts`  | queued/running/ready/partial/failed scan lifecycle                                       |
+| `packages/db/src/repositories/workbook-catalog.ts` | immutable successful imports; no preview-failure persistence                             |
+| `apps/web/lib/export-reconciliation.ts`            | exact included listing/version and latest revision receipt rules                         |
+| `apps/web/lib/use-latest-request.ts`               | cancellation and superseded-request protection; stale flag currently only covers loading |
+| `apps/web/components/jobs-ledger-client.tsx`       | existing Jobs filters, attempt inspection; no initial URL kind state yet                 |
+| `apps/web/app/api/catalog/route.ts`                | catalog query validation; no import ID filter yet                                        |
+| `apps/web/app/(app)/shell-nav-items.ts`            | existing primary route list                                                              |
+| `tests/e2e/real-stack-fixture.ts`                  | isolated authenticated browser fixtures                                                  |
 
 ## Contract decisions resolved during planning
 
@@ -51,8 +51,10 @@
 **Interfaces:** Produce these shared types; web code imports them as types from `@wukong/db`.
 
 ```ts
-export type WorkbenchKind = 'listing' | 'export' | 'website_scan' | 'workbook_import';
-export type WorkbenchState = 'attention' | 'progress' | 'completed' | 'unclassified';
+export type WorkbenchKind =
+  "listing" | "export" | "website_scan" | "workbook_import";
+export type WorkbenchState =
+  "attention" | "progress" | "completed" | "unclassified";
 export type WorkbenchQuery = {
   state: WorkbenchState;
   kind?: WorkbenchKind;
@@ -60,9 +62,18 @@ export type WorkbenchQuery = {
   pageSize: number;
 };
 export type WorkbenchReason =
-  | 'failed' | 'needs_info' | 'review' | 'delivery' | 'result_needed'
-  | 'processing' | 'published' | 'result_reported'
-  | 'preview_ready' | 'preview_partial' | 'imported' | 'unknown';
+  | "failed"
+  | "needs_info"
+  | "review"
+  | "delivery"
+  | "result_needed"
+  | "processing"
+  | "published"
+  | "result_reported"
+  | "preview_ready"
+  | "preview_partial"
+  | "imported"
+  | "unknown";
 export type WorkbenchItem = {
   key: string;
   id: string;
@@ -73,7 +84,7 @@ export type WorkbenchItem = {
   sourceLabel: string | null;
   productCount: number | null;
   occurredAt: string;
-  timestampKind: 'updated' | 'recorded';
+  timestampKind: "updated" | "recorded";
 };
 export type WorkbenchPage = {
   items: WorkbenchItem[];
@@ -85,13 +96,24 @@ export type WorkbenchPage = {
 };
 export function classifyListing(status: string): WorkbenchReason {
   switch (status) {
-    case 'failed': case 'publish_failed': return 'failed';
-    case 'needs_info': return 'needs_info';
-    case 'in_review': case 'reopened': return 'review';
-    case 'approved': return 'delivery';
-    case 'received': case 'processing': case 'publishing': return 'processing';
-    case 'published': return 'published';
-    default: return 'unknown';
+    case "failed":
+    case "publish_failed":
+      return "failed";
+    case "needs_info":
+      return "needs_info";
+    case "in_review":
+    case "reopened":
+      return "review";
+    case "approved":
+      return "delivery";
+    case "received":
+    case "processing":
+    case "publishing":
+      return "processing";
+    case "published":
+      return "published";
+    default:
+      return "unknown";
   }
 }
 ```
@@ -99,10 +121,10 @@ export function classifyListing(status: string): WorkbenchReason {
 - [ ] Write table-driven tests for all 11 listing statuses plus an unknown string. Assert each reason maps to exactly one state, including approved -> attention and reopened -> review.
 
 ```ts
-it('keeps approved work actionable and unknown states visible', () => {
-  expect(classifyListing('approved')).toBe('delivery');
-  expect(classifyListing('reopened')).toBe('review');
-  expect(classifyListing('future_status')).toBe('unknown');
+it("keeps approved work actionable and unknown states visible", () => {
+  expect(classifyListing("approved")).toBe("delivery");
+  expect(classifyListing("reopened")).toBe("review");
+  expect(classifyListing("future_status")).toBe("unknown");
 });
 ```
 
@@ -121,16 +143,25 @@ it('keeps approved work actionable and unknown states visible', () => {
 - [ ] Write assertions for pagination, exact totals, role-scoped tenant isolation, unknown legacy exports, state parity and no content-heavy fields in the response. Example required assertion shape:
 
 ```ts
-const first = await db.forWorkspace(ws, r => r.workbench.page({
-  state: 'attention', page: 1, pageSize: 25,
-}));
-const second = await db.forWorkspace(ws, r => r.workbench.page({
-  state: 'attention', page: 2, pageSize: 25,
-}));
+const first = await db.forWorkspace(ws, (r) =>
+  r.workbench.page({
+    state: "attention",
+    page: 1,
+    pageSize: 25,
+  }),
+);
+const second = await db.forWorkspace(ws, (r) =>
+  r.workbench.page({
+    state: "attention",
+    page: 2,
+    pageSize: 25,
+  }),
+);
 expect(first.counts).toEqual(second.counts);
-expect(new Set([...first.items, ...second.items].map(x => x.key)).size)
-  .toBe(first.items.length + second.items.length);
-expect(first.items.every(x => !('normalizedSheet' in x))).toBe(true);
+expect(new Set([...first.items, ...second.items].map((x) => x.key)).size).toBe(
+  first.items.length + second.items.length,
+);
+expect(first.items.every((x) => !("normalizedSheet" in x))).toBe(true);
 ```
 
 - [ ] Run `corepack.cmd pnpm@11.7.0 exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/workbench-reads.integration.test.ts`; observe missing method red using only the isolated service environment.
@@ -164,8 +195,12 @@ LIMIT 1
 
 ```ts
 const querySchema = z.object({
-  state: z.enum(['attention','progress','completed','unclassified']).default('attention'),
-  kind: z.enum(['listing','export','website_scan','workbook_import']).optional(),
+  state: z
+    .enum(["attention", "progress", "completed", "unclassified"])
+    .default("attention"),
+  kind: z
+    .enum(["listing", "export", "website_scan", "workbook_import"])
+    .optional(),
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -177,10 +212,14 @@ const querySchema = z.object({
 ```ts
 export function workbenchDestination(item: WorkbenchItem): string {
   switch (item.kind) {
-    case 'listing': return `/listings/${encodeURIComponent(item.id)}`;
-    case 'export': return `/jobs?${new URLSearchParams({kind:'export',attempt:item.id})}`;
-    case 'website_scan': return `/listings/import?${new URLSearchParams({scan:item.id})}`;
-    case 'workbook_import': return `/catalog?${new URLSearchParams({filter:'workbook',importId:item.id})}`;
+    case "listing":
+      return `/listings/${encodeURIComponent(item.id)}`;
+    case "export":
+      return `/jobs?${new URLSearchParams({ kind: "export", attempt: item.id })}`;
+    case "website_scan":
+      return `/listings/import?${new URLSearchParams({ scan: item.id })}`;
+    case "workbook_import":
+      return `/catalog?${new URLSearchParams({ filter: "workbook", importId: item.id })}`;
   }
 }
 ```
@@ -201,9 +240,10 @@ export function workbenchDestination(item: WorkbenchItem): string {
 - [ ] Test return-path rejection and accepted normalization:
 
 ```ts
-expect(normalizeWorkbenchReturn('//example.test')).toBe('/dashboard');
-expect(normalizeWorkbenchReturn('/dashboard?state=attention&page=2'))
-  .toBe('/dashboard?state=attention&page=2');
+expect(normalizeWorkbenchReturn("//example.test")).toBe("/dashboard");
+expect(normalizeWorkbenchReturn("/dashboard?state=attention&page=2")).toBe(
+  "/dashboard?state=attention&page=2",
+);
 ```
 
 - [ ] Run modified Jobs/catalog unit tests plus `corepack.cmd pnpm@11.7.0 exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/workspace-reads.integration.test.ts`; commit `feat: preserve workbench destination context`.
@@ -249,9 +289,11 @@ const retainedStale = matching !== null && (loading || error !== null);
 - [ ] Add 390px mobile and 1440px desktop browser checks, keyboard-only navigation, Chinese/English locale, counts beyond 25 records, filter/Back restoration, unavailable API and superseded responses. The browser tests must assert user-visible behavior, not class-name snapshots.
 
 ```ts
-await page.goto('/dashboard?state=attention');
-await expect(page.getByRole('heading', {name: '工作台', exact: true})).toBeVisible();
-await page.getByRole('button', {name: /已完成/}).click();
+await page.goto("/dashboard?state=attention");
+await expect(
+  page.getByRole("heading", { name: "工作台", exact: true }),
+).toBeVisible();
+await page.getByRole("button", { name: /已完成/ }).click();
 await expect(page).toHaveURL(/state=completed/);
 await page.goBack();
 await expect(page).toHaveURL(/state=attention/);
@@ -269,24 +311,39 @@ Spec coverage: state populations/counts/snapshot -> Tasks 1–2; capabilities/re
 Source limitations are explicit: stateless XLSX preview failures are not durable tasks; workbook quality cohorts are excluded; imports navigation is the existing flow; partial website results retain their meaning; legacy export state is unknown. No database field or migration is silently invented.
 
 Execution is sequential through Tasks 1–4, then Tasks 5–6, followed by Task 7. A failure in classification/count parity or source authorization is a correctness blocker; do not hide it with UI fallback data. This document is a plan, not evidence that any implementation or check has run.
+
 ### Concrete return-path helper for Task 4
 
 Export this function from `apps/web/lib/workbench-navigation.ts`. It avoids a free-form return URL and only retains the approved dashboard filters.
 
 ```ts
 export function normalizeWorkbenchReturn(input: string | null): string {
-  if (!input || !input.startsWith('/dashboard') || input.startsWith('//')) return '/dashboard';
-  const url = new URL(input, 'http://workbench.invalid');
-  if (url.origin !== 'http://workbench.invalid' || url.pathname !== '/dashboard') return '/dashboard';
+  if (!input || !input.startsWith("/dashboard") || input.startsWith("//"))
+    return "/dashboard";
+  const url = new URL(input, "http://workbench.invalid");
+  if (
+    url.origin !== "http://workbench.invalid" ||
+    url.pathname !== "/dashboard"
+  )
+    return "/dashboard";
   const out = new URLSearchParams();
-  const state = url.searchParams.get('state');
-  const kind = url.searchParams.get('kind');
-  const page = url.searchParams.get('page');
-  if (state && ['attention','progress','completed','unclassified'].includes(state)) out.set('state', state);
-  if (kind && ['listing','export','website_scan','workbook_import'].includes(kind)) out.set('kind', kind);
-  if (page && /^[1-9][0-9]*$/.test(page) && Number(page) <= 21474836) out.set('page', page);
+  const state = url.searchParams.get("state");
+  const kind = url.searchParams.get("kind");
+  const page = url.searchParams.get("page");
+  if (
+    state &&
+    ["attention", "progress", "completed", "unclassified"].includes(state)
+  )
+    out.set("state", state);
+  if (
+    kind &&
+    ["listing", "export", "website_scan", "workbook_import"].includes(kind)
+  )
+    out.set("kind", kind);
+  if (page && /^[1-9][0-9]*$/.test(page) && Number(page) <= 21474836)
+    out.set("page", page);
   const query = out.toString();
-  return query ? `/dashboard?${query}` : '/dashboard';
+  return query ? `/dashboard?${query}` : "/dashboard";
 }
 ```
 

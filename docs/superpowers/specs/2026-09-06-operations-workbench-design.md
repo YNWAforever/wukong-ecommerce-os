@@ -28,12 +28,12 @@ Layout: a compact left navigation, a primary Import products action, three selec
 
 Primary navigation:
 
-| Label | Destination and behavior |
-| --- | --- |
-| Workbench / 工作台 | /dashboard; retains existing route |
-| Catalog / 商品目錄 | /catalog; preserves existing filters and source labels |
-| Imports / 匯入 | /listings/import; existing import flow, not a newly promised global import-history screen |
-| Exports & results / 匯出與結果 | /jobs with export filtering; results remain attached to exact export attempts |
+| Label                          | Destination and behavior                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| Workbench / 工作台             | /dashboard; retains existing route                                                        |
+| Catalog / 商品目錄             | /catalog; preserves existing filters and source labels                                    |
+| Imports / 匯入                 | /listings/import; existing import flow, not a newly promised global import-history screen |
+| Exports & results / 匯出與結果 | /jobs with export filtering; results remain attached to exact export attempts             |
 
 Keep Work Queue (/queue), Batches (/batches), New listing (/listings/new), all Jobs (/jobs), Quality (/quality) and System map (/system-map) accessible in a secondary Tools group. Keep the existing admin-only settings destination and role gates. Do not remove URLs or reduce the ability to discover existing functionality. The mockup's Imports history label is replaced by Imports because a complete cross-source history screen is outside this slice.
 
@@ -47,12 +47,12 @@ Each item exposes identity, kind, state, title, source label when available, aff
 
 Classification is mutually exclusive, with attention taking precedence:
 
-| Record | Needs attention | In progress | Completed |
-| --- | --- | --- | --- |
-| Listing | failed/publish_failed; needs_info; in_review/reopened; approved awaiting its existing delivery action | received/processing/publishing | published according to the existing domain status |
-| Export attempt | failed artifact; ready artifact with rejected or unreported included members | pending artifact | ready artifact with all included members operator-reported accepted; retain the unverified report label |
-| Website scan | retained failed scan | retained queued/running scan | retained completed scan; completion means the scan finished, not that observations were saved or products published |
-| Workbook import | no synthetic failure task | no synthetic processing task | successful retained import; completion means catalog records were saved |
+| Record          | Needs attention                                                                                       | In progress                    | Completed                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Listing         | failed/publish_failed; needs_info; in_review/reopened; approved awaiting its existing delivery action | received/processing/publishing | published according to the existing domain status                                                                   |
+| Export attempt  | failed artifact; ready artifact with rejected or unreported included members                          | pending artifact               | ready artifact with all included members operator-reported accepted; retain the unverified report label             |
+| Website scan    | retained failed scan                                                                                  | retained queued/running scan   | retained completed scan; completion means the scan finished, not that observations were saved or products published |
+| Workbook import | no synthetic failure task                                                                             | no synthetic processing task   | successful retained import; completion means catalog records were saved                                             |
 
 Use actual domain enums and existing reconciliation logic to implement these semantic categories. Unknown future statuses must surface as unclassified/unavailable with a read-only destination, never silently appear completed. They are excluded from the three state totals and accompanied by an explicit unclassified count.
 
