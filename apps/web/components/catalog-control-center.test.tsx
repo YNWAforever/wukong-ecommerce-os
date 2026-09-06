@@ -14,13 +14,16 @@ import { CatalogControlCenter } from "./catalog-control-center.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-async function mount(fetcher: ReturnType<typeof vi.fn>) {
+async function mount(
+  fetcher: ReturnType<typeof vi.fn>,
+  initialSearch?: string,
+) {
   vi.stubGlobal("fetch", fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root: Root = createRoot(container);
   await act(async () => {
-    root.render(createElement(CatalogControlCenter));
+    root.render(<CatalogControlCenter initialSearch={initialSearch} />);
   });
   await act(async () => {
     await Promise.resolve();
@@ -745,5 +748,38 @@ it("restores validated catalog page and search from the URL", async () => {
   } finally {
     await unmount(root);
     window.history.replaceState(null, "", "/");
+  }
+});
+it("updates import, search, filter and page when the destination query changes", async () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+  const calls: URL[] = [];
+  const { root, container } = await mount(
+    makePagingFetcher(calls),
+    `importId=${a}&filter=workbook&q=first&page=2`,
+  );
+  try {
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(a);
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("2");
+    await act(async () =>
+      root.render(
+        <CatalogControlCenter
+          initialSearch={`importId=${b}&filter=workbook&q=second&page=3`}
+        />,
+      ),
+    );
+    expect(calls.at(-1)!.searchParams.get("importId")).toBe(b);
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("second");
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("3");
+    expect(container.textContent).toContain("Page 3 item");
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={"filter=all&page=1"} />),
+    );
+    expect(calls.at(-1)!.searchParams.has("importId")).toBe(false);
+    expect(calls.at(-1)!.searchParams.get("filter")).toBe("all");
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("");
+    expect(container.textContent).not.toContain("此匯入");
+  } finally {
+    await unmount(root);
   }
 });

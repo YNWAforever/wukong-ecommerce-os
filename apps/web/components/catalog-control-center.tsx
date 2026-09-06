@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
 import type { CatalogPage } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -61,7 +61,10 @@ const EMPTY_RESPONSE: CatalogPage = {
 export function CatalogControlCenter({
   initialSearch,
 }: { initialSearch?: string } = {}) {
-  const [params] = useState(() => initialDestinationSearch(initialSearch));
+  const params = useMemo(
+    () => initialDestinationSearch(initialSearch),
+    [initialSearch],
+  );
   const importId = exactQueryId(params.get("importId"));
   const invalidImport = params.has("importId") && !importId;
   const returnTo = params.get("returnTo");
@@ -69,18 +72,34 @@ export function CatalogControlCenter({
   const c = commonCopy[locale];
   const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
-  const [query, setQuery] = useState(params.get("q") ?? "");
-  const [filter, setFilter] = useState<CatalogFilter>(
-    () =>
-      CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
-        ?.value ?? "all",
-  );
-  const [page, setPage] = useState(() => {
-    const value = params.get("page");
-    return value && /^[1-9][0-9]*$/.test(value) && Number(value) <= 21474836
-      ? Number(value)
+  const destinationQuery = params.get("q") ?? "";
+  const destinationFilter =
+    CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
+      ?.value ?? "all";
+  const pageValue = params.get("page");
+  const destinationPage =
+    pageValue &&
+    /^[1-9][0-9]*$/.test(pageValue) &&
+    Number(pageValue) <= 21474836
+      ? Number(pageValue)
       : 1;
-  });
+  const destination = JSON.stringify([
+    params.get("importId"),
+    destinationQuery,
+    destinationFilter,
+    destinationPage,
+  ]);
+  const [previousDestination, setPreviousDestination] = useState(destination);
+  const [query, setQuery] = useState(destinationQuery);
+  const [filter, setFilter] = useState<CatalogFilter>(destinationFilter);
+  const [page, setPage] = useState(destinationPage);
+  // Synchronize URL-owned controls without remounting detail or export forms.
+  if (previousDestination !== destination) {
+    setPreviousDestination(destination);
+    setQuery(destinationQuery);
+    setFilter(destinationFilter);
+    setPage(destinationPage);
+  }
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const loadCatalog = useCallback(

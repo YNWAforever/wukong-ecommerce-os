@@ -20,13 +20,13 @@ async function settleEffects() {
   });
 }
 
-async function mountLedger() {
+async function mountLedger(initialSearch?: string) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   mountedRoots.push(root);
   await act(async () => {
-    root.render(createElement(JobsLedgerClient));
+    root.render(<JobsLedgerClient initialSearch={initialSearch} />);
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -508,4 +508,34 @@ it("rejects malformed attempt URL without fetching its detail", async () => {
   } finally {
     window.history.replaceState(null, "", "/");
   }
+});
+it("updates exact attempt to All jobs and follows changed URL pages without remounting", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (input) =>
+      String(input).startsWith("/api/jobs?")
+        ? Response.json({ entries: SAMPLE_ENTRIES, metrics: SAMPLE_METRICS })
+        : Response.json({}, { status: 404 }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const { container, root } = await mountLedger(`kind=export&attempt=${id}`);
+  await settleEffects();
+  expect(container.querySelector('[aria-label="指定匯出紀錄"]')).not.toBeNull();
+  expect(fetcher.mock.calls.map(([url]) => url)).toContain(
+    "/api/jobs?page=1&pageSize=50&kind=export",
+  );
+  await act(async () => root.render(<JobsLedgerClient initialSearch={""} />));
+  await settleEffects();
+  expect(container.querySelector('[aria-label="指定匯出紀錄"]')).toBeNull();
+  expect(fetcher.mock.calls.at(-1)?.[0]).toBe("/api/jobs?page=1&pageSize=50");
+  expect(container.textContent).toContain("AI pipeline run");
+  await act(async () =>
+    root.render(<JobsLedgerClient initialSearch={"kind=publish_job&page=3"} />),
+  );
+  await settleEffects();
+  expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+    "/api/jobs?page=3&pageSize=50&kind=publish_job",
+  );
+  await act(async () => root.unmount());
 });

@@ -16,7 +16,7 @@ import {
 } from "../lib/ui-copy";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { LedgerKind, NormalizedStatus } from "../lib/jobs-ledger";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -90,7 +90,10 @@ export function JobsLedgerClient({
   initialSearch,
 }: { initialSearch?: string } = {}) {
   const locale = useLocale();
-  const [params] = useState(() => initialDestinationSearch(initialSearch));
+  const params = useMemo(
+    () => initialDestinationSearch(initialSearch),
+    [initialSearch],
+  );
   const attempt = params.get("attempt");
   const attemptId = exactQueryId(attempt);
   const returnTo = params.get("returnTo");
@@ -127,25 +130,44 @@ export function JobsLedgerClient({
           )}
         </p>
       ) : null}
-      <JobsLedger initialKind={params.get("kind")} returnTo={returnTo} />
+      <JobsLedger
+        initialKind={params.get("kind")}
+        initialPage={params.get("page")}
+        returnTo={returnTo}
+      />
     </>
   );
 }
 function JobsLedger({
   initialKind,
+  initialPage,
   returnTo,
 }: {
   initialKind: string | null;
+  initialPage: string | null;
   returnTo: string | null;
 }) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const [kindFilter, setKindFilter] = useState<KindFilter>(
-    () =>
-      KIND_FILTERS.find((option) => option.value === initialKind)?.value ??
-      "all",
-  );
-  const [page, setPage] = useState(1);
+  const destinationKind =
+    KIND_FILTERS.find((option) => option.value === initialKind)?.value ?? "all";
+  const destinationPage =
+    initialPage &&
+    /^[1-9][0-9]*$/.test(initialPage) &&
+    Number(initialPage) <= 21474836
+      ? Number(initialPage)
+      : 1;
+  const destination = `${destinationKind}:${destinationPage}`;
+  const [previousDestination, setPreviousDestination] = useState(destination);
+  const [kindFilter, setKindFilter] = useState<KindFilter>(destinationKind);
+  const [page, setPage] = useState(destinationPage);
+  // Apply navigation before committing a fetch with the previous URL's filters.
+  // Other stateful panels stay mounted and retain their local form state.
+  if (previousDestination !== destination) {
+    setPreviousDestination(destination);
+    setKindFilter(destinationKind);
+    setPage(destinationPage);
+  }
 
   const load = useCallback(
     async (signal: AbortSignal) => {
