@@ -151,6 +151,7 @@ it("maps PostgreSQL JSONB size constraints to an actionable error", async () => 
 
 function reorderedWorkbook(
   names: readonly [string, string] = ["Default", "Archive"],
+  paired = false,
 ) {
   const originalSheet = sheet();
   originalSheet[2]![0] = "ARCHIVE-PRODUCT";
@@ -175,6 +176,11 @@ function reorderedWorkbook(
     /<sheets>[\s\S]*?<\/sheets>/,
     `<sheets><sheet name="${names[0]}" sheetId="2" r:id="rId2"/><sheet name="${names[1]}" sheetId="1" r:id="rId1"/></sheets>`,
   );
+  if (paired)
+    workbook.text = workbook.text.replace(
+      /<sheet\b([^>]*)\/>/g,
+      "<sheet$1></sheet>",
+    );
   const relationships = parts.find(
     (p) => p.name === "xl/_rels/workbook.xml.rels",
   )!;
@@ -248,39 +254,42 @@ it.each([
   },
 );
 
-it("saves relationship-selected Default rows with their matching source name", async () => {
-  const bytes = reorderedWorkbook(),
-    parsed = await createWorkbookParser()(request(bytes));
-  const saveWorkbook = vi.fn(async () => ({
-    importId: "saved",
-    importedProducts: 1,
-    alreadyImportedProducts: 0,
-    excludedRows: 0,
-  }));
-  const handler = createWorkbookSaveHandler({
-    sessionContext: {
-      resolve: async () => ({
-        workspaceId: "trusted",
-        actorId: "op",
-        role: "operator",
+it.each([false, true])(
+  "saves relationship-selected Default rows with matching source name (paired tags: %s)",
+  async (paired) => {
+    const bytes = reorderedWorkbook(undefined, paired),
+      parsed = await createWorkbookParser()(request(bytes));
+    const saveWorkbook = vi.fn(async () => ({
+      importId: "saved",
+      importedProducts: 1,
+      alreadyImportedProducts: 0,
+      excludedRows: 0,
+    }));
+    const handler = createWorkbookSaveHandler({
+      sessionContext: {
+        resolve: async () => ({
+          workspaceId: "trusted",
+          actorId: "op",
+          role: "operator",
+        }),
+      },
+      parseWorkbook: createWorkbookParser(),
+      saveWorkbook,
+    });
+    const saveRequest = request(bytes);
+    saveRequest.headers.set("x-workbook-sha256", parsed.workbookSha256);
+    saveRequest.headers.set(
+      "x-workbook-header-sha256",
+      parsed.headerContractSha256,
+    );
+    expect((await handler(saveRequest)).status).toBe(201);
+    expect(saveWorkbook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sheetName: "Default",
+        prepared: expect.objectContaining({
+          products: [expect.objectContaining({ productId: "CURRENT-PRODUCT" })],
+        }),
       }),
-    },
-    parseWorkbook: createWorkbookParser(),
-    saveWorkbook,
-  });
-  const saveRequest = request(bytes);
-  saveRequest.headers.set("x-workbook-sha256", parsed.workbookSha256);
-  saveRequest.headers.set(
-    "x-workbook-header-sha256",
-    parsed.headerContractSha256,
-  );
-  expect((await handler(saveRequest)).status).toBe(201);
-  expect(saveWorkbook).toHaveBeenCalledWith(
-    expect.objectContaining({
-      sheetName: "Default",
-      prepared: expect.objectContaining({
-        products: [expect.objectContaining({ productId: "CURRENT-PRODUCT" })],
-      }),
-    }),
-  );
-});
+    );
+  },
+);

@@ -592,14 +592,16 @@ export function readDefaultBulkFormSheet(bytes: Uint8Array): BulkFormSheet {
   const roots = [...xml.matchAll(/<sheets\b[^>]*>([\s\S]*?)<\/sheets>/g)];
   if (roots.length !== 1)
     throw new BulkFormWorkbookError("ambiguous worksheet declarations");
-  const body = roots[0]![1]!,
-    tags = [...body.matchAll(/<sheet\b[^>]*\/>/g)];
-  if (body.replace(/<sheet\b[^>]*\/>/g, "").trim())
+  const body = roots[0]![1]!;
+  // Spreadsheet exports use both empty-element and explicit closing tags.
+  const sheetTag = /(<sheet\b[^>]*?)(?:\/>|>\s*<\/sheet\s*>)/g;
+  const tags = [...body.matchAll(sheetTag)];
+  if (body.replace(sheetTag, "").trim())
     throw new BulkFormWorkbookError("unsupported worksheet declarations");
   const ids = new Set<string>();
   let selected: string | undefined;
   for (const tag of tags) {
-    const attrs = tagAttributes(tag[0]),
+    const attrs = tagAttributes(`${tag[1]}>`),
       id = attrs.get("r:id"),
       name = attrs.get("name");
     if (!id || !name || ids.has(id))
