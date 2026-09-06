@@ -243,10 +243,30 @@ export function WorkbookImportPanel({
         <>
           <p>
             {t(
-              `${preview.totalRows} 列，共 ${preview.eligibleProducts} 個可匯入商品，${preview.excludedRows} 列已排除。`,
-              `${preview.totalRows} rows · ${preview.eligibleProducts} eligible · ${preview.excludedRows} excluded`,
+              `${preview.totalRows} 列，共 ${preview.eligibleProducts} 個可匯入商品，${preview.excludedRows} 列已排除，${preview.totalIssues} 項注意事項。`,
+              `${preview.totalRows} rows · ${preview.eligibleProducts} eligible · ${preview.excludedRows} excluded · ${preview.totalIssues} issues`,
             )}
           </p>
+          {!result && (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={
+                !canImport ||
+                stage !== null ||
+                failed !== null ||
+                preview.eligibleProducts === 0
+              }
+              onClick={() => {
+                if (file) void run("save", file, preview);
+              }}
+            >
+              {t(
+                `匯入 ${preview.eligibleProducts} 個商品`,
+                `Import ${preview.eligibleProducts} products`,
+              )}
+            </button>
+          )}
           <div
             className={styles.tableWrap}
             role="region"
@@ -294,8 +314,16 @@ export function WorkbookImportPanel({
             </table>
           </div>
           {preview.issues.length > 0 && (
-            <>
-              <h3>{t("資料列注意事項", "Row issues")}</h3>
+            <details
+              key={preview.workbookSha256}
+              open={preview.eligibleProducts === 0}
+            >
+              <summary>
+                {t(
+                  `資料列注意事項：${preview.totalIssues} 項 · ${preview.excludedRows} 列已排除`,
+                  `Row issues: ${preview.totalIssues} · ${preview.excludedRows} excluded`,
+                )}
+              </summary>
               <p>
                 {t(
                   `顯示 ${preview.issues.length} / ${preview.totalIssues} 項；請在原始檔案修正已排除的資料列。`,
@@ -316,7 +344,7 @@ export function WorkbookImportPanel({
                   </li>
                 ))}
               </ul>
-            </>
+            </details>
           )}
           <details>
             <summary>{t("來源資料", "Source details")}</summary>
@@ -334,25 +362,6 @@ export function WorkbookImportPanel({
               </dd>
             </dl>
           </details>
-          {!result && (
-            <button
-              type="button"
-              disabled={
-                !canImport ||
-                stage !== null ||
-                failed !== null ||
-                preview.eligibleProducts === 0
-              }
-              onClick={() => {
-                if (file) void run("save", file, preview);
-              }}
-            >
-              {t(
-                `匯入 ${preview.eligibleProducts} 個商品`,
-                `Import ${preview.eligibleProducts} products`,
-              )}
-            </button>
-          )}
         </>
       )}
       {result && (

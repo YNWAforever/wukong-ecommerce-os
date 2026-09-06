@@ -313,11 +313,65 @@ it("shows inferred source time only in collapsed details without requiring a dat
     ),
   );
   await select();
-  const details = container.querySelector("details")!;
+  const details = [...container.querySelectorAll("details")].find(
+    (d) => d.querySelector("summary")?.textContent === "Source details",
+  )!;
   expect(details.open).toBe(false);
   expect(details.textContent).toContain(
     "inferred from filename; timezone unknown, unverified",
   );
   expect(container.querySelector("input[type=datetime-local]")).toBeNull();
   expect(button("Import 21 products").disabled).toBe(false);
+});
+
+it("keeps one import action before the sample and collapses detailed issues while showing exact totals", async () => {
+  const data = {
+    ...preview(),
+    totalIssues: 48,
+    issues: Array.from({ length: 48 }, (_, i) => ({
+      code: "sku_missing",
+      severity: "error",
+      row: i + 3,
+      message: "SKU missing",
+    })),
+  };
+  await mount(vi.fn().mockResolvedValue(json(data)));
+  await select();
+  const action = button("Import 21 products");
+  expect(container.querySelectorAll("button.primary-button")).toHaveLength(1);
+  expect(
+    action.compareDocumentPosition(container.querySelector("table")!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const disclosure = [...container.querySelectorAll("details")].find((d) =>
+    d.querySelector("summary")?.textContent?.includes("Row issues"),
+  )!;
+  expect(disclosure).toBeDefined();
+  expect(disclosure.open).toBe(false);
+  expect(disclosure.querySelector("summary")?.textContent).toContain("48");
+  expect(disclosure.querySelector("summary")?.textContent).toContain(
+    "1 excluded",
+  );
+  expect(disclosure.querySelectorAll("li")).toHaveLength(48);
+  expect(action.previousElementSibling?.textContent).toContain("48 issues");
+});
+it("automatically opens blocking reasons when no products are eligible", async () => {
+  await mount(
+    vi.fn().mockResolvedValue(
+      json({
+        ...preview("Blocked", 0),
+        products: [],
+        totalRows: 1,
+        excludedRows: 1,
+      }),
+    ),
+  );
+  await select();
+  const disclosure = [...container.querySelectorAll("details")].find((d) =>
+    d.querySelector("summary")?.textContent?.includes("Row issues"),
+  )!;
+  expect(disclosure).toBeDefined();
+  expect(disclosure.open).toBe(true);
+  expect(disclosure.textContent).toContain("Variant rows unsupported");
+  expect(button("Import 0 products").disabled).toBe(true);
 });

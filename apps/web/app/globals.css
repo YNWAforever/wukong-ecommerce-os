@@ -1524,6 +1524,8 @@ button:disabled {
 }
 .admin-tabs {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 20px;
 }
 .admin-tab-list {
@@ -1551,6 +1553,7 @@ button:disabled {
   box-shadow: 0 2px 8px rgb(24 36 50 / 6%);
 }
 .admin-tab-panel {
+  min-width: 0;
   color: var(--ink);
 }
 .jobs-row-header {
