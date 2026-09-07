@@ -67,19 +67,35 @@ export function ProductShotReview({
   const load = useCallback(
     async (signal: AbortSignal) => {
       const revision = ++sequence.current;
-      const response = await fetch(`/api/listings/${listingId}/product-shot`, {
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) throw new Error("read_failed");
-      const next = await response.json();
-      if (!signal.aborted && revision === sequence.current) {
-        setError(false);
-        setView(next);
-        setSelected(
-          next.sourceAssetId ??
-            (next.sources?.length === 1 ? next.sources[0].assetId : ""),
+      // Signing previews can race normal worker state changes. Retry only the
+      // rejected read snapshot; never repeat a processing or approval request.
+      for (let read = 0; read < 3; read++) {
+        const response = await fetch(
+          `/api/listings/${listingId}/product-shot`,
+          {
+            cache: "no-store",
+            signal,
+          },
         );
+        if (signal.aborted || revision !== sequence.current) return;
+        if (!response.ok) {
+          const failure =
+            response.status === 409
+              ? await response.json().catch(() => null)
+              : null;
+          if (failure?.code === "selection_changed" && read < 2) continue;
+          throw new Error("read_failed");
+        }
+        const next = await response.json();
+        if (!signal.aborted && revision === sequence.current) {
+          setError(false);
+          setView(next);
+          setSelected(
+            next.sourceAssetId ??
+              (next.sources?.length === 1 ? next.sources[0].assetId : ""),
+          );
+        }
+        return;
       }
     },
     [listingId],

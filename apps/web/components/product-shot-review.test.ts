@@ -541,3 +541,67 @@ it("does not clear the current listing error when an old retry succeeds after na
   );
   expect(host.querySelector("img")).toBeNull();
 });
+
+it.each([
+  ["transient selection change", 409, "selection_changed", true, 3],
+  ["persistent selection change", 409, "selection_changed", false, 4],
+  ["unrelated read failure", 500, "internal_error", false, 2],
+] as const)(
+  "recovers only bounded status reads after %s without repeating the image request",
+  async (_name, status, code, recovers, calls) => {
+    const fetcher = await mount({
+      ...base,
+      sources: [
+        ...base.sources,
+        { assetId: "replacement", previewUrl: "/replacement.png" },
+      ],
+    });
+    fetcher.mockReset();
+    const conflict = () => Response.json({ code }, { status });
+    fetcher.mockResolvedValueOnce(Response.json({ state: "queued" }));
+    fetcher.mockResolvedValueOnce(conflict());
+    if (recovers) {
+      fetcher.mockResolvedValueOnce(
+        Response.json({
+          ...base,
+          state: "outcome_unknown",
+          sourceAssetId: "replacement",
+          candidatePreviewUrl: null,
+          allowedActions: ["fresh_attempt"],
+        }),
+      );
+    } else {
+      fetcher.mockImplementation(async () => conflict());
+    }
+    await act(async () =>
+      host
+        .querySelector<HTMLInputElement>('input[value="replacement"]')!
+        .click(),
+    );
+    const use = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Use this photo",
+    )!;
+    await act(async () => use.click());
+    expect(fetcher).toHaveBeenCalledTimes(calls);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "/api/listings/listing/product-shot",
+      expect.objectContaining({ method: "POST" }),
+    );
+    for (let i = 2; i <= calls; i++) {
+      expect(fetcher).toHaveBeenNthCalledWith(
+        i,
+        "/api/listings/listing/product-shot",
+        expect.objectContaining({ cache: "no-store" }),
+      );
+    }
+    if (recovers) {
+      expect(host.textContent).toContain(
+        "unknown and may already have been charged",
+      );
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    } else {
+      expect(host.querySelector('[role="alert"]')).not.toBeNull();
+    }
+  },
+);
