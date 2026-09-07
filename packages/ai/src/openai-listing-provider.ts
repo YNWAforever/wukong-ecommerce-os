@@ -110,6 +110,44 @@ export class ProviderApiError extends ListingProviderError {}
 export class ProviderRefusalError extends ListingProviderError {}
 export class ProviderOutputError extends ListingProviderError {}
 
+function reportProviderFailure(
+  error: unknown,
+  phase: "request" | "repair",
+): void {
+  const detail = error && typeof error === "object" ? error : {};
+  const rawStatus = "status" in detail ? detail.status : null;
+  const status =
+    typeof rawStatus === "number" &&
+    Number.isInteger(rawStatus) &&
+    rawStatus >= 400 &&
+    rawStatus <= 599
+      ? rawStatus
+      : null;
+  const rawCode = "code" in detail ? detail.code : null;
+  const allowedCodes = new Set([
+    "invalid_api_key",
+    "insufficient_quota",
+    "rate_limit_exceeded",
+    "model_not_found",
+    "invalid_json_schema",
+    "invalid_request_error",
+    "unsupported_parameter",
+    "invalid_value",
+    "server_error",
+    "invalid_image",
+    "invalid_image_url",
+    "image_parse_error",
+  ]);
+  const code =
+    typeof rawCode === "string" && allowedCodes.has(rawCode)
+      ? rawCode
+      : "unknown";
+  // Do not include exception messages, request bodies, URLs or credentials.
+  console.error(
+    JSON.stringify({ event: "listing_provider_failure", phase, status, code }),
+  );
+}
+
 function isHttpsUrl(value: string): boolean {
   try {
     return new URL(value).protocol === "https:";
@@ -489,6 +527,7 @@ export class OpenAIListingProvider implements ListingAIProvider {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
+      reportProviderFailure(error, "request");
       const message = error instanceof Error ? error.message : "";
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)
@@ -515,6 +554,7 @@ export class OpenAIListingProvider implements ListingAIProvider {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
+      reportProviderFailure(error, "repair");
       const message = error instanceof Error ? error.message : "";
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)

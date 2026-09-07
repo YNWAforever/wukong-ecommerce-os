@@ -776,3 +776,46 @@ describe("OpenAIListingProvider", () => {
     ).rejects.toBeInstanceOf(ProviderOutputError);
   });
 });
+
+describe("safe provider failure diagnostics", () => {
+  it.each([
+    [401, "invalid_api_key", "invalid_api_key"],
+    [429, "insufficient_quota", "insufficient_quota"],
+    [400, "invalid_json_schema", "invalid_json_schema"],
+    [503, "private-provider-detail", "unknown"],
+    ["secret-status", "private-provider-detail", "unknown"],
+  ])(
+    "reports only safe API metadata for status %s",
+    async (status, code, expectedCode) => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const parse = vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error("secret-token private source"), {
+            status,
+            code,
+          }),
+        );
+      try {
+        await expect(
+          new OpenAIListingProvider({ responses: { parse } }).extract({
+            assets: [],
+            note: null,
+          }),
+        ).rejects.toBeInstanceOf(ProviderApiError);
+        expect(parse).toHaveBeenCalledTimes(1);
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+          JSON.stringify({
+            event: "listing_provider_failure",
+            phase: "request",
+            status: typeof status === "number" ? status : null,
+            code: expectedCode,
+          }),
+        );
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(/secret|private/);
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+});
