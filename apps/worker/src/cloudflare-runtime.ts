@@ -12,6 +12,7 @@ import {
   PHOTOROOM_ESTIMATED_COST_USD,
   ProductShotProviderError,
   OpenAIListingProvider,
+  OpenRouterListingProvider,
   type ListingAIProvider,
 } from "@wukong/ai";
 import {
@@ -77,6 +78,12 @@ function createAssetStore(env: WorkerEnv): AssetStore {
 function createProvider(env: WorkerEnv): ListingAIProvider {
   const provider = env.AI_PROVIDER ?? "openai";
   if (provider === "fake") return new FakeListingProvider();
+  if (provider === "openrouter") {
+    return new OpenRouterListingProvider({
+      apiKey: required(env.OPENROUTER_API_KEY, "OPENROUTER_API_KEY"),
+      model: required(env.OPENROUTER_LISTING_MODEL, "OPENROUTER_LISTING_MODEL"),
+    });
+  }
   if (provider !== "openai") throw new Error("unsupported AI provider");
   return new OpenAIListingProvider(undefined, {
     apiKey: required(env.OPENAI_API_KEY, "OPENAI_API_KEY"),
@@ -130,7 +137,7 @@ export function createCloudflareRuntime(
   const assetStore = (config.assetStoreFactory ?? createAssetStore)(env);
   const ai = (config.providerFactory ?? createProvider)(env);
   const database = (config.databaseFactory ?? createWorkerDatabase)(env);
-  const providerName = env.AI_PROVIDER === "fake" ? "fake" : "openai";
+  const providerName = env.AI_PROVIDER ?? "openai";
   const dependencies: PipelineDependencies = {
     async withWorkspace<T>(
       workspaceId: string,
@@ -193,6 +200,16 @@ export function createCloudflareRuntime(
 
 export function workerHealth(env: WorkerEnv) {
   return {
+    aiProvider: ["fake", "openai", "openrouter"].includes(
+      env.AI_PROVIDER ?? "openai",
+    )
+      ? (env.AI_PROVIDER ?? "openai")
+      : "unknown",
+    productShotProvider: ["disabled", "fake", "photoroom"].includes(
+      env.PRODUCT_SHOT_PROVIDER ?? "disabled",
+    )
+      ? (env.PRODUCT_SHOT_PROVIDER ?? "disabled")
+      : "unknown",
     buildSha: env.BUILD_SHA?.trim() || "unknown",
     adapterMode:
       env.SHOPLINE_ADAPTER === "mock" || env.SHOPLINE_ADAPTER === "real"

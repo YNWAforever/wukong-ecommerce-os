@@ -506,3 +506,38 @@ test("a missing Worker points at the secrets-file first deploy", () => {
   assert.equal(check.status, "failed");
   assert.match(check.fix, /--secrets-file/);
 });
+
+test("doctor uses intended predeploy providers and observed live providers", async () => {
+  const { doctorRequiredSecrets } =
+    await import("../scripts/runtime-doctor.mjs");
+  const config = {
+    requiredSecrets: ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+    productShot: { provider: "disabled" },
+  };
+  const env = { AI_PROVIDER: "openai", PRODUCT_SHOT_PROVIDER: "disabled" };
+  assert.deepEqual(
+    doctorRequiredSecrets(config, { preDeployOnly: true, env }),
+    ["OPENAI_API_KEY", "QUEUE_INGRESS_SECRET"],
+  );
+  assert.deepEqual(
+    doctorRequiredSecrets(config, {
+      preDeployOnly: true,
+      env: { AI_PROVIDER: "openrouter", PRODUCT_SHOT_PROVIDER: "photoroom" },
+    }),
+    ["QUEUE_INGRESS_SECRET", "OPENROUTER_API_KEY", "PHOTOROOM_API_KEY"],
+  );
+  assert.deepEqual(
+    doctorRequiredSecrets(config, {
+      env,
+      health: { aiProvider: "openrouter", productShotProvider: "photoroom" },
+    }),
+    ["QUEUE_INGRESS_SECRET", "OPENROUTER_API_KEY", "PHOTOROOM_API_KEY"],
+  );
+  for (const health of [
+    null,
+    {},
+    { aiProvider: "secret-marker", productShotProvider: "disabled" },
+    { aiProvider: "openrouter" },
+  ])
+    assert.equal(doctorRequiredSecrets(config, { env, health }), null);
+});

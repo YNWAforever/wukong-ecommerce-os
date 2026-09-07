@@ -1,3 +1,8 @@
+import {
+  listingProviderSecretNames,
+  productShotSecretNames,
+} from "./listing-provider-config.mjs";
+
 import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -440,7 +445,37 @@ export function classifySecretList(result, required, worker) {
       };
 }
 
-function secretsCheck(config, environment) {
+export function doctorRequiredSecrets(
+  config,
+  { preDeployOnly = false, env = {}, health = null } = {},
+) {
+  const listing = preDeployOnly
+    ? env.AI_PROVIDER?.trim() || "openai"
+    : health?.aiProvider;
+  const shot = preDeployOnly
+    ? env.PRODUCT_SHOT_PROVIDER?.trim() || config.productShot.provider
+    : health?.productShotProvider;
+  if (
+    !preDeployOnly &&
+    (!["fake", "openai", "openrouter"].includes(listing) ||
+      !["disabled", "fake", "photoroom"].includes(shot))
+  )
+    return null;
+  return productShotSecretNames(
+    listingProviderSecretNames(config.requiredSecrets ?? [], listing),
+    shot,
+  );
+}
+
+function secretsCheck(config, environment, requiredNames) {
+  if (requiredNames === null)
+    return {
+      id: "worker-secrets",
+      status: "unknown",
+      detail:
+        "deployed provider metadata unavailable; required secret names are unknown",
+      dependsOn: "wrangler-auth",
+    };
   const worker = config.environments[environment].worker;
   const result = wrangler([
     "secret",
@@ -450,7 +485,7 @@ function secretsCheck(config, environment) {
     "--format",
     "json",
   ]);
-  return classifySecretList(result, config.requiredSecrets ?? [], worker);
+  return classifySecretList(result, requiredNames, worker);
 }
 
 export function vercelEnvCheck(url, secret, environment) {
@@ -480,6 +515,14 @@ async function main() {
   const ingressUrl = process.env.QUEUE_INGRESS_URL?.trim();
   const ingressSecret = process.env.QUEUE_INGRESS_SECRET?.trim();
 
+  const health =
+    !preDeployOnly && ingressUrl ? await readHealth(ingressUrl) : null;
+  const requiredNames = doctorRequiredSecrets(config, {
+    preDeployOnly,
+    env: process.env,
+    health,
+  });
+
   const checks = [
     { id: "wrangler-auth", ...whoamiCheck() },
     checkQueues(
@@ -491,7 +534,7 @@ async function main() {
       wrangler(["hyperdrive", "list"]).stdout,
       process.env.CLOUDFLARE_HYPERDRIVE_ID ?? "",
     ),
-    secretsCheck(config, environment),
+    secretsCheck(config, environment, requiredNames),
   ];
 
   if (!preDeployOnly) {
@@ -504,7 +547,7 @@ async function main() {
       // response.json() throws *after* the fetch resolves. A rejection handler
       // on the fetch alone does not catch that, and a diagnostic must never be
       // the thing that crashes.
-      const health = await readHealth(ingressUrl);
+
       checks.push(
         health
           ? checkHealthGet(health)

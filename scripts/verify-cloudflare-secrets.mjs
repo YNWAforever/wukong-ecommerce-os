@@ -1,3 +1,8 @@
+export { productShotSecretNames } from "./listing-provider-config.mjs";
+import {
+  listingProviderSecretNames,
+  productShotSecretNames,
+} from "./listing-provider-config.mjs";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -6,12 +11,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
 
 const root = new URL("../", import.meta.url);
-
-export function productShotSecretNames(base, provider) {
-  if (!["disabled", "fake", "photoroom"].includes(provider))
-    throw new Error("PRODUCT_SHOT_PROVIDER is invalid");
-  return provider === "photoroom" ? [...base, "PHOTOROOM_API_KEY"] : base;
-}
 
 export function compareSecretNames(requiredNames, configuredNames) {
   const required = [...new Set(requiredNames)].sort();
@@ -119,7 +118,10 @@ function main() {
     return;
   }
   const requiredNames = productShotSecretNames(
-    source.requiredSecrets,
+    listingProviderSecretNames(
+      source.requiredSecrets,
+      process.env.AI_PROVIDER?.trim() || "openai",
+    ),
     process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider,
   );
   verifyExactSecretNames(requiredNames, parseSecretNames(result.stdout));

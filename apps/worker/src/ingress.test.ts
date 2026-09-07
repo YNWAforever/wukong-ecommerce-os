@@ -189,6 +189,8 @@ describe("Cloudflare Worker ingress", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
+      aiProvider: "openai",
+      productShotProvider: "disabled",
       buildSha: "abc123",
       adapterMode: "disabled",
       bindings: {
@@ -252,7 +254,7 @@ describe("Cloudflare Worker ingress", () => {
     expect(response.status).toBe(401);
   });
 
-  it("keeps the unauthenticated GET /health body unchanged", async () => {
+  it("limits unauthenticated GET /health to safe metadata", async () => {
     const response = await handleIngress(
       new Request("https://worker.test/health", { method: "GET" }),
       env(),
@@ -264,8 +266,10 @@ describe("Cloudflare Worker ingress", () => {
     // Pins the unauthenticated surface: it must never grow authenticated detail.
     expect(Object.keys(await response.json()).sort()).toEqual([
       "adapterMode",
+      "aiProvider",
       "bindings",
       "buildSha",
+      "productShotProvider",
     ]);
   });
 });

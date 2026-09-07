@@ -1,4 +1,9 @@
-import { productShotSecretNames } from "./verify-cloudflare-secrets.mjs";
+import {
+  listingProviderSecretNames,
+  validateOpenRouterListingModel,
+  productShotSecretNames,
+} from "./listing-provider-config.mjs";
+
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -32,14 +37,23 @@ const buildSha = safeToken(
   /^[A-Za-z0-9._-]{7,128}$/,
 );
 const aiProvider = requiredInput("AI_PROVIDER");
-if (!new Set(["fake", "openai"]).has(aiProvider)) {
+if (!new Set(["fake", "openai", "openrouter"]).has(aiProvider)) {
   throw new Error("AI_PROVIDER is invalid");
 }
-const openAiListingModel = safeToken(
-  "OPENAI_LISTING_MODEL",
-  requiredInput("OPENAI_LISTING_MODEL"),
-  /^[A-Za-z0-9._:-]{1,128}$/,
-);
+const listingModel =
+  aiProvider === "openrouter"
+    ? {
+        OPENROUTER_LISTING_MODEL: validateOpenRouterListingModel(
+          requiredInput("OPENROUTER_LISTING_MODEL"),
+        ),
+      }
+    : {
+        OPENAI_LISTING_MODEL: safeToken(
+          "OPENAI_LISTING_MODEL",
+          requiredInput("OPENAI_LISTING_MODEL"),
+          /^[A-Za-z0-9._:-]{1,128}$/,
+        ),
+      };
 const s3Bucket = requiredInput("S3_BUCKET");
 if (s3Bucket !== selected.r2Bucket) {
   throw new Error("S3_BUCKET does not match the selected environment");
@@ -74,7 +88,7 @@ if (websiteFetchBaseUrl) {
 const productShotProvider =
   process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider;
 const secretNames = productShotSecretNames(
-  source.requiredSecrets,
+  listingProviderSecretNames(source.requiredSecrets, aiProvider),
   productShotProvider,
 );
 const shotBudget =
@@ -117,7 +131,7 @@ const wrangler = {
       : {}),
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,
-    OPENAI_LISTING_MODEL: openAiListingModel,
+    ...listingModel,
     SHOPLINE_ADAPTER: environment === "preview" ? "mock" : "disabled",
     SHOPLINE_PUBLISH_ENABLED: "false",
     S3_BUCKET: s3Bucket,
