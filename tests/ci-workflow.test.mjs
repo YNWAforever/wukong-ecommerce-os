@@ -482,3 +482,21 @@ test("CI image mode exercises both synthetic failure outcomes for the actual fix
     /PRODUCT_SHOT_SYNTHETIC_SCENARIO:/,
   );
 });
+
+test("browser modes allow the real-stack harness to stop detached children", async () => {
+  const previous = process.env.PLAYWRIGHT_E2E;
+  process.env.PLAYWRIGHT_E2E = "1";
+  try {
+    const { default: config } = await import("../playwright.config.ts");
+    assert.deepEqual(config.webServer.gracefulShutdown, {
+      signal: "SIGTERM",
+      timeout: 15000,
+    });
+    if (process.platform !== "win32")
+      assert.match(config.webServer.command, /&& exec node/);
+    assert.equal(config.webServer.reuseExistingServer, !process.env.CI);
+  } finally {
+    if (previous === undefined) delete process.env.PLAYWRIGHT_E2E;
+    else process.env.PLAYWRIGHT_E2E = previous;
+  }
+});

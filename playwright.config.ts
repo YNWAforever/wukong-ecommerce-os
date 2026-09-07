@@ -29,9 +29,13 @@ export default defineConfig({
   webServer: !process.env.PLAYWRIGHT_BASE_URL
     ? {
         command: enabled
-          ? "pnpm build --filter=@wukong/web && node tests/e2e/real-stack-server.mjs"
+          ? `pnpm build --filter=@wukong/web && ${process.platform === "win32" ? "" : "exec "}node tests/e2e/real-stack-server.mjs`
           : "pnpm --filter @wukong/web dev --hostname 127.0.0.1 --port 49218",
         url: enabled ? `${baseURL}/signin` : `${baseURL}/register`,
+        // Let the harness terminate its detached Worker/web groups before the next mode.
+        gracefulShutdown: enabled
+          ? { signal: "SIGTERM", timeout: 15_000 }
+          : undefined,
         reuseExistingServer: !process.env.CI,
         testIgnore: productShotE2E ? undefined : "**/product-shot.spec.ts",
         timeout: enabled ? 120_000 : 30_000,
