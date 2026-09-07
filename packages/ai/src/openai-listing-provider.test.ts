@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ProviderOutputError as publicError } from "./index.js";
+import { ProviderOutputError as sharedError } from "./listing-provider-errors.js";
 import {
   OpenAIListingProvider,
   ProviderApiError,
-  ProviderOutputError,
+  ProviderOutputError as legacyError,
   ProviderRefusalError,
   UnsupportedAssetError,
 } from "./openai-listing-provider.js";
+
+const ProviderOutputError = legacyError;
 
 const facts = {
   sku: "OPAK-DEMO-001",
@@ -154,6 +158,11 @@ function extractionResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("OpenAIListingProvider", () => {
+  it("preserves the public provider output error class identity", () => {
+    expect(publicError).toBe(legacyError);
+    expect(sharedError).toBe(legacyError);
+  });
+
   it("uses Responses structured parsing, multimodal HTTPS inputs, configured model, and deterministic telemetry", async () => {
     const { client, parse } = fakeClient(
       extractionResponse({
