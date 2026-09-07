@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -444,4 +445,40 @@ test("runs product-shot acceptance separately with synthetic image processing an
   );
   assert.match(config, /WUKONG_PRODUCT_SHOT_E2E/);
   assert.match(config, /testIgnore:[\s\S]*?product-shot\.spec\.ts/);
+});
+
+test("CI image mode exercises both synthetic failure outcomes for the actual fixture bytes", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  const step = workflow.slice(image, legacy);
+  const configured = step.match(/PRODUCT_SHOT_SYNTHETIC_SCENARIO: '([^']+)'/);
+  assert.ok(
+    configured,
+    "image acceptance must configure fake failure scenarios",
+  );
+  const scenarios = JSON.parse(configured[1]);
+  const fixture = readFileSync(
+    new URL("./e2e/real-stack-fixture.ts", import.meta.url),
+    "utf8",
+  );
+  for (const [name, outcome] of [
+    ["definitiveFailure", "definitive_failure"],
+    ["ambiguous", "ambiguous_completion"],
+  ]) {
+    const match = fixture.match(
+      new RegExp(`${name}: Buffer\\.from\\(\\s*"([^"]+)"`),
+    );
+    assert.ok(match, `synthetic ${name} image must exist`);
+    const digest = createHash("sha256")
+      .update(Buffer.from(match[1], "base64"))
+      .digest("hex");
+    assert.equal(scenarios[digest], outcome);
+  }
+  assert.equal(Object.keys(scenarios).length, 2);
+  assert.doesNotMatch(
+    workflow.slice(legacy),
+    /PRODUCT_SHOT_SYNTHETIC_SCENARIO:/,
+  );
 });

@@ -156,6 +156,7 @@ jobs:
         env:
           PLAYWRIGHT_E2E: "1"
           WUKONG_PRODUCT_SHOT_E2E: "1"
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: '{"3b89b2ac0cb972c04cd0016fcc807b0f712f7f01756f315f43fcad57325a3eff":"definitive_failure","baf7f7a8e86642fbd2619791bad4741f28c93b6e5c426739125f6d9e587e3c8e":"ambiguous_completion"}'
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
           AUTH_SECRET: ci-test-secret-at-least-32-characters-long
           BETTER_AUTH_URL: http://localhost:3000
