@@ -402,3 +402,25 @@ test("uses one stable Compose project across worktrees", () => {
   assert.match(localRunbook, /shared Compose project[\s\S]*worktree/i);
   assert.match(localRunbook, /--force-recreate[\s\S]*replace/i);
 });
+
+test("prepares the configured local bucket before storage integration tests", () => {
+  const prepare = workflow.indexOf(
+    "- name: Prepare integration object storage",
+  );
+  const integration = workflow.indexOf("- name: Integration tests");
+  assert.ok(
+    prepare >= 0,
+    "CI must create its bucket before first integration write",
+  );
+  assert.ok(
+    prepare < integration,
+    "bucket setup must precede integration tests",
+  );
+  const step = workflow.slice(prepare, integration);
+  assert.match(step, /CreateBucketCommand/);
+  assert.match(step, /HeadBucketCommand/);
+  assert.match(step, /Bucket: process.env.S3_BUCKET/);
+  assert.match(step, /endpoint: process.env.S3_ENDPOINT/);
+  assert.match(step, /BucketAlreadyOwnedByYou/);
+  assert.match(step, /throw error/);
+});
