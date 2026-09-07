@@ -229,3 +229,78 @@ it("signs a strict independent product-shot envelope", async () => {
     } as never),
   ).rejects.toMatchObject({ reason: "invalid_payload" });
 });
+
+describe("safe queue failure diagnostics", () => {
+  it.each([
+    "UND_ERR_CONNECT_TIMEOUT",
+    "ENOTFOUND",
+    "ECONNRESET",
+    "secret-host.example",
+  ])(
+    "classifies exhausted transport failure %s without leaking details",
+    async (code) => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const fetch = vi.fn().mockRejectedValue(
+        new TypeError("secret URL and payload", {
+          cause: Object.assign(new Error("secret credential"), { code }),
+        }),
+      );
+      try {
+        const client = createCloudflareIngressClient({
+          env: {
+            QUEUE_INGRESS_URL: "https://queue.example",
+            QUEUE_INGRESS_SECRET: "private-key",
+          },
+          fetch,
+          sleep: async () => {},
+        });
+        await expect(
+          client.enqueue(LISTING_INGRESS_PATH, payload),
+        ).rejects.toMatchObject({ reason: "unreachable" });
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+          JSON.stringify({
+            event: "queue_ingress_failure",
+            stage: "transport",
+            code: code === "secret-host.example" ? "unknown" : code,
+          }),
+        );
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(
+          /secret|private-key|queue.example/,
+        );
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+  it("identifies signing failures without blaming the network or dispatching", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sign = vi
+      .spyOn(crypto.subtle, "sign")
+      .mockRejectedValue(new Error("private credential"));
+    const fetch = vi.fn();
+    try {
+      const client = createCloudflareIngressClient({
+        env: {
+          QUEUE_INGRESS_URL: "https://queue.example",
+          QUEUE_INGRESS_SECRET: "private-key",
+        },
+        fetch,
+      });
+      await expect(
+        client.enqueue(LISTING_INGRESS_PATH, payload),
+      ).rejects.toMatchObject({ reason: "unreachable" });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify({
+          event: "queue_ingress_failure",
+          stage: "signing",
+          code: "unknown",
+        }),
+      );
+    } finally {
+      sign.mockRestore();
+      log.mockRestore();
+    }
+  });
+});

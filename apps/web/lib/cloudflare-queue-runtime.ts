@@ -63,6 +63,43 @@ function queueUnavailable(reason: QueueIngressReason): QueueIngressError {
   return new QueueIngressError(reason);
 }
 
+// Never log arbitrary exception text: it can contain URLs or credentials.
+function reportIngressFailure(
+  stage: "configuration" | "signing" | "transport",
+  error: unknown,
+) {
+  const allowed = new Set([
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "ERR_INVALID_URL",
+    "CERT_HAS_EXPIRED",
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "TimeoutError",
+    "AbortError",
+  ]);
+  const failure = error instanceof Error ? error : null;
+  const cause = failure?.cause;
+  const candidates = [
+    cause && typeof cause === "object" && "code" in cause ? cause.code : null,
+    failure && "code" in failure ? failure.code : null,
+    failure?.name,
+  ];
+  const code =
+    candidates.find(
+      (value): value is string =>
+        typeof value === "string" && allowed.has(value),
+    ) ?? "unknown";
+  console.error(
+    JSON.stringify({ event: "queue_ingress_failure", stage, code }),
+  );
+}
+
 export function createCloudflareIngressClient(
   options: Options = {},
 ): CloudflareIngressClient {
@@ -74,6 +111,7 @@ export function createCloudflareIngressClient(
       | typeof PRODUCT_SHOT_INGRESS_PATH,
     payload: ListingJob | ShoplinePublishJob | WebsiteJob | ProductShotJob,
   ): Promise<{ accepted: true }> {
+    let stage: "configuration" | "signing" | "transport" = "configuration";
     try {
       const env = options.env ?? process.env;
       const ingressUrl = env.QUEUE_INGRESS_URL?.trim();
@@ -100,6 +138,7 @@ export function createCloudflareIngressClient(
         throw queueUnavailable("invalid_payload");
       }
 
+      stage = "signing";
       const timestamp = Math.floor((options.now ?? Date.now)() / 1_000);
       const signature = await signQueueRequest({
         secret,
@@ -108,6 +147,7 @@ export function createCloudflareIngressClient(
         body,
       });
 
+      stage = "transport";
       const attemptFetch = () =>
         (options.fetch ?? globalThis.fetch)(new URL(path, ingressUrl), {
           method: "POST",
@@ -136,7 +176,8 @@ export function createCloudflareIngressClient(
         )(RETRY_DELAY_MS);
         try {
           response = await attemptFetch();
-        } catch {
+        } catch (error) {
+          reportIngressFailure(stage, error);
           throw queueUnavailable("unreachable");
         }
       }
@@ -145,6 +186,7 @@ export function createCloudflareIngressClient(
       return { accepted: true };
     } catch (error) {
       if (error instanceof QueueIngressError) throw error;
+      reportIngressFailure(stage, error);
       throw queueUnavailable("unreachable");
     }
   }
