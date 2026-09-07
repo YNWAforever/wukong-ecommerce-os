@@ -58,3 +58,6 @@ export type {
   NumericFactField,
   ProtectedFactField,
 } from "./eval.js";
+
+export { OpenRouterListingProvider } from "./openrouter-listing-provider.js";
+export type { OpenRouterListingProviderConfig } from "./openrouter-listing-provider.js";
