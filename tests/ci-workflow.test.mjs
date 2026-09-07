@@ -148,7 +148,10 @@ test("runs the real storage, mail, browser, and audit release gate", () => {
     workflow,
     /pnpm exec playwright test --project=chromium --workers=1 --reporter=line/,
   );
-  assert.match(workflow, /audit:verify --workspace ws_opak --draft/);
+  assert.match(
+    workflow,
+    /audit:verify --workspace "\$WORKSPACE_ID" --draft "\$DRAFT_ID"/,
+  );
 });
 
 test("defines a reproducible runtime formatting gate", () => {
@@ -499,4 +502,24 @@ test("browser modes allow the real-stack harness to stop detached children", asy
     if (previous === undefined) delete process.env.PLAYWRIGHT_E2E;
     else process.env.PLAYWRIGHT_E2E = previous;
   }
+});
+
+test("audits the workspace and draft emitted by the same completed browser fixture", () => {
+  assert.match(
+    workflow,
+    /WORKSPACE_ID="\$\(cat test-results\/real-stack-workspace-id\.txt\)"/,
+  );
+  assert.match(workflow, /test -n "\$WORKSPACE_ID"/);
+  const pilot = readFileSync(
+    new URL("./e2e/listing-pilot.spec.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    pilot,
+    /writeFile\(\s*"test-results\/real-stack-workspace-id\.txt",\s*OPAK_WORKSPACE_ID,/,
+  );
+  assert.match(
+    pilot,
+    /writeFile\("test-results\/real-stack-draft-id\.txt", draftId!/,
+  );
 });

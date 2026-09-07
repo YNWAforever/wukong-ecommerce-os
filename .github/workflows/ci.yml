@@ -194,8 +194,10 @@ jobs:
       - name: Verify the completed Opak audit by draft
         run: |
           DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"
+          WORKSPACE_ID="$(cat test-results/real-stack-workspace-id.txt)"
           test -n "$DRAFT_ID"
-          pnpm --filter @wukong/db audit:verify --workspace ws_opak --draft "$DRAFT_ID"
+          test -n "$WORKSPACE_ID"
+          pnpm --filter @wukong/db audit:verify --workspace "$WORKSPACE_ID" --draft "$DRAFT_ID"
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
