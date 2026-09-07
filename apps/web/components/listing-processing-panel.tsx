@@ -38,6 +38,12 @@ export function ListingProcessingPanel({
       "AI 工作程序將在可用時開始處理。",
       "AI processing will start when a worker is available.",
     );
+  } else if (status === "received" && enqueueState === "retry_required") {
+    title = t("未能加入處理佇列", "Could not queue processing");
+    explanation = t(
+      "檔案已儲存，無需重新上傳。請稍後重試；如仍未能開始，請聯絡支援人員檢查處理服務。",
+      "Your files are saved; no upload is needed. Retry later; if processing still cannot start, contact support to check the processing service.",
+    );
   } else if (status === "received") {
     title = t("尚未開始處理", "Processing not started");
     explanation = t(

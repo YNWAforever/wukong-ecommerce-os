@@ -15,7 +15,9 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("Processing not started");
+    expect(markup).toContain("Could not queue processing");
+    expect(markup).toContain("Your files are saved");
+    expect(markup).toContain("contact support");
     expect(markup).toContain("Start processing");
   });
 

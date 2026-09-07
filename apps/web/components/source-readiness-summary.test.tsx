@@ -52,3 +52,23 @@ describe("SourceReadinessSummary", () => {
     ).toContain("來源準備狀態不明");
   });
 });
+
+it("does not report a changed version or missing export evidence before a version exists", () => {
+  const html = renderToStaticMarkup(
+    createElement(SourceReadinessSummary, {
+      readiness: {
+        ...base,
+        currentVersionId: null,
+        sourceImportId: null,
+        reviewedBinding: null,
+        merchantAttestedExportAt: null,
+        eligibleAfterAttestation: false,
+        reason: "version_mismatch",
+      },
+    }),
+  );
+  expect(html).toContain("商品版本尚未建立");
+  expect(html).not.toContain("目前版本已變更");
+  expect(html).not.toContain("商戶確認的匯出時間");
+  expect(html).not.toContain("來源需要處理");
+});

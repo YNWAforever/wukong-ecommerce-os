@@ -404,7 +404,7 @@ describe("ListingReviewClient processing orchestration", () => {
 
   it.each([
     ["queued", "Queued for processing", false],
-    ["retry_required", "Processing not started", true],
+    ["retry_required", "Could not queue processing", true],
   ] as const)(
     "binds initial %s state to the processing panel",
     async (initialProcessing, copy, hasStartButton) => {

@@ -22,6 +22,16 @@ export function SourceReadinessSummary({
         {localized(locale, "來源準備狀態不明", "Source readiness unknown")}
       </span>
     );
+  if (readiness.currentVersionId === null)
+    return (
+      <p className="helper-copy">
+        {localized(
+          locale,
+          "商品版本尚未建立。完成商品處理後再審核及檢查匯出資格。",
+          "No listing version exists yet. Complete processing before review and export eligibility checks.",
+        )}
+      </p>
+    );
   const reviewed = readiness.reviewedBinding;
   return (
     <div className={compact ? "source-readiness compact" : "source-readiness"}>
