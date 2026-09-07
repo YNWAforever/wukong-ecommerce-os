@@ -131,7 +131,12 @@ describe("delivery audit and queue context", () => {
       job: { id: "job_1", versionId: "version_1", status: "pending_enqueue" },
       imageUrls: ["https://signed.example/asset-a"],
     });
-    expect(imageUrls).toHaveBeenCalledWith("ws_opak", "listing_1", []);
+    expect(imageUrls).toHaveBeenCalledWith(
+      "ws_opak",
+      "listing_1",
+      [],
+      "version_1",
+    );
     expect(existingDelivery).toHaveBeenCalledWith(
       "ws_opak:version_1:shopline:create",
     );
@@ -617,10 +622,12 @@ describe("delivery audit and queue context", () => {
       harness,
     );
 
-    expect(imageUrls).toHaveBeenCalledWith("ws_opak", "listing_1", [
-      "asset_b",
-      "asset_a",
-    ]);
+    expect(imageUrls).toHaveBeenCalledWith(
+      "ws_opak",
+      "listing_1",
+      ["asset_b", "asset_a"],
+      "version_1",
+    );
     expect(result.kind).toBe("csv");
     if (result.kind !== "csv") throw new Error("expected CSV delivery");
     expect(result.body.indexOf("https://signed.example/asset-b")).toBeLessThan(
@@ -1296,4 +1303,28 @@ describe("bulk-form export", () => {
     expect(result.kind).toBe("bulk_form");
     expect(audits).toHaveLength(1);
   });
+});
+
+it("binds image resolution to the observed approved version and blocks missing publication", async () => {
+  const dependency = deps([], []);
+  dependency.imageUrls = vi.fn(async () => {
+    throw new Error("Approve the product image before exporting");
+  });
+  await expect(
+    deliverListing(
+      {
+        workspaceId: "ws_opak",
+        draftId: "listing_1",
+        actorId: "actor",
+        method: "csv",
+      },
+      dependency,
+    ),
+  ).rejects.toThrow("Approve");
+  expect(dependency.imageUrls).toHaveBeenCalledWith(
+    "ws_opak",
+    "listing_1",
+    [],
+    "version_1",
+  );
 });

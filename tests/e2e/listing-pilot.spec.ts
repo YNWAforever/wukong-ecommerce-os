@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import {
+  OPAK_WORKSPACE_ID,
   enrollAndSignInOpakAdmin,
   expectedMockShoplineRemoteId,
   prepareRealStackFixture,
@@ -220,6 +221,11 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   await expect(page.getByText(expectedRemoteProductId)).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await writeFile("test-results/real-stack-draft-id.txt", draftId!, "utf8");
+  await writeFile(
+    "test-results/real-stack-workspace-id.txt",
+    OPAK_WORKSPACE_ID,
+    "utf8",
+  );
 
   const audit = await verifyCompletedAudit(draftId!);
   expect(audit.missingActions).toEqual([]);

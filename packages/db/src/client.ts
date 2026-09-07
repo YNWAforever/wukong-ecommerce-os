@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import {
+  createProductShotRepository,
+  type ProductShotRepository,
+} from "./repositories/product-shots.js";
 import {
   createWorkbenchReadRepository,
   type WorkbenchReadRepository,
@@ -110,6 +115,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  productShots: ProductShotRepository;
   workbench: WorkbenchReadRepository;
   workbookCatalog: WorkbookCatalogRepository;
   websiteCatalog: WebsiteCatalogRepository;
@@ -136,6 +142,7 @@ export type WorkspaceRepositories = {
 };
 
 export type DatabaseOptions = {
+  publicImageOrigin?: string;
   migrationUrl?: string;
   maxConnections?: number;
   /** Injected by tests; production uses the real postgres driver. */
@@ -143,6 +150,12 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  lookupPublishedImage(token: string): Promise<{
+    workspaceId: string;
+    storageKey: string;
+    digest: string;
+    size: number;
+  } | null>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
   /**
@@ -211,6 +224,12 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        productShots: createProductShotRepository(
+          transaction,
+          workspaceId,
+          scope,
+          options.publicImageOrigin ?? process.env.PRODUCT_IMAGE_PUBLIC_ORIGIN,
+        ),
         workbench: createWorkbenchReadRepository(
           transaction,
           workspaceId,
@@ -312,6 +331,20 @@ export function createDatabase(
   };
 
   return {
+    async lookupPublishedImage(token) {
+      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+      const hash = createHash("sha256").update(token).digest("hex");
+      const [row] =
+        await client`select * from public.lookup_published_product_image(${hash})`;
+      return row
+        ? {
+            workspaceId: String(row.workspace_id),
+            storageKey: String(row.storage_key),
+            digest: String(row.digest),
+            size: Number(row.size),
+          }
+        : null;
+    },
     async migrate() {
       if (!options.migrationUrl) {
         throw new Error("migrationUrl is required for migrations");

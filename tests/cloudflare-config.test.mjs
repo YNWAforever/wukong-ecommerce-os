@@ -98,6 +98,7 @@ test("renders deterministic non-secret Wrangler config", () => {
     observability: { enabled: true },
     secrets: { required: requiredSecrets },
     vars: {
+      PRODUCT_SHOT_PROVIDER: "disabled",
       BUILD_SHA: safeRendererInputs.BUILD_SHA,
       AI_PROVIDER: "fake",
       OPENAI_LISTING_MODEL: "gpt-5-mini",
@@ -148,6 +149,7 @@ test("renders deterministic non-secret Wrangler config", () => {
     "AI_PROVIDER",
     "BUILD_SHA",
     "OPENAI_LISTING_MODEL",
+    "PRODUCT_SHOT_PROVIDER",
     "S3_BUCKET",
     "S3_ENDPOINT",
     "S3_FORCE_PATH_STYLE",
@@ -314,4 +316,43 @@ test("renders optional trusted website callback origin without requiring it for 
     readJson(".wrangler/wrangler.generated.jsonc").vars.WEBSITE_FETCH_BASE_URL,
     undefined,
   );
+});
+
+test("product shots default disabled and live mode validates budget with secret-only key", () => {
+  assert.equal(render().status, 0);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.PRODUCT_SHOT_PROVIDER,
+    "disabled",
+  );
+  for (const value of [
+    "",
+    "0",
+    "-1",
+    "1.5",
+    "Infinity",
+    "2147483648",
+    "9007199254740991",
+  ])
+    assert.notEqual(
+      render({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: value,
+      }).status,
+      0,
+    );
+  assert.notEqual(render({ PRODUCT_SHOT_PROVIDER: "other" }).status, 0);
+  const result = render({
+    PRODUCT_SHOT_PROVIDER: "photoroom",
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
+    PHOTOROOM_API_KEY: "must-not-render",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.ok(config.secrets.required.includes("PHOTOROOM_API_KEY"));
+  assert.equal(
+    config.vars.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
+    "2147483647",
+  );
+  assert.ok(!JSON.stringify(config).includes("must-not-render"));
+  assert.equal(render().status, 0);
 });

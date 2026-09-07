@@ -303,3 +303,27 @@ it("refuses website ingress when its callback is not configured", async () => {
   );
   expect(response.status).toBe(503);
 });
+
+const shot = {
+  kind: "product_shot",
+  workspaceId: "ws_opak",
+  draftId: listing.draftId,
+  attemptId: shopline.versionId,
+};
+it("accepts signed strict product shots on the existing listing binding and denies malformed or unsigned ingress", async () => {
+  const bindings = env();
+  for (const [payload, signature, status] of [
+    [shot, undefined, 202],
+    [{ ...shot, storageKey: "injected" }, undefined, 400],
+    [shot, "unsigned", 401],
+  ] as const) {
+    const res = await handleIngress(
+      await signedRequest("/ingress/product-shots", payload, { signature }),
+      bindings,
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+    expect(res.status).toBe(status);
+  }
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(shot);
+});

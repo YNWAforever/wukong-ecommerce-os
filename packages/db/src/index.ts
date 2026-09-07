@@ -151,3 +151,14 @@ export {
   createWorkbenchReadRepository,
   type WorkbenchReadRepository,
 } from "./repositories/workbench-reads.js";
+export {
+  PRODUCT_SHOT_LEASE_MS,
+  ProductShotConflict,
+} from "./repositories/product-shots.js";
+export type {
+  ProductShotRepository,
+  ProductShotAttempt,
+  ProductShotPublication,
+  ProductShotOutputMetadata,
+  ProductShotClaim,
+} from "./repositories/product-shots.js";

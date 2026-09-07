@@ -48,6 +48,11 @@ type ShoplineRuntime = {
     workspaceId: string,
     draftId: string,
     imageAssetIds: readonly string[],
+    versionId: string,
+    scopedRepositories?: Pick<
+      WorkspaceRepositories,
+      "sourceAssets" | "productShots"
+    >,
   ): Promise<readonly string[]>;
   close(): Promise<void>;
 };
@@ -66,6 +71,7 @@ function publishRepositories(
   workspaceId: string,
 ): PublishRepositories {
   return {
+    imageRepositories: repositories,
     listings: repositories.listings,
     publishJobs: repositories.publishJobs,
     shoplineConnections: {
@@ -240,8 +246,23 @@ export async function consumeShoplineMessage(
             work(publishRepositories(repositories, workspaceId)),
           );
         },
-        resolveImageUrls: (workspaceId, draftId, imageAssetIds) =>
-          runtime.resolveImageUrls(workspaceId, draftId, imageAssetIds),
+        resolveImageUrls: (
+          workspaceId,
+          draftId,
+          imageAssetIds,
+          versionId,
+          repositories,
+        ) => {
+          if (!repositories.imageRepositories)
+            throw new Error("Scoped image repositories required");
+          return runtime.resolveImageUrls(
+            workspaceId,
+            draftId,
+            imageAssetIds,
+            versionId,
+            repositories.imageRepositories,
+          );
+        },
       },
     );
     return "ack";

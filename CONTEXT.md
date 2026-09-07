@@ -28,6 +28,42 @@ focus/retry refresh without polling. No schema migration or new provider behavio
 is introduced. Verification is recorded in
 `docs/superpowers/plans/2026-09-06-operations-workbench-results.md`.
 
+## Reviewed product images
+
+Product-shot processing is separate from listing copy generation. An operator
+selects one actual uploaded image (automatic when exactly one is eligible), then
+reviews the exact persisted white JPEG beside its private original. Background
+removal runs in the Worker; deterministic rendering uses the Node-only assets
+subpath. Live processing is disabled by default.
+
+Attempts retain leases and cutout checkpoints. Queue redelivery never blindly
+repeats a possibly billed call. An uncertain outcome requires explicit consent
+to a fresh attempt; stored cutouts and candidates are reused without another
+provider dispatch. The daily workspace allowance counts dispatched attempts,
+including uncertain outcomes.
+
+Image acceptance binds the current source, observed listing version, candidate
+digest and render/provider identity. Changing sources invalidates acceptance,
+even when returning to a previously accepted source. Factual approval is still
+required. A confirmation-ledger change reopens an approved listing in the same
+transaction, under the listing lock; mutations during publishing fail closed.
+Saved images remain available for reapproval without processing again.
+A shared server policy blocks image-carrying delivery until the current
+version has a matching unrevoked publication; the Worker validates under the
+same transaction lock as its publish preparation.
+
+Approved JPEGs have stable HTTPS capability URLs through a narrowly privileged
+public lookup. Original files stay private. Historical publications pin immutable
+objects and remain available after draft replacement unless explicitly revoked.
+The 71-column Bulk Update contains no image column and retains its independent
+factual and source-binding checks; it does not become a new-product XLSX format.
+
+Implementation and verification status is recorded in
+`docs/superpowers/plans/2026-09-07-photoroom-product-shot-results.md`;
+operator setup and recovery are in `docs/runbooks/product-shot-processing.md`.
+Synthetic acceptance does not establish live glass/label quality, billing or
+SHOPLINE acceptance, and does not authorize production activation.
+
 ## Shopline delivery
 
 Shopline delivery is the listing decision that determines whether a specific

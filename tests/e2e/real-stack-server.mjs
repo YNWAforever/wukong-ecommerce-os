@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { connect as connectTls } from "node:tls";
@@ -9,6 +11,9 @@ const port = process.env.PORT ?? "49217";
 const workerPort = "8787";
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const workerUrl = `http://127.0.0.1:${workerPort}`;
+const publicImagePort = 49218;
+const productShotFixtureEnabled = process.env.WUKONG_PRODUCT_SHOT_E2E === "1";
+const syntheticScenarios = process.env.PRODUCT_SHOT_SYNTHETIC_SCENARIO ?? "{}";
 const runtimeUrl =
   process.env.TEST_DATABASE_URL ??
   "postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong";
@@ -40,6 +45,16 @@ const runtimeEnv = {
   S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE ?? "true",
   AI_PROVIDER: "fake",
   SHOPLINE_ADAPTER: "mock",
+  PRODUCT_SHOT_PROVIDER: productShotFixtureEnabled ? "fake" : "disabled",
+  PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: productShotFixtureEnabled
+    ? "100"
+    : undefined,
+  PRODUCT_SHOT_SYNTHETIC_SCENARIO: productShotFixtureEnabled
+    ? syntheticScenarios
+    : undefined,
+  PRODUCT_IMAGE_PUBLIC_ORIGIN: productShotFixtureEnabled
+    ? `https://localhost:${publicImagePort}`
+    : undefined,
   QUEUE_INGRESS_URL: workerUrl,
   QUEUE_INGRESS_SECRET: ingressSecret,
 
@@ -53,10 +68,12 @@ const runtimeEnv = {
 };
 
 delete runtimeEnv[localHyperdriveEnvironmentVariable];
+delete runtimeEnv.PHOTOROOM_API_KEY;
 const workerEnv = {
   ...runtimeEnv,
   [localHyperdriveEnvironmentVariable]: runtimeUrl,
 };
+delete workerEnv.PHOTOROOM_API_KEY;
 
 const localWrangler = {
   name: "wukong-runtime-e2e",
@@ -78,6 +95,10 @@ const localWrangler = {
     SHOPLINE_ADAPTER: "mock",
     SHOPLINE_PUBLISH_ENABLED: "false",
     AI_PROVIDER: "fake",
+    PRODUCT_SHOT_PROVIDER: runtimeEnv.PRODUCT_SHOT_PROVIDER,
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY:
+      runtimeEnv.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
+    PRODUCT_SHOT_SYNTHETIC_SCENARIO: runtimeEnv.PRODUCT_SHOT_SYNTHETIC_SCENARIO,
     S3_BUCKET: runtimeEnv.S3_BUCKET,
     S3_ENDPOINT: runtimeEnv.S3_ENDPOINT,
     S3_REGION: runtimeEnv.S3_REGION,
@@ -114,6 +135,7 @@ const localWrangler = {
 };
 
 const children = new Set();
+const ownedServers = new Set();
 const logs = new Map();
 let stopping = false;
 let stopPromise;
@@ -122,6 +144,7 @@ const SENSITIVE_BINDINGS = new Set([
   "S3_ACCESS_KEY_ID",
   "S3_SECRET_ACCESS_KEY",
   "SHOPLINE_TOKEN_ENCRYPTION_KEY",
+  "PHOTOROOM_API_KEY",
 ]);
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const DEFAULT_SENSITIVE_VALUES = [
@@ -412,6 +435,18 @@ function stop(code = 0) {
       [...children].map((child) => terminateProcessTree(child)),
     );
     children.clear();
+    const serverResults = await Promise.allSettled(
+      [...ownedServers].map(
+        (server) =>
+          new Promise((resolveClose, rejectClose) =>
+            server.close((error) =>
+              error ? rejectClose(error) : resolveClose(),
+            ),
+          ),
+      ),
+    );
+    ownedServers.clear();
+    results.push(...serverResults);
     for (const result of results) {
       if (result.status === "rejected") {
         process.exitCode = 1;
@@ -426,6 +461,49 @@ function stop(code = 0) {
     }
   })();
   return stopPromise;
+}
+
+async function startPublicImageProxy() {
+  const certPath = resolve(
+    root,
+    "node_modules/.photoroom-services/certs/public.crt",
+  );
+  const keyPath = resolve(
+    root,
+    "node_modules/.photoroom-services/certs/private.key",
+  );
+  const server = https.createServer(
+    { cert: await readFile(certPath), key: await readFile(keyPath) },
+    (request, response) => {
+      const upstream = http.request(
+        {
+          hostname: "127.0.0.1",
+          port: Number(port),
+          path: request.url,
+          method: request.method,
+          headers: request.headers,
+        },
+        (upstreamResponse) => {
+          response.writeHead(
+            upstreamResponse.statusCode ?? 502,
+            upstreamResponse.headers,
+          );
+          upstreamResponse.pipe(response);
+        },
+      );
+      upstream.on("error", () => {
+        if (!response.headersSent) response.writeHead(502);
+        response.end();
+      });
+      request.pipe(upstream);
+    },
+  );
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(publicImagePort, "127.0.0.1", resolveListen);
+  });
+  ownedServers.add(server);
+  return server;
 }
 
 async function runServer() {
@@ -500,6 +578,14 @@ async function runServer() {
       "--port",
       port,
     ]);
+    await waitFor(`${baseUrl}/signin`, "Web");
+    if (productShotFixtureEnabled) {
+      await startPublicImageProxy();
+      await waitFor(
+        `https://localhost:${publicImagePort}/signin`,
+        "public-image-proxy",
+      );
+    }
 
     await new Promise(() => {});
   } catch (error) {

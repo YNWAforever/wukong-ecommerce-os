@@ -42,6 +42,14 @@ export type {
 } from "./assert-approval-freshness.js";
 
 export { assertContentFreshness } from "./content-freshness.js";
+
+export { PRODUCT_SHOT_LIMITS, nextShotAction } from "./product-shot.js";
+export type {
+  ProductShotState,
+  ShotCandidate,
+  ShotIdentity,
+  ShotObservation,
+} from "./product-shot.js";
 export type {
   ContentFreshnessDeps,
   ContentFreshnessFailureReason,
@@ -66,3 +74,5 @@ export type {
   WebsiteScanEnvelope,
   RobotsPolicy,
 } from "./website-catalog.js";
+
+export { usesProductShotWorkflow } from "./product-shot.js";

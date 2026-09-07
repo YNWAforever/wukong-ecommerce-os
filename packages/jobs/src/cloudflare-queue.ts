@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { z } from "zod";
+import type { ProductShotJob } from "./product-shot-queue.js";
 import type { WebsiteJob } from "./website-queue.js";
 
 const safeId = z
@@ -33,7 +34,8 @@ export const shoplinePublishJobSchema = z
 
 export type ListingJob = z.infer<typeof listingJobSchema>;
 export type ShoplinePublishJob = z.infer<typeof shoplinePublishJobSchema>;
-export type QueueMessage = ListingJob | ShoplinePublishJob | WebsiteJob;
+export type QueueMessage =
+  ListingJob | ShoplinePublishJob | WebsiteJob | ProductShotJob;
 
 type SignInput = {
   secret: string;

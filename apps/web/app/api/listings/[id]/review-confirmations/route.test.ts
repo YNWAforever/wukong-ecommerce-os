@@ -30,6 +30,7 @@ function makeHandler(
     role?: "viewer" | "operator" | "reviewer" | "admin";
     activeVersionId?: string | null;
     snapshotExists?: boolean;
+    invalidation?: "unchanged" | "reopened" | "publishing" | "stale";
     platformProduct?: {
       sourceImportId: string | null;
       contentDigest: string | null;
@@ -55,6 +56,17 @@ function makeHandler(
           calls.push(["forWorkspace", workspaceId]);
           return work({
             listings: {
+              async invalidateApprovalForConfirmationChange(
+                id: string,
+                observedVersionId: string,
+              ) {
+                calls.push([
+                  "invalidateApprovalForConfirmationChange",
+                  id,
+                  observedVersionId,
+                ]);
+                return options.invalidation ?? "unchanged";
+              },
               async getReviewSnapshot(id: string) {
                 calls.push(["getReviewSnapshot", id]);
                 if (!snapshotExists) return null;
@@ -177,6 +189,56 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
     ]);
   });
 
+  it("reopens current approval before updating its confirmation ledger", async () => {
+    const { handler, calls } = makeHandler({ invalidation: "reopened" });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: false },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(200);
+    expect(calls).toContainEqual([
+      "invalidateApprovalForConfirmationChange",
+      listingId,
+      versionId,
+    ]);
+  });
+
+  it("maps a version that becomes stale after the snapshot to 409", async () => {
+    const { handler, calls } = makeHandler({ invalidation: "stale" });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: false },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "stale_version" });
+    expect(
+      calls.some((call) => Array.isArray(call) && call[0] === "upsert"),
+    ).toBe(false);
+  });
+  it("fails closed without updating confirmations while publishing", async () => {
+    const { handler, calls } = makeHandler({ invalidation: "publishing" });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: false },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "listing_publishing" });
+    expect(
+      calls.some((call) => Array.isArray(call) && call[0] === "upsert"),
+    ).toBe(false);
+  });
   it("populates null sourceImportId/rowDigest for a create-origin listing with no platform product link", async () => {
     const { handler, calls } = makeHandler({ platformProduct: null });
     const response = await handler(

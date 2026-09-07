@@ -176,6 +176,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.910.0
         version: 3.1085.0
+      '@wukong/core':
+        specifier: workspace:*
+        version: link:../core
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@26.4.0)

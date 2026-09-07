@@ -147,3 +147,100 @@ describe("tenant table probe list", () => {
     expect(TENANT_TABLES).toContain("platform_products");
   });
 });
+
+it("conditionally verifies each product-shot checkpoint and publication binding without changing legacy requirements", async () => {
+  const { productShotAuditMissing } = await import("./audit-verify.js");
+  expect(productShotAuditMissing([], [], [])).toEqual([]);
+  const attempt = {
+    id: "attempt-1",
+    state: "approved",
+    dispatchedAt: new Date(),
+    cutoutAssetId: "cutout",
+    candidateAssetId: "candidate",
+  };
+  const publication = {
+    id: "publication-1",
+    attemptId: "attempt-1",
+    versionId: "version-1",
+    revokedAt: new Date(),
+  };
+  expect(productShotAuditMissing([attempt], [publication], [])).toEqual([
+    "product_shot.requested:attempt-1",
+    "product_shot.dispatched:attempt-1",
+    "product_shot.cutout_saved:attempt-1",
+    "product_shot.candidate_saved:attempt-1",
+    "product_shot.approved:publication-1",
+    "product_shot.revoked:publication-1",
+  ]);
+  const events = [
+    "requested",
+    "dispatched",
+    "cutout_saved",
+    "candidate_saved",
+    "approved",
+    "revoked",
+  ].map((action) => ({
+    action: "product_shot." + action,
+    metadata: {
+      attemptId: "attempt-1",
+      versionId: "version-1",
+      publicationId: "publication-1",
+    },
+  }));
+  expect(productShotAuditMissing([attempt], [publication], events)).toEqual([]);
+  expect(
+    productShotAuditMissing(
+      [attempt],
+      [publication],
+      events.map((event) => ({
+        ...event,
+        metadata: { ...event.metadata, attemptId: "foreign" },
+      })),
+    ),
+  ).toHaveLength(6);
+  expect(
+    productShotAuditMissing(
+      [
+        {
+          ...attempt,
+          state: "outcome_unknown",
+          cutoutAssetId: null,
+          candidateAssetId: null,
+        },
+      ],
+      [],
+      events,
+    ),
+  ).toContain("product_shot.outcome_unknown:attempt-1");
+});
+
+it("requires source-replacement audits when more than one attempt was selected", async () => {
+  const { productShotAuditMissing } = await import("./audit-verify.js");
+  const attempts = ["a", "b"].map((id) => ({
+    id,
+    state: "queued",
+    dispatchedAt: null,
+    cutoutAssetId: null,
+    candidateAssetId: null,
+  }));
+  const events = attempts.map((a) => ({
+    action: "product_shot.requested",
+    metadata: { attemptId: a.id },
+  }));
+  expect(productShotAuditMissing(attempts, [], events)).toEqual([
+    "product_shot.source_replaced",
+  ]);
+  expect(
+    productShotAuditMissing(
+      attempts,
+      [],
+      [
+        ...events,
+        {
+          action: "product_shot.source_replaced",
+          metadata: { attemptId: "b", previousAttemptId: "a" },
+        },
+      ],
+    ),
+  ).toEqual([]);
+});

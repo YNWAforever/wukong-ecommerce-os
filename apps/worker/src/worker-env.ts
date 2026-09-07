@@ -4,6 +4,7 @@ import type {
   MessageBatch,
 } from "@cloudflare/workers-types";
 import type {
+  ProductShotJob,
   ListingJob,
   WebsiteJob,
   QueueMessage,
@@ -12,7 +13,7 @@ import type {
 
 export type WorkerEnv = {
   HYPERDRIVE: Hyperdrive;
-  LISTING_QUEUE: Queue<ListingJob | WebsiteJob>;
+  LISTING_QUEUE: Queue<ListingJob | WebsiteJob | ProductShotJob>;
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
@@ -22,6 +23,9 @@ export type WorkerEnv = {
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
   AI_PROVIDER?: "openai" | "fake";
   OPENAI_API_KEY?: string;
+  PRODUCT_SHOT_PROVIDER?: "disabled" | "fake" | "photoroom";
+  PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?: string;
+  PHOTOROOM_API_KEY?: string;
   S3_BUCKET?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;

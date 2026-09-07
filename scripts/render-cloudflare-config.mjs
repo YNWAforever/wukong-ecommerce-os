@@ -1,3 +1,4 @@
+import { productShotSecretNames } from "./verify-cloudflare-secrets.mjs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -70,6 +71,23 @@ if (websiteFetchBaseUrl) {
     throw new Error("WEBSITE_FETCH_BASE_URL must be a trusted HTTPS origin");
   }
 }
+const productShotProvider =
+  process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider;
+const secretNames = productShotSecretNames(
+  source.requiredSecrets,
+  productShotProvider,
+);
+const shotBudget =
+  process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
+if (
+  (shotBudget || productShotProvider === "photoroom") &&
+  (!Number.isSafeInteger(Number(shotBudget)) ||
+    Number(shotBudget) <= 0 ||
+    Number(shotBudget) > 2_147_483_647)
+)
+  throw new Error(
+    "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be an integer from 1 to 2147483647",
+  );
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({
   queue,
@@ -88,10 +106,14 @@ const wrangler = {
   compatibility_flags: ["nodejs_compat"],
   limits: { cpu_ms: 240000 },
   observability: { enabled: true },
-  secrets: { required: source.requiredSecrets },
+  secrets: { required: secretNames },
   vars: {
     ...(websiteFetchBaseUrl
       ? { WEBSITE_FETCH_BASE_URL: websiteFetchBaseUrl }
+      : {}),
+    PRODUCT_SHOT_PROVIDER: productShotProvider,
+    ...(shotBudget
+      ? { PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: shotBudget }
       : {}),
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,

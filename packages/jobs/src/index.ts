@@ -10,3 +10,5 @@ export {
   type ShoplinePublishJob,
 } from "./cloudflare-queue.js";
 export * from "./website-queue.js";
+
+export * from "./product-shot-queue.js";

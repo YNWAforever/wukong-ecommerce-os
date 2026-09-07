@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -147,7 +148,10 @@ test("runs the real storage, mail, browser, and audit release gate", () => {
     workflow,
     /pnpm exec playwright test --project=chromium --workers=1 --reporter=line/,
   );
-  assert.match(workflow, /audit:verify --workspace ws_opak --draft/);
+  assert.match(
+    workflow,
+    /audit:verify --workspace "\$WORKSPACE_ID" --draft "\$DRAFT_ID"/,
+  );
 });
 
 test("defines a reproducible runtime formatting gate", () => {
@@ -168,16 +172,14 @@ test("renders and validates Cloudflare configuration without production credenti
     workflow,
     /node --test tests\/ci-workflow\.test\.mjs tests\/cloudflare-config\.test\.mjs/,
   );
-  const playwrightStep = workflow.indexOf(
-    "Playwright Wrangler Queue acceptance",
-  );
+  const playwrightStep = workflow.indexOf("- name: Playwright");
   const localConnection = workflow.indexOf(
     "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:",
   );
   assert.ok(playwrightStep >= 0);
   assert.ok(
     localConnection > playwrightStep,
-    "the local Hyperdrive connection belongs only to the Playwright step",
+    "the local Hyperdrive connection belongs only to the Playwright steps",
   );
   assert.match(
     workflow,
@@ -401,4 +403,123 @@ test("uses one stable Compose project across worktrees", () => {
   assert.ok(inspect >= 0 && down > inspect && up > down);
   assert.match(localRunbook, /shared Compose project[\s\S]*worktree/i);
   assert.match(localRunbook, /--force-recreate[\s\S]*replace/i);
+});
+
+test("prepares the configured local bucket before storage integration tests", () => {
+  const prepare = workflow.indexOf(
+    "- name: Prepare integration object storage",
+  );
+  const integration = workflow.indexOf("- name: Integration tests");
+  assert.ok(
+    prepare >= 0,
+    "CI must create its bucket before first integration write",
+  );
+  assert.ok(
+    prepare < integration,
+    "bucket setup must precede integration tests",
+  );
+  const step = workflow.slice(prepare, integration);
+  assert.match(step, /CreateBucketCommand/);
+  assert.match(step, /HeadBucketCommand/);
+  assert.match(step, /Bucket: process.env.S3_BUCKET/);
+  assert.match(step, /endpoint: process.env.S3_ENDPOINT/);
+  assert.match(step, /BucketAlreadyOwnedByYou/);
+  assert.match(step, /throw error/);
+});
+
+test("runs product-shot acceptance separately with synthetic image processing and TLS", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  assert.ok(
+    image >= 0 && image < legacy,
+    "image mode must run separately before legacy audit evidence",
+  );
+  const step = workflow.slice(image, legacy);
+  assert.match(step, /WUKONG_PRODUCT_SHOT_E2E: "1"/);
+  assert.match(step, /playwright test tests\/e2e\/product-shot\.spec\.ts/);
+  assert.match(step, /--retries=0/);
+  assert.match(step, /openssl verify/);
+  assert.match(step, /photoroom-services\/certs\/public\.crt/);
+  const config = readFileSync(
+    new URL("../playwright.config.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(config, /WUKONG_PRODUCT_SHOT_E2E/);
+  assert.match(config, /testIgnore:[\s\S]*?product-shot\.spec\.ts/);
+});
+
+test("CI image mode exercises both synthetic failure outcomes for the actual fixture bytes", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  const step = workflow.slice(image, legacy);
+  const configured = step.match(/PRODUCT_SHOT_SYNTHETIC_SCENARIO: '([^']+)'/);
+  assert.ok(
+    configured,
+    "image acceptance must configure fake failure scenarios",
+  );
+  const scenarios = JSON.parse(configured[1]);
+  const fixture = readFileSync(
+    new URL("./e2e/real-stack-fixture.ts", import.meta.url),
+    "utf8",
+  );
+  for (const [name, outcome] of [
+    ["definitiveFailure", "definitive_failure"],
+    ["ambiguous", "ambiguous_completion"],
+  ]) {
+    const match = fixture.match(
+      new RegExp(`${name}: Buffer\\.from\\(\\s*"([^"]+)"`),
+    );
+    assert.ok(match, `synthetic ${name} image must exist`);
+    const digest = createHash("sha256")
+      .update(Buffer.from(match[1], "base64"))
+      .digest("hex");
+    assert.equal(scenarios[digest], outcome);
+  }
+  assert.equal(Object.keys(scenarios).length, 2);
+  assert.doesNotMatch(
+    workflow.slice(legacy),
+    /PRODUCT_SHOT_SYNTHETIC_SCENARIO:/,
+  );
+});
+
+test("browser modes allow the real-stack harness to stop detached children", async () => {
+  const previous = process.env.PLAYWRIGHT_E2E;
+  process.env.PLAYWRIGHT_E2E = "1";
+  try {
+    const { default: config } = await import("../playwright.config.ts");
+    assert.deepEqual(config.webServer.gracefulShutdown, {
+      signal: "SIGTERM",
+      timeout: 15000,
+    });
+    if (process.platform !== "win32")
+      assert.match(config.webServer.command, /&& exec node/);
+    assert.equal(config.webServer.reuseExistingServer, !process.env.CI);
+  } finally {
+    if (previous === undefined) delete process.env.PLAYWRIGHT_E2E;
+    else process.env.PLAYWRIGHT_E2E = previous;
+  }
+});
+
+test("audits the workspace and draft emitted by the same completed browser fixture", () => {
+  assert.match(
+    workflow,
+    /WORKSPACE_ID="\$\(cat test-results\/real-stack-workspace-id\.txt\)"/,
+  );
+  assert.match(workflow, /test -n "\$WORKSPACE_ID"/);
+  const pilot = readFileSync(
+    new URL("./e2e/listing-pilot.spec.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    pilot,
+    /writeFile\(\s*"test-results\/real-stack-workspace-id\.txt",\s*OPAK_WORKSPACE_ID,/,
+  );
+  assert.match(
+    pilot,
+    /writeFile\("test-results\/real-stack-draft-id\.txt", draftId!/,
+  );
 });

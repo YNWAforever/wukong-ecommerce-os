@@ -1,3 +1,4 @@
+import { consumeProductShotMessage as defaultConsumeProductShotMessage } from "./product-shot-consumer.js";
 import {
   consumeWebsiteMessage as defaultConsumeWebsiteMessage,
   type WebsiteConsumerOutcome,
@@ -34,6 +35,10 @@ type ListingAttempt = {
 };
 
 type QueueDependencies = {
+  consumeProductShotMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<"ack" | { retryAfterSeconds: number }>;
   consumeWebsiteMessage?: (
     payload: unknown,
     env: WorkerEnv,
@@ -80,6 +85,20 @@ export async function handleQueue(
   const consume =
     dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
   for (const message of batch.messages) {
+    if (
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "kind" in message.body &&
+      message.body.kind === "product_shot"
+    ) {
+      const outcome = await (
+        dependencies.consumeProductShotMessage ??
+        defaultConsumeProductShotMessage
+      )(message.body, env);
+      if (outcome === "ack") message.ack();
+      else message.retry({ delaySeconds: outcome.retryAfterSeconds });
+      continue;
+    }
     const website =
       typeof message.body === "object" &&
       message.body !== null &&

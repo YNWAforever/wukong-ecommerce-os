@@ -21,6 +21,7 @@ function handlerFor(
   role: "viewer" | "operator" | "reviewer" | "admin" | "owner",
   hasConnection = false,
   overrides: {
+    productShots?: { currentForListing: (id: string) => Promise<any> };
     importResults?: {
       listHistoricalForListing: (id: string) => Promise<any[]>;
     };
@@ -51,6 +52,7 @@ function handlerFor(
           work: (repositories: any) => Promise<T>,
         ) {
           return work({
+            productShots: overrides.productShots,
             listings: {
               async getReviewSnapshot() {
                 return {
@@ -407,3 +409,59 @@ it("returns durable manual history from the authorized listing read", async () =
   expect((await response.json()).historicalImportResults).toEqual(history);
   expect(listHistoricalForListing).toHaveBeenCalledWith(listingId);
 });
+
+it("marks enabled workflow so disabled legacy screens do not fetch new review state", async () => {
+  vi.stubEnv("PRODUCT_SHOT_PROVIDER", "fake");
+  try {
+    const response = await handlerFor("reviewer")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+    expect((await response.json()).productShotWorkflow).toBe(true);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it.each([
+  ["multiple sources", "fake", false, false, true],
+  ["setup missing", "photoroom", false, false, true],
+  ["disabled legacy", "disabled", false, false, false],
+  ["actual legacy cutout", "fake", true, false, false],
+  ["selected workflow after disablement", "disabled", true, true, true],
+])(
+  "listing view classifies %s from server state",
+  async (_label, provider, legacy, selected, expected) => {
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", provider as string);
+    try {
+      const response = await handlerFor("reviewer", false, {
+        productShots: {
+          currentForListing: async () =>
+            selected ? { state: "candidate_ready" } : null,
+        },
+        sourceAssets: {
+          listForListing: async () =>
+            legacy
+              ? [
+                  {
+                    kind: "image/png",
+                    storageKey: "legacy",
+                    metadata: { role: "product_shot_cutout" },
+                  },
+                ]
+              : [
+                  { kind: "image/png", metadata: {} },
+                  { kind: "image/jpeg", metadata: {} },
+                ],
+        },
+        assetStore: { createReadUrl: async () => ({ url: "/legacy" }) },
+      })(new Request("http://localhost"), {
+        params: Promise.resolve({ id: listingId }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).productShotWorkflow).toBe(expected);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);

@@ -105,6 +105,32 @@ jobs:
         run: pnpm typecheck
       - name: Unit tests
         run: pnpm test
+      - name: Prepare integration object storage
+        # Integration tests write images before the browser fixture creates its bucket.
+        run: |
+          node --input-type=module <<'NODE'
+          import { S3Client, CreateBucketCommand, HeadBucketCommand } from "@aws-sdk/client-s3";
+          const endpoint = new URL(process.env.S3_ENDPOINT);
+          if (!["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)) {
+            throw new Error("CI bucket setup requires local object storage");
+          }
+          const client = new S3Client({
+            endpoint: process.env.S3_ENDPOINT,
+            region: process.env.S3_REGION,
+            forcePathStyle: true,
+            credentials: {
+              accessKeyId: process.env.S3_ACCESS_KEY_ID,
+              secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+            },
+          });
+          try {
+            await client.send(new CreateBucketCommand({ Bucket: process.env.S3_BUCKET }));
+          } catch (error) {
+            if (error.name !== "BucketAlreadyOwnedByYou") throw error;
+          }
+          await client.send(new HeadBucketCommand({ Bucket: process.env.S3_BUCKET }));
+          client.destroy();
+          NODE
       - name: Integration tests
         run: pnpm test:integration
       - name: Production build
@@ -126,9 +152,29 @@ jobs:
         run: node --test tests/sharp-native-bundling.test.mjs
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright product-shot acceptance (synthetic images)
+        env:
+          PLAYWRIGHT_E2E: "1"
+          WUKONG_PRODUCT_SHOT_E2E: "1"
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: '{"3b89b2ac0cb972c04cd0016fcc807b0f712f7f01756f315f43fcad57325a3eff":"definitive_failure","baf7f7a8e86642fbd2619791bad4741f28c93b6e5c426739125f6d9e587e3c8e":"ambiguous_completion"}'
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          NODE_EXTRA_CA_CERTS: .wrangler/caddy-data/caddy/pki/authorities/local/root.crt
+        run: |
+          # Issue an ephemeral localhost certificate using only this job's local CA.
+          mkdir -p node_modules/.photoroom-services/certs
+          openssl req -newkey rsa:2048 -nodes -keyout node_modules/.photoroom-services/certs/private.key -out node_modules/.photoroom-services/certs/local.csr -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          openssl x509 -req -in node_modules/.photoroom-services/certs/local.csr -CA .wrangler/caddy-data/caddy/pki/authorities/local/root.crt -CAkey .wrangler/caddy-data/caddy/pki/authorities/local/root.key -set_serial 1 -days 1 -copy_extensions copy -out node_modules/.photoroom-services/certs/public.crt
+          openssl verify -CAfile .wrangler/caddy-data/caddy/pki/authorities/local/root.crt node_modules/.photoroom-services/certs/public.crt
+          pnpm exec playwright test tests/e2e/product-shot.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Playwright Wrangler Queue acceptance (fake AI/mock SHOPLINE)
         env:
           PLAYWRIGHT_E2E: "1"
+          WUKONG_PRODUCT_SHOT_E2E: "0"
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
           # S3_ENDPOINT is deliberately NOT overridden here. The runtime pins
           # itself to the TLS proxy in tests/e2e/real-stack-server.mjs, while the
@@ -144,12 +190,14 @@ jobs:
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-        run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
+        run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line --retries=0
       - name: Verify the completed Opak audit by draft
         run: |
           DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"
+          WORKSPACE_ID="$(cat test-results/real-stack-workspace-id.txt)"
           test -n "$DRAFT_ID"
-          pnpm --filter @wukong/db audit:verify --workspace ws_opak --draft "$DRAFT_ID"
+          test -n "$WORKSPACE_ID"
+          pnpm --filter @wukong/db audit:verify --workspace "$WORKSPACE_ID" --draft "$DRAFT_ID"
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4

@@ -1,3 +1,4 @@
+import { ProductImageApprovalRequiredError } from "@wukong/assets";
 import {
   assertShoplineEncryptionKey,
   decryptShoplineToken,
@@ -72,5 +73,27 @@ export function createShoplineConnectorFactory(
       base64Key,
     );
     return new ShoplineConnector(token);
+  };
+}
+
+/** Current publication is re-evaluated by the scoped repository on every queue delivery. */
+export async function productImagePublicationForDelivery(
+  repositories: Pick<
+    import("@wukong/db").WorkspaceRepositories,
+    "productShots"
+  >,
+  input: { listingId: string; versionId?: string; provider?: string },
+) {
+  if (!(await repositories.productShots.requiresWorkflow(input)))
+    return undefined;
+  if (!input.versionId) throw new ProductImageApprovalRequiredError();
+  return {
+    versionId: input.versionId,
+    resolveApprovedProductImage: (value: {
+      workspaceId: string;
+      listingId: string;
+      versionId: string;
+      assetId: string;
+    }) => repositories.productShots.resolveApprovedProductImage(value),
   };
 }
