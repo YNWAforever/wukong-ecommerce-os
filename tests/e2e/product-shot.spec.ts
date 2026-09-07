@@ -190,22 +190,41 @@ for (const locale of ["en", "zh-Hant"] as const) {
       mimeType: "image/png",
       buffer: PRODUCT_SHOT_PNGS.success,
     });
+    let replacementShot = {
+      sourceAssetId: "",
+      candidatePreviewUrl: "",
+      state: "",
+    };
     await expect
       .poll(
-        async () =>
-          page.request
-            .get(`/api/listings/${one.listingId}/product-shot`)
-            .then((response) => response.json())
-            .then((view) => view.sourceAssetId),
+        async () => {
+          const response = await page.request.get(
+            `/api/listings/${one.listingId}/product-shot`,
+          );
+          if (!response.ok()) return `http_${response.status()}`;
+          const current = await response.json();
+          if (current.sourceAssetId === initialSourceAssetId)
+            return "previous_source";
+          replacementShot = current;
+          return current.state;
+        },
         { timeout: 60_000 },
       )
-      .not.toBe(initialSourceAssetId);
-    await expect(page.getByAltText(t.final)).toBeVisible({ timeout: 60_000 });
+      .toBe("candidate_ready");
+    // The old preview remains visible during upload. Observe the replacement
+    // artifact itself instead of letting that previous image satisfy readiness.
+    const candidatePath = new URL(replacementShot.candidatePreviewUrl).pathname;
+    await expect
+      .poll(
+        async () => {
+          const src = await page.getByAltText(t.final).getAttribute("src");
+          return src ? new URL(src, BASE_URL).pathname : null;
+        },
+        { timeout: 60_000 },
+      )
+      .toBe(candidatePath);
+    await expect(page.getByAltText(t.final)).toBeVisible();
     await expect(page.getByRole("button", { name: t.accept })).toBeVisible();
-    const replacementShot = await page.request
-      .get(`/api/listings/${one.listingId}/product-shot`)
-      .then((response) => response.json());
-    expect(replacementShot.state).toBe("candidate_ready");
     const replacementListing = await page.request
       .get(`/api/listings/${one.listingId}`)
       .then((response) => response.json());
