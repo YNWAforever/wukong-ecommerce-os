@@ -28,7 +28,9 @@ const admin = postgres(adminUrl, {
     prepare: false,
     onnotice: () => {},
   }),
-  db = createDatabase(appUrl);
+  db = createDatabase(appUrl, {
+    publicImageOrigin: "https://images.example.invalid",
+  });
 const config = readS3RuntimeConfig(process.env),
   store = S3AssetStore.fromConfig(config.bucket, config.client);
 const require = createRequire(import.meta.url),
