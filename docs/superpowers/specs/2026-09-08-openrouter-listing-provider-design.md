@@ -1,7 +1,7 @@
 # OpenRouter listing provider
 
 Date: 2026-09-08
-Status: Design approved in conversation; written specification awaiting review.
+Status: Design and written specification approved in conversation.
 Base: GitHub main `69b6e6fb7859388495602ef1b00a3b9645896540`.
 Branch: `codex/openrouter-listing-provider`.
 
