@@ -152,9 +152,28 @@ jobs:
         run: node --test tests/sharp-native-bundling.test.mjs
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright product-shot acceptance (synthetic images)
+        env:
+          PLAYWRIGHT_E2E: "1"
+          WUKONG_PRODUCT_SHOT_E2E: "1"
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          NODE_EXTRA_CA_CERTS: .wrangler/caddy-data/caddy/pki/authorities/local/root.crt
+        run: |
+          # Issue an ephemeral localhost certificate using only this job's local CA.
+          mkdir -p node_modules/.photoroom-services/certs
+          openssl req -newkey rsa:2048 -nodes -keyout node_modules/.photoroom-services/certs/private.key -out node_modules/.photoroom-services/certs/local.csr -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          openssl x509 -req -in node_modules/.photoroom-services/certs/local.csr -CA .wrangler/caddy-data/caddy/pki/authorities/local/root.crt -CAkey .wrangler/caddy-data/caddy/pki/authorities/local/root.key -set_serial 1 -days 1 -copy_extensions copy -out node_modules/.photoroom-services/certs/public.crt
+          openssl verify -CAfile .wrangler/caddy-data/caddy/pki/authorities/local/root.crt node_modules/.photoroom-services/certs/public.crt
+          pnpm exec playwright test tests/e2e/product-shot.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Playwright Wrangler Queue acceptance (fake AI/mock SHOPLINE)
         env:
           PLAYWRIGHT_E2E: "1"
+          WUKONG_PRODUCT_SHOT_E2E: "0"
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong
           # S3_ENDPOINT is deliberately NOT overridden here. The runtime pins
           # itself to the TLS proxy in tests/e2e/real-stack-server.mjs, while the
@@ -170,7 +189,7 @@ jobs:
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-        run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line
+        run: pnpm exec playwright test --project=chromium --workers=1 --reporter=line --retries=0
       - name: Verify the completed Opak audit by draft
         run: |
           DRAFT_ID="$(cat test-results/real-stack-draft-id.txt)"

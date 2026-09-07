@@ -168,16 +168,14 @@ test("renders and validates Cloudflare configuration without production credenti
     workflow,
     /node --test tests\/ci-workflow\.test\.mjs tests\/cloudflare-config\.test\.mjs/,
   );
-  const playwrightStep = workflow.indexOf(
-    "Playwright Wrangler Queue acceptance",
-  );
+  const playwrightStep = workflow.indexOf("- name: Playwright");
   const localConnection = workflow.indexOf(
     "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:",
   );
   assert.ok(playwrightStep >= 0);
   assert.ok(
     localConnection > playwrightStep,
-    "the local Hyperdrive connection belongs only to the Playwright step",
+    "the local Hyperdrive connection belongs only to the Playwright steps",
   );
   assert.match(
     workflow,
@@ -423,4 +421,27 @@ test("prepares the configured local bucket before storage integration tests", ()
   assert.match(step, /endpoint: process.env.S3_ENDPOINT/);
   assert.match(step, /BucketAlreadyOwnedByYou/);
   assert.match(step, /throw error/);
+});
+
+test("runs product-shot acceptance separately with synthetic image processing and TLS", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  assert.ok(
+    image >= 0 && image < legacy,
+    "image mode must run separately before legacy audit evidence",
+  );
+  const step = workflow.slice(image, legacy);
+  assert.match(step, /WUKONG_PRODUCT_SHOT_E2E: "1"/);
+  assert.match(step, /playwright test tests\/e2e\/product-shot\.spec\.ts/);
+  assert.match(step, /--retries=0/);
+  assert.match(step, /openssl verify/);
+  assert.match(step, /photoroom-services\/certs\/public\.crt/);
+  const config = readFileSync(
+    new URL("../playwright.config.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(config, /WUKONG_PRODUCT_SHOT_E2E/);
+  assert.match(config, /testIgnore:[\s\S]*?product-shot\.spec\.ts/);
 });
