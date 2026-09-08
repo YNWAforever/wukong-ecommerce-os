@@ -423,19 +423,17 @@ describe("OpenRouter listing provider", () => {
     async (status) => {
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
-        const fetcher = vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(
-            Response.json(
-              {
-                error: {
-                  message: "SECRET https://private.invalid",
-                  code: "SECRET",
-                },
+        const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+          Response.json(
+            {
+              error: {
+                message: "SECRET https://private.invalid",
+                code: "SECRET",
               },
-              { status },
-            ),
-          );
+            },
+            { status },
+          ),
+        );
         const provider = new OpenRouterListingProvider({
           apiKey: "synthetic",
           model: "test/model",

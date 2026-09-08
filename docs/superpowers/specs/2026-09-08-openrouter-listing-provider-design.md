@@ -1,7 +1,7 @@
 # OpenRouter listing provider
 
 Date: 2026-09-08
-Status: Design and written specification approved in conversation.
+Status: Approved specification; implementation and synthetic verification completed. See the dated implementation results for evidence. Live activation remains pending.
 Base: GitHub main `69b6e6fb7859388495602ef1b00a3b9645896540`.
 Branch: `codex/openrouter-listing-provider`.
 
@@ -102,8 +102,8 @@ from live verification, which is outside this implementation approval.
 
 ## Rollout boundary
 
-The production Worker currently uses an older source baseline plus its provider
-diagnostic patch. Main includes later product-shot work. Before any future
+The last observed production Worker used an older source baseline plus its provider
+diagnostic patch; that live observation was not refreshed during implementation. Main includes later product-shot work. Before any future
 deployment, compare the intended Worker artifact with the deployed revision and
 choose a reviewed isolated backport or explicitly approved full rollout. Do not
 silently activate unrelated functionality. Preserve SHOPLINE writes disabled.
