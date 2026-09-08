@@ -356,3 +356,68 @@ test("product shots default disabled and live mode validates budget with secret-
   assert.ok(!JSON.stringify(config).includes("must-not-render"));
   assert.equal(render().status, 0);
 });
+
+test("renders OpenRouter alone and composes product-shot secrets without values", () => {
+  for (const provider of ["disabled", "fake", "photoroom"]) {
+    const result = render({
+      AI_PROVIDER: "openrouter",
+      OPENAI_LISTING_MODEL: "",
+      OPENROUTER_LISTING_MODEL: "vendor/model-1",
+      OPENROUTER_API_KEY: "secret-marker",
+      PRODUCT_SHOT_PROVIDER: provider,
+      PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "1",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const config = readJson(".wrangler/wrangler.generated.jsonc");
+    assert.equal(config.vars.OPENROUTER_LISTING_MODEL, "vendor/model-1");
+    assert.equal(config.vars.OPENAI_LISTING_MODEL, undefined);
+    assert.equal(config.vars.SHOPLINE_PUBLISH_ENABLED, "false");
+    assert.ok(config.secrets.required.includes("OPENROUTER_API_KEY"));
+    assert.ok(!config.secrets.required.includes("OPENAI_API_KEY"));
+    assert.equal(
+      config.secrets.required.includes("PHOTOROOM_API_KEY"),
+      provider === "photoroom",
+    );
+    assert.doesNotMatch(JSON.stringify(config), /secret-marker/);
+    assert.throws(
+      () =>
+        verifyExactSecretNames(config.secrets.required, [
+          ...config.secrets.required,
+          "OPENAI_API_KEY",
+        ]),
+      /unexpected: OPENAI_API_KEY/,
+    );
+  }
+});
+test("rejects missing and dynamic OpenRouter models", () => {
+  for (const model of [
+    "",
+    "openrouter/auto",
+    "vendor/model:free",
+    "vendor/model-latest",
+    "vendor/model-online",
+    "vendor/search",
+    "vendor/model name",
+    "vendor/" + "a".repeat(128),
+  ]) {
+    const result = render({
+      AI_PROVIDER: "openrouter",
+      OPENROUTER_LISTING_MODEL: model,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /OPENROUTER_LISTING_MODEL/);
+  }
+});
+test("listing secret helper preserves legacy choices and rejects invalid providers", async () => {
+  const { listingProviderSecretNames } =
+    await import("../scripts/listing-provider-config.mjs");
+  for (const provider of ["fake", "openai"])
+    assert.deepEqual(
+      listingProviderSecretNames(requiredSecrets, provider),
+      requiredSecrets,
+    );
+  assert.throws(
+    () => listingProviderSecretNames(requiredSecrets, "other"),
+    /AI_PROVIDER/,
+  );
+});

@@ -37,14 +37,14 @@ corepack pnpm --filter @wukong/worker exec wrangler hyperdrive create <exact-hyp
 
 Run the Queue command once for each exact Queue and DLQ in the table. The Hyperdrive command must use the environment's runtime Neon role, never the admin URL. Capture its non-secret configuration ID as `CLOUDFLARE_HYPERDRIVE_ID`.
 
-Set every explicit non-secret renderer input. `S3_BUCKET` must be the exact bucket from the table. `S3_ENDPOINT` must be the standard Cloudflare R2 S3 API root `https://<32-hex-account-id>.r2.cloudflarestorage.com`; credentials, ports, non-root paths, queries, and fragments are rejected. Managed R2 uses region `auto` and no path-style addressing. Preview may use `AI_PROVIDER=fake`; production uses `AI_PROVIDER=openai`. The renderer always forces preview to `SHOPLINE_ADAPTER=mock`, production to `SHOPLINE_ADAPTER=disabled`, and both to `SHOPLINE_PUBLISH_ENABLED=false`; caller-supplied SHOPLINE values cannot override that lock.
+Set every explicit non-secret renderer input. `S3_BUCKET` must be the exact bucket from the table. `S3_ENDPOINT` must be the standard Cloudflare R2 S3 API root `https://<32-hex-account-id>.r2.cloudflarestorage.com`; credentials, ports, non-root paths, queries, and fragments are rejected. Managed R2 uses region `auto` and no path-style addressing. Preview may use `AI_PROVIDER=fake`; production supports explicitly selected `AI_PROVIDER=openai` or `AI_PROVIDER=openrouter`. The repository example continues to default to OpenAI. OpenRouter requires its own explicit model. The renderer always forces preview to `SHOPLINE_ADAPTER=mock`, production to `SHOPLINE_ADAPTER=disabled`, and both to `SHOPLINE_PUBLISH_ENABLED=false`; caller-supplied SHOPLINE values cannot override that lock.
 
 ```powershell
 $env:CLOUDFLARE_ENV = "<preview-or-production>"
 $env:CLOUDFLARE_HYPERDRIVE_ID = "<configuration-id>"
 $env:BUILD_SHA = "<accepted-commit-sha>"
-$env:AI_PROVIDER = "<fake-or-openai>"
-$env:OPENAI_LISTING_MODEL = "<approved-model>"
+$env:AI_PROVIDER = "<fake-or-openai-or-openrouter>"
+$env:OPENAI_LISTING_MODEL = "<approved-openai-model>" # For OpenRouter instead set OPENROUTER_LISTING_MODEL to approved author/model
 $env:S3_BUCKET = "<exact-environment-bucket>"
 $env:S3_ENDPOINT = "https://<32-hex-account-id>.r2.cloudflarestorage.com"
 $env:S3_REGION = "auto"
@@ -59,7 +59,11 @@ Install each required Worker secret interactively. These commands read the value
 
 ```powershell
 corepack pnpm --filter @wukong/worker exec wrangler secret put QUEUE_INGRESS_SECRET --name <exact-worker-name>
+# Select exactly one listing-provider command; never install both:
+# OpenAI/fake:
 corepack pnpm --filter @wukong/worker exec wrangler secret put OPENAI_API_KEY --name <exact-worker-name>
+# OpenRouter instead:
+# corepack pnpm --filter @wukong/worker exec wrangler secret put OPENROUTER_API_KEY --name <exact-worker-name>
 corepack pnpm --filter @wukong/worker exec wrangler secret put SHOPLINE_TOKEN_ENCRYPTION_KEY --name <exact-worker-name>
 corepack pnpm --filter @wukong/worker exec wrangler secret put S3_ACCESS_KEY_ID --name <exact-worker-name>
 corepack pnpm --filter @wukong/worker exec wrangler secret put S3_SECRET_ACCESS_KEY --name <exact-worker-name>
@@ -68,7 +72,7 @@ node scripts/verify-cloudflare-secrets.mjs $deploymentEnvironment
 corepack pnpm --filter @wukong/worker deploy:<preview-or-production>
 ```
 
-The generated configuration omits Wrangler `keep_vars`. Each deployment replaces all approved plaintext variables and deletes arbitrary stale dashboard plaintext variables that are not rendered. The exact-name secret preflight protects the five encrypted secrets independently: checked-in metadata and generated Wrangler `secrets.required` list exactly those five names and no values. The verifier compares only names from `wrangler secret list --format json`; if any required name is missing or any unexpected secret name exists, abort the deployment. It never reads or prints values. The deploy script repeats this fail-closed verifier immediately before `wrangler deploy`.
+The generated configuration omits Wrangler `keep_vars`. Each deployment replaces all approved plaintext variables and deletes arbitrary stale dashboard plaintext variables that are not rendered. The exact-name secret preflight protects the five encrypted secrets for a listing-only configuration (six when Photoroom is enabled): generated Wrangler `secrets.required` composes the existing base names with the selected listing and product-shot providers, without values. OpenRouter substitutes `OPENROUTER_API_KEY` for `OPENAI_API_KEY`; OpenAI and fake retain the existing base requirement. Enabled Photoroom additionally requires `PHOTOROOM_API_KEY`. The verifier compares only names from `wrangler secret list --format json`; if any required name is missing or any unexpected secret name exists, abort the deployment. It never reads or prints values. The deploy script repeats this fail-closed verifier immediately before `wrangler deploy`.
 
 Hyperdrive caching is disabled because tenant RLS, leases, and read-after-write state require fresh reads. The Worker database client has a maximum of five database connections and closes after every Queue batch. The Worker must never run migrations at startup.
 
@@ -78,6 +82,30 @@ Create two distinct bucket-scoped R2 credentials per environment and record only
 2. Worker signed-read credential: Object Read-only for that same one bucket. Store its different `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` only as secrets on the matching Worker.
 
 The credential values must never be reused or shared between Vercel and the Worker, and preview credentials must differ from production credentials. Using the same environment variable names in separate platform scopes is intentional; the underlying access keys remain distinct. Apply CORS only for the Vercel origin, required `PUT` and `HEAD` methods, and `Content-Type` header. Worker read-only S3 access is server-side and requires no CORS permission. Keep every bucket private and forbid wildcard CORS.
+
+## OpenRouter listing configuration and activation
+
+The alternate configuration is:
+
+```dotenv
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=
+OPENROUTER_LISTING_MODEL=
+```
+
+Blank values deliberately fail validation. Obtain a dedicated key from [OpenRouter key management](https://openrouter.ai/settings/keys) and save it as `OPENROUTER_API_KEY` on the matching Cloudflare Worker through the interactive secret prompt. Never reuse the `OPENAI_API_KEY` variable, request a key in chat, read it back, or print it. Obtain an explicit author/model identifier from the [public model catalog](https://openrouter.ai/models) and verify the chosen provider endpoint supports both image input and strict structured output; model-level capability alone is insufficient. Auto/free routers, dynamic aliases and online/search variants are rejected. No activation model has been selected by synthetic tests.
+
+This adapter sends non-streaming chat completions to the fixed OpenRouter origin with strict JSON schema and `provider.require_parameters=true`. It supports JPEG, PNG and WebP HTTPS images; PDF and other formats fail before dispatch. OpenAI PDF support remains intact. No paid PDF/OCR parser is enabled. Shared validators check supplied evidence/source IDs and immutable facts, but cannot independently prove that a model read an image correctly. Human factual review and export source binding remain mandatory.
+
+`usage.prompt_tokens`, `usage.completion_tokens` and provider-reported `usage.cost` map to `inputTokens`, `outputTokens` and `estimatedCostUsd`. Cost is reported USD credits, not an OpenAI price estimate. Counts must be safe non-negative integers and cost finite and non-negative; explicit zero is valid, absent accounting is terminal. At most one schema repair is allowed after a complete, non-refusal response with valid accounting, with usage summed across both responses. Grounding failures, refusal, truncation, absent usage and transport failures are not repaired. SDK retries are disabled (`maxRetries: 0`); existing Queue transport retries can still incur additional cost. `ai_runs` records successful steps only, so failed or unknown calls are not a complete persisted billing ledger. See [usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting) and [structured output requirements](https://openrouter.ai/docs/guides/features/structured-outputs).
+
+Activation requires a separately reviewed operation:
+
+1. Inspect the current deployed Worker revision and compare its artifact with intended source. The last observed older Worker used isolated revision `7a14937` from `49e84a3`; that observation was not refreshed during implementation. This branch starts from `69b6e6f`, which includes later product-shot work. Choose a reviewed isolated backport or explicitly approved full rollout before deployment.
+2. Verify the selected live model and compatible endpoint metadata, then approve the exact artifact, environment and rollback plan. Preserve SHOPLINE writes disabled.
+3. Save the dedicated Worker secret interactively. Explicitly resolve the obsolete `OPENAI_API_KEY`: exact-name checks reject it for OpenRouter. Removing it is a separate approved secret operation; preserve secure access to the old provider credential for rollback. The verifier never automatically removes secrets.
+4. Deploy only the reviewed artifact under separate deployment authorization. Verify safe deployed build/provider/model metadata and exact secret names. An older Worker without provider metadata remains unknown in live doctor checks.
+5. Obtain separate authorization for one real processing cycle, then verify factual output, source binding and reported accounting. Synthetic tests and a dry run prove wiring, not live model availability, quality or billing.
 
 ## Queue sweeper cron trigger
 
@@ -105,15 +133,15 @@ The Vercel preview or production scope may contain only the variables required b
 - `S3_SECRET_ACCESS_KEY`
 - `S3_FORCE_PATH_STYLE`
 
-Platform-provided `VERCEL_URL` and `VERCEL_PROJECT_PRODUCTION_URL` are allowed. Vercel must not receive a Cloudflare account token, `OPENAI_API_KEY`, `SHOPLINE_TOKEN_ENCRYPTION_KEY`, a raw SHOPLINE credential, a Hyperdrive connection string, `DATABASE_ADMIN_URL`, or any legacy queue variable.
+Platform-provided `VERCEL_URL` and `VERCEL_PROJECT_PRODUCTION_URL` are allowed. Vercel must not receive a Cloudflare account token, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `PHOTOROOM_API_KEY`, `SHOPLINE_TOKEN_ENCRYPTION_KEY`, a raw SHOPLINE credential, a Hyperdrive connection string, `DATABASE_ADMIN_URL`, or any legacy queue variable.
 
 ### Worker variable allowlist
 
 Bindings: `HYPERDRIVE`, `LISTING_QUEUE`, and `SHOPLINE_QUEUE`.
 
-Secrets: `QUEUE_INGRESS_SECRET`, `OPENAI_API_KEY`, `SHOPLINE_TOKEN_ENCRYPTION_KEY`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`.
+Secrets: `QUEUE_INGRESS_SECRET`, `SHOPLINE_TOKEN_ENCRYPTION_KEY`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`, plus `OPENAI_API_KEY` for OpenAI/fake or `OPENROUTER_API_KEY` for OpenRouter. Enabled Photoroom additionally requires `PHOTOROOM_API_KEY`. Exact-name preflight rejects the obsolete provider secret; never remove it automatically.
 
-Non-secret variables: `BUILD_SHA`, `AI_PROVIDER`, `OPENAI_LISTING_MODEL`, `SHOPLINE_ADAPTER`, `SHOPLINE_PUBLISH_ENABLED`, `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, and `S3_FORCE_PATH_STYLE`.
+Non-secret variables: `BUILD_SHA`, `AI_PROVIDER`, `OPENAI_LISTING_MODEL` or `OPENROUTER_LISTING_MODEL` for the selected listing provider, `PRODUCT_SHOT_PROVIDER`, `PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY`, `SHOPLINE_ADAPTER`, `SHOPLINE_PUBLISH_ENABLED`, `S3_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, and `S3_FORCE_PATH_STYLE`.
 
 The Worker must not receive `DATABASE_ADMIN_URL`, Better Auth or mail values, a raw SHOPLINE token, or a Cloudflare account API token as a runtime variable. Queue payloads contain database IDs only.
 

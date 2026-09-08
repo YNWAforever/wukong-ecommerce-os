@@ -365,3 +365,70 @@ it("rechecks versioned publication for queued SHOPLINE images and never signs so
     runtime.resolveImageUrls("ws", "listing", ["final"], "version"),
   ).rejects.toThrow("image_approval_required");
 });
+
+it("constructs OpenRouter without OpenAI configuration and records its provider", async () => {
+  const { OpenRouterListingProvider } = await import("@wukong/ai");
+  const append = vi.fn(async () => {});
+  const runtime = createCloudflareRuntime(
+    {
+      AI_PROVIDER: "openrouter",
+      OPENROUTER_API_KEY: "synthetic",
+      OPENROUTER_LISTING_MODEL: "vendor/model-1",
+    } as never,
+    {
+      assetStoreFactory: () => ({}) as never,
+      databaseFactory: () =>
+        ({
+          forWorkspace: async (_id: string, work: any) =>
+            work({ aiRuns: { append } }),
+          close: async () => {},
+        }) as never,
+    },
+  );
+  expect(runtime.dependencies.ai).toBeInstanceOf(OpenRouterListingProvider);
+  await runtime.dependencies.withWorkspace("ws", async (r) => {
+    await r.aiRuns.append({ draftId: "listing", task: "extract" } as never);
+  });
+  expect(append).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "openrouter" }),
+  );
+});
+it.each(["OPENROUTER_API_KEY", "OPENROUTER_LISTING_MODEL"])(
+  "requires %s for OpenRouter",
+  (missing) => {
+    expect(() =>
+      createCloudflareRuntime(
+        {
+          AI_PROVIDER: "openrouter",
+          OPENROUTER_API_KEY: "synthetic",
+          OPENROUTER_LISTING_MODEL: "vendor/model-1",
+          [missing]: undefined,
+        } as never,
+        { assetStoreFactory: () => ({}) as never },
+      ),
+    ).toThrow(missing);
+  },
+);
+it("exposes only allowlisted provider health metadata", async () => {
+  const { workerHealth } = await import("./cloudflare-runtime.js");
+  expect(
+    workerHealth({
+      ...env(),
+      AI_PROVIDER: "openrouter",
+      PRODUCT_SHOT_PROVIDER: "photoroom",
+    } as never),
+  ).toMatchObject({
+    aiProvider: "openrouter",
+    productShotProvider: "photoroom",
+  });
+  const unsafe = workerHealth({
+    ...env(),
+    AI_PROVIDER: "secret-marker",
+    PRODUCT_SHOT_PROVIDER: "secret-marker",
+  } as never);
+  expect(unsafe).toMatchObject({
+    aiProvider: "unknown",
+    productShotProvider: "unknown",
+  });
+  expect(JSON.stringify(unsafe)).not.toContain("secret-marker");
+});
