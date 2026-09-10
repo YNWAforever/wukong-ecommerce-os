@@ -68,7 +68,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | F04 normalization | still_reproducible | **fixed** — `b68210d`, `d1af2a7` |
 | F03 needs_info / failed dead end | partially_fixed | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info) |
 | F02 null facts block generation | still_reproducible | **fixed** — generation gates on product identity, not on every null fact |
-| F01 empty-body CRC32 on presign | still_reproducible | no |
+| F01 empty-body CRC32 on presign | still_reproducible | **fixed** — presign pinned to `WHEN_REQUIRED`, covered by a real-SDK test |
 | F05 no idempotency in intake | still_reproducible | no |
 | F07 four disagreeing media policies | still_reproducible | no |
 | F10 draft save requires canonical | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate |
@@ -92,6 +92,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | (re-run work) | Re-run a listing after supplying what it asked for, instead of being refused forever |
 | (partial save) | Save a draft with the SKU and price still unknown, keeping everything already confirmed |
 | (generation gate) | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end |
+| (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once |
 
 ## Next task, exactly
 
@@ -111,6 +112,16 @@ Files: `apps/web/components/listing-intake-form.tsx` (per-file retry state),
 
 Then: F13 append-not-replace on the file picker → F09 server-side dirty guard on
 approve → F06 image orchestration on create.
+
+## Discovered while fixing, not yet addressed
+
+**The presign does not bind content type.** `PutObjectCommand` is given a
+`ContentType`, but the SDK signs only `content-length;host`, so a caller holding
+an upload URL may PUT any content type and the object is stored with it. The
+presign is therefore not the layer enforcing media policy -- finalize is, and it
+must keep re-reading the stored object rather than trusting what the browser
+declared. Pinned by a test so it cannot be assumed otherwise. Belongs with F07,
+which is about the four layers already disagreeing on media limits.
 
 ## Not started
 
