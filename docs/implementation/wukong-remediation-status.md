@@ -77,7 +77,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | F12 doctor passes while misconfigured | partially_fixed | no |
 | F08 batches enqueue at sequence 0 | still_reproducible | no |
 | F14 batch cost is all-history | still_reproducible | no |
-| F09 approve without a dirty guard | still_reproducible | no |
+| F09 approve without a dirty guard | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
 | F11 no external enrichment stage | still_reproducible | no |
 
 ## Delivered
@@ -95,6 +95,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once |
 | (create replay) | Click create again after a lost response and reach the same listing, instead of a 409 dead end |
 | (file picker) | Add a back label without silently losing the bottle shot, and remove a file that was picked by mistake |
+| (dirty guard) | Stop approving a version that lacks the correction still sitting in the box |
 
 ## Next task, exactly
 
