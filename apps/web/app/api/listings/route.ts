@@ -65,12 +65,43 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
               "One or more source assets were not found.",
             );
           }
-          if (assets.some(({ listingId }) => listingId !== null)) {
-            throw new ApiError(
-              409,
-              "source_asset_already_used",
-              "One or more source assets are already associated.",
-            );
+          // A create whose response was lost is the common case here, not an
+          // exotic one: the operator sees nothing happen and clicks again.
+          // Assets are single-use, so the previous attempt had already claimed
+          // them and the retry was answered with 409 -- leaving the listing
+          // stranded, reachable only by someone who knew to go looking for it.
+          //
+          // The asset set is itself the natural idempotency key. If EVERY
+          // requested asset is already attached to one and the same listing,
+          // this is that listing being created again, so return it. Anything
+          // else -- a partial overlap, assets split across listings -- is a
+          // genuine conflict and still refuses.
+          const attached = assets.filter(({ listingId }) => listingId !== null);
+          if (attached.length > 0) {
+            const owners = new Set(attached.map(({ listingId }) => listingId));
+            const owner = owners.size === 1 ? [...owners][0] : null;
+            const existing =
+              owner != null && attached.length === assets.length
+                ? await repositories.listings.getById(owner)
+                : null;
+            if (!existing) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "One or more source assets are already associated.",
+              );
+            }
+            // Same assets but different words is a different request wearing
+            // the same key. Returning the old listing would silently discard
+            // what the operator just typed, so say so instead.
+            if (existing.note !== (body.note.trim() || null)) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "These files already belong to another listing.",
+              );
+            }
+            return existing;
           }
 
           const imageKinds = new Set(["image/jpeg", "image/png", "image/webp"]);

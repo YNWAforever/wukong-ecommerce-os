@@ -69,7 +69,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | F03 needs_info / failed dead end | partially_fixed | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info) |
 | F02 null facts block generation | still_reproducible | **fixed** — generation gates on product identity, not on every null fact |
 | F01 empty-body CRC32 on presign | still_reproducible | **fixed** — presign pinned to `WHEN_REQUIRED`, covered by a real-SDK test |
-| F05 no idempotency in intake | still_reproducible | no |
+| F05 no idempotency in intake | still_reproducible | **create half fixed** — a replayed create returns the same listing; per-file upload retry still re-uploads everything |
 | F07 four disagreeing media policies | still_reproducible | no |
 | F10 draft save requires canonical | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate |
 | F13 second file selection replaces the first | still_reproducible | no |
@@ -93,24 +93,23 @@ Twelve of fourteen reproduce. None were already fixed.
 | (partial save) | Save a draft with the SKU and price still unknown, keeping everything already confirmed |
 | (generation gate) | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end |
 | (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once |
+| (create replay) | Click create again after a lost response and reach the same listing, instead of a 409 dead end |
 
 ## Next task, exactly
 
-**F05 / F01 — intake idempotency and the presign signature.** A retry after any
-per-file failure re-uploads every file, and `POST /api/listings` carries no
-idempotency key: a lost response means the retry either creates a second listing
-or, because the assets are already attached, fails with
-`409 source_asset_already_used` and strands the operator. Separately, every
-presigned PUT URL embeds `x-amz-checksum-crc32=AAAAAA==` — the CRC32 of zero
-bytes — as a signed query parameter, which is conditional today but a latent
-failure against any backend that enforces it.
+**F05, second half — per-file upload retry.** A retry after any per-file failure
+re-uploads every file, so a second photo failing costs the operator the first
+one's bytes again. `listing-intake-form.tsx:135` promises otherwise; the state it
+keeps cannot distinguish an uploaded file from a pending one.
 
-Files: `apps/web/components/listing-intake-form.tsx` (per-file retry state),
-`apps/web/lib/browser-asset-upload.ts`, `apps/web/app/api/assets/presign/route.ts`,
-`packages/assets/src/s3-asset-store.ts:75` (the checksum), and
-`apps/web/app/api/listings/route.ts` (create idempotency).
+Files: `apps/web/components/listing-intake-form.tsx` (per-file state),
+`apps/web/lib/browser-asset-upload.ts` (the upload loop),
+`apps/web/app/api/assets/finalize/route.ts` (finalize replay returning the same
+asset).
 
-Then: F13 append-not-replace on the file picker → F09 server-side dirty guard on
+Then, in dependency order: F13 append-not-replace on the file picker (the same
+component, so likely the same change) → F07 reconcile the four media policies,
+including the unbound content type below → F09 server-side dirty guard on
 approve → F06 image orchestration on create.
 
 ## Discovered while fixing, not yet addressed
