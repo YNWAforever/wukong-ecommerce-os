@@ -1,4 +1,8 @@
-import { AssetInputError, SUPPORTED_ASSET_MIME_TYPES } from "@wukong/assets";
+import {
+  AssetInputError,
+  MAX_ASSET_SIZE,
+  SUPPORTED_ASSET_MIME_TYPES,
+} from "@wukong/assets";
 import { z } from "zod";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -18,7 +22,7 @@ const presignAssetSchema = z
   .object({
     fileName: z.string().min(1).max(255),
     mimeType: z.enum(SUPPORTED_ASSET_MIME_TYPES),
-    size: z.number().int().min(1).max(20 * 1024 * 1024),
+    size: z.number().int().min(1).max(MAX_ASSET_SIZE),
   })
   .strict();
 
@@ -47,7 +51,11 @@ export function createPresignAssetHandler(deps: IntakeRouteDeps) {
         });
       } catch (error) {
         if (error instanceof AssetInputError) {
-          throw new ApiError(400, "invalid_asset", "Asset upload request is invalid.");
+          throw new ApiError(
+            400,
+            "invalid_asset",
+            "Asset upload request is invalid.",
+          );
         }
         throw error;
       }

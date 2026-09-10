@@ -242,14 +242,6 @@ test("keeps the formatting-debt waiver exact, hash-pinned, and fail-closed", () 
       "3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b",
     ],
     [
-      "apps/web/app/api/assets/finalize/route.ts",
-      "5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2",
-    ],
-    [
-      "apps/web/app/api/assets/presign/route.ts",
-      "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
-    ],
-    [
       "apps/worker/src/listing-consumer.test.ts",
       "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
     ],

@@ -64,7 +64,11 @@ describe("readProcessingSummary", () => {
     expect(summary?.resultStatus).toBe("needs_info");
     expect(summary?.extractedFacts?.producer).toBe("Demo Estate");
     expect(summary?.extractedFacts?.volumeMl).toBe(750);
-    expect(summary?.missingFields).toEqual(["sku", "priceHkd", "stockQuantity"]);
+    expect(summary?.missingFields).toEqual([
+      "sku",
+      "priceHkd",
+      "stockQuantity",
+    ]);
   });
 
   it("never surfaces model, token or cost telemetry", () => {

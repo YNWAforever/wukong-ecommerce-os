@@ -5,7 +5,10 @@ import { createReviewListingHandler } from "./route.js";
 const listingId = "00000000-0000-4000-8000-000000000101";
 const baseVersionId = "00000000-0000-4000-8000-0000000002a1";
 
-const localized = { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate 麗絲玲" };
+const localized = {
+  en: "Demo Estate Riesling",
+  "zh-Hant": "Demo Estate 麗絲玲",
+};
 
 /**
  * A draft an operator can genuinely produce from a photographed label: the
@@ -38,9 +41,10 @@ function draftContent(overrides: Record<string, unknown> = {}) {
 }
 
 function handlerFor(role = "operator") {
-  const editReview = vi.fn(
-    async (..._args: unknown[]) => ({ id: "version_2", sequence: 2 }),
-  );
+  const editReview = vi.fn(async (..._args: unknown[]) => ({
+    id: "version_2",
+    sequence: 2,
+  }));
   const handler = createReviewListingHandler({
     sessionContext: {
       async resolve() {
@@ -100,8 +104,7 @@ describe("PUT /api/listings/[id]/review", () => {
     expect(response.status).toBe(200);
     expect(editReview).toHaveBeenCalledOnce();
     const saved = editReview.mock.calls.at(0)?.at(2) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(saved).toBeDefined();
     expect(saved!.producer).toBe("Demo Estate");
     expect(saved!.volumeMl).toBe(750);
@@ -128,8 +131,7 @@ describe("PUT /api/listings/[id]/review", () => {
 
     expect(response.status).toBe(200);
     const saved = editReview.mock.calls.at(0)?.at(2) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(saved).toBeDefined();
     expect(saved!.sku).toBe("OPAK-1");
     expect(saved!.priceHkd).toBe(288);

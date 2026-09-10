@@ -37,9 +37,7 @@ export function ListingProcessingPanel({
   // the same route answered 409 processing_already_started no matter what the
   // operator supplied, and this button would only have failed.
   const canStart =
-    (status === "received" ||
-      status === "failed" ||
-      status === "needs_info") &&
+    (status === "received" || status === "failed" || status === "needs_info") &&
     enqueueState !== "queued" &&
     canProcess;
 

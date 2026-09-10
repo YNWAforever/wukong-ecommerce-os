@@ -20,20 +20,20 @@ must not be reported as attributed.
 of its own evidence excerpts. That is satisfiable by the synthetic note the
 provider fixtures use (`product type wine; country Germany; volume 750 ml`) and
 unsatisfiable by a photographed label. Since `ProviderOutputError` is in
-`isTerminalProviderError`, a *correct* extraction of a real label terminalized
+`isTerminalProviderError`, a _correct_ extraction of a real label terminalized
 the listing to `failed` on the first delivery — no retry, no dead-letter, the
 consumer acks — and discarded every fact extracted alongside the rejected one.
 
 Rejection paths confirmed by test, each a legitimate extraction:
 
-| Case | Why it was rejected |
-|---|---|
-| `productType: "wine"` | A four-value enum classification; no label prints the word |
-| `volumeMl: 750` from `75 cl` | Unit conversion; 750 is not a number in the excerpt |
-| `country: "France"` from `法國` | Translation; the value cannot quote itself |
-| `abvPercent: 13.5` from `13,5 % vol.` | Tokenizes to 13 and 5; neither equals 13.5 |
-| `field: "abv"` | Evidence field names were never given to the model |
-| `Chateau Margaux` vs `CHÂTEAU MARGAUX` | NFKC composes accents rather than stripping them |
+| Case                                   | Why it was rejected                                        |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `productType: "wine"`                  | A four-value enum classification; no label prints the word |
+| `volumeMl: 750` from `75 cl`           | Unit conversion; 750 is not a number in the excerpt        |
+| `country: "France"` from `法國`        | Translation; the value cannot quote itself                 |
+| `abvPercent: 13.5` from `13,5 % vol.`  | Tokenizes to 13 and 5; neither equals 13.5                 |
+| `field: "abv"`                         | Evidence field names were never given to the model         |
+| `Chateau Margaux` vs `CHÂTEAU MARGAUX` | NFKC composes accents rather than stripping them           |
 
 ### What is NOT established
 
@@ -63,39 +63,40 @@ model accepts image input was not readable from here.
 
 Twelve of fourteen reproduce. None were already fixed.
 
-| ID | Status | Addressed here |
-|---|---|---|
-| F04 normalization | still_reproducible | **fixed** — `b68210d`, `d1af2a7` |
-| F03 needs_info / failed dead end | partially_fixed | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info) |
-| F02 null facts block generation | still_reproducible | **fixed** — generation gates on product identity, not on every null fact |
-| F01 empty-body CRC32 on presign | still_reproducible | **fixed** — presign pinned to `WHEN_REQUIRED`, covered by a real-SDK test |
-| F05 no idempotency in intake | still_reproducible | **create half fixed** — a replayed create returns the same listing; per-file upload retry still re-uploads everything |
-| F07 four disagreeing media policies | still_reproducible | no |
-| F10 draft save requires canonical | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate |
-| F13 second file selection replaces the first | still_reproducible | **file picker half fixed** — selections accumulate and can be removed; other UX sub-claims remain |
-| F06 create never starts image work | still_reproducible | no |
-| F12 doctor passes while misconfigured | partially_fixed | no |
-| F08 batches enqueue at sequence 0 | still_reproducible | no |
-| F14 batch cost is all-history | still_reproducible | no |
-| F09 approve without a dirty guard | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
-| F11 no external enrichment stage | still_reproducible | no |
+| ID                                           | Status             | Addressed here                                                                                                        |
+| -------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| F04 normalization                            | still_reproducible | **fixed** — `b68210d`, `d1af2a7`                                                                                      |
+| F03 needs_info / failed dead end             | partially_fixed    | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info)                                                 |
+| F02 null facts block generation              | still_reproducible | **fixed** — generation gates on product identity, not on every null fact                                              |
+| F01 empty-body CRC32 on presign              | still_reproducible | **fixed** — presign pinned to `WHEN_REQUIRED`, covered by a real-SDK test                                             |
+| F05 no idempotency in intake                 | still_reproducible | **create half fixed** — a replayed create returns the same listing; per-file upload retry still re-uploads everything |
+| F07 four disagreeing media policies          | still_reproducible | **fixed** — one browser-safe policy leaf shared by form, presign, finalize and create                                 |
+| F10 draft save requires canonical            | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate                                          |
+| F13 second file selection replaces the first | still_reproducible | **file picker half fixed** — selections accumulate and can be removed; other UX sub-claims remain                     |
+| F06 create never starts image work           | still_reproducible | no                                                                                                                    |
+| F12 doctor passes while misconfigured        | partially_fixed    | no                                                                                                                    |
+| F08 batches enqueue at sequence 0            | still_reproducible | no                                                                                                                    |
+| F14 batch cost is all-history                | still_reproducible | no                                                                                                                    |
+| F09 approve without a dirty guard            | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
+| F11 no external enrichment stage             | still_reproducible | no                                                                                                                    |
 
 ## Delivered
 
-| Commit | What a user can now do |
-|---|---|
-| `5b00f91` | — (reproduction tests; Phase 0 evidence) |
-| `b68210d` | A real label extracts without being rejected for converting a unit, translating a country, or classifying a type |
-| `1b69c36` | Retry a failed listing instead of being told to contact support |
-| `605a2ff` | See what the AI read off their photos, and which fields only they can supply, while the listing still needs information |
-| `d1af2a7` | Same, for labels with accents, and for models that name evidence fields naturally |
-| (re-run work) | Re-run a listing after supplying what it asked for, instead of being refused forever |
-| (partial save) | Save a draft with the SKU and price still unknown, keeping everything already confirmed |
-| (generation gate) | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end |
-| (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once |
-| (create replay) | Click create again after a lost response and reach the same listing, instead of a 409 dead end |
-| (file picker) | Add a back label without silently losing the bottle shot, and remove a file that was picked by mistake |
-| (dirty guard) | Stop approving a version that lacks the correction still sitting in the box |
+| Commit             | What a user can now do                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `5b00f91`          | — (reproduction tests; Phase 0 evidence)                                                                                |
+| `b68210d`          | A real label extracts without being rejected for converting a unit, translating a country, or classifying a type        |
+| `1b69c36`          | Retry a failed listing instead of being told to contact support                                                         |
+| `605a2ff`          | See what the AI read off their photos, and which fields only they can supply, while the listing still needs information |
+| `d1af2a7`          | Same, for labels with accents, and for models that name evidence fields naturally                                       |
+| (re-run work)      | Re-run a listing after supplying what it asked for, instead of being refused forever                                    |
+| (partial save)     | Save a draft with the SKU and price still unknown, keeping everything already confirmed                                 |
+| (generation gate)  | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end                            |
+| (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once                                  |
+| (create replay)    | Click create again after a lost response and reach the same listing, instead of a 409 dead end                          |
+| (file picker)      | Add a back label without silently losing the bottle shot, and remove a file that was picked by mistake                  |
+| (dirty guard)      | Stop approving a version that lacks the correction still sitting in the box                                             |
+| (media policy)     | Learn a photo is too large before uploading it, not after presign refuses it                                            |
 
 ## Next task, exactly
 
@@ -120,9 +121,10 @@ approve → F06 image orchestration on create.
 `ContentType`, but the SDK signs only `content-length;host`, so a caller holding
 an upload URL may PUT any content type and the object is stored with it. The
 presign is therefore not the layer enforcing media policy -- finalize is, and it
-must keep re-reading the stored object rather than trusting what the browser
-declared. Pinned by a test so it cannot be assumed otherwise. Belongs with F07,
-which is about the four layers already disagreeing on media limits.
+does re-read the stored object (`object.mimeType !== body.mimeType` rejects a
+mismatch) rather than trusting what the browser declared. Pinned by a test so it
+cannot be assumed otherwise. Sharing the policy in F07 does not change this: a
+shared constant makes the four layers agree on the RULE, not on who enforces it.
 
 ## Not started
 

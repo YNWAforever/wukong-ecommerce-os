@@ -5,16 +5,26 @@ export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
 // to SHOPLINE by a person, so the ten-minute upload window does not apply to the
 // image URLs inside it.
 export const ASSET_EXPORT_READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const MAX_ASSET_SIZE = 20 * 1024 * 1024;
-
-export const SUPPORTED_ASSET_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-] as const;
-
-export type AssetMimeType = (typeof SUPPORTED_ASSET_MIME_TYPES)[number];
+// The media policy lives in a leaf module with no `node:` imports, so a client
+// component can import it without pulling this file's crypto (and, through the
+// package index, the AWS SDK) into the browser bundle. Re-exported here so every
+// existing importer of these names keeps working unchanged.
+export {
+  MAX_ASSET_SIZE,
+  MAX_LISTING_IMAGES,
+  MAX_LISTING_PDFS,
+  SUPPORTED_ASSET_MIME_TYPES,
+  isImageMimeType,
+  isSupportedAssetMimeType,
+  rejectAsset,
+  type AssetMimeType,
+  type MediaRejection,
+} from "./media-policy.js";
+import {
+  MAX_ASSET_SIZE,
+  SUPPORTED_ASSET_MIME_TYPES,
+  type AssetMimeType,
+} from "./media-policy.js";
 
 export type CreateUploadInput = {
   workspaceId: string;

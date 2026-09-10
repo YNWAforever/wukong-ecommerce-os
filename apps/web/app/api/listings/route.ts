@@ -1,5 +1,10 @@
 import { readSourceReadiness } from "../../../lib/source-readiness";
 import { z } from "zod";
+import {
+  isImageMimeType,
+  MAX_LISTING_IMAGES,
+  MAX_LISTING_PDFS,
+} from "@wukong/assets";
 import type { WorkspaceRepositories } from "@wukong/db";
 
 import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
@@ -104,16 +109,15 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
             return existing;
           }
 
-          const imageKinds = new Set(["image/jpeg", "image/png", "image/webp"]);
           const imageCount = assets.filter(({ kind }) =>
-            imageKinds.has(kind),
+            isImageMimeType(kind),
           ).length;
           const pdfCount = assets.filter(
             ({ kind }) => kind === "application/pdf",
           ).length;
           if (
-            imageCount > 10 ||
-            pdfCount > 1 ||
+            imageCount > MAX_LISTING_IMAGES ||
+            pdfCount > MAX_LISTING_PDFS ||
             imageCount + pdfCount !== assets.length
           ) {
             throw new ApiError(

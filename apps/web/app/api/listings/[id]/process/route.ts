@@ -142,7 +142,10 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
           // it -- which is why supplying the missing details used to change
           // nothing at all. Number the next run instead of reusing the key.
           if (runState.resultStatus === "needs_info") {
-            return { ...input, runAttempt: latestAttempt + 1 } satisfies ListingJob;
+            return {
+              ...input,
+              runAttempt: latestAttempt + 1,
+            } satisfies ListingJob;
           }
 
           throw new ApiError(

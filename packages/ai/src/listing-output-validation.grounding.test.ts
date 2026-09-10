@@ -250,9 +250,7 @@ describe("transcription differences that are not fact differences", () => {
     const facts = factsWith({ producer: "Chateau Margaux" });
 
     expect(() =>
-      assertFactsGrounded(facts, [
-        evidenceFor("producer", "CHÂTEAU MARGAUX"),
-      ]),
+      assertFactsGrounded(facts, [evidenceFor("producer", "CHÂTEAU MARGAUX")]),
     ).not.toThrow();
   });
 
@@ -268,9 +266,7 @@ describe("transcription differences that are not fact differences", () => {
     const facts = factsWith({ producer: "Chateau Latour" });
 
     expect(() =>
-      assertFactsGrounded(facts, [
-        evidenceFor("producer", "CHÂTEAU MARGAUX"),
-      ]),
+      assertFactsGrounded(facts, [evidenceFor("producer", "CHÂTEAU MARGAUX")]),
     ).toThrow("AI evidence did not support its fact value");
   });
 });

@@ -16,7 +16,10 @@
 import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
 import { describe, expect, it } from "vitest";
 
-const localized = { en: "Demo Estate Riesling", "zh-Hant": "Demo Estate 麗絲玲" };
+const localized = {
+  en: "Demo Estate Riesling",
+  "zh-Hant": "Demo Estate 麗絲玲",
+};
 
 /** What an operator can honestly record from a label alone. */
 const partialDraft = {

@@ -11,10 +11,17 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { MAX_ASSET_SIZE } from "@wukong/assets/media-policy";
+
 import { ListingIntakeForm } from "./listing-intake-form.js";
 
 function png(name: string, bytes = 1024): File {
   return new File([new Uint8Array(bytes)], name, { type: "image/png" });
+}
+
+function oversized(name: string): File {
+  // One byte past the shared cap. Presign rejects this; the form used not to.
+  return new File([new Uint8Array(1)], name, { type: "image/png" });
 }
 
 function pdf(name: string): File {
@@ -160,5 +167,48 @@ describe("removing a chosen file", () => {
     await choose(input, [png("front.png")]);
 
     expect(names(container)).toEqual(["front.png"]);
+  });
+});
+
+describe("the shared media policy", () => {
+  it("rejects a file past the size cap before anything is uploaded", async () => {
+    // The form enforced no size limit at all, so an operator was told a 25 MB
+    // photo was ready and only found out at presign -- after committing to it.
+    const { container, input } = await mount();
+    const big = oversized("huge.png");
+    Object.defineProperty(big, "size", { value: MAX_ASSET_SIZE + 1 });
+
+    await choose(input, [big]);
+
+    expect(container.querySelectorAll(".file-error")).toHaveLength(1);
+    expect(container.textContent).toContain("20 MB");
+  });
+
+  it("accepts a file exactly at the cap", async () => {
+    const { container, input } = await mount();
+    const exact = oversized("exact.png");
+    Object.defineProperty(exact, "size", { value: MAX_ASSET_SIZE });
+
+    await choose(input, [exact]);
+
+    expect(container.querySelectorAll(".file-error")).toHaveLength(0);
+  });
+
+  it("rejects an empty file rather than letting presign do it", async () => {
+    const { container, input } = await mount();
+
+    await choose(input, [png("empty.png", 0)]);
+
+    expect(container.querySelectorAll(".file-error")).toHaveLength(1);
+  });
+
+  it("rejects a type the storage layer would refuse", async () => {
+    const { container, input } = await mount();
+
+    await choose(input, [
+      new File([new Uint8Array(16)], "notes.txt", { type: "text/plain" }),
+    ]);
+
+    expect(container.querySelectorAll(".file-error")).toHaveLength(1);
   });
 });

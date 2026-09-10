@@ -18,6 +18,11 @@
       "types": "./src/product-shot-render.ts",
       "development": "./src/product-shot-render.ts",
       "default": "./dist/product-shot-render.js"
+    },
+    "./media-policy": {
+      "types": "./src/media-policy.ts",
+      "development": "./src/media-policy.ts",
+      "default": "./dist/media-policy.js"
     }
   },
   "scripts": {

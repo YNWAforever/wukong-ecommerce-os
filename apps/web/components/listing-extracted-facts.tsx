@@ -33,7 +33,10 @@ const FACT_LABELS: Partial<Record<keyof ListingFacts, [string, string]>> = {
   stockQuantity: ["庫存", "Stock"],
 };
 
-function labelFor(locale: Parameters<typeof localized>[0], key: string): string {
+function labelFor(
+  locale: Parameters<typeof localized>[0],
+  key: string,
+): string {
   const pair = FACT_LABELS[key as keyof ListingFacts];
   // An unrecognized key is still worth naming rather than hiding: a fact the
   // pipeline reports as missing must never silently vanish from this list.

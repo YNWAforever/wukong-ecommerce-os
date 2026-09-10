@@ -26,11 +26,11 @@ of a real label terminalized the listing to `failed` on the first delivery.
 
 **Rejected alternatives.**
 
-- *Drop grounding for the affected fields.* Removes the anti-fabrication
+- _Drop grounding for the affected fields._ Removes the anti-fabrication
   property that is the whole point of the check.
-- *Ask the model to emit both raw and normalized values.* Moves the trust
+- _Ask the model to emit both raw and normalized values._ Moves the trust
   boundary into the model's own self-report; a fabricated pair still passes.
-- *Fuzzy/edit-distance matching.* Non-deterministic in effect, and would accept
+- _Fuzzy/edit-distance matching._ Non-deterministic in effect, and would accept
   the `Mosel`/`Moselle` and `750`/`700` collisions the current rules reject.
 
 **Consequences.** `productType` is no longer checked against its excerpt, so the
@@ -56,7 +56,7 @@ bottle, a shelf tag or packaging is not the merchant's selling price, stock leve
 or SKU, so accepting it is a guess presented as an extracted fact. The plan is
 explicit that these must come from the merchant or an authorised product system.
 
-**Consequences.** This is the one deliberate *tightening* in D1's change; every
+**Consequences.** This is the one deliberate _tightening_ in D1's change; every
 other mode is strictly more permissive. It is compatible with all existing
 fixtures and with the import flows, which already write these into the note.
 It does **not** by itself let a draft save without them — see D5.
@@ -119,7 +119,7 @@ alone would let a second click enqueue attempt 2 while attempt 1 was still in
 flight, buying a duplicate extraction. The route reads the state of the newest
 attempt instead: `started` → 409; `failed` → reopen and re-drive the same key;
 `succeeded` + `needs_info` → the next number. When no run row exists yet — queued
-but unclaimed — it re-enqueues the *same* key, which the pipeline deduplicates.
+but unclaimed — it re-enqueues the _same_ key, which the pipeline deduplicates.
 
 **Rollout constraint.** `listingJobSchema` is strict, so an old Worker
 `safeParse`s a message carrying `runAttempt` as invalid and the consumer **acks
@@ -127,7 +127,7 @@ it away silently**. The Worker ships first; the producer switches after. Attempt
 0 never puts the field on the wire, so the common path stays compatible
 throughout — there is a test pinning that.
 
-**Not covered.** A lost POST response *after* the newest run has finished still
+**Not covered.** A lost POST response _after_ the newest run has finished still
 produces a genuine new run. Making that idempotent needs a client-supplied
 request key, which is a separate contract change.
 
@@ -191,7 +191,7 @@ change with **no migration**.
 assumes non-null facts fail typecheck. That surfaced exactly four production
 sites, and all four are delivery or approval gates — `requireForPublish` (kept
 strict, still parsing with `canonicalListingSchema`), the deliver route, the
-SHOPLINE publish consumer, and the quality summary. Nothing in the *drafting*
+SHOPLINE publish consumer, and the quality summary. Nothing in the _drafting_
 path needed the guarantee. That is the evidence the completeness requirement
 belongs at the gate rather than on every save, rather than an assumption.
 
@@ -227,7 +227,7 @@ made for it.
 
 **Status:** open — proposed, not yet implemented
 
-For the `needs_info` outcome, `recordStep(..., output: extraction)` runs *before*
+For the `needs_info` outcome, `recordStep(..., output: extraction)` runs _before_
 the `missingFields` check, so facts, evidence and missing fields are already
 persisted in `listing_pipeline_steps.output`, and `pipelineRuns.getState` already
 returns step outputs. Nothing reads them back: the listing GET response never
@@ -238,7 +238,7 @@ and only then consider a schema change. That gives a real partial-draft view for
 `needs_info` with no migration and no widening of
 `listingVersions.content.$type<CanonicalListing>()`.
 
-**Note on the `failed` path.** Those facts are *not* durable, because a grounding
+**Note on the `failed` path.** Those facts are _not_ durable, because a grounding
 rejection is raised before `recordStep`. D1 removes the common cause; making the
 remainder durable is a separate change.
 

@@ -30,10 +30,7 @@
 import type { ListingFacts } from "@wukong/core";
 
 export type GroundingMode =
-  | "verbatim"
-  | "normalized"
-  | "classified"
-  | "merchant";
+  "verbatim" | "normalized" | "classified" | "merchant";
 
 export const FACT_GROUNDING_MODES: Record<keyof ListingFacts, GroundingMode> = {
   // Commercial data. Only the merchant knows these; a label cannot state them.

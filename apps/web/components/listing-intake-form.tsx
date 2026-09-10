@@ -2,6 +2,13 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  isImageMimeType,
+  MAX_ASSET_SIZE,
+  rejectAsset,
+  type MediaRejection,
+} from "@wukong/assets/media-policy";
+
 type IntakeFileState = {
   id: string;
   file: File;
@@ -14,8 +21,6 @@ export type ListingIntakeFormProps = {
   onCreate?: (payload: ListingIntakePayload) => Promise<void> | void;
 };
 
-const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-
 /**
  * Identifies a chosen file well enough to spot the same one picked twice.
  *
@@ -27,38 +32,49 @@ function fileIdentity(file: File): string {
   return `${file.name}-${file.size}-${file.lastModified}`;
 }
 
+const rejectionCopy: Record<MediaRejection, string> = {
+  unsupported_type: "只接受 JPG、PNG、WebP 或 PDF。",
+  empty_file: "檔案是空的，請重新選取。",
+  too_large: `檔案超過 ${Math.round(MAX_ASSET_SIZE / (1024 * 1024))} MB 上限。`,
+  too_many_images: "圖片數量已達上限。",
+  too_many_pdfs: "PDF 數量已達上限。",
+};
+
+/**
+ * Applies the SHARED media policy, so what this form accepts is what presign,
+ * finalize and the create route accept. It previously enforced no size limit at
+ * all, so an operator could be told a 25 MB photo was ready and only discover
+ * the cap once presign refused it -- after they had committed to the upload.
+ */
 function validateFiles(files: File[]): {
   accepted: IntakeFileState[];
   errors: string[];
 } {
-  const images = files.filter((file) => imageTypes.has(file.type));
-  const pdfs = files.filter((file) => file.type === "application/pdf");
   const errors: string[] = [];
-  if (images.length > 10)
-    errors.push("最多可加入 10 張 JPG、PNG 或 WebP 圖片。");
-  if (pdfs.length > 1) errors.push("每個草稿最多可加入 1 份 PDF。");
   const accepted: IntakeFileState[] = [];
-  files.forEach((file) => {
-    const acceptedType =
-      imageTypes.has(file.type) || file.type === "application/pdf";
-    const overImageLimit =
-      imageTypes.has(file.type) && images.indexOf(file) >= 10;
-    const overPdfLimit =
-      file.type === "application/pdf" && pdfs.indexOf(file) >= 1;
+  let images = 0;
+  let pdfs = 0;
+  for (const file of files) {
+    const rejection = rejectAsset(
+      { mimeType: file.type, size: file.size },
+      { imagesBefore: images, pdfsBefore: pdfs },
+    );
+    if (rejection === null) {
+      if (isImageMimeType(file.type)) images += 1;
+      else pdfs += 1;
+    } else if (
+      (rejection === "too_many_images" || rejection === "too_many_pdfs") &&
+      !errors.includes(rejectionCopy[rejection])
+    ) {
+      errors.push(rejectionCopy[rejection]);
+    }
     accepted.push({
       id: fileIdentity(file),
       file,
-      status:
-        acceptedType && !overImageLimit && !overPdfLimit ? "ready" : "error",
-      message: !acceptedType
-        ? "只接受 JPG、PNG、WebP 或 PDF。"
-        : overImageLimit
-          ? "圖片數量已達上限。"
-          : overPdfLimit
-            ? "PDF 數量已達上限。"
-            : undefined,
+      status: rejection === null ? "ready" : "error",
+      message: rejection === null ? undefined : rejectionCopy[rejection],
     });
-  });
+  }
   return { accepted, errors };
 }
 

@@ -1,4 +1,8 @@
-import { assertAssetKey, SUPPORTED_ASSET_MIME_TYPES } from "@wukong/assets";
+import {
+  assertAssetKey,
+  MAX_ASSET_SIZE,
+  SUPPORTED_ASSET_MIME_TYPES,
+} from "@wukong/assets";
 import { z } from "zod";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -18,7 +22,7 @@ const finalizeAssetSchema = z
   .object({
     key: z.string().min(1).max(1024),
     mimeType: z.enum(SUPPORTED_ASSET_MIME_TYPES),
-    size: z.number().int().min(1).max(20 * 1024 * 1024),
+    size: z.number().int().min(1).max(MAX_ASSET_SIZE),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
@@ -46,9 +50,15 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
-      const object = await deps.getAssetStore().head(context.workspaceId, body.key);
+      const object = await deps
+        .getAssetStore()
+        .head(context.workspaceId, body.key);
       if (!object) {
-        throw new ApiError(404, "asset_not_found", "Uploaded asset was not found.");
+        throw new ApiError(
+          404,
+          "asset_not_found",
+          "Uploaded asset was not found.",
+        );
       }
       if (object.size !== body.size || object.mimeType !== body.mimeType) {
         throw new ApiError(
@@ -58,11 +68,15 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
-      const asset = await deps.getDatabase().forWorkspace(
-        context.workspaceId,
-        async (repositories) => {
+      const asset = await deps
+        .getDatabase()
+        .forWorkspace(context.workspaceId, async (repositories) => {
           if (await repositories.sourceAssets.getByStorageKey(body.key)) {
-            throw new ApiError(409, "asset_already_finalized", "Asset is already finalized.");
+            throw new ApiError(
+              409,
+              "asset_already_finalized",
+              "Asset is already finalized.",
+            );
           }
           const created = await repositories.sourceAssets.create({
             storageKey: body.key,
@@ -86,8 +100,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
             },
           });
           return created;
-        },
-      );
+        });
 
       return jsonResponse(201, { assetId: asset.id });
     });
