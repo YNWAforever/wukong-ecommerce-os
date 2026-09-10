@@ -62,6 +62,36 @@ export const FACT_GROUNDING_MODES: Record<keyof ListingFacts, GroundingMode> = {
 };
 
 /**
+ * The facts without which no honest copy can be written.
+ *
+ * Deliberately just the product's identity. Everything else -- region, vintage,
+ * volume, ABV, grapes -- makes the copy better when present and is simply left
+ * out when absent, which is what a person writing the same listing would do.
+ *
+ * SKU, price and stock are NOT here, and that is the point. They are merchant
+ * data (see FACT_GROUNDING_MODES), so waiting on them used to strand the whole
+ * draft even though none of them appears in a title or a description.
+ */
+export const GENERATION_REQUIRED_FACTS = ["producer"] as const;
+
+/**
+ * Whether these facts identify a product well enough to write about it.
+ *
+ * Separate from `missingFields`, which stays a full list of everything absent so
+ * the screen can tell an operator what is still outstanding. Being missing and
+ * being blocking are different questions, and conflating them is what sent a
+ * perfectly usable extraction to `needs_info` for want of a region.
+ */
+export function factsSufficientForGeneration(
+  facts: Pick<ListingFacts, (typeof GENERATION_REQUIRED_FACTS)[number]>,
+): boolean {
+  return GENERATION_REQUIRED_FACTS.every((key) => {
+    const value = facts[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+}
+
+/**
  * Case folding, width folding, and accent stripping.
  *
  * NFKD normalizes full-width digits and decomposes accents; removing combining

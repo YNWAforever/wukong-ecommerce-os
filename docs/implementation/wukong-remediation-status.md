@@ -67,7 +67,7 @@ Twelve of fourteen reproduce. None were already fixed.
 |---|---|---|
 | F04 normalization | still_reproducible | **fixed** — `b68210d`, `d1af2a7` |
 | F03 needs_info / failed dead end | partially_fixed | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info) |
-| F02 null facts block generation | still_reproducible | partly mitigated — facts now survive and are shown (`605a2ff`); `missingFields` still counts all 14 keys |
+| F02 null facts block generation | still_reproducible | **fixed** — generation gates on product identity, not on every null fact |
 | F01 empty-body CRC32 on presign | still_reproducible | no |
 | F05 no idempotency in intake | still_reproducible | no |
 | F07 four disagreeing media policies | still_reproducible | no |
@@ -91,31 +91,26 @@ Twelve of fourteen reproduce. None were already fixed.
 | `d1af2a7` | Same, for labels with accents, and for models that name evidence fields naturally |
 | (re-run work) | Re-run a listing after supplying what it asked for, instead of being refused forever |
 | (partial save) | Save a draft with the SKU and price still unknown, keeping everything already confirmed |
+| (generation gate) | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end |
 
 ## Next task, exactly
 
-**F02 — split `missingFields`.** Both providers compute it as
-`FACT_KEYS.filter(key => facts[key] === null)`, all fourteen keys, so a
-non-vintage spirit with no stated region is reported as missing three fields and
-routed to `needs_info` even though everything needed to write copy is present.
-Separate the facts required to generate from the ones that are merely absent,
-and let generation proceed on the identity facts alone.
+**F05 / F01 — intake idempotency and the presign signature.** A retry after any
+per-file failure re-uploads every file, and `POST /api/listings` carries no
+idempotency key: a lost response means the retry either creates a second listing
+or, because the assets are already attached, fails with
+`409 source_asset_already_used` and strands the operator. Separately, every
+presigned PUT URL embeds `x-amz-checksum-crc32=AAAAAA==` — the CRC32 of zero
+bytes — as a signed query parameter, which is conditional today but a latent
+failure against any backend that enforces it.
 
-Files: `packages/ai/src/openai-listing-provider.ts` and
-`openrouter-listing-provider.ts` (the `missingFields` computation),
-`packages/ai/src/fact-grounding-rules.ts` (which already classifies facts and is
-the natural home for a required/optional split),
-`packages/ai/src/listing-output-validation.ts` (`buildSafeListing` still demands
-seven non-null facts), `apps/worker/src/listing-pipeline.ts` (the
-`missingFields.length > 0` gate).
+Files: `apps/web/components/listing-intake-form.tsx` (per-file retry state),
+`apps/web/lib/browser-asset-upload.ts`, `apps/web/app/api/assets/presign/route.ts`,
+`packages/assets/src/s3-asset-store.ts:75` (the checksum), and
+`apps/web/app/api/listings/route.ts` (create idempotency).
 
-Note the coupling that makes this bigger than it looks: `buildSafeListing`
-throws `Safe generation requires sku`, so relaxing the gate without relaxing
-generation converts a `needs_info` into a terminal `failed`. They must move
-together.
-
-Then: F05/F01 intake idempotency and signing → F13 append-not-replace on the
-file picker → F09 server-side dirty guard on approve.
+Then: F13 append-not-replace on the file picker → F09 server-side dirty guard on
+approve → F06 image orchestration on create.
 
 ## Not started
 

@@ -102,6 +102,13 @@ export type HarnessState = {
 };
 export type HarnessOptions = {
   missingFields?: string[];
+  /**
+   * Extraction that could not identify the product at all -- a blurred or
+   * obscured label. This, not a missing price, is what routes a run to
+   * `needs_info`: merchant data was never something the model could read off a
+   * photograph, so waiting on it stranded drafts that were perfectly writable.
+   */
+  unidentifiable?: boolean;
   extractError?: Error;
   generateError?: Error;
   generateProvider?: (input: GenerationInput) => Promise<GenerationResult>;
@@ -132,10 +139,13 @@ export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
   return {
     async extract(_input: ExtractionInput): Promise<ExtractionResult> {
       if (options.extractError) throw options.extractError;
-      return {
-        facts: options.missingFields?.includes("priceHkd")
+      const extracted = options.unidentifiable
+        ? { ...facts, producer: null }
+        : options.missingFields?.includes("priceHkd")
           ? { ...facts, priceHkd: null }
-          : facts,
+          : facts;
+      return {
+        facts: extracted,
         evidence: options.missingFields ? [] : evidence,
         missingFields: options.missingFields ?? [],
         usage,

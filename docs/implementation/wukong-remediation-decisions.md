@@ -133,6 +133,43 @@ request key, which is a separate contract change.
 
 ---
 
+## D7 — Being missing and being blocking are different questions
+
+**Status:** implemented
+
+Both providers report `missingFields` as every null fact, and the pipeline
+treated a non-empty list as "cannot generate". That conflated three unrelated
+things: facts a label legitimately does not state (region on a spirit, vintage
+on an NV), merchant data the model is **forbidden** to read off a photograph at
+all (SKU, price, stock — see D2), and the product identity without which there
+is genuinely nothing to write.
+
+Only the last one blocks now. `factsSufficientForGeneration` requires
+`GENERATION_REQUIRED_FACTS`, currently just `producer`, and the pipeline gates on
+that instead of on `missingFields.length`.
+
+**`missingFields` is deliberately unchanged.** The review screen shows it, and an
+operator does want to know a region is absent. It simply no longer decides
+whether a draft exists. That also leaves the two providers' differing definitions
+(`FACT_KEYS`, all 14, versus the fake's `PROTECTED_FIELDS`, 10) harmless rather
+than load-bearing — worth reconciling, but no longer urgent.
+
+**Why this had to move together with generation.** `buildSafeListing` demanded
+seven non-null facts and threw `Safe generation requires sku`. Relaxing the gate
+alone would have converted a `needs_info` into a terminal `failed` — strictly
+worse. So it now requires only the identity and omits each optional clause when
+its fact is absent, rather than rendering `Volume: null ml.` to the merchant's
+customers. `generationOutputSchema` and `GenerationResult.listing` become
+reviewable for the same reason, and the fake provider mirrors the rule so it
+cannot accept a draft the real path would reject.
+
+**What now routes to `needs_info`.** An unidentifiable product — a blurred or
+obscured label. The two tests that previously reached that state through a
+missing price now reach it that way, which is why they changed rather than being
+deleted.
+
+---
+
 ## D6 — A draft saves as reviewable; canonical is the delivery gate
 
 **Status:** implemented

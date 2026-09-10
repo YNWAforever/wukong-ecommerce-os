@@ -1,7 +1,7 @@
 import type {
   AuditContext,
   AuditWriter,
-  CanonicalListing,
+  ReviewableListing,
   ComplianceFlag,
   FieldEvidence,
   ListingStatus,
@@ -9,6 +9,7 @@ import type {
 } from "@wukong/core";
 import { scanCompliance } from "@wukong/core";
 import {
+  factsSufficientForGeneration,
   ProviderApiError,
   ProviderOutputError,
   ProviderRefusalError,
@@ -59,7 +60,7 @@ export type PipelineRepositories = {
     ): Promise<void>;
     appendVersion(
       id: string,
-      content: CanonicalListing,
+      content: ReviewableListing,
       context: AuditContext,
       audit: PipelineAuditWriter,
       pipelineIdempotencyKey?: string,
@@ -233,7 +234,7 @@ function aiRunFrom(
   };
 }
 function flattenLocalizedContent(
-  listing: CanonicalListing,
+  listing: ReviewableListing,
 ): Record<string, string> {
   return {
     titleEn: listing.title.en,
@@ -412,7 +413,14 @@ export async function runListingPipeline(
       claimedLeaseToken = null;
     }
 
-    if (extraction.missingFields.length > 0) {
+    // Gate on whether the product can be WRITTEN ABOUT, not on whether every
+    // fact is present. `missingFields` lists everything absent -- which the
+    // review screen shows the operator -- and that included optional facts like
+    // region and vintage, plus the merchant data the model is forbidden to read
+    // off a label at all. So a perfectly usable extraction of a non-vintage
+    // spirit was sent to needs_info, with no version saved, for want of a
+    // region it was never going to find.
+    if (!factsSufficientForGeneration(extraction.facts)) {
       if (!completionStep) throw new Error("pipeline completion step missing");
       const result: PipelineResult = { status: "needs_info", versionId: null };
       await deps.withWorkspace(input.workspaceId, async (repos) => {

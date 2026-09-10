@@ -61,3 +61,10 @@ export type {
 
 export { OpenRouterListingProvider } from "./openrouter-listing-provider.js";
 export type { OpenRouterListingProviderConfig } from "./openrouter-listing-provider.js";
+
+export {
+  FACT_GROUNDING_MODES,
+  GENERATION_REQUIRED_FACTS,
+  factsSufficientForGeneration,
+} from "./fact-grounding-rules.js";
+export type { GroundingMode } from "./fact-grounding-rules.js";

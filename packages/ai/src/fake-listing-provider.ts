@@ -1,6 +1,6 @@
 import {
-  canonicalListingSchema,
   listingFactsSchema,
+  reviewableListingSchema,
   type FieldEvidence,
   type ListingFacts,
 } from "@wukong/core";
@@ -17,6 +17,7 @@ import {
   type ProductShotProvider,
   type ProductShotResult,
 } from "./contracts.js";
+import { factsSufficientForGeneration } from "./fact-grounding-rules.js";
 import {
   EXTRACTION_PROMPT,
   GENERATION_PROMPT,
@@ -183,28 +184,27 @@ export class FakeListingProvider
 
   async generate(input: GenerationInput): Promise<GenerationResult> {
     const { facts } = input;
-    const required = {
-      sku: facts.sku,
-      producer: facts.producer,
-      productType: facts.productType,
-      country: facts.country,
-      volumeMl: facts.volumeMl,
-      abvPercent: facts.abvPercent,
-      priceHkd: facts.priceHkd,
-    };
-    for (const [field, value] of Object.entries(required)) {
-      if (value === null) throw new Error(`Fake generation requires ${field}`);
+    // Mirrors the real providers: only the product's identity is required, so
+    // the fake cannot pass a draft the real path would reject, or reject one it
+    // would accept.
+    if (!factsSufficientForGeneration(facts)) {
+      throw new Error("Fake generation requires an identifiable product");
     }
     const vintage = facts.vintage === null ? "" : ` ${facts.vintage}`;
     const title = `${facts.producer}${vintage}`;
-    const region =
-      facts.region === null
-        ? facts.country
-        : `${facts.region}, ${facts.country}`;
-    const description = `${facts.producer} ${facts.productType} from ${region}.`;
-    const listing = canonicalListingSchema.parse({
+    const region = [facts.region, facts.country]
+      .filter((value): value is string => value !== null)
+      .join(", ");
+    const description = [
+      facts.producer,
+      facts.productType,
+      region === "" ? null : `from ${region}`,
+    ]
+      .filter((value): value is string => value !== null)
+      .join(" ")
+      .concat(".");
+    const listing = reviewableListingSchema.parse({
       ...facts,
-      ...required,
       title: { en: title, "zh-Hant": title },
       description: {
         en: description,

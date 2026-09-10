@@ -36,8 +36,10 @@ describe("runListingPipeline", () => {
     expect(listing.imageAssetIds).toEqual(["asset_1"]);
   });
 
-  it("requests protected information without generating an invalid canonical listing", async () => {
-    const { deps, state } = makeHarness({ missingFields: ["priceHkd"] });
+  it("requests more information when the product cannot be identified", async () => {
+    // A blurred or obscured label. There is genuinely nothing to write about,
+    // so the run stops and asks -- and pays for extraction only, not generation.
+    const { deps, state } = makeHarness({ unidentifiable: true });
     await expect(
       runListingPipeline(
         { workspaceId, draftId, activeVersionSequence: 0 },
@@ -46,6 +48,21 @@ describe("runListingPipeline", () => {
     ).resolves.toEqual({ status: "needs_info", versionId: null });
     expect(state.aiRuns).toHaveLength(1);
     expect(state.audits).toContain("listing.info_requested");
+  });
+
+  it("still drafts a listing whose merchant data is unknown", async () => {
+    // The audited production upload: a readable label with no SKU, price or
+    // stock. Those are the merchant's own data and the model is forbidden to
+    // read them off a photograph, so waiting for them produced a draft that
+    // could never arrive. It now reaches review with those fields left null.
+    const { deps, state } = makeHarness({ missingFields: ["priceHkd"] });
+    await expect(
+      runListingPipeline(
+        { workspaceId, draftId, activeVersionSequence: 0 },
+        deps,
+      ),
+    ).resolves.toEqual({ status: "in_review", versionId: "version_1" });
+    expect(state.audits).toContain("listing.submitted_for_review");
   });
 
   it("returns the completed revision without duplicate side effects", async () => {
