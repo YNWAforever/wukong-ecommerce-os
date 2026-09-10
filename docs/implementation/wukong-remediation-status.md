@@ -72,7 +72,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | F05 no idempotency in intake | still_reproducible | **create half fixed** — a replayed create returns the same listing; per-file upload retry still re-uploads everything |
 | F07 four disagreeing media policies | still_reproducible | no |
 | F10 draft save requires canonical | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate |
-| F13 second file selection replaces the first | still_reproducible | no |
+| F13 second file selection replaces the first | still_reproducible | **file picker half fixed** — selections accumulate and can be removed; other UX sub-claims remain |
 | F06 create never starts image work | still_reproducible | no |
 | F12 doctor passes while misconfigured | partially_fixed | no |
 | F08 batches enqueue at sequence 0 | still_reproducible | no |
@@ -94,6 +94,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | (generation gate) | Get a usable draft from a label with no SKU, price, region or vintage, instead of a dead end |
 | (presign checksum) | Upload against a backend that enforces checksums, instead of every PUT failing at once |
 | (create replay) | Click create again after a lost response and reach the same listing, instead of a 409 dead end |
+| (file picker) | Add a back label without silently losing the bottle shot, and remove a file that was picked by mistake |
 
 ## Next task, exactly
 

@@ -16,6 +16,17 @@ export type ListingIntakeFormProps = {
 
 const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+/**
+ * Identifies a chosen file well enough to spot the same one picked twice.
+ *
+ * Also the React key, so it must not depend on position: re-validating the
+ * union renumbers the array, and an index-based key would make React reuse the
+ * wrong row and show one file's status against another's name.
+ */
+function fileIdentity(file: File): string {
+  return `${file.name}-${file.size}-${file.lastModified}`;
+}
+
 function validateFiles(files: File[]): {
   accepted: IntakeFileState[];
   errors: string[];
@@ -27,7 +38,7 @@ function validateFiles(files: File[]): {
     errors.push("最多可加入 10 張 JPG、PNG 或 WebP 圖片。");
   if (pdfs.length > 1) errors.push("每個草稿最多可加入 1 份 PDF。");
   const accepted: IntakeFileState[] = [];
-  files.forEach((file, index) => {
+  files.forEach((file) => {
     const acceptedType =
       imageTypes.has(file.type) || file.type === "application/pdf";
     const overImageLimit =
@@ -35,7 +46,7 @@ function validateFiles(files: File[]): {
     const overPdfLimit =
       file.type === "application/pdf" && pdfs.indexOf(file) >= 1;
     accepted.push({
-      id: `${file.name}-${file.size}-${index}`,
+      id: fileIdentity(file),
       file,
       status:
         acceptedType && !overImageLimit && !overPdfLimit ? "ready" : "error",
@@ -61,14 +72,48 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
     [files],
   );
 
+  /**
+   * Add to the selection rather than replace it.
+   *
+   * A bottle shot and a back label are two trips to the file picker on most
+   * phones, and this used to overwrite the whole array on the second one -- the
+   * first photo disappeared with no warning and no way back to it except to
+   * find the file again. Re-validating the union rather than only the new files
+   * keeps the 10-image and 1-PDF caps meaningful across both trips.
+   */
   function handleFiles(nextFiles: FileList | null) {
-    if (!nextFiles) return;
-    const parsed = validateFiles(Array.from(nextFiles));
-    setFiles(parsed.accepted);
-    setMessage(
-      parsed.errors[0] ??
-        `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
-    );
+    if (!nextFiles || nextFiles.length === 0) return;
+    setFiles((current) => {
+      const seen = new Set(current.map((item) => fileIdentity(item.file)));
+      const added = Array.from(nextFiles).filter(
+        (file) => !seen.has(fileIdentity(file)),
+      );
+      const parsed = validateFiles([
+        ...current.map((item) => item.file),
+        ...added,
+      ]);
+      setMessage(
+        parsed.errors[0] ??
+          `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
+      );
+      return parsed.accepted;
+    });
+  }
+
+  function removeFile(id: string) {
+    setFiles((current) => {
+      // Re-validate what is left: dropping an image can bring a file that was
+      // over the cap back under it, and leaving it marked as an error would
+      // strand a file the operator can now actually use.
+      const parsed = validateFiles(
+        current.filter((item) => item.id !== id).map((item) => item.file),
+      );
+      setMessage(
+        parsed.errors[0] ??
+          `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
+      );
+      return parsed.accepted;
+    });
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -129,7 +174,13 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf"
           multiple
-          onChange={(event) => handleFiles(event.target.files)}
+          onChange={(event) => {
+            handleFiles(event.target.files);
+            // Clear the input so choosing the SAME file again still fires a
+            // change event -- otherwise removing a file and re-picking it does
+            // nothing, which reads as the picker being broken.
+            event.target.value = "";
+          }}
         />
         <p className="upload-limit">
           最多 10 張圖片及 1 份 PDF。成功上傳的檔案不會在重試時重複上傳。
@@ -156,6 +207,15 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
                       ? "已完成"
                       : item.message}
               </span>
+              {item.status === "uploading" ? null : (
+                <button
+                  type="button"
+                  className="link-button file-remove"
+                  onClick={() => removeFile(item.id)}
+                >
+                  移除 <span>Remove</span>
+                </button>
+              )}
             </li>
           ))}
         </ul>
