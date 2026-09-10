@@ -432,7 +432,10 @@ describe("a duplicate request must not buy a second run", () => {
       params: Promise.resolve({ id: listingId }),
     });
 
-    const sent = enqueue.mock.calls[0]?.[0] as Record<string, unknown>;
+    const sent = enqueue.mock.calls.at(0)?.at(0) as
+      | Record<string, unknown>
+      | undefined;
+    expect(sent).toBeDefined();
     expect(sent).not.toHaveProperty("runAttempt");
   });
 
@@ -449,7 +452,10 @@ describe("a duplicate request must not buy a second run", () => {
       params: Promise.resolve({ id: listingId }),
     });
 
-    const sent = enqueue.mock.calls[0]?.[0] as Record<string, unknown>;
+    const sent = enqueue.mock.calls.at(0)?.at(0) as
+      | Record<string, unknown>
+      | undefined;
+    expect(sent).toBeDefined();
     expect(sent).not.toHaveProperty("runAttempt");
   });
 });

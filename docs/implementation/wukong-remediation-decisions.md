@@ -133,6 +133,59 @@ request key, which is a separate contract change.
 
 ---
 
+## D6 — A draft saves as reviewable; canonical is the delivery gate
+
+**Status:** implemented
+
+`PUT /api/listings/[id]/review` validated the payload with
+`canonicalListingSchema`, which re-tightens the seven commercial facts to
+non-null. An operator who had read the producer, origin, vintage, volume and ABV
+off a label but was still waiting on the merchant's SKU and price could not
+record any of it: the whole payload was rejected for the two fields they did not
+have, losing the nine they did.
+
+The save path now validates with `reviewableListingSchema` — the two schemas
+already existed side by side for exactly this distinction. `listing_versions.content`
+is `jsonb` with no database-level constraint, so this is a TypeScript-visibility
+change with **no migration**.
+
+**Why widening the stored type was safe to do now.** Changing
+`$type<CanonicalListing>` to `$type<ReviewableListing>` made every reader that
+assumes non-null facts fail typecheck. That surfaced exactly four production
+sites, and all four are delivery or approval gates — `requireForPublish` (kept
+strict, still parsing with `canonicalListingSchema`), the deliver route, the
+SHOPLINE publish consumer, and the quality summary. Nothing in the *drafting*
+path needed the guarantee. That is the evidence the completeness requirement
+belongs at the gate rather than on every save, rather than an assumption.
+
+**The client blocked it too.** `applyListingFields` ran price, volume and ABV
+through `requiredNumber`, which threw before the request was made. They now use
+`optionalNumber`, which still rejects text that is not a number — absent and
+wrong stay different — and `packQuantity` falls back to the schema default of 1.
+
+**Not changed.** Bilingual title, description, SEO, tags and images are still
+required to save; relaxing the facts must not relax the content a reviewer reads.
+
+**A regression this introduced, caught before committing.** `listRecent` and
+`getByIds` also parsed with `canonicalListingSchema`, and their failure mode is
+silent: `safeParse` failing sets `activeVersion` to null, and the catalog row
+then falls back to the note and finally to "未命名商品". So the first partial
+draft would have vanished from its own catalog row under its real title, with a
+null SKU, and no error anywhere. The full test suite stayed green through it,
+because nothing saved a partial draft and then listed it.
+
+Both are display paths, so both now parse as reviewable, and a unit test pins
+the split — reviewable for display, canonical for publishing — precisely because
+the failure is invisible at runtime.
+
+**Why approval did not need a new gate.** `listing-approval.ts` already states
+that `getReviewSnapshot` content "is only as complete as review has gotten" and
+that "nothing here re-validates completeness; requireForPublish still does". The
+separation this decision relies on was already the design, not an assumption
+made for it.
+
+---
+
 ## D5 — Extraction results are already durable; expose them before migrating
 
 **Status:** open — proposed, not yet implemented

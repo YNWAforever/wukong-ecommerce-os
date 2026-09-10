@@ -1,5 +1,5 @@
 import type {
-  CanonicalListing,
+  ReviewableListing,
   ListingFacts,
   ProductShotState,
 } from "@wukong/core";
@@ -327,7 +327,7 @@ export const listingVersions = pgTable(
     listingId: uuid("listing_id").notNull(),
     sequence: integer("sequence").notNull(),
     pipelineIdempotencyKey: text("pipeline_idempotency_key"),
-    content: jsonb("content").$type<CanonicalListing>().notNull(),
+    content: jsonb("content").$type<ReviewableListing>().notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
   },

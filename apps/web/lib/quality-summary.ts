@@ -1,12 +1,12 @@
 import type { ReviewQualityMetrics } from "./review-quality-metrics";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
-import type { CanonicalListing } from "@wukong/core";
+import type { ReviewableListing } from "@wukong/core";
 
 import { canonicalListingToGapsInput } from "./canonical-listing-gaps";
 
 export type QualityAssessedListing = {
   id: string;
-  activeVersion: { id: string; content: CanonicalListing } | null;
+  activeVersion: { id: string; content: ReviewableListing } | null;
 };
 
 export type QualitySummary = {

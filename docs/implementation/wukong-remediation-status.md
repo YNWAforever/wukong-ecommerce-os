@@ -71,7 +71,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | F01 empty-body CRC32 on presign | still_reproducible | no |
 | F05 no idempotency in intake | still_reproducible | no |
 | F07 four disagreeing media policies | still_reproducible | no |
-| F10 draft save requires canonical | still_reproducible | no |
+| F10 draft save requires canonical | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate |
 | F13 second file selection replaces the first | still_reproducible | no |
 | F06 create never starts image work | still_reproducible | no |
 | F12 doctor passes while misconfigured | partially_fixed | no |
@@ -89,25 +89,33 @@ Twelve of fourteen reproduce. None were already fixed.
 | `1b69c36` | Retry a failed listing instead of being told to contact support |
 | `605a2ff` | See what the AI read off their photos, and which fields only they can supply, while the listing still needs information |
 | `d1af2a7` | Same, for labels with accents, and for models that name evidence fields naturally |
-| (this change) | Re-run a listing after supplying what it asked for, instead of being refused forever |
+| (re-run work) | Re-run a listing after supplying what it asked for, instead of being refused forever |
+| (partial save) | Save a draft with the SKU and price still unknown, keeping everything already confirmed |
 
 ## Next task, exactly
 
-**F10 — partial save.** An operator who knows the producer, region, vintage,
-volume and ABV but is still waiting on the merchant SKU and price cannot record
-any of it: the review save path validates the whole payload against the
-canonical schema, so an empty price is rejected outright. This is now the last
-thing standing between the first-milestone journey and working end to end, since
-the run can be re-driven and the extracted facts are visible.
+**F02 — split `missingFields`.** Both providers compute it as
+`FACT_KEYS.filter(key => facts[key] === null)`, all fourteen keys, so a
+non-vintage spirit with no stated region is reported as missing three fields and
+routed to `needs_info` even though everything needed to write copy is present.
+Separate the facts required to generate from the ones that are merely absent,
+and let generation proceed on the identity facts alone.
 
-Files: `apps/web/app/api/listings/[id]/review/route.ts` (payload schema),
-`packages/core/src/listing-schema.ts` (a draft shape distinct from canonical),
-`apps/web/components/listing-fields-form.tsx` (client-side numeric coercion,
-which throws on an empty field before the request is made).
+Files: `packages/ai/src/openai-listing-provider.ts` and
+`openrouter-listing-provider.ts` (the `missingFields` computation),
+`packages/ai/src/fact-grounding-rules.ts` (which already classifies facts and is
+the natural home for a required/optional split),
+`packages/ai/src/listing-output-validation.ts` (`buildSafeListing` still demands
+seven non-null facts), `apps/worker/src/listing-pipeline.ts` (the
+`missingFields.length > 0` gate).
 
-Then, in dependency order: F02 `missingFields` split (so an absent region alone
-stops routing to needs_info) → F05/F01 intake idempotency and signing →
-F13 append-not-replace on the file picker.
+Note the coupling that makes this bigger than it looks: `buildSafeListing`
+throws `Safe generation requires sku`, so relaxing the gate without relaxing
+generation converts a `needs_info` into a terminal `failed`. They must move
+together.
+
+Then: F05/F01 intake idempotency and signing → F13 append-not-replace on the
+file picker → F09 server-side dirty guard on approve.
 
 ## Not started
 

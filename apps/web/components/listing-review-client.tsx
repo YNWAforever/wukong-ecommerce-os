@@ -433,14 +433,6 @@ function valueOf(fields: ListingField[], key: string): string {
   return value === null || value === undefined ? "" : String(value).trim();
 }
 
-function requiredNumber(fields: ListingField[], key: string): number {
-  const raw = valueOf(fields, key);
-  const value = Number(raw);
-  if (!raw || !Number.isFinite(value))
-    throw new Error(`${key} must be a valid number`);
-  return value;
-}
-
 function optionalNumber(fields: ListingField[], key: string): number | null {
   const raw = valueOf(fields, key);
   if (!raw) return null;
@@ -449,29 +441,42 @@ function optionalNumber(fields: ListingField[], key: string): number | null {
   return value;
 }
 
+/**
+ * Turn the edited form back into savable content.
+ *
+ * An empty commercial field means "not known yet", not "invalid". These used to
+ * go through `requiredNumber`, which threw before the request was ever made, so
+ * an operator waiting on the merchant's price could not save the producer,
+ * origin, vintage, volume and ABV they had already confirmed. `optionalNumber`
+ * still rejects text that is not a number -- absent and wrong stay different.
+ *
+ * Completeness is enforced at approval and delivery, where the listing is about
+ * to leave the workspace, rather than on every keystroke-to-save.
+ */
 export function applyListingFields(
   current: ReviewableListing,
   fields: ListingField[],
-): CanonicalListing {
+): ReviewableListing {
   return {
     ...current,
-    sku: valueOf(fields, "sku"),
-    producer: valueOf(fields, "producer"),
-    productType: valueOf(
-      fields,
-      "productType",
-    ) as CanonicalListing["productType"],
-    country: valueOf(fields, "country"),
+    sku: valueOf(fields, "sku") || null,
+    producer: valueOf(fields, "producer") || null,
+    productType:
+      (valueOf(fields, "productType") as ReviewableListing["productType"]) ||
+      null,
+    country: valueOf(fields, "country") || null,
     region: valueOf(fields, "region") || null,
     vintage: optionalNumber(fields, "vintage"),
     grapeVarieties: valueOf(fields, "grapeVarieties")
       .split(/[,，]/)
       .map((value) => value.trim())
       .filter(Boolean),
-    volumeMl: requiredNumber(fields, "volumeMl"),
-    abvPercent: requiredNumber(fields, "abvPercent"),
-    packQuantity: requiredNumber(fields, "packQuantity"),
-    priceHkd: requiredNumber(fields, "priceHkd"),
+    volumeMl: optionalNumber(fields, "volumeMl"),
+    abvPercent: optionalNumber(fields, "abvPercent"),
+    // The schema defaults this to 1, so an empty box means one bottle rather
+    // than an unanswered question.
+    packQuantity: optionalNumber(fields, "packQuantity") ?? 1,
+    priceHkd: optionalNumber(fields, "priceHkd"),
     stockQuantity: optionalNumber(fields, "stockQuantity"),
     title: {
       en: valueOf(fields, "titleEn"),

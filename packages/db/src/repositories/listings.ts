@@ -27,7 +27,7 @@ export type Listing = typeof listingDrafts.$inferSelect;
 export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
 export type ListingSummary = Listing & {
-  activeVersion: { id: string; content: CanonicalListing } | null;
+  activeVersion: { id: string; content: ReviewableListing } | null;
   /**
    * Open, blocking-severity compliance flags on the active version. A listing
    * is bulk-approvable exactly when this is 0 and status is `in_review` — the
@@ -81,6 +81,12 @@ export type ListingRepository = {
    */
   countByStatus(): Promise<Record<ListingStatus, number>>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
+  /**
+   * Strict on purpose: this is the publish path, so it parses the active
+   * version with `canonicalListingSchema` and throws when the content is not
+   * publish-ready. A draft may legitimately be saved without a SKU or a price,
+   * and this is the gate where that stops being acceptable.
+   */
   requireForPublish(id: string): Promise<{
     id: string;
     target: "shopline";
@@ -115,7 +121,7 @@ export type ListingRepository = {
   editReview(
     id: string,
     baseVersionId: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     changedFields: string[],
     context: AuditContext,
     audit: AuditWriter,
@@ -147,7 +153,7 @@ export type ListingRepository = {
   ): Promise<void>;
   appendVersion(
     id: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     context: AuditContext,
     audit: AuditWriter,
     pipelineIdempotencyKey?: string,
@@ -399,9 +405,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
@@ -469,9 +480,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
