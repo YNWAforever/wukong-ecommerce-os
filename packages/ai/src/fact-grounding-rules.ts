@@ -61,9 +61,18 @@ export const FACT_GROUNDING_MODES: Record<keyof ListingFacts, GroundingMode> = {
   awards: "verbatim",
 };
 
-/** NFKC + case folding, so half-width and full-width digits compare equal. */
+/**
+ * Case folding, width folding, and accent stripping.
+ *
+ * NFKD normalizes full-width digits and decomposes accents; removing combining
+ * marks then makes `Österreich` and `Osterreich` the same alias lookup. Matches
+ * the folding `normalizedTokens` applies on the verbatim path.
+ */
 function fold(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase();
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLocaleLowerCase();
 }
 
 /**

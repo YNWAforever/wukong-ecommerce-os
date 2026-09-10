@@ -15,7 +15,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { assertFactsGrounded, FACT_KEYS } from "./listing-output-validation.js";
+import {
+  assertFactsGrounded,
+  extractionOutputSchema,
+  FACT_KEYS,
+} from "./listing-output-validation.js";
 import { ProviderOutputError } from "./listing-provider-errors.js";
 
 import type { FieldEvidence, ListingFacts } from "@wukong/core";
@@ -236,5 +240,51 @@ describe("missingFields contract", () => {
     // spirit with no stated region is still reported as missing three fields.
     const missing = FACT_KEYS.filter((key) => facts[key] === null);
     expect(missing).toEqual(["region", "vintage", "stockQuantity"]);
+  });
+});
+
+describe("transcription differences that are not fact differences", () => {
+  it("accepts a producer transcribed without the label's accents", () => {
+    // Labels are set in caps with accents; the name is normally typed without
+    // them. That is a transcription difference, not a different producer.
+    const facts = factsWith({ producer: "Chateau Margaux" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [
+        evidenceFor("producer", "CHÂTEAU MARGAUX"),
+      ]),
+    ).not.toThrow();
+  });
+
+  it("accepts a country alias written with its own diacritics", () => {
+    const facts = factsWith({ country: "Austria" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("country", "Österreich")]),
+    ).not.toThrow();
+  });
+
+  it("still rejects a genuinely different producer", () => {
+    const facts = factsWith({ producer: "Chateau Latour" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [
+        evidenceFor("producer", "CHÂTEAU MARGAUX"),
+      ]),
+    ).toThrow("AI evidence did not support its fact value");
+  });
+});
+
+describe("the model is told which field names exist", () => {
+  it("constrains evidence field names in the schema it is sent", () => {
+    // assertFactsGrounded rejects any evidence naming something outside the
+    // fact keys, so a model writing the natural word `abv` failed twice: the
+    // evidence was rejected, and abvPercent was then left unsupported. The
+    // structured-output schema now enumerates the legal names.
+    const shape = extractionOutputSchema.shape.evidence.element.shape.field;
+    const parsed = shape.safeParse("abv");
+    expect(parsed.success).toBe(false);
+    expect(shape.safeParse("abvPercent").success).toBe(true);
+    expect(shape.safeParse("volumeMl").success).toBe(true);
   });
 });

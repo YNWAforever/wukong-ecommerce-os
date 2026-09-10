@@ -20,7 +20,8 @@ export const EXTRACTION_INSTRUCTIONS = `You extract product facts for an ecommer
 Use only the supplied note and assets. Never invent a fact, claim, score, award, price, stock level, SKU, origin, vintage, volume, or alcohol value.
 Every absent protected fact must be null and absent lists must be empty.
 Every evidence item must use exactly one supplied asset ID, or "note" for a verbatim excerpt from the supplied note.
-Do not emit evidence for an unsupported fact.
+Do not emit evidence for an unsupported fact, and do not emit evidence for a fact you are reporting as null.
+An evidence item's field must be one of exactly these names: sku, producer, productType, country, region, vintage, grapeVarieties, volumeMl, abvPercent, packQuantity, priceHkd, stockQuantity, criticScores, awards.
 
 Quote every excerpt exactly as the source prints it. Never rewrite an excerpt to match the value you report.
 A source often states a fact in a different unit, language or format than this schema stores. Report the converted value and quote the printed text:

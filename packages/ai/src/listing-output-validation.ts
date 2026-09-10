@@ -15,9 +15,32 @@ import {
 } from "./fact-grounding-rules.js";
 import { ProviderOutputError } from "./listing-provider-errors.js";
 
+const FACT_KEY_NAMES = Object.keys(listingFactsSchema.shape) as [
+  string,
+  ...string[],
+];
+
+/**
+ * Evidence as the MODEL must produce it.
+ *
+ * `fieldEvidenceSchema.field` is a free string, because stored rows are read
+ * back with it and a historical row may name anything. But `assertFactsGrounded`
+ * rejects any evidence naming something outside the fact keys, and nothing ever
+ * told the model what those keys were -- so a model that wrote the natural word
+ * `abv` or `volume` instead of `abvPercent` or `volumeMl` failed validation, and
+ * the correctly-named fact was then left with no evidence and failed too.
+ *
+ * Constraining the field here puts the allowed names into the structured-output
+ * schema the provider sends, so the model cannot guess wrong in the first place.
+ * Reads keep the permissive schema.
+ */
+const modelFieldEvidenceSchema = fieldEvidenceSchema.extend({
+  field: z.enum(FACT_KEY_NAMES),
+});
+
 export const extractionOutputSchema = z.object({
   facts: listingFactsSchema,
-  evidence: z.array(fieldEvidenceSchema),
+  evidence: z.array(modelFieldEvidenceSchema),
   missingFields: z.array(z.string()),
 });
 
@@ -39,8 +62,15 @@ const MAX_EVIDENCE_EXCERPT_LENGTH = 500;
 function normalizedTokens(value: string): string[] {
   return (
     value
-      .normalize("NFKC")
-      .toLowerCase()
+      // NFKD then strip combining marks, so an accent is not the difference
+      // between grounded and rejected. NFKC alone COMPOSES accents, so a model
+      // transcribing "CHÂTEAU MARGAUX" as "Chateau Margaux" -- which is how the
+      // name is usually typed -- failed the token compare even though case
+      // folding was already handled. Two genuinely different words still differ
+      // after folding, so this widens nothing else.
+      .normalize("NFKD")
+      .replace(/\p{M}+/gu, "")
+      .toLocaleLowerCase()
       .match(/[\p{L}\p{N}]+/gu) ?? []
   );
 }
