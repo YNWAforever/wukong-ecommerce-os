@@ -4,16 +4,14 @@
  * The pre-existing provider tests all ground their facts against a note written
  * as `product type wine; country Germany; volume 750 ml` -- a string engineered
  * so every value appears verbatim inside its own evidence excerpt. Under that
- * fixture `assertFactsGrounded` can only pass, so it never exercised what the
+ * fixture `assertFactsGrounded` could only pass, so it never exercised what the
  * validator does to a photographed bottle label, which is the only input the
  * production journey actually has.
  *
  * These cases use excerpts of the shape a vision model genuinely returns when
- * it transcribes a label. Each one is a legitimate, correctly-extracted fact.
- *
- * The assertions below pin CURRENT behaviour, which rejects them. They are the
- * Phase 0 reproduction of audit findings F04 (normalization) and F02 (a null /
- * ungroundable fact stops the run), and they are inverted by the Phase 1 fix.
+ * it transcribes a label. Each accepted case was rejected before
+ * `fact-grounding-rules.ts` existed, and each rejected case must stay rejected:
+ * widening what grounds is only safe if a WRONG value still fails.
  */
 import { describe, expect, it } from "vitest";
 
@@ -27,8 +25,9 @@ const ASSET = "3f1c9d2e-6a44-4f0b-9e1a-8c5d2b7a4e11";
 function evidenceFor(
   field: keyof ListingFacts,
   excerpt: string,
+  sourceAssetId = ASSET,
 ): FieldEvidence {
-  return { field, sourceAssetId: ASSET, page: null, excerpt, confidence: 0.9 };
+  return { field, sourceAssetId, page: null, excerpt, confidence: 0.9 };
 }
 
 /** A fully-null fact set, so each case opts in to exactly the fact it exercises. */
@@ -52,28 +51,113 @@ function factsWith(overrides: Partial<ListingFacts>): ListingFacts {
   };
 }
 
-describe("assertFactsGrounded against real label transcriptions", () => {
-  it("rejects an enum classification the label never spells out", () => {
+describe("facts a real label states in another form", () => {
+  it("accepts an enum classification cited against the text it read", () => {
     // A Bordeaux label states its appellation, never the English word "wine".
-    // productType is a CLASSIFICATION over the schema's four-value enum, so no
-    // correct extraction of any real wine label can quote "wine" from it.
+    // productType is a CLASSIFICATION over a four-value enum, so it is grounded
+    // by pointing at the text that was classified, not by quoting the value.
     const facts = factsWith({ productType: "wine" });
-    const evidence = [evidenceFor("productType", "GRAND VIN DE BORDEAUX")];
 
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      ProviderOutputError,
-    );
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI evidence did not support its fact value",
-    );
+    expect(() =>
+      assertFactsGrounded(facts, [
+        evidenceFor("productType", "GRAND VIN DE BORDEAUX"),
+      ]),
+    ).not.toThrow();
   });
 
-  it("rejects a classification the model declines to fabricate evidence for", () => {
-    // EXTRACTION_INSTRUCTIONS tells the model "Do not emit evidence for an
-    // unsupported fact". A model that obeys -- classifying productType but
-    // quoting nothing, because the label has nothing to quote -- hits the
-    // opposite branch and is rejected just the same. Both ways of handling an
-    // honestly-classified fact are errors, so there is no output that passes.
+  it("accepts a centilitre volume normalized to millilitres", () => {
+    const facts = factsWith({ volumeMl: 750 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("volumeMl", "75 cl")]),
+    ).not.toThrow();
+  });
+
+  it("accepts a litre volume written with a decimal comma", () => {
+    const facts = factsWith({ volumeMl: 1500 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("volumeMl", "1,5 L")]),
+    ).not.toThrow();
+  });
+
+  it("accepts a country name printed in its own language", () => {
+    const facts = factsWith({ country: "France" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("country", "法國波爾多")]),
+    ).not.toThrow();
+  });
+
+  it("accepts an ABV written with a decimal comma", () => {
+    const facts = factsWith({ abvPercent: 13.5 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("abvPercent", "13,5 % vol.")]),
+    ).not.toThrow();
+  });
+
+  it("still accepts the synthetic note shape the existing fixtures use", () => {
+    // Normalization widens what grounds; it must never narrow it.
+    const facts = factsWith({
+      productType: "wine",
+      country: "Germany",
+      volumeMl: 750,
+      abvPercent: 12.5,
+    });
+
+    expect(() =>
+      assertFactsGrounded(facts, [
+        evidenceFor("productType", "product type wine"),
+        evidenceFor("country", "country Germany"),
+        evidenceFor("volumeMl", "volume 750 ml"),
+        evidenceFor("abvPercent", "ABV 12.5%"),
+      ]),
+    ).not.toThrow();
+  });
+});
+
+describe("a wrong value is still rejected", () => {
+  it("rejects a volume that no reading of the excerpt produces", () => {
+    // 75 cl is 750 ml, not 700. Accepting the conversion must not accept every
+    // number near it.
+    const facts = factsWith({ volumeMl: 700 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("volumeMl", "75 cl")]),
+    ).toThrow("AI evidence did not support its fact value");
+  });
+
+  it("rejects a country the alias table maps somewhere else", () => {
+    const facts = factsWith({ country: "Italy" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("country", "法國波爾多")]),
+    ).toThrow("AI evidence did not support its fact value");
+  });
+
+  it("rejects a country alias it has never seen, rather than guessing", () => {
+    // An unlisted language falls back to verbatim matching, so an unknown form
+    // fails closed instead of being invented.
+    const facts = factsWith({ country: "Poland" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("country", "Polska")]),
+    ).toThrow("AI evidence did not support its fact value");
+  });
+
+  it("rejects a substring collision on a verbatim fact", () => {
+    // region is quoted off the label, so "Moselle" does not support "Mosel".
+    const facts = factsWith({ region: "Mosel" });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("region", "Moselle")]),
+    ).toThrow("AI evidence did not support its fact value");
+  });
+
+  it("rejects a classified fact that cites nothing at all", () => {
+    // Classification still has to point at the source it judged. Evidence is
+    // not optional -- only restating the value is.
     const facts = factsWith({ productType: "wine" });
 
     expect(() => assertFactsGrounded(facts, [])).toThrow(
@@ -81,91 +165,61 @@ describe("assertFactsGrounded against real label transcriptions", () => {
     );
   });
 
-  it("rejects a centilitre volume normalized to millilitres", () => {
-    // EU bottles are labelled in centilitres. volumeMl is millilitres by
-    // contract, so 75 cl MUST be stored as 750 -- and 750 is not a number that
-    // appears in the excerpt.
-    const facts = factsWith({ volumeMl: 750 });
-    const evidence = [evidenceFor("volumeMl", "75 cl")];
-
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI evidence did not support its fact value",
-    );
-  });
-
-  it("rejects a litre volume normalized to millilitres", () => {
-    const facts = factsWith({ volumeMl: 1500 });
-    const evidence = [evidenceFor("volumeMl", "1,5 L")];
-
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI evidence did not support its fact value",
-    );
-  });
-
-  it("rejects a country name normalized out of its own language", () => {
-    // A label printed for the Hong Kong market states the origin in Chinese.
-    // The canonical country value is English, so the correct extraction can
-    // never quote itself.
-    const facts = factsWith({ country: "France" });
-    const evidence = [evidenceFor("country", "法國波爾多")];
-
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI evidence did not support its fact value",
-    );
-  });
-
-  it("rejects an ABV written with a decimal comma", () => {
-    // "13,5 % vol." tokenizes to the numbers 13 and 5; neither equals 13.5.
-    const facts = factsWith({ abvPercent: 13.5 });
-    const evidence = [evidenceFor("abvPercent", "13,5 % vol.")];
-
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI evidence did not support its fact value",
-    );
-  });
-
-  it("rejects a country correctly inferred from an appellation", () => {
-    // The label prints only the appellation. Inferring France is right, and
-    // there is no honest excerpt for it, so the fact is rejected outright.
+  it("rejects a country inferred with no evidence at all", () => {
     const facts = factsWith({ country: "France", region: "Margaux" });
-    const evidence = [evidenceFor("region", "MARGAUX")];
 
-    expect(() => assertFactsGrounded(facts, evidence)).toThrow(
-      "AI fact had no supporting evidence",
-    );
-  });
-
-  it("accepts the synthetic note shape the existing fixtures use", () => {
-    // The control. The validator is not universally rejecting: it passes as
-    // soon as the excerpt restates the value, which is what every pre-existing
-    // fixture does and what no photographed label does.
-    const facts = factsWith({
-      productType: "wine",
-      country: "Germany",
-      volumeMl: 750,
-      abvPercent: 12.5,
-    });
-    const evidence = [
-      evidenceFor("productType", "product type wine"),
-      evidenceFor("country", "country Germany"),
-      evidenceFor("volumeMl", "volume 750 ml"),
-      evidenceFor("abvPercent", "ABV 12.5%"),
-    ];
-
-    expect(() => assertFactsGrounded(facts, evidence)).not.toThrow();
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("region", "MARGAUX")]),
+    ).toThrow("AI fact had no supporting evidence");
   });
 });
 
-describe("missingFields contract divergence between providers", () => {
+describe("merchant data is never read off a photograph", () => {
+  it("rejects a price grounded in an image asset", () => {
+    // A price on a bottle is not the merchant's selling price. Even a perfectly
+    // quoted number is a guess about someone else's business.
+    const facts = factsWith({ priceHkd: 288 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [evidenceFor("priceHkd", "HK$288")]),
+    ).toThrow("AI read merchant data from a source that cannot state it");
+  });
+
+  it("rejects a SKU and a stock level grounded in an image asset", () => {
+    expect(() =>
+      assertFactsGrounded(factsWith({ sku: "OPAK-1" }), [
+        evidenceFor("sku", "OPAK-1"),
+      ]),
+    ).toThrow(ProviderOutputError);
+
+    expect(() =>
+      assertFactsGrounded(factsWith({ stockQuantity: 6 }), [
+        evidenceFor("stockQuantity", "6 bottles"),
+      ]),
+    ).toThrow(ProviderOutputError);
+  });
+
+  it("accepts merchant data the operator supplied in the note", () => {
+    const facts = factsWith({ sku: "OPAK-1", priceHkd: 288, stockQuantity: 6 });
+
+    expect(() =>
+      assertFactsGrounded(facts, [
+        evidenceFor("sku", "SKU: OPAK-1", "note"),
+        evidenceFor("priceHkd", "HK$288", "note"),
+        evidenceFor("stockQuantity", "Stock quantity: 6", "note"),
+      ]),
+    ).not.toThrow();
+  });
+});
+
+describe("missingFields contract", () => {
   it("counts every fact key, so an optional fact is treated as missing", () => {
-    // OpenAIListingProvider computes missingFields as
+    // Both providers compute missingFields as
     // FACT_KEYS.filter(key => facts[key] === null) -- all 14 keys. That folds
     // genuinely optional facts (region, vintage, stockQuantity) into the same
     // bucket as the merchant fields the journey really needs, and any one of
     // them being null routes the run to needs_info with no draft saved.
-    expect(FACT_KEYS).toContain("region");
-    expect(FACT_KEYS).toContain("vintage");
-    expect(FACT_KEYS).toContain("stockQuantity");
+    // Unchanged by the grounding fix; owned by the partial-draft work.
     expect(FACT_KEYS).toHaveLength(14);
 
     const facts = factsWith({

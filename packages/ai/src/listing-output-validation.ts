@@ -9,6 +9,10 @@ import {
 import { z } from "zod";
 
 import { NOTE_SOURCE_ID, type GenerationInput } from "./contracts.js";
+import {
+  FACT_GROUNDING_MODES,
+  normalizationSupportsValue,
+} from "./fact-grounding-rules.js";
 import { ProviderOutputError } from "./listing-provider-errors.js";
 
 export const extractionOutputSchema = z.object({
@@ -67,7 +71,15 @@ function excerptSupportsValue(excerpt: string, value: unknown): boolean {
   return false;
 }
 
+/**
+ * Whether the evidence for one field supports its value, either by quoting it
+ * or by stating it in a form a declared normalization rule converts.
+ *
+ * The rule is consulted only after a verbatim match fails, so normalization can
+ * widen what grounds but never narrow it.
+ */
 function evidenceSupportsValue(
+  key: keyof ListingFacts,
   evidence: FieldEvidence[],
   value: unknown,
 ): boolean {
@@ -76,7 +88,11 @@ function evidenceSupportsValue(
       evidence.some((entry) => excerptSupportsValue(entry.excerpt, item)),
     );
   }
-  return evidence.some((entry) => excerptSupportsValue(entry.excerpt, value));
+  return evidence.some(
+    (entry) =>
+      excerptSupportsValue(entry.excerpt, value) ||
+      normalizationSupportsValue(key, entry.excerpt, value),
+  );
 }
 
 function isMeaningfulFact(value: unknown): boolean {
@@ -174,7 +190,30 @@ export function assertFactsGrounded(
       );
       continue;
     }
-    if (!evidenceSupportsValue(evidenceForField, value)) {
+
+    const mode = FACT_GROUNDING_MODES[key];
+
+    // A judgement over the source rather than a quote from it. Evidence still
+    // has to exist -- that is checked above -- but a four-value enum has no
+    // verbatim form on a label that never spells it out.
+    if (mode === "classified") continue;
+
+    // SKU, price and stock describe the merchant's business, not the bottle.
+    // Reading them off a photograph is a guess, so only the operator-supplied
+    // note can carry them.
+    const supporting =
+      mode === "merchant"
+        ? evidenceForField.filter(
+            (item) => item.sourceAssetId === NOTE_SOURCE_ID,
+          )
+        : evidenceForField;
+    if (supporting.length === 0) {
+      throw new ProviderOutputError(
+        "AI read merchant data from a source that cannot state it",
+      );
+    }
+
+    if (!evidenceSupportsValue(key, supporting, value)) {
       throw new ProviderOutputError(
         "AI evidence did not support its fact value",
       );
