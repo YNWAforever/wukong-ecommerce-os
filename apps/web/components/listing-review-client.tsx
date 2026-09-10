@@ -18,7 +18,9 @@ import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { ListingFieldsForm } from "./listing-fields-form";
+import { ListingExtractedFacts } from "./listing-extracted-facts";
 import { ListingProcessingPanel } from "./listing-processing-panel";
+import type { ListingProcessingSummary } from "../lib/listing-processing-summary";
 import type {
   BlockingFlag,
   DeliveryModel,
@@ -113,6 +115,10 @@ export type ListingViewResponse = {
     createdAt: string;
   }>;
   activity: WireListingActivityEntry[];
+  // Facts the extraction step already recorded. Present even when the run
+  // ended in needs_info and wrote no version, which is exactly when the rest
+  // of this snapshot has nothing to show.
+  processing?: ListingProcessingSummary | null;
 };
 
 type MappedListingView = {
@@ -663,6 +669,7 @@ export function ListingReviewClient({
           onProcess={startProcessing}
           busy={busy}
         />
+        <ListingExtractedFacts processing={snapshot.processing} />
       </div>
     );
   if (viewState.kind === "loading" || !snapshot || !mapped)

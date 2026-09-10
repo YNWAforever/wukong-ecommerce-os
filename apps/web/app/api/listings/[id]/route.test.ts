@@ -37,6 +37,7 @@ function handlerFor(
       listBatchesForListing: (id: string) => Promise<any[]>;
     };
     exportAttempts?: { listContainingListing: (id: string) => Promise<any[]> };
+    pipelineRuns?: { getState: (key: string) => Promise<any> };
   } = {},
 ) {
   return createListingViewHandler({
@@ -64,6 +65,20 @@ function handlerFor(
                   evidence: [],
                   flags: [],
                 };
+              },
+              // The handler derives the pipeline run key from the current
+              // revision, the same way POST .../process does.
+              async requireById() {
+                return {
+                  id: listingId,
+                  status: "in_review",
+                  activeVersionSequence: 1,
+                };
+              },
+            },
+            pipelineRuns: overrides.pipelineRuns ?? {
+              async getState() {
+                return null;
               },
             },
             importResults: overrides.importResults ?? {
@@ -465,3 +480,107 @@ it.each([
     }
   },
 );
+
+describe("processing summary", () => {
+  const extractedRun = {
+    status: "succeeded" as const,
+    resultStatus: "needs_info" as const,
+    errorCode: null,
+    steps: new Map([
+      [
+        "extracted",
+        {
+          state: "completed" as const,
+          output: {
+            facts: {
+              sku: null,
+              producer: "Demo Estate",
+              productType: "wine",
+              country: "Germany",
+              region: "Mosel",
+              vintage: 2024,
+              grapeVarieties: ["Riesling"],
+              volumeMl: 750,
+              abvPercent: 12.5,
+              packQuantity: 1,
+              priceHkd: null,
+              stockQuantity: null,
+              criticScores: [],
+              awards: [],
+            },
+            evidence: [],
+            missingFields: ["sku", "priceHkd", "stockQuantity"],
+            usage: {
+              inputTokens: 100,
+              outputTokens: 50,
+              estimatedCostUsd: 0.001,
+              latencyMs: 25,
+              model: "gpt-5.6-terra",
+              promptVersion: "1.1.0",
+            },
+          },
+        },
+      ],
+    ]),
+  };
+
+  it("returns the facts a needs_info run already extracted", async () => {
+    // Without this the page has nothing to show: a needs_info run writes no
+    // version, so activeVersion carries none of what the model read.
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: { getState: async () => extractedRun },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.processing.resultStatus).toBe("needs_info");
+    expect(body.processing.extractedFacts.producer).toBe("Demo Estate");
+    expect(body.processing.missingFields).toEqual([
+      "sku",
+      "priceHkd",
+      "stockQuantity",
+    ]);
+  });
+
+  it("keeps model and cost telemetry out of the response", async () => {
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: { getState: async () => extractedRun },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const body = await response.text();
+    expect(body).not.toContain("estimatedCostUsd");
+    expect(body).not.toContain("gpt-5.6-terra");
+  });
+
+  it("reports a stable error code for a failed run", async () => {
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: {
+        getState: async () => ({
+          status: "failed" as const,
+          resultStatus: null,
+          errorCode: "provider_failure",
+          steps: new Map(),
+        }),
+      },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const body = await response.json();
+    expect(body.processing.runStatus).toBe("failed");
+    expect(body.processing.errorCode).toBe("provider_failure");
+  });
+
+  it("is null when the listing has never been processed", async () => {
+    const response = await handlerFor("operator")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect((await response.json()).processing).toBeNull();
+  });
+});
