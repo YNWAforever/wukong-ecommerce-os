@@ -47,21 +47,36 @@ describe("ListingProcessingPanel", () => {
     expect(markup).not.toContain("Start processing");
   });
 
-  it.each([
-    ["processing", "AI processing"],
-    ["needs_info", "More information needed"],
-  ] as const)("shows %s without a retry button", (status, copy) => {
+  it("shows a processing listing without any action", () => {
+    // A delivery is mid-flight; there is nothing useful to press.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
-        status={status}
+        status="processing"
         canProcess
         onProcess={vi.fn()}
         busy={false}
       />,
     );
 
-    expect(markup).toContain(copy);
+    expect(markup).toContain("AI processing");
     expect(markup).not.toContain("Start processing");
+    expect(markup).not.toContain("Run processing again");
+  });
+
+  it("offers a re-run once a listing has asked for more information", () => {
+    // The route now numbers this as a new run rather than answering 409, so
+    // supplying the missing details can actually produce a new result.
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="needs_info"
+        canProcess
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("More information needed");
+    expect(markup).toContain("Run processing again");
   });
 
   it("offers a retry for a failed listing, which the server accepts", () => {

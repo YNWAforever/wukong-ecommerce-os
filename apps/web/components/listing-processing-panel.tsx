@@ -32,13 +32,14 @@ export function ListingProcessingPanel({
   // re-enqueueing, so a retry starts clean rather than colliding with the
   // lease the failed run left behind.
   //
-  // `needs_info` is deliberately NOT offered. Its run completed with status
-  // `succeeded`, so the same route answers 409 processing_already_started, and
-  // nothing an operator does on this screen changes that. A button that can
-  // only fail is worse than no button; re-running after supplying information
-  // needs the operation identity work, not a control here.
+  // `needs_info` is offered as well, now that a re-run carries its own
+  // attempt number. Its run completed with status `succeeded`, so before that
+  // the same route answered 409 processing_already_started no matter what the
+  // operator supplied, and this button would only have failed.
   const canStart =
-    (status === "received" || status === "failed") &&
+    (status === "received" ||
+      status === "failed" ||
+      status === "needs_info") &&
     enqueueState !== "queued" &&
     canProcess;
 
@@ -86,7 +87,7 @@ export function ListingProcessingPanel({
         <button type="button" onClick={onProcess} disabled={busy}>
           {busy
             ? commonCopy[locale].loading
-            : status === "failed"
+            : status === "failed" || status === "needs_info"
               ? t("再處理一次", "Run processing again")
               : t("開始處理", "Start processing")}
         </button>

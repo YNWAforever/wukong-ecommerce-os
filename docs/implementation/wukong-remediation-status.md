@@ -66,7 +66,7 @@ Twelve of fourteen reproduce. None were already fixed.
 | ID | Status | Addressed here |
 |---|---|---|
 | F04 normalization | still_reproducible | **fixed** — `b68210d`, `d1af2a7` |
-| F03 needs_info / failed dead end | partially_fixed | **failed half fixed** — `1b69c36`; `needs_info` still blocked |
+| F03 needs_info / failed dead end | partially_fixed | **fixed** — `1b69c36` (failed) and the re-run work below (needs_info) |
 | F02 null facts block generation | still_reproducible | partly mitigated — facts now survive and are shown (`605a2ff`); `missingFields` still counts all 14 keys |
 | F01 empty-body CRC32 on presign | still_reproducible | no |
 | F05 no idempotency in intake | still_reproducible | no |
@@ -89,23 +89,25 @@ Twelve of fourteen reproduce. None were already fixed.
 | `1b69c36` | Retry a failed listing instead of being told to contact support |
 | `605a2ff` | See what the AI read off their photos, and which fields only they can supply, while the listing still needs information |
 | `d1af2a7` | Same, for labels with accents, and for models that name evidence fields naturally |
+| (this change) | Re-run a listing after supplying what it asked for, instead of being refused forever |
 
 ## Next task, exactly
 
-**Unblock `needs_info` re-runs** (decision D4). The queue key is
-`listing:<workspace>:<draft>:<activeVersionSequence>`; a `needs_info` listing
-never appends a version, so the sequence stays `0`, the key keeps resolving to a
-run whose status is `succeeded`, and `POST /api/listings/[id]/process` answers
-`409 processing_already_started` forever. Supplying the missing information
-changes nothing.
+**F10 — partial save.** An operator who knows the producer, region, vintage,
+volume and ABV but is still waiting on the merchant SKU and price cannot record
+any of it: the review save path validates the whole payload against the
+canonical schema, so an empty price is rejected outright. This is now the last
+thing standing between the first-milestone journey and working end to end, since
+the run can be re-driven and the extracted facts are visible.
 
-Files: `apps/web/lib/listing-queue-runtime.ts` (key), `packages/jobs`
-(`listingJobSchema` is strict — the Worker that reads both envelopes must deploy
-before the web producer switches), `apps/worker/src/listing-pipeline.ts`,
-`apps/web/app/api/listings/[id]/process/route.ts`.
+Files: `apps/web/app/api/listings/[id]/review/route.ts` (payload schema),
+`packages/core/src/listing-schema.ts` (a draft shape distinct from canonical),
+`apps/web/components/listing-fields-form.tsx` (client-side numeric coercion,
+which throws on an empty field before the request is made).
 
-Then, in dependency order: F10 partial save → F02 `missingFields` split →
-F05/F01 intake idempotency and signing → F13 append-not-replace.
+Then, in dependency order: F02 `missingFields` split (so an absent region alone
+stops routing to needs_info) → F05/F01 intake idempotency and signing →
+F13 append-not-replace on the file picker.
 
 ## Not started
 

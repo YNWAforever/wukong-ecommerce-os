@@ -19,12 +19,13 @@ import {
   ProductShotProvider,
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
-import type { ListingJob } from "@wukong/jobs";
+import { listingRunKey, type ListingJob } from "@wukong/jobs";
 
 export type ListingPipelineInput = ListingJob;
 
 function listingPipelineJobId(input: ListingPipelineInput): string {
-  return `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  // Shared with the web producer so both sides derive byte-identical keys.
+  return listingRunKey(input);
 }
 export type PipelineResult = {
   status: "in_review" | "needs_info";

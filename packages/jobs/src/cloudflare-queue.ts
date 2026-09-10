@@ -20,8 +20,41 @@ export const listingJobSchema = z
     workspaceId: safeId,
     draftId: z.string().uuid(),
     activeVersionSequence: z.number().int().nonnegative(),
+    /**
+     * Which deliberate re-run of this revision this message is.
+     *
+     * `activeVersionSequence` alone cannot identify a run: a listing that ends
+     * in `needs_info` appends no version, so its sequence stays where it was and
+     * the derived key keeps resolving to the run that already completed. The
+     * operator supplies what was missing and nothing can happen.
+     *
+     * Optional, and absent means 0, so a message produced before this field
+     * existed still parses and still derives exactly the key it derived before.
+     * A NEW producer must not run against an OLD Worker, though: the schema is
+     * strict, so an unrecognized key makes safeParse fail and the consumer acks
+     * the message away. Deploy the Worker first.
+     */
+    runAttempt: z.number().int().min(0).max(999).optional(),
   })
   .strict();
+
+/**
+ * The idempotency key for one listing pipeline run.
+ *
+ * Both the web producer and the Worker derive this, and they must agree
+ * exactly, so it lives here rather than being spelled out on each side.
+ * Attempt 0 keeps the historical `listing:<ws>:<draft>:<sequence>` form so
+ * every run already recorded stays reachable under the same key.
+ */
+export function listingRunKey(input: {
+  workspaceId: string;
+  draftId: string;
+  activeVersionSequence: number;
+  runAttempt?: number;
+}): string {
+  const base = `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  return input.runAttempt ? `${base}#${input.runAttempt}` : base;
+}
 
 export const shoplinePublishJobSchema = z
   .object({

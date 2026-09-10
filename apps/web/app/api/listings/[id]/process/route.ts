@@ -99,20 +99,57 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             draftId: id,
             activeVersionSequence: revision.activeVersionSequence,
           } satisfies ListingJob;
-          const key = listingApplicationJobId(input);
-          const runState = await repositories.pipelineRuns.getState(key);
-          if (runState && runState.status !== "failed") {
-            // `started` means a delivery is still working on it; `succeeded`
-            // means it is already done. Only a failed run may be re-driven.
+          // Runs for this revision are numbered from 0, so N recorded runs
+          // means the newest is N-1. Only that newest one decides what may
+          // happen next; the earlier ones are settled history.
+          const recordedRuns = await repositories.pipelineRuns.countRuns({
+            listingId: id,
+            activeVersionSequence: revision.activeVersionSequence,
+          });
+          const latestAttempt = recordedRuns === 0 ? 0 : recordedRuns - 1;
+          // Attempt 0 must not carry the field at all: a Worker deployed before
+          // `runAttempt` existed parses strictly and would ack the message away.
+          const latestInput = {
+            ...input,
+            ...(latestAttempt > 0 ? { runAttempt: latestAttempt } : {}),
+          } satisfies ListingJob;
+          const latestKey = listingApplicationJobId(latestInput);
+          const runState = await repositories.pipelineRuns.getState(latestKey);
+
+          // Nothing recorded yet: either this listing has never been processed,
+          // or a message is already queued and no delivery has claimed it. Both
+          // want the same key -- re-enqueueing it is a no-op the pipeline
+          // deduplicates, rather than a second billed run.
+          if (!runState) return latestInput;
+
+          if (runState.status === "started") {
             throw new ApiError(
               409,
               "processing_already_started",
               "Processing has already started.",
             );
           }
-          if (runState) await repositories.pipelineRuns.reopenFailed(key);
 
-          return input;
+          if (runState.status === "failed") {
+            await repositories.pipelineRuns.reopenFailed(latestKey);
+            return latestInput;
+          }
+
+          // A run that asked for more information is finished, but the LISTING
+          // is not: the operator still has work to do, and doing it has to be
+          // able to produce a new result. That run appended no version, so its
+          // activeVersionSequence never moved and its key keeps resolving to
+          // it -- which is why supplying the missing details used to change
+          // nothing at all. Number the next run instead of reusing the key.
+          if (runState.resultStatus === "needs_info") {
+            return { ...input, runAttempt: latestAttempt + 1 } satisfies ListingJob;
+          }
+
+          throw new ApiError(
+            409,
+            "processing_already_started",
+            "Processing has already started.",
+          );
         });
 
       // Deliberately uncaught. withRouteErrors already answers a queue failure

@@ -94,22 +94,42 @@ button" for `failed`. That test encoded the dead end, not a constraint.
 
 ---
 
-## D4 — A re-run needs its own operation identity (not yet implemented)
+## D4 — A re-run carries its own attempt number
 
-**Status:** open — the next blocking design decision
+**Status:** implemented
 
-The queue key is `listing:<workspace>:<draft>:<activeVersionSequence>`. A
-`needs_info` listing never appends a version, so its sequence stays `0`, the key
-keeps resolving to the completed run, and no amount of supplied information
-produces a new run.
+The queue key was `listing:<workspace>:<draft>:<activeVersionSequence>`. A
+`needs_info` listing never appends a version, so its sequence stayed `0`, the key
+kept resolving to the completed run, and no amount of supplied information
+produced a new one.
 
-**Direction.** Introduce an explicit operation identity per run rather than
-deriving the key from `activeVersionSequence` alone. The plan forbids renaming or
-zeroing `activeVersionSequence`, so the operation id is additive.
+`listingJobSchema` gains an **optional** `runAttempt`, and `listingRunKey()` in
+`packages/jobs` becomes the single derivation both sides share — previously the
+literal was spelled out separately in `listing-queue-runtime.ts` and
+`listing-pipeline.ts`, which had to agree by inspection.
 
-**Constraint that shapes the rollout.** `listingJobSchema` is strict, so a
-producer must not emit a field the deployed Worker cannot parse. The Worker that
-reads both envelopes ships first; the web producer switches after.
+**Why a counter rather than a UUID operation id.** Attempt 0 must key exactly as
+before, or every run already recorded is orphaned and re-runs work that is done
+and paid for. A counter gives that for free (`runAttempt` absent or 0 → the
+historical string) and needs no new column: `listing_pipeline_runs` already has
+`listing_id` and `active_version_sequence`, so `countRuns` is a plain count.
+
+**Why the newest run decides, not the attempt-0 run.** Numbering off a count
+alone would let a second click enqueue attempt 2 while attempt 1 was still in
+flight, buying a duplicate extraction. The route reads the state of the newest
+attempt instead: `started` → 409; `failed` → reopen and re-drive the same key;
+`succeeded` + `needs_info` → the next number. When no run row exists yet — queued
+but unclaimed — it re-enqueues the *same* key, which the pipeline deduplicates.
+
+**Rollout constraint.** `listingJobSchema` is strict, so an old Worker
+`safeParse`s a message carrying `runAttempt` as invalid and the consumer **acks
+it away silently**. The Worker ships first; the producer switches after. Attempt
+0 never puts the field on the wire, so the common path stays compatible
+throughout — there is a test pinning that.
+
+**Not covered.** A lost POST response *after* the newest run has finished still
+produces a genuine new run. Making that idempotent needs a client-supplied
+request key, which is a separate contract change.
 
 ---
 
