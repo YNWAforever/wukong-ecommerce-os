@@ -38,6 +38,7 @@ function post(sourceAssetIds: string[], note = "intake") {
 function harness(
   assets: Array<{ id: string; kind: string; listingId: string | null }>,
   existing: { id: string; note: string | null } | null = null,
+  requestProductShot?: (input: unknown) => Promise<{ state: string }>,
 ) {
   const mutations: string[] = [];
   const repositories = {
@@ -82,6 +83,7 @@ function harness(
         },
       }) as never,
     publisher: { enqueue },
+    requestProductShot,
   });
   return { handler, mutations, enqueue };
 }
@@ -180,5 +182,65 @@ describe("POST /api/listings still refuses a genuine conflict", () => {
     );
 
     expect((await handler(post([assetA]))).status).toBe(409);
+  });
+});
+
+describe("creating a listing also starts image work", () => {
+  const fresh = [{ id: assetA, kind: "image/png", listingId: null }];
+
+  it("dispatches the product shot alongside the listing job", async () => {
+    // Creating from photographs used to enqueue the listing job alone, so no
+    // product shot existed until an operator happened to open the review screen
+    // and ask -- on the one path where the photos had just been uploaded.
+    const requestShot = vi.fn(async () => ({ state: "queued" }));
+    const { handler, enqueue } = harness(fresh, null, requestShot);
+
+    const response = await handler(post([assetA]));
+
+    expect(response.status).toBe(201);
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(requestShot).toHaveBeenCalledWith(
+      expect.objectContaining({ listingId, actorId: "user_1" }),
+    );
+    expect((await response.json()).productShot).toEqual({ state: "queued" });
+  });
+
+  it("still creates the draft when image work cannot start", async () => {
+    // Provider disabled or queue unconfigured answers `setup_required`. The
+    // text draft must not depend on it.
+    const { handler } = harness(fresh, null, async () => ({
+      state: "setup_required",
+    }));
+
+    const response = await handler(post([assetA]));
+
+    expect(response.status).toBe(201);
+    expect((await response.json()).productShot).toEqual({
+      state: "setup_required",
+    });
+  });
+
+  it("still creates the draft when the shot request throws", async () => {
+    // A rejected image dispatch is reported, not propagated: losing the whole
+    // draft because a picture could not be queued would be a worse outcome.
+    const { handler, enqueue } = harness(fresh, null, async () => {
+      throw new Error("image queue unreachable");
+    });
+
+    const response = await handler(post([assetA]));
+
+    expect(response.status).toBe(201);
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect((await response.json()).productShot).toEqual({
+      state: "request_failed",
+    });
+  });
+
+  it("omits productShot entirely when no requester is wired", async () => {
+    const { handler } = harness(fresh);
+
+    const response = await handler(post([assetA]));
+
+    expect(await response.json()).not.toHaveProperty("productShot");
   });
 });

@@ -14,6 +14,11 @@ import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
 import {
+  requestProductShotFromProcess,
+  type ProductShotRequestInput,
+  type ProductShotRequestResult,
+} from "../../../lib/product-shot-request";
+import {
   ApiError,
   jsonResponse,
   queueIngressReason,
@@ -39,7 +44,18 @@ const listingSchema = z
   })
   .strict();
 
-export function createListingHandler(deps: IntakeRouteDeps<true>) {
+type CreateListingDeps = IntakeRouteDeps<true> & {
+  /**
+   * Optional so tests can leave image work out. Production wires the same
+   * requester the process route uses -- see the dispatch below for why creating
+   * a listing has to start image work at all.
+   */
+  requestProductShot?: (
+    input: ProductShotRequestInput,
+  ) => Promise<ProductShotRequestResult>;
+};
+
+export function createListingHandler(deps: CreateListingDeps) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
@@ -156,12 +172,33 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
             errorCode: "queue_unavailable";
           };
 
+      // Image work starts here, not only when someone re-processes. Creating a
+      // listing from photographs used to enqueue the listing job alone, so no
+      // product shot existed until an operator happened to open the review
+      // screen and ask for one -- on the one path where the photos had just
+      // been uploaded. The two are dispatched together and independently: a
+      // shot that cannot start (provider disabled, queue unconfigured) answers
+      // `setup_required` and never blocks the text draft.
+      let productShot: ProductShotRequestResult | undefined;
       try {
-        const job = await deps.publisher.enqueue({
-          workspaceId: context.workspaceId,
-          draftId: listing.id,
-          activeVersionSequence: 0,
-        });
+        const [textResult, shotResult] = await Promise.allSettled([
+          deps.publisher.enqueue({
+            workspaceId: context.workspaceId,
+            draftId: listing.id,
+            activeVersionSequence: 0,
+          }),
+          deps.requestProductShot?.({
+            workspaceId: context.workspaceId,
+            listingId: listing.id,
+            actorId: context.actorId,
+          }) ?? Promise.resolve(undefined),
+        ]);
+        productShot =
+          shotResult.status === "fulfilled"
+            ? shotResult.value
+            : { state: "request_failed" };
+        if (textResult.status === "rejected") throw textResult.reason;
+        const job = textResult.value;
         processing = { state: "queued", jobId: job.id, errorCode: null };
         console.info(
           JSON.stringify({
@@ -199,6 +236,7 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
           target: listing.target,
         },
         processing,
+        ...(productShot ? { productShot } : {}),
       });
     });
   };
@@ -375,4 +413,5 @@ export const POST = createListingHandler({
   getAssetStore,
   getDatabase,
   publisher: listingPublisher,
+  requestProductShot: requestProductShotFromProcess,
 });

@@ -102,18 +102,17 @@ Twelve of fourteen reproduce. None were already fixed.
 
 **F05, second half — per-file upload retry.** A retry after any per-file failure
 re-uploads every file, so a second photo failing costs the operator the first
-one's bytes again. `listing-intake-form.tsx:135` promises otherwise; the state it
-keeps cannot distinguish an uploaded file from a pending one.
+one's bytes again. `listing-intake-form.tsx` promises otherwise in its own copy;
+the state it keeps cannot distinguish an uploaded file from a pending one.
 
-Files: `apps/web/components/listing-intake-form.tsx` (per-file state),
-`apps/web/lib/browser-asset-upload.ts` (the upload loop),
-`apps/web/app/api/assets/finalize/route.ts` (finalize replay returning the same
-asset).
+Files: `apps/web/components/listing-intake-form.tsx` (per-file status is already
+modelled -- `uploading` / `uploaded` / `error` -- but the upload loop ignores
+it), `apps/web/lib/browser-asset-upload.ts`,
+`apps/web/app/api/assets/finalize/route.ts` (a finalize replay should return the
+same asset rather than erroring).
 
-Then, in dependency order: F13 append-not-replace on the file picker (the same
-component, so likely the same change) → F07 reconcile the four media policies,
-including the unbound content type below → F09 server-side dirty guard on
-approve → F06 image orchestration on create.
+Then, in dependency order: F12 doctor alignment → F08 batch identity and outbox
+→ F14 cost ledger → F11 external enrichment (a new capability, Phase 3).
 
 ## Discovered while fixing, not yet addressed
 
