@@ -21,14 +21,26 @@ Companion records: [status](./wukong-remediation-status.md) ·
 |---|---|
 | `pnpm install --frozen-lockfile` | ok |
 | `pnpm --filter "@wukong/db..." build` | ok (required first; the worker suite cannot resolve `@wukong/db` otherwise) |
-| `pnpm --filter @wukong/ai test` | **145 passed**, 6 files |
-| `pnpm --filter @wukong/worker test` | **174 passed**, 16 files |
-| `pnpm --filter @wukong/web test` | **1514 passed**, 155 files |
-| `pnpm --filter @wukong/ai typecheck` | clean |
-| `pnpm --filter @wukong/web typecheck` | clean |
+| `pnpm test` (root gate) | **14/14 tasks**, exit 0 |
+| — `@wukong/web` | 1547 passed |
+| — `@wukong/worker` | 175 passed |
+| — `@wukong/ai` | 152 passed |
+| — `@wukong/db` | 101 passed |
+| — `@wukong/assets` | 73 passed |
+| — `@wukong/jobs` | 11 passed |
+| — root `node --test` suites | 78 passed |
+| `typecheck` (ai, db, jobs, worker, web) | clean |
 
-Not run, and therefore not claimed: `pnpm test` (root), `pnpm lint` across all
-packages, `pnpm build`, `pnpm test:integration`, `pnpm test:e2e`,
+The root gate needs a `pnpm` shim on PATH, because `turbo` shells out to a
+binary that `corepack pnpm` does not install:
+
+```
+pnpm.cmd:  @echo off
+           corepack pnpm %*
+```
+
+Not run, and therefore not claimed: `pnpm lint` across all packages,
+`pnpm build`, `pnpm test:integration`, `pnpm test:e2e`,
 `pnpm --filter @wukong/db audit:verify`, `pnpm runtime:doctor`.
 
 ## Scenario coverage
@@ -39,11 +51,16 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
 | ID | Scenario | Layer reached | Result |
 |---|---|---|---|
 | A01 | Diagnose the original failed run | — | **Not attributable.** Mechanism reproduced at U; the run's own `error_code` was never read. See status doc for the query. |
-| A03 | Optional-value nulls must not block generation | U | **Still fails.** `missingFields` counts all 14 fact keys; an absent region alone still routes to `needs_info`. |
+| A02 | Clear front label, no SKU / price / stock | U | **Passes.** Reaches review as a draft with those fields null; nothing is invented. |
+| A03 | Optional-value nulls must not block generation | U | **Passes.** Generation gates on product identity; an absent region or vintage no longer routes to `needs_info`. |
+| A04 | Two selections, second file fails | U | **Partly.** Selections accumulate and can be removed; per-file upload retry still re-uploads everything. |
+| A05 | Create succeeds but the response is lost | U | **Passes.** The replay returns the same listing and writes nothing; genuine conflicts still 409. |
+| A06 | Presign signature shape | U | **Partly.** No zero-byte checksum is signed, proven against the real SDK. A non-empty PUT against a live bucket is still untested. |
 | A08 | `75 cl` / `0.75 L` / `750 ml`, `法國` / `France` | U | **Passes.** Converted and translated values ground; `700` from `75 cl`, `Italy` from `法國`, and the unlisted alias `Polska` are all still rejected. |
 | A09 | Invalid schema / grounding rejection | U | **Partly.** The rejection no longer fires for correct extractions, and the checkpoint is now readable for `needs_info`. A `failed` run still saves nothing. |
-| A10 | `needs_info` → supply info → re-run | — | **Still blocked.** `409 processing_already_started`, permanently. Extracted facts are now visible, but the re-run is not possible. |
-| A02, A04–A07, A11–A30 | | — | **Not attempted.** Most need Postgres, MinIO, a browser, a real provider, or a merchant. |
+| A10 | `needs_info` → supply info → re-run | U | **Passes.** The re-run is numbered and enqueued; a duplicate request while one is in flight is refused rather than billed twice. |
+| A15 | Edited title, unsaved, then Approve | U | **Passes.** Approval is blocked with a stated reason; server-side freshness remains version-id based. |
+| A07, A11–A14, A16–A30 | | — | **Not attempted.** Most need Postgres, MinIO, a browser, a real provider, or a merchant. |
 
 ## What the evidence supports
 
