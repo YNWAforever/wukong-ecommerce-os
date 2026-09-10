@@ -64,7 +64,11 @@ describe("ListingProcessingPanel", () => {
     expect(markup).not.toContain("Start processing");
   });
 
-  it("shows terminal failure recovery guidance without a retry button", () => {
+  it("offers a retry for a failed listing, which the server accepts", () => {
+    // POST /api/listings/[id]/process lists `failed` as retryable and calls
+    // pipelineRuns.reopenFailed first, so this button is a real action rather
+    // than one that 409s. Before this, a failed listing was a dead end whose
+    // only on-screen guidance was to contact support.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
         status="failed"
@@ -74,9 +78,23 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("Processing failed");
-    expect(markup).toContain("Source files are retained");
-    expect(markup).not.toContain("Start processing");
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).toContain("nothing was overwritten");
+    expect(markup).toContain("Run processing again");
+  });
+
+  it("withholds the retry from a viewer who cannot process", () => {
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="failed"
+        canProcess={false}
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).not.toContain("Run processing again");
   });
 
   it("does not expose the action to viewers", () => {
