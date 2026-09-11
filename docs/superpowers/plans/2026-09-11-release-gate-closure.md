@@ -277,6 +277,29 @@ cannot fall behind the code. The remainder — owners, secret custody, rotation
 cadence, deployment IDs, merchant approval — is irreducibly human and should say
 so next to each box, rather than sitting unchecked and ambiguous.
 
+**Done (2026-09-12).** Twenty boxes, split six automated and fourteen human,
+with every box annotated in the runbook to say which it is and every human one
+carrying a reason. `pnpm release-gate:check` proves the automated six and names
+the rest; `tests/release-gate.test.mjs` links the two lists in both directions,
+so a box with no check fails and a check with no box fails. Adding a line to
+the runbook now forces a decision about which kind it is.
+
+The six that source settles: `DATABASE_ADMIN_URL` reaching no runtime surface;
+CI pinning Node 24 and pnpm 11.7.0 through to full Playwright; the real-stack
+harness being a production build with fake AI and mock SHOPLINE; `audit:verify`
+running against the synthetic draft; and the two SHOPLINE adapter settings,
+which live in `scripts/render-cloudflare-config.mjs` rather than in the config
+file its name suggests.
+
+The command prints, and the code repeats, that a green run is **not** sign-off:
+it proves the repository is configured as described and nothing about a
+deployment. The human half is the gate.
+
+One thing the work turned up: `tests/cloudflare-config.test.mjs` pins the root
+test script verbatim, so adding a root test file fails until the pin is
+updated. That is the same shape as the guards this plan keeps asking for, and
+it worked -- it caught the new file immediately.
+
 ## 4. Stale records to reconcile
 
 Three claims are now false and are load-bearing for the readiness verdict:
