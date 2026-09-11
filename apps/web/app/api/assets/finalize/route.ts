@@ -68,15 +68,29 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
-      const asset = await deps
+      const finalized = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          if (await repositories.sourceAssets.getByStorageKey(body.key)) {
-            throw new ApiError(
-              409,
-              "asset_already_finalized",
-              "Asset is already finalized.",
-            );
+          const existing = await repositories.sourceAssets.getByStorageKey(
+            body.key,
+          );
+          if (existing) {
+            // A replay, not a conflict. The key names one immutable upload, so
+            // the same key carrying the same content is the same asset. Once a
+            // client can resume a stored key instead of re-uploading, a
+            // finalize whose response was lost is the ordinary way to arrive
+            // here, and refusing it stranded bytes already safely in storage.
+            const recorded = (existing.metadata ?? {}) as {
+              clientSha256?: unknown;
+            };
+            if (recorded.clientSha256 !== body.sha256) {
+              throw new ApiError(
+                409,
+                "asset_already_finalized",
+                "Asset is already finalized with different content.",
+              );
+            }
+            return { asset: existing, replayed: true };
           }
           const created = await repositories.sourceAssets.create({
             storageKey: body.key,
@@ -99,10 +113,14 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
               hashVerified: false,
             },
           });
-          return created;
+          return { asset: created, replayed: false };
         });
 
-      return jsonResponse(201, { assetId: asset.id });
+      // 200 rather than 201 on a replay: nothing was created this time, and the
+      // client only needs the id either way.
+      return jsonResponse(finalized.replayed ? 200 : 201, {
+        assetId: finalized.asset.id,
+      });
     });
   };
 }

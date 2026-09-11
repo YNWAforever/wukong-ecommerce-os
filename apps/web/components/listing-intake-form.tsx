@@ -9,16 +9,53 @@ import {
   type MediaRejection,
 } from "@wukong/assets/media-policy";
 
-type IntakeFileState = {
+/**
+ * One chosen file, and how far it has got.
+ *
+ * `assetId` and `storedKey` are what make a retry cheap. `storedKey` means the
+ * bytes reached object storage but finalize did not confirm them; `assetId`
+ * means the asset exists and must never be uploaded again. Both survive a
+ * failed submit, which is the whole point -- the form used to keep only a
+ * status string, so after any failure it could not tell a file it had already
+ * sent from one it had not.
+ */
+export type ListingIntakeFile = {
   id: string;
   file: File;
   status: "ready" | "uploading" | "uploaded" | "error";
   message?: string;
+  assetId?: string;
+  storedKey?: string;
 };
 
-export type ListingIntakePayload = { files: File[]; note: string };
+/**
+ * What creating a draft needs to know about one file.
+ *
+ * Deliberately narrower than the row the form renders: the upload caller has no
+ * business reading a status string or a rejection message, and keeping it out
+ * means the two cannot drift into disagreeing about which is authoritative.
+ */
+export type ListingIntakeUpload = Pick<
+  ListingIntakeFile,
+  "id" | "file" | "assetId" | "storedKey"
+>;
+
+export type ListingIntakePayload = {
+  files: ListingIntakeUpload[];
+  note: string;
+};
+
+/** Reports one file's progress so it outlives a failure later in the batch. */
+export type ListingIntakeProgress = (
+  id: string,
+  progress: { assetId?: string; storedKey?: string },
+) => void;
+
 export type ListingIntakeFormProps = {
-  onCreate?: (payload: ListingIntakePayload) => Promise<void> | void;
+  onCreate?: (
+    payload: ListingIntakePayload,
+    report: ListingIntakeProgress,
+  ) => Promise<void> | void;
 };
 
 /**
@@ -40,21 +77,28 @@ const rejectionCopy: Record<MediaRejection, string> = {
   too_many_pdfs: "PDF 數量已達上限。",
 };
 
+type CandidateFile = Pick<ListingIntakeFile, "file" | "assetId" | "storedKey">;
+
 /**
  * Applies the SHARED media policy, so what this form accepts is what presign,
  * finalize and the create route accept. It previously enforced no size limit at
  * all, so an operator could be told a 25 MB photo was ready and only discover
  * the cap once presign refused it -- after they had committed to the upload.
+ *
+ * Carries `assetId`/`storedKey` through, because this runs on every add and
+ * every removal: rebuilding rows from the File alone would silently throw away
+ * completed uploads the moment the operator touched the selection again.
  */
-function validateFiles(files: File[]): {
-  accepted: IntakeFileState[];
+function validateFiles(candidates: CandidateFile[]): {
+  accepted: ListingIntakeFile[];
   errors: string[];
 } {
   const errors: string[] = [];
-  const accepted: IntakeFileState[] = [];
+  const accepted: ListingIntakeFile[] = [];
   let images = 0;
   let pdfs = 0;
-  for (const file of files) {
+  for (const candidate of candidates) {
+    const { file } = candidate;
     const rejection = rejectAsset(
       { mimeType: file.type, size: file.size },
       { imagesBefore: images, pdfsBefore: pdfs },
@@ -71,15 +115,26 @@ function validateFiles(files: File[]): {
     accepted.push({
       id: fileIdentity(file),
       file,
-      status: rejection === null ? "ready" : "error",
+      assetId: candidate.assetId,
+      storedKey: candidate.storedKey,
+      status:
+        rejection !== null
+          ? "error"
+          : candidate.assetId !== undefined
+            ? "uploaded"
+            : "ready",
       message: rejection === null ? undefined : rejectionCopy[rejection],
     });
   }
   return { accepted, errors };
 }
 
+function readyCount(files: ListingIntakeFile[]): number {
+  return files.filter((item) => item.status !== "error").length;
+}
+
 export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
-  const [files, setFiles] = useState<IntakeFileState[]>([]);
+  const [files, setFiles] = useState<ListingIntakeFile[]>([]);
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,16 +156,12 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
     if (!nextFiles || nextFiles.length === 0) return;
     setFiles((current) => {
       const seen = new Set(current.map((item) => fileIdentity(item.file)));
-      const added = Array.from(nextFiles).filter(
-        (file) => !seen.has(fileIdentity(file)),
-      );
-      const parsed = validateFiles([
-        ...current.map((item) => item.file),
-        ...added,
-      ]);
+      const added = Array.from(nextFiles)
+        .filter((file) => !seen.has(fileIdentity(file)))
+        .map((file) => ({ file }));
+      const parsed = validateFiles([...current, ...added]);
       setMessage(
-        parsed.errors[0] ??
-          `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
+        parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
       );
       return parsed.accepted;
     });
@@ -121,15 +172,36 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
       // Re-validate what is left: dropping an image can bring a file that was
       // over the cap back under it, and leaving it marked as an error would
       // strand a file the operator can now actually use.
-      const parsed = validateFiles(
-        current.filter((item) => item.id !== id).map((item) => item.file),
-      );
+      const parsed = validateFiles(current.filter((item) => item.id !== id));
       setMessage(
-        parsed.errors[0] ??
-          `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
+        parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
       );
       return parsed.accepted;
     });
+  }
+
+  /**
+   * Records one file's progress the moment it happens.
+   *
+   * Committed to state during the submit rather than after it, so a throw from
+   * a later file cannot take the earlier files' progress down with it.
+   */
+  function reportProgress(
+    id: string,
+    progress: { assetId?: string; storedKey?: string },
+  ) {
+    setFiles((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              assetId: progress.assetId ?? item.assetId,
+              storedKey: progress.storedKey ?? item.storedKey,
+              status: progress.assetId ? ("uploaded" as const) : item.status,
+            }
+          : item,
+      ),
+    );
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -147,10 +219,10 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
-      await onCreate?.({
-        files: validFiles.map((item) => item.file),
-        note: note.trim(),
-      });
+      await onCreate?.(
+        { files: validFiles, note: note.trim() },
+        reportProgress,
+      );
       setFiles((current) =>
         current.map((item) =>
           item.status === "uploading" ? { ...item, status: "uploaded" } : item,
@@ -158,16 +230,34 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
       );
       setMessage("草稿已建立，下一步會進入 AI 處理佇列。");
     } catch (error) {
-      setFiles((current) =>
-        current.map((item) =>
-          item.status === "uploading" ? { ...item, status: "ready" } : item,
-        ),
-      );
-      setMessage(
+      const failure =
         error instanceof Error
           ? error.message
-          : "Unable to create the listing draft.",
-      );
+          : "Unable to create the listing draft.";
+      // The count has to be read from the NEXT state, not the render-time
+      // snapshot: `reportProgress` committed each completed upload while this
+      // submit was still running, so the closed-over `files` predates them.
+      setFiles((current) => {
+        // Only the files that did NOT finish go back to the queue. A file with
+        // an assetId is done, and saying otherwise is what re-sent it.
+        const next = current.map((item) =>
+          item.status === "uploading"
+            ? {
+                ...item,
+                status: item.assetId
+                  ? ("uploaded" as const)
+                  : ("ready" as const),
+              }
+            : item,
+        );
+        const reusable = next.filter((item) => item.assetId).length;
+        setMessage(
+          reusable > 0
+            ? `${failure} 已上傳的 ${reusable} 個檔案會保留，重試只會上傳其餘檔案。`
+            : failure,
+        );
+        return next;
+      });
     } finally {
       setBusy(false);
     }

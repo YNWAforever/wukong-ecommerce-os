@@ -171,7 +171,7 @@ export function ProductShotReview({
       setBusy(true);
       setError(false);
       try {
-        const sourceAssetId = await uploadSourceAsset(file);
+        const { assetId: sourceAssetId } = await uploadSourceAsset(file);
         if (signal.aborted) return;
         const response = await fetch(
           `/api/listings/${listingId}/product-shot/source`,
