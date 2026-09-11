@@ -14,11 +14,21 @@ import {
   CONFIRMATION_NEGATIVE_KEYS,
 } from "./review-confirmation-keys";
 
+// Shared row content, so the top-level `input` fixture's attested digest and
+// each `fixture()` call's link digest agree without one reading the other.
+const BASE_RAW_ROW = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "productId" ? "remote_test" : "synthetic",
+  ]),
+);
+const BASE_ROW_DIGEST = hashBulkFormRow(BASE_RAW_ROW as never);
+
 const input = {
   workspaceId: "workspace_test",
   listingId: "listing_test",
   versionId: "version_test",
-  freshnessAttested: true,
+  attestedRowDigest: BASE_ROW_DIGEST,
 };
 function fixture() {
   const state = {
@@ -26,13 +36,8 @@ function fixture() {
     activeVersionId: input.versionId,
     flags: [] as ComplianceFlag[],
   };
-  const rawRow = Object.fromEntries(
-    BULK_FORM_COLUMNS.map((column) => [
-      column.key,
-      column.key === "productId" ? "remote_test" : "synthetic",
-    ]),
-  );
-  const digest = hashBulkFormRow(rawRow as never);
+  const rawRow = structuredClone(BASE_RAW_ROW);
+  const digest = BASE_ROW_DIGEST;
   const confirmation = {
     id: "confirmation_test",
     listingId: input.listingId,
@@ -367,4 +372,28 @@ it("website-only IDs cannot inherit approval or platform eligibility", async () 
       deps,
     ),
   ).toEqual({ ok: false, reason: "version_mismatch" });
+});
+
+describe("attested digest", () => {
+  it("refuses when the attested digest is not what the link now carries", async () => {
+    // The point of the change: the caller no longer supplies the server's own
+    // reading of the link as the expectation.
+    const { deps } = fixture();
+    expect(
+      await checkBulkUpdateEligibility(
+        { ...input, attestedRowDigest: "a-digest-the-link-no-longer-has" },
+        deps,
+      ),
+    ).toEqual({ ok: false, reason: "row_digest_mismatch" });
+  });
+
+  it("refuses when no attestation was supplied at all", async () => {
+    const { deps } = fixture();
+    expect(
+      await checkBulkUpdateEligibility(
+        { ...input, attestedRowDigest: null },
+        deps,
+      ),
+    ).toEqual({ ok: false, reason: "not_attested" });
+  });
 });

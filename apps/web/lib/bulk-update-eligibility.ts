@@ -115,7 +115,8 @@ export async function checkBulkUpdateEligibility(
     workspaceId: string;
     listingId: string;
     versionId: string;
-    freshnessAttested: boolean;
+    /** The digest the operator attested, or null when none was supplied. */
+    attestedRowDigest: string | null;
   },
   deps: BulkUpdateEligibilityDeps,
   expected?: BulkUpdateEvidence,
@@ -232,8 +233,7 @@ export async function checkBulkUpdateEligibility(
       listingId: input.listingId,
       expectedVersionId: input.versionId,
       expectedSourceImportId: link.sourceImportId,
-      expectedRowDigest: link.contentDigest,
-      freshnessAttested: input.freshnessAttested,
+      attestedRowDigest: input.attestedRowDigest,
     },
     {
       ...deps,
