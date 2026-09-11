@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   carryResolutions,
+  claimPolicyCoverage,
   localizedCopyFields,
   resolveFlag,
   scanCompliance,
@@ -374,5 +375,99 @@ describe("localizedCopyFields", () => {
       "titleEn",
       "titleZhHant",
     ]);
+  });
+});
+
+/**
+ * A claim rule the workspace states but nothing checks.
+ *
+ * `workspaceProfile.claimPolicy` is free text whose only use was being pasted
+ * into the model's prompt. That makes it a statement of intent nothing
+ * verifies: a workspace could write "no origin claims without certification"
+ * and every listing would keep passing, with no signal the rule was decorative.
+ *
+ * This does not make free text enforceable. It makes the gap visible, and the
+ * pilot's own policy is asserted below to have no gap -- so adding a rule
+ * without a checker fails the build instead of quietly meaning nothing.
+ */
+describe("claimPolicyCoverage", () => {
+  it("maps a stated rule to the check that implements it", () => {
+    const coverage = claimPolicyCoverage([
+      "ratings require evidence",
+      "health claims are blocked",
+    ]);
+
+    expect(coverage.unenforced).toEqual([]);
+    expect(coverage.enforced).toEqual([
+      {
+        policy: "ratings require evidence",
+        rules: ["rating_without_evidence"],
+      },
+      { policy: "health claims are blocked", rules: ["health_claim"] },
+    ]);
+  });
+
+  it("names a rule nothing implements rather than passing silently", () => {
+    const coverage = claimPolicyCoverage([
+      "origin claims require certification",
+    ]);
+
+    expect(coverage.enforced).toEqual([]);
+    expect(coverage.unenforced).toEqual([
+      "origin claims require certification",
+    ]);
+  });
+
+  it("covers every rule the pilot workspace actually states", () => {
+    // Copied from packages/db/src/seeds/opak-profile.ts. If someone adds a
+    // policy line there without a checker here, this fails -- which is the
+    // whole point: the policy stops being decorative.
+    const coverage = claimPolicyCoverage([
+      "ratings require evidence",
+      "awards require evidence",
+      "exclusivity claims require evidence",
+      "health claims are blocked",
+      "superlatives require review",
+    ]);
+
+    expect(coverage.unenforced).toEqual([]);
+    expect(coverage.enforced).toHaveLength(5);
+  });
+});
+
+describe("exclusivity claims", () => {
+  it("warns rather than blocks, because nothing can verify it", () => {
+    // The policy asks for evidence, and the schema carries no exclusivity fact
+    // to check evidence against. Blocking would stop every listing that says
+    // "exclusive" with no mechanical way to satisfy the rule.
+    const flags = scanCompliance({
+      descriptionEn: "Exclusive to our HK cellar.",
+    });
+
+    expect(flags).toEqual([
+      expect.objectContaining({ rule: "exclusivity", severity: "warning" }),
+    ]);
+  });
+
+  it.each([
+    "Sole importer for Hong Kong.",
+    "Only available through us.",
+    "本店獨家發售。",
+    "香港總代理",
+  ])("recognises %s", (copy) => {
+    expect(scanCompliance({ descriptionEn: copy })).toEqual([
+      expect.objectContaining({ rule: "exclusivity" }),
+    ]);
+  });
+
+  it("does not fire on ordinary copy that merely contains the letters", () => {
+    // "commonly available" contains "only available" as a substring; the word
+    // boundary is what stops that reading.
+    for (const copy of [
+      "A commonly available style.",
+      "Drink solely for pleasure.",
+    ]) {
+      expect(scanCompliance({ descriptionEn: copy })).toEqual([]);
+    }
   });
 });

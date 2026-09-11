@@ -4,7 +4,11 @@ type ComplianceFlagFields = {
   id: string;
   field: string;
   rule:
-    "health_claim" | "guarantee" | "rating_without_evidence" | "superlative";
+    | "health_claim"
+    | "guarantee"
+    | "rating_without_evidence"
+    | "superlative"
+    | "exclusivity";
   severity: "blocking" | "warning";
 };
 
@@ -42,6 +46,20 @@ const SUPERLATIVE =
  */
 const RATING_CLAIM =
   /\b\d{2,3}\s*(?:points|pts)\b|\b(?:RP|WS|JS|WA|AG)\s?\d{2,3}\b|\b(?:robert\s+parker|wine\s+spectator|james\s+suckling|decanter|jancis\s+robinson|wine\s+advocate)\b|\b(?:gold|silver|bronze)\s+medal\b|\b\d{2,3}\s*分\b|金獎|銀獎|銅獎|帕克/i;
+
+/**
+ * Wording that claims a product is uniquely available here.
+ *
+ * A warning rather than a blocker, and the reason is a real limitation: the
+ * workspace policy says "exclusivity claims require evidence", but the listing
+ * schema carries no exclusivity fact to check that evidence against -- unlike a
+ * critic score or an award. So this is the strongest honest enforcement
+ * available: a person has to look and, if the claim is good, answer the flag
+ * with the reason. Making it blocking would block every listing that says
+ * "exclusive" with no mechanical way to satisfy it.
+ */
+const EXCLUSIVITY_CLAIM =
+  /\bexclusiv(?:e|ely|ity)\b|\bsole\s+(?:importer|distributor|agent|stockist)\b|\bonly\s+(?:available|stockist)\b|獨家|唯一(?:指定)?(?:代理|進口)?|總代理/i;
 
 /**
  * What the listing can actually support, as extracted and grounded.
@@ -94,6 +112,18 @@ export function scanCompliance(
         field,
         rule: "rating_without_evidence",
         severity: "blocking",
+        status: "open",
+        resolutionReason: null,
+      });
+    }
+    if (EXCLUSIVITY_CLAIM.test(value)) {
+      flags.push({
+        id: `${field}:exclusivity:0`,
+        field,
+        rule: "exclusivity",
+        // See EXCLUSIVITY_CLAIM: nothing in the schema can verify it, so the
+        // most this can honestly do is put it in front of a person.
+        severity: "warning",
         status: "open",
         resolutionReason: null,
       });
@@ -195,4 +225,55 @@ export async function resolveFlag(
     },
   });
   return resolved;
+}
+
+/**
+ * Which of a workspace's claim rules are actually machine-checked.
+ *
+ * `workspaceProfile.claimPolicy` is free text, and until now its only use was
+ * being pasted into the model's prompt. That makes it a statement of intent
+ * that nothing verifies: a workspace could add "no origin claims without
+ * certification" and every listing would keep passing, with no signal that the
+ * rule was decorative.
+ *
+ * This does not make free text enforceable -- it makes the gap visible. A
+ * policy line that matches no rule comes back in `unenforced`, and the seeded
+ * pilot profile is asserted to have none, so adding a rule without a checker
+ * fails the build instead of quietly meaning nothing.
+ */
+const POLICY_RULES: ReadonlyArray<{
+  matches: RegExp;
+  rule: ComplianceFlagFields["rule"];
+}> = [
+  { matches: /\brating|\bscore|\bcritic/i, rule: "rating_without_evidence" },
+  { matches: /\baward|\bmedal/i, rule: "rating_without_evidence" },
+  { matches: /\bhealth/i, rule: "health_claim" },
+  { matches: /\bguarantee/i, rule: "guarantee" },
+  { matches: /\bsuperlative|\bbest\b/i, rule: "superlative" },
+  { matches: /\bexclusiv/i, rule: "exclusivity" },
+];
+
+export type ClaimPolicyCoverage = {
+  enforced: Array<{ policy: string; rules: ComplianceFlagFields["rule"][] }>;
+  /** Policy lines no deterministic rule implements. Intent, not enforcement. */
+  unenforced: string[];
+};
+
+export function claimPolicyCoverage(
+  claimPolicy: readonly string[],
+): ClaimPolicyCoverage {
+  const enforced: ClaimPolicyCoverage["enforced"] = [];
+  const unenforced: string[] = [];
+  for (const policy of claimPolicy) {
+    const rules = [
+      ...new Set(
+        POLICY_RULES.filter((entry) => entry.matches.test(policy)).map(
+          (entry) => entry.rule,
+        ),
+      ),
+    ];
+    if (rules.length) enforced.push({ policy, rules });
+    else unenforced.push(policy);
+  }
+  return { enforced, unenforced };
 }

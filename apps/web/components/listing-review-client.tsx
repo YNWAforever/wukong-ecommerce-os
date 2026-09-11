@@ -199,6 +199,13 @@ const labels: Record<
     label: "最高級聲稱",
     description: "核對最高級聲稱的來源，或記錄處理理由。",
   },
+  // The workspace policy says exclusivity claims require evidence, but the
+  // listing schema carries no exclusivity fact to check against, so the flag
+  // asks a person rather than asserting the claim is unsupported.
+  exclusivity: {
+    label: "獨家聲稱",
+    description: "補充獨家代理或供應的證明，或記錄移除／保留理由。",
+  },
 };
 
 function reviewStatus(status: ListingStatus): ListingReviewModel["status"] {
