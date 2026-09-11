@@ -2,7 +2,6 @@ import { ApiError } from "./route-support";
 import { createHash } from "node:crypto";
 import { PRODUCT_SHOT_LIMITS } from "@wukong/core";
 import type { AssetStore } from "@wukong/assets";
-import { validateProductShotSource } from "@wukong/assets/product-shot-render";
 import type { Database } from "@wukong/db";
 import { PRODUCT_SHOT_INGRESS_PATH, type ProductShotJob } from "@wukong/jobs";
 import { createCloudflareIngressClient } from "./cloudflare-queue-runtime";
@@ -34,11 +33,44 @@ export type ProductShotRequestDeps = {
   assetStore: AssetStore;
   providerName: "disabled" | "fake" | "photoroom";
   enqueue: (job: ProductShotJob) => Promise<unknown>;
-  validateSource?: (
-    bytes: Uint8Array,
-    mimeType: string,
-  ) => Promise<{ width: number; height: number }>;
+  /**
+   * Required, and never defaulted here.
+   *
+   * The only implementation that really decodes an image is
+   * `validateProductShotSource`, which imports `sharp` -- a native module. A
+   * static import of it made `sharp` a transitive dependency of every route
+   * that touches this file, and Next's file tracer cannot follow the `dlopen()`
+   * sharp uses to load libvips, so the shared library is silently dropped from
+   * the deployed bundle and the route throws ERR_DLOPEN_FAILED at runtime while
+   * building fine locally and in CI. That is a regression that has already
+   * shipped to production once, and `tests/sharp-native-bundling.test.mjs`
+   * exists to stop it happening again.
+   *
+   * Making it an explicit dependency means a route opts into `sharp` by
+   * importing it, rather than inheriting it from a module it merely shares.
+   */
+  validateSource: SourceValidator;
 };
+
+export type SourceValidator = (
+  bytes: Uint8Array,
+  mimeType: string,
+) => Promise<unknown>;
+
+/**
+ * Accepts the bytes without decoding them.
+ *
+ * Named so nobody mistakes it for validation. Used on the create path, which
+ * cannot import `sharp` (see `validateSource`). What it gives up is the check
+ * that the bytes genuinely decode as the MIME type they claim: finalize has
+ * already confirmed the stored object's size and MIME against the store
+ * itself, so what remains uncaught is a well-labelled file whose contents are
+ * corrupt. That costs one rejected provider call, which now ends as a visible
+ * `failed` attempt rather than a silent one -- a worse outcome than decoding,
+ * and a far better one than a route that cannot start.
+ */
+export const acceptSourceWithoutDecoding: SourceValidator = async () =>
+  undefined;
 export const PRODUCT_SHOT_RENDER_VERSION = "white-v1";
 
 function assertMutableObservedVersion(
@@ -207,7 +239,7 @@ export async function requestProductShot(
   );
   if (bytes.length > PRODUCT_SHOT_LIMITS.inputBytes)
     throw new Error("input_too_large");
-  await (deps.validateSource ?? validateProductShotSource)(bytes, source.kind);
+  await deps.validateSource(bytes, source.kind);
   const { attemptId } = await deps.forWorkspace(
     input.workspaceId,
     async (r) => {
@@ -254,6 +286,7 @@ export async function requestProductShot(
 }
 export async function requestProductShotFromProcess(
   input: ProductShotRequestInput,
+  validateSource: SourceValidator,
 ): Promise<ProductShotRequestResult> {
   const providerName = process.env.PRODUCT_SHOT_PROVIDER?.trim() || "disabled";
   if (providerName === "disabled") return { state: "setup_required" };
@@ -276,6 +309,7 @@ export async function requestProductShotFromProcess(
     providerName,
     forWorkspace: getDatabase().forWorkspace,
     assetStore: getAssetStore(),
+    validateSource,
     enqueue: (job) =>
       createCloudflareIngressClient().enqueue(PRODUCT_SHOT_INGRESS_PATH, job),
   });
@@ -283,9 +317,11 @@ export async function requestProductShotFromProcess(
 
 export async function attachProductShotSourceFromProcess(
   input: ProductShotAttachInput,
+  validateSource: SourceValidator,
 ): Promise<ProductShotRequestResult> {
   return attachProductShotSource(input, {
     forWorkspace: getDatabase().forWorkspace,
-    requestShot: requestProductShotFromProcess,
+    requestShot: (request) =>
+      requestProductShotFromProcess(request, validateSource),
   });
 }

@@ -1,3 +1,4 @@
+import { validateProductShotSource } from "@wukong/assets/product-shot-render";
 import {
   requestProductShotFromProcess,
   type ProductShotRequestInput,
@@ -185,5 +186,6 @@ export const POST = createProcessListingHandler({
   sessionContext: authSessionContext,
   getDatabase,
   publisher: listingPublisher,
-  requestProductShot: requestProductShotFromProcess,
+  requestProductShot: (input) =>
+    requestProductShotFromProcess(input, validateProductShotSource),
 });

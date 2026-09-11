@@ -14,6 +14,9 @@ import {
   prepareProductShot,
   approveProductShot,
 } from "../../../../../lib/product-shot-service";
+// This route genuinely decodes an uploaded image, so it opts into `sharp`
+// explicitly. `next.config.mjs` traces libvips for the routes that do.
+import { validateProductShotSource } from "@wukong/assets/product-shot-render";
 import {
   attachProductShotSourceFromProcess,
   type ProductShotAttachInput,
@@ -97,7 +100,14 @@ export function createProductShotHandler(
           if (!found)
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           return reply(
-            await (deps.requestShot ?? requestProductShotFromProcess)({
+            await (
+              deps.requestShot ??
+              ((request: ProductShotRequestInput) =>
+                requestProductShotFromProcess(
+                  request,
+                  validateProductShotSource,
+                ))
+            )({
               ...scope,
               ...body,
             }),
@@ -106,7 +116,14 @@ export function createProductShotHandler(
         if (action === "attach") {
           const body = attachBody.parse(await request.json());
           return reply(
-            await (deps.attachShot ?? attachProductShotSourceFromProcess)({
+            await (
+              deps.attachShot ??
+              ((request: ProductShotAttachInput) =>
+                attachProductShotSourceFromProcess(
+                  request,
+                  validateProductShotSource,
+                ))
+            )({
               ...scope,
               ...body,
             }),

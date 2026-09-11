@@ -14,6 +14,7 @@ import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
 import {
+  acceptSourceWithoutDecoding,
   requestProductShotFromProcess,
   type ProductShotRequestInput,
   type ProductShotRequestResult,
@@ -413,5 +414,12 @@ export const POST = createListingHandler({
   getAssetStore,
   getDatabase,
   publisher: listingPublisher,
-  requestProductShot: requestProductShotFromProcess,
+  // Deliberately NOT the decoding validator. It imports `sharp`, and a native
+  // module in this route's graph is what shipped 500s from the admin panel's
+  // home page once already -- Next's tracer cannot follow sharp's dlopen(), so
+  // libvips is dropped from the bundle and the route dies at runtime while
+  // building clean. `tests/sharp-native-bundling.test.mjs` guards this route
+  // specifically. See `acceptSourceWithoutDecoding` for what that costs.
+  requestProductShot: (input) =>
+    requestProductShotFromProcess(input, acceptSourceWithoutDecoding),
 });
