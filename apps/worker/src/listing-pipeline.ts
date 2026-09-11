@@ -504,7 +504,14 @@ export async function runListingPipeline(
         .filter((asset) => asset.mimeType.startsWith("image/"))
         .map((asset) => asset.id),
     });
-    const flags = scanCompliance(flattenLocalizedContent(generation.listing));
+    // The generated copy is scanned against what the listing can actually
+    // support. Without the second argument a description asserting "95 points
+    // from Robert Parker" reads the same as a grounded one, and the rule that
+    // exists to catch it could never fire.
+    const flags = scanCompliance(flattenLocalizedContent(generation.listing), {
+      criticScores: generation.listing.criticScores,
+      awards: generation.listing.awards,
+    });
     // A ProductShotProvider/AssetStore pair is optional, and neither is wired in
     // wherever PipelineDependencies is bound to real implementations for
     // production today — this whole feature stays a no-op until a future task

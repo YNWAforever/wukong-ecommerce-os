@@ -4,7 +4,7 @@ import { resolveFlag, scanCompliance } from "./compliance";
 const auditContext = {
   workspaceId: "workspace-1",
   actorId: "reviewer-1",
-  entityId: "listing-1"
+  entityId: "listing-1",
 };
 
 type TestAuditEvent = {
@@ -22,21 +22,23 @@ function createAuditWriter() {
     writer: {
       async write(event: TestAuditEvent) {
         events.push(event);
-      }
-    }
+      },
+    },
   };
 }
 
 describe("scanCompliance", () => {
   it("returns deterministic blocking flags for guaranteed health benefits", () => {
-    expect(scanCompliance({ description: "Guaranteed health benefits" })).toEqual([
+    expect(
+      scanCompliance({ description: "Guaranteed health benefits" }),
+    ).toEqual([
       {
         id: "description:health_claim:0",
         field: "description",
         rule: "health_claim",
         severity: "blocking",
         status: "open",
-        resolutionReason: null
+        resolutionReason: null,
       },
       {
         id: "description:guarantee:1",
@@ -44,8 +46,8 @@ describe("scanCompliance", () => {
         rule: "guarantee",
         severity: "blocking",
         status: "open",
-        resolutionReason: null
-      }
+        resolutionReason: null,
+      },
     ]);
   });
 
@@ -56,7 +58,153 @@ describe("scanCompliance", () => {
   it("blocks Chinese health claims and guarantees", () => {
     expect(scanCompliance({ description: "保證有保健功效" })).toEqual([
       expect.objectContaining({ rule: "health_claim", severity: "blocking" }),
-      expect.objectContaining({ rule: "guarantee", severity: "blocking" })
+      expect.objectContaining({ rule: "guarantee", severity: "blocking" }),
+    ]);
+  });
+});
+
+/**
+ * The two rules that were declared but unreachable.
+ *
+ * `rating_without_evidence` and `superlative` were in the flag union and had
+ * bilingual labels on the review screen, and no pattern produced either. So a
+ * description could assert "Awarded 100 points by Robert Parker" against
+ * `criticScores: []` and pass generation validation, pass compliance, and reach
+ * approval with nothing flagged.
+ */
+describe("claims the listing cannot support", () => {
+  const nothingGrounded = { criticScores: [], awards: [] };
+
+  it("blocks a score the listing has no fact for", () => {
+    const flags = scanCompliance(
+      { descriptionEn: "Awarded 100 points by Robert Parker." },
+      nothingGrounded,
+    );
+
+    expect(flags).toEqual([
+      expect.objectContaining({
+        rule: "rating_without_evidence",
+        severity: "blocking",
+        field: "descriptionEn",
+      }),
+    ]);
+  });
+
+  it("allows the same sentence once a grounded score exists", () => {
+    // A fact only exists if extraction tied it to an evidence excerpt, so the
+    // presence of one is already "something in the source said so".
+    const flags = scanCompliance(
+      { descriptionEn: "Awarded 100 points by Robert Parker." },
+      {
+        criticScores: [
+          { source: "Robert Parker", score: "100", evidenceId: "ev_1" },
+        ],
+        awards: [],
+      },
+    );
+
+    expect(flags).toEqual([]);
+  });
+
+  it("accepts an award fact as support for an award claim", () => {
+    const flags = scanCompliance(
+      { descriptionZhHant: "曾獲金獎。" },
+      {
+        criticScores: [],
+        awards: [{ name: "Decanter Gold", evidenceId: "e" }],
+      },
+    );
+
+    expect(flags).toEqual([]);
+  });
+
+  it.each([
+    "RP 95",
+    "Scored 93 pts in Wine Spectator.",
+    "Gold medal at Decanter 2016.",
+    "James Suckling called it remarkable.",
+    "帕克評分 96 分。",
+    "曾獲銀獎。",
+  ])("recognises %s as a rating claim", (copy) => {
+    expect(scanCompliance({ descriptionEn: copy }, nothingGrounded)).toEqual([
+      expect.objectContaining({ rule: "rating_without_evidence" }),
+    ]);
+  });
+
+  it("does not read an ordinary number as a score", () => {
+    // Vintages, volumes and prices are everywhere in this copy. Flagging them
+    // would make the rule noise and get it switched off.
+    for (const copy of [
+      "A 2016 vintage from a 750 ml bottle.",
+      "Aged 18 months in French oak.",
+      "HKD 288 per bottle.",
+    ]) {
+      expect(scanCompliance({ descriptionEn: copy }, nothingGrounded)).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("says nothing about ratings when the caller did not supply the facts", () => {
+    // Without them an unsupported score and a grounded one are the same
+    // sentence, and guessing either way is worse than staying silent.
+    expect(
+      scanCompliance({ descriptionEn: "Awarded 100 points by Robert Parker." }),
+    ).toEqual([]);
+  });
+});
+
+describe("superlatives", () => {
+  it("warns rather than blocks", () => {
+    // Someone has to stand behind "finest", but blocking every listing that
+    // uses one would stop the pilot, and a warning still forces a human look.
+    const flags = scanCompliance({ titleEn: "The finest Riesling in Mosel" });
+
+    expect(flags).toEqual([
+      expect.objectContaining({ rule: "superlative", severity: "warning" }),
+    ]);
+  });
+
+  it.each([
+    "The best wine of the vintage",
+    "World's finest Riesling",
+    "An unrivalled expression",
+    "#1 in its appellation",
+    "本區最佳的麗絲玲",
+    "無與倫比的酒體",
+  ])("recognises %s", (copy) => {
+    expect(scanCompliance({ titleEn: copy })).toEqual([
+      expect.objectContaining({ rule: "superlative" }),
+    ]);
+  });
+
+  it("leaves an ordinary tasting note alone", () => {
+    for (const copy of [
+      "Perfect with grilled lamb.",
+      "A restrained, mineral style.",
+      "Best served at 10°C",
+    ]) {
+      const flags = scanCompliance({ descriptionEn: copy });
+      if (copy.startsWith("Best served")) {
+        // Honest limit: "best served" is a serving instruction, and this rule
+        // reads it as a rank claim. A reviewer clears it; it is not silent.
+        expect(flags).toHaveLength(1);
+      } else {
+        expect(flags).toEqual([]);
+      }
+    }
+  });
+
+  it("still reports a blocking flag alongside a warning", () => {
+    const flags = scanCompliance(
+      { descriptionEn: "Guaranteed the best health benefit" },
+      { criticScores: [], awards: [] },
+    );
+
+    expect(flags.map((flag) => flag.rule).sort()).toEqual([
+      "guarantee",
+      "health_claim",
+      "superlative",
     ]);
   });
 });
@@ -69,8 +217,8 @@ describe("resolveFlag", () => {
 
     await expect(
       Promise.resolve().then(() =>
-        resolveFlag(flag, " too short ", auditContext, writer)
-      )
+        resolveFlag(flag, " too short ", auditContext, writer),
+      ),
     ).rejects.toThrow("A meaningful resolution reason is required");
     expect(events).toEqual([]);
   });
@@ -82,13 +230,13 @@ describe("resolveFlag", () => {
       flag,
       "  Claim removed from description.  ",
       auditContext,
-      writer
+      writer,
     );
 
     expect(resolved).toEqual({
       ...flag,
       status: "resolved",
-      resolutionReason: "Claim removed from description."
+      resolutionReason: "Claim removed from description.",
     });
     expect(flag).toMatchObject({ status: "open", resolutionReason: null });
     expect(events).toEqual([
@@ -99,9 +247,9 @@ describe("resolveFlag", () => {
           flagId: flag.id,
           field: flag.field,
           rule: flag.rule,
-          resolutionReason: "Claim removed from description."
-        }
-      }
+          resolutionReason: "Claim removed from description.",
+        },
+      },
     ]);
   });
 
@@ -109,7 +257,7 @@ describe("resolveFlag", () => {
     const writer = {
       async write() {
         throw new Error("audit unavailable");
-      }
+      },
     };
 
     await expect(
@@ -117,8 +265,8 @@ describe("resolveFlag", () => {
         flag,
         "Claim removed from description.",
         auditContext,
-        writer
-      )
+        writer,
+      ),
     ).rejects.toThrow("audit unavailable");
     expect(flag).toMatchObject({ status: "open", resolutionReason: null });
   });

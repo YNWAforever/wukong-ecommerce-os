@@ -87,14 +87,17 @@ async function fixture() {
     }),
     // Mirrors the repository guard: only an attempt that reached no provider
     // may be written off as a costless failure.
-    finishUndispatched: vi.fn(async ({ code }: { code: string }) => {
-      if (row.state !== "queued" || row.dispatchedAt || row.cutoutAssetId)
-        return "skipped";
-      row.state = "failed";
-      row.errorCode = code;
-      row.leaseToken = null;
-      return "ended";
-    }),
+    finishUndispatched: vi.fn(
+      async (input: { attemptId: string; code: string }) => {
+        const { code } = input;
+        if (row.state !== "queued" || row.dispatchedAt || row.cutoutAssetId)
+          return "skipped";
+        row.state = "failed";
+        row.errorCode = code;
+        row.leaseToken = null;
+        return "ended";
+      },
+    ),
   };
   const repos = {
     productShots: shots,

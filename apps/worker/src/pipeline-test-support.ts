@@ -11,6 +11,7 @@ import type {
   AuditContext,
   AuditWriter,
   CanonicalListing,
+  ComplianceFlag,
   FieldEvidence,
   ListingFacts,
   WorkspaceProfile,
@@ -99,6 +100,12 @@ export type HarnessState = {
     metadata: unknown;
   }>;
   sourceAssetsAttached: Array<{ listingId: string; assetIds: string[] }>;
+  /**
+   * Compliance flags the pipeline wrote for the generated copy. Recorded rather
+   * than dropped, because `replaceFlags` was a no-op here and nothing in this
+   * suite could see whether the scan produced anything at all.
+   */
+  flags: Array<{ rule: string; field: string; severity: string }>;
 };
 export type HarnessOptions = {
   missingFields?: string[];
@@ -170,6 +177,7 @@ export function makeHarness(options: HarnessOptions = {}): {
     audits: [],
     sourceAssetsCreated: [],
     sourceAssetsAttached: [],
+    flags: [],
   };
   let completeErrorConsumed = false;
   const audit: AuditWriter = {
@@ -206,7 +214,13 @@ export function makeHarness(options: HarnessOptions = {}): {
         return { id, sequence: 1 };
       },
       async replaceEvidence() {},
-      async replaceFlags() {},
+      async replaceFlags(_versionId: string, flags: ComplianceFlag[]) {
+        state.flags = flags.map((flag) => ({
+          rule: flag.rule,
+          field: flag.field,
+          severity: flag.severity,
+        }));
+      },
       async complete(
         _id: string,
         result,
