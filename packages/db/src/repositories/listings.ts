@@ -125,6 +125,15 @@ export type ListingRepository = {
     changedFields: string[],
     context: AuditContext,
     audit: AuditWriter,
+    /**
+     * Flags for the version this edit creates.
+     *
+     * Omit and the base version's flags are copied forward unchanged, which is
+     * the safe default: a Save must never be able to empty the approval gate.
+     * Supply them when the caller has re-scanned the edited copy, so a claim
+     * typed in after generation is caught and one edited out is cleared.
+     */
+    flags?: ComplianceFlag[],
   ): Promise<ListingVersion>;
   beginPublish(
     id: string,
@@ -787,6 +796,7 @@ export function createListingRepository(
       changedFields,
       context,
       audit,
+      flags,
     ) {
       scope.assertOpen();
       const listing = await this.requireById(id);
@@ -821,29 +831,36 @@ export function createListingRepository(
       // so the previous version's excerpts may no longer support the values
       // they are attached to, and asserting that they do would be worse than
       // showing none.
-      const carriedFlags = await transaction
-        .select({
-          code: complianceFlags.code,
-          severity: complianceFlags.severity,
-          status: complianceFlags.status,
-          details: complianceFlags.details,
-          resolvedAt: complianceFlags.resolvedAt,
-        })
-        .from(complianceFlags)
-        .where(
-          and(
-            eq(complianceFlags.workspaceId, workspaceId),
-            eq(complianceFlags.listingVersionId, baseVersionId),
-          ),
-        );
-      if (carriedFlags.length > 0) {
-        await transaction.insert(complianceFlags).values(
-          carriedFlags.map((flag) => ({
-            ...flag,
-            workspaceId,
-            listingVersionId: version.id,
-          })),
-        );
+      if (flags) {
+        // The caller re-scanned the edited copy, so it -- not the base version
+        // -- decides. That is what lets a claim edited OUT clear its flag, which
+        // a blind copy-forward never could.
+        await this.replaceFlags(version.id, flags);
+      } else {
+        const carriedFlags = await transaction
+          .select({
+            code: complianceFlags.code,
+            severity: complianceFlags.severity,
+            status: complianceFlags.status,
+            details: complianceFlags.details,
+            resolvedAt: complianceFlags.resolvedAt,
+          })
+          .from(complianceFlags)
+          .where(
+            and(
+              eq(complianceFlags.workspaceId, workspaceId),
+              eq(complianceFlags.listingVersionId, baseVersionId),
+            ),
+          );
+        if (carriedFlags.length > 0) {
+          await transaction.insert(complianceFlags).values(
+            carriedFlags.map((flag) => ({
+              ...flag,
+              workspaceId,
+              listingVersionId: version.id,
+            })),
+          );
+        }
       }
       const updated = await transaction
         .update(listingDrafts)

@@ -40,7 +40,7 @@ function draftContent(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function handlerFor(role = "operator") {
+function handlerFor(role = "operator", snapshotFlags: unknown[] = []) {
   const editReview = vi.fn(async (..._args: unknown[]) => ({
     id: "version_2",
     sequence: 2,
@@ -68,7 +68,7 @@ function handlerFor(role = "operator") {
                     content: draftContent(),
                   },
                   evidence: [],
-                  flags: [],
+                  flags: snapshotFlags,
                 };
               },
               editReview,
@@ -188,5 +188,129 @@ describe("PUT /api/listings/[id]/review", () => {
 
     expect(response.status).toBe(403);
     expect(editReview).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Whether an edit is checked for claims the listing cannot support.
+ *
+ * Only the GENERATED copy was ever scanned. This route wrote no flags at all,
+ * so an operator could type "95 points from Robert Parker" into the description
+ * after generation and reach approval with nothing flagged -- and equally, a
+ * flag raised at generation stayed attached for ever even after the sentence
+ * that caused it was deleted, because nothing re-read the text.
+ */
+describe("re-scanning an edit", () => {
+  const flagsPassedTo = (editReview: { mock: { calls: unknown[][] } }) =>
+    (editReview.mock.calls.at(0)?.at(6) ?? []) as Array<{
+      rule: string;
+      status: string;
+      field: string;
+    }>;
+
+  it("flags a rating the operator typed in after generation", async () => {
+    const { handler, editReview } = handlerFor();
+
+    const response = await handler(
+      save({
+        baseVersionId,
+        listing: draftContent({
+          description: {
+            en: "Awarded 95 points by Robert Parker.",
+            "zh-Hant": "Demo Estate 麗絲玲",
+          },
+        }),
+      }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(flagsPassedTo(editReview)).toEqual([
+      expect.objectContaining({
+        rule: "rating_without_evidence",
+        status: "open",
+        field: "descriptionEn",
+      }),
+    ]);
+  });
+
+  it("clears a flag once the claim is edited out", async () => {
+    // The other half, and the one a blind copy-forward could never do: the
+    // operator removed the sentence, so the flag must not survive it.
+    const { handler, editReview } = handlerFor("operator", [
+      {
+        id: "descriptionEn:rating_without_evidence:0",
+        field: "descriptionEn",
+        rule: "rating_without_evidence",
+        severity: "blocking",
+        status: "open",
+        resolutionReason: null,
+      },
+    ]);
+
+    await handler(save({ baseVersionId, listing: draftContent() }), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(flagsPassedTo(editReview)).toEqual([]);
+  });
+
+  it("keeps an answer the operator already gave on a field they did not touch", async () => {
+    // Re-raising a resolved flag on every save would block a listing that had
+    // already been cleared, and would train people to ignore the flags.
+    const resolved = {
+      id: "descriptionEn:health_claim:0",
+      field: "descriptionEn",
+      rule: "health_claim",
+      severity: "blocking",
+      status: "resolved",
+      resolutionReason: "Verified against the importer's product sheet.",
+    };
+    const claim = {
+      en: "A health benefit of moderate enjoyment.",
+      "zh-Hant": "Demo Estate 麗絲玲",
+    };
+    const { handler, editReview } = handlerFor("operator", [resolved]);
+
+    // Same description as the base version; only the tags changed.
+    await handler(
+      save({
+        baseVersionId,
+        listing: draftContent({
+          description: claim,
+          tags: ["Riesling", "Dry"],
+        }),
+      }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    // The base version's description differs from `claim`, so the field DID
+    // change and the flag correctly comes back open -- this case pins that the
+    // decision is made per field, not blanket-carried.
+    expect(flagsPassedTo(editReview)).toEqual([
+      expect.objectContaining({ rule: "health_claim", status: "open" }),
+    ]);
+  });
+
+  it("does not invent a rating flag when the listing has a grounded score", async () => {
+    const { handler, editReview } = handlerFor();
+
+    await handler(
+      save({
+        baseVersionId,
+        listing: draftContent({
+          description: {
+            en: "Awarded 95 points by Robert Parker.",
+            "zh-Hant": "Demo Estate 麗絲玲",
+          },
+          criticScores: [
+            { source: "Robert Parker", score: "95", evidenceId: "ev_1" },
+          ],
+        }),
+      }),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect(flagsPassedTo(editReview)).toEqual([]);
   });
 });

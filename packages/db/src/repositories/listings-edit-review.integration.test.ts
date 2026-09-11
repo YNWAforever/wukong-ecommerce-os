@@ -167,6 +167,75 @@ describe("listing review edits guard in-flight states", () => {
     ).toBe("Score verified against the importer sheet.");
   });
 
+  /**
+   * When the caller has re-scanned the edited copy, IT decides.
+   *
+   * The copy-forward above is the safe default, but it can only ever preserve
+   * what was already there -- so a claim the operator edited OUT kept its flag
+   * for ever. The review route re-scans and passes the result, and that result
+   * has to replace the carried set rather than be added to it.
+   */
+  it("replaces the carried flags when the caller supplies its own", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details) values (${workspaceId}, ${versionId}, 'health_claim', 'blocking', 'open', ${admin.json({ id: "flag_3", field: "descriptionEn" })})`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+        // The operator removed the offending sentence, so the re-scan is empty.
+        [],
+      ),
+    );
+
+    const remaining =
+      await admin`select code from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(remaining).toEqual([]);
+    // The base version keeps its own history; only the new version changes.
+    const original =
+      await admin`select code from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${versionId}`;
+    expect(original).toHaveLength(1);
+  });
+
+  it("writes a flag the caller raised that the base version never had", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["description"],
+        contextFor(listingId),
+        repos.audit,
+        [
+          {
+            id: "descriptionEn:rating_without_evidence:0",
+            field: "descriptionEn",
+            rule: "rating_without_evidence",
+            severity: "blocking",
+            status: "open",
+            resolutionReason: null,
+          },
+        ],
+      ),
+    );
+
+    const written =
+      await admin`select code, severity, status from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(written).toEqual([
+      {
+        code: "rating_without_evidence",
+        severity: "blocking",
+        status: "open",
+      },
+    ]);
+  });
+
   it("refuses an edit while a SHOPLINE delivery is in flight", async () => {
     const { listingId, versionId } = await seedListing("publishing");
 

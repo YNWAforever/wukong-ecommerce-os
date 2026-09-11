@@ -1,5 +1,8 @@
 import {
+  carryResolutions,
+  localizedCopyFields,
   reviewableListingSchema,
+  scanCompliance,
   type AuditContext,
   type ReviewableListing,
 } from "@wukong/core";
@@ -114,6 +117,23 @@ export function createReviewListingHandler(deps: ReviewRouteDeps) {
               "Listing changed; reload before saving.",
             );
           }
+          // Re-scan what the operator actually submitted. Only the GENERATED
+          // copy was ever scanned, so a claim typed in afterwards reached
+          // approval with nothing flagged -- and a claim edited OUT kept its
+          // flag for ever, because nothing re-examined the text.
+          const before = localizedCopyFields(snapshot.activeVersion.content);
+          const after = localizedCopyFields(content);
+          const unchanged = new Set(
+            Object.keys(after).filter((key) => after[key] === before[key]),
+          );
+          const flags = carryResolutions(
+            scanCompliance(after, {
+              criticScores: content.criticScores,
+              awards: content.awards,
+            }),
+            snapshot.flags,
+            unchanged,
+          );
           try {
             const version = await repositories.listings.editReview(
               id,
@@ -122,6 +142,7 @@ export function createReviewListingHandler(deps: ReviewRouteDeps) {
               changedFields(snapshot.activeVersion.content, content),
               auditContext,
               repositories.audit,
+              flags,
             );
             return {
               listingId: id,

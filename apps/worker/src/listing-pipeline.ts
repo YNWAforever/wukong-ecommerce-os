@@ -7,7 +7,7 @@ import type {
   ListingStatus,
   WorkspaceProfile,
 } from "@wukong/core";
-import { scanCompliance } from "@wukong/core";
+import { localizedCopyFields, scanCompliance } from "@wukong/core";
 import {
   factsSufficientForGeneration,
   ProviderApiError,
@@ -233,20 +233,9 @@ function aiRunFrom(
     ...usage,
   };
 }
-function flattenLocalizedContent(
-  listing: ReviewableListing,
-): Record<string, string> {
-  return {
-    titleEn: listing.title.en,
-    titleZhHant: listing.title["zh-Hant"],
-    descriptionEn: listing.description.en,
-    descriptionZhHant: listing.description["zh-Hant"],
-    seoTitleEn: listing.seo.title.en,
-    seoTitleZhHant: listing.seo.title["zh-Hant"],
-    seoDescriptionEn: listing.seo.description.en,
-    seoDescriptionZhHant: listing.seo.description["zh-Hant"],
-  };
-}
+// The field list lives in @wukong/core so the operator's save scans exactly the
+// same eight fields. A private copy here is how a rule ends up enforced on
+// generated copy and not on edited copy.
 function classifyError(error: unknown): PipelineErrorCode {
   if (error instanceof PipelineTimeoutError) return "provider_timeout";
   const message = error instanceof Error ? error.message : "";
@@ -508,7 +497,7 @@ export async function runListingPipeline(
     // support. Without the second argument a description asserting "95 points
     // from Robert Parker" reads the same as a grounded one, and the rule that
     // exists to catch it could never fire.
-    const flags = scanCompliance(flattenLocalizedContent(generation.listing), {
+    const flags = scanCompliance(localizedCopyFields(generation.listing), {
       criticScores: generation.listing.criticScores,
       awards: generation.listing.awards,
     });

@@ -113,6 +113,62 @@ export function scanCompliance(
   });
 }
 
+/**
+ * The copy a compliance scan reads, as one flat map.
+ *
+ * Shared so the pipeline and the operator's save look at the SAME eight fields.
+ * Two private copies of this list is how a rule ends up enforced on generated
+ * copy and not on edited copy, which is the gap that let an operator type a
+ * claim in after generation and have nothing notice.
+ */
+export function localizedCopyFields(listing: {
+  title: { en: string; "zh-Hant": string };
+  description: { en: string; "zh-Hant": string };
+  seo: {
+    title: { en: string; "zh-Hant": string };
+    description: { en: string; "zh-Hant": string };
+  };
+}): Record<string, string> {
+  return {
+    titleEn: listing.title.en,
+    titleZhHant: listing.title["zh-Hant"],
+    descriptionEn: listing.description.en,
+    descriptionZhHant: listing.description["zh-Hant"],
+    seoTitleEn: listing.seo.title.en,
+    seoTitleZhHant: listing.seo.title["zh-Hant"],
+    seoDescriptionEn: listing.seo.description.en,
+    seoDescriptionZhHant: listing.seo.description["zh-Hant"],
+  };
+}
+
+/**
+ * Re-scan results, with answers the operator already gave kept.
+ *
+ * A re-scan alone would undo every resolution on every save, so a flag someone
+ * had answered would come back open and block approval again. Carrying every
+ * resolution instead would be worse: the operator could resolve a flag, rewrite
+ * the flagged sentence into something else objectionable, and keep the old
+ * answer attached to text it was never about.
+ *
+ * So a resolution survives only while the field it was raised on is untouched.
+ * Edit that field and the flag comes back open, with the change in front of the
+ * person who has to justify it.
+ */
+export function carryResolutions(
+  scanned: readonly ComplianceFlag[],
+  previous: readonly ComplianceFlag[],
+  unchangedFields: ReadonlySet<string>,
+): ComplianceFlag[] {
+  return scanned.map((flag) => {
+    if (!unchangedFields.has(flag.field)) return flag;
+    const answered = previous.find(
+      (candidate) =>
+        candidate.id === flag.id && candidate.status === "resolved",
+    );
+    return answered ?? flag;
+  });
+}
+
 export async function resolveFlag(
   flag: ComplianceFlag,
   reason: string,

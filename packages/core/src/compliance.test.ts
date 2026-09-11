@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveFlag, scanCompliance } from "./compliance";
+import {
+  carryResolutions,
+  localizedCopyFields,
+  resolveFlag,
+  scanCompliance,
+} from "./compliance";
 
 const auditContext = {
   workspaceId: "workspace-1",
@@ -269,5 +274,105 @@ describe("resolveFlag", () => {
       ),
     ).rejects.toThrow("audit unavailable");
     expect(flag).toMatchObject({ status: "open", resolutionReason: null });
+  });
+});
+
+/**
+ * Keeping an answer the operator already gave, without keeping it for ever.
+ *
+ * A re-scan on every save would undo every resolution, so a flag somebody had
+ * answered would come back open and block approval again. Carrying every
+ * resolution blindly is the opposite failure: resolve a flag, rewrite the
+ * flagged sentence into something else objectionable, and the old answer stays
+ * attached to text it was never about.
+ */
+describe("carryResolutions", () => {
+  const open = {
+    id: "descriptionEn:health_claim:0",
+    field: "descriptionEn",
+    rule: "health_claim" as const,
+    severity: "blocking" as const,
+    status: "open" as const,
+    resolutionReason: null,
+  };
+  const answered = {
+    ...open,
+    status: "resolved" as const,
+    resolutionReason: "Verified against the importer's sheet.",
+  };
+
+  it("keeps a resolution while its field is untouched", () => {
+    expect(
+      carryResolutions([open], [answered], new Set(["descriptionEn"])),
+    ).toEqual([answered]);
+  });
+
+  it("re-opens it once that field is edited", () => {
+    // The operator changed the thing that was flagged, so the justification
+    // they gave for the old wording may not hold for the new wording.
+    expect(carryResolutions([open], [answered], new Set())).toEqual([open]);
+  });
+
+  it("drops a flag the re-scan no longer raises", () => {
+    // The claim was edited out. This is what a blind copy-forward cannot do.
+    expect(
+      carryResolutions([], [answered], new Set(["descriptionEn"])),
+    ).toEqual([]);
+  });
+
+  it("does not resurrect a resolution for a different rule on the same field", () => {
+    const other = {
+      ...open,
+      id: "descriptionEn:guarantee:0",
+      rule: "guarantee" as const,
+    };
+
+    expect(
+      carryResolutions([other], [answered], new Set(["descriptionEn"])),
+    ).toEqual([other]);
+  });
+
+  it("leaves a newly raised flag open even among resolved ones", () => {
+    const fresh = {
+      ...open,
+      id: "titleEn:health_claim:0",
+      field: "titleEn",
+    };
+
+    expect(
+      carryResolutions(
+        [answered, fresh],
+        [answered],
+        new Set(["descriptionEn", "titleEn"]),
+      ),
+    ).toEqual([answered, fresh]);
+  });
+});
+
+describe("localizedCopyFields", () => {
+  it("covers every field a scan is supposed to read", () => {
+    // Shared so the pipeline and the operator's save look at the same eight.
+    // Two private copies is how a rule gets enforced on generated copy and not
+    // on edited copy.
+    const copy = { en: "en", "zh-Hant": "zh" };
+
+    expect(
+      Object.keys(
+        localizedCopyFields({
+          title: copy,
+          description: copy,
+          seo: { title: copy, description: copy },
+        }),
+      ).sort(),
+    ).toEqual([
+      "descriptionEn",
+      "descriptionZhHant",
+      "seoDescriptionEn",
+      "seoDescriptionZhHant",
+      "seoTitleEn",
+      "seoTitleZhHant",
+      "titleEn",
+      "titleZhHant",
+    ]);
   });
 });
