@@ -13,23 +13,32 @@ export type AssertExportFreshnessDeps = ContentFreshnessDeps & {
   currentHeaderContractSha256(): string;
 };
 
-export type AssertExportFreshnessInput = ContentFreshnessInput & {
+export type AssertExportFreshnessInput = Omit<
+  ContentFreshnessInput,
+  "expectedRowDigest"
+> & {
   /**
    * Not read by this function — every `deps` lookup is keyed by
    * `listingId`/`sourceImportId` alone. Carried on the input for interface
-   * fidelity with the caller that will wire real deps in later: tenancy
-   * scoping happens entirely by how that caller closes over a
-   * workspace-bound transaction when constructing `AssertExportFreshnessDeps`
-   * (the same pattern every `packages/db` repository uses), not by this
+   * fidelity with the caller that wires real deps: tenancy scoping happens by
+   * how that caller closes over a workspace-bound transaction, not by this
    * pure function checking the id itself.
    */
   workspaceId: string;
   /**
-   * Must come from an explicit human attestation before an export, never
-   * from a time-since-import comparison — the master instruction bars a
+   * The row digest the operator was shown and attested to, or `null` when no
+   * attestation was supplied.
+   *
+   * This IS the expectation the content check compares against, which is what
+   * `expectedRowDigest` was always documented to mean: "named from the
+   * caller's point of expectation rather than the port's point of storage".
+   * Feeding it from the caller's own read of the link — as this path used to —
+   * made that check compare a value against a re-read of itself.
+   *
+   * Never a time-since-import comparison: the master instruction bars a
    * hard-coded freshness threshold until Opak approves a policy.
    */
-  freshnessAttested: boolean;
+  attestedRowDigest: string | null;
 };
 
 export type FreshnessFailureReason =
@@ -52,11 +61,14 @@ export async function assertExportFreshness(
   input: AssertExportFreshnessInput,
   deps: AssertExportFreshnessDeps,
 ): Promise<FreshnessResult> {
-  if (!input.freshnessAttested) {
+  if (input.attestedRowDigest === null) {
     return { ok: false, reason: "not_attested" };
   }
 
-  const contentFreshness = await assertContentFreshness(input, deps);
+  const contentFreshness = await assertContentFreshness(
+    { ...input, expectedRowDigest: input.attestedRowDigest },
+    deps,
+  );
   if (!contentFreshness.ok) {
     return contentFreshness;
   }
