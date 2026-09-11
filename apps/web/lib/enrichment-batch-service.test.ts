@@ -233,6 +233,9 @@ describe("enrichment batch creation", () => {
 
 type Marked = { listingIds: string[]; status: string };
 
+/** Fixed so the cost-window assertion has something exact to compare to. */
+const BATCH_CREATED_AT = new Date("2026-09-01T00:00:00.000Z");
+
 function advanceServiceWith(options: {
   spent: number;
   budget: number;
@@ -240,8 +243,12 @@ function advanceServiceWith(options: {
   queued?: string[];
   listingStatuses?: Record<string, string>;
   counts?: Record<string, number>;
+  sequences?: Record<string, number>;
+  recordedRuns?: Record<string, number>;
 }) {
   const enqueued: string[] = [];
+  const jobs: Array<Record<string, unknown>> = [];
+  const costWindows: Array<Date | null> = [];
   const statuses: string[] = [];
   const marked: Marked[] = [];
   const audits: AuditRecord[] = [];
@@ -265,6 +272,7 @@ function advanceServiceWith(options: {
                   waveSize: 2,
                   status: "open",
                   createdBy: "user_1",
+                  createdAt: BATCH_CREATED_AT,
                 };
               },
               async listItemIds() {
@@ -301,15 +309,33 @@ function advanceServiceWith(options: {
             },
             listings: {
               async statusesByIds(ids: string[]) {
+                // A draft with no configured status is a plain unprocessed
+                // one. Before the wave gate existed the service never asked,
+                // so the fake could leave them undefined.
                 return Object.fromEntries(
-                  ids
-                    .filter((id) => options.listingStatuses?.[id] !== undefined)
-                    .map((id) => [id, options.listingStatuses?.[id]]),
+                  ids.map((id) => [
+                    id,
+                    options.listingStatuses?.[id] ?? "received",
+                  ]),
                 );
+              },
+              async requireById(id: string) {
+                return {
+                  activeVersionSequence: options.sequences?.[id] ?? 0,
+                };
+              },
+            },
+            pipelineRuns: {
+              async countRuns({ listingId }: { listingId: string }) {
+                return options.recordedRuns?.[listingId] ?? 0;
               },
             },
             aiRuns: {
-              async sumCostForListings() {
+              async sumCostForListings(
+                _ids: readonly string[],
+                costOptions?: { since?: Date },
+              ) {
+                costWindows.push(costOptions?.since ?? null);
                 return options.spent;
               },
             },
@@ -324,12 +350,13 @@ function advanceServiceWith(options: {
     publisher: {
       async enqueue(job: { draftId: string }) {
         enqueued.push(job.draftId);
+        jobs.push({ ...job });
         return { id: `job_${job.draftId}` };
       },
     },
   });
 
-  return { service, enqueued, statuses, marked, audits };
+  return { service, enqueued, jobs, statuses, marked, audits, costWindows };
 }
 
 const advanceInput = {
@@ -577,5 +604,195 @@ describe("enrichment batch detail", () => {
     await expect(
       service.getBatch({ workspaceId: "ws_opak", batchId: "missing" }),
     ).rejects.toThrow(/no such enrichment batch/i);
+  });
+});
+
+/**
+ * What a batch actually sends, and what it declines to send.
+ *
+ * Every wave used to enqueue `activeVersionSequence: 0` regardless of the
+ * draft's real revision. For anything that had already been through the
+ * pipeline that key resolved to a completed run, so the Worker returned the
+ * cached result without calling the model: the item was marked queued, then
+ * reconciled as succeeded, and the catalog was unchanged. The operator read
+ * "enqueued: 5" over five listings nothing had touched. The cohort makes that
+ * the expected case rather than a corner -- the gap is read from an imported
+ * sheet row enrichment never rewrites, so a second batch re-selects exactly
+ * the same drafts.
+ *
+ * Sending the real revision is only safe together with a status gate, which is
+ * why they are pinned together here: a genuine job for an approved or
+ * published draft spends on the model and then throws on the status
+ * transition, rolling back the cost record written in the same transaction.
+ */
+describe("what a wave enqueues", () => {
+  it("uses the draft's real revision and a fresh attempt", async () => {
+    const { service, jobs } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+      sequences: { draft_1: 2 },
+      recordedRuns: { draft_1: 1 },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(jobs).toEqual([
+      {
+        workspaceId: "ws_opak",
+        draftId: "draft_1",
+        activeVersionSequence: 2,
+        runAttempt: 1,
+      },
+    ]);
+  });
+
+  it("omits runAttempt entirely for a draft that has never run", async () => {
+    // A Worker deployed before `runAttempt` existed parses the envelope
+    // strictly and acks an unrecognised field away in silence, so the common
+    // path must stay byte-identical to what it always was.
+    const { service, jobs } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(jobs).toEqual([
+      {
+        workspaceId: "ws_opak",
+        draftId: "draft_1",
+        activeVersionSequence: 0,
+      },
+    ]);
+  });
+
+  it("does not send a draft the pipeline cannot start from", async () => {
+    // `transitionListing` has no edge out of `approved` or `published` for
+    // submit_review, so this job would run extraction and generation and then
+    // throw while completing -- and the throw takes the cost record with it.
+    const { service, enqueued, marked } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_done", "draft_live", "draft_open"],
+      listingStatuses: {
+        draft_done: "approved",
+        draft_live: "published",
+        draft_open: "received",
+      },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    // waveSize is 2, so only the first two are claimed this time.
+    expect(enqueued).toEqual([]);
+    expect(result.enqueued).toBe(0);
+    expect(marked).toEqual([
+      { listingIds: ["draft_done", "draft_live"], status: "succeeded" },
+    ]);
+  });
+
+  it("skips a draft stuck somewhere the pipeline cannot use", async () => {
+    const { service, enqueued, marked } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_held"],
+      listingStatuses: { draft_held: "publishing" },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual([]);
+    expect(marked).toEqual([
+      { listingIds: ["draft_held"], status: "succeeded" },
+    ]);
+  });
+
+  it("still sends a draft that needs information or has failed", async () => {
+    const { service, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_short", "draft_broken"],
+      listingStatuses: {
+        draft_short: "needs_info",
+        draft_broken: "failed",
+      },
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_short", "draft_broken"]);
+  });
+});
+
+describe("closing out a batch", () => {
+  it("settles a queued item that came back needing information", async () => {
+    // Neither succeeded nor failed, so it was in neither reconciliation list
+    // and stayed `queued`. `done` requires an empty queued bucket, so the
+    // batch could never report itself complete and the operator was left
+    // watching a counter that would not move.
+    const { service, marked } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: [],
+      queued: ["draft_short", "draft_back"],
+      listingStatuses: {
+        draft_short: "needs_info",
+        draft_back: "reopened",
+      },
+      counts: { pending: 0, queued: 0 },
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(marked).toEqual([
+      { listingIds: ["draft_short", "draft_back"], status: "skipped" },
+    ]);
+    expect(result.status).toBe("completed");
+  });
+});
+
+describe("what a batch's budget counts", () => {
+  it("counts only spend recorded after the batch was created", async () => {
+    const { service, costWindows } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(costWindows).toEqual([BATCH_CREATED_AT]);
+  });
+
+  it("advances a cohort an earlier batch already spent against", async () => {
+    // The prescribed recovery from a bad run is a new batch over the same
+    // drafts. Counting all history meant that batch opened pre-charged with
+    // the first one's spend -- and since no route can change a batch's budget
+    // after creation, an operator had no way out of it at all.
+    const { service } = advanceServiceWith({
+      spent: 0, // what the window returns: nothing since this batch began
+      budget: 5,
+      pending: ["draft_1"],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("running");
+    expect(result.enqueued).toBe(1);
+  });
+
+  it("still refuses to advance once its own spend reaches the budget", async () => {
+    const { service, enqueued } = advanceServiceWith({
+      spent: 5,
+      budget: 5,
+      pending: ["draft_1"],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(result.status).toBe("budget_exhausted");
+    expect(enqueued).toEqual([]);
   });
 });

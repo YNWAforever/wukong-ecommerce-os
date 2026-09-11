@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { aiRuns } from "../schema.js";
@@ -29,8 +29,19 @@ export type AiRunRepository = {
    * returns as a string and must be cast before summing. Budgets are enforced
    * on this number rather than on a running total stored elsewhere, so the
    * budget can never drift out of sync with the runs it is counting.
+   *
+   * `since` bounds it to runs recorded at or after a point in time. Without it
+   * the answer is every run those drafts have ever had -- the right number for
+   * a workspace cost report, and the wrong one for a budget belonging to a
+   * single batch: a second batch over the same drafts opened already charged
+   * for the first batch's spend, and could exhaust its budget before enqueuing
+   * anything. There is deliberately no batch id on `ai_runs`; the listing
+   * pipeline stays generic, and a time bound needs no column at all.
    */
-  sumCostForListings(listingIds: readonly string[]): Promise<number>;
+  sumCostForListings(
+    listingIds: readonly string[],
+    options?: { since?: Date },
+  ): Promise<number>;
 };
 
 export function createAiRunRepository(
@@ -64,7 +75,7 @@ export function createAiRunRepository(
         .onConflictDoNothing();
     },
 
-    async sumCostForListings(listingIds) {
+    async sumCostForListings(listingIds, options) {
       scope.assertOpen();
       if (listingIds.length === 0) return 0;
       const [row] = await transaction
@@ -73,9 +84,12 @@ export function createAiRunRepository(
         })
         .from(aiRuns)
         .where(
+          // `and` drops undefined, so an absent `since` leaves the query
+          // exactly as it was.
           and(
             eq(aiRuns.workspaceId, workspaceId),
             inArray(aiRuns.listingId, [...listingIds]),
+            options?.since ? gte(aiRuns.createdAt, options.since) : undefined,
           ),
         );
       return Number(row?.total ?? 0);
