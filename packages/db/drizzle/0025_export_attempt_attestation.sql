@@ -22,7 +22,8 @@ DO $attestation_check$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'export_attempts_source_attestation_is_array'
+    WHERE conrelid = 'export_attempts'::regclass
+      AND conname = 'export_attempts_source_attestation_is_array'
   ) THEN
     ALTER TABLE export_attempts
       ADD CONSTRAINT export_attempts_source_attestation_is_array
