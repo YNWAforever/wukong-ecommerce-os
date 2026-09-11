@@ -7,12 +7,21 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useLocalePreference } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
 import { setLocaleCookie, type Locale } from "../lib/locale";
+import type { WorkspaceRole } from "../lib/session-context";
 
 export type NavItem = {
   href: string;
   labelZh: string;
   labelEn: string;
   group?: "primary" | "tools";
+  /**
+   * The lowest workspace role this destination is useful to.
+   *
+   * Absent means every member. This hides nothing a server does not already
+   * refuse -- see shell-nav-items.test.ts -- it only stops the shell offering
+   * work the reader cannot do.
+   */
+  role?: WorkspaceRole;
 };
 
 type AppShellNavProps = {

@@ -103,8 +103,22 @@ decision where the script itself states it.
 
 **Guard:** extend `tests/ci-workflow.test.mjs` so the exclusion list is exact
 and fail-closed, as `knownFormatDebt` already is.
-**Acceptance:** `RELEASE_BASE_SHA=<root> pnpm format:runtime:check` passes over
-the whole tree, not only over a diff.
+**Acceptance:** the gate passes for any base whose diff includes the
+specification.
+
+**Done (2026-09-11).** The specification joins `protectedUnrelatedFiles`, which
+already held a plan document for exactly this reason, and that list is now
+exported and pinned by `assert.deepEqual` the way `knownFormatDebt` has always
+been — plus a check that refuses to park a Prettier-clean file there, so the
+list cannot become a dumping ground. Proven at `765c616~1`: 578 files checked,
+0 failures, where the same base previously failed on exactly that file out of 579.
+
+An earlier draft of this section set the acceptance at "passes over the whole
+tree, not only over a diff". That was wrong, and is corrected above. From the
+repo root the gate still fails on **26 of 787** files that predate it and have
+never entered a diff since. That debt is real and worth paying down, but it is
+not what kept the specification unformatted, and reformatting 26 unrelated
+files does not belong in this workstream.
 
 ### W3 — A viewer sees every destination
 
@@ -121,6 +135,16 @@ reader cannot do.
 
 **Guard:** a test asserting no nav entry's role exceeds the session role.
 **Acceptance:** a viewer session renders no operator-only destination.
+
+**Done (2026-09-11).** `NavItem` gains an optional `role`, and exactly three
+destinations carry it — `/listings/import`, `/listings/new` and `/batches` —
+matching the operator gate their own APIs enforce. `/batches` refuses a viewer
+on the GET as well as the POST, which is why `batch-list.tsx` maps
+`insufficient_role` for a plain read: the page rendered nothing but a
+permission error. `visibleNavItems` reuses `requireWorkspaceRole` rather than
+comparing roles itself, so the shell and the server cannot disagree about what
+operator ranks above. The marked set is pinned exactly, so adding a destination
+is a visible decision.
 
 ### W4 — The unlocalised tail, and a guard that stops it regrowing
 

@@ -19,12 +19,30 @@ const supportedExtensions = new Set([
 ]);
 const generatedFiles = new Set(["pnpm-lock.yaml"]);
 const semanticOnlyFiles = new Set([".env.example"]);
+/**
+ * Files the gate does not format, because their exact bytes are the point.
+ *
+ * Both plan documents here were uploaded as reference material and are kept as
+ * received; reformatting one would rewrite the record of what was asked for.
+ * The two dotfiles are belt-and-braces, since neither has an extension in
+ * supportedExtensions and the gate never reaches them anyway.
+ *
+ * Unlike knownFormatDebt this carries no hash, so it cannot detect an edit --
+ * .gitignore legitimately changes. What it must not do is grow in silence, so
+ * the list is exported and pinned exactly by tests/ci-workflow.test.mjs, which
+ * also refuses to let a Prettier-clean file be parked here.
+ */
 const protectedUnrelatedFiles = new Set([
   ".gitignore",
   "apps/web/.gitignore",
   "apps/web/auth.test.ts",
   "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
+  "docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md",
 ]);
+
+export function protectedUnrelatedFileEntries() {
+  return [...protectedUnrelatedFiles];
+}
 const knownFormatDebt = new Map([
   [
     "apps/web/app/api/assets/finalize/route.test.ts",
