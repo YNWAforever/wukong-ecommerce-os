@@ -13,3 +13,13 @@
  * enforcing the old bound.
  */
 export const MAX_BULK_APPROVE_ITEMS = 50;
+
+/**
+ * The most listings one export request accepts.
+ *
+ * 100 matches the largest attended UAT stage in the rollout runbook. The
+ * request previously had no maximum at all, which mattered little when the
+ * body was a list of ids and matters more now that it carries per-listing
+ * evidence.
+ */
+export const MAX_BULK_EXPORT_ITEMS = 100;

@@ -6,6 +6,7 @@ import {
   CONFIRMATION_FIELD_KEYS,
   CONFIRMATION_NEGATIVE_KEYS,
 } from "../../../../lib/review-confirmation-keys";
+import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 import {
   BULK_FORM_COLUMNS,
   hashBulkFormHeaderContract,
@@ -67,6 +68,48 @@ function rawRowFor(overrides: Partial<Record<string, string>> = {}) {
     seoDescriptionZh: "舊 seo 描述",
     seoKeywords: "old,keywords",
     ...overrides,
+  };
+}
+
+/**
+ * The digest an operator would have been shown for a given raw row --
+ * mirrors the same normalization `makeRepositories` applies to a
+ * `contentDigest: "digest_1"` fixture, so a test can attest the value the
+ * gate will actually compare against without invoking any repository mock
+ * (mocks like `listing_stale`'s are stateful -- see its call-count comment
+ * below -- and calling them to "discover" a digest would consume that state).
+ */
+function digestOf(rawRow: Record<string, string>): string {
+  if (!isBulkFormRawRow(rawRow)) {
+    throw new Error("test fixture row is missing required bulk-form columns");
+  }
+  return hashBulkFormRow(rawRow);
+}
+
+/** `listing_changed` and `listing_stale` both fixture an unmodified `rawRowFor()`. */
+const CHANGED_DIGEST = digestOf(rawRowFor());
+const NOOP_DIGEST = digestOf(
+  rawRowFor({
+    nameZh: "標題",
+    summaryEn: "Desc EN",
+    summaryZh: "描述",
+    seoTitleEn: "SEO title EN",
+    seoTitleZh: "SEO 標題",
+    seoDescriptionEn: "SEO desc EN",
+    seoDescriptionZh: "SEO 描述",
+    seoKeywords: "a, b",
+  }),
+);
+/** Deliberately wrong -- attesting this never matches a fixture's real digest. */
+const WRONG_DIGEST = "digest_the_operator_did_not_see";
+
+/** Builds the `attestation` field of a request body from listingId -> digest. */
+function attestationFor(digests: Record<string, string>) {
+  return {
+    listings: Object.entries(digests).map(([listingId, contentDigest]) => ({
+      listingId,
+      contentDigest,
+    })),
   };
 }
 
@@ -528,7 +571,10 @@ describe("POST /api/listings/export", () => {
         },
       });
       const response = await handler(
-        request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
       );
       expect(response.status).toBe(200);
       const body = await response.json();
@@ -607,8 +653,18 @@ describe("POST /api/listings/export", () => {
         },
       },
     });
+    // Read back post-normalization: `makeRepositories` already rewrote each
+    // fixture's placeholder "digest_1" to the real hash of its (per-id)
+    // rawRow, in place on this same `platformProducts` object.
     const response = await handler(
-      request({ listingIds: ids, freshnessAttested: true }),
+      request({
+        listingIds: ids,
+        attestation: attestationFor(
+          Object.fromEntries(
+            ids.map((id) => [id, platformProducts[id]!.contentDigest!]),
+          ),
+        ),
+      }),
     );
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -708,7 +764,10 @@ describe("POST /api/listings/export", () => {
         },
       });
       const response = await handler(
-        request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
       );
       expect(response.status).toBe(409);
       expect(await response.json()).toMatchObject({
@@ -726,7 +785,10 @@ describe("POST /api/listings/export", () => {
     const { handler, assetStore, audits } = makeHandler();
     const payload = {
       listingIds: ["listing_changed", "listing_noop"],
-      freshnessAttested: true,
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        listing_noop: NOOP_DIGEST,
+      }),
     };
     const first = await (await handler(request(payload))).json();
     const second = await (await handler(request(payload))).json();
@@ -743,7 +805,10 @@ describe("POST /api/listings/export", () => {
     snapshots.listing_noop!.activeVersion!.content = contentFor("更新內容");
     const payload = {
       listingIds: ["listing_changed", "listing_noop"],
-      freshnessAttested: true,
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        listing_noop: NOOP_DIGEST,
+      }),
     };
     const first = await (await handler(request(payload))).json();
     snapshots.listing_noop!.flags = [
@@ -769,7 +834,10 @@ describe("POST /api/listings/export", () => {
   it("does not create an empty downloadable workbook for an all-no-op request", async () => {
     const { handler, assetStore, audits, exportAttempts } = makeHandler();
     const response = await handler(
-      request({ listingIds: ["listing_noop"], freshnessAttested: true }),
+      request({
+        listingIds: ["listing_noop"],
+        attestation: attestationFor({ listing_noop: NOOP_DIGEST }),
+      }),
     );
     expect(await response.json()).toMatchObject({
       rowCount: 0,
@@ -786,7 +854,15 @@ describe("POST /api/listings/export", () => {
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_noop", "listing_stale"],
-        freshnessAttested: true,
+        // listing_stale's first read (inside checkBulkUpdateEligibility) still
+        // returns the real, matching digest -- attesting anything else would
+        // fail eligibility for the wrong reason before the recheck (the
+        // fixture's own staleness simulation) ever runs.
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+          listing_stale: CHANGED_DIGEST,
+        }),
       }),
     );
     expect(response.status).toBe(200);
@@ -840,7 +916,10 @@ describe("POST /api/listings/export", () => {
     async (role) => {
       const { handler } = makeHandler({ role });
       const response = await handler(
-        request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
       );
       expect(response.status).toBe(403);
       const body = await response.json();
@@ -851,23 +930,25 @@ describe("POST /api/listings/export", () => {
   it("rejects an empty listingIds array with 400", async () => {
     const { handler } = makeHandler();
     const response = await handler(
-      request({ listingIds: [], freshnessAttested: true }),
+      request({ listingIds: [], attestation: attestationFor({}) }),
     );
     expect(response.status).toBe(400);
   });
 
   it("repeats an all-excluded request without creating an attempt or success audit", async () => {
     const { handler, audits } = makeHandler();
-    // Uses freshnessAttested: false (not the listing_stale fixture) so the
-    // excluded_stale outcome is stable across repeat calls to the SAME
-    // handler/repositories -- listing_stale's fixture instead simulates a
-    // freshness race via a call-count counter that keeps incrementing across
-    // repeat calls within one test, which would make the manifest differ
-    // between the first and second request and defeat the point of this
-    // idempotency assertion.
+    // Attests the WRONG digest (not omission -- the route now rejects an
+    // attestation that omits a requested listingId with 400, before this
+    // per-listing outcome would ever be reached) so the excluded_stale
+    // outcome (row_digest_mismatch, not not_attested) is stable across repeat
+    // calls to the SAME handler/repositories -- listing_stale's fixture
+    // instead simulates a freshness race via a call-count counter that keeps
+    // incrementing across repeat calls within one test, which would make the
+    // manifest differ between the first and second request and defeat the
+    // point of this idempotency assertion.
     const body = {
       listingIds: ["listing_changed"],
-      freshnessAttested: false,
+      attestation: attestationFor({ listing_changed: WRONG_DIGEST }),
     };
     const first = await (await handler(request(body))).json();
     const second = await (await handler(request(body))).json();
@@ -879,15 +960,20 @@ describe("POST /api/listings/export", () => {
   });
 
   it("returns every stale exclusion without creating a successful export", async () => {
-    // freshnessAttested: false makes every import-origin listing excluded
-    // for the same, deterministic reason -- unlike listing_stale's
+    // Attesting the wrong digest for every listing (not omission -- an
+    // attestation that omits a requested listingId is now a 400 before any
+    // per-listing outcome is produced) makes every import-origin listing
+    // excluded for the same, deterministic reason -- unlike listing_stale's
     // call-count-based fixture, this holds steady within a single request
     // regardless of how many listingIds are in it.
     const { handler, audits } = makeHandler();
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_noop"],
-        freshnessAttested: false,
+        attestation: attestationFor({
+          listing_changed: WRONG_DIGEST,
+          listing_noop: WRONG_DIGEST,
+        }),
       }),
     );
     expect(response.status).toBe(200);
@@ -897,13 +983,13 @@ describe("POST /api/listings/export", () => {
         listingId: "listing_changed",
         versionId: "version_changed",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
       {
         listingId: "listing_noop",
         versionId: "version_noop",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
     ]);
     expect(body.exportAttemptId).toBeNull();
@@ -913,7 +999,10 @@ describe("POST /api/listings/export", () => {
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
     const { handler } = makeHandler();
     const response = await handler(
-      request({ listingIds: ["listing_missing"], freshnessAttested: true }),
+      request({
+        listingIds: ["listing_missing"],
+        attestation: attestationFor({ listing_missing: "irrelevant" }),
+      }),
     );
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -931,7 +1020,7 @@ describe("POST /api/listings/export", () => {
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_changed"],
-        freshnessAttested: true,
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
       }),
     );
     expect(response.status).toBe(400);
@@ -969,10 +1058,14 @@ describe("POST /api/listings/export", () => {
         listing_dup_b: { ...sharedLink, sourceImportId: "import_2" },
       },
     });
+    // Read back post-normalization, like the mixed-review-selection test above.
     const response = await handler(
       request({
         listingIds: ["listing_dup_a", "listing_dup_b"],
-        freshnessAttested: true,
+        attestation: attestationFor({
+          listing_dup_a: sharedLink.contentDigest!,
+          listing_dup_b: sharedLink.contentDigest!,
+        }),
       }),
     );
     expect(response.status).toBeGreaterThanOrEqual(400);
@@ -985,11 +1078,15 @@ describe("POST /api/listings/export", () => {
     ).toBe(true);
   });
 
-  it("does not collide the idempotency key across different freshnessAttested values for the same listingIds/versions", async () => {
+  it("does not collide the idempotency key across different attested digests for the same listingIds/versions", async () => {
     const { handler } = makeHandler();
     const body = {
       listingIds: ["listing_changed"],
-      freshnessAttested: false,
+      // Wrong digest first (not omission -- the route now rejects an
+      // attestation that omits a requested listingId with 400), then the
+      // correct one below: two different attestation states for the same
+      // listingId/version, to confirm the idempotency key differs between them.
+      attestation: attestationFor({ listing_changed: WRONG_DIGEST }),
     };
     const firstResponse = await handler(request(body));
     expect(firstResponse.status).toBe(200);
@@ -1000,12 +1097,15 @@ describe("POST /api/listings/export", () => {
         listingId: "listing_changed",
         versionId: "version_changed",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
     ]);
 
     const secondResponse = await handler(
-      request({ ...body, freshnessAttested: true }),
+      request({
+        ...body,
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
     );
     expect(secondResponse.status).toBe(200);
     const second = await secondResponse.json();
@@ -1033,7 +1133,10 @@ describe("POST /api/listings/export", () => {
     // the rolled-back row.
     const { handler, assetStore } = makeHandler({ auditWriteThrows: true });
     const response = await handler(
-      request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+      request({
+        listingIds: ["listing_changed"],
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
     );
     expect(response.status).toBe(500);
     expect(assetStore.calls).toHaveLength(0);
@@ -1043,11 +1146,15 @@ describe("POST /api/listings/export", () => {
 describe("durable artifact creation", () => {
   it("commits canonical provenance and a hash of exactly the downloadable rows", async () => {
     const { handler, assetStore, exportAttempts } = makeHandler();
+    const digests = attestationFor({
+      listing_noop: NOOP_DIGEST,
+      listing_changed: CHANGED_DIGEST,
+    });
     const first = await (
       await handler(
         request({
           listingIds: ["listing_noop", "listing_changed"],
-          freshnessAttested: true,
+          attestation: digests,
         }),
       )
     ).json();
@@ -1055,7 +1162,7 @@ describe("durable artifact creation", () => {
       await handler(
         request({
           listingIds: ["listing_changed", "listing_noop"],
-          freshnessAttested: true,
+          attestation: digests,
         }),
       )
     ).json();
@@ -1080,7 +1187,7 @@ describe("durable artifact creation", () => {
     };
     const payload = {
       listingIds: ["listing_changed"],
-      freshnessAttested: true,
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
     };
     const response = await handler(request(payload));
     expect(response.status).toBe(503);
@@ -1099,7 +1206,7 @@ describe("durable artifact creation", () => {
     const { handler, assetStore } = makeHandler();
     const payload = {
       listingIds: ["listing_changed"],
-      freshnessAttested: true,
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
     };
     await handler(request(payload));
     const key = assetStore.calls[0].key;
@@ -1122,7 +1229,7 @@ describe("durable artifact creation", () => {
     });
     const payload = {
       listingIds: ["listing_changed"],
-      freshnessAttested: true,
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
     };
     expect((await handler(request(payload))).status).toBe(503);
     const recovered = await (await handler(request(payload))).json();
@@ -1135,7 +1242,10 @@ describe("durable artifact creation", () => {
 
 it("a renewed durable approval gets a new artifact identity while preserving earlier bytes", async () => {
   const { handler, repositories, assetStore, exportAttempts } = makeHandler();
-  const payload = { listingIds: ["listing_changed"], freshnessAttested: true };
+  const payload = {
+    listingIds: ["listing_changed"],
+    attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+  };
   const first = await (await handler(request(payload))).json();
   const readReceipt = repositories.approvalReceipts.getByVersionId;
   repositories.approvalReceipts.getByVersionId = async (versionId) => {
@@ -1157,8 +1267,18 @@ it("fresh source evidence and approval create a new attempt without replacing th
   const { handler, repositories, assetStore, exportAttempts } = makeHandler({
     platformProducts: products,
   });
-  const payload = { listingIds: ["listing_changed"], freshnessAttested: true };
-  const first = await (await handler(request(payload))).json();
+  const listingIds = ["listing_changed"];
+  // Read back post-normalization, like the mixed-review-selection test above.
+  const first = await (
+    await handler(
+      request({
+        listingIds,
+        attestation: attestationFor({
+          listing_changed: products.listing_changed!.contentDigest!,
+        }),
+      }),
+    )
+  ).json();
   const oldBytes = new Uint8Array(assetStore.calls[0].body);
   const oldReceipt =
     await repositories.approvalReceipts.getByVersionId("version_changed");
@@ -1189,7 +1309,20 @@ it("fresh source evidence and approval create a new attempt without replacing th
     sourceRowDigest: snapshot.sourceRowDigest,
     id: "renewed-receipt",
   });
-  const second = await (await handler(request(payload))).json();
+  const second = await (
+    await handler(
+      request({
+        listingIds,
+        // The digest an operator would see now differs from what `first`
+        // attested -- attesting the stale value here would (correctly) fail
+        // freshness instead of exercising the "fresh evidence" path this test
+        // is about.
+        attestation: attestationFor({
+          listing_changed: products.listing_changed!.contentDigest!,
+        }),
+      }),
+    )
+  ).json();
   expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
   expect(second.rowCount).toBe(1);
   expect(assetStore.calls).toHaveLength(2);
@@ -1205,7 +1338,10 @@ it("direct website IDs produce no bulk artifact, attempt or successful export au
   const { handler, assetStore, audits, exportAttempts } = makeHandler();
   const id = "00000000-0000-4000-8000-000000000901";
   const response = await handler(
-    request({ listingIds: [id], freshnessAttested: true }),
+    request({
+      listingIds: [id],
+      attestation: attestationFor({ [id]: "irrelevant" }),
+    }),
   );
   expect(response.status).toBe(200);
   const body = await response.json();
@@ -1216,4 +1352,52 @@ it("direct website IDs produce no bulk artifact, attempt or successful export au
   });
   expect(audits).toEqual([]);
   expect(assetStore.calls).toEqual([]);
+});
+
+describe("attestation request shape", () => {
+  it("rejects an attestation that omits one of two requested listingIds with 400 attestation_incomplete", async () => {
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop"],
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("attestation_incomplete");
+  });
+
+  it("rejects an attestation that names a listing not present in listingIds with 400 attestation_incomplete", async () => {
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+        }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("attestation_incomplete");
+  });
+
+  it("rejects a request over MAX_BULK_EXPORT_ITEMS listingIds with 400", async () => {
+    const { handler } = makeHandler();
+    const listingIds = Array.from(
+      { length: MAX_BULK_EXPORT_ITEMS + 1 },
+      (_, index) => `listing_${index}`,
+    );
+    const response = await handler(
+      request({
+        listingIds,
+        attestation: attestationFor(
+          Object.fromEntries(listingIds.map((id) => [id, "digest"])),
+        ),
+      }),
+    );
+    expect(response.status).toBe(400);
+  });
 });

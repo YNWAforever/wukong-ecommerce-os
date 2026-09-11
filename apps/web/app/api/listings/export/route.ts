@@ -10,6 +10,7 @@ import {
 import { ShoplineBulkFormError } from "@wukong/shopline";
 import { z } from "zod";
 
+import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 import {
   createBulkExport,
   createBulkExportDeps,
@@ -31,8 +32,18 @@ export const runtime = "nodejs";
 
 const bodySchema = z
   .object({
-    listingIds: z.array(z.string().min(1)).min(1),
-    freshnessAttested: z.boolean(),
+    listingIds: z.array(z.string().min(1)).min(1).max(MAX_BULK_EXPORT_ITEMS),
+    attestation: z.object({
+      listings: z
+        .array(
+          z.object({
+            listingId: z.string().min(1),
+            contentDigest: z.string().min(1),
+          }),
+        )
+        .min(1)
+        .max(MAX_BULK_EXPORT_ITEMS),
+    }),
   })
   .strict()
   .refine(
@@ -86,13 +97,35 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
       assertReviewer(session.role);
       const body = bodySchema.parse(await request.json());
 
+      // Set equality, not containment: an attestation that omits a requested
+      // listing never covered it, and one that names an extra listing was made
+      // against a different selection. Either way the evidence does not
+      // describe this export, so it is a bad request rather than a per-listing
+      // outcome.
+      const attested = new Map(
+        body.attestation.listings.map((entry) => [
+          entry.listingId,
+          entry.contentDigest,
+        ]),
+      );
+      if (
+        attested.size !== new Set(body.listingIds).size ||
+        body.listingIds.some((listingId) => !attested.has(listingId))
+      ) {
+        throw new ApiError(
+          400,
+          "attestation_incomplete",
+          "The attestation does not cover exactly the listings requested.",
+        );
+      }
+
       try {
         const database = deps.getDatabase();
         const input = {
           workspaceId: session.workspaceId,
           requestedBy: session.actorId,
           listingIds: body.listingIds,
-          freshnessAttested: body.freshnessAttested,
+          attestedDigests: attested,
         };
         const exported = await database.forWorkspace(
           session.workspaceId,
@@ -111,7 +144,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         const provenance = {
           identityVersion: 1,
           workspaceId: session.workspaceId,
-          freshnessAttested: body.freshnessAttested,
+          attestedListingCount: attested.size,
           headerContractSha256: exported.headerContractSha256,
           specVersion: exported.specVersion,
           rowOrder: exported.evidence.map((entry) => entry.listingId),
