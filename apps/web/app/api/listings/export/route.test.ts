@@ -1355,6 +1355,27 @@ it("direct website IDs produce no bulk artifact, attempt or successful export au
 });
 
 describe("attestation request shape", () => {
+  it("rejects an attestation that names one listing twice", async () => {
+    // Built literally rather than through attestationFor, which is keyed by
+    // object and so cannot express a duplicate. Without the schema refine the
+    // two entries collapse in the handler Map, set equality still passes, and
+    // whichever digest came last wins silently.
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation: {
+          listings: [
+            { listingId: "listing_changed", contentDigest: CHANGED_DIGEST },
+            { listingId: "listing_changed", contentDigest: WRONG_DIGEST },
+          ],
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects an attestation that omits one of two requested listingIds with 400 attestation_incomplete", async () => {
     const { handler } = makeHandler();
     const response = await handler(

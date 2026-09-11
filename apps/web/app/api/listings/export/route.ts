@@ -42,7 +42,16 @@ const bodySchema = z
           }),
         )
         .min(1)
-        .max(MAX_BULK_EXPORT_ITEMS),
+        .max(MAX_BULK_EXPORT_ITEMS)
+        // Same rule listingIds already carries. Without it two entries for one
+        // listing collapse in the Map below and the set-equality check still
+        // passes, silently picking whichever digest came last.
+        .refine(
+          (listings) =>
+            new Set(listings.map((entry) => entry.listingId)).size ===
+            listings.length,
+          { message: "attestation must not name a listing twice" },
+        ),
     }),
   })
   .strict()
