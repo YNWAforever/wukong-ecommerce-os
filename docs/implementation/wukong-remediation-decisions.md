@@ -250,6 +250,210 @@ coherent slice rather than a partial widening.
 
 ---
 
+## D8 — Progress survives the failure that interrupted it
+
+**Status:** implemented (`0cfeba4`)
+
+`createListingDraft` collected asset ids into a local array and threw on the
+first failure, so the array went out of scope. The form then reset every
+in-flight row to `ready`, because a status string was all it kept. A second
+photo failing therefore re-sent the first photo's bytes — over the connection
+that had just proved unreliable — and left the first upload orphaned in the
+bucket with `listing_id` null.
+
+Each file now reports `storedKey` the moment its bytes land and `assetId` the
+moment finalize confirms them, and both are committed to state during the submit
+rather than after it. A retry resumes from the stored key, skipping presign and
+the PUT entirely.
+
+**Why finalize had to become replay-safe at the same time.** Presign mints a
+fresh random key per call (`asset-store.ts:154`), so before this change a retry
+could never revisit a key and the `409 asset_already_finalized` branch was
+unreachable from any real path. Resuming makes it reachable on the first lost
+finalize response. The same key with the same `clientSha256` is now answered
+with the existing asset and a `200`; a different checksum is still a `409`, and
+no second audit event is written because no mutation happened.
+
+**Consequences.** This also repairs the create-replay guard from F05's first
+half, which keys idempotency on the asset set: re-uploading minted new ids, so a
+replay looked like a different listing and a lost `POST /api/listings` response
+produced a second draft for the same bottle.
+
+---
+
+## D9 — An attempt nothing dispatched gets a terminal state, not silence
+
+**Status:** implemented (`c8125f8`)
+
+`runProductShot` returned silently when the Worker's provider was `disabled`,
+acking the message and leaving the row `queued` for ever. The panel polled it
+every three seconds, "Retry queue" led back to the same line, and — because
+`listing-approval.ts:341` refuses any listing whose product shot is not
+`approved` — the listing could never be approved either. A blocked listing, not
+a spinner.
+
+`finishUndispatched` ends such an attempt as `failed`, guarded on
+`queued && !dispatchedAt && !cutoutAssetId`. That predicate is the whole safety
+argument: it is the proof no provider call was made, and therefore that nothing
+can have been charged. Anything dispatched keeps flowing through
+`finishFailure`, which can still reach `outcome_unknown`.
+
+**A migration was required, and unit tests could not have told me.**
+`0021_product_shots.sql:27` pins `error_code` to six values, all of which
+describe something that happened during or after a provider call. All three new
+codes were outside it, so the write raised `check_violation` in production while
+every fake-repository test stayed green. `0022` widens the CHECK — strictly
+additive, rehearsed twice on a real Postgres for idempotency, then re-proved
+through the full migration chain and the repository integration tests.
+
+**Deployment order.** The migration must be applied **before** the Worker that
+writes the new codes. A second ordering constraint on top of D4's.
+
+**Not covered.** A runtime that cannot initialise has no database handle to
+record through, so its final delivery still dead-letters; a DLQ replay is the
+only recovery. Closing that needs a sweeper pass over stuck attempts, which
+needs its own `SECURITY DEFINER` function and migration.
+
+---
+
+## D10 — A batch must not report work it did not do
+
+**Status:** implemented (`cbe7201`)
+
+Every batch wave enqueued `activeVersionSequence: 0`. For any draft already
+through the pipeline that key resolved to a completed run, so the Worker
+returned the cached result without calling the model: the item was marked
+queued, reconciled as succeeded, and the catalog was unchanged. The operator
+read "enqueued: 5" over five listings nothing had touched. The cohort makes this
+the expected case — the gap is read from an imported sheet row enrichment never
+rewrites, so a second batch re-selects exactly the same drafts.
+
+**Why the status gate is in the same commit.** Sending the real revision fixes
+the no-op and immediately exposes a worse failure: a genuine job for an
+`approved` or `published` draft runs extraction _and_ generation and then throws
+`Illegal transition` while completing — and that throw rolls back the cost
+record written in the same transaction, so the money is spent where no budget
+can see it. Landing the key fix alone would have made production worse than
+leaving it broken.
+
+**Mutual exclusion comes from the item status, not the queue key.** Numbering a
+fresh attempt per advance means two advances no longer share a key, so the key
+no longer serializes them. `claimWave` claims only `pending` rows and nothing
+moves an item back, so a draft whose job is in flight cannot be claimed twice.
+
+**`needs_info` and `reopened` now settle.** They were in neither the succeeded
+nor the failed list, so the item stayed `queued` and `done` could never become
+true. They are `skipped`: the batch has nothing further to try, even though a
+person still can.
+
+**Not covered.** Dispatch is still an in-request loop after the claim commits. A
+request that dies mid-wave leaves items `queued` with no message and no audit
+event. A recovery pass cannot yet tell "never dispatched" from "dispatched and
+still in the queue", because the run row only appears when the pipeline claims
+its first step — that distinction has to be designed before it can be fixed.
+
+---
+
+## D11 — A budget counts the batch's own spend, not the cohort's history
+
+**Status:** implemented (`cbe7201`)
+
+`sumCostForListings` summed every run those drafts had ever had. The design's
+own prescribed recovery — a new batch over a failed cohort — was therefore the
+case that broke worst: the second batch opened already charged for the first
+one's spend and could exhaust its budget before enqueuing anything. No route can
+change a batch's budget after creation, so there was no value an operator could
+set to escape it.
+
+`since` bounds the sum to the batch's own lifetime. **Deliberately no batch id
+on `ai_runs`**: the listing pipeline stays generic, `listingJobSchema` is
+`.strict()` so a new key would make an older Worker reject the envelope, and a
+time bound needs no column at all. The parameter is optional, so
+`GET /api/quality` — which genuinely wants workspace-lifetime cost and already
+publishes `costScope: "all_history_for_workspace_listings"` — is unchanged.
+
+---
+
+## D12 — A gate that a Save can empty is not a gate
+
+**Status:** implemented (`bc501ee`)
+
+Compliance flags are stored against the version they were raised on, and every
+edit appends a new version. `approveListing` refuses only on an OPEN BLOCKING
+flag it can see, and it reads them off the active version — so saving any edit,
+even one nowhere near the flagged field, left the new version with no flags and
+opened the gate. `listing-approval.ts` already carries flags forward wherever it
+appends a version; `editReview` was the one path that did not.
+
+**Evidence is deliberately not carried.** There the content is what changed, so
+the previous version's excerpts may no longer support the values they are
+attached to, and asserting that they do would be worse than showing none.
+
+**Revisit if** an edit to a flagged field should re-open a resolved flag. Today
+a resolved flag carries its resolution forward unchanged, which restores the
+behaviour that existed before the version was appended — not a judgement that
+the resolution still applies.
+
+---
+
+## D13 — A diagnostic may not claim more than it checked
+
+**Status:** implemented (`6eefc16`)
+
+Two false greens, both of which an operator would read as an answer to a
+question the command never asked.
+
+`vercel-env` read `process.env`. A green line said the operator's own shell held
+an ingress URL and secret; its name said Vercel was configured. The bring-up
+runbook then told them `health-signed` proves Vercel and the Worker agree — but
+that check signs with the same shell value, and the runbook's own command block
+tells them to paste the Worker's secret into it. So the most common bring-up
+failure was structurally invisible, behind a check named after it. Renamed to
+`local-ingress-env`, its detail now says which shell it read, and its fix names
+`vercel env pull`, which answers the other question.
+
+`/health` has always published `aiProvider`, and nothing read it. A production
+Worker deployed with `AI_PROVIDER=fake` invents every fact and every sentence it
+returns, and reported seven green checks. `listing-provider` now fails
+production on `fake`, fails any value this build cannot run, and prints both
+provider names — the product-shot one is printed rather than judged, because it
+is only wrong relative to the web app's value, which this command cannot read.
+
+**Why not make the Vercel check `unknown`.** `hasFailure` treats anything that
+is not `ok` as a failure, so an always-unknown check would exit 1 on every run
+and be trained away within a week. Naming what was actually checked is worth
+more than a signal nobody reads.
+
+**Not covered.** The env-inventory delta: several variables `apps/web` requires
+at runtime are still unchecked, and one is explicitly forbidden on Vercel by the
+runbook the operator is following.
+
+---
+
+## D14 — F11 is a capability, and a seam that cannot carry it is worse than none
+
+**Status:** decided, not implemented
+
+Nothing at HEAD misbehaves against its own contract. Closing F11 means building
+a stage that consults a data source outside this repository, which needs a real
+provider and either a credential or a robots-permitted crawl target. None exists
+offline, so nothing was landed.
+
+A seam was designed and rejected on review. It proposed a second `extracted`
+step record, which `UNIQUE (workspace_id, pipeline_run_id, step)` makes
+impossible and which would break the replay determinism the lease design exists
+to guarantee; and it copied `deps.productShot?`, whose own comment says that
+dependency is legacy and is deliberately never supplied by
+`createCloudflareRuntime`. A seam that cannot carry the feature would have
+looked like progress and blocked the real design.
+
+**Constraint for whoever builds it.** Facts from an external source must arrive
+with evidence or not at all. `fact-grounding-rules.ts` exists to stop an
+unattributable value reaching a listing, and adding a source must not become a
+way around it — which means a new grounding mode, not an exemption.
+
+---
+
 ## Open questions requiring evidence this session could not obtain
 
 - The historical run `3b958fe6-64e3-44bb-ac0c-13fa38ae60a3` cannot be attributed

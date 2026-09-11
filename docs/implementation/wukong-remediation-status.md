@@ -73,12 +73,12 @@ Twelve of fourteen reproduce. None were already fixed.
 | F07 four disagreeing media policies          | still_reproducible | **fixed** — one browser-safe policy leaf shared by form, presign, finalize and create                                 |
 | F10 draft save requires canonical            | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate                                          |
 | F13 second file selection replaces the first | still_reproducible | **file picker half fixed** — selections accumulate and can be removed; other UX sub-claims remain                     |
-| F06 create never starts image work           | still_reproducible | no                                                                                                                    |
-| F12 doctor passes while misconfigured        | partially_fixed    | no                                                                                                                    |
-| F08 batches enqueue at sequence 0            | still_reproducible | no                                                                                                                    |
-| F14 batch cost is all-history                | still_reproducible | no                                                                                                                    |
+| F06 create never starts image work           | still_reproducible | **fixed** — create dispatches image work, and a shot the Worker will never run now ends instead of queueing for ever  |
+| F12 doctor passes while misconfigured        | partially_fixed    | **partly fixed** — the two false greens are gone; the env-inventory delta remains                                     |
+| F08 batches enqueue at sequence 0            | still_reproducible | **stale key and needs_info fixed** — durable dispatch remains                                                         |
+| F14 batch cost is all-history                | still_reproducible | **cost half fixed** — a batch's budget counts only its own spend; claim grounding remains                             |
 | F09 approve without a dirty guard            | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
-| F11 no external enrichment stage             | still_reproducible | no                                                                                                                    |
+| F11 no external enrichment stage             | **not_a_defect**   | no — and deliberately not attempted; see below                                                                        |
 
 ## Delivered
 
@@ -97,22 +97,70 @@ Twelve of fourteen reproduce. None were already fixed.
 | (file picker)      | Add a back label without silently losing the bottle shot, and remove a file that was picked by mistake                  |
 | (dirty guard)      | Stop approving a version that lacks the correction still sitting in the box                                             |
 | (media policy)     | Learn a photo is too large before uploading it, not after presign refuses it                                            |
+| `0cfeba4`          | Retry after one photo fails without re-sending the ones that already uploaded                                           |
+| `c8125f8`          | See that image processing is off rather than watching a spinner that never ends                                         |
+| `cbe7201`          | Run a second batch over the same products and have it actually do the work it reports                                   |
+| `bc501ee`          | Stop a blocking compliance flag disappearing because someone saved an unrelated edit                                    |
+| `6eefc16`          | Find out the production Worker is inventing every listing, instead of reading seven green checks                        |
+
+## What the adversarial review corrected in my own work
+
+Every finding below was investigated and then independently attacked. Three
+corrections changed what shipped, and are recorded because the tests did not
+catch any of them:
+
+1. **F06's fix would have raised `check_violation` in production.**
+   `0021_product_shots.sql:27` pins `error_code` to six values, and all three
+   codes the fix writes were outside it. Unit tests use fake repositories, so
+   they stayed green. Caught by review, then reproduced on a real Postgres,
+   fixed by migration `0022`, and re-proved end to end.
+2. **F06's severity was overstated by me.** The committed
+   `cloudflare-runtime.config.json` pins the Worker to `disabled`, but the web
+   app defaults to `disabled` too and refuses to enqueue, so the committed
+   configuration is self-consistent. The reachable case is enabling the feature
+   on Vercel without also setting it in the Worker config. The code comment said
+   otherwise and was corrected.
+3. **F08's key fix alone would have made production worse.** Resolving the real
+   revision stops the silent no-op — and immediately sends a genuine job for
+   drafts that are already `approved` or `published`, which spends on the model
+   and then throws on the status transition, rolling back the cost record in the
+   same transaction. The status gate had to land in the same commit, and did.
 
 ## Next task, exactly
 
-**F05, second half — per-file upload retry.** A retry after any per-file failure
-re-uploads every file, so a second photo failing costs the operator the first
-one's bytes again. `listing-intake-form.tsx` promises otherwise in its own copy;
-the state it keeps cannot distinguish an uploaded file from a pending one.
+**F13(c) — the review screen collapses a conflict into one useless sentence.**
+Not every failure, as first reported: 401/403 already render a dedicated
+permission sentence. What collapses is the 409/422 family —
+`version_conflict`, `confirmation_ledger_stale`, `confirmation_source_stale`,
+`source_snapshot_required`, `source_origin_changed`, `image_approval_required`,
+`stale_version`, `listing_busy` — each of which has a precise remedy already
+written in `apps/web/lib/approval-ui-copy.ts` and wired only to the bulk queue.
+`listing-review-client.tsx:506-509` discards the body, so the code never
+reaches the screen. Forward the `code` field only, never `message`, or the
+"never leak internals into a response body" rule leaks through the UI instead.
 
-Files: `apps/web/components/listing-intake-form.tsx` (per-file status is already
-modelled -- `uploading` / `uploaded` / `error` -- but the upload loop ignores
-it), `apps/web/lib/browser-asset-upload.ts`,
-`apps/web/app/api/assets/finalize/route.ts` (a finalize replay should return the
-same asset rather than erroring).
+Then, in dependency order: F08 durable dispatch (needs a decision on whether a
+run row can distinguish "never dispatched" from "dispatched and still queued")
+→ F12's env-inventory delta → F14 claim grounding.
 
-Then, in dependency order: F12 doctor alignment → F08 batch identity and outbox
-→ F14 cost ledger → F11 external enrichment (a new capability, Phase 3).
+## F11 is not a defect, and was deliberately not attempted
+
+Nothing at HEAD misbehaves against its own contract: the pipeline is
+extract → generate → complete, and it does exactly that. Closing F11 means
+building a stage that consults a data source outside this repository, which
+needs a real provider and either a credential or a robots-permitted crawl
+target. None of the three exists in an offline session.
+
+A seam was designed and then rejected on review: it proposed a second
+`extracted` step record, which `UNIQUE (workspace_id, pipeline_run_id, step)`
+makes impossible and which would break the replay determinism the lease design
+exists to guarantee; and it copied `deps.productShot?`, whose own comment says
+that dependency is legacy and deliberately never supplied. Landing a seam that
+cannot carry the feature is worse than landing nothing, so nothing was landed.
+
+Whatever eventually fills it must produce evidence-bearing facts or none:
+`fact-grounding-rules.ts` exists precisely to stop an unattributable value
+reaching a listing, and an external source must not become a way around it.
 
 ## Discovered while fixing, not yet addressed
 
