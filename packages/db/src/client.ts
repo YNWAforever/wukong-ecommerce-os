@@ -86,6 +86,10 @@ import {
   type EnrichmentBatchRepository,
 } from "./repositories/enrichment-batches.js";
 import {
+  createListingDispatchOutboxRepository,
+  type ListingDispatchOutboxRepository,
+} from "./repositories/listing-dispatch-outbox.js";
+import {
   createMembershipRepository,
   type MembershipRepository,
 } from "./repositories/memberships.js";
@@ -134,6 +138,8 @@ export type WorkspaceRepositories = {
   exportAttempts: ExportAttemptRepository;
   importResults: ImportResultRepository;
   enrichmentBatches: EnrichmentBatchRepository;
+  /** Work recorded before it is sent, so a crash mid-send stays recoverable. */
+  dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
@@ -304,6 +310,11 @@ export function createDatabase(
           scope,
         ),
         enrichmentBatches: createEnrichmentBatchRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        dispatchOutbox: createListingDispatchOutboxRepository(
           transaction,
           workspaceId,
           scope,

@@ -245,10 +245,34 @@ function advanceServiceWith(options: {
   counts?: Record<string, number>;
   sequences?: Record<string, number>;
   recordedRuns?: Record<string, number>;
+  /** Rows an earlier advance recorded and never confirmed as sent. */
+  stranded?: Array<{
+    id: string;
+    listingId: string;
+    dedupeKey: string;
+    payload: Record<string, unknown>;
+  }>;
+  enqueueFails?: (job: { draftId: string }) => boolean;
 }) {
   const enqueued: string[] = [];
   const jobs: Array<Record<string, unknown>> = [];
   const costWindows: Array<Date | null> = [];
+  // Mirrors the repository: unique on dedupeKey, and `pending` only ever
+  // returns rows nothing has confirmed.
+  const outbox = new Map<
+    string,
+    {
+      id: string;
+      listingId: string;
+      dedupeKey: string;
+      payload: Record<string, unknown>;
+      attempts: number;
+      dispatched: boolean;
+    }
+  >();
+  for (const row of options.stranded ?? []) {
+    outbox.set(row.dedupeKey, { ...row, attempts: 0, dispatched: false });
+  }
   const statuses: string[] = [];
   const marked: Marked[] = [];
   const audits: AuditRecord[] = [];
@@ -330,6 +354,43 @@ function advanceServiceWith(options: {
                 return options.recordedRuns?.[listingId] ?? 0;
               },
             },
+            dispatchOutbox: {
+              async record(
+                entries: Array<{
+                  listingId: string;
+                  dedupeKey: string;
+                  payload: Record<string, unknown>;
+                }>,
+              ) {
+                const created = [];
+                for (const entry of entries) {
+                  if (outbox.has(entry.dedupeKey)) continue;
+                  const row = {
+                    ...entry,
+                    id: `outbox_${outbox.size + 1}`,
+                    attempts: 0,
+                    dispatched: false,
+                  };
+                  outbox.set(entry.dedupeKey, row);
+                  created.push(row);
+                }
+                return created;
+              },
+              async pending() {
+                return [...outbox.values()].filter((row) => !row.dispatched);
+              },
+              async markDispatched(ids: string[]) {
+                for (const row of outbox.values()) {
+                  if (ids.includes(row.id)) row.dispatched = true;
+                }
+              },
+              async markAttempted(ids: string[]) {
+                for (const row of outbox.values()) {
+                  if (ids.includes(row.id) && !row.dispatched)
+                    row.attempts += 1;
+                }
+              },
+            },
             aiRuns: {
               async sumCostForListings(
                 _ids: readonly string[],
@@ -349,6 +410,7 @@ function advanceServiceWith(options: {
       }) as never,
     publisher: {
       async enqueue(job: { draftId: string }) {
+        if (options.enqueueFails?.(job)) throw new Error("queue unreachable");
         enqueued.push(job.draftId);
         jobs.push({ ...job });
         return { id: `job_${job.draftId}` };
@@ -356,7 +418,16 @@ function advanceServiceWith(options: {
     },
   });
 
-  return { service, enqueued, jobs, statuses, marked, audits, costWindows };
+  return {
+    service,
+    enqueued,
+    jobs,
+    statuses,
+    marked,
+    audits,
+    costWindows,
+    outbox,
+  };
 }
 
 const advanceInput = {
@@ -794,5 +865,168 @@ describe("what a batch's budget counts", () => {
 
     expect(result.status).toBe("budget_exhausted");
     expect(enqueued).toEqual([]);
+  });
+});
+
+/**
+ * Work that was decided on but never sent.
+ *
+ * Dispatch was an in-request loop running AFTER the claim transaction
+ * committed. A request that died mid-wave left its items `queued` with no queue
+ * message, no audit event, and nothing able to find them: the sweeper requires
+ * a source asset, which imported drafts never have, and `claimWave` only claims
+ * `pending`. The work was lost silently and permanently.
+ *
+ * A recovery pass was impossible to write before, because nothing recorded the
+ * INTENT to send -- `listing_pipeline_runs` appears only once the pipeline
+ * claims its first step, so its absence cannot tell "never sent" from "sent and
+ * still queued", and re-sending the second buys a duplicate extraction.
+ */
+describe("recording work before sending it", () => {
+  const pending = <T extends { dispatched: boolean }>(outbox: Map<string, T>) =>
+    [...outbox.values()].filter((row) => !row.dispatched);
+
+  it("records the wave, then confirms it once the queue accepts", async () => {
+    const { service, enqueued, outbox } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1", "draft_2"],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_1", "draft_2"]);
+    expect(outbox.size).toBe(2);
+    expect(pending(outbox)).toEqual([]);
+  });
+
+  it("keeps the row when the queue refuses, so nothing is lost", async () => {
+    const { service, outbox } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1", "draft_2"],
+      enqueueFails: (job) => job.draftId === "draft_2",
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    // One went out, one did not, and the batch reports only what was accepted.
+    expect(result.enqueued).toBe(1);
+    expect(pending(outbox).map((row) => row.listingId)).toEqual(["draft_2"]);
+    expect(pending(outbox)[0]?.attempts).toBe(1);
+  });
+
+  it("does not abandon the rest of the wave when one send fails", async () => {
+    // The loop used to `await` without catching, so the first failure threw and
+    // every later item in the wave was never attempted at all.
+    const { service, enqueued } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1", "draft_2"],
+      enqueueFails: (job) => job.draftId === "draft_1",
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_2"]);
+  });
+
+  it("re-sends what an interrupted advance recorded and never sent", async () => {
+    // The whole point: this is the request that died, recovered by the next one.
+    const { service, enqueued, outbox } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: [],
+      counts: { pending: 0, queued: 1 },
+      stranded: [
+        {
+          id: "outbox_x",
+          listingId: "draft_lost",
+          dedupeKey: "listing:ws_opak:draft_lost:0",
+          payload: {
+            workspaceId: "ws_opak",
+            draftId: "draft_lost",
+            activeVersionSequence: 0,
+          },
+        },
+      ],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_lost"]);
+    expect(result.enqueued).toBe(1);
+    expect(pending(outbox)).toEqual([]);
+  });
+
+  it("still sends stranded work after the budget is exhausted", async () => {
+    // The money was committed when the item was claimed; the message merely
+    // never left. Withholding it would strand the item for ever with nothing
+    // owed to it, and no budget an operator could set would release it.
+    const { service, enqueued } = advanceServiceWith({
+      spent: 99,
+      budget: 5,
+      pending: ["draft_1"],
+      stranded: [
+        {
+          id: "outbox_x",
+          listingId: "draft_lost",
+          dedupeKey: "listing:ws_opak:draft_lost:0",
+          payload: {
+            workspaceId: "ws_opak",
+            draftId: "draft_lost",
+            activeVersionSequence: 0,
+          },
+        },
+      ],
+    });
+
+    const result = await service.advanceBatch(advanceInput);
+
+    expect(enqueued).toEqual(["draft_lost"]);
+    // The batch is still exhausted; it just is not hiding the debt it owed.
+    expect(result.status).toBe("budget_exhausted");
+  });
+
+  it("does not record the same job twice", async () => {
+    // Unique on the run key, so a retried advance cannot turn one job into two
+    // messages -- and a genuinely new run carries a new attempt, so a new key.
+    const { service, outbox } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+      stranded: [
+        {
+          id: "outbox_x",
+          listingId: "draft_1",
+          dedupeKey: "listing:ws_opak:draft_1:0",
+          payload: {
+            workspaceId: "ws_opak",
+            draftId: "draft_1",
+            activeVersionSequence: 0,
+          },
+        },
+      ],
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(outbox.size).toBe(1);
+  });
+
+  it("reports a queue that accepted nothing as a failure, not a quiet success", async () => {
+    // The work is safe and the next advance re-sends it, but answering 200 with
+    // `enqueued: 0` would say the queue is healthy when it plainly is not.
+    const { service, outbox } = advanceServiceWith({
+      spent: 0,
+      budget: 10,
+      pending: ["draft_1"],
+      enqueueFails: () => true,
+    });
+
+    await expect(service.advanceBatch(advanceInput)).rejects.toThrow(
+      /queue unreachable/i,
+    );
+    expect(pending(outbox)).toHaveLength(1);
   });
 });

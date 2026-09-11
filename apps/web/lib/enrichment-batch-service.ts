@@ -5,6 +5,7 @@ import type {
   PlatformProduct,
   WorkspaceRepositories,
 } from "@wukong/db";
+import { listingRunKey } from "@wukong/jobs";
 import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
@@ -101,6 +102,17 @@ const UNRESOLVED_STATUSES = ["needs_info", "reopened"] as const;
 
 /** Exactly what the publisher accepts, so the two cannot drift apart. */
 type WaveJob = Parameters<ListingPublisher["enqueue"]>[0];
+
+/**
+ * How long a recorded-but-unsent job waits before another advance re-sends it.
+ *
+ * A wave is at most five messages, so a healthy dispatch finishes in well under
+ * a second; anything still unsent after a minute belongs to a request that did
+ * not survive. Long enough that a concurrent advance does not race the one
+ * currently sending -- and if two ever did overlap, the duplicate is harmless:
+ * both carry the same run key, and the pipeline deduplicates on it.
+ */
+const OUTBOX_GRACE_SECONDS = 60;
 
 /** Marks items, skipping the write entirely when there is nothing to mark. */
 async function markItems(
@@ -329,6 +341,14 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           );
         }
 
+        // Work an earlier advance recorded and never confirmed as sent. The
+        // grace window keeps a wave that is dispatching right now out of this,
+        // so a second advance cannot race the one currently sending.
+        const stranded = await repositories.dispatchOutbox.pending({
+          olderThanSeconds: OUTBOX_GRACE_SECONDS,
+          maxRows: 100,
+        });
+
         // Budget is enforced on observed spend, never on a stored running
         // total, so it cannot drift out of sync with the runs it counts.
         const itemIds = await repositories.enrichmentBatches.listItemIds(
@@ -348,7 +368,10 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
             input.batchId,
             "budget_exhausted",
           );
-          return { batch, spentUsd, jobs: [] as WaveJob[], done: false };
+          // Stranded work still goes out. The money was committed when the
+          // item was claimed; the message merely never left. Withholding it
+          // now would leave the item queued for ever with nothing owed to it.
+          return { batch, spentUsd, dispatches: stranded, done: false };
         }
 
         const wave = await repositories.enrichmentBatches.claimWave(
@@ -368,7 +391,7 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
               "completed",
             );
           }
-          return { batch, spentUsd, jobs: [] as WaveJob[], done };
+          return { batch, spentUsd, dispatches: stranded, done };
         }
 
         await repositories.enrichmentBatches.setStatus(
@@ -376,18 +399,41 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           "running",
         );
         const jobs = await planWave(repositories, input, wave);
-        return { batch, spentUsd, jobs, done: false };
+        // Recorded INSIDE the claim transaction, which is the whole point: if
+        // this request dies before the queue call, the row already says what
+        // was owed. `listing_pipeline_runs` cannot answer that question --
+        // it appears only once the pipeline claims its first step, so its
+        // absence cannot tell "never sent" from "sent and still queued".
+        const recorded = await repositories.dispatchOutbox.record(
+          jobs.map((job) => ({
+            listingId: job.draftId,
+            dedupeKey: listingRunKey(job),
+            payload: job as unknown as Record<string, unknown>,
+          })),
+        );
+        return {
+          batch,
+          spentUsd,
+          dispatches: [...stranded, ...recorded],
+          done: false,
+        };
       });
 
-    if (plan.jobs.length === 0) {
+    // Derived once. Sending stranded work no longer implies the batch is
+    // running: a budget-exhausted batch can still owe messages from a wave it
+    // paid for, and reporting that as `running` told the operator the batch had
+    // resumed when it had not.
+    const status =
+      plan.spentUsd >= plan.batch.budgetUsd
+        ? ("budget_exhausted" as const)
+        : plan.done
+          ? ("completed" as const)
+          : ("running" as const);
+
+    if (plan.dispatches.length === 0) {
       return {
         batchId: input.batchId,
-        status:
-          plan.spentUsd >= plan.batch.budgetUsd
-            ? "budget_exhausted"
-            : plan.done
-              ? "completed"
-              : "running",
+        status,
         enqueued: 0,
         spentUsd: plan.spentUsd,
         budgetUsd: plan.batch.budgetUsd,
@@ -395,17 +441,30 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     }
 
     // Enqueue outside the transaction: the queue is a remote service and must
-    // not hold a pooled connection open. Items are already `queued`, so a
-    // failure here leaves them claimed rather than silently re-runnable.
-    let enqueued = 0;
-    for (const job of plan.jobs) {
-      await deps.publisher.enqueue(job);
-      enqueued += 1;
+    // not hold a pooled connection open. Every job is already recorded, so a
+    // failure here is recoverable rather than lost -- which is why one send
+    // failing no longer abandons the rest of the wave.
+    const delivered: string[] = [];
+    const unsent: string[] = [];
+    let firstFailure: unknown;
+    for (const entry of plan.dispatches) {
+      try {
+        await deps.publisher.enqueue(entry.payload as unknown as WaveJob);
+        delivered.push(entry.id);
+      } catch (error) {
+        firstFailure ??= error;
+        unsent.push(entry.id);
+      }
     }
+    const enqueued = delivered.length;
 
     await deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
+        // Confirm before auditing: the audit event reports what the queue
+        // accepted, and it must not claim more than the outbox records.
+        await repositories.dispatchOutbox.markDispatched(delivered);
+        await repositories.dispatchOutbox.markAttempted(unsent);
         // Counts and money only — no draft note, product name or SKU.
         await repositories.audit.write({
           workspaceId: input.workspaceId,
@@ -431,9 +490,14 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
       }),
     );
 
+    // Nothing reached the queue. The work is safe -- every job is recorded and
+    // the next advance re-sends it -- but answering 200 with `enqueued: 0`
+    // would tell the operator the queue is healthy when it plainly is not.
+    if (enqueued === 0 && unsent.length > 0) throw firstFailure;
+
     return {
       batchId: input.batchId,
-      status: "running",
+      status,
       enqueued,
       spentUsd: plan.spentUsd,
       budgetUsd: plan.batch.budgetUsd,
