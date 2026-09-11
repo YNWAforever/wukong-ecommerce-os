@@ -213,7 +213,7 @@ Postgres was started this session, so these are no longer assumptions:
    from enrichment_batches where status = 'budget_exhausted';
    ```
 
-## Deployment order, now two constraints
+## Deployment order, now three constraints
 
 1. **Migration `0022` before the Worker.** A Worker that writes
    `provider_disabled` against the un-widened CHECK raises `check_violation` on
@@ -222,3 +222,114 @@ Postgres was started this session, so these are no longer assumptions:
    parses `listingJobSchema` strictly and silently acks away any message
    carrying `runAttempt` — which the batch path now sends too, not just the
    manual re-run route.
+3. **Migrations `0023` and `0024` before the Worker.** The scheduled handler now
+   calls `sweeper_find_undispatched_listing_jobs` and writes through the
+   `dispatchOutbox` repository. Deployed against a database without them, the
+   cron throws on every tick — and the draft sweep and website reconciliation
+   that run in the same handler still complete, so the failure would show up
+   only as an error line, not as stalled work.
+
+## Follow-up work, with what each was measured against
+
+Four items, in the order they were done.
+
+1. **Golden-set evals for `productType`.** D1 removed the only automatic check
+   on the classification and said accuracy was now an eval concern; nothing then
+   measured it. `packages/ai/src/product-type-eval.ts` scores any classifier
+   against 14 labelled cases chosen for the traps — 白酒 reading as "white
+   wine", Cognac labelled `Eau-de-vie de vin`, Port at 20 % vol. The scorer is
+   itself tested: an empty set scores 0 rather than 1, a declined answer is
+   counted apart from a wrong one, and a wholly-failed class fails even when the
+   average looks fine.
+
+   **This does not establish the deployed model's accuracy.** Nothing here calls
+   a provider. Running it against a real model needs a credential and a paid
+   call, and that remains outstanding — the same standing as F11.
+
+2. **Deterministic claim policy.** Opak's seeded `claimPolicy` states five
+   rules; four had a checker and "exclusivity claims require evidence" had none,
+   so that line only ever reached the model's prompt. `scanCompliance` now
+   raises an exclusivity flag as a **warning**, not a blocker: the listing schema
+   carries no exclusivity fact to check evidence against, unlike a critic score
+   or an award, so blocking would stop every listing that says "exclusive" with
+   no mechanical way to satisfy the rule. `claimPolicyCoverage` reports which
+   policy lines no rule implements, and the pilot profile is asserted to have
+   none — verified by deleting a checker and watching the test fail.
+
+   `compliance_flags.code` is plain `text` with no CHECK constraint
+   (`0000_initial.sql:210`), unlike the `error_code` trap behind F06, so no
+   migration was needed. That was checked before the rule was written, not after.
+
+3. **Outbox self-healing sweep.** `dispatchOutbox.pending()` is read in exactly
+   one place, inside `advanceBatch`, and `advanceBatch` has exactly one caller:
+   the operator pressing Advance. A workspace whose batches have all reached
+   `completed` or `budget_exhausted` never re-reads its own outbox, so work
+   recorded by a request that died stays owed for ever.
+   `sweeper_find_stuck_listing_jobs` cannot cover it — that needs a draft with a
+   source asset, and an imported draft has none. `0024` adds the second
+   cross-workspace read in the same SECURITY DEFINER shape as `0007`, and the
+   cron drains it.
+
+   Three details decide whether it heals anything: a failed send is recorded as
+   an attempt and never confirmed, because nothing else reads the outbox and a
+   row wrongly marked dispatched is work lost permanently; an unparsable payload
+   is counted too, or it could never reach the attempt cap and would be retried
+   for ever; and a row whose payload names a different workspace than the row
+   itself is refused outright.
+
+   Rehearsed twice against the live Postgres for idempotency before any code
+   depended on it, and confirmed not to disturb `sweeper_find_stuck_listing_jobs`.
+   It rests on the same property `0007` already relies on in production — that
+   the migration role bypasses RLS — and so adds no new deployment assumption.
+
+   **Retention is still open, deliberately.** Dispatched rows are never pruned,
+   and rows at the attempt cap stay in the table rather than being deleted. The
+   row is the evidence that work was owed to a draft, which is why `0023` made
+   both foreign keys `ON DELETE RESTRICT`. Choosing a retention window is a
+   decision about discarding that evidence, and was not made here.
+
+4. **F13's remaining UX sub-claims.** All four were confirmed against the code
+   before anything was changed:
+
+   - The 50-selection cap refused the 51st checkbox in silence. The cap itself is
+     correct — it mirrors `MAX_BULK_APPROVE_ITEMS` in the route schema — but it
+     was a second literal that could drift from it, and refusing said nothing.
+   - Four maps named the same statuses. Queue headings said 已上架 and 發布中
+     where `states` said 已發佈 and 發佈中; the catalog carried a third map that
+     nothing rendered. `stateLabel` now answers for all of them.
+   - The batch pages never read the locale, and the detail page printed
+     `狀態: budget_exhausted` and `succeeded: 3` straight from the database.
+   - The role chip said 審閱者 where every message gating that role said 審核員,
+     so a user denied an action was told they needed a role their chip did not
+     name.
+
+   `catalogStatusLabel` turned out to be **dead** — reachable only from its own
+   test — so it was deleted rather than localised. Fixing a function nothing
+   renders would have read as a UX improvement without being one.
+
+   A vocabulary test names the retired terms and fails with the word to use
+   instead, so the copy cannot drift back.
+
+## Gates run for this follow-up work
+
+| Gate | Result |
+| --- | --- |
+| `pnpm lint` (tsc across 14 packages) | 14/14 |
+| `pnpm test` | 14/14 tasks |
+| `pnpm test:integration` | 39 files, 320 tests, 2 files skipped, **0 failures** |
+| `pnpm format:runtime:check` | 107 runtime files, 0 format debt |
+| Migration `0024` applied twice in a row | idempotent |
+
+The integration suite ran in full for the first time in this work. The three
+`product-shot` files need MinIO **and a bucket that exists**, and nothing in the
+runbook creates `wukong-local`: without it they fail at import with
+`S3_BUCKET is required`, and with the env but no bucket they fail 19 tests with
+`NoSuchBucket` — which reads like a code defect and is not one.
+
+A bare `prettier --check` across the repo reports 496 files, including ones no
+commit here touched; every file changed by this work passes. That is a
+pre-existing line-ending condition, not something this work introduced.
+
+`audit:verify` is per-draft (`--workspace` and `--draft`) and is left to CI,
+which supplies them. The outbox sweep writes no audit event, matching the
+existing sweeper and the website-scan reconciliation beside it.
