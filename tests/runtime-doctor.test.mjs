@@ -14,6 +14,7 @@ import {
   signHealthProbe,
   localIngressEnvCheck,
   checkListingProvider,
+  checkWebEnvInventory,
   parseWranglerTable,
   classifySecretList,
 } from "../scripts/runtime-doctor.mjs";
@@ -610,4 +611,40 @@ test("doctor uses intended predeploy providers and observed live providers", asy
     { aiProvider: "openrouter" },
   ])
     assert.equal(doctorRequiredSecrets(config, { env, health }), null);
+});
+
+test("checkWebEnvInventory prints the list an operator compares against Vercel", () => {
+  // The command cannot read Vercel, and pretending otherwise is what the old
+  // `vercel-env` check did. What it can do is stop the operator guessing.
+  const manifest = { required: ["DATABASE_URL", "AUTH_SECRET"], optional: [] };
+  const check = checkWebEnvInventory(
+    manifest,
+    ["DATABASE_URL=", "AUTH_SECRET="].join("\n"),
+  );
+
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /DATABASE_URL/);
+  assert.match(check.detail, /AUTH_SECRET/);
+  assert.match(check.detail, /vercel env ls/);
+});
+
+test("checkWebEnvInventory fails on a name .env.example never documents", () => {
+  // Exactly how SHOPLINE_TOKEN_ENCRYPTION_KEY stayed missing from the file both
+  // surfaces need it in: an operator following .env.example could not know.
+  const manifest = {
+    required: ["DATABASE_URL", "SHOPLINE_TOKEN_ENCRYPTION_KEY"],
+    optional: [],
+  };
+  const check = checkWebEnvInventory(manifest, "DATABASE_URL=");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /SHOPLINE_TOKEN_ENCRYPTION_KEY/);
+  assert.match(check.fix, /names only, never values/);
+});
+
+test("checkWebEnvInventory does not demand a name the app must never hold", () => {
+  // A denied value documented in an app env file reads as an invitation.
+  const manifest = { required: ["DATABASE_ADMIN_URL"], optional: [] };
+
+  assert.equal(checkWebEnvInventory(manifest, "").status, "ok");
 });

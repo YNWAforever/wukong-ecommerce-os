@@ -2,6 +2,7 @@ import {
   listingProviderSecretNames,
   productShotSecretNames,
 } from "./listing-provider-config.mjs";
+import { undocumentedNames, WEB_RUNTIME_ENV } from "./runtime-env-manifest.mjs";
 
 import { spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
@@ -521,6 +522,36 @@ export function localIngressEnvCheck(url, secret, environment) {
       };
 }
 
+/**
+ * The list an operator needs in order to check Vercel themselves.
+ *
+ * This command cannot read Vercel, and pretending otherwise is what
+ * `local-ingress-env` used to do. What it can do is stop the operator having to
+ * guess: nothing in the repository said what `apps/web` requires, so the
+ * bring-up sequence offered no list to compare `vercel env ls` against.
+ *
+ * It fails only on a defect it can genuinely see -- a name the manifest
+ * requires that `.env.example` never documents, which is how
+ * `SHOPLINE_TOKEN_ENCRYPTION_KEY` stayed absent from the file both surfaces
+ * need it in.
+ */
+export function checkWebEnvInventory(manifest, envExampleSource) {
+  const undocumented = undocumentedNames(manifest, envExampleSource);
+  if (undocumented.length) {
+    return {
+      id: "web-env-inventory",
+      status: "failed",
+      detail: `.env.example does not document ${undocumented.join(", ")}`,
+      fix: "add the names to .env.example (names only, never values)",
+    };
+  }
+  return {
+    id: "web-env-inventory",
+    status: "ok",
+    detail: `Vercel must hold: ${manifest.required.join(", ")} — compare with: vercel env ls`,
+  };
+}
+
 const LISTING_PROVIDERS = ["fake", "openai", "openrouter"];
 
 /**
@@ -611,6 +642,12 @@ async function main() {
   ];
 
   if (!preDeployOnly) {
+    checks.push(
+      checkWebEnvInventory(
+        WEB_RUNTIME_ENV,
+        readFileSync(new URL("../.env.example", import.meta.url), "utf8"),
+      ),
+    );
     checks.push(localIngressEnvCheck(ingressUrl, ingressSecret, environment));
     if (ingressUrl) {
       // A half-deployed Worker answers with a Cloudflare HTML error page, so
