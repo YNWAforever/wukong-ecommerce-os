@@ -59,6 +59,20 @@ export type {
   ProtectedFactField,
 } from "./eval.js";
 
+export {
+  PRODUCT_TYPE_GOLDEN_SET,
+  PRODUCT_TYPES,
+  assertClassificationEvaluation,
+  evaluateProductTypeClassification,
+} from "./product-type-eval.js";
+export type {
+  ClassificationEvaluation,
+  ClassificationThresholds,
+  ProductType,
+  ProductTypeCase,
+  ProductTypeClassifier,
+} from "./product-type-eval.js";
+
 export { OpenRouterListingProvider } from "./openrouter-listing-provider.js";
 export type { OpenRouterListingProviderConfig } from "./openrouter-listing-provider.js";
 
