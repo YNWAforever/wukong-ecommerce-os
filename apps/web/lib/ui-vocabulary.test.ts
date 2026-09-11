@@ -95,3 +95,78 @@ describe("interface vocabulary", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * Copy that ignores the language toggle.
+ *
+ * The batch feature was localised twice in one week -- first two components,
+ * then the two siblings nobody had named -- because nothing measured the gap.
+ * Twelve files still contain Traditional Chinese with no locale awareness at
+ * all: no `localized()`, no `stateLabel()`, no `"zh-Hant"` map, not even a
+ * `Locale` in scope. For a reader who has chosen English, those surfaces are
+ * simply in a language they did not pick.
+ *
+ * This is a ratchet, not a proof. It cannot see a file that localises most of
+ * its copy and hardcodes the rest -- that is what the retired-term check above
+ * is for. What it does guarantee is that the list below only ever shrinks: a
+ * new file with hardcoded Chinese fails immediately, and a converted file must
+ * be struck off, which is what makes the remaining work countable.
+ */
+const UNLOCALISED_SURFACES = [
+  "app/(app)/admin/page.tsx",
+  "components/admin-members-panel.tsx",
+  "components/admin-settings-panel.tsx",
+  "components/bulk-import-panel.tsx",
+  "components/listing-intake-form.tsx",
+  "components/listing-view-models.ts",
+  "components/new-product-blocked-panel.tsx",
+  "components/supporting-evidence-panel.tsx",
+  "lib/listing-approval.ts",
+];
+
+/** Han characters. Deliberately not matching kana or punctuation. */
+const HAN = /[\u4e00-\u9fff]/;
+
+/**
+ * Any sign the file knows a language exists.
+ *
+ * Deliberately generous: `read-page-copy.ts` keys a map by `"zh-Hant"` and
+ * `auth-form.tsx` takes a `Locale` parameter, and neither is a defect. A file
+ * that trips this check has no bilingual mechanism whatsoever.
+ */
+const LOCALE_AWARE = /localized\(|stateLabel\(|"zh-Hant"|labelZh|Locale/;
+
+describe("localisation coverage", () => {
+  const sources = copySources(join(import.meta.dirname, ".."));
+
+  it("has no surface with Chinese copy and no notion of language, beyond the known list", () => {
+    const offenders = sources
+      .filter((path) => {
+        const source = readFileSync(path, "utf8");
+        return HAN.test(source) && !LOCALE_AWARE.test(source);
+      })
+      .map((path) => relative(join(import.meta.dirname, ".."), path))
+      .map((path) => path.split("\\").join("/"))
+      .sort();
+
+    expect(offenders).toEqual([...UNLOCALISED_SURFACES].sort());
+  });
+
+  it("keeps the known list honest", () => {
+    // A file that has been converted must be struck off, or the list stops
+    // meaning anything. A path that no longer exists must go too.
+    for (const entry of UNLOCALISED_SURFACES) {
+      const source = readFileSync(
+        join(import.meta.dirname, "..", entry),
+        "utf8",
+      );
+      expect(HAN.test(source), entry + " no longer has Chinese copy").toBe(
+        true,
+      );
+      expect(
+        LOCALE_AWARE.test(source),
+        entry + " is localised now, so strike it off the list",
+      ).toBe(false);
+    }
+  });
+});

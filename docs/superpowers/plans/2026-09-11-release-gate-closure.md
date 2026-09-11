@@ -165,6 +165,22 @@ allowlist for the surfaces not yet converted, so the list can only shrink.
 **Acceptance:** the language toggle changes every string on `/listings/import`
 and `/listings/new`.
 
+**Done in part (2026-09-12).** The guard is installed, and it is the durable
+half: it finds every source file containing Han characters with no notion of
+language at all -- no `localized()`, no `stateLabel()`, no `"zh-Hant"` map, not
+even a `Locale` in scope -- and pins the rest as a list that can only shrink.
+It found **twelve** such files, not the two this workstream named.
+
+Three are localised and struck off: `/batches`, `/batches/[id]` and
+`/listings/new`. Nine remain, including `bulk-import-panel.tsx`, the largest and
+the one named here. That one carries a coupling worth knowing before it is
+attempted: `tests/e2e/bulk-update-pilot.spec.ts:239` selects its submit button
+by the exact string `開始匯入 Import`, so localising the panel changes the pilot
+journey and the two must move together.
+
+The guard cannot see a file that localises most of its copy and hardcodes the
+rest; that is what the retired-term check is for. It is a ratchet, not a proof.
+
 ### W5 — Accessibility defects Package J did not close
 
 - All three `.metric-strip` containers put `aria-label` on a plain `<div>` with
@@ -181,6 +197,22 @@ and `/listings/new`.
 assertion to the route sweep.
 **Acceptance:** Package J's own clause — WCAG 2.2 AA for every route in §5 —
 with the routes it never exercised included.
+
+**Done (2026-09-12).** All three strips carry `role="group"`; `/batches/[id]`
+has an `h1`, server-rendered so it exists at first paint rather than appearing
+when the batch loads; and the overflow assertion is hard.
+
+This contradicts a written decision, which is why it is recorded rather than
+quietly applied.
+`docs/superpowers/specs/2026-09-04-metric-tile-role-group-design.md:50` puts the
+strip-level `aria-label`s out of scope, calling them "already-adequate". They
+were not: ARIA prohibits `aria-label` on a generic element, so a plain `div`
+never exposed one to assistive technology. The two tile tests now scope their
+count to the strip children, which is what they always meant.
+
+Still open from the same audit: the `/jobs` strip has no per-tile association at
+all -- its tiles are bare `div`s -- so it received the container fix without the
+tile fix that dashboard and quality already had.
 
 ### W6 — The confirmation ledger is thinner than §11 requires
 

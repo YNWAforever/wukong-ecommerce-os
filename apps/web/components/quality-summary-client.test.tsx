@@ -97,7 +97,7 @@ describe("QualitySummaryClient", () => {
 
     const { container } = await mountClient();
 
-    const tiles = container.querySelectorAll('[role="group"]');
+    const tiles = container.querySelectorAll('.metric-strip > [role="group"]');
     expect(tiles.length).toBe(4);
 
     const expectedSubstrings = ["已評估商品", "無缺口", "有缺口", "AI 總成本"];

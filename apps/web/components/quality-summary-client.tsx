@@ -123,6 +123,7 @@ export function QualitySummaryClient() {
         ) : null}
       </p>
       <div
+        role="group"
         className="metric-strip quality-metric-strip"
         aria-label={localized(locale, "內容品質統計", "Quality metrics")}
       >
