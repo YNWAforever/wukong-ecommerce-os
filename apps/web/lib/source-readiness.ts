@@ -47,6 +47,19 @@ export async function evaluateSourceReadiness(
     source.headerContractSha256 === deps.currentHeaderContractSha256();
   // Advisory hypothetical evaluation is explicit. It performs the complete shared
   // policy including header checks; no attestation or authorization is persisted.
+  // There is no operator attestation to check here, so this stands in with the
+  // digest `link` (this evaluation's own read, above) currently carries -- i.e.
+  // "if the operator had attested whatever this link carries right now, would
+  // everything else be in order?" That is the same self-referential digest the
+  // gate used to supply on its own (`expectedRowDigest: link.contentDigest`)
+  // before the real (non-advisory) callers had to start passing a digest a
+  // person actually attested to. Passing `null` instead would make the gate
+  // report "not_attested" before it ever reaches its own dependency checks,
+  // masking whatever this evaluation would otherwise report -- but that only
+  // matters if the gate could still get that far with no link, and it can't:
+  // when `link` is absent the gate's own `not_import_origin` check (reading
+  // the same row this `link` was read from) returns first, so `attestedRowDigest`
+  // is never consulted in that case.
   const hypothetical =
     input.listingId && versionId
       ? await checkBulkUpdateEligibility(
@@ -54,7 +67,7 @@ export async function evaluateSourceReadiness(
             workspaceId: input.workspaceId,
             listingId: input.listingId,
             versionId,
-            freshnessAttested: true,
+            attestedRowDigest: link?.contentDigest ?? null,
           },
           deps,
         )
