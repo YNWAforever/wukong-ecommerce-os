@@ -48,14 +48,27 @@ pnpm.cmd:  @echo off
 | `pnpm format:runtime:check` | clean, 0 waived |
 | `pnpm runtime:forbidden:check` | 310 files, 0 forbidden |
 
-Not run, and therefore not claimed: `pnpm lint` across all packages,
-`pnpm build`, `pnpm test:e2e`, `pnpm runtime:doctor`, and the `apps/web`
-integration suites (they need MinIO as well as Postgres).
+### What CI proved that this machine could not
 
-`packages/db`'s integration suites **were** run, against a real Postgres started
-for this session. `audit:verify` is exercised inside them — the product-shot
-cases assert 0 missing actions and 0 accessible foreign records — but the
-standalone `pnpm --filter @wukong/db audit:verify` CLI was not invoked.
+GitHub Actions run [`34589711668`](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/34589711668)
+went green on Linux with a real Postgres and a real MinIO, and it covers several
+things recorded above as unrun. Every step below passed:
+
+| Step                                     | Notes                                                                                                       |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Lint · Typecheck · Build                 | `pnpm lint` and `pnpm build` were never run on this machine                                                 |
+| Unit tests                               | matches the local run                                                                                       |
+| Integration tests                        | includes the `apps/web` suites and `product-shot-worker`, both of which need MinIO and were skipped locally |
+| Production build                         | the trace manifests this branch's tracing fix depends on                                                    |
+| Verify sharp's native library is bundled | 3 passed, **0 skipped** — the platform guard did not mask anything on Linux                                 |
+| Playwright product-shot acceptance       | synthetic images                                                                                            |
+| Playwright Wrangler Queue acceptance     | fake AI, mock SHOPLINE                                                                                      |
+| Verify the completed Opak audit by draft | the `audit:verify` release gate, as a CLI                                                                   |
+
+Still not run anywhere: `pnpm runtime:doctor`, which needs a real Cloudflare
+account and a deployed Worker. Everything under "What the evidence does NOT
+support" below stands unchanged — CI exercises the fake provider and a mock
+SHOPLINE, so none of it speaks to a real model or a real storefront.
 
 `format:runtime:check` compares against the audit baseline, so it flags every
 file this branch touches. It was failing from the first commit until it was run;
