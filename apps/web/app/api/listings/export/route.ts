@@ -118,7 +118,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         ]),
       );
       if (
-        attested.size !== new Set(body.listingIds).size ||
+        attested.size !== body.listingIds.length ||
         body.listingIds.some((listingId) => !attested.has(listingId))
       ) {
         throw new ApiError(
@@ -150,10 +150,18 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         }
 
         const artifactSha256 = artifactHash(exported.body);
+        // Excluded-for-mismatch, not attested-count: the set-equality guard
+        // above already forces attested.size to equal manifest.length on
+        // every request that reaches here, so that count is invariant and
+        // tells a reviewer nothing. This one varies with which digests
+        // actually failed to match on this attempt.
+        const attestationMismatchCount = exported.manifest.filter(
+          (entry) => entry.reason === "row_digest_mismatch",
+        ).length;
         const provenance = {
           identityVersion: 1,
           workspaceId: session.workspaceId,
-          attestedListingCount: attested.size,
+          attestationMismatchCount,
           headerContractSha256: exported.headerContractSha256,
           specVersion: exported.specVersion,
           rowOrder: exported.evidence.map((entry) => entry.listingId),
@@ -185,6 +193,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               specVersion: exported.specVersion,
               provenance,
               artifactSha256,
+              sourceAttestation: body.attestation.listings,
             });
 
             // Only a genuinely new attempt gets its own audit event --
@@ -201,6 +210,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                 action: "listing.bulk_export_created",
                 metadata: {
                   exportAttemptId: ensured.id,
+                  attestationMismatchCount,
                   includedListingIds: ensured.manifest
                     .filter(
                       (entry: ExportManifestEntry) =>

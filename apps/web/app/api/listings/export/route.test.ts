@@ -1143,6 +1143,84 @@ describe("POST /api/listings/export", () => {
   });
 });
 
+describe("attestation evidence recorded on the attempt", () => {
+  it("passes the request's attestation through to exportAttempts.ensure()", async () => {
+    const { handler, exportAttempts } = makeHandler();
+    const attestation = attestationFor({ listing_changed: CHANGED_DIGEST });
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(exportAttempts.ensureCalls).toHaveLength(1);
+    expect(exportAttempts.ensureCalls[0].sourceAttestation).toEqual(
+      attestation.listings,
+    );
+  });
+
+  // No fully-excluded batch reaches ensure() -- rowCount === 0 returns before
+  // the attempt is ever created (see "repeats an all-excluded request" and
+  // "returns every stale exclusion" above, which both assert
+  // exportAttemptId/audits stay empty on that path). The refusal that DOES
+  // reach ensure() is a failure after the attempt row already exists but
+  // before the artifact is confirmed ready -- the route already returns that
+  // attempt's id on such a failure (see "records upload failure then
+  // recovers the same committed artifact" above), so its sourceAttestation
+  // must be recorded too.
+  it("records the attestation on a refused attempt (artifact upload failure), not only a successful one", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    assetStore.writeObjectIfAbsent = async () => {
+      throw new Error("upload unavailable");
+    };
+    const attestation = attestationFor({ listing_changed: CHANGED_DIGEST });
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation,
+      }),
+    );
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.exportAttemptId).toEqual(expect.any(String));
+    expect(exportAttempts.ensureCalls).toHaveLength(1);
+    expect(exportAttempts.ensureCalls[0].sourceAttestation).toEqual(
+      attestation.listings,
+    );
+  });
+
+  it("audits a digest-mismatch count instead of the invariant attested count, and never leaks a digest value", async () => {
+    const { handler, audits } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop", "listing_stale"],
+        // listing_stale's first read (inside checkBulkUpdateEligibility) still
+        // returns the real, matching digest -- attesting anything else would
+        // fail eligibility for the wrong reason before the recheck (the
+        // fixture's own staleness simulation) ever runs. Mirrors the mixed
+        // 3-listing batch test above, which already exercises this exact
+        // manifest shape (one included, one no-op, one row_digest_mismatch).
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+          listing_stale: CHANGED_DIGEST,
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(audits[0].action).toBe("listing.bulk_export_created");
+    // Exactly one manifest entry (listing_stale) has reason
+    // row_digest_mismatch -- a count that varies with the request, unlike
+    // the old attestedListingCount which always equalled the request size.
+    expect(audits[0].metadata.attestationMismatchCount).toBe(1);
+    expect(audits[0].metadata).not.toHaveProperty("attestedListingCount");
+    const serializedMetadata = JSON.stringify(audits[0].metadata);
+    expect(serializedMetadata).not.toContain(CHANGED_DIGEST);
+    expect(serializedMetadata).not.toContain(NOOP_DIGEST);
+  });
+});
+
 describe("durable artifact creation", () => {
   it("commits canonical provenance and a hash of exactly the downloadable rows", async () => {
     const { handler, assetStore, exportAttempts } = makeHandler();
