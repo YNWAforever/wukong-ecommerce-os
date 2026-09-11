@@ -78,12 +78,12 @@ satisfy the old shape and skip the new one.
 
 Checked before any export work, in this order:
 
-| Order | Check                                                                          | Reason on failure                                   |
-| ----- | ------------------------------------------------------------------------------ | --------------------------------------------------- |
-| 1     | `attestation` is present                                                       | `not_attested`                                      |
-| 2     | attested listings are exactly `listingIds` — none missing, extra or duplicated | `attestation_incomplete`                            |
-| 3     | each attested `contentDigest` equals the current `link.contentDigest`          | `attestation_stale`, naming the listings that moved |
-| 4     | existing content and header-contract checks                                    | unchanged                                           |
+| Order | Check                                                                          | Reason on failure                |
+| ----- | ------------------------------------------------------------------------------ | -------------------------------- |
+| 1     | `attestation` is present                                                       | `not_attested`                   |
+| 2     | attested listings are exactly `listingIds` — none missing, extra or duplicated | `attestation_incomplete`         |
+| 3     | each attested `contentDigest` equals the current `link.contentDigest`          | `row_digest_mismatch` (existing) |
+| 4     | existing content and header-contract checks                                    | unchanged                        |
 
 `not_attested` keeps its name and becomes genuinely reachable: it now means the
 `attestation` object is absent.
@@ -97,12 +97,34 @@ largest attended UAT stage in the rollout runbook. The constant lives beside
 `MAX_BULK_APPROVE_ITEMS` in `apps/web/lib/bulk-approve-limit.ts`, which exists
 precisely so a client component and a route schema can read one number.
 
-### Copy, and the duplicated union
+### Copy
 
-`attestation_incomplete` and `attestation_stale` need bilingual copy in
-`apps/web/lib/approval-ui-copy.ts`, and must be added to the reason union
-restated as a comment at `apps/web/app/api/jobs/route.ts:35`. That comment is a
-second copy of the union and will drift silently if missed.
+`attestation_incomplete` is a **400 request error**, like the existing
+duplicate-`listingIds` refusal, not a per-listing outcome. It needs an
+`ApiError` code and bilingual copy, and deliberately does **not** enter the
+reason union restated as a comment at `apps/web/app/api/jobs/route.ts:35` --
+that union is per-listing.
+
+No new freshness reason is added at all. See the amendment below.
+
+### Amended during planning: the digest feeds the existing check
+
+`expectedRowDigest` is currently fed from `link.contentDigest`
+(`apps/web/lib/bulk-update-eligibility.ts:230`) -- the link the function just
+read -- and `assertContentFreshness` then re-reads the link and compares. So
+`row_digest_mismatch` compares a value against a re-read of itself, with a race
+window of microseconds. It is very nearly vacuous on this path.
+
+Its own doc comment states the intent: the field is "named from the caller
+point of expectation rather than the port point of storage". The caller
+expectation is exactly the digest the operator was shown.
+
+So the attested digest **becomes** `expectedRowDigest`, and the existing
+`row_digest_mismatch` turns into a real check. A separate `attestation_stale`
+is dropped: it would have overlapped a reason that already exists, already has
+copy, and is already in the per-listing union. The cost is that
+`row_digest_mismatch` now means "the source moved since you looked" rather
+than "a read raced", so its copy is reworded.
 
 ## Persistence
 
@@ -174,8 +196,8 @@ one, so wiring that method to a UI later fails loudly instead of inheriting a
 ## Testing
 
 - **Unit:** absent attestation → `not_attested`; attested set unequal to
-  requested set → `attestation_incomplete`; one stale digest → `attestation_stale`
-  naming that listing.
+  requested set → a 400 `attestation_incomplete`; an attested digest that no
+  longer matches the link → `row_digest_mismatch`.
 - **Client:** the tick drops when a digest changes beneath an unchanged
   selection.
 - **Integration, real Postgres:** the column is written on a refused attempt as
