@@ -270,6 +270,24 @@ describe("BatchDetail localisation", () => {
     }
   });
 
+  it("renders a count row in the exact shape the pilot E2E asserts", async () => {
+    // tests/e2e/bulk-update-pilot.spec.ts pins this row through the same
+    // stateLabel call. Pinning the rendered shape here too means a drift
+    // between them surfaces in seconds rather than in a full real-stack run,
+    // which is how the raw `succeeded: 2` assertion survived until now.
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(payload));
+
+    const { container, root } = await mountWithLocale(fetcher, "en");
+    try {
+      expect(container.textContent).toContain(
+        `${stateLabel("succeeded", "en")}: 3`,
+      );
+    } finally {
+      await unmount(root);
+    }
+  });
   it("reports a failure in the reader's language", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

@@ -3,6 +3,7 @@ import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
+import { stateLabel } from "../../apps/web/lib/ui-copy.js";
 import { BULK_FORM_COLUMNS } from "../../packages/shopline/src/bulk-form.js";
 import {
   readBulkFormSheet,
@@ -297,7 +298,12 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     status: "completed",
     enqueued: 0,
   });
-  await expect(page.getByText("succeeded: 2", { exact: true })).toBeVisible();
+  // The batch page used to print its database column names. It now reads from
+  // the shared label map, so this asserts through the same source of truth --
+  // in English, because the fixture pins the browser to locale=en.
+  await expect(
+    page.getByText(`${stateLabel("succeeded", "en")}: 2`, { exact: true }),
+  ).toBeVisible();
   for (const [index, id] of listingIds.entries()) {
     await page.goto("/listings/" + id);
     await page

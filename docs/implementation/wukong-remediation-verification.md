@@ -312,13 +312,19 @@ Four items, in the order they were done.
 
 ## Gates run for this follow-up work
 
-| Gate | Result |
-| --- | --- |
-| `pnpm lint` (tsc across 14 packages) | 14/14 |
-| `pnpm test` | 14/14 tasks |
-| `pnpm test:integration` | 39 files, 320 tests, 2 files skipped, **0 failures** |
-| `pnpm format:runtime:check` | 107 runtime files, 0 format debt |
-| Migration `0024` applied twice in a row | idempotent |
+| Gate                                    | Result                                                    |
+| --------------------------------------- | --------------------------------------------------------- |
+| `pnpm lint` (tsc across 14 packages)    | 14/14                                                     |
+| `pnpm test`                             | 14/14 tasks                                               |
+| `pnpm test:integration`                 | 39 files, 320 tests, 2 files skipped, **0 failures**      |
+| `pnpm format:runtime:check`             | 126 runtime files against the release base, 0 format debt |
+| Migration `0024` applied twice in a row | idempotent                                                |
+
+That gate checks only the files changed since `RELEASE_BASE_SHA`, so running
+it before the last edit checks fewer files than CI does. Run first and then
+edited once more, it reported 107 files and passed; CI checked 126 and failed
+on the one file added after — this record. Run it last, with the base set:
+`RELEASE_BASE_SHA=9f72a37 pnpm format:runtime:check`.
 
 The integration suite ran in full for the first time in this work. The three
 `product-shot` files need MinIO **and a bucket that exists**, and nothing in the
