@@ -809,6 +809,42 @@ export function createListingRepository(
         nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
       if (!nextStatus) throw new Error(`listing is ${listing.status}`);
       const version = await this.appendVersion(id, content, context, audit);
+      // A compliance flag belongs to the version it was raised against, and an
+      // edit appends a new one. Carrying them is not housekeeping: flags are
+      // read by active version id, `approveListing` refuses only on an OPEN
+      // BLOCKING flag it can actually see, so saving ANY edit -- even one
+      // nowhere near the flagged field -- silently emptied the gate and let the
+      // listing be approved. `listing-approval.ts` already does exactly this
+      // wherever it appends a version; this path was the one that did not.
+      //
+      // Evidence is deliberately NOT carried. Here the content is what changed,
+      // so the previous version's excerpts may no longer support the values
+      // they are attached to, and asserting that they do would be worse than
+      // showing none.
+      const carriedFlags = await transaction
+        .select({
+          code: complianceFlags.code,
+          severity: complianceFlags.severity,
+          status: complianceFlags.status,
+          details: complianceFlags.details,
+          resolvedAt: complianceFlags.resolvedAt,
+        })
+        .from(complianceFlags)
+        .where(
+          and(
+            eq(complianceFlags.workspaceId, workspaceId),
+            eq(complianceFlags.listingVersionId, baseVersionId),
+          ),
+        );
+      if (carriedFlags.length > 0) {
+        await transaction.insert(complianceFlags).values(
+          carriedFlags.map((flag) => ({
+            ...flag,
+            workspaceId,
+            listingVersionId: version.id,
+          })),
+        );
+      }
       const updated = await transaction
         .update(listingDrafts)
         .set({

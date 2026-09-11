@@ -94,6 +94,79 @@ describe("listing review edits guard in-flight states", () => {
     return created;
   }
 
+  /**
+   * A blocking compliance flag must not be erasable by an ordinary Save.
+   *
+   * Flags are stored against the version they were raised on, and every edit
+   * appends a new version. `approveListing` refuses only on an OPEN BLOCKING
+   * flag it can see (`packages/core/src/review.ts`), and it reads them off the
+   * ACTIVE version -- so an edit that carried nothing forward left the new
+   * version with an empty flag set and the gate simply opened. The edit did not
+   * even have to touch the flagged field.
+   *
+   * `listing-approval.ts` already calls `replaceFlags(newVersion.id,
+   * snapshot.flags)` wherever it appends a version. This path was the one that
+   * did not.
+   */
+  it("carries compliance flags onto the version an edit creates", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details) values (${workspaceId}, ${versionId}, 'rating_without_evidence', 'blocking', 'open', ${admin.json({ id: "flag_1", field: "description" })})`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+
+    const carried =
+      await admin`select code, severity, status, details from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(carried).toHaveLength(1);
+    expect(carried[0]).toMatchObject({
+      code: "rating_without_evidence",
+      severity: "blocking",
+      status: "open",
+    });
+    // The gate reads from the active version, so this is what approval sees.
+    const snapshot = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getReviewSnapshot(listingId),
+    );
+    expect(snapshot?.flags).toHaveLength(1);
+    expect(snapshot?.flags[0]).toMatchObject({
+      severity: "blocking",
+      status: "open",
+    });
+  });
+
+  it("keeps a resolved flag resolved rather than reopening it", async () => {
+    // Carrying must not lose the resolution either: re-raising a flag an
+    // operator has already answered would block a listing they had cleared.
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details, resolved_at) values (${workspaceId}, ${versionId}, 'rating_without_evidence', 'blocking', 'resolved', ${admin.json({ id: "flag_2", field: "description", resolutionReason: "Score verified against the importer sheet." })}, now())`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+
+    const carried =
+      await admin`select status, details from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(carried[0]?.status).toBe("resolved");
+    expect(
+      (carried[0]?.details as { resolutionReason?: string })?.resolutionReason,
+    ).toBe("Score verified against the importer sheet.");
+  });
+
   it("refuses an edit while a SHOPLINE delivery is in flight", async () => {
     const { listingId, versionId } = await seedListing("publishing");
 
