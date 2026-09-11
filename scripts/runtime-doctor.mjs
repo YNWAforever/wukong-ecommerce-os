@@ -488,18 +488,91 @@ function secretsCheck(config, environment, requiredNames) {
   return classifySecretList(result, requiredNames, worker);
 }
 
-export function vercelEnvCheck(url, secret, environment) {
+/**
+ * What THIS SHELL holds, which is not what Vercel holds.
+ *
+ * The check reads `process.env`, so a green line here says the operator can
+ * reach the Worker from their own machine -- and it was labelled `vercel-env`,
+ * which reads as "Vercel is configured". The bring-up runbook calls a
+ * QUEUE_INGRESS_SECRET mismatch between Vercel and the Worker the most common
+ * failure in the sequence, and this check cannot see that mismatch at all:
+ * `health-signed` below proves the operator's secret matches the Worker's, not
+ * that Vercel's does. Nothing offline can, so the honest move is to say which
+ * question was answered and to name the command that answers the other one.
+ */
+export function localIngressEnvCheck(url, secret, environment) {
   const missing = [
     ...(url ? [] : ["QUEUE_INGRESS_URL"]),
     ...(secret ? [] : ["QUEUE_INGRESS_SECRET"]),
   ];
   return missing.length
     ? {
+        id: "local-ingress-env",
         status: "failed",
-        detail: `missing ${missing.join(", ")} in this environment`,
-        fix: `vercel env add ${missing[0]} ${environment}`,
+        detail: `missing ${missing.join(", ")} in this shell`,
+        fix: `set ${missing[0]} locally, then confirm Vercel with: vercel env pull --environment=${environment}`,
       }
-    : { status: "ok", detail: "ingress url and secret present" };
+    : {
+        id: "local-ingress-env",
+        status: "ok",
+        detail:
+          "ingress url and secret present in this shell — NOT read from Vercel",
+        fix: `confirm Vercel separately: vercel env pull --environment=${environment}`,
+      };
+}
+
+const LISTING_PROVIDERS = ["fake", "openai", "openrouter"];
+
+/**
+ * Which providers the deployed Worker is actually running.
+ *
+ * `/health` has always published `aiProvider`, and the doctor never looked at
+ * it: a production Worker deployed with `AI_PROVIDER=fake` invents every fact
+ * and every sentence it returns, and reported seven green checks while doing
+ * it. Nothing else in the report distinguishes that Worker from a correct one.
+ *
+ * `productShotProvider` is printed alongside rather than judged, because the
+ * Worker's value is only wrong relative to the web app's, which this command
+ * cannot read. Printing it is what lets an operator see the mismatch that
+ * otherwise leaves product-shot attempts with nowhere to go.
+ */
+export function checkListingProvider(health, environment) {
+  const provider = health?.aiProvider;
+  const shot = health?.productShotProvider ?? "unknown";
+  if (!provider) {
+    return {
+      id: "listing-provider",
+      status: "unknown",
+      detail: "health payload did not report a listing provider",
+      fix: "pnpm --filter @wukong/worker deploy:production",
+      dependsOn: "health-get",
+    };
+  }
+  if (!LISTING_PROVIDERS.includes(provider)) {
+    return {
+      id: "listing-provider",
+      status: "failed",
+      detail: `AI_PROVIDER is a value this build does not recognise (${provider})`,
+      fix: "set AI_PROVIDER to openai or openrouter and redeploy the Worker",
+      dependsOn: "health-get",
+    };
+  }
+  if (environment === "production" && provider === "fake") {
+    return {
+      id: "listing-provider",
+      status: "failed",
+      detail:
+        "production Worker is running the fake listing provider — every fact and every sentence it returns is invented",
+      fix: "set AI_PROVIDER to openai or openrouter and redeploy the Worker",
+      dependsOn: "health-get",
+    };
+  }
+  return {
+    id: "listing-provider",
+    status: "ok",
+    detail: `listing provider ${provider}, product shot provider ${shot}`,
+    dependsOn: "health-get",
+  };
 }
 
 async function main() {
@@ -538,10 +611,7 @@ async function main() {
   ];
 
   if (!preDeployOnly) {
-    checks.push({
-      id: "vercel-env",
-      ...vercelEnvCheck(ingressUrl, ingressSecret, environment),
-    });
+    checks.push(localIngressEnvCheck(ingressUrl, ingressSecret, environment));
     if (ingressUrl) {
       // A half-deployed Worker answers with a Cloudflare HTML error page, so
       // response.json() throws *after* the fetch resolves. A rejection handler
@@ -559,6 +629,7 @@ async function main() {
               dependsOn: "worker-secrets",
             },
       );
+      checks.push(checkListingProvider(health, environment));
       if (ingressSecret)
         checks.push(
           checkHealthSigned(await probeSigned(ingressUrl, ingressSecret)),

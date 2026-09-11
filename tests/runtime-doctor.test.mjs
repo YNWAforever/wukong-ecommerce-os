@@ -12,7 +12,8 @@ import {
   checkHealthGet,
   checkHealthSigned,
   signHealthProbe,
-  vercelEnvCheck,
+  localIngressEnvCheck,
+  checkListingProvider,
   parseWranglerTable,
   classifySecretList,
 } from "../scripts/runtime-doctor.mjs";
@@ -309,12 +310,81 @@ test("signHealthProbe matches the queue signing algorithm", () => {
   assert.equal(signature, "6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
 });
 
-test("vercelEnvCheck names the environment it was run for", () => {
-  const check = vercelEnvCheck(undefined, undefined, "preview");
+test("localIngressEnvCheck names the environment it was run for", () => {
+  const check = localIngressEnvCheck(undefined, undefined, "preview");
 
   assert.equal(check.status, "failed");
   assert.match(check.fix, /preview/);
   assert.doesNotMatch(check.fix, /production/);
+});
+
+test("localIngressEnvCheck does not claim to have read Vercel", () => {
+  // It reads process.env. Labelled `vercel-env`, a green line told the
+  // operator Vercel was configured -- and the runbook calls a Vercel/Worker
+  // QUEUE_INGRESS_SECRET mismatch the most common failure in bring-up, which
+  // is exactly what this check cannot see.
+  const check = localIngressEnvCheck(
+    "https://worker.example",
+    "s3cret",
+    "production",
+  );
+
+  assert.equal(check.id, "local-ingress-env");
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /this shell/i);
+  assert.match(check.detail, /NOT read from Vercel/);
+  // Still tells the operator how to answer the question it could not.
+  assert.match(check.fix, /vercel env pull/);
+});
+
+test("checkListingProvider refuses a production worker serving fake copy", () => {
+  // /health has always published aiProvider and the doctor never looked. A
+  // production Worker on the fake provider invents every fact and every
+  // sentence it returns, and the report was seven green checks.
+  const check = checkListingProvider(
+    { aiProvider: "fake", productShotProvider: "disabled" },
+    "production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /invented/);
+  assert.equal(check.dependsOn, "health-get");
+});
+
+test("checkListingProvider allows the fake provider outside production", () => {
+  const check = checkListingProvider(
+    { aiProvider: "fake", productShotProvider: "fake" },
+    "preview",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkListingProvider reports both providers by name when healthy", () => {
+  // Printing the product shot provider is what lets an operator notice the
+  // mismatch that strands image work: this command cannot read the web app's
+  // value, so it shows the Worker's rather than judging it.
+  const check = checkListingProvider(
+    { aiProvider: "openrouter", productShotProvider: "disabled" },
+    "production",
+  );
+
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /openrouter/);
+  assert.match(check.detail, /disabled/);
+});
+
+test("checkListingProvider refuses a provider this build cannot run", () => {
+  const check = checkListingProvider({ aiProvider: "anthropic" }, "production");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /does not recognise/);
+});
+
+test("checkListingProvider is unknown, never ok, when health said nothing", () => {
+  const check = checkListingProvider(null, "production");
+
+  assert.equal(check.status, "unknown");
 });
 
 test("planQueueCreation creates only the queues that are absent", () => {
