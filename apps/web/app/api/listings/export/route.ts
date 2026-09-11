@@ -155,6 +155,14 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         // every request that reaches here, so that count is invariant and
         // tells a reviewer nothing. This one varies with which digests
         // actually failed to match on this attempt.
+        //
+        // Broader than the name suggests, deliberately: bulk-update-eligibility
+        // also returns row_digest_mismatch when a review CONFIRMATION has gone
+        // stale against current source content, which is a different fault from
+        // the operator attesting the wrong digest. The manifest records only the
+        // reason, not which of the three comparisons fired, so this counts any
+        // digest disagreement. That is still the number worth watching; it just
+        // is not solely a count of bad attestations.
         const attestationMismatchCount = exported.manifest.filter(
           (entry) => entry.reason === "row_digest_mismatch",
         ).length;
