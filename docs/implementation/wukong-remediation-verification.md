@@ -22,17 +22,17 @@ Companion records: [status](./wukong-remediation-status.md) ·
 | ---------------------------------------------------- | --------------------------------------------------------------------------- |
 | `pnpm install --frozen-lockfile`                     | ok                                                                          |
 | `pnpm --filter "@wukong/db..." build`                | ok (required first; the worker suite cannot resolve `@wukong/db` otherwise) |
-| unit suites, every package                           | **2431 passed**, 0 failed                                                   |
-| — `@wukong/web`                                      | 1578 passed                                                                 |
+| unit suites, every package                           | **2475 passed**, 0 failed                                                   |
+| — `@wukong/web`                                      | 1592 passed                                                                 |
 | — `@wukong/shopline`                                 | 260 passed                                                                  |
-| — `@wukong/worker`                                   | 186 passed                                                                  |
+| — `@wukong/worker`                                   | 190 passed                                                                  |
 | — `@wukong/ai`                                       | 152 passed                                                                  |
 | — `@wukong/db`                                       | 101 passed                                                                  |
 | — `@wukong/assets`                                   | 73 passed                                                                   |
-| — `@wukong/core`                                     | 70 passed                                                                   |
+| — `@wukong/core`                                     | 96 passed                                                                   |
 | — `@wukong/jobs`                                     | 11 passed                                                                   |
 | — root `node --test` suites                          | 84 passed                                                                   |
-| `packages/db` integration, real Neon-shaped Postgres | **315 passed**, 1 suite skipped (needs MinIO)                               |
+| `packages/db` integration, real Neon-shaped Postgres | **317 passed**, 1 suite skipped (needs MinIO)                               |
 | `db:migrate` (full chain, incl. `0022`)              | ok                                                                          |
 | `check-runtime-format.mjs`                           | clean, 77 files, **0 waived**                                               |
 | `typecheck` (ai, db, jobs, worker, web)              | clean                                                                       |
@@ -119,6 +119,14 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
 - **Anything about the batch path end to end.** The stale-key, status-gate and
   cost-window fixes are covered by service-level tests with injected fakes. No
   batch was advanced against a real queue and a real Worker.
+- **That the claim patterns catch a claim phrased outside them.** They are
+  deterministic, English and Chinese only, and match wording rather than meaning.
+  A score asserted in words the table does not list passes, and there is still no
+  HK alcohol advertising rule set — `workspaceProfile.claimPolicy` is pasted into
+  the model prompt and read by no deterministic checker.
+- **That the superlative rule has no false positives.** One is already known and
+  recorded in its own test: "best served at 10°C" is read as a rank claim. It is
+  a warning, so a reviewer clears it, but the rate across real copy is unmeasured.
 - **That the doctor's new checks read a real deployment.** `listing-provider` and
   `local-ingress-env` are pure functions tested against synthetic payloads. The
   command was not run against production, which is also why it is still unknown
@@ -143,6 +151,9 @@ Postgres was started this session, so these are no longer assumptions:
 - A compliance flag survives `editReview`, and a resolved one keeps its
   resolution reason. Both cases were confirmed to **fail** with the fix removed,
   so they pin behaviour rather than restating it.
+- A caller-supplied flag set replaces the carried one rather than adding to it,
+  which is what lets a claim the operator edited out actually clear its flag,
+  and the base version keeps its own flag history untouched.
 
 ## Unverified runtime gates
 

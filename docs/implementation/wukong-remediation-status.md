@@ -72,11 +72,11 @@ Twelve of fourteen reproduce. None were already fixed.
 | F05 no idempotency in intake                 | still_reproducible | **create half fixed** — a replayed create returns the same listing; per-file upload retry still re-uploads everything |
 | F07 four disagreeing media policies          | still_reproducible | **fixed** — one browser-safe policy leaf shared by form, presign, finalize and create                                 |
 | F10 draft save requires canonical            | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate                                          |
-| F13 second file selection replaces the first | still_reproducible | **file picker half fixed** — selections accumulate and can be removed; other UX sub-claims remain                     |
+| F13 second file selection replaces the first | still_reproducible | **picker and error copy fixed** — selections accumulate, and a refused action now names the conflict that refused it  |
 | F06 create never starts image work           | still_reproducible | **fixed** — create dispatches image work, and a shot the Worker will never run now ends instead of queueing for ever  |
 | F12 doctor passes while misconfigured        | partially_fixed    | **partly fixed** — the two false greens are gone; the env-inventory delta remains                                     |
 | F08 batches enqueue at sequence 0            | still_reproducible | **stale key and needs_info fixed** — durable dispatch remains                                                         |
-| F14 batch cost is all-history                | still_reproducible | **cost half fixed** — a batch's budget counts only its own spend; claim grounding remains                             |
+| F14 batch cost is all-history                | still_reproducible | **fixed** — a batch's budget counts only its own spend, and a claim with no evidence behind it is flagged             |
 | F09 approve without a dirty guard            | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
 | F11 no external enrichment stage             | **not_a_defect**   | no — and deliberately not attempted; see below                                                                        |
 
@@ -101,6 +101,9 @@ Twelve of fourteen reproduce. None were already fixed.
 | `c8125f8`          | See that image processing is off rather than watching a spinner that never ends                                         |
 | `cbe7201`          | Run a second batch over the same products and have it actually do the work it reports                                   |
 | `bc501ee`          | Stop a blocking compliance flag disappearing because someone saved an unrelated edit                                    |
+| `e2d0e8c`          | Read which conflict refused an action, instead of one sentence that fits a dozen different problems                     |
+| `7e11b47`          | Have "95 points from Robert Parker" flagged when nothing in the source ever said so                                     |
+| `9a5c5a9`          | Have the same check applied to a claim typed in by hand after the AI was done                                           |
 | `6eefc16`          | Find out the production Worker is inventing every listing, instead of reading seven green checks                        |
 
 ## What the adversarial review corrected in my own work
@@ -128,7 +131,26 @@ catch any of them:
 
 ## Next task, exactly
 
-**F13(c) — the review screen collapses a conflict into one useless sentence.**
+**F08, durable dispatch.** Dispatch is still an in-request loop that runs after
+the claim transaction commits. A request that dies mid-wave leaves its items
+`queued` with no queue message, no audit event, and nothing able to find them:
+the cron sweeper requires a source asset, which imported drafts never have, and
+`claimWave` only claims `pending`.
+
+The blocker is a design question, not typing. A recovery pass cannot yet tell
+"never dispatched" from "dispatched and still sitting in the queue", because the
+`listing_pipeline_runs` row appears only once the pipeline claims its first
+step, and re-dispatching the second case buys a duplicate extraction. Settle
+that first -- most likely by recording the dispatch itself, which is what an
+outbox is -- and the rest is small.
+
+Then: F12's env-inventory delta. Several variables `apps/web` requires at
+runtime are unchecked, and one is explicitly forbidden on Vercel by the runbook
+the operator is following.
+
+### Done since this section last named a task
+
+**F13(c) — the review screen collapsed a conflict into one useless sentence.**
 Not every failure, as first reported: 401/403 already render a dedicated
 permission sentence. What collapses is the 409/422 family —
 `version_conflict`, `confirmation_ledger_stale`, `confirmation_source_stale`,
@@ -139,9 +161,17 @@ written in `apps/web/lib/approval-ui-copy.ts` and wired only to the bulk queue.
 reaches the screen. Forward the `code` field only, never `message`, or the
 "never leak internals into a response body" rule leaks through the UI instead.
 
-Then, in dependency order: F08 durable dispatch (needs a decision on whether a
-run row can distinguish "never dispatched" from "dispatched and still queued")
-→ F12's env-inventory delta → F14 claim grounding.
+Fixed in `e2d0e8c`: only `code` crosses the boundary, never `message`, and an
+unrecognised code still falls back to the generic sentence.
+
+**F14 claim grounding.** Only the fact EXTRACTION was ever grounded; nothing
+checked the prose. `rating_without_evidence` and `superlative` were declared in
+the flag union and had bilingual labels on the review screen, and no pattern
+produced either — so a description could assert "Awarded 100 points by Robert
+Parker" against `criticScores: []` and pass generation validation, compliance,
+and approval. Both rules are real now (`7e11b47`), and the operator's save is
+re-scanned too (`9a5c5a9`), because scanning only at generation left the obvious
+hole of typing the claim in afterwards.
 
 ## F11 is not a defect, and was deliberately not attempted
 

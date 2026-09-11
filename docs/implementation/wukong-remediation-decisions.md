@@ -454,6 +454,87 @@ way around it — which means a new grounding mode, not an exemption.
 
 ---
 
+## D15 — An error code is data the operator is owed; a message is not
+
+**Status:** implemented (`e2d0e8c`)
+
+`responseError` on the review screen discarded the response body, so every
+action failure became `Request failed (409)` and rendered as one sentence with
+one offered action, Retry. "The AI is still working on this" (wait), "your copy
+of this page is stale" (reload) and "resolve the flags below" (act) were
+indistinguishable, and Retry is the right move for exactly one of them.
+
+Only `code` crosses the boundary. `message` is still dropped, because route
+handlers may put internals there and the rule against leaking internals into a
+response body means nothing if the screen prints them instead — there is a test
+asserting a connection string in `message` never reaches the DOM.
+
+**Why a second copy table rather than reusing the bulk queue's.** Every remedy
+in `approvalErrorLabel` ends in "select it again", which is correct on a queue
+and meaningless on a screen with no selection. The two tables sit in one file so
+a divergence is visible in review.
+
+**Why unknown codes return null rather than a sentence.** A route may add a code
+before the table does. Null keeps the caller's existing fallback, and that
+fallback is also what renders the permission wording for 401/403 — which is why
+`insufficient_role` deliberately has no entry.
+
+---
+
+## D16 — A claim in the copy is checked against what the listing can support
+
+**Status:** implemented (`7e11b47`, `9a5c5a9`)
+
+Only the fact EXTRACTION was ever grounded. `assertGenerationGrounding` compares
+the 14 structured fact keys and `imageAssetIds`; title, description, SEO and
+tags were never looked at. The only check on the prose was `scanCompliance`,
+whose two rules covered health claims and guarantees.
+
+So a description could assert "Awarded 100 points by Robert Parker" while
+`criticScores` was empty, and pass generation validation, pass compliance, and
+reach approval with nothing flagged. The two rules that exist for exactly this,
+`rating_without_evidence` and `superlative`, were declared in the flag union and
+given bilingual labels on the review screen — and no pattern produced either, so
+both sets of UI strings were unreachable.
+
+**The rating rule needs the facts, which is why it never worked.**
+`scanCompliance(fields)` took text alone, and from text alone a fabricated score
+and a grounded one are the same sentence. It now takes the listing's
+`criticScores` and `awards`; the argument is optional, so the rule fires only
+where the caller genuinely knows, rather than guessing in either direction.
+
+**Superlative is a warning, not a blocker.** Someone has to stand behind
+"finest", but blocking every listing that uses one would stop the pilot, and the
+flag already puts it in front of a person. One honest limit is recorded in its
+test: "best served at 10°C" is read as a rank claim, and a reviewer clears it.
+
+**Why the operator's save had to be re-scanned in the same slice.** Scanning
+only generated copy leaves the obvious hole: type the claim in afterwards and
+nothing notices. `PUT /review` wrote no flags at all. It now re-scans what was
+submitted — and, because the field list is shared from `@wukong/core`, scans the
+same eight fields the pipeline does. Two private copies of that list is how a
+rule ends up enforced on one path and not the other.
+
+**Resolutions survive only while their field is untouched.** A blind re-scan
+would re-open every answered flag on every save and train people to ignore them;
+carrying every resolution would let an operator resolve a flag, rewrite the
+flagged sentence into something else objectionable, and keep the old answer
+attached to text it was never about. Editing the flagged field brings the flag
+back open, with the change in front of the person who has to justify it.
+
+**Consequences.** `editReview` gains an optional `flags` argument. Omitted, it
+copies the base version's flags forward (D12's safety property: a Save must
+never empty the gate). Supplied, the caller's re-scan replaces them — which is
+what lets a claim edited OUT clear its flag, something a copy-forward alone can
+never do.
+
+**Not covered.** The patterns are deterministic and English/Chinese only; a
+claim phrased outside them passes. There is no HK alcohol advertising rule set,
+and `workspaceProfile.claimPolicy` is still only pasted into the model prompt
+with no deterministic checker reading it.
+
+---
+
 ## Open questions requiring evidence this session could not obtain
 
 - The historical run `3b958fe6-64e3-44bb-ac0c-13fa38ae60a3` cannot be attributed
