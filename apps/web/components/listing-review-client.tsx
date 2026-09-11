@@ -839,7 +839,7 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, ["已加入 SHOPLINE 發布佇列", "Publish queued"]);
+    }, ["已加入 SHOPLINE 發佈佇列", "Publish queued"]);
   }
 
   return (

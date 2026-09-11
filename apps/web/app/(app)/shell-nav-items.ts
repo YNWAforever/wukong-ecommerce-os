@@ -36,7 +36,7 @@ export const SHELL_NAV_ITEMS: NavItem[] = [
 export const ROLE_LABELS: Record<WorkspaceRole, { zh: string; en: string }> = {
   viewer: { zh: "檢視者", en: "Viewer" },
   operator: { zh: "操作員", en: "Operator" },
-  reviewer: { zh: "審閱者", en: "Reviewer" },
+  reviewer: { zh: "審核員", en: "Reviewer" },
   admin: { zh: "管理員", en: "Admin" },
   owner: { zh: "擁有者", en: "Owner" },
 };

@@ -1,6 +1,11 @@
 "use client";
 import { useLocale } from "../lib/locale-context";
-import { localized, commonCopy, formatHkDate } from "../lib/ui-copy";
+import {
+  localized,
+  commonCopy,
+  formatHkDate,
+  stateLabel,
+} from "../lib/ui-copy";
 import Link from "next/link";
 
 import { queueGroups, type QueueItem } from "./listing-view-models";
@@ -56,7 +61,7 @@ export function ListingQueue({
               <div className="queue-group-heading">
                 <div>
                   <h3 id={`queue-${group.status}`}>
-                    {localized(locale, group.label, group.englishLabel)}
+                    {stateLabel(group.status, locale)}
                   </h3>
                 </div>
                 {group.status === "in_review" && groupEligibleCount > 0 ? (

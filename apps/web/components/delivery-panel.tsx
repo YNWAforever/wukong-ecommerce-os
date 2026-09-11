@@ -31,13 +31,13 @@ const connectionCopy: Record<
     label: "連接錯誤",
     english: "Connection error",
     className: "status-danger",
-    detail: "連接未通過驗證。請修正設定後再嘗試發布。",
+    detail: "連接未通過驗證。請修正設定後再嘗試發佈。",
   },
   connected: {
     label: "已連接",
     english: "Connected",
     className: "status-success",
-    detail: "SHOPLINE 連接已驗證，可在批准後發布。",
+    detail: "SHOPLINE 連接已驗證，可在批准後發佈。",
   },
 };
 

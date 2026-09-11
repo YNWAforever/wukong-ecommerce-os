@@ -80,6 +80,8 @@ const states: Record<string, readonly [string, string]> = {
   publish_failed: ["發佈失敗", "Publish failed"],
   failed: ["失敗", "Failed"],
   pending: ["待處理", "Pending"],
+  queued: ["已排隊", "Queued"],
+  skipped: ["已略過", "Skipped"],
   running: ["進行中", "Running"],
   succeeded: ["成功", "Succeeded"],
   cancelled: ["已取消", "Cancelled"],

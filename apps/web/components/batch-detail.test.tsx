@@ -3,11 +3,45 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import { LocaleProvider } from "../lib/locale-context.js";
+import type { Locale } from "../lib/locale.js";
+import { stateLabel } from "../lib/ui-copy.js";
 import { BatchDetail } from "./batch-detail.js";
+
+const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh }),
+  usePathname: () => "/batches",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Same as `mount`, with the reader's chosen language in place. */
+async function mountWithLocale(
+  fetcher: ReturnType<typeof vi.fn>,
+  locale: Locale,
+  batchId = "batch_1",
+) {
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root: Root = createRoot(container);
+  await act(async () => {
+    root.render(
+      createElement(LocaleProvider, {
+        locale,
+        children: createElement(BatchDetail, { batchId }),
+      }),
+    );
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  return { container, root };
+}
 
 async function mount(fetcher: ReturnType<typeof vi.fn>, batchId = "batch_1") {
   vi.stubGlobal("fetch", fetcher);
@@ -49,7 +83,7 @@ describe("BatchDetail", () => {
     const { container, root } = await mount(fetcher, "batch_1");
 
     expect(container.textContent).toContain("zh names");
-    expect(container.textContent).toContain("succeeded");
+    expect(container.textContent).toContain(stateLabel("succeeded", "zh-Hant"));
     expect(fetcher).toHaveBeenCalledWith(
       "/api/enrichment-batches/batch_1",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -134,7 +168,7 @@ describe("BatchDetail", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toBe("Operator access is required.");
+    expect(alert!.textContent).toBe("需要操作員權限。");
 
     await unmount(root);
   });
@@ -148,9 +182,109 @@ describe("BatchDetail", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toBe("Could not reach the server. Try again.");
+    expect(alert!.textContent).toBe("無法連線至伺服器，請重試。");
     expect(container.textContent).not.toContain("載入中");
 
     await unmount(root);
+  });
+});
+
+/**
+ * A screen that answers in neither language.
+ *
+ * The batch pages never read the locale. Their chrome was hard-coded Chinese,
+ * their errors hard-coded English, and the detail page printed the status
+ * column straight from the database -- an operator reading "budget_exhausted"
+ * where every other screen says 預算用盡. Toggling the language changed
+ * nothing here, which is worse than a missing translation: it tells the
+ * operator the toggle is broken.
+ */
+describe("BatchDetail localisation", () => {
+  const payload = {
+    batch: {
+      id: "batch_1",
+      label: "Opak spring cohort",
+      budgetUsd: 5,
+      waveSize: 3,
+      status: "budget_exhausted",
+      createdBy: "user_1",
+      createdAt: "2026-08-01T00:00:00.000Z",
+    },
+    counts: { pending: 1, queued: 2, succeeded: 3, failed: 0, skipped: 4 },
+  };
+
+  it("names the status instead of printing the database value", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(payload));
+
+    const { container, root } = await mount(fetcher);
+    try {
+      expect(container.textContent).toContain(
+        stateLabel("budget_exhausted", "zh-Hant"),
+      );
+      expect(container.textContent).not.toContain("budget_exhausted");
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("names each count rather than showing its column name", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(payload));
+
+    const { container, root } = await mount(fetcher);
+    try {
+      for (const key of [
+        "pending",
+        "queued",
+        "succeeded",
+        "failed",
+        "skipped",
+      ]) {
+        expect(container.textContent).toContain(stateLabel(key, "zh-Hant"));
+        expect(container.textContent).not.toContain(`${key}:`);
+      }
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("answers in English when the reader has chosen English", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(payload));
+
+    const { container, root } = await mountWithLocale(fetcher, "en");
+    try {
+      expect(container.textContent).toContain(
+        stateLabel("budget_exhausted", "en"),
+      );
+      // The hard-coded Chinese chrome that used to show whatever the reader
+      // had chosen.
+      expect(container.textContent).not.toContain("每波");
+      expect(container.textContent).not.toContain("預算");
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("reports a failure in the reader's language", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ code: "insufficient_role" }, { status: 403 }),
+      );
+
+    const { container, root } = await mountWithLocale(fetcher, "zh-Hant");
+    try {
+      expect(container.textContent).not.toContain(
+        "Operator access is required.",
+      );
+      expect(container.textContent).toMatch(/[一-鿿]/);
+    } finally {
+      await unmount(root);
+    }
   });
 });
