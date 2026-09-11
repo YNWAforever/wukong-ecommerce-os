@@ -156,20 +156,20 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         // tells a reviewer nothing. This one varies with which digests
         // actually failed to match on this attempt.
         //
-        // Broader than the name suggests, deliberately: bulk-update-eligibility
+        // Named for the reason it counts, not for a cause it cannot prove:
         // also returns row_digest_mismatch when a review CONFIRMATION has gone
         // stale against current source content, which is a different fault from
         // the operator attesting the wrong digest. The manifest records only the
         // reason, not which of the three comparisons fired, so this counts any
-        // digest disagreement. That is still the number worth watching; it just
-        // is not solely a count of bad attestations.
-        const attestationMismatchCount = exported.manifest.filter(
+        // digest disagreement. A reader of the raw audit row has only the field
+        // name to go on, so it must not claim the operator was at fault.
+        const rowDigestMismatchCount = exported.manifest.filter(
           (entry) => entry.reason === "row_digest_mismatch",
         ).length;
         const provenance = {
           identityVersion: 1,
           workspaceId: session.workspaceId,
-          attestationMismatchCount,
+          rowDigestMismatchCount,
           headerContractSha256: exported.headerContractSha256,
           specVersion: exported.specVersion,
           rowOrder: exported.evidence.map((entry) => entry.listingId),
@@ -218,7 +218,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                 action: "listing.bulk_export_created",
                 metadata: {
                   exportAttemptId: ensured.id,
-                  attestationMismatchCount,
+                  rowDigestMismatchCount,
                   includedListingIds: ensured.manifest
                     .filter(
                       (entry: ExportManifestEntry) =>

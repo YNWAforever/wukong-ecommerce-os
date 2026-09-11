@@ -1213,8 +1213,7 @@ describe("attestation evidence recorded on the attempt", () => {
     // Exactly one manifest entry (listing_stale) has reason
     // row_digest_mismatch -- a count that varies with the request, unlike
     // the old attestedListingCount which always equalled the request size.
-    expect(audits[0].metadata.attestationMismatchCount).toBe(1);
-    expect(audits[0].metadata).not.toHaveProperty("attestedListingCount");
+    expect(audits[0].metadata.rowDigestMismatchCount).toBe(1);
     const serializedMetadata = JSON.stringify(audits[0].metadata);
     expect(serializedMetadata).not.toContain(CHANGED_DIGEST);
     expect(serializedMetadata).not.toContain(NOOP_DIGEST);
