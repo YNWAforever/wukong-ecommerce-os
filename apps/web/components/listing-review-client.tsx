@@ -1,4 +1,5 @@
 "use client";
+import { reviewErrorLabel } from "../lib/approval-ui-copy";
 import { useLocale } from "../lib/locale-context";
 import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
 
@@ -503,10 +504,36 @@ export function applyListingFields(
   };
 }
 
-async function responseError(response: Response): Promise<Error> {
-  const fallback = `Request failed (${response.status})`;
-  return new Error(fallback);
+type CodedError = Error & { code?: string };
+
+/**
+ * Keeps the server's error CODE, and nothing else.
+ *
+ * This used to discard the body entirely, so every action failure arrived as
+ * `Request failed (409)` and rendered as one sentence: "the AI is still working
+ * on this", "your copy of this page is stale" and "resolve the flags below"
+ * were the same sentence, and none of them said what to do.
+ *
+ * `message` is deliberately still dropped. Route handlers may put internals
+ * there, and the rule against leaking internals into a response body means
+ * nothing if the screen prints them instead. Only `code` -- a closed server
+ * enum -- crosses over. The Error's own message stays the status line, because
+ * `safeUiError` reads it to recognise 401/403.
+ */
+async function responseError(response: Response): Promise<CodedError> {
+  const error: CodedError = new Error(`Request failed (${response.status})`);
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    if (typeof body?.code === "string") error.code = body.code;
+  } catch {
+    // A half-deployed edge answers with an HTML error page, so `json()` throws
+    // after the fetch resolved. Reporting a failure must not itself fail.
+  }
+  return error;
 }
+
+const errorCodeOf = (cause: unknown): string | undefined =>
+  cause instanceof Error ? (cause as CodedError).code : undefined;
 
 export function ListingReviewClient({
   listingId,
@@ -521,6 +548,7 @@ export function ListingReviewClient({
   const [processingState, setProcessingState] = useState(initialProcessing);
   const [errorKind, setErrorKind] = useState<"read" | "action">("read");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<readonly [string, string] | null>(
     null,
   );
@@ -528,6 +556,12 @@ export function ListingReviewClient({
   const requestId = useRef(0);
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
+  // A code the screen recognises says what to do about it. Anything else falls
+  // back to the generic sentence, which is also what renders the permission
+  // wording for 401/403 -- `insufficient_role` deliberately has no entry.
+  const actionErrorText =
+    reviewErrorLabel(errorCode, locale) ??
+    safeUiError(error, locale, errorKind);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -542,6 +576,7 @@ export function ListingReviewClient({
         if (requestId.current !== id || signal?.aborted) return;
         setSnapshot(next);
         setError(null);
+        setErrorCode(undefined);
         if (
           next.status === "processing" ||
           next.status === "needs_info" ||
@@ -556,6 +591,7 @@ export function ListingReviewClient({
           setError(
             cause instanceof Error ? cause.message : "Unable to load listing.",
           );
+          setErrorCode(errorCodeOf(cause));
         }
         // Background callers swallow rejection; imperative callers must observe it
         // even when a newer request owns the displayed snapshot and load error.
@@ -602,6 +638,7 @@ export function ListingReviewClient({
     async (work: () => Promise<void>, success: readonly [string, string]) => {
       setBusy(true);
       setError(null);
+      setErrorCode(undefined);
       setMessage(null);
       try {
         await work();
@@ -613,6 +650,7 @@ export function ListingReviewClient({
             ? runError.message
             : "Unable to complete request.",
         );
+        setErrorCode(errorCodeOf(runError));
       } finally {
         setBusy(false);
       }
@@ -655,7 +693,7 @@ export function ListingReviewClient({
       <div className="page-wrap review-page" aria-busy={busy}>
         {error ? (
           <p className="inline-warning" role="alert" id="listing-action-error">
-            {safeUiError(error, locale, errorKind)}
+            {actionErrorText}
             <button type="button" onClick={() => void load().catch(() => {})}>
               {commonCopy[locale].retry}
             </button>
@@ -825,7 +863,7 @@ export function ListingReviewClient({
       </div>
       {error ? (
         <p className="inline-warning" role="alert" id="listing-action-error">
-          {safeUiError(error, locale, errorKind)}
+          {actionErrorText}
           <button type="button" onClick={() => void load().catch(() => {})}>
             {commonCopy[locale].retry}
           </button>
