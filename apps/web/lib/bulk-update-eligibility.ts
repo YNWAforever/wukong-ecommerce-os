@@ -241,18 +241,37 @@ export async function checkBulkUpdateEligibility(
   }
   let latestState = state;
   let latestLink: BulkUpdateLink | null = link;
+  // The digest the content check compares against, by whose expectation
+  // `input.attestation` carries (see that type's doc comment): an operator's
+  // real attestation, the link's own digest for an advisory hypothetical, or
+  // no expectation at all. A `switch` with a `never`-typed default so that
+  // adding a fourth kind is a compile error here, rather than silently
+  // falling through to "not attested".
+  let attestedRowDigest: string | null;
+  switch (input.attestation.kind) {
+    case "operator":
+      attestedRowDigest = input.attestation.rowDigest;
+      break;
+    case "advisory":
+      attestedRowDigest = link.contentDigest;
+      break;
+    case "none":
+      attestedRowDigest = null;
+      break;
+    default: {
+      const exhaustive: never = input.attestation;
+      throw new Error(
+        `unhandled attestation kind: ${JSON.stringify(exhaustive)}`,
+      );
+    }
+  }
   const freshness = await assertExportFreshness(
     {
       workspaceId: input.workspaceId,
       listingId: input.listingId,
       expectedVersionId: input.versionId,
       expectedSourceImportId: link.sourceImportId,
-      attestedRowDigest:
-        input.attestation.kind === "operator"
-          ? input.attestation.rowDigest
-          : input.attestation.kind === "advisory"
-            ? link.contentDigest
-            : null,
+      attestedRowDigest,
     },
     {
       ...deps,
