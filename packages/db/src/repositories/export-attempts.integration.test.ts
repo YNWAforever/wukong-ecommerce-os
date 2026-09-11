@@ -597,4 +597,62 @@ describe("export attempts repository", () => {
       artifactErrorCode: null,
     });
   });
+
+  it("records the operator's source attestation beside the attempt it authorised, refused or not", async () => {
+    // Recorded on a refused attempt (excluded_stale, below) as well as a
+    // ready one: "they attested X, we refused because Y" is the half of the
+    // evidence a stage review needs -- the attestation is evidence about what
+    // the operator claimed, independent of whether the export actually went
+    // through.
+    const sourceAttestation = [
+      {
+        listingId: manifest[0].listingId,
+        contentDigest: "a".repeat(64),
+      },
+    ];
+    const refusedManifest = [
+      {
+        listingId: manifest[0].listingId,
+        versionId: manifest[0].versionId,
+        outcome: "excluded_stale" as const,
+        reason: "not_attested",
+      },
+    ];
+
+    const created = await database.forWorkspace(
+      workspaceId,
+      ({ exportAttempts }) =>
+        exportAttempts.ensure({
+          idempotencyKey: "key_source_attestation",
+          requestedBy: "user_1",
+          manifest: refusedManifest,
+          rowCount: 0,
+          specVersion: "bulk-form-v1",
+          sourceAttestation,
+        }),
+    );
+
+    const [stored] = await admin`
+      SELECT source_attestation FROM export_attempts WHERE id = ${created.id}
+    `;
+    expect(stored?.source_attestation).toEqual(sourceAttestation);
+  });
+
+  it("rejects a source_attestation that is a JSON object instead of an array", async () => {
+    // The CHECK constraint (export_attempts_source_attestation_is_array) is
+    // invisible to any fake repository -- only a real Postgres insert can
+    // exercise it.
+    await expect(
+      admin`
+        INSERT INTO export_attempts (
+          workspace_id, idempotency_key, requested_by, manifest, row_count,
+          spec_version, source_attestation
+        ) VALUES (
+          ${workspaceId}, 'key_source_attestation_object', 'user_1',
+          ${admin.json(manifest)}, 1, 'bulk-form-v1',
+          ${admin.json({ listingId: manifest[0].listingId, contentDigest: "a".repeat(64) })}
+        )
+      `,
+    ).rejects.toThrow(/export_attempts_source_attestation_is_array/);
+  });
 });

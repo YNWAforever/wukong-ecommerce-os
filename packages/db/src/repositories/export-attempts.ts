@@ -38,6 +38,7 @@ export type EnsureExportAttemptInput = {
   manifest: ExportManifestEntry[];
   rowCount: number;
   specVersion: string;
+  sourceAttestation?: Array<{ listingId: string; contentDigest: string }>;
 };
 
 export type ExportAttempt = {
@@ -218,6 +219,7 @@ export function createExportAttemptRepository(
           rowCount: input.rowCount,
           specVersion: input.specVersion,
           provenance: input.provenance ?? null,
+          sourceAttestation: input.sourceAttestation ?? null,
           artifactSha256: input.artifactSha256 ?? null,
           artifactStatus: input.provenance ? "pending" : null,
         })

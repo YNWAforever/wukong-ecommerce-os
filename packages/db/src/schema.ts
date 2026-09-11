@@ -864,6 +864,9 @@ export const exportAttempts = pgTable(
       >()
       .notNull(),
     provenance: jsonb("provenance").$type<Record<string, unknown>>(),
+    sourceAttestation: jsonb("source_attestation").$type<
+      Array<{ listingId: string; contentDigest: string }>
+    >(),
     artifactSha256: text("artifact_sha256"),
     artifactStatus: text("artifact_status").$type<
       "pending" | "ready" | "failed"
