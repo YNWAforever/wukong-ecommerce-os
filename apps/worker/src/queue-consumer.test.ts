@@ -54,7 +54,13 @@ it("dispatches exact product_shot kind without website or listing AI routing", a
       consumeWebsiteMessage: website,
     },
   );
-  expect(shot).toHaveBeenCalledWith(body, expect.anything());
+  // The delivery counter goes through too: product-shot messages ride the
+  // listing queue, and the consumer has to know which delivery is the last one
+  // so it can record a terminal state rather than dead-letter the attempt.
+  expect(shot).toHaveBeenCalledWith(body, expect.anything(), {
+    attempt: 1,
+    maxAttempts: 4,
+  });
   expect(listing).not.toHaveBeenCalled();
   expect(website).not.toHaveBeenCalled();
   expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 121 });

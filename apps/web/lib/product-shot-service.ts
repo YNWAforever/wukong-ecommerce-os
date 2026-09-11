@@ -25,6 +25,13 @@ export type ProductShotView = {
   lowResolution: boolean;
   sources: Array<{ assetId: string; previewUrl: string }>;
   allowedActions: string[];
+  /**
+   * Why a failed attempt failed, so the screen can tell the operator whether
+   * trying again is worth anything. "The photo was rejected" and "the service
+   * is not switched on" rendered as the same sentence before, and only one of
+   * them is the operator's to act on.
+   */
+  errorCode: string | null;
 };
 const sha = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -140,6 +147,7 @@ export async function readProductShot(
     lowResolution: attempt?.candidate?.lowResolution ?? false,
     sources,
     allowedActions,
+    errorCode: attempt?.errorCode ?? null,
   };
 }
 export async function prepareProductShot(

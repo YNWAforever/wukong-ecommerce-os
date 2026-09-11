@@ -22,6 +22,8 @@ export class ProductShotBusyError extends Error {
     super("product_shot_busy");
   }
 }
+/** The longest delay a queue retry accepts. Matches `website-consumer.ts`. */
+export const MAX_RETRY_DELAY_SECONDS = 43_200;
 export class ProductShotBudgetError extends Error {
   constructor(readonly retryAfterSeconds: number) {
     super("product_shot_budget_exhausted");
@@ -192,7 +194,27 @@ export async function runProductShot(
     }
     return;
   }
-  if (deps.providerName === "disabled") return;
+  if (deps.providerName === "disabled") {
+    // The web app refuses to enqueue unless ITS OWN PRODUCT_SHOT_PROVIDER is
+    // set, so arriving at a disabled Worker means the two surfaces disagree.
+    // Both default to "disabled", so the committed configuration is consistent
+    // and safe; what is reachable is enabling the feature on Vercel without
+    // also setting it in cloudflare-runtime.config.json, which reads like the
+    // natural order to do it in.
+    //
+    // Returning here acked the message and left the attempt `queued` for ever:
+    // the panel polled a row nothing would touch again, "Retry queue" led
+    // straight back to this line, and no further audit event or log recorded
+    // that the work had been dropped -- only the `product_shot.requested`
+    // event the web app had already written, which makes the row look normal.
+    await deps.forWorkspace(job.workspaceId, (r) =>
+      r.productShots.finishUndispatched({
+        attemptId: job.attemptId,
+        code: "provider_disabled",
+      }),
+    );
+    return;
+  }
   const claim = await deps.forWorkspace(job.workspaceId, (r) =>
     r.productShots.claim({
       attemptId: job.attemptId,
@@ -208,8 +230,18 @@ export async function runProductShot(
       now.getUTCMonth(),
       now.getUTCDate() + 1,
     );
+    // 43200, not 86400: the budget resets at the next UTC midnight, so a denial
+    // just after one produces a delay of nearly a whole day -- longer than the
+    // ceiling `message.retry({ delaySeconds })` accepts. The website consumer
+    // already caps at this value (website-consumer.ts:17-21); this one did not,
+    // and an unacceptable delay is another way for an attempt to lose its
+    // message while the row stays `queued`. Waking early is harmless: the claim
+    // is re-denied and the delivery costs nothing.
     throw new ProductShotBudgetError(
-      Math.min(86400, Math.max(1, Math.ceil((nextDay - now.getTime()) / 1000))),
+      Math.min(
+        MAX_RETRY_DELAY_SECONDS,
+        Math.max(1, Math.ceil((nextDay - now.getTime()) / 1000)),
+      ),
     );
   }
   if (claim.kind !== "claimed") {
