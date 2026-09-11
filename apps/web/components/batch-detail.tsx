@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useLocale } from "../lib/locale-context";
-import { localized, stateLabel } from "../lib/ui-copy";
+import {
+  localized,
+  sharedMessages,
+  stateLabel,
+  type BilingualMessage,
+} from "../lib/ui-copy";
 import { AdvanceBatchButton } from "./advance-batch-button";
 
 type BatchDetailData = {
@@ -25,9 +30,6 @@ type BatchDetailData = {
   };
 };
 
-/** Chinese first, then English -- the argument order `localized` takes. */
-type Message = readonly [zh: string, en: string];
-
 // Only the ApiError codes the GET route and its service throw directly
 // (apps/web/app/api/enrichment-batches/[id]/route.ts,
 // apps/web/lib/enrichment-batch-service.ts#getBatch). Generic
@@ -35,17 +37,12 @@ type Message = readonly [zh: string, en: string];
 // authentication_unavailable, internal_error, ...) are not mapped here, same
 // as batch-list.tsx and advance-batch-button.tsx: they fall back to the
 // server-provided message.
-const API_ERROR_MESSAGES: Record<string, Message> = {
-  insufficient_role: ["需要操作員權限。", "Operator access is required."],
-  batch_not_found: ["此批次已不存在。", "This batch no longer exists."],
+const API_ERROR_MESSAGES: Record<string, BilingualMessage> = {
+  insufficient_role: sharedMessages.operatorRequired,
+  batch_not_found: sharedMessages.batchNotFound,
 };
 
-const UNREACHABLE: Message = [
-  "無法連線至伺服器，請重試。",
-  "Could not reach the server. Try again.",
-];
-
-const LOAD_FAILED: Message = [
+const LOAD_FAILED: BilingualMessage = [
   "無法載入批次資料，請重試。",
   "The batch could not be loaded.",
 ];
@@ -72,7 +69,7 @@ function isAbortError(error: unknown): boolean {
 export function BatchDetail({ batchId }: { batchId: string }) {
   const locale = useLocale();
   const [data, setData] = useState<BatchDetailData | null>(null);
-  const [error, setError] = useState<Message | null>(null);
+  const [error, setError] = useState<BilingualMessage | null>(null);
 
   // `signal` is only supplied by the effect below, which re-runs (aborting
   // any still-in-flight request first) whenever `batchId` changes. Without
@@ -92,7 +89,7 @@ export function BatchDetail({ batchId }: { batchId: string }) {
         });
       } catch (cause) {
         if (isAbortError(cause)) return;
-        setError(UNREACHABLE);
+        setError(sharedMessages.unreachable);
         return;
       }
 
@@ -104,7 +101,7 @@ export function BatchDetail({ batchId }: { batchId: string }) {
         // 502/504/524 gateway page) rather than the application itself, same
         // as batch-list.tsx/advance-batch-button.tsx.
         if (isAbortError(cause)) return;
-        setError(UNREACHABLE);
+        setError(sharedMessages.unreachable);
         return;
       }
 
@@ -113,7 +110,7 @@ export function BatchDetail({ batchId }: { batchId: string }) {
           typeof body.code === "string" ? body.code : "unknown_error";
         // A message the server wrote is shown as it stands: translating it
         // here would mean inventing a Chinese version of text we did not write.
-        const message: Message =
+        const message: BilingualMessage =
           API_ERROR_MESSAGES[code] ??
           (typeof body.message === "string"
             ? [body.message, body.message]

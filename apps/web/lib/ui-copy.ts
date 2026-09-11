@@ -4,6 +4,29 @@ export type LocalizedText = Readonly<Record<Locale, string>>;
 export function localized(locale: Locale, zh: string, en: string) {
   return locale === "zh-Hant" ? zh : en;
 }
+/**
+ * A message in both languages, Chinese first.
+ *
+ * That is the argument order `localized` takes, so a holder of one reads it
+ * as `localized(locale, ...message)`.
+ */
+export type BilingualMessage = readonly [zh: string, en: string];
+
+/**
+ * Failure copy that more than one screen needs.
+ *
+ * The four batch screens each carried their own copy of these sentences.
+ * Four translations of one sentence is four chances to drift apart, which is
+ * exactly what happened to the four status maps.
+ */
+export const sharedMessages = {
+  unreachable: [
+    "無法連線至伺服器，請重試。",
+    "Could not reach the server. Try again.",
+  ],
+  operatorRequired: ["需要操作員權限。", "Operator access is required."],
+  batchNotFound: ["此批次已不存在。", "This batch no longer exists."],
+} as const satisfies Record<string, BilingualMessage>;
 export function formatHkDate(
   value: string | Date | null | undefined,
   locale: Locale,

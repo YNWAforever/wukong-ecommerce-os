@@ -299,6 +299,12 @@ Four items, in the order they were done.
      nothing rendered. `stateLabel` now answers for all of them.
    - The batch pages never read the locale, and the detail page printed
      `狀態: budget_exhausted` and `succeeded: 3` straight from the database.
+     The two siblings named by no sub-claim -- the Advance button and the
+     create form -- carried the same defect, and the Advance button printed
+     both languages at once, which is why the pilot journey could match it by
+     /Advance/. All four batch screens now read the locale, and the English
+     strings the journey selects by are held byte-identical and pinned by unit
+     tests.
    - The role chip said 審閱者 where every message gating that role said 審核員,
      so a user denied an action was told they needed a role their chip did not
      name.

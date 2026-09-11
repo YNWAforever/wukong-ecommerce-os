@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { useLocale } from "../lib/locale-context";
-import { localized, stateLabel } from "../lib/ui-copy";
+import {
+  localized,
+  sharedMessages,
+  stateLabel,
+  type BilingualMessage,
+} from "../lib/ui-copy";
 
 type BatchSummary = {
   id: string;
@@ -31,24 +36,16 @@ const STATUS_TONES: Record<BatchSummary["status"], string> = {
   cancelled: "status-danger",
 };
 
-/** Chinese first, then English -- the argument order `localized` takes. */
-type Message = readonly [zh: string, en: string];
-
 // Only the insufficient_role code the GET route throws directly
 // (apps/web/app/api/enrichment-batches/route.ts). Generic route-support.ts
 // fallbacks (unauthorized, invalid_request, authentication_unavailable,
 // internal_error, ...) are not mapped here, same as create-batch-form.tsx and
 // advance-batch-button.tsx: they fall back to the server-provided message.
-const API_ERROR_MESSAGES: Record<string, Message> = {
-  insufficient_role: ["需要操作員權限。", "Operator access is required."],
+const API_ERROR_MESSAGES: Record<string, BilingualMessage> = {
+  insufficient_role: sharedMessages.operatorRequired,
 };
 
-const UNREACHABLE: Message = [
-  "無法連線至伺服器，請重試。",
-  "Could not reach the server. Try again.",
-];
-
-const LOAD_FAILED: Message = [
+const LOAD_FAILED: BilingualMessage = [
   "無法載入批次清單，請重試。",
   "The batch list could not be loaded.",
 ];
@@ -56,7 +53,7 @@ const LOAD_FAILED: Message = [
 export function BatchList() {
   const locale = useLocale();
   const [batches, setBatches] = useState<BatchSummary[] | null>(null);
-  const [error, setError] = useState<Message | null>(null);
+  const [error, setError] = useState<BilingualMessage | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +63,7 @@ export function BatchList() {
       try {
         response = await fetch("/api/enrichment-batches");
       } catch {
-        if (!cancelled) setError(UNREACHABLE);
+        if (!cancelled) setError(sharedMessages.unreachable);
         return;
       }
 
@@ -77,7 +74,7 @@ export function BatchList() {
         // A non-JSON body reaches here from a platform-level failure (e.g. a
         // 502/504/524 gateway page) rather than the application itself, same
         // as create-batch-form.tsx/advance-batch-button.tsx.
-        if (!cancelled) setError(UNREACHABLE);
+        if (!cancelled) setError(sharedMessages.unreachable);
         return;
       }
 
@@ -86,7 +83,7 @@ export function BatchList() {
           typeof body.code === "string" ? body.code : "unknown_error";
         // A message the server wrote is shown as it stands: translating it
         // here would mean inventing a Chinese version of text we did not write.
-        const message: Message =
+        const message: BilingualMessage =
           API_ERROR_MESSAGES[code] ??
           (typeof body.message === "string"
             ? [body.message, body.message]
