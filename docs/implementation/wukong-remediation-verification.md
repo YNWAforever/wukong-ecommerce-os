@@ -22,8 +22,8 @@ Companion records: [status](./wukong-remediation-status.md) ·
 | ---------------------------------------------------- | --------------------------------------------------------------------------- |
 | `pnpm install --frozen-lockfile`                     | ok                                                                          |
 | `pnpm --filter "@wukong/db..." build`                | ok (required first; the worker suite cannot resolve `@wukong/db` otherwise) |
-| unit suites, every package                           | **2475 passed**, 0 failed                                                   |
-| — `@wukong/web`                                      | 1592 passed                                                                 |
+| unit suites, every package                           | **2482 passed**, 0 failed                                                   |
+| — `@wukong/web`                                      | 1599 passed                                                                 |
 | — `@wukong/shopline`                                 | 260 passed                                                                  |
 | — `@wukong/worker`                                   | 190 passed                                                                  |
 | — `@wukong/ai`                                       | 152 passed                                                                  |
@@ -31,9 +31,9 @@ Companion records: [status](./wukong-remediation-status.md) ·
 | — `@wukong/assets`                                   | 73 passed                                                                   |
 | — `@wukong/core`                                     | 96 passed                                                                   |
 | — `@wukong/jobs`                                     | 11 passed                                                                   |
-| — root `node --test` suites                          | 84 passed                                                                   |
-| `packages/db` integration, real Neon-shaped Postgres | **317 passed**, 1 suite skipped (needs MinIO)                               |
-| `db:migrate` (full chain, incl. `0022`)              | ok                                                                          |
+| — root `node --test` suites                          | 95 passed                                                                   |
+| `packages/db` integration, real Neon-shaped Postgres | **384 passed**, 1 suite skipped (needs MinIO)                               |
+| `db:migrate` (full chain, incl. `0022` and `0023`)   | ok                                                                          |
 | `check-runtime-format.mjs`                           | clean, 77 files, **0 waived**                                               |
 | `typecheck` (ai, db, jobs, worker, web)              | clean                                                                       |
 
@@ -127,6 +127,12 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
 - **That the superlative rule has no false positives.** One is already known and
   recorded in its own test: "best served at 10°C" is read as a rank claim. It is
   a warning, so a reviewer clears it, but the rate across real copy is unmeasured.
+- **That an interrupted wave recovers in production.** The outbox is proven at
+  the repository level against a real Postgres and at the service level with
+  injected fakes; no request was actually killed mid-dispatch against a live
+  queue. Recovery also happens on the next advance of the same batch, not on a
+  timer, so a batch nobody advances again keeps its pending rows indefinitely --
+  visible and safe, but not self-healing.
 - **That the doctor's new checks read a real deployment.** `listing-provider` and
   `local-ingress-env` are pure functions tested against synthetic payloads. The
   command was not run against production, which is also why it is still unknown
@@ -148,6 +154,13 @@ Postgres was started this session, so these are no longer assumptions:
   reach the CHECK.
 - `audit:verify` reports **0 missing actions** and **0 accessible foreign
   records** for the new terminal state.
+- The dispatch outbox behaves as the schema, not the code, promises: the unique
+  index refuses a second row for the same run key, row-level security hides one
+  workspace's pending work from another, a confirmed row is never re-dated, and
+  an attempt counter stops once the row is sent.
+- `TENANT_TABLES` covers the new table, and every composite foreign key is
+  workspace-consistent -- both are existing invariants that failed until the
+  outbox was declared in them, which is the test doing its job.
 - A compliance flag survives `editReview`, and a resolved one keeps its
   resolution reason. Both cases were confirmed to **fail** with the fix removed,
   so they pin behaviour rather than restating it.

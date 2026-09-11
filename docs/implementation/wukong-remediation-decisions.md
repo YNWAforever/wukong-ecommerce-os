@@ -535,6 +535,93 @@ with no deterministic checker reading it.
 
 ---
 
+## D17 — Record the intent to send, then send
+
+**Status:** implemented (`5e89866`)
+
+Batch dispatch was an in-request loop running after its claim transaction
+committed. A request that died mid-wave left its items `queued` with no queue
+message, no audit event, and nothing able to find them: the sweeper requires a
+source asset, which imported drafts never have, and `claimWave` only claims
+`pending`. The work was lost silently and permanently.
+
+The reason no recovery pass had been written is that one could not be. Nothing
+recorded the INTENT to send, and `listing_pipeline_runs` cannot stand in for it:
+that row appears only once the pipeline claims its first step, so its absence
+cannot distinguish "never sent" from "sent and still sitting in the queue" --
+and re-sending the second buys a duplicate extraction, which costs money.
+
+`listing_dispatch_outbox` (migration `0023`) is written inside the claim
+transaction, so the row exists before any send is attempted and `dispatched_at`
+answers the question directly.
+
+**Why a unique key rather than a status column.** `(workspace_id, dedupe_key)`
+holds the queue run key, so recording is idempotent by construction: a retried
+wave writes nothing new, and `record` returns only the rows THIS call created,
+so a caller can never re-send a row another request owns. A genuinely new run
+carries a new attempt and therefore a new key (D4), so nothing legitimate is
+suppressed.
+
+**Why one failed send no longer abandons the wave.** The loop used to `await`
+without catching, so the first failure threw and every later item went
+unattempted. Now each is tried, the successes are confirmed, and the failures
+stay pending for the next advance. If nothing at all reached the queue the call
+still throws -- the work is safe, but answering 200 with `enqueued: 0` would
+tell the operator the queue is healthy when it plainly is not.
+
+**Stranded work goes out even when the budget is exhausted.** The money was
+committed when the item was claimed; the message merely never left. Withholding
+it would strand the item for ever, and no budget an operator could set would
+release it. Finding that required fixing a second bug the test surfaced: the
+final return hard-coded `status: "running"`, so a budget-exhausted batch that
+still owed messages reported itself as running again.
+
+**Not covered.** Recovery happens on the next advance of the same batch, not on
+a timer. A batch nobody advances again keeps its pending rows indefinitely --
+visible and safe, but not self-healing. A cron sweep would need a cross-workspace
+`SECURITY DEFINER` function like `sweeper_find_stuck_listing_jobs`, and rows are
+never pruned, so retention is an open question rather than a solved one.
+
+---
+
+## D18 — Write down what each surface needs, and derive the check from the code
+
+**Status:** implemented (`5b538df`)
+
+Nothing in the repository stated what `apps/web` requires at runtime. The doctor
+checked the Worker's secrets and the operator's own shell, so an operator
+bringing production up had no list to compare `vercel env ls` against.
+
+That absence is how `DATABASE_MIGRATION_URL` survived: a name read in exactly
+one file, spelled differently from the `DATABASE_ADMIN_URL` used everywhere
+else, documented nowhere, and handed to a `migrate()` the web app never calls.
+
+**It was removed, not documented.** `migrationUrl` is read only by
+`Database.migrate()`, and `grep -rn "\.migrate(" apps/web` finds nothing. What
+the option did provide was a named channel for putting an admin database URL on
+Vercel -- which `production-ai-runtime.md` forbids outright, under a spelling
+this one sidestepped. Documenting it would have made the hazard permanent.
+
+**Why the test scans the source rather than restating the list.** A hand-written
+inventory rots the first time someone adds a `process.env.X`, and a rotted list
+is worse than none because the operator reads it as complete. The test derives
+the names from the code and fails when the manifest disagrees, so the list
+cannot quietly fall behind. It found a second real gap immediately:
+`SHOPLINE_TOKEN_ENCRYPTION_KEY` was required by both surfaces and absent from
+`.env.example`.
+
+**Three categories, not two.** `BUILD_SHA` and `CLOUDFLARE_HYPERDRIVE_ID` are
+deploy-shell render inputs -- writing either into a file makes it stale the
+moment it is written -- and the platform-provided `VERCEL_*` names must never
+appear in `.env.example` at all, because an entry there reads as an invitation
+to set them.
+
+**Not covered.** The doctor still cannot read Vercel. It prints the list and
+names `vercel env pull`; confirming the two sides agree remains a manual step,
+and that is stated rather than implied.
+
+---
+
 ## Open questions requiring evidence this session could not obtain
 
 - The historical run `3b958fe6-64e3-44bb-ac0c-13fa38ae60a3` cannot be attributed

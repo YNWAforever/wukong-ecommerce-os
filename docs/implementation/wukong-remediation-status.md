@@ -74,8 +74,8 @@ Twelve of fourteen reproduce. None were already fixed.
 | F10 draft save requires canonical            | still_reproducible | **fixed** — save accepts reviewable; canonical enforced at the delivery gate                                          |
 | F13 second file selection replaces the first | still_reproducible | **picker and error copy fixed** — selections accumulate, and a refused action now names the conflict that refused it  |
 | F06 create never starts image work           | still_reproducible | **fixed** — create dispatches image work, and a shot the Worker will never run now ends instead of queueing for ever  |
-| F12 doctor passes while misconfigured        | partially_fixed    | **partly fixed** — the two false greens are gone; the env-inventory delta remains                                     |
-| F08 batches enqueue at sequence 0            | still_reproducible | **stale key and needs_info fixed** — durable dispatch remains                                                         |
+| F12 doctor passes while misconfigured        | partially_fixed    | **fixed** — the false greens are gone, and what each surface requires is written down and checked against the source  |
+| F08 batches enqueue at sequence 0            | still_reproducible | **fixed** — a wave is recorded before it is sent, so an interrupted advance is recoverable rather than lost           |
 | F14 batch cost is all-history                | still_reproducible | **fixed** — a batch's budget counts only its own spend, and a claim with no evidence behind it is flagged             |
 | F09 approve without a dirty guard            | still_reproducible | **client guard fixed** — approval blocks on unsaved edits and says why; server freshness was already version-id based |
 | F11 no external enrichment stage             | **not_a_defect**   | no — and deliberately not attempted; see below                                                                        |
@@ -104,6 +104,8 @@ Twelve of fourteen reproduce. None were already fixed.
 | `e2d0e8c`          | Read which conflict refused an action, instead of one sentence that fits a dozen different problems                     |
 | `7e11b47`          | Have "95 points from Robert Parker" flagged when nothing in the source ever said so                                     |
 | `9a5c5a9`          | Have the same check applied to a claim typed in by hand after the AI was done                                           |
+| `5b538df`          | Follow one list of what to set, instead of guessing what Vercel needs                                                   |
+| `5e89866`          | Keep a batch wave that was interrupted, instead of losing it with no trace                                              |
 | `6eefc16`          | Find out the production Worker is inventing every listing, instead of reading seven green checks                        |
 
 ## What the adversarial review corrected in my own work
@@ -131,22 +133,37 @@ catch any of them:
 
 ## Next task, exactly
 
+**Nothing in the audit remains open.** All fourteen findings are addressed; what
+is left is verification, not implementation, and it is listed under "Still not
+proven" in the [verification record](./wukong-remediation-verification.md). The
+two that matter most before a pilot: `listing-extraction@1.1.0` has never been
+sent to a model, and the production run remains unattributed.
+
+### Done since this section last named a task
+
 **F08, durable dispatch.** Dispatch is still an in-request loop that runs after
 the claim transaction commits. A request that dies mid-wave leaves its items
 `queued` with no queue message, no audit event, and nothing able to find them:
 the cron sweeper requires a source asset, which imported drafts never have, and
 `claimWave` only claims `pending`.
 
-The blocker is a design question, not typing. A recovery pass cannot yet tell
-"never dispatched" from "dispatched and still sitting in the queue", because the
-`listing_pipeline_runs` row appears only once the pipeline claims its first
-step, and re-dispatching the second case buys a duplicate extraction. Settle
-that first -- most likely by recording the dispatch itself, which is what an
-outbox is -- and the rest is small.
+The blocker was a design question rather than typing: a recovery pass could not
+tell "never dispatched" from "dispatched and still sitting in the queue",
+because the `listing_pipeline_runs` row appears only once the pipeline claims
+its first step, and re-dispatching the second case buys a duplicate extraction.
+Settled by recording the dispatch itself — migration `0023` adds
+`listing_dispatch_outbox`, written inside the claim transaction, so the row
+exists before any send and `dispatched_at` says which of the two happened.
 
-Then: F12's env-inventory delta. Several variables `apps/web` requires at
-runtime are unchecked, and one is explicitly forbidden on Vercel by the runbook
-the operator is following.
+**F12's env-inventory delta.** Several variables `apps/web` required at runtime
+were unchecked, and one — `DATABASE_MIGRATION_URL` — was a name read in exactly
+one file, spelled differently from the `DATABASE_ADMIN_URL` used everywhere
+else, documented nowhere, and handed to a `migrate()` the web app never calls.
+It was removed rather than documented: what it actually provided was a channel
+for putting an admin database URL on Vercel, which the runbook forbids under the
+other spelling. `scripts/runtime-env-manifest.mjs` now states what each surface
+needs, and a test derives the truth from the source so the list cannot fall
+behind the code.
 
 ### Done since this section last named a task
 
