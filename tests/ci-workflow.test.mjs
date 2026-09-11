@@ -554,3 +554,33 @@ test("keeps the protected-file exclusions exact and self-justifying", async () =
     );
   }
 });
+
+test("keeps the three end-to-end ports disjoint", () => {
+  // The auth mode and the real-stack public-image server both claimed 49218.
+  // Whichever started second died on EADDRINUSE, and because
+  // real-stack-server.mjs binds the application port as well, losing the image
+  // port took the app down with it -- so the failure surfaced as a refused
+  // connection on 49217, a port that was never the conflict. Derived from the
+  // sources rather than restated, so moving a port cannot re-collide silently.
+  const config = readFileSync(
+    new URL("playwright.config.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  const harness = readFileSync(
+    new URL("tests/e2e/real-stack-server.mjs", new URL("../", import.meta.url)),
+    "utf8",
+  );
+
+  const authPort = /--port (\d+)"/.exec(config)?.[1];
+  const appPort = /PORT: "(\d+)"/.exec(config)?.[1];
+  const imagePort = /publicImagePort = (\d+);/.exec(harness)?.[1];
+
+  assert.ok(authPort, "auth-mode dev server port not found");
+  assert.ok(appPort, "real-stack app port not found");
+  assert.ok(imagePort, "public-image port not found");
+  assert.equal(
+    new Set([authPort, appPort, imagePort]).size,
+    3,
+    `ports collide: auth=${authPort} app=${appPort} image=${imagePort}`,
+  );
+});
