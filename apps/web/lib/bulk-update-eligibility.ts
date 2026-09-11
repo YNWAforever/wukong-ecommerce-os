@@ -24,6 +24,21 @@ export type BulkUpdateLink = {
   connectionId: string;
 };
 
+/**
+ * Whose expectation the digest check compares against.
+ *
+ * `operator` carries what a person actually attested, and is the only kind
+ * that can gate a real export. `advisory` asks the same policy question with
+ * the attestation set aside -- the readiness readout needs that, and must not
+ * invent an attestation nobody made: the link it holds may not even be the row
+ * this check reads, because `platform_products` has no unique index on
+ * `listing_id`. `none` is an export attempted with no attestation at all.
+ */
+export type BulkUpdateAttestation =
+  | { kind: "operator"; rowDigest: string }
+  | { kind: "advisory" }
+  | { kind: "none" };
+
 export type BulkUpdateEligibilityReason =
   | FreshnessFailureReason
   | "approval_required"
@@ -115,8 +130,7 @@ export async function checkBulkUpdateEligibility(
     workspaceId: string;
     listingId: string;
     versionId: string;
-    /** The digest the operator attested, or null when none was supplied. */
-    attestedRowDigest: string | null;
+    attestation: BulkUpdateAttestation;
   },
   deps: BulkUpdateEligibilityDeps,
   expected?: BulkUpdateEvidence,
@@ -233,7 +247,12 @@ export async function checkBulkUpdateEligibility(
       listingId: input.listingId,
       expectedVersionId: input.versionId,
       expectedSourceImportId: link.sourceImportId,
-      attestedRowDigest: input.attestedRowDigest,
+      attestedRowDigest:
+        input.attestation.kind === "operator"
+          ? input.attestation.rowDigest
+          : input.attestation.kind === "advisory"
+            ? link.contentDigest
+            : null,
     },
     {
       ...deps,

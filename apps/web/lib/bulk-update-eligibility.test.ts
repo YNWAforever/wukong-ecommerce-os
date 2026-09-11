@@ -28,7 +28,7 @@ const input = {
   workspaceId: "workspace_test",
   listingId: "listing_test",
   versionId: "version_test",
-  attestedRowDigest: BASE_ROW_DIGEST,
+  attestation: { kind: "operator", rowDigest: BASE_ROW_DIGEST } as const,
 };
 function fixture() {
   const state = {
@@ -381,7 +381,13 @@ describe("attested digest", () => {
     const { deps } = fixture();
     expect(
       await checkBulkUpdateEligibility(
-        { ...input, attestedRowDigest: "a-digest-the-link-no-longer-has" },
+        {
+          ...input,
+          attestation: {
+            kind: "operator",
+            rowDigest: "a-digest-the-link-no-longer-has",
+          },
+        },
         deps,
       ),
     ).toEqual({ ok: false, reason: "row_digest_mismatch" });
@@ -391,7 +397,7 @@ describe("attested digest", () => {
     const { deps } = fixture();
     expect(
       await checkBulkUpdateEligibility(
-        { ...input, attestedRowDigest: null },
+        { ...input, attestation: { kind: "none" } },
         deps,
       ),
     ).toEqual({ ok: false, reason: "not_attested" });
