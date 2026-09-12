@@ -787,7 +787,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form", attestedContentDigest: bulkDigest }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -886,7 +889,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form", attestedContentDigest: bulkDigest }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
