@@ -967,10 +967,7 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     // attestation is still valid and Generate is still enabled.
     expect(attestation.checked).toBe(true);
 
-    const generateButton = findButtonByText(
-      container,
-      "產生批量更新 XLSX",
-    )!;
+    const generateButton = findButtonByText(container, "產生批量更新 XLSX")!;
     expect(generateButton.disabled).toBe(false);
     await act(async () => {
       generateButton.click();
@@ -978,7 +975,9 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
       await Promise.resolve();
     });
 
-    const exportCall = calls.find((call) => call.url === "/api/listings/export");
+    const exportCall = calls.find(
+      (call) => call.url === "/api/listings/export",
+    );
     expect(exportCall).toBeDefined();
     const body = JSON.parse(String(exportCall!.init!.body));
     expect(body.attestation.listings).toEqual([

@@ -43,7 +43,10 @@ export type EnsureExportAttemptInput = {
 
 export type ExportAttempt = {
   provenance?: Record<string, unknown> | null;
-  sourceAttestation?: Array<{ listingId: string; contentDigest: string }> | null;
+  sourceAttestation?: Array<{
+    listingId: string;
+    contentDigest: string;
+  }> | null;
   artifactSha256?: string | null;
   artifactStatus?: ArtifactStatus | null;
   artifactErrorCode?: string | null;
@@ -145,9 +148,7 @@ const sortedAttestation = (
 ): Array<{ listingId: string; contentDigest: string }> | null =>
   attestation === null
     ? null
-    : [...attestation].sort((a, b) =>
-        a.listingId.localeCompare(b.listingId),
-      );
+    : [...attestation].sort((a, b) => a.listingId.localeCompare(b.listingId));
 
 const COLUMNS = {
   provenance: exportAttempts.provenance,

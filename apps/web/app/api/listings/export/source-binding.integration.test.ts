@@ -97,13 +97,27 @@ async function importPrice(price: string) {
   });
 }
 async function exportListing(listingId: string) {
+  // Reads the digest the operator would have been shown rather than taking a
+  // boolean on trust. The digest changes across this test -- a re-import
+  // rewrites it -- so it has to be read per call, not captured once.
+  const attestedDigest = await database.forWorkspace(workspaceId, async (r) => {
+    const link = await r.platformProducts.getByListingId(listingId);
+    return link?.contentDigest ?? null;
+  });
   const response = await exportHandler(
     new Request("http://localhost/api/listings/export", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         listingIds: [listingId],
-        freshnessAttested: true,
+        attestation: {
+          listings: [
+            {
+              listingId,
+              contentDigest: attestedDigest ?? "no-digest-recorded",
+            },
+          ],
+        },
       }),
     }),
   );
