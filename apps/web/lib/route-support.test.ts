@@ -49,17 +49,21 @@ describe("withRouteErrors", () => {
     });
 
     expect(response.status).toBe(500);
-    expect(lines).toContain(
-      JSON.stringify({
-        event: "route_error",
-        outcome: "failure",
-        reason: "internal_error",
-        errorName: "ConnectionError",
-      }),
-    );
+    const [logged] = lines;
+    expect(JSON.parse(logged!)).toMatchObject({
+      event: "route_error",
+      outcome: "failure",
+      reason: "internal_error",
+      errorName: "ConnectionError",
+      // A source location, so the reader can tell one plain `Error` from
+      // another. Asserted as a shape rather than a literal because the frame
+      // moves whenever this test file does.
+      errorSite: expect.stringMatching(/^[\w.-]+[/\\][\w.-]+:\d+:\d+$|^unknown$/),
+    });
     for (const line of lines) {
       expect(line).not.toContain("hunter2");
       expect(line).not.toContain("db.example.com");
+      expect(line).not.toContain("postgres://");
     }
   });
 
