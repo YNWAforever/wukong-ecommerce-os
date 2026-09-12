@@ -32,7 +32,7 @@ it.each(["en", "zh-Hant"] as const)(
     );
     const exportMarkup = renderToStaticMarkup(
       createElement(BulkExportPanel, {
-        listingIds: ["exact-id"],
+        listings: [{ listingId: "exact-id", contentDigest: "digest-exact" }],
         canGenerate: true,
       }),
     );

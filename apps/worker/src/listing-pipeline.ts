@@ -1,14 +1,15 @@
 import type {
   AuditContext,
   AuditWriter,
-  CanonicalListing,
+  ReviewableListing,
   ComplianceFlag,
   FieldEvidence,
   ListingStatus,
   WorkspaceProfile,
 } from "@wukong/core";
-import { scanCompliance } from "@wukong/core";
+import { localizedCopyFields, scanCompliance } from "@wukong/core";
 import {
+  factsSufficientForGeneration,
   ProviderApiError,
   ProviderOutputError,
   ProviderRefusalError,
@@ -19,12 +20,13 @@ import {
   ProductShotProvider,
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
-import type { ListingJob } from "@wukong/jobs";
+import { listingRunKey, type ListingJob } from "@wukong/jobs";
 
 export type ListingPipelineInput = ListingJob;
 
 function listingPipelineJobId(input: ListingPipelineInput): string {
-  return `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  // Shared with the web producer so both sides derive byte-identical keys.
+  return listingRunKey(input);
 }
 export type PipelineResult = {
   status: "in_review" | "needs_info";
@@ -58,7 +60,7 @@ export type PipelineRepositories = {
     ): Promise<void>;
     appendVersion(
       id: string,
-      content: CanonicalListing,
+      content: ReviewableListing,
       context: AuditContext,
       audit: PipelineAuditWriter,
       pipelineIdempotencyKey?: string,
@@ -231,20 +233,9 @@ function aiRunFrom(
     ...usage,
   };
 }
-function flattenLocalizedContent(
-  listing: CanonicalListing,
-): Record<string, string> {
-  return {
-    titleEn: listing.title.en,
-    titleZhHant: listing.title["zh-Hant"],
-    descriptionEn: listing.description.en,
-    descriptionZhHant: listing.description["zh-Hant"],
-    seoTitleEn: listing.seo.title.en,
-    seoTitleZhHant: listing.seo.title["zh-Hant"],
-    seoDescriptionEn: listing.seo.description.en,
-    seoDescriptionZhHant: listing.seo.description["zh-Hant"],
-  };
-}
+// The field list lives in @wukong/core so the operator's save scans exactly the
+// same eight fields. A private copy here is how a rule ends up enforced on
+// generated copy and not on edited copy.
 function classifyError(error: unknown): PipelineErrorCode {
   if (error instanceof PipelineTimeoutError) return "provider_timeout";
   const message = error instanceof Error ? error.message : "";
@@ -411,7 +402,14 @@ export async function runListingPipeline(
       claimedLeaseToken = null;
     }
 
-    if (extraction.missingFields.length > 0) {
+    // Gate on whether the product can be WRITTEN ABOUT, not on whether every
+    // fact is present. `missingFields` lists everything absent -- which the
+    // review screen shows the operator -- and that included optional facts like
+    // region and vintage, plus the merchant data the model is forbidden to read
+    // off a label at all. So a perfectly usable extraction of a non-vintage
+    // spirit was sent to needs_info, with no version saved, for want of a
+    // region it was never going to find.
+    if (!factsSufficientForGeneration(extraction.facts)) {
       if (!completionStep) throw new Error("pipeline completion step missing");
       const result: PipelineResult = { status: "needs_info", versionId: null };
       await deps.withWorkspace(input.workspaceId, async (repos) => {
@@ -495,7 +493,14 @@ export async function runListingPipeline(
         .filter((asset) => asset.mimeType.startsWith("image/"))
         .map((asset) => asset.id),
     });
-    const flags = scanCompliance(flattenLocalizedContent(generation.listing));
+    // The generated copy is scanned against what the listing can actually
+    // support. Without the second argument a description asserting "95 points
+    // from Robert Parker" reads the same as a grounded one, and the rule that
+    // exists to catch it could never fire.
+    const flags = scanCompliance(localizedCopyFields(generation.listing), {
+      criticScores: generation.listing.criticScores,
+      awards: generation.listing.awards,
+    });
     // A ProductShotProvider/AssetStore pair is optional, and neither is wired in
     // wherever PipelineDependencies is bound to real implementations for
     // production today — this whole feature stays a no-op until a future task

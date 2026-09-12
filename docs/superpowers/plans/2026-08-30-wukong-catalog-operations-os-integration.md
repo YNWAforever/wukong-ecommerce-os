@@ -102,7 +102,7 @@ Rendered as one structured entry per route rather than a single wide table — t
 - **Missing contract:** none — reuse the existing functional flow; only the layout/copy should be adopted from the Site.
 - **Disposition:** extend (visual layer only). **Priority:** high (public-facing, low risk).
 - **Dependencies:** ADR-5 (public/auth boundary).
-- **Acceptance evidence:** existing `apps/web/auth.test.ts`, `auth-flow.test.ts`; add visual-regression capture per §14.
+- **Acceptance evidence:** existing `apps/web/auth.test.ts`, `auth-flow.test.ts`; capture both viewports per §14 as a human-read artefact ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md): the capture is not a pixel assertion).
 
 ### `/register` — Invite-only enrolment
 
@@ -415,6 +415,13 @@ Each entry: conflicting claims → evidence for each side → operational/securi
 **Accessible drawer/dialog/table/card patterns:** the Site's confirmed mobile pattern (sidebar → bottom-nav collapse at the `lg` breakpoint, plus a hamburger drawer revealing the full nav) should be adopted as the responsive pattern; the runtime has no existing drawer component to reuse, so this is new, plain-CSS-based work (§9 ADR-3).
 
 **Desktop/375px acceptance captures and visual-regression scope:** every route in §5 needs both viewports captured at minimum; routes marked Partial or Missing need before/after captures once built.
+
+> **Amended 2026-09-13 (W9).** The comparison half of this scope was never
+> built -- no `toHaveScreenshot`, no committed baseline -- so it asserted
+> nothing. Captures remain, as artefacts a person reads; the automated
+> acceptance evidence is the hard overflow assertion, `<h1>` presence, the
+> accessibility-tree and contrast assertions, and the localisation ratchet.
+> Reasoning and what would reverse it: [visual-regression decision](../specs/2026-09-13-visual-regression-decision.md).
 
 **Skip link:** **[Unverified]** whether the current authenticated shell (`apps/web/app/(app)/layout.tsx`) has a skip link — no subagent was asked to check this specifically. Add one if confirmed missing, per master instruction §7's explicit accessibility requirement.
 
@@ -771,7 +778,7 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Auth/audit/idempotency:** N/A.
 - **Tests/commands:** `pnpm --filter @wukong/web test`, `pnpm typecheck`, new locale-persistence test.
 - **Observability:** N/A.
-- **Acceptance evidence:** visual-regression capture of the shell in both locales/viewports (§14).
+- **Acceptance evidence:** the shell captured in both locales/viewports (§14) as a human-read artefact, plus the localisation ratchet, which fails a surface with no notion of language ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md)).
 - **Rollback:** revert; no data implications.
 - **Size:** M.
 
@@ -889,7 +896,7 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **API/data/migration impact:** none expected beyond minor fixes.
 - **Feature flag:** none.
 - **Auth/audit/idempotency:** N/A directly, though the CSRF/cookie item from Package C should be re-verified here as a final check.
-- **Tests/commands:** accessibility-tree assertions, contrast checks, visual-regression suite across every route in §5.
+- **Tests/commands:** accessibility-tree assertions, contrast checks, and the hard overflow plus `<h1>`-presence sweep across every route in §5 ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md): there is no visual-regression suite, and this clause no longer claims one).
 - **Observability:** N/A.
 - **Acceptance evidence:** WCAG 2.2 AA checklist passes for every affected route.
 - **Rollback:** revert individual fixes as needed.
@@ -937,7 +944,7 @@ pnpm --filter @wukong/db audit:verify
 
 - **Route/function parity:** one acceptance test per §5 entry once built — start with §5's flagged unknowns (`/listings/new` wiring, `/batches` wave-cap) since those need confirmation before their disposition is even settled.
 - **Public/protected boundaries:** verify every route in §5 enforces the role listed; add a negative test for each protected route confirming a lower-role session is rejected.
-- **Both locales, desktop and 375px mobile:** per §14's visual-regression scope, every route.
+- **Both locales, desktop and 375px mobile:** per §14's capture scope as amended, every route.
 - **Auth invitation/reset and role matrix:** extend existing `auth.test.ts`/`flow-routes.test.ts` coverage to the CSRF/cookie hardening from Package C once landed.
 - **Cross-workspace/RLS denial:** replicate the existing `memberships.integration.test.ts` pattern for every new tenant-scoped table (§15).
 - **Catalog pagination/search/cohorts:** new integration test for the >100-row case (§16 Package D).

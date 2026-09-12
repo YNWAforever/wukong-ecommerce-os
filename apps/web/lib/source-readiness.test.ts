@@ -139,6 +139,33 @@ it("refuses an advisory catalog row when the current listing link points elsewhe
     reason: "remote_link_changed",
   });
 });
+it("reports remote_link_changed, not row_digest_mismatch, when the batch-fetched link's digest is stale", async () => {
+  // `platform_products` has no unique constraint on `listing_id`, so the
+  // batch-fetched `link` a caller supplies (e.g. the catalog route's
+  // getByIds read) is not guaranteed to be the same row
+  // `deps.getPlatformProductLink` resolves internally. Here the two rows
+  // agree on identity (remoteProductId/connectionId/sourceImportId/origin)
+  // but disagree on contentDigest -- exactly the shape that, before the
+  // fix, made the advisory path fabricate an attestation from the
+  // supplied link's (possibly wrong-row) digest, fail the internal
+  // freshness check with `row_digest_mismatch`, and short-circuit
+  // `catalogLinkMatches` before it could report the real divergence.
+  const { deps } = fixture();
+  const other = {
+    ...(await deps.getPlatformProductLink()),
+    contentDigest: "a-different-row-digest",
+  };
+  const result = await evaluateSourceReadiness(
+    { workspaceId: "workspace", listingId: "listing", link: other as never },
+    deps as never,
+  );
+  expect(result.reason).not.toBe("row_digest_mismatch");
+  expect(result).toMatchObject({
+    eligibleAfterAttestation: false,
+    reason: "remote_link_changed",
+  });
+});
+
 it("keeps missing source/time explicit and rejects a stale reviewed binding", async () => {
   const { deps } = fixture();
   const missing = await evaluateSourceReadiness(

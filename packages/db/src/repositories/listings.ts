@@ -27,7 +27,7 @@ export type Listing = typeof listingDrafts.$inferSelect;
 export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
 export type ListingSummary = Listing & {
-  activeVersion: { id: string; content: CanonicalListing } | null;
+  activeVersion: { id: string; content: ReviewableListing } | null;
   /**
    * Open, blocking-severity compliance flags on the active version. A listing
    * is bulk-approvable exactly when this is 0 and status is `in_review` — the
@@ -81,6 +81,12 @@ export type ListingRepository = {
    */
   countByStatus(): Promise<Record<ListingStatus, number>>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
+  /**
+   * Strict on purpose: this is the publish path, so it parses the active
+   * version with `canonicalListingSchema` and throws when the content is not
+   * publish-ready. A draft may legitimately be saved without a SKU or a price,
+   * and this is the gate where that stops being acceptable.
+   */
   requireForPublish(id: string): Promise<{
     id: string;
     target: "shopline";
@@ -115,10 +121,19 @@ export type ListingRepository = {
   editReview(
     id: string,
     baseVersionId: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     changedFields: string[],
     context: AuditContext,
     audit: AuditWriter,
+    /**
+     * Flags for the version this edit creates.
+     *
+     * Omit and the base version's flags are copied forward unchanged, which is
+     * the safe default: a Save must never be able to empty the approval gate.
+     * Supply them when the caller has re-scanned the edited copy, so a claim
+     * typed in after generation is caught and one edited out is cleared.
+     */
+    flags?: ComplianceFlag[],
   ): Promise<ListingVersion>;
   beginPublish(
     id: string,
@@ -147,7 +162,7 @@ export type ListingRepository = {
   ): Promise<void>;
   appendVersion(
     id: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     context: AuditContext,
     audit: AuditWriter,
     pipelineIdempotencyKey?: string,
@@ -399,9 +414,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
@@ -469,9 +489,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
@@ -771,6 +796,7 @@ export function createListingRepository(
       changedFields,
       context,
       audit,
+      flags,
     ) {
       scope.assertOpen();
       const listing = await this.requireById(id);
@@ -793,6 +819,49 @@ export function createListingRepository(
         nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
       if (!nextStatus) throw new Error(`listing is ${listing.status}`);
       const version = await this.appendVersion(id, content, context, audit);
+      // A compliance flag belongs to the version it was raised against, and an
+      // edit appends a new one. Carrying them is not housekeeping: flags are
+      // read by active version id, `approveListing` refuses only on an OPEN
+      // BLOCKING flag it can actually see, so saving ANY edit -- even one
+      // nowhere near the flagged field -- silently emptied the gate and let the
+      // listing be approved. `listing-approval.ts` already does exactly this
+      // wherever it appends a version; this path was the one that did not.
+      //
+      // Evidence is deliberately NOT carried. Here the content is what changed,
+      // so the previous version's excerpts may no longer support the values
+      // they are attached to, and asserting that they do would be worse than
+      // showing none.
+      if (flags) {
+        // The caller re-scanned the edited copy, so it -- not the base version
+        // -- decides. That is what lets a claim edited OUT clear its flag, which
+        // a blind copy-forward never could.
+        await this.replaceFlags(version.id, flags);
+      } else {
+        const carriedFlags = await transaction
+          .select({
+            code: complianceFlags.code,
+            severity: complianceFlags.severity,
+            status: complianceFlags.status,
+            details: complianceFlags.details,
+            resolvedAt: complianceFlags.resolvedAt,
+          })
+          .from(complianceFlags)
+          .where(
+            and(
+              eq(complianceFlags.workspaceId, workspaceId),
+              eq(complianceFlags.listingVersionId, baseVersionId),
+            ),
+          );
+        if (carriedFlags.length > 0) {
+          await transaction.insert(complianceFlags).values(
+            carriedFlags.map((flag) => ({
+              ...flag,
+              workspaceId,
+              listingVersionId: version.id,
+            })),
+          );
+        }
+      }
       const updated = await transaction
         .update(listingDrafts)
         .set({

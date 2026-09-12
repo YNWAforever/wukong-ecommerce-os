@@ -3,6 +3,7 @@ import { useLocale } from "../lib/locale-context";
 import { localized, commonCopy, safeUiError } from "../lib/ui-copy";
 
 import { approvalErrorLabel } from "../lib/approval-ui-copy";
+import { MAX_BULK_APPROVE_ITEMS } from "../lib/bulk-approve-limit";
 
 import { useCallback, useState } from "react";
 
@@ -51,6 +52,10 @@ export function QueueClient() {
   );
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [bulkPending, setBulkPending] = useState(false);
+  // A refused selection, remembered only until there is room again. The cap is
+  // correct -- it mirrors what the API accepts -- but refusing in silence left
+  // a live-looking checkbox doing nothing at all.
+  const [selectionCapped, setSelectionCapped] = useState(false);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -76,34 +81,47 @@ export function QueueClient() {
   const items = data?.items ?? null;
 
   const toggleSelected = (id: string) => {
-    setSelection((current) => {
-      const next = new Map(current);
-      if (next.has(id)) next.delete(id);
-      else {
-        const item = items?.find((candidate) => candidate.id === id);
-        if (item?.reviewContext && current.size < 50) {
-          next.set(id, { ...item.reviewContext });
-        }
-      }
-      return next;
-    });
+    if (selection.has(id)) {
+      const next = new Map(selection);
+      next.delete(id);
+      setSelection(next);
+      // There is room again, so the warning has nothing left to explain.
+      setSelectionCapped(false);
+      return;
+    }
+    const item = items?.find((candidate) => candidate.id === id);
+    if (!item?.reviewContext) return;
+    if (selection.size >= MAX_BULK_APPROVE_ITEMS) {
+      setSelectionCapped(true);
+      return;
+    }
+    const next = new Map(selection);
+    next.set(id, { ...item.reviewContext });
+    setSelection(next);
   };
 
   const selectAllEligible = (eligibleIds: string[]) => {
-    setSelection((current) => {
-      const next = new Map(current);
-      const itemsById = new Map(items?.map((item) => [item.id, item]));
-      for (const id of eligibleIds) {
-        if (next.has(id)) continue;
-        if (next.size >= 50) break;
-        const context = current.get(id) ?? itemsById.get(id)?.reviewContext;
-        if (context) next.set(id, { ...context });
+    const next = new Map(selection);
+    const itemsById = new Map(items?.map((item) => [item.id, item]));
+    let refused = false;
+    for (const id of eligibleIds) {
+      if (next.has(id)) continue;
+      if (next.size >= MAX_BULK_APPROVE_ITEMS) {
+        // Stopping here is right; dropping the rest without a word was not.
+        refused = true;
+        break;
       }
-      return next;
-    });
+      const context = selection.get(id) ?? itemsById.get(id)?.reviewContext;
+      if (context) next.set(id, { ...context });
+    }
+    setSelection(next);
+    setSelectionCapped(refused);
   };
 
-  const clearSelection = () => setSelection(new Map());
+  const clearSelection = () => {
+    setSelection(new Map());
+    setSelectionCapped(false);
+  };
 
   const runBulkApprove = async () => {
     setBulkPending(true);
@@ -139,6 +157,7 @@ export function QueueClient() {
         for (const id of approvedIds) next.delete(id);
         return next;
       });
+      if (approvedIds.size > 0) setSelectionCapped(false);
       reload();
     } catch {
       // Covers both a rejected fetch() call (network failure) and a thrown
@@ -227,7 +246,7 @@ export function QueueClient() {
               ? localized(locale, "批准中…", "Approving…")
               : localized(
                   locale,
-                  `批准 ${selected.size} 個上架項目`,
+                  `批准 ${selected.size} 個商品`,
                   `Approve ${selected.size} listings`,
                 )}
           </button>
@@ -240,6 +259,15 @@ export function QueueClient() {
             {c.clearSelection}
           </button>
         </div>
+      ) : null}
+      {selectionCapped ? (
+        <p className="inline-warning" role="alert">
+          {localized(
+            locale,
+            `一次最多可選取 ${MAX_BULK_APPROVE_ITEMS} 個項目。請先批准已選取的項目，再選取其餘項目。`,
+            `You can select at most ${MAX_BULK_APPROVE_ITEMS} listings at a time. Approve the ones you have selected, then select the rest.`,
+          )}
+        </p>
       ) : null}
       {bulkError ? (
         <p className="inline-warning" role="alert">

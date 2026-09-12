@@ -597,4 +597,143 @@ describe("export attempts repository", () => {
       artifactErrorCode: null,
     });
   });
+
+  it("records the operator's source attestation beside the attempt it authorised, refused or not", async () => {
+    // Recorded on a refused attempt (excluded_stale, below) as well as a
+    // ready one: "they attested X, we refused because Y" is the half of the
+    // evidence a stage review needs -- the attestation is evidence about what
+    // the operator claimed, independent of whether the export actually went
+    // through.
+    const sourceAttestation = [
+      {
+        listingId: manifest[0].listingId,
+        contentDigest: "a".repeat(64),
+      },
+    ];
+    const refusedManifest = [
+      {
+        listingId: manifest[0].listingId,
+        versionId: manifest[0].versionId,
+        outcome: "excluded_stale" as const,
+        reason: "not_attested",
+      },
+    ];
+
+    const created = await database.forWorkspace(
+      workspaceId,
+      ({ exportAttempts }) =>
+        exportAttempts.ensure({
+          idempotencyKey: "key_source_attestation",
+          requestedBy: "user_1",
+          manifest: refusedManifest,
+          rowCount: 0,
+          specVersion: "bulk-form-v1",
+          sourceAttestation,
+        }),
+    );
+
+    const [stored] = await admin`
+      SELECT source_attestation FROM export_attempts WHERE id = ${created.id}
+    `;
+    expect(stored?.source_attestation).toEqual(sourceAttestation);
+    // The repository's own read path (COLUMNS) must surface it too, not just
+    // a raw SQL SELECT -- otherwise no in-process caller could ever see what
+    // was attested for an attempt without dropping to raw SQL itself.
+    expect(created.sourceAttestation).toEqual(sourceAttestation);
+  });
+
+  it("throws instead of silently keeping the first attestation when a repeat call's idempotency key carries a different source attestation", async () => {
+    // The attestation is evidence about what the operator claimed, not
+    // derived data -- a retry under the same key that disagrees on what was
+    // attested must be refused, or the stored record would misrepresent
+    // what was actually attested for this attempt. Same manifest, rowCount,
+    // specVersion, provenance and artifact hash on both calls: attestation
+    // is the *only* thing that differs, so this isolates the comparison
+    // this fix adds rather than any of the other fields already checked.
+    const provenance = { version: 1, rowOrder: [manifest[0].listingId] };
+    const artifactSha256 = "e".repeat(64);
+    const firstAttestation = [
+      { listingId: manifest[0].listingId, contentDigest: "a".repeat(64) },
+    ];
+    const secondAttestation = [
+      { listingId: manifest[0].listingId, contentDigest: "b".repeat(64) },
+    ];
+
+    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
+      await exportAttempts.ensure({
+        idempotencyKey: "key_attestation_collision",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        provenance,
+        artifactSha256,
+        sourceAttestation: firstAttestation,
+      });
+
+      await expect(
+        exportAttempts.ensure({
+          idempotencyKey: "key_attestation_collision",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+          provenance,
+          artifactSha256,
+          sourceAttestation: secondAttestation,
+        }),
+      ).rejects.toThrow(/idempotency key does not match/i);
+    });
+  });
+
+  it("does not throw when a repeat call's source attestation has the same entries in a different array order", async () => {
+    // Mirrors the manifest reorder test above: the comparison normalizes by
+    // listingId before comparing, so a legitimate retry that reconstructs
+    // the same attestation from a Map/Set in a different order is not
+    // flagged as a false mismatch.
+    const forward = [
+      { listingId: "listing_a", contentDigest: "a".repeat(64) },
+      { listingId: "listing_b", contentDigest: "b".repeat(64) },
+    ];
+    const reversed = [...forward].reverse();
+
+    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
+      const created = await exportAttempts.ensure({
+        idempotencyKey: "key_attestation_reordered",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        sourceAttestation: forward,
+      });
+
+      const repeat = await exportAttempts.ensure({
+        idempotencyKey: "key_attestation_reordered",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        sourceAttestation: reversed,
+      });
+      expect(repeat.id).toBe(created.id);
+    });
+  });
+
+  it("rejects a source_attestation that is a JSON object instead of an array", async () => {
+    // The CHECK constraint (export_attempts_source_attestation_is_array) is
+    // invisible to any fake repository -- only a real Postgres insert can
+    // exercise it.
+    await expect(
+      admin`
+        INSERT INTO export_attempts (
+          workspace_id, idempotency_key, requested_by, manifest, row_count,
+          spec_version, source_attestation
+        ) VALUES (
+          ${workspaceId}, 'key_source_attestation_object', 'user_1',
+          ${admin.json(manifest)}, 1, 'bulk-form-v1',
+          ${admin.json({ listingId: manifest[0].listingId, contentDigest: "a".repeat(64) })}
+        )
+      `,
+    ).rejects.toThrow(/export_attempts_source_attestation_is_array/);
+  });
 });

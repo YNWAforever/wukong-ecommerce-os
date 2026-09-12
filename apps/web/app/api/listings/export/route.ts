@@ -10,6 +10,7 @@ import {
 import { ShoplineBulkFormError } from "@wukong/shopline";
 import { z } from "zod";
 
+import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 import {
   createBulkExport,
   createBulkExportDeps,
@@ -31,8 +32,27 @@ export const runtime = "nodejs";
 
 const bodySchema = z
   .object({
-    listingIds: z.array(z.string().min(1)).min(1),
-    freshnessAttested: z.boolean(),
+    listingIds: z.array(z.string().min(1)).min(1).max(MAX_BULK_EXPORT_ITEMS),
+    attestation: z.object({
+      listings: z
+        .array(
+          z.object({
+            listingId: z.string().min(1),
+            contentDigest: z.string().min(1),
+          }),
+        )
+        .min(1)
+        .max(MAX_BULK_EXPORT_ITEMS)
+        // Same rule listingIds already carries. Without it two entries for one
+        // listing collapse in the Map below and the set-equality check still
+        // passes, silently picking whichever digest came last.
+        .refine(
+          (listings) =>
+            new Set(listings.map((entry) => entry.listingId)).size ===
+            listings.length,
+          { message: "attestation must not name a listing twice" },
+        ),
+    }),
   })
   .strict()
   .refine(
@@ -86,13 +106,35 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
       assertReviewer(session.role);
       const body = bodySchema.parse(await request.json());
 
+      // Set equality, not containment: an attestation that omits a requested
+      // listing never covered it, and one that names an extra listing was made
+      // against a different selection. Either way the evidence does not
+      // describe this export, so it is a bad request rather than a per-listing
+      // outcome.
+      const attested = new Map(
+        body.attestation.listings.map((entry) => [
+          entry.listingId,
+          entry.contentDigest,
+        ]),
+      );
+      if (
+        attested.size !== body.listingIds.length ||
+        body.listingIds.some((listingId) => !attested.has(listingId))
+      ) {
+        throw new ApiError(
+          400,
+          "attestation_incomplete",
+          "The attestation does not cover exactly the listings requested.",
+        );
+      }
+
       try {
         const database = deps.getDatabase();
         const input = {
           workspaceId: session.workspaceId,
           requestedBy: session.actorId,
           listingIds: body.listingIds,
-          freshnessAttested: body.freshnessAttested,
+          attestedDigests: attested,
         };
         const exported = await database.forWorkspace(
           session.workspaceId,
@@ -108,10 +150,26 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         }
 
         const artifactSha256 = artifactHash(exported.body);
+        // Excluded-for-mismatch, not attested-count: the set-equality guard
+        // above already forces attested.size to equal manifest.length on
+        // every request that reaches here, so that count is invariant and
+        // tells a reviewer nothing. This one varies with which digests
+        // actually failed to match on this attempt.
+        //
+        // Named for the reason it counts, not for a cause it cannot prove:
+        // also returns row_digest_mismatch when a review CONFIRMATION has gone
+        // stale against current source content, which is a different fault from
+        // the operator attesting the wrong digest. The manifest records only the
+        // reason, not which of the three comparisons fired, so this counts any
+        // digest disagreement. A reader of the raw audit row has only the field
+        // name to go on, so it must not claim the operator was at fault.
+        const rowDigestMismatchCount = exported.manifest.filter(
+          (entry) => entry.reason === "row_digest_mismatch",
+        ).length;
         const provenance = {
           identityVersion: 1,
           workspaceId: session.workspaceId,
-          freshnessAttested: body.freshnessAttested,
+          rowDigestMismatchCount,
           headerContractSha256: exported.headerContractSha256,
           specVersion: exported.specVersion,
           rowOrder: exported.evidence.map((entry) => entry.listingId),
@@ -143,6 +201,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               specVersion: exported.specVersion,
               provenance,
               artifactSha256,
+              sourceAttestation: body.attestation.listings,
             });
 
             // Only a genuinely new attempt gets its own audit event --
@@ -159,6 +218,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                 action: "listing.bulk_export_created",
                 metadata: {
                   exportAttemptId: ensured.id,
+                  rowDigestMismatchCount,
                   includedListingIds: ensured.manifest
                     .filter(
                       (entry: ExportManifestEntry) =>

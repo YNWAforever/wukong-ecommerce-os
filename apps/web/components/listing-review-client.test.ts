@@ -479,7 +479,7 @@ describe("ListingReviewClient processing orchestration", () => {
 
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(fetcher).toHaveBeenCalledTimes(3);
-    expect(container.textContent).toContain("Processing failed");
+    expect(container.textContent).toContain("Processing did not finish");
 
     await act(async () => vi.advanceTimersByTimeAsync(6_000));
     expect(fetcher).toHaveBeenCalledTimes(3);

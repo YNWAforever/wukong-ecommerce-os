@@ -38,10 +38,15 @@ export type EnsureExportAttemptInput = {
   manifest: ExportManifestEntry[];
   rowCount: number;
   specVersion: string;
+  sourceAttestation?: Array<{ listingId: string; contentDigest: string }>;
 };
 
 export type ExportAttempt = {
   provenance?: Record<string, unknown> | null;
+  sourceAttestation?: Array<{
+    listingId: string;
+    contentDigest: string;
+  }> | null;
   artifactSha256?: string | null;
   artifactStatus?: ArtifactStatus | null;
   artifactErrorCode?: string | null;
@@ -71,9 +76,23 @@ export type EnsuredExportAttempt = ExportAttempt & {
 export type ExportAttemptRepository = {
   /**
    * Identity covers canonical manifest, row order, source/approval provenance,
-   * header/spec and artifact hash. Conflicts must match every stored input.
-   * Omitted provenance/hash is reserved for historical compatibility; production
-   * exports always provide both and start pending.
+   * source attestation, header/spec and artifact hash. Conflicts must match
+   * every stored input. Omitted provenance/hash is reserved for historical
+   * compatibility; production exports always provide both and start pending.
+   *
+   * `sourceAttestation` is evidence about what the operator claimed, not
+   * derived data -- a retry under the same key that carries a different
+   * attestation must not be allowed to silently keep the first one, or the
+   * stored record would misrepresent what was actually attested for this
+   * attempt. As of the route currently calling `ensure()`
+   * (apps/web/app/api/listings/export/route.ts), the idempotency key is not
+   * guaranteed to change when only the attested digest changes: a listing
+   * excluded for `row_digest_mismatch` records just that reason code, not
+   * the wrong digest itself, so two different (both incorrect) attested
+   * digests for the same excluded listing in an otherwise unchanged batch
+   * produce identical provenance/manifest/artifact bytes and thus the same
+   * key. This comparison is what actually closes that gap, independent of
+   * whether the calling route already threads a real attestation through.
    */
   ensure(input: EnsureExportAttemptInput): Promise<EnsuredExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
@@ -120,8 +139,20 @@ const sortedManifest = (
     manifestSortKey(a).localeCompare(manifestSortKey(b)),
   );
 
+// Array order carries no meaning for the attestation either -- normalize by
+// listingId the same way `sortedManifest` normalizes manifest order, so a
+// legitimate retry that reconstructs the same attestation from a Map/Set in
+// a different order is not flagged as a false mismatch.
+const sortedAttestation = (
+  attestation: Array<{ listingId: string; contentDigest: string }> | null,
+): Array<{ listingId: string; contentDigest: string }> | null =>
+  attestation === null
+    ? null
+    : [...attestation].sort((a, b) => a.listingId.localeCompare(b.listingId));
+
 const COLUMNS = {
   provenance: exportAttempts.provenance,
+  sourceAttestation: exportAttempts.sourceAttestation,
   artifactSha256: exportAttempts.artifactSha256,
   artifactStatus: exportAttempts.artifactStatus,
   artifactErrorCode: exportAttempts.artifactErrorCode,
@@ -218,6 +249,7 @@ export function createExportAttemptRepository(
           rowCount: input.rowCount,
           specVersion: input.specVersion,
           provenance: input.provenance ?? null,
+          sourceAttestation: input.sourceAttestation ?? null,
           artifactSha256: input.artifactSha256 ?? null,
           artifactStatus: input.provenance ? "pending" : null,
         })
@@ -229,6 +261,10 @@ export function createExportAttemptRepository(
       if (
         row.artifactSha256 !== (input.artifactSha256 ?? null) ||
         !isDeepStrictEqual(row.provenance, input.provenance ?? null) ||
+        !isDeepStrictEqual(
+          sortedAttestation(row.sourceAttestation ?? null),
+          sortedAttestation(input.sourceAttestation ?? null),
+        ) ||
         row.rowCount !== input.rowCount ||
         row.specVersion !== input.specVersion ||
         !isDeepStrictEqual(

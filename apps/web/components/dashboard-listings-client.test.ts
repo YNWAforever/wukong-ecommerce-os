@@ -206,7 +206,7 @@ describe("DashboardListingsClient", () => {
 
     const { container, root } = await mount(fetcher);
 
-    const tiles = container.querySelectorAll('[role="group"]');
+    const tiles = container.querySelectorAll('.metric-strip > [role="group"]');
     expect(tiles.length).toBe(3);
 
     const expectedSubstrings = ["進行中", "待你審核", "阻塞上架"];

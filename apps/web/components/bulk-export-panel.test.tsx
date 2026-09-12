@@ -9,15 +9,25 @@ import { BulkExportPanel } from "./bulk-export-panel.js";
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+type ShownListing = { listingId: string; contentDigest: string };
+
+/** Ids paired with an arbitrary-but-stable digest, for tests that do not care what the digest is. */
+function listingsOf(
+  ids: readonly string[],
+  contentDigest = "digest_1",
+): ShownListing[] {
+  return ids.map((listingId) => ({ listingId, contentDigest }));
+}
+
 async function submitExport(
   root: ReturnType<typeof createRoot>,
   container: HTMLDivElement,
-  listingIds: readonly string[],
+  listings: ShownListing[],
 ) {
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds,
+        listings,
         canGenerate: true,
       }),
     ),
@@ -49,7 +59,7 @@ describe.each([
     document.body.append(container);
     const root = createRoot(container);
 
-    await submitExport(root, container, ["listing-a"]);
+    await submitExport(root, container, listingsOf(["listing-a"]));
 
     expect(container.textContent).not.toContain(
       "every requested listing was excluded or unchanged",
@@ -62,6 +72,40 @@ describe.each([
     document.body.innerHTML = "";
     vi.unstubAllGlobals();
   });
+});
+
+it("surfaces the server's attestation_incomplete code as actionable copy, not its raw message", async () => {
+  // Defect 2: the route returns `{ code: "attestation_incomplete", message }`
+  // (see apps/web/app/api/listings/export/route.ts), but the panel used to
+  // discard the whole body on a non-ok, no-attempt response and throw a
+  // generic "Unable to generate export (400)" -- so the copy written for
+  // this code (apps/web/lib/export-ui-copy.ts's `exportErrors`) never
+  // reached a user. The server's `message` must not leak into the UI either.
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json(
+      {
+        code: "attestation_incomplete",
+        message: "UNSAFE SERVER DETAIL should never render",
+      },
+      { status: 400 },
+    ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await submitExport(root, container, listingsOf(["listing-a"]));
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(
+    "This confirmation does not cover the listings you selected. Confirm again and retry.",
+  );
+  expect(alert?.textContent).not.toContain("UNSAFE SERVER DETAIL");
+
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
 
 it("keeps exact mixed zero-row counts and member context bound to the submitted response", async () => {
@@ -90,7 +134,11 @@ it("keeps exact mixed zero-row counts and member context bound to the submitted 
   document.body.append(container);
   const root = createRoot(container);
 
-  await submitExport(root, container, ["listing-no-op", "listing-stale"]);
+  await submitExport(
+    root,
+    container,
+    listingsOf(["listing-no-op", "listing-stale"]),
+  );
 
   const summary = container.querySelector("[data-zero-row-export-summary]")!;
   expect(summary.textContent).toContain("Requested: 2");
@@ -111,7 +159,7 @@ it("keeps exact mixed zero-row counts and member context bound to the submitted 
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-new"],
+        listings: listingsOf(["listing-new"]),
         canGenerate: true,
       }),
     ),
@@ -126,6 +174,7 @@ it("keeps exact mixed zero-row counts and member context bound to the submitted 
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
+
 it("gates generation on permission and explicit freshness, then preserves submitted ids", async () => {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
     Response.json({
@@ -148,7 +197,7 @@ it("gates generation on permission and explicit freshness, then preserves submit
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-a"],
+        listings: listingsOf(["listing-a"]),
         canGenerate: true,
       }),
     ),
@@ -172,13 +221,49 @@ it("gates generation on permission and explicit freshness, then preserves submit
       method: "POST",
       body: JSON.stringify({
         listingIds: ["listing-a"],
-        freshnessAttested: true,
+        attestation: { listings: listingsOf(["listing-a"]) },
       }),
     }),
   );
   expect(container.textContent).toContain("No enrichable fields changed");
   expect(container.textContent).toContain("No artifact was created");
   await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it("sends the attestation the operator was actually shown, not a hardcoded boolean", async () => {
+  // The defect this test guards against: the request used to carry one
+  // hardcoded `freshnessAttested: true`, made and enforced entirely in the
+  // browser. The server can no longer take the browser's word for it -- it
+  // needs the exact digests displayed for each selected listing, keyed by
+  // listing id, so it can check each one against the current source row.
+  const shown: ShownListing[] = [
+    { listingId: "listing-a", contentDigest: "digest_1" },
+    { listingId: "listing-b", contentDigest: "digest_2" },
+  ];
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValue(
+      Response.json({ exportAttemptId: null, rowCount: 0, manifest: [] }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await submitExport(root, container, shown);
+
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const [, init] = fetcher.mock.calls[0]!;
+  const body = JSON.parse(String(init!.body));
+  expect(body).toEqual({
+    listingIds: ["listing-a", "listing-b"],
+    attestation: { listings: shown },
+  });
+  expect(body).not.toHaveProperty("freshnessAttested");
+
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
 
@@ -189,7 +274,7 @@ it("invalidates freshness when the selected listing IDs change", async () => {
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-a"],
+        listings: listingsOf(["listing-a"]),
         canGenerate: true,
       }),
     ),
@@ -205,7 +290,52 @@ it("invalidates freshness when the selected listing IDs change", async () => {
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-a", "listing-b"],
+        listings: listingsOf(["listing-a", "listing-b"]),
+        canGenerate: true,
+      }),
+    ),
+  );
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .checked,
+  ).toBe(false);
+  expect(container.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
+    true,
+  );
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+});
+
+it("drops the attestation when a digest changes beneath an unchanged selection", async () => {
+  // `selectionIdentity` used to join listing ids alone, so when the catalog
+  // refreshed and a row's digest changed underneath a selection nobody had
+  // touched, the tick survived over content the operator never saw. Folding
+  // the digest into the identity means the same listing id, once its
+  // content changes, is no longer the selection that was attested to.
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listings: [{ listingId: "listing-a", contentDigest: "digest_1" }],
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      .click(),
+  );
+  expect(container.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
+    false,
+  );
+
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listings: [{ listingId: "listing-a", contentDigest: "digest_2" }],
         canGenerate: true,
       }),
     ),
@@ -270,7 +400,7 @@ it("keeps a POST-created attempt visible and retries only its detail lookup", as
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-a"],
+        listings: listingsOf(["listing-a"]),
         canGenerate: true,
       }),
     ),
@@ -326,7 +456,7 @@ it("shows the stable attempt carried by an artifact error response", async () =>
   await act(async () =>
     root.render(
       createElement(BulkExportPanel, {
-        listingIds: ["listing-a"],
+        listings: listingsOf(["listing-a"]),
         canGenerate: true,
       }),
     ),

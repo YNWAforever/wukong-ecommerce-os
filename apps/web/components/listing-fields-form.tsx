@@ -111,10 +111,27 @@ export function ListingFieldsForm({
     fieldConfirmations,
     negativeConfirmations,
   );
+  /**
+   * Edits typed but not yet saved.
+   *
+   * `fields` is local state; approving sends only the loaded version id, so a
+   * reviewer who corrected a title and pressed Approve without pressing Save
+   * approved the version WITHOUT their correction -- and the screen showed the
+   * corrected text the whole time, so there was nothing to notice. Compared by
+   * key rather than position, because a re-render can reorder the array.
+   */
+  const isDirty = useMemo(() => {
+    const saved = new Map(
+      model.fields.map((field) => [field.key, field.value]),
+    );
+    return fields.some((field) => saved.get(field.key) !== field.value);
+  }, [fields, model.fields]);
+
   const approvalDisabled =
     !canApprove ||
     hasOpenBlockingFlag ||
     confirmationsIncomplete ||
+    isDirty ||
     model.status !== "in_review";
 
   function updateField(key: string, value: string) {
@@ -241,12 +258,22 @@ export function ListingFieldsForm({
               ? "approval-help"
               : confirmationsIncomplete
                 ? "confirmation-help"
-                : undefined
+                : isDirty
+                  ? "unsaved-help"
+                  : undefined
           }
         >
           {t("批准上架", "Approve listing")}
         </button>
       </div>
+      {!hasOpenBlockingFlag && !confirmationsIncomplete && isDirty ? (
+        <div id="unsaved-help" className="inline-warning" role="alert">
+          {t(
+            "你有未儲存修改。請先保存，再確認最新版本。",
+            "You have unsaved changes. Save them first, then confirm the latest version.",
+          )}
+        </div>
+      ) : null}
       {hasOpenBlockingFlag ? (
         <div id="approval-help" className="inline-warning" role="alert">
           <strong>{t("尚有開放的阻塞提示：", "Open blocking flags:")}</strong>{" "}

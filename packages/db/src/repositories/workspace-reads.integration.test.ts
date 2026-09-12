@@ -21,6 +21,14 @@ const admin = postgres(adminUrl, {
   prepare: false,
 });
 const db = createDatabase(appUrl);
+/**
+ * Stands in for a digest the operator was shown.
+ *
+ * Every case that uses it is asking a workspace-boundary question, so the
+ * listing is never visible and the digest is never compared. It exists only
+ * so the request is well-formed enough to reach the boundary.
+ */
+const SYNTHETIC_DIGEST = "synthetic-digest-not-compared";
 describe("full workspace read boundaries", () => {
   beforeAll(async () => {
     await admin`insert into workspaces(id,name,profile) values (${workspaceId},'synthetic','{}'),(${otherId},'synthetic','{}')`;
@@ -499,7 +507,17 @@ describe("full workspace read boundaries", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             listingIds: [workbookId],
-            freshnessAttested: true,
+            // A well-formed attestation for a listing this workspace cannot
+            // see. The digest is never compared -- the listing resolves to
+            // `listing_not_found` first -- but it has to be present and cover
+            // exactly `listingIds`, or the refusal below would come from
+            // schema validation rather than from the workspace boundary this
+            // case exists to prove.
+            attestation: {
+              listings: [
+                { listingId: workbookId, contentDigest: SYNTHETIC_DIGEST },
+              ],
+            },
           }),
         }),
       );
@@ -536,7 +554,13 @@ describe("full workspace read boundaries", () => {
             {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ method, freshnessAttested: true }),
+              // `bulk_form` refuses outright without an attestation, so send
+              // one for every method. Same reason as the export case: the
+              // status below must come from the boundary, not the schema.
+              body: JSON.stringify({
+                method,
+                attestedContentDigest: SYNTHETIC_DIGEST,
+              }),
             },
           ),
           { params: Promise.resolve({ id: workbookId }) },
@@ -651,7 +675,11 @@ describe("full workspace read boundaries", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             listingIds: [websiteId],
-            freshnessAttested: true,
+            attestation: {
+              listings: [
+                { listingId: websiteId, contentDigest: SYNTHETIC_DIGEST },
+              ],
+            },
           }),
         }),
       );

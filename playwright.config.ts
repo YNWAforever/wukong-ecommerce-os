@@ -1,11 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Ports: 49217 real-stack app, 49218 the real-stack public-image TLS server
+// (tests/e2e/real-stack-server.mjs), 49219 the auth-mode dev server. The auth
+// mode used to share 49218 with that image server, so whichever mode started
+// second died on EADDRINUSE -- and because real-stack-server.mjs binds both,
+// losing 49218 took 49217 down with it and the failure surfaced as a refused
+// connection on a port that was never the conflict.
 const enabled = process.env.PLAYWRIGHT_E2E === "1";
 const authE2E = !enabled;
 const productShotE2E = enabled && process.env.WUKONG_PRODUCT_SHOT_E2E === "1";
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL ??
-  (authE2E ? "http://127.0.0.1:49218" : "http://127.0.0.1:49217");
+  (authE2E ? "http://127.0.0.1:49219" : "http://127.0.0.1:49217");
 
 export default defineConfig({
   testDir: "./tests",
@@ -30,7 +36,7 @@ export default defineConfig({
     ? {
         command: enabled
           ? `pnpm build --filter=@wukong/web && ${process.platform === "win32" ? "" : "exec "}node tests/e2e/real-stack-server.mjs`
-          : "pnpm --filter @wukong/web dev --hostname 127.0.0.1 --port 49218",
+          : "pnpm --filter @wukong/web dev --hostname 127.0.0.1 --port 49219",
         url: enabled ? `${baseURL}/signin` : `${baseURL}/register`,
         // Let the harness terminate its detached Worker/web groups before the next mode.
         gracefulShutdown: enabled

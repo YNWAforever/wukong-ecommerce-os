@@ -24,6 +24,21 @@ export type BulkUpdateLink = {
   connectionId: string;
 };
 
+/**
+ * Whose expectation the digest check compares against.
+ *
+ * `operator` carries what a person actually attested, and is the only kind
+ * that can gate a real export. `advisory` asks the same policy question with
+ * the attestation set aside -- the readiness readout needs that, and must not
+ * invent an attestation nobody made: the link it holds may not even be the row
+ * this check reads, because `platform_products` has no unique index on
+ * `listing_id`. `none` is an export attempted with no attestation at all.
+ */
+export type BulkUpdateAttestation =
+  | { kind: "operator"; rowDigest: string }
+  | { kind: "advisory" }
+  | { kind: "none" };
+
 export type BulkUpdateEligibilityReason =
   | FreshnessFailureReason
   | "approval_required"
@@ -115,7 +130,7 @@ export async function checkBulkUpdateEligibility(
     workspaceId: string;
     listingId: string;
     versionId: string;
-    freshnessAttested: boolean;
+    attestation: BulkUpdateAttestation;
   },
   deps: BulkUpdateEligibilityDeps,
   expected?: BulkUpdateEvidence,
@@ -226,14 +241,37 @@ export async function checkBulkUpdateEligibility(
   }
   let latestState = state;
   let latestLink: BulkUpdateLink | null = link;
+  // The digest the content check compares against, by whose expectation
+  // `input.attestation` carries (see that type's doc comment): an operator's
+  // real attestation, the link's own digest for an advisory hypothetical, or
+  // no expectation at all. A `switch` with a `never`-typed default so that
+  // adding a fourth kind is a compile error here, rather than silently
+  // falling through to "not attested".
+  let attestedRowDigest: string | null;
+  switch (input.attestation.kind) {
+    case "operator":
+      attestedRowDigest = input.attestation.rowDigest;
+      break;
+    case "advisory":
+      attestedRowDigest = link.contentDigest;
+      break;
+    case "none":
+      attestedRowDigest = null;
+      break;
+    default: {
+      const exhaustive: never = input.attestation;
+      throw new Error(
+        `unhandled attestation kind: ${JSON.stringify(exhaustive)}`,
+      );
+    }
+  }
   const freshness = await assertExportFreshness(
     {
       workspaceId: input.workspaceId,
       listingId: input.listingId,
       expectedVersionId: input.versionId,
       expectedSourceImportId: link.sourceImportId,
-      expectedRowDigest: link.contentDigest,
-      freshnessAttested: input.freshnessAttested,
+      attestedRowDigest,
     },
     {
       ...deps,

@@ -249,6 +249,7 @@ function JobsLedger({
         </p>
       ) : null}
       <div
+        role="group"
         className="metric-strip jobs-metric-strip"
         aria-label={localized(locale, "作業指標統計", "Job metrics")}
       >

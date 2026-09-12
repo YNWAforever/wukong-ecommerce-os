@@ -94,6 +94,24 @@ export interface ProductShotRepository {
     code: string;
     unknown: boolean;
   }): Promise<void>;
+  /**
+   * Ends an attempt no worker ever dispatched.
+   *
+   * `finishFailure` cannot serve this: it requires `processing` and a matching
+   * lease token, and an attempt that was never claimed has neither. So a
+   * message acknowledged without doing any work left the row `queued` with no
+   * terminal state, no error code and no audit event -- the review panel
+   * polled it for ever and no sweeper looked at it.
+   *
+   * The guard is what makes it safe. `queued` with no `dispatchedAt` and no
+   * cutout is the proof that no provider call was made and therefore that
+   * nothing can have been charged. Anything dispatched keeps flowing through
+   * `finishFailure`, which can still reach `outcome_unknown`.
+   */
+  finishUndispatched(input: {
+    attemptId: string;
+    code: string;
+  }): Promise<"ended" | "skipped">;
   saveCandidate(input: {
     attemptId: string;
     candidate: ShotCandidate;
@@ -766,6 +784,33 @@ export function createProductShotRepository(
         })
         .where(byAttempt(row.id));
       await event(row, state, { code });
+    },
+    async finishUndispatched(input) {
+      const { row } = await lockAttempt(input.attemptId, false);
+      // Not an error: a concurrent delivery may have claimed the attempt while
+      // this one was deciding. That delivery owns the outcome, and a row that
+      // reached a provider must never be recorded as a costless failure.
+      if (row.state !== "queued" || row.dispatchedAt || row.cutoutAssetId)
+        return "skipped";
+      const code = [
+        "provider_disabled",
+        "budget_exhausted",
+        "never_dispatched",
+      ].includes(input.code)
+        ? input.code
+        : "never_dispatched";
+      await tx
+        .update(attempts)
+        .set({
+          state: "failed",
+          errorCode: code,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          updatedAt: new Date(),
+        })
+        .where(byAttempt(row.id));
+      await event(row, "failed", { code });
+      return "ended";
     },
     async saveCandidate(input) {
       const { row } = await lockAttempt(input.attemptId);

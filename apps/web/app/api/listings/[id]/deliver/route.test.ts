@@ -787,7 +787,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form", freshnessAttested: true }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -886,7 +889,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form", freshnessAttested: true }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -917,7 +923,7 @@ it.each(["csv", "bulk_form", "shopline_api"] as const)(
       new Request("http://localhost/api/listings/website/deliver", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ method, freshnessAttested: true }),
+        body: JSON.stringify({ method, attestedContentDigest: bulkDigest }),
       }),
       {
         params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000901" }),
@@ -1005,4 +1011,31 @@ it("default CSV composition emits the versioned public JPEG and blocks revoked p
     ).status,
   ).toBe(409);
   expect(f.createReadUrl).not.toHaveBeenCalled();
+});
+
+it("refuses a bulk_form delivery that carries no attestation", async () => {
+  // The route coerced an absent field to false and passed it straight into
+  // createBulkExport, so the first UI to call this would have inherited a
+  // refusal nobody chose. Failing loudly is the point.
+  const handler = createDeliverListingHandler({
+    sessionContext: {
+      async resolve() {
+        return context;
+      },
+    },
+    delivery: defaultDelivery(),
+  });
+
+  const response = await handler(
+    new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+      method: "POST",
+      body: JSON.stringify({ method: "bulk_form" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({
+    code: "attestation_incomplete",
+  });
 });

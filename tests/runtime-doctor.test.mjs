@@ -12,7 +12,9 @@ import {
   checkHealthGet,
   checkHealthSigned,
   signHealthProbe,
-  vercelEnvCheck,
+  localIngressEnvCheck,
+  checkListingProvider,
+  checkWebEnvInventory,
   parseWranglerTable,
   classifySecretList,
 } from "../scripts/runtime-doctor.mjs";
@@ -309,12 +311,81 @@ test("signHealthProbe matches the queue signing algorithm", () => {
   assert.equal(signature, "6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
 });
 
-test("vercelEnvCheck names the environment it was run for", () => {
-  const check = vercelEnvCheck(undefined, undefined, "preview");
+test("localIngressEnvCheck names the environment it was run for", () => {
+  const check = localIngressEnvCheck(undefined, undefined, "preview");
 
   assert.equal(check.status, "failed");
   assert.match(check.fix, /preview/);
   assert.doesNotMatch(check.fix, /production/);
+});
+
+test("localIngressEnvCheck does not claim to have read Vercel", () => {
+  // It reads process.env. Labelled `vercel-env`, a green line told the
+  // operator Vercel was configured -- and the runbook calls a Vercel/Worker
+  // QUEUE_INGRESS_SECRET mismatch the most common failure in bring-up, which
+  // is exactly what this check cannot see.
+  const check = localIngressEnvCheck(
+    "https://worker.example",
+    "s3cret",
+    "production",
+  );
+
+  assert.equal(check.id, "local-ingress-env");
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /this shell/i);
+  assert.match(check.detail, /NOT read from Vercel/);
+  // Still tells the operator how to answer the question it could not.
+  assert.match(check.fix, /vercel env pull/);
+});
+
+test("checkListingProvider refuses a production worker serving fake copy", () => {
+  // /health has always published aiProvider and the doctor never looked. A
+  // production Worker on the fake provider invents every fact and every
+  // sentence it returns, and the report was seven green checks.
+  const check = checkListingProvider(
+    { aiProvider: "fake", productShotProvider: "disabled" },
+    "production",
+  );
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /invented/);
+  assert.equal(check.dependsOn, "health-get");
+});
+
+test("checkListingProvider allows the fake provider outside production", () => {
+  const check = checkListingProvider(
+    { aiProvider: "fake", productShotProvider: "fake" },
+    "preview",
+  );
+
+  assert.equal(check.status, "ok");
+});
+
+test("checkListingProvider reports both providers by name when healthy", () => {
+  // Printing the product shot provider is what lets an operator notice the
+  // mismatch that strands image work: this command cannot read the web app's
+  // value, so it shows the Worker's rather than judging it.
+  const check = checkListingProvider(
+    { aiProvider: "openrouter", productShotProvider: "disabled" },
+    "production",
+  );
+
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /openrouter/);
+  assert.match(check.detail, /disabled/);
+});
+
+test("checkListingProvider refuses a provider this build cannot run", () => {
+  const check = checkListingProvider({ aiProvider: "anthropic" }, "production");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /does not recognise/);
+});
+
+test("checkListingProvider is unknown, never ok, when health said nothing", () => {
+  const check = checkListingProvider(null, "production");
+
+  assert.equal(check.status, "unknown");
 });
 
 test("planQueueCreation creates only the queues that are absent", () => {
@@ -540,4 +611,40 @@ test("doctor uses intended predeploy providers and observed live providers", asy
     { aiProvider: "openrouter" },
   ])
     assert.equal(doctorRequiredSecrets(config, { env, health }), null);
+});
+
+test("checkWebEnvInventory prints the list an operator compares against Vercel", () => {
+  // The command cannot read Vercel, and pretending otherwise is what the old
+  // `vercel-env` check did. What it can do is stop the operator guessing.
+  const manifest = { required: ["DATABASE_URL", "AUTH_SECRET"], optional: [] };
+  const check = checkWebEnvInventory(
+    manifest,
+    ["DATABASE_URL=", "AUTH_SECRET="].join("\n"),
+  );
+
+  assert.equal(check.status, "ok");
+  assert.match(check.detail, /DATABASE_URL/);
+  assert.match(check.detail, /AUTH_SECRET/);
+  assert.match(check.detail, /vercel env ls/);
+});
+
+test("checkWebEnvInventory fails on a name .env.example never documents", () => {
+  // Exactly how SHOPLINE_TOKEN_ENCRYPTION_KEY stayed missing from the file both
+  // surfaces need it in: an operator following .env.example could not know.
+  const manifest = {
+    required: ["DATABASE_URL", "SHOPLINE_TOKEN_ENCRYPTION_KEY"],
+    optional: [],
+  };
+  const check = checkWebEnvInventory(manifest, "DATABASE_URL=");
+
+  assert.equal(check.status, "failed");
+  assert.match(check.detail, /SHOPLINE_TOKEN_ENCRYPTION_KEY/);
+  assert.match(check.fix, /names only, never values/);
+});
+
+test("checkWebEnvInventory does not demand a name the app must never hold", () => {
+  // A denied value documented in an app env file reads as an invitation.
+  const manifest = { required: ["DATABASE_ADMIN_URL"], optional: [] };
+
+  assert.equal(checkWebEnvInventory(manifest, "").status, "ok");
 });

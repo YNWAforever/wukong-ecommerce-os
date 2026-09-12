@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_ENRICHMENT_WAVE_SIZE } from "../../../lib/enrichment-wave-limit";
+
 import {
   createEnrichmentBatchService,
   type CreateBatchInput,
@@ -32,7 +34,7 @@ const bodySchema = z
       "summaryMissing",
     ]),
     budgetUsd: z.number().positive().max(10_000),
-    waveSize: z.number().int().min(1).max(5),
+    waveSize: z.number().int().min(1).max(MAX_ENRICHMENT_WAVE_SIZE),
   })
   .strict();
 

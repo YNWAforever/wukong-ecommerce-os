@@ -59,7 +59,7 @@ describe("live listing intake", () => {
       );
 
     const result = await createListingDraft(
-      { files: [file], note: "Opak pilot" },
+      { files: [{ id: "bottle", file }], note: "Opak pilot" },
       {
         fetcher,
         digest: async () => "a".repeat(64),
@@ -151,7 +151,7 @@ describe("live listing intake", () => {
 
     await expect(
       createListingDraft(
-        { files: [file], note: "" },
+        { files: [{ id: "bottle", file }], note: "" },
         { fetcher, digest: async () => "a".repeat(64) },
       ),
     ).rejects.toThrow("Upload rejected");
@@ -173,7 +173,7 @@ describe("live listing intake", () => {
       .mockRejectedValueOnce(blocked);
 
     const outcome = await createListingDraft(
-      { files: [file], note: "" },
+      { files: [{ id: "bottle", file }], note: "" },
       { fetcher, digest: async () => "a".repeat(64) },
     ).catch((error: unknown) => error);
 
@@ -209,7 +209,7 @@ describe("live listing intake", () => {
       });
 
       const outcome = await createListingDraft(
-        { files: [file], note: "" },
+        { files: [{ id: "bottle", file }], note: "" },
         { fetcher, digest: async () => "a".repeat(64) },
       ).catch((error: unknown) => error);
 

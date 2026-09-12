@@ -3,10 +3,20 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import { LocaleProvider } from "../lib/locale-context.js";
+import type { Locale } from "../lib/locale.js";
+import { sharedMessages } from "../lib/ui-copy.js";
 import {
   AdvanceBatchButton,
   submitAdvanceBatch,
 } from "./advance-batch-button.js";
+
+const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh }),
+  usePathname: () => "/batches",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 describe("submitAdvanceBatch", () => {
   it("returns a network_error when the fetcher throws", async () => {
@@ -16,9 +26,10 @@ describe("submitAdvanceBatch", () => {
 
     const result = await submitAdvanceBatch("batch_1", { fetcher });
 
+    // The same copy every batch screen shows, so the four cannot drift.
     expect(result).toEqual({
       kind: "network_error",
-      message: "Could not reach the server. Try again.",
+      message: sharedMessages.unreachable,
     });
   });
 
@@ -55,7 +66,7 @@ describe("submitAdvanceBatch", () => {
   it.each([
     [403, "insufficient_role", "Operator access is required."],
     [404, "batch_not_found", "This batch no longer exists."],
-  ])("maps a %d %s to its message", async (status, code, message) => {
+  ])("maps a %d %s to its message", async (status, code, english) => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -64,7 +75,12 @@ describe("submitAdvanceBatch", () => {
 
     const result = await submitAdvanceBatch("batch_1", { fetcher });
 
-    expect(result).toEqual({ kind: "api_error", code, message });
+    expect(result).toMatchObject({ kind: "api_error", code });
+    if (result.kind === "success") throw new Error("expected a failure");
+    // The English half is what the pilot journey reads; the Chinese half must
+    // be a real translation rather than the same sentence twice.
+    expect(result.message[1]).toBe(english);
+    expect(result.message[0]).not.toBe(english);
   });
 });
 
@@ -152,11 +168,13 @@ describe("AdvanceBatchButton", () => {
     });
 
     const message = container.querySelector(".intake-message");
-    expect(message?.textContent).toBe("This batch no longer exists.");
+    // Chinese, because that is the default locale. This paragraph used to be
+    // English whatever language the reader had chosen.
+    expect(message?.textContent).toBe(sharedMessages.batchNotFound[0]);
     expect(onAdvanced).toHaveBeenCalledWith({
       kind: "api_error",
       code: "batch_not_found",
-      message: "This batch no longer exists.",
+      message: sharedMessages.batchNotFound,
     });
 
     await act(async () => root.unmount());
@@ -229,4 +247,63 @@ it("calls browser fetch without a dependency-object receiver", async () => {
   expect((await submitAdvanceBatch("batch_1", { fetcher })).kind).toBe(
     "success",
   );
+});
+
+/**
+ * The button that drives the pilot journey, in the reader's language.
+ *
+ * It printed both languages at once -- 推進下一波 followed by a span reading
+ * Advance -- so the language toggle changed nothing here, and the accessible
+ * name was two sentences in two languages. The English half is load-bearing:
+ * tests/e2e/bulk-update-pilot.spec.ts clicks this button by /Advance/ with the
+ * fixture pinned to locale=en, so these pin that contract in milliseconds
+ * rather than in a full real-stack run.
+ */
+describe("AdvanceBatchButton localisation", () => {
+  async function mountWithLocale(locale: Locale) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(LocaleProvider, {
+          locale,
+          children: createElement(AdvanceBatchButton, { batchId: "batch_1" }),
+        }),
+      );
+    });
+    return { container, root };
+  }
+
+  async function unmountLocale(root: Root) {
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+  }
+
+  it("keeps the exact English name the pilot journey clicks", async () => {
+    const { container, root } = await mountWithLocale("en");
+    try {
+      expect(container.querySelector("button")?.textContent).toBe("Advance");
+    } finally {
+      await unmountLocale(root);
+    }
+  });
+
+  it("shows one language at a time", async () => {
+    const { container, root } = await mountWithLocale("en");
+    try {
+      expect(container.textContent).not.toContain("推進");
+    } finally {
+      await unmountLocale(root);
+    }
+  });
+
+  it("names the action in Chinese for a Chinese reader", async () => {
+    const { container, root } = await mountWithLocale("zh-Hant");
+    try {
+      expect(container.querySelector("button")?.textContent).toBe("推進下一波");
+    } finally {
+      await unmountLocale(root);
+    }
+  });
 });

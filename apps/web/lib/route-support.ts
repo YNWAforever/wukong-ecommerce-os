@@ -68,6 +68,25 @@ function report(reason: string, detail: Record<string, string>): void {
   );
 }
 
+/**
+ * Where an unexpected error was thrown -- never what it said.
+ *
+ * `errorName: "Error"` on its own is undiagnosable: every plain `Error` in the
+ * codebase reports identically, so a 500 in CI gives a reader nothing to go on
+ * but the route. A stack frame is our own source location, so it carries no
+ * connection string, signed URL, prompt or customer content, and stays inside
+ * the rule the caller documents.
+ */
+function throwSite(error: unknown): string {
+  const stack = error instanceof Error ? error.stack : undefined;
+  if (typeof stack !== "string") return "unknown";
+  for (const line of stack.split("\n").slice(1)) {
+    const frame = /([\w.-]+[/\\][\w.-]+:\d+:\d+)/.exec(line);
+    if (frame?.[1]) return frame[1];
+  }
+  return "unknown";
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -164,6 +183,7 @@ export async function withRouteErrors(
     // string or a signed URL, and the readiness gate scans runtime logs.
     report("internal_error", {
       errorName: error instanceof Error ? error.name : "UnknownError",
+      errorSite: throwSite(error),
     });
     return jsonResponse(500, {
       code: "internal_error",

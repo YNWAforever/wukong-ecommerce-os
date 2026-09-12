@@ -4,6 +4,29 @@ export type LocalizedText = Readonly<Record<Locale, string>>;
 export function localized(locale: Locale, zh: string, en: string) {
   return locale === "zh-Hant" ? zh : en;
 }
+/**
+ * A message in both languages, Chinese first.
+ *
+ * That is the argument order `localized` takes, so a holder of one reads it
+ * as `localized(locale, ...message)`.
+ */
+export type BilingualMessage = readonly [zh: string, en: string];
+
+/**
+ * Failure copy that more than one screen needs.
+ *
+ * The four batch screens each carried their own copy of these sentences.
+ * Four translations of one sentence is four chances to drift apart, which is
+ * exactly what happened to the four status maps.
+ */
+export const sharedMessages = {
+  unreachable: [
+    "無法連線至伺服器，請重試。",
+    "Could not reach the server. Try again.",
+  ],
+  operatorRequired: ["需要操作員權限。", "Operator access is required."],
+  batchNotFound: ["此批次已不存在。", "This batch no longer exists."],
+} as const satisfies Record<string, BilingualMessage>;
 export function formatHkDate(
   value: string | Date | null | undefined,
   locale: Locale,
@@ -80,6 +103,8 @@ const states: Record<string, readonly [string, string]> = {
   publish_failed: ["發佈失敗", "Publish failed"],
   failed: ["失敗", "Failed"],
   pending: ["待處理", "Pending"],
+  queued: ["已排隊", "Queued"],
+  skipped: ["已略過", "Skipped"],
   running: ["進行中", "Running"],
   succeeded: ["成功", "Succeeded"],
   cancelled: ["已取消", "Cancelled"],
@@ -161,9 +186,18 @@ export const readinessReasons = {
     "匯入來源已變更，請重新審核來源",
     "The source import changed. Review the source again",
   ],
+  // Reworded to match `approvalErrors.row_digest_mismatch` in
+  // approval-ui-copy.ts (same underlying `FreshnessFailureReason`, surfaced
+  // to a different screen): the old text read like two reads of the same
+  // link racing, which an operator cannot act on. It now says what actually
+  // happened -- the source moved after a review/attestation confirmed it --
+  // and what to do about it. This is the entry `manifestReasonLabel` (in
+  // `export-ui-copy.ts`) actually reads for the Bulk Update XLSX export
+  // manifest, and `SourceReadinessSummary` reads for the same reason shown
+  // in the catalog table before an export is attempted.
   row_digest_mismatch: [
-    "來源資料內容已變更，請重新審核",
-    "Source row content changed. Review it again",
+    "來源資料在你確認之後已變更，請重新檢視並確認。",
+    "The source changed after you confirmed it. Review it again and confirm.",
   ],
 } satisfies Record<BulkUpdateEligibilityReason, readonly [string, string]> &
   Record<string, readonly [string, string]>;

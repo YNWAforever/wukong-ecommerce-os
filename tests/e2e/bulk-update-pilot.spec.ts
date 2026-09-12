@@ -3,6 +3,7 @@ import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
+import { stateLabel } from "../../apps/web/lib/ui-copy.js";
 import { BULK_FORM_COLUMNS } from "../../packages/shopline/src/bulk-form.js";
 import {
   readBulkFormSheet,
@@ -61,7 +62,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   });
   const file = page.locator("#bulk-import-file");
   const time = page.locator("#merchant-attested-export-at");
-  const submit = page.getByRole("button", { name: "開始匯入 Import" });
+  const submit = page.getByRole("button", { name: "Start import" });
   await file.setInputFiles({
     name: filename,
     mimeType:
@@ -116,7 +117,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
       createdDrafts: 1,
       refreshedProducts: 0,
     });
-    await expect(page.getByText(/已解析 1 列/)).toBeVisible();
+    await expect(page.getByText(/Rows parsed: 1/)).toBeVisible();
     const sent = new URL(response.request().url());
     expect(sent.searchParams.get("filename")).toBe(filename);
     expect(sent.searchParams.get("merchantAttestedExportAt")).toBe(
@@ -178,7 +179,7 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
   });
   await page.locator("#merchant-attested-export-at").fill("2026-01-01T00:15");
   await expect(
-    page.getByRole("button", { name: "開始匯入 Import" }),
+    page.getByRole("button", { name: "Start import" }),
   ).toBeDisabled();
   const forbidden = await page.request.post(
     "/api/listings/import?filename=synthetic.xlsx&merchantAttestedExportAt=2025-12-31T16%3A15%3A00.000Z",
@@ -235,7 +236,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
-  await page.getByRole("button", { name: "開始匯入 Import" }).click();
+  await page.getByRole("button", { name: "Start import" }).click();
   expect((await imported).status()).toBe(201);
   await page.goto("/batches");
   await page.getByLabel(/Label/).fill("Synthetic attended update");
@@ -297,7 +298,12 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     status: "completed",
     enqueued: 0,
   });
-  await expect(page.getByText("succeeded: 2", { exact: true })).toBeVisible();
+  // The batch page used to print its database column names. It now reads from
+  // the shared label map, so this asserts through the same source of truth --
+  // in English, because the fixture pins the browser to locale=en.
+  await expect(
+    page.getByText(`${stateLabel("succeeded", "en")}: 2`, { exact: true }),
+  ).toBeVisible();
   for (const [index, id] of listingIds.entries()) {
     await page.goto("/listings/" + id);
     await page
@@ -1101,7 +1107,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
     await page.locator("#connected-shopline-update > summary").click();
     const file = page.locator("#bulk-import-file");
     const time = page.locator("#merchant-attested-export-at");
-    const submit = page.getByRole("button", { name: "開始匯入 Import" });
+    const submit = page.getByRole("button", { name: "Start import" });
     await file.setInputFiles({
       name: filename,
       mimeType:

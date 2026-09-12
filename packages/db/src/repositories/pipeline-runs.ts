@@ -48,6 +48,18 @@ export type StepClaim = {
 export type PipelineRunRepository = {
   getCompleted(key: string): Promise<PipelineResult | null>;
   getState(key: string): Promise<PipelineRunState | null>;
+  /**
+   * How many runs already exist for this listing at this revision.
+   *
+   * Used to number a deliberate re-run. A listing that ended in `needs_info`
+   * appends no version, so its `activeVersionSequence` never moves and the key
+   * derived from it alone keeps resolving to the completed run; this count is
+   * what makes the next run addressable.
+   */
+  countRuns(input: {
+    listingId: string;
+    activeVersionSequence: number;
+  }): Promise<number>;
   /** Newest-first, this workspace's pipeline runs only. `limit` defaults to
    * 100 and must be between 1 and 100. */
   getByIds(ids: readonly string[]): Promise<PipelineRunSummary[]>;
@@ -220,6 +232,24 @@ export function createPipelineRunRepository(
         status: run.status as "in_review" | "needs_info",
         versionId: run.versionId,
       };
+    },
+
+    async countRuns(input) {
+      scope.assertOpen();
+      const [row] = await transaction
+        .select({ total: sql<number>`count(*)::int` })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            eq(listingPipelineRuns.workspaceId, workspaceId),
+            eq(listingPipelineRuns.listingId, input.listingId),
+            eq(
+              listingPipelineRuns.activeVersionSequence,
+              input.activeVersionSequence,
+            ),
+          ),
+        );
+      return row?.total ?? 0;
     },
 
     async getState(key) {

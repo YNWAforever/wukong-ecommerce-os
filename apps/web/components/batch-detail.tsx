@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  sharedMessages,
+  stateLabel,
+  type BilingualMessage,
+} from "../lib/ui-copy";
 import { AdvanceBatchButton } from "./advance-batch-button";
 
 type BatchDetailData = {
@@ -30,20 +37,39 @@ type BatchDetailData = {
 // authentication_unavailable, internal_error, ...) are not mapped here, same
 // as batch-list.tsx and advance-batch-button.tsx: they fall back to the
 // server-provided message.
-const API_ERROR_MESSAGES: Record<string, string> = {
-  insufficient_role: "Operator access is required.",
-  batch_not_found: "This batch no longer exists.",
+const API_ERROR_MESSAGES: Record<string, BilingualMessage> = {
+  insufficient_role: sharedMessages.operatorRequired,
+  batch_not_found: sharedMessages.batchNotFound,
 };
 
-const UNREACHABLE = "Could not reach the server. Try again.";
+const LOAD_FAILED: BilingualMessage = [
+  "無法載入批次資料，請重試。",
+  "The batch could not be loaded.",
+];
+
+/**
+ * The counts, in the order work moves through them.
+ *
+ * They used to be five hand-written rows labelled with their own column names,
+ * so an operator read `succeeded: 3` in an interface that is otherwise
+ * Chinese. `stateLabel` already had a name for each.
+ */
+const COUNT_KEYS = [
+  "pending",
+  "queued",
+  "succeeded",
+  "failed",
+  "skipped",
+] as const;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
 export function BatchDetail({ batchId }: { batchId: string }) {
+  const locale = useLocale();
   const [data, setData] = useState<BatchDetailData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BilingualMessage | null>(null);
 
   // `signal` is only supplied by the effect below, which re-runs (aborting
   // any still-in-flight request first) whenever `batchId` changes. Without
@@ -63,7 +89,7 @@ export function BatchDetail({ batchId }: { batchId: string }) {
         });
       } catch (cause) {
         if (isAbortError(cause)) return;
-        setError(UNREACHABLE);
+        setError(sharedMessages.unreachable);
         return;
       }
 
@@ -75,18 +101,20 @@ export function BatchDetail({ batchId }: { batchId: string }) {
         // 502/504/524 gateway page) rather than the application itself, same
         // as batch-list.tsx/advance-batch-button.tsx.
         if (isAbortError(cause)) return;
-        setError(UNREACHABLE);
+        setError(sharedMessages.unreachable);
         return;
       }
 
       if (!response.ok) {
         const code =
           typeof body.code === "string" ? body.code : "unknown_error";
-        const message =
+        // A message the server wrote is shown as it stands: translating it
+        // here would mean inventing a Chinese version of text we did not write.
+        const message: BilingualMessage =
           API_ERROR_MESSAGES[code] ??
           (typeof body.message === "string"
-            ? body.message
-            : "The batch could not be loaded.");
+            ? [body.message, body.message]
+            : LOAD_FAILED);
         setError(message);
         return;
       }
@@ -106,27 +134,33 @@ export function BatchDetail({ batchId }: { batchId: string }) {
   if (error) {
     return (
       <p className="inline-warning" role="alert">
-        {error}
+        {localized(locale, ...error)}
       </p>
     );
   }
   if (data === null) {
-    return <p className="intake-message">載入中…</p>;
+    return (
+      <p className="intake-message">
+        {localized(locale, "載入中…", "Loading…")}
+      </p>
+    );
   }
 
   return (
     <div>
       <h2>{data.batch.label}</h2>
       <p>
-        狀態: {data.batch.status} · 每波 {data.batch.waveSize} · 預算 $
-        {data.batch.budgetUsd}
+        {localized(locale, "狀態", "Status")}:{" "}
+        {stateLabel(data.batch.status, locale)} ·{" "}
+        {localized(locale, "每波", "Wave size")} {data.batch.waveSize} ·{" "}
+        {localized(locale, "預算", "Budget")} ${data.batch.budgetUsd}
       </p>
       <ul className="file-list">
-        <li>pending: {data.counts.pending}</li>
-        <li>queued: {data.counts.queued}</li>
-        <li>succeeded: {data.counts.succeeded}</li>
-        <li>failed: {data.counts.failed}</li>
-        <li>skipped: {data.counts.skipped}</li>
+        {COUNT_KEYS.map((key) => (
+          <li key={key}>
+            {stateLabel(key, locale)}: {data.counts[key]}
+          </li>
+        ))}
       </ul>
       <AdvanceBatchButton batchId={batchId} onAdvanced={() => void reload()} />
     </div>

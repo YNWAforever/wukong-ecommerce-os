@@ -132,7 +132,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
     products: "件商品",
     recorded: "記錄時間",
     updated: "更新時間",
-    untitled: "未命名刊登",
+    untitled: "未命名商品",
     view: "查看詳情",
     review: "審核內容",
     result: "查看並回報結果",
@@ -143,11 +143,11 @@ export const workbenchCopy: Record<Locale, Copy> = {
     steps: [
       "匯入並預覽商品",
       "查看來源資料與限制",
-      "審核符合條件的刊登內容",
+      "審核符合條件的商品內容",
       "匯出並記錄匯入結果",
     ],
     caution:
-      "來源資料不會自動成為刊登草稿。匯出檔案就緒不代表 SHOPLINE 已接受。",
+      "來源資料不會自動成為上架草稿。匯出檔案就緒不代表 SHOPLINE 已接受。",
     states: {
       attention: "需要處理",
       progress: "處理中",
@@ -155,7 +155,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
       unclassified: "狀態不可用",
     },
     kinds: {
-      listing: "刊登",
+      listing: "上架",
       export: "匯出",
       website_scan: "網站掃描",
       workbook_import: "工作簿匯入",

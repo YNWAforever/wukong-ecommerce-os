@@ -85,6 +85,19 @@ async function fixture() {
       row.state = unknown ? "outcome_unknown" : "failed";
       row.leaseToken = null;
     }),
+    // Mirrors the repository guard: only an attempt that reached no provider
+    // may be written off as a costless failure.
+    finishUndispatched: vi.fn(
+      async (input: { attemptId: string; code: string }) => {
+        const { code } = input;
+        if (row.state !== "queued" || row.dispatchedAt || row.cutoutAssetId)
+          return "skipped";
+        row.state = "failed";
+        row.errorCode = code;
+        row.leaseToken = null;
+        return "ended";
+      },
+    ),
   };
   const repos = {
     productShots: shots,
@@ -222,6 +235,52 @@ describe("durable product shot pipeline", () => {
       expect(f.provider.generateProductShot).not.toHaveBeenCalled();
     }
   });
+  it("ends a disabled-provider attempt instead of leaving it queued", async () => {
+    // The web app only enqueues when its own provider is configured, so a
+    // disabled Worker means the two surfaces disagree: the feature was turned
+    // on for Vercel but not in cloudflare-runtime.config.json. This used to
+    // return silently -- the message was acked, the row stayed `queued`, and
+    // the review panel polled a row nothing would ever touch again.
+    const f = await fixture();
+    f.deps.providerName = "disabled";
+
+    await runProductShot(job, f.deps);
+
+    expect(f.row.state).toBe("failed");
+    expect(f.row.errorCode).toBe("provider_disabled");
+    expect(f.shots.finishUndispatched).toHaveBeenCalledOnce();
+    expect(f.provider.generateProductShot).not.toHaveBeenCalled();
+    // Nothing was dispatched, so nothing can have been charged -- which is why
+    // `failed` rather than `outcome_unknown` is the honest state here.
+    expect(f.shots.finishFailure).not.toHaveBeenCalled();
+  });
+  it("is a no-op on redelivery once the attempt already ended", async () => {
+    const f = await fixture();
+    f.deps.providerName = "disabled";
+
+    await runProductShot(job, f.deps);
+    await runProductShot(job, f.deps);
+
+    // The second delivery returns at the terminal-state guard, before the
+    // disabled branch, so the row is not touched twice.
+    expect(f.shots.finishUndispatched).toHaveBeenCalledOnce();
+    expect(f.row.state).toBe("failed");
+  });
+  it("never writes off an attempt that already reached the provider", async () => {
+    // The guard that keeps this safe. A dispatched attempt may have been
+    // charged, so it has to stay with finishFailure and outcome_unknown.
+    const f = await fixture();
+    f.row.state = "processing";
+    f.row.dispatchedAt = new Date();
+
+    expect(
+      await f.shots.finishUndispatched({
+        attemptId: job.attemptId,
+        code: "provider_disabled",
+      }),
+    ).toBe("skipped");
+    expect(f.row.state).toBe("processing");
+  });
   it("recovers deterministic stored output when checkpoint fails without calling provider again", async () => {
     const f = await fixture();
     f.shots.saveCutout.mockRejectedValueOnce(new Error("db failed"));
@@ -238,12 +297,30 @@ it("retries exhausted budget at the UTC boundary without provider invocation the
   const denied = await runProductShot(job, f.deps).catch((e) => e);
   expect(denied).toBeInstanceOf(ProductShotBudgetError);
   expect(denied.retryAfterSeconds).toBe(60);
-  expect(denied.retryAfterSeconds).toBeLessThanOrEqual(86400);
+  // The ceiling a queue retry actually accepts, not a whole day: a denial just
+  // after UTC midnight is nearly 86400 seconds from the reset, and asking for
+  // that is another way to lose the message.
+  expect(denied.retryAfterSeconds).toBeLessThanOrEqual(43200);
   expect(f.provider.generateProductShot).not.toHaveBeenCalled();
   expect(f.row.state).toBe("queued");
   f.allow();
   await runProductShot(job, f.deps);
   expect(f.provider.generateProductShot).toHaveBeenCalledOnce();
+});
+it("caps an exhausted-budget retry at the delay a queue will accept", async () => {
+  // Denied just after UTC midnight, the reset is nearly a whole day away. The
+  // previous ceiling was 86400, so this asked for a delay longer than
+  // `message.retry` takes -- and a rejected retry is one more way for the row
+  // to stay `queued` with nobody coming back for it.
+  const f = await fixture();
+  f.deny();
+  f.expire(); // 2026-09-07T23:59:00Z -> 2026-09-08T00:01:01Z
+
+  const denied = await runProductShot(job, f.deps).catch((e) => e);
+
+  expect(denied).toBeInstanceOf(ProductShotBudgetError);
+  expect(denied.retryAfterSeconds).toBe(43200);
+  expect(f.row.state).toBe("queued");
 });
 it("refuses a truncated deterministic PNG checkpoint", async () => {
   const f = await fixture();

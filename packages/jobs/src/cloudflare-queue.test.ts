@@ -4,6 +4,7 @@ import {
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  listingRunKey,
   shoplinePublishJobSchema,
   signQueueRequest,
   verifyQueueRequest,
@@ -105,5 +106,53 @@ describe("queue signing vector", () => {
         body: "{}",
       }),
     ).resolves.toBe("6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
+  });
+});
+
+describe("listing run identity", () => {
+  const base = { workspaceId: "ws_opak", draftId, activeVersionSequence: 0 };
+
+  it("keeps the historical key for the first run", () => {
+    // Every run already recorded was keyed this way. A new key format here
+    // would orphan them and re-run work that is already done and paid for.
+    expect(listingRunKey(base)).toBe(`listing:ws_opak:${draftId}:0`);
+    expect(listingRunKey({ ...base, runAttempt: 0 })).toBe(
+      `listing:ws_opak:${draftId}:0`,
+    );
+  });
+
+  it("gives a deliberate re-run its own key", () => {
+    expect(listingRunKey({ ...base, runAttempt: 1 })).toBe(
+      `listing:ws_opak:${draftId}:0#1`,
+    );
+    expect(listingRunKey({ ...base, runAttempt: 2 })).not.toBe(
+      listingRunKey({ ...base, runAttempt: 1 }),
+    );
+  });
+
+  it("distinguishes a re-run from a later revision", () => {
+    // Attempt 1 of revision 0 and revision 1 are different work; collapsing
+    // them would let one read back the other's cached result.
+    expect(listingRunKey({ ...base, runAttempt: 1 })).not.toBe(
+      listingRunKey({ ...base, activeVersionSequence: 1 }),
+    );
+  });
+
+  it("accepts a message from a producer that predates runAttempt", () => {
+    const parsed = listingJobSchema.parse(base);
+    expect(parsed.runAttempt).toBeUndefined();
+    expect(listingRunKey(parsed)).toBe(`listing:ws_opak:${draftId}:0`);
+  });
+
+  it("still rejects an unknown field", () => {
+    expect(() =>
+      listingJobSchema.parse({ ...base, operationId: "nope" }),
+    ).toThrow();
+  });
+
+  it("rejects a runAttempt that is not a bounded non-negative integer", () => {
+    for (const runAttempt of [-1, 1.5, 1000]) {
+      expect(() => listingJobSchema.parse({ ...base, runAttempt })).toThrow();
+    }
   });
 });

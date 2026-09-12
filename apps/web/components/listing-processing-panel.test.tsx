@@ -47,24 +47,43 @@ describe("ListingProcessingPanel", () => {
     expect(markup).not.toContain("Start processing");
   });
 
-  it.each([
-    ["processing", "AI processing"],
-    ["needs_info", "More information needed"],
-  ] as const)("shows %s without a retry button", (status, copy) => {
+  it("shows a processing listing without any action", () => {
+    // A delivery is mid-flight; there is nothing useful to press.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
-        status={status}
+        status="processing"
         canProcess
         onProcess={vi.fn()}
         busy={false}
       />,
     );
 
-    expect(markup).toContain(copy);
+    expect(markup).toContain("AI processing");
     expect(markup).not.toContain("Start processing");
+    expect(markup).not.toContain("Run processing again");
   });
 
-  it("shows terminal failure recovery guidance without a retry button", () => {
+  it("offers a re-run once a listing has asked for more information", () => {
+    // The route now numbers this as a new run rather than answering 409, so
+    // supplying the missing details can actually produce a new result.
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="needs_info"
+        canProcess
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("More information needed");
+    expect(markup).toContain("Run processing again");
+  });
+
+  it("offers a retry for a failed listing, which the server accepts", () => {
+    // POST /api/listings/[id]/process lists `failed` as retryable and calls
+    // pipelineRuns.reopenFailed first, so this button is a real action rather
+    // than one that 409s. Before this, a failed listing was a dead end whose
+    // only on-screen guidance was to contact support.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
         status="failed"
@@ -74,9 +93,23 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("Processing failed");
-    expect(markup).toContain("Source files are retained");
-    expect(markup).not.toContain("Start processing");
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).toContain("nothing was overwritten");
+    expect(markup).toContain("Run processing again");
+  });
+
+  it("withholds the retry from a viewer who cannot process", () => {
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="failed"
+        canProcess={false}
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).not.toContain("Run processing again");
   });
 
   it("does not expose the action to viewers", () => {

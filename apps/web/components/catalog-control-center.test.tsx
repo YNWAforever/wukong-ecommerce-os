@@ -9,6 +9,7 @@ import type {
   CatalogPage,
 } from "../lib/catalog-contract";
 import { CatalogControlCenter } from "./catalog-control-center.js";
+import { NO_CONTENT_DIGEST } from "./bulk-export-panel.js";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -889,6 +890,102 @@ it("hides rows from another import through pending, failure and retry while pres
       container.querySelector('section section input[type="checkbox"]'),
     ).toBe(attestation);
     expect(attestation.checked).toBe(true);
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("attests a selected listing's real digest, not a sentinel, after it scrolls off the fetched page", async () => {
+  // Regression for Defect 1: `selectedListings` deliberately survives page
+  // changes (see the "keeps selected platform listings..." and "hides rows
+  // from another import..." tests above), so once the operator moves to
+  // page 2 the selected listing is no longer in `response.items`. Looking
+  // its digest up in the current page alone -- as the code used to -- misses
+  // it there and used to fall back to the `NO_CONTENT_DIGEST` sentinel,
+  // which the server can only read as a mismatch, silently excluding a
+  // perfectly current listing from the export. The fix captures the digest
+  // the operator was actually shown at the moment they selected the row, so
+  // it survives regardless of which page is loaded when they hit Generate.
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    calls.push({ url, init });
+    if (url === "/api/listings/export") {
+      return Promise.resolve(
+        Response.json({ exportAttemptId: null, rowCount: 0, manifest: [] }),
+      );
+    }
+    const parsed = new URL(url, "http://localhost");
+    const page = Number(parsed.searchParams.get("page"));
+    return Promise.resolve(
+      Response.json(
+        pageResponse(
+          page === 1
+            ? [
+                makeItem({
+                  id: "kept",
+                  listingId: "listing-kept",
+                  contentDigest: "digest-real",
+                }),
+              ]
+            : [makeItem({ id: "other", listingId: "listing-other" })],
+          {
+            page,
+            totalMatching: 60,
+            capabilities: {
+              canGenerateBulkUpdate: true,
+              canRecordImportResult: true,
+            },
+          },
+        ),
+      ),
+    );
+  });
+
+  const { container, root } = await mount(fetcher);
+  try {
+    await act(async () =>
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    const attestation = container.querySelector(
+      'section section input[type="checkbox"]',
+    ) as HTMLInputElement;
+    await act(async () => attestation.click());
+    expect(attestation.checked).toBe(true);
+
+    // Move to page 2: the selected listing is no longer in `response.items`.
+    await act(async () => {
+      findButtonByText(container, "下一頁")!.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain("listing-kept");
+    // The digest captured at selection survived the page change, so the
+    // attestation is still valid and Generate is still enabled.
+    expect(attestation.checked).toBe(true);
+
+    const generateButton = findButtonByText(container, "產生批量更新 XLSX")!;
+    expect(generateButton.disabled).toBe(false);
+    await act(async () => {
+      generateButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const exportCall = calls.find(
+      (call) => call.url === "/api/listings/export",
+    );
+    expect(exportCall).toBeDefined();
+    const body = JSON.parse(String(exportCall!.init!.body));
+    expect(body.attestation.listings).toEqual([
+      { listingId: "listing-kept", contentDigest: "digest-real" },
+    ]);
+    expect(body.attestation.listings[0].contentDigest).not.toBe(
+      NO_CONTENT_DIGEST,
+    );
   } finally {
     await unmount(root);
   }

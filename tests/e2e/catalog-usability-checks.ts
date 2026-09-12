@@ -18,9 +18,11 @@ export async function assertNoHorizontalOverflow(page: Page) {
       .filter((rect) => rect.right > window.innerWidth + 1 || rect.left < -1)
       .slice(0, 12),
   }));
-  expect
-    .soft(bounds.document, JSON.stringify(bounds))
-    .toBeLessThanOrEqual(bounds.viewport);
+  // Hard, not soft: expect.soft records a horizontal overflow and lets the
+  // run pass, so Package J's responsive acceptance could never actually fail.
+  expect(bounds.document, JSON.stringify(bounds)).toBeLessThanOrEqual(
+    bounds.viewport,
+  );
 }
 
 export async function assertDrawerKeyboardFlow(page: Page) {

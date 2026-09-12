@@ -1,7 +1,10 @@
 import {
-  canonicalListingSchema,
+  carryResolutions,
+  localizedCopyFields,
+  reviewableListingSchema,
+  scanCompliance,
   type AuditContext,
-  type CanonicalListing,
+  type ReviewableListing,
 } from "@wukong/core";
 import { z } from "zod";
 
@@ -26,11 +29,26 @@ type ReviewRouteDeps = {
   };
 };
 
+/**
+ * Saving a draft accepts REVIEWABLE content, not canonical.
+ *
+ * `canonicalListingSchema` re-tightens the commercial facts to non-null, so an
+ * operator who has read the producer, region, vintage, volume and ABV off a
+ * label but is still waiting on the merchant's SKU and price could not record
+ * any of it -- the whole payload was rejected for the two fields they do not
+ * have yet. `reviewableListingSchema` keeps the bilingual copy, SEO, tags and
+ * images required, and lets those facts stay null.
+ *
+ * Nothing is loosened about delivery: `requireForPublish` still parses with
+ * `canonicalListingSchema` and throws when the content is not publish-ready, so
+ * the completeness requirement moves to the gate where it belongs rather than
+ * disappearing.
+ */
 const reviewBodySchema = z
   .object({
     baseVersionId: z.string().uuid(),
-    listing: canonicalListingSchema.optional(),
-    content: canonicalListingSchema.optional(),
+    listing: reviewableListingSchema.optional(),
+    content: reviewableListingSchema.optional(),
   })
   .strict()
   .refine(
@@ -49,13 +67,13 @@ function assertOperator(role: string): void {
 }
 
 function changedFields(
-  before: CanonicalListing,
-  after: CanonicalListing,
+  before: ReviewableListing,
+  after: ReviewableListing,
 ): string[] {
   return Object.keys(after).filter(
     (key) =>
-      JSON.stringify(before[key as keyof CanonicalListing]) !==
-      JSON.stringify(after[key as keyof CanonicalListing]),
+      JSON.stringify(before[key as keyof ReviewableListing]) !==
+      JSON.stringify(after[key as keyof ReviewableListing]),
   );
 }
 
@@ -99,6 +117,23 @@ export function createReviewListingHandler(deps: ReviewRouteDeps) {
               "Listing changed; reload before saving.",
             );
           }
+          // Re-scan what the operator actually submitted. Only the GENERATED
+          // copy was ever scanned, so a claim typed in afterwards reached
+          // approval with nothing flagged -- and a claim edited OUT kept its
+          // flag for ever, because nothing re-examined the text.
+          const before = localizedCopyFields(snapshot.activeVersion.content);
+          const after = localizedCopyFields(content);
+          const unchanged = new Set(
+            Object.keys(after).filter((key) => after[key] === before[key]),
+          );
+          const flags = carryResolutions(
+            scanCompliance(after, {
+              criticScores: content.criticScores,
+              awards: content.awards,
+            }),
+            snapshot.flags,
+            unchanged,
+          );
           try {
             const version = await repositories.listings.editReview(
               id,
@@ -107,6 +142,7 @@ export function createReviewListingHandler(deps: ReviewRouteDeps) {
               changedFields(snapshot.activeVersion.content, content),
               auditContext,
               repositories.audit,
+              flags,
             );
             return {
               listingId: id,

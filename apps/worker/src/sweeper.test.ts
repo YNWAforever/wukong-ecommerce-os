@@ -21,8 +21,22 @@ function makeDatabase(jobs: unknown[]) {
   return {
     findStuckListingJobs: vi.fn(async () => jobs),
     findStuckWebsiteScans: vi.fn(async () => []),
+    findUndispatchedListingJobs: vi.fn(async () => [] as unknown[]),
     close: vi.fn(async () => undefined),
   };
+}
+
+/** A database whose outbox owes the given rows, with the marks recorded. */
+function makeOutboxDatabase(rows: unknown[]) {
+  const markDispatched = vi.fn(async () => undefined);
+  const markAttempted = vi.fn(async () => undefined);
+  const database = {
+    ...makeDatabase([]),
+    findUndispatchedListingJobs: vi.fn(async () => rows),
+    forWorkspace: async (_workspaceId: string, work: any) =>
+      work({ dispatchOutbox: { markDispatched, markAttempted } }),
+  };
+  return { database, markDispatched, markAttempted };
 }
 
 describe("handleScheduled", () => {
@@ -179,4 +193,173 @@ it("records failed website recovery dispatch for the next bounded sweep", async 
     expect.objectContaining({ status: "failed" }),
   );
   expect(database.close).toHaveBeenCalledOnce();
+});
+
+/**
+ * Work recorded in the outbox that nobody will ever advance again.
+ *
+ * The outbox heals only inside `advanceBatch`, and `advanceBatch` runs only
+ * when an operator presses Advance on that one batch. A workspace whose batches
+ * have all reached `completed` or `budget_exhausted` never re-reads its own
+ * outbox, so a row stranded by a request that died stays owed for ever. The
+ * cron is the only thing that runs without being asked.
+ */
+describe("outbox recovery", () => {
+  const owed = {
+    workspaceId: "ws_opak",
+    outboxId: "3f1f7a52-0d8e-4a52-9a1a-3a2b1c0d9e88",
+    payload: job,
+  };
+
+  it("sends work nobody advanced and confirms it in the same tick", async () => {
+    const send = vi.fn(async () => undefined);
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      owed,
+    ]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(database.findUndispatchedListingJobs).toHaveBeenCalledWith({
+      // Longer than the web app's own 60s grace window, so the cron cannot
+      // re-send messages an advance is still in the middle of sending.
+      olderThanSeconds: 300,
+      maxRows: 20,
+      maxAttempts: 5,
+    });
+    expect(send).toHaveBeenCalledWith(job);
+    expect(markDispatched).toHaveBeenCalledWith([owed.outboxId]);
+    expect(markAttempted).not.toHaveBeenCalled();
+  });
+
+  it("counts a failed send as an attempt rather than confirming it", async () => {
+    // Confirming an unsent row would lose the work permanently: nothing else
+    // reads the outbox, so a row marked dispatched is never looked at again.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const send = vi.fn(async () => {
+      throw new Error("queue unavailable");
+    });
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      owed,
+    ]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(markDispatched).not.toHaveBeenCalled();
+    expect(markAttempted).toHaveBeenCalledWith([owed.outboxId]);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("outbox_sweeper.send_failed"),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("refuses a payload addressed to a different workspace than its row", async () => {
+    // Workspace scoping is the security boundary. A row whose stored payload
+    // names another tenant must never be put on the queue, whatever wrote it.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const send = vi.fn(async () => undefined);
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      { ...owed, payload: { ...job, workspaceId: "ws_someone_else" } },
+    ]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(markDispatched).not.toHaveBeenCalled();
+    expect(markAttempted).toHaveBeenCalledWith([owed.outboxId]);
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("outbox_sweeper.unusable"),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it("counts an unparsable payload so it can reach the attempt cap", async () => {
+    // Skipping it silently, as the draft sweeper does, would leave a row the
+    // queue can never accept being retried every five minutes for ever: the
+    // attempt count only rises if something records the attempt.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const send = vi.fn(async () => undefined);
+    const { database, markAttempted } = makeOutboxDatabase([
+      { ...owed, payload: { draftId: "not-a-uuid" } },
+    ]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(markAttempted).toHaveBeenCalledWith([owed.outboxId]);
+
+    consoleError.mockRestore();
+  });
+
+  it("marks each workspace through its own scope", async () => {
+    // One tick spans tenants. Marking them together would need a cross-tenant
+    // write, which RLS forbids and which no repository offers.
+    const send = vi.fn(async () => undefined);
+    const scopes: string[] = [];
+    const markDispatched = vi.fn(async () => undefined);
+    const database = {
+      ...makeDatabase([]),
+      findUndispatchedListingJobs: vi.fn(async () => [
+        owed,
+        {
+          workspaceId: "ws_other",
+          outboxId: "9c2a8d41-55b1-4f0e-9d3c-11aa22bb33cc",
+          payload: { ...job, workspaceId: "ws_other" },
+        },
+      ]),
+      forWorkspace: async (workspaceId: string, work: any) => {
+        scopes.push(workspaceId);
+        return work({
+          dispatchOutbox: { markDispatched, markAttempted: vi.fn() },
+        });
+      },
+    };
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(scopes).toEqual(["ws_opak", "ws_other"]);
+  });
+
+  it("reports its own totals without disturbing the draft sweeper's", async () => {
+    const consoleInfo = vi
+      .spyOn(console, "info")
+      .mockImplementation(() => undefined);
+    const send = vi.fn(async () => undefined);
+    const { database } = makeOutboxDatabase([owed]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(consoleInfo).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "outbox_sweeper.completed",
+        requeued: 1,
+        failed: 0,
+      }),
+    );
+    expect(consoleInfo).toHaveBeenCalledWith(
+      JSON.stringify({ event: "sweeper.completed", requeued: 0, failed: 0 }),
+    );
+
+    consoleInfo.mockRestore();
+  });
 });

@@ -17,6 +17,8 @@ type HandlerOptions = {
   status?: string;
   assets?: number;
   pipelineState?: "started" | "succeeded" | "failed" | null;
+  pipelineResultStatus?: "in_review" | "needs_info" | null;
+  existingRunCount?: number;
   enqueueError?: boolean;
   unexpectedError?: boolean;
   shotRequest?: (input: {
@@ -90,8 +92,14 @@ function handlerFor(options: HandlerOptions = {}) {
               pipelineRunKeys.push(key);
               // Shape matches the repository, which returns a run record.
               return options.pipelineState
-                ? { status: options.pipelineState }
+                ? {
+                    status: options.pipelineState,
+                    resultStatus: options.pipelineResultStatus ?? null,
+                  }
                 : null;
+            },
+            async countRuns() {
+              return options.existingRunCount ?? 1;
             },
             async reopenFailed(key: string) {
               reopenedKeys.push(key);
@@ -301,5 +309,151 @@ it("keeps text processing independent when image setup or enqueue fails", async 
   expect(enqueue).toHaveBeenCalledOnce();
   expect(await result.json()).toMatchObject({
     productShot: { state: "request_failed" },
+  });
+});
+
+describe("re-running a listing that asked for more information", () => {
+  it("enqueues a numbered new run instead of answering 409", async () => {
+    // The needs_info run appended no version, so activeVersionSequence never
+    // moved and the derived key still resolves to that completed run. Without
+    // its own attempt number the operator could supply everything that was
+    // missing and nothing would happen.
+    const { handler, enqueue } = handlerFor({
+      status: "needs_info",
+      pipelineState: "succeeded",
+      pipelineResultStatus: "needs_info",
+      existingRunCount: 1,
+    });
+
+    const response = await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(202);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ draftId: listingId, runAttempt: 1 }),
+    );
+  });
+
+  it("numbers each further re-run from the runs already recorded", async () => {
+    const { handler, enqueue } = handlerFor({
+      status: "needs_info",
+      pipelineState: "succeeded",
+      pipelineResultStatus: "needs_info",
+      existingRunCount: 3,
+    });
+
+    await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ runAttempt: 3 }),
+    );
+  });
+
+  it("does not reopen the completed run", async () => {
+    // reopenFailed is for a failed run. A needs_info run succeeded, and
+    // rewinding it would discard the extraction the screen reads back.
+    const { handler, reopenedKeys } = handlerFor({
+      status: "needs_info",
+      pipelineState: "succeeded",
+      pipelineResultStatus: "needs_info",
+    });
+
+    await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(reopenedKeys).toEqual([]);
+  });
+
+  it("still refuses a run that is already in review", async () => {
+    const { handler, enqueue } = handlerFor({
+      status: "in_review",
+      pipelineState: "succeeded",
+      pipelineResultStatus: "in_review",
+    });
+
+    const response = await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a run a delivery is currently working on", async () => {
+    const { handler, enqueue } = handlerFor({
+      status: "needs_info",
+      pipelineState: "started",
+      pipelineResultStatus: null,
+    });
+
+    const response = await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("a duplicate request must not buy a second run", () => {
+  it("refuses while the newest run is still in flight", async () => {
+    // Attempt 1 was started by an earlier click whose response was lost. A
+    // second click must not enqueue attempt 2 and pay for the same extraction
+    // twice.
+    const { handler, enqueue } = handlerFor({
+      status: "needs_info",
+      pipelineState: "started",
+      pipelineResultStatus: null,
+      existingRunCount: 2,
+    });
+
+    const response = await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("re-enqueues the same key when nothing is recorded yet", async () => {
+    // Enqueued, but no delivery has claimed it, so no run row exists. Sending
+    // the same key again is a no-op the pipeline deduplicates.
+    const { handler, enqueue } = handlerFor({
+      status: "received",
+      pipelineState: null,
+      existingRunCount: 0,
+    });
+
+    await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const sent = enqueue.mock.calls.at(0)?.at(0) as
+      Record<string, unknown> | undefined;
+    expect(sent).toBeDefined();
+    expect(sent).not.toHaveProperty("runAttempt");
+  });
+
+  it("never puts runAttempt 0 on the wire", async () => {
+    // A Worker deployed before the field existed parses strictly and would ack
+    // an unrecognized key away, silently dropping the job.
+    const { handler, enqueue } = handlerFor({
+      status: "failed",
+      pipelineState: "failed",
+      existingRunCount: 1,
+    });
+
+    await handler(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const sent = enqueue.mock.calls.at(0)?.at(0) as
+      Record<string, unknown> | undefined;
+    expect(sent).toBeDefined();
+    expect(sent).not.toHaveProperty("runAttempt");
   });
 });
