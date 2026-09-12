@@ -306,6 +306,25 @@ outside 1–5 — through an earlier bug, a migration, or a direct write — is
 honoured. G12 asked for the cap to be enforced by the API rather than the UI;
 half of the API enforces it.
 
+**Done (2026-09-13).** The advance path now claims
+`Math.min(batch.waveSize, MAX_ENRICHMENT_WAVE_SIZE)`, and the cap lives in one
+leaf module (`apps/web/lib/enrichment-wave-limit.ts`) that the route schema, the
+create validation and the advance path all read — it was three separate
+literals, so moving one would have left the others on the old bound.
+
+One correction to the paragraph above: the exposure is only the **ceiling**, not
+"outside 1–5". `enrichment_batches.wave_size` already carries
+`CHECK (wave_size > 0)` (`0005_enrichment_batches.sql:20`), so Postgres refuses a
+zero or negative value however it is written. That is why advance clamps rather
+than refuses: clamping can only ever dispatch fewer calls, never more, and it
+leaves the batch usable instead of stranding it. A clamp that fires also logs
+`enrichment_batch.wave_size_capped` with both numbers, because a stored value
+the API cannot produce means something wrote the row outside it.
+
+Two tests, because a clamp has two ways to be wrong: a row holding 40 claims
+exactly the cap, and a row holding 2 still claims 2 — the clamp must not become
+a floor.
+
 ### W9 — Decide whether visual regression is an acceptance criterion at all
 
 Packages B, C and J each cite "visual-regression capture" as acceptance
@@ -320,6 +339,22 @@ churn, or amend the three packages to drop the clause and rely on the
 a11y/overflow assertions that do run. Recommend amending — the matrix is 13
 routes × 2 locales × 2 viewports, and a baseline suite that is always slightly
 wrong gets ignored, which is worse than not having one.
+
+**Decided (2026-09-13): amend.** Recorded in
+[visual-regression decision](../specs/2026-09-13-visual-regression-decision.md),
+with five clauses in the integration plan amended to match: §14's scope
+definition, B's and C's acceptance bullets, and J's two.
+
+The recommendation held, and gained a concrete reason it did not have: CI runs
+`ubuntu-latest` while development happens on Windows, so a Linux-generated
+baseline fails locally and cannot be regenerated without Docker. A suite only
+one machine can update is one that gets `--update-snapshots`-ed until it
+asserts nothing.
+
+Worth keeping in view: the defects this phase actually found — an `aria-label`
+on a role-less `div`, a missing `h1`, a soft overflow assertion, and surfaces
+in the wrong language — are all invisible to a screenshot diff, or visible only
+to someone who opens it and reads Chinese.
 
 ### W10 — Make the release gate a gate
 
