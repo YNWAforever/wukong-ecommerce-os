@@ -213,7 +213,7 @@ Postgres was started this session, so these are no longer assumptions:
    from enrichment_batches where status = 'budget_exhausted';
    ```
 
-## Deployment order, now three constraints
+## Deployment order, now four constraints
 
 1. **Migration `0022` before the Worker.** A Worker that writes
    `provider_disabled` against the un-widened CHECK raises `check_violation` on
@@ -228,6 +228,11 @@ Postgres was started this session, so these are no longer assumptions:
    cron throws on every tick — and the draft sweep and website reconciliation
    that run in the same handler still complete, so the failure would show up
    only as an error line, not as stalled work.
+4. **Migration `0025` before the web deploy.** The export route writes
+   `export_attempts.source_attestation`. A web deploy that lands first fails
+   every export at the insert -- after the operator has already ticked the
+   attestation box, which is the worst possible moment to discover it. The
+   column is additive and nullable, so the migration is safe to run ahead.
 
 ## Follow-up work, with what each was measured against
 

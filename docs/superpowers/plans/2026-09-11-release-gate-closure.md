@@ -85,6 +85,42 @@ record and asserts refusal.
 **Acceptance:** an export attempt with a stale or absent attestation is refused
 by the server, proven against a real Postgres.
 
+**Done (2026-09-12).** Option (a): the attestation is now evidence the server
+can falsify. The operator sends the digests they were shown; the server
+refuses unless the attested set is exactly the requested set (400
+`attestation_incomplete`), compares each digest against the current link, and
+records the evidence on the export attempt. `freshnessAttested` is retired.
+
+Planning changed the design once and the spec was amended to match. Feeding
+the attested digest into `expectedRowDigest` -- which that field was always
+documented to mean -- turned `row_digest_mismatch` from a comparison of a
+value against a re-read of itself into a real check, so **no new freshness
+reason was needed at all**.
+
+Implemented as nine tasks under subagent-driven development. Review caught
+five defects worth naming, because each was invisible to the tests:
+
+- The advisory readiness path fabricated an attestation from a link that may
+  not be the row the gate reads (`platform_products` has no unique index on
+  `listing_id`), flipping a reported reason. Fixed with a discriminated
+  attestation kind, so the advisory path can ask the policy question without
+  inventing an answer.
+- The catalog derived digests from the current page while selection survives
+  paging, so a listing selected on page 1 and exported from page 2 was
+  silently dropped. Digests are now captured at selection and preferred live
+  only while the row is visible.
+- `ensure()` ignored the attestation in its idempotency conflict check, so a
+  retry with different evidence silently kept the old record.
+- Both new copy strings were written into tables the export panel never reads.
+- `attestationMismatchCount` claimed the operator was at fault for a reason
+  that also fires on stale review confirmations.
+
+**Not proven:** the integration suite has not been run since the deliver-path
+change, because Docker stopped partway through. Migration `0025` was rehearsed
+twice against real Postgres and the export-attempt tests passed 18/18 at that
+time, but `source-binding.integration.test.ts` was edited afterwards and has
+never been executed. Playwright has not been run at all.
+
 ### W2 — CI is green because the gate cannot see the failure
 
 Package A's whole Outcome was "fix the CI formatting failure". It was never
