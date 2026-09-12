@@ -101,7 +101,7 @@ describe("interface vocabulary", () => {
  *
  * The batch feature was localised twice in one week -- first two components,
  * then the two siblings nobody had named -- because nothing measured the gap.
- * Twelve files still contain Traditional Chinese with no locale awareness at
+ * Six files still contain Traditional Chinese with no locale awareness at
  * all: no `localized()`, no `stateLabel()`, no `"zh-Hant"` map, not even a
  * `Locale` in scope. For a reader who has chosen English, those surfaces are
  * simply in a language they did not pick.
@@ -116,11 +116,8 @@ const UNLOCALISED_SURFACES = [
   "app/(app)/admin/page.tsx",
   "components/admin-members-panel.tsx",
   "components/admin-settings-panel.tsx",
-  "components/bulk-import-panel.tsx",
   "components/listing-intake-form.tsx",
   "components/listing-view-models.ts",
-  "components/new-product-blocked-panel.tsx",
-  "components/supporting-evidence-panel.tsx",
   "lib/listing-approval.ts",
 ];
 
