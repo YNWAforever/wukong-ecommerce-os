@@ -15,6 +15,7 @@ import {
   CONFIRMATION_NEGATIVE_KEYS,
 } from "../../../../lib/review-confirmation-keys";
 import { createExportListingsHandler } from "./route";
+import { createImportResultHandler } from "../[id]/shopline-import-result/route";
 
 // This suite deliberately requires explicit isolated test-service URLs.
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL!;
@@ -258,4 +259,39 @@ it("binds the real workbook, manifest and hash to approval; re-import cannot reu
     "100",
     "105",
   ]);
+
+  // The step the pilot journey performs next, and the one no test crossed.
+  //
+  // Recording a result re-validates the attempt's provenance against a schema
+  // owned by the db package, while the shape of that provenance is decided by
+  // the export route. Each side's own tests passed while the two disagreed,
+  // because nothing exercised an attempt this route actually wrote. Running
+  // the real export handler and then the real result handler against one
+  // Postgres is what makes that disagreement fail here instead of in UAT.
+  const recordResult = createImportResultHandler({
+    getDatabase: () => database,
+    sessionContext: {
+      async resolve() {
+        return { workspaceId, actorId, role: "reviewer" };
+      },
+    },
+  });
+  const recorded = await recordResult(
+    new Request("http://localhost/api/listings/" + listingId + "/result", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "export",
+        outcome: "accepted",
+        exportAttemptId: second.exportAttemptId,
+        versionId,
+        idempotencyKey: "synthetic-" + second.exportAttemptId,
+      }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+  expect({
+    status: recorded.status,
+    body: await recorded.json(),
+  }).toMatchObject({ status: 201, body: { replayed: false } });
 });
