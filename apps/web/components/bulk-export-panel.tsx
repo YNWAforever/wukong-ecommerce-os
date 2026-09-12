@@ -7,7 +7,11 @@ import {
   stateLabel,
   safeUiError,
 } from "../lib/ui-copy";
-import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
+import {
+  outcomeLabel,
+  manifestReasonLabel,
+  exportErrorLabel,
+} from "../lib/export-ui-copy";
 
 import { useId, useMemo, useRef, useState } from "react";
 import {
@@ -22,6 +26,15 @@ import {
  * accidentally match a real one -- the server's freshness check reports
  * `row_digest_mismatch` for that one listing instead of failing the whole
  * request's schema validation the way an empty string would.
+ *
+ * Only for a row whose digest has genuinely never been recorded. It must
+ * never stand in for a digest a caller simply failed to look up (e.g. a
+ * selected row that scrolled off the currently fetched catalog page) --
+ * that use fabricated an attestation for content the operator was never
+ * shown and silently excluded a perfectly current listing from its export.
+ * `catalog-control-center.tsx` captures the digest a row had at the moment
+ * it was selected instead, precisely so it never needs this sentinel for
+ * that case.
  */
 export const NO_CONTENT_DIGEST = "no-content-digest-recorded";
 
@@ -35,6 +48,7 @@ type ExportResponse = {
     reason?: string;
   }>;
   rowCount?: number;
+  code?: string;
   message?: string;
 };
 
@@ -90,6 +104,12 @@ export function BulkExportPanel({
   const [busy, setBusy] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The server `code` behind the current `error`, kept separately so the
+  // render can look up specific copy for it (e.g. `attestation_incomplete`)
+  // without leaking `message` -- see `exportErrorLabel`. Cleared whenever a
+  // new attempt starts or a differently-caused error replaces this one, so a
+  // stale code from an earlier failure never mislabels a later one.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [result, setResult] = useState<ExportResponse | null>(null);
   const [detail, setDetail] = useState<WireExportReconciliationDetail | null>(
     null,
@@ -108,12 +128,14 @@ export function BulkExportPanel({
         throw new Error(`Unable to load export status (${response.status})`);
       setDetail((await response.json()) as WireExportReconciliationDetail);
       setError(null);
+      setErrorCode(null);
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
           : "Unable to load export status",
       );
+      setErrorCode(null);
     } finally {
       setDetailBusy(false);
     }
@@ -130,6 +152,7 @@ export function BulkExportPanel({
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    setErrorCode(null);
     setResult(null);
     setDetail(null);
     // Both arrays below are derived from this one snapshot, taken once, so
@@ -154,6 +177,12 @@ export function BulkExportPanel({
           await loadDetail(body.exportAttemptId);
           return;
         }
+        // Forward the `code` only, never `message` -- the server's message
+        // can describe internals this UI must not surface. `exportErrorLabel`
+        // maps a recognised code to copy; the thrown message below is a
+        // fixed, made-up string (never the server's), kept only as a
+        // fallback for a code the render's lookup does not recognise.
+        setErrorCode(body.code ?? null);
         throw new Error(`Unable to generate export (${response.status})`);
       }
       if (body.exportAttemptId) {
@@ -236,11 +265,12 @@ export function BulkExportPanel({
       ) : null}
       {error ? (
         <p className="inline-warning" role="alert" id={errorId}>
-          {safeUiError(
-            error,
-            locale,
-            result?.exportAttemptId ? "read" : "action",
-          )}
+          {exportErrorLabel(errorCode ?? undefined, locale) ??
+            safeUiError(
+              error,
+              locale,
+              result?.exportAttemptId ? "read" : "action",
+            )}
         </p>
       ) : null}
       {result?.exportAttemptId && !detail ? (

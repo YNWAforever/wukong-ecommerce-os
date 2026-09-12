@@ -186,9 +186,18 @@ export const readinessReasons = {
     "匯入來源已變更，請重新審核來源",
     "The source import changed. Review the source again",
   ],
+  // Reworded to match `approvalErrors.row_digest_mismatch` in
+  // approval-ui-copy.ts (same underlying `FreshnessFailureReason`, surfaced
+  // to a different screen): the old text read like two reads of the same
+  // link racing, which an operator cannot act on. It now says what actually
+  // happened -- the source moved after a review/attestation confirmed it --
+  // and what to do about it. This is the entry `manifestReasonLabel` (in
+  // `export-ui-copy.ts`) actually reads for the Bulk Update XLSX export
+  // manifest, and `SourceReadinessSummary` reads for the same reason shown
+  // in the catalog table before an export is attempted.
   row_digest_mismatch: [
-    "來源資料內容已變更，請重新審核",
-    "Source row content changed. Review it again",
+    "來源資料在你確認之後已變更，請重新檢視並確認。",
+    "The source changed after you confirmed it. Review it again and confirm.",
   ],
 } satisfies Record<BulkUpdateEligibilityReason, readonly [string, string]> &
   Record<string, readonly [string, string]>;

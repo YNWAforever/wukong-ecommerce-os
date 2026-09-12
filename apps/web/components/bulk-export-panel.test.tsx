@@ -74,6 +74,40 @@ describe.each([
   });
 });
 
+it("surfaces the server's attestation_incomplete code as actionable copy, not its raw message", async () => {
+  // Defect 2: the route returns `{ code: "attestation_incomplete", message }`
+  // (see apps/web/app/api/listings/export/route.ts), but the panel used to
+  // discard the whole body on a non-ok, no-attempt response and throw a
+  // generic "Unable to generate export (400)" -- so the copy written for
+  // this code (apps/web/lib/export-ui-copy.ts's `exportErrors`) never
+  // reached a user. The server's `message` must not leak into the UI either.
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json(
+      {
+        code: "attestation_incomplete",
+        message: "UNSAFE SERVER DETAIL should never render",
+      },
+      { status: 400 },
+    ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await submitExport(root, container, listingsOf(["listing-a"]));
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(
+    "This confirmation does not cover the listings you selected. Confirm again and retry.",
+  );
+  expect(alert?.textContent).not.toContain("UNSAFE SERVER DETAIL");
+
+  await act(async () => root.unmount());
+  document.body.innerHTML = "";
+  vi.unstubAllGlobals();
+});
+
 it("keeps exact mixed zero-row counts and member context bound to the submitted response", async () => {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
     Response.json({

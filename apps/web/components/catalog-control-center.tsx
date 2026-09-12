@@ -100,7 +100,16 @@ export function CatalogControlCenter({
     setFilter(destinationFilter);
     setPage(destinationPage);
   }
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Keyed by listingId, valued by the `contentDigest` the operator was
+  // actually shown at the moment they ticked the row -- not re-derived later
+  // from whichever page happens to be loaded. `selectedListings` deliberately
+  // survives page and filter changes (see the "keeps selected platform
+  // listings..." and "hides rows from another import..." tests), so a
+  // selected row is very often no longer present in `response.items` by the
+  // time the export panel needs its digest.
+  const [selectedListings, setSelectedListings] = useState<
+    ReadonlyMap<string, string | null>
+  >(new Map());
 
   const loadCatalog = useCallback(
     async (signal: AbortSignal) => {
@@ -133,6 +142,30 @@ export function CatalogControlCenter({
     data && !invalidImport && data.importId === importId
       ? data.page
       : EMPTY_RESPONSE;
+
+  // What actually gets attested: prefer the digest on the row as it appears
+  // on the current page, and only fall back to the digest captured at the
+  // moment of selection when the row is not on this page at all. A
+  // still-visible row whose content moved on must not be attestable at its
+  // old value -- feeding the fresh digest through here changes the identity
+  // `BulkExportPanel` compares against, which is what drops an existing
+  // attestation on its own (see that component's `selectionIdentity`).
+  // `NO_CONTENT_DIGEST` only stands in when neither the current page nor the
+  // selection-time capture has ever produced a real digest for this row; it
+  // never overrides a real one, so an off-page row keeps the value the
+  // operator actually saw instead of losing it to this sentinel.
+  const exportListings = useMemo(
+    () =>
+      Array.from(selectedListings, ([listingId, capturedDigest]) => {
+        const visibleRow = response.items.find(
+          (item): item is PlatformCatalogItem =>
+            item.sourceType === "platform" && item.listingId === listingId,
+        );
+        const digest = visibleRow ? visibleRow.contentDigest : capturedDigest;
+        return { listingId, contentDigest: digest ?? NO_CONTENT_DIGEST };
+      }),
+    [selectedListings, response.items],
+  );
 
   function handleQueryChange(value: string) {
     setQuery(value);
@@ -259,41 +292,21 @@ export function CatalogControlCenter({
           <strong>
             {localized(
               locale,
-              `已選取 ${selectedIds.length} 個商品作批量更新`,
-              `${selectedIds.length} selected for Bulk Update`,
+              `已選取 ${selectedListings.size} 個商品作批量更新`,
+              `${selectedListings.size} selected for Bulk Update`,
             )}
           </strong>
           <button
             type="button"
             className={styles.pageButton}
-            disabled={selectedIds.length === 0}
-            onClick={() => setSelectedIds([])}
+            disabled={selectedListings.size === 0}
+            onClick={() => setSelectedListings(new Map())}
           >
             {localized(locale, "清除選取", "Clear selection")}
           </button>
         </div>
         <BulkExportPanel
-          listings={selectedIds.map((listingId) => {
-            const row = response.items.find(
-              (item): item is PlatformCatalogItem =>
-                item.sourceType === "platform" && item.listingId === listingId,
-            );
-            return {
-              listingId,
-              // `contentDigest` is nullable on the catalog contract (a linked
-              // row can have no recorded digest yet). Sending an empty string
-              // would fail the export route's `z.string().min(1)` and reject
-              // the WHOLE batch with a generic validation error, punishing
-              // every other selected listing for this one row's missing
-              // digest. This sentinel is non-empty (passes validation) and
-              // can never equal a real sha256 row digest, so the server's
-              // freshness check reports this one listing as
-              // `row_digest_mismatch` -- correctly excluding it, with a
-              // reason the operator can act on, while the rest of the export
-              // proceeds.
-              contentDigest: row?.contentDigest ?? NO_CONTENT_DIGEST,
-            };
-          })}
+          listings={exportListings}
           canGenerate={response.capabilities.canGenerateBulkUpdate}
         />
         <div className={styles.toolbar}>
@@ -479,17 +492,21 @@ export function CatalogControlCenter({
                               `選取 ${item.sku ?? item.remoteProductId} 作批量更新`,
                               `Select ${item.sku ?? item.remoteProductId} for Bulk Update`,
                             )}
-                            checked={selectedIds.includes(item.listingId)}
+                            checked={selectedListings.has(item.listingId)}
                             onChange={(event) =>
-                              setSelectedIds((current) =>
-                                event.target.checked
-                                  ? current.includes(item.listingId!)
-                                    ? current
-                                    : [...current, item.listingId!]
-                                  : current.filter(
-                                      (id) => id !== item.listingId,
-                                    ),
-                              )
+                              setSelectedListings((current) => {
+                                const next = new Map(current);
+                                if (event.target.checked) {
+                                  // Capture the digest as shown right now --
+                                  // this is what the operator is attesting
+                                  // to, not whatever a later page happens to
+                                  // find under this id.
+                                  next.set(item.listingId!, item.contentDigest);
+                                } else {
+                                  next.delete(item.listingId!);
+                                }
+                                return next;
+                              })
                             }
                           />
                         ) : null}
