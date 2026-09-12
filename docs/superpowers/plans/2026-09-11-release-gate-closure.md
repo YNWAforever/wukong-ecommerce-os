@@ -217,6 +217,35 @@ journey and the two must move together.
 The guard cannot see a file that localises most of its copy and hardcodes the
 rest; that is what the retired-term check is for. It is a ratchet, not a proof.
 
+**`/listings/import` closed (2026-09-13).** The acceptance criterion names the
+route, not one component, and the route renders **three** of the nine:
+`bulk-import-panel.tsx`, `supporting-evidence-panel.tsx` and
+`new-product-blocked-panel.tsx`. All three are converted, so the list is now
+**six**. The two small panels also carried the both-languages-at-once pattern
+this workstream set out to remove.
+
+Two things this found that the entry above did not predict:
+
+- **The toggle failed in both directions.** `bulk-import-panel.tsx` was not
+  simply "hardcoded Traditional Chinese": its chrome was Chinese and its
+  failure messages were **English only**, so a reader who chose Chinese was
+  answered in English. Failure copy now travels as the `[zh, en]` pair the
+  batch screens already use (`batch-list.tsx:44`), and a message the server
+  wrote is still repeated as it stands rather than given an invented
+  translation -- the position `batch-list.tsx:87` already takes.
+- **The coupling was wider than one line.** Four selectors used
+  `開始匯入 Import`, not just `:239`, and a fifth assertion matched the
+  Chinese success line. The fixture pins `locale=en`, so all five now read the
+  English copy.
+
+`/listings/new` was already struck off, so with `/listings/import` converted
+this workstream's stated acceptance criterion is met. The six that remain are
+`/admin` and its two panels, `listing-intake-form.tsx`,
+`listing-view-models.ts` and `lib/listing-approval.ts`. `listing-view-models.ts`
+is worth naming: it is a library, not a screen, so its Chinese can surface on
+routes that are otherwise localised -- the one remaining entry the ratchet
+cannot attribute to a single page.
+
 ### W5 — Accessibility defects Package J did not close
 
 - All three `.metric-strip` containers put `aria-label` on a plain `<div>` with
