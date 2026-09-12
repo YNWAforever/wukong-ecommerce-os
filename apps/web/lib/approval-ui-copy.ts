@@ -48,9 +48,16 @@ const approvalErrors = {
     "匯入來源已變更，請重新載入商品、審核來源並重新選取。",
     "The source import changed. Reload the listing, review its source and select it again.",
   ],
+  // Used to mean two reads of the same link raced -- nothing an operator
+  // could act on. It now means the source moved after they confirmed it,
+  // which they can: review the current content and confirm again.
   row_digest_mismatch: [
-    "來源內容已變更，請重新載入商品、審核來源並重新選取。",
-    "The source content changed. Reload the listing, review its source and select it again.",
+    "來源資料在你確認之後已變更，請重新檢視並確認。",
+    "The source changed after you confirmed it. Review it again and confirm.",
+  ],
+  attestation_incomplete: [
+    "此確認未涵蓋你選取的商品，請重新確認後再試。",
+    "This confirmation does not cover the listings you selected. Confirm again and retry.",
   ],
   confirmation_source_stale: [
     "確認清單屬於舊來源，請重新載入商品、審核來源及清單並重新選取。",

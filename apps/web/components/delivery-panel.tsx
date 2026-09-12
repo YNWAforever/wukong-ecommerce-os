@@ -3,7 +3,7 @@ import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
 
 import type { DeliveryModel } from "./listing-view-models";
-import { BulkExportPanel } from "./bulk-export-panel";
+import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
 import { ImportResultForm, ImportResultHistory } from "./import-result-form";
 import { useState } from "react";
 
@@ -138,7 +138,12 @@ export function DeliveryPanel({
       ) : null}
       {imported && model.listingId ? (
         <BulkExportPanel
-          listingIds={[model.listingId]}
+          listings={[
+            {
+              listingId: model.listingId,
+              contentDigest: model.contentDigest ?? NO_CONTENT_DIGEST,
+            },
+          ]}
           canGenerate={model.canReview}
         />
       ) : null}

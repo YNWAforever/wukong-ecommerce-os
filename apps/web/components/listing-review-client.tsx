@@ -420,6 +420,7 @@ export function mapListingView(
       remoteProductUrl: null,
       remoteProductId: response.delivery?.remoteProductId ?? null,
       shoplineLink: response.shoplineLink,
+      contentDigest: response.contentDigest,
       listingId: response.listingId,
       versionId: version.id,
       canRecordImportResult:

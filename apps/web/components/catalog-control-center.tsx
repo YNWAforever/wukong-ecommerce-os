@@ -20,7 +20,7 @@ import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
 import { useCallback, useId, useMemo, useState } from "react";
 
-import type { CatalogPage } from "../lib/catalog-contract";
+import type { CatalogPage, PlatformCatalogItem } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { SourceReadinessSummary } from "./source-readiness-summary";
 import {
@@ -29,7 +29,7 @@ import {
   catalogStatusTone,
 } from "./catalog-view-models";
 import styles from "./catalog-control-center.module.css";
-import { BulkExportPanel } from "./bulk-export-panel";
+import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
 
 const STATUS_TONE_CLASSES = {
   neutral: styles.statusNeutral,
@@ -273,7 +273,27 @@ export function CatalogControlCenter({
           </button>
         </div>
         <BulkExportPanel
-          listingIds={selectedIds}
+          listings={selectedIds.map((listingId) => {
+            const row = response.items.find(
+              (item): item is PlatformCatalogItem =>
+                item.sourceType === "platform" && item.listingId === listingId,
+            );
+            return {
+              listingId,
+              // `contentDigest` is nullable on the catalog contract (a linked
+              // row can have no recorded digest yet). Sending an empty string
+              // would fail the export route's `z.string().min(1)` and reject
+              // the WHOLE batch with a generic validation error, punishing
+              // every other selected listing for this one row's missing
+              // digest. This sentinel is non-empty (passes validation) and
+              // can never equal a real sha256 row digest, so the server's
+              // freshness check reports this one listing as
+              // `row_digest_mismatch` -- correctly excluding it, with a
+              // reason the operator can act on, while the rest of the export
+              // proceeds.
+              contentDigest: row?.contentDigest ?? NO_CONTENT_DIGEST,
+            };
+          })}
           canGenerate={response.capabilities.canGenerateBulkUpdate}
         />
         <div className={styles.toolbar}>

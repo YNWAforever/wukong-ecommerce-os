@@ -15,6 +15,16 @@ import {
   type WireExportReconciliationDetail,
 } from "./export-reconciliation-panel";
 
+/**
+ * Stands in for a row's `contentDigest` when the catalog contract has it as
+ * `null` (a linked row can have no recorded digest yet). Never a valid
+ * sha256 row digest (wrong length/alphabet), so attesting it can never
+ * accidentally match a real one -- the server's freshness check reports
+ * `row_digest_mismatch` for that one listing instead of failing the whole
+ * request's schema validation the way an empty string would.
+ */
+export const NO_CONTENT_DIGEST = "no-content-digest-recorded";
+
 type ExportResponse = {
   exportAttemptId: string | null;
   artifactStatus?: "pending" | "ready" | "failed";
@@ -42,23 +52,37 @@ function isCompletedZeroRowResponse(
   );
 }
 
-function selectionIdentity(listingIds: readonly string[]): string {
-  return [...listingIds].sort().join("\u001f");
+/**
+ * What the operator attested, not merely which rows they picked.
+ *
+ * This joined ids alone, so when the catalog refreshed and a row's digest
+ * changed beneath an unchanged selection, the tick survived over content
+ * nobody had looked at. Folding the digests in drops the attestation exactly
+ * when what was shown stops being true.
+ */
+function selectionIdentity(
+  listings: ReadonlyArray<{ listingId: string; contentDigest: string }>,
+): string {
+  return [...listings]
+    .map((entry) => `${entry.listingId}:${entry.contentDigest}`)
+    .sort()
+    .join("\u001f");
 }
 
 export function BulkExportPanel({
-  listingIds,
+  listings,
   canGenerate,
 }: {
-  listingIds: readonly string[];
+  listings: ReadonlyArray<{ listingId: string; contentDigest: string }>;
   canGenerate: boolean;
 }) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
   const errorId = useId();
+  const listingIds = listings.map((entry) => entry.listingId);
   const currentSelection = useMemo(
-    () => selectionIdentity(listingIds),
-    [listingIds],
+    () => selectionIdentity(listings),
+    [listings],
   );
   const [attestedSelection, setAttestedSelection] = useState<string | null>(
     null,
@@ -108,14 +132,19 @@ export function BulkExportPanel({
     setError(null);
     setResult(null);
     setDetail(null);
-    const submittedIds = [...listingIds];
+    // Both arrays below are derived from this one snapshot, taken once, so
+    // `submittedIds` and the attested listings can never name different
+    // selections -- there is no separate `listingIds` capture that could
+    // drift from what gets attested.
+    const submittedListings = [...listings];
+    const submittedIds = submittedListings.map((entry) => entry.listingId);
     try {
       const response = await fetch("/api/listings/export", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           listingIds: submittedIds,
-          freshnessAttested: true,
+          attestation: { listings: submittedListings },
         }),
       });
       const body = (await response.json()) as ExportResponse;

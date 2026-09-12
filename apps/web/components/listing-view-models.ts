@@ -71,6 +71,8 @@ export type DeliveryModel = {
     remoteProductId: string;
     origin?: "import" | "created";
   } | null;
+  /** The row digest the operator is currently looking at, for the single-listing Bulk Update export below. Null when no digest has been recorded for the linked row. */
+  contentDigest?: string | null;
   listingId?: string;
   versionId?: string;
   canRecordImportResult?: boolean;
