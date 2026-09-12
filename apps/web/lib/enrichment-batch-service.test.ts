@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createEnrichmentBatchService } from "./enrichment-batch-service";
+import { MAX_ENRICHMENT_WAVE_SIZE } from "./enrichment-wave-limit";
 
 const untranslated = {
   remoteProductId: "remote_1",
@@ -253,6 +254,8 @@ function advanceServiceWith(options: {
     payload: Record<string, unknown>;
   }>;
   enqueueFails?: (job: { draftId: string }) => boolean;
+  /** What the row holds, which need not be what the API would accept. */
+  storedWaveSize?: number;
 }) {
   const enqueued: string[] = [];
   const jobs: Array<Record<string, unknown>> = [];
@@ -278,6 +281,7 @@ function advanceServiceWith(options: {
   const audits: AuditRecord[] = [];
   const queued = options.queued ?? [];
   let remaining = [...options.pending];
+  const claimLimits: number[] = [];
 
   const service = createEnrichmentBatchService({
     getDatabase: () =>
@@ -293,7 +297,7 @@ function advanceServiceWith(options: {
                   id: "batch_1",
                   label: "zh names",
                   budgetUsd: options.budget,
-                  waveSize: 2,
+                  waveSize: options.storedWaveSize ?? 2,
                   status: "open",
                   createdBy: "user_1",
                   createdAt: BATCH_CREATED_AT,
@@ -306,6 +310,7 @@ function advanceServiceWith(options: {
                 return status === "queued" ? queued : [];
               },
               async claimWave(_batchId: string, limit: number) {
+                claimLimits.push(limit);
                 const wave = remaining.slice(0, limit);
                 remaining = remaining.slice(limit);
                 return wave;
@@ -427,6 +432,7 @@ function advanceServiceWith(options: {
     audits,
     costWindows,
     outbox,
+    claimLimits,
   };
 }
 
@@ -435,6 +441,48 @@ const advanceInput = {
   actorId: "user_1",
   batchId: "batch_1",
 };
+
+describe("the wave cap on advance", () => {
+  /**
+   * G12 asked for the cap to be enforced by the API, not the UI.
+   *
+   * `createBatch` and the route schema both refuse an over-large `waveSize`,
+   * so no request can store one. A row can still hold one -- an earlier bug, a
+   * migration, a direct write -- and `advanceBatch` claimed using the stored
+   * number, so that row dispatched that many AI calls per advance. The ceiling
+   * is the unguarded side: Postgres already refuses a zero or negative value
+   * (0005_enrichment_batches.sql:20 CHECK (wave_size > 0)).
+   */
+  it("claims no more than the cap when the row holds a larger number", async () => {
+    const pending = Array.from({ length: 40 }, (_, i) => `listing_${i}`);
+    const { service, claimLimits, enqueued } = advanceServiceWith({
+      pending,
+      budget: 1000,
+      spent: 0,
+      storedWaveSize: 40,
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(claimLimits).toEqual([MAX_ENRICHMENT_WAVE_SIZE]);
+    expect(enqueued).toHaveLength(MAX_ENRICHMENT_WAVE_SIZE);
+  });
+
+  it("leaves a legitimate wave size exactly as stored", async () => {
+    // Clamping must not quietly become a floor: a batch created at 2 still
+    // claims 2, not the cap.
+    const { service, claimLimits } = advanceServiceWith({
+      pending: ["listing_a", "listing_b", "listing_c", "listing_d"],
+      budget: 1000,
+      spent: 0,
+      storedWaveSize: 2,
+    });
+
+    await service.advanceBatch(advanceInput);
+
+    expect(claimLimits).toEqual([2]);
+  });
+});
 
 describe("enrichment batch advance", () => {
   it("enqueues one wave of existing listing jobs", async () => {

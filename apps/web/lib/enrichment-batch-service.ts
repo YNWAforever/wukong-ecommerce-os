@@ -10,6 +10,7 @@ import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
 import { ApiError } from "./route-support";
+import { MAX_ENRICHMENT_WAVE_SIZE } from "./enrichment-wave-limit";
 
 export type { EnrichmentBatch };
 
@@ -165,12 +166,12 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     if (
       !Number.isInteger(input.waveSize) ||
       input.waveSize < 1 ||
-      input.waveSize > 5
+      input.waveSize > MAX_ENRICHMENT_WAVE_SIZE
     ) {
       throw new ApiError(
         400,
         "invalid_wave_size",
-        "Wave size must be a whole number from 1 to 5.",
+        `Wave size must be a whole number from 1 to ${MAX_ENRICHMENT_WAVE_SIZE}.`,
       );
     }
 
@@ -374,9 +375,27 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           return { batch, spentUsd, dispatches: stranded, done: false };
         }
 
+        // The cap applies to the wave actually claimed, not only to the one
+        // requested at creation. `batch.waveSize` is read from the row, and a
+        // row can hold a larger number than the API would ever accept; before
+        // this bound, one advance honoured it and dispatched that many calls.
+        const waveSize = Math.min(batch.waveSize, MAX_ENRICHMENT_WAVE_SIZE);
+        if (waveSize !== batch.waveSize) {
+          // Counts only, and worth saying out loud: a stored value the API
+          // cannot produce means something wrote this row outside it.
+          console.info(
+            JSON.stringify({
+              event: "enrichment_batch.wave_size_capped",
+              workspaceId: input.workspaceId,
+              batchId: input.batchId,
+              storedWaveSize: batch.waveSize,
+              claimedWaveSize: waveSize,
+            }),
+          );
+        }
         const wave = await repositories.enrichmentBatches.claimWave(
           input.batchId,
-          batch.waveSize,
+          waveSize,
         );
         if (wave.length === 0) {
           const counts = await repositories.enrichmentBatches.countByStatus(
