@@ -58,7 +58,9 @@ describe("withRouteErrors", () => {
       // A source location, so the reader can tell one plain `Error` from
       // another. Asserted as a shape rather than a literal because the frame
       // moves whenever this test file does.
-      errorSite: expect.stringMatching(/^[\w.-]+[/\\][\w.-]+:\d+:\d+$|^unknown$/),
+      errorSite: expect.stringMatching(
+        /^[\w.-]+[/\\][\w.-]+:\d+:\d+$|^unknown$/,
+      ),
     });
     for (const line of lines) {
       expect(line).not.toContain("hunter2");
