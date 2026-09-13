@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import type { FieldEvidence, ReviewableListing } from "@wukong/core";
 import { describe, expect, it } from "vitest";
 
+import { CONFIRMATION_FIELD_KEYS } from "../../../../../lib/review-confirmation-keys";
+
 import { createReviewConfirmationsHandler } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
@@ -259,7 +261,7 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
         metadata: {
           versionId,
           revision: 1,
-          fieldsWithSource: 0,
+          fieldsWithImportedCell: 0,
           fieldsWithoutEvidence: 8,
         },
       }),
@@ -312,7 +314,7 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
         metadata: {
           versionId,
           revision: 1,
-          fieldsWithSource: 1,
+          fieldsWithImportedCell: 1,
           fieldsWithoutEvidence: 7,
         },
       }),
@@ -390,10 +392,19 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
         rowDigest: null,
       }),
     ]);
-    const records = upsertInput(calls)?.fieldRecords ?? {};
-    expect(
-      Object.values(records).every((record) => record.before === null),
-    ).toBe(true);
+    const records = upsertInput(calls)?.fieldRecords;
+    // Every confirmation key gets a record even with no imported row. Without
+    // checking the key set, an absent or partial fieldRecords would pass.
+    expect(Object.keys(records ?? {}).sort()).toEqual(
+      [...CONFIRMATION_FIELD_KEYS].sort(),
+    );
+    for (const key of CONFIRMATION_FIELD_KEYS) {
+      expect(records?.[key]).toEqual({
+        afterDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        before: null,
+        evidenceDigest: null,
+      });
+    }
   });
 
   it("rejects a versionId that isn't the listing's current active version", async () => {

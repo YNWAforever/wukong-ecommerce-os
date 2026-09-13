@@ -236,7 +236,7 @@ non-object value and expects the constraint to refuse it.
 
 The existing `review_confirmation.updated` event
 (`review-confirmations/route.ts:121`) gains two counts beside `versionId` and
-`revision`: `fieldsWithSource` and `fieldsWithoutEvidence`. Digests stay in the
+`revision`: `fieldsWithImportedCell` and `fieldsWithoutEvidence`. Digests stay in the
 column; audit metadata stays small and keeps the route's rule -- identifiers and
 counts, never confirmed content.
 

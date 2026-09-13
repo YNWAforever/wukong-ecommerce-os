@@ -139,7 +139,7 @@ export function createReviewConfirmationsHandler(
             metadata: {
               versionId: body.versionId,
               revision: result.revision,
-              fieldsWithSource: records.filter(
+              fieldsWithImportedCell: records.filter(
                 (record) => record.before !== null,
               ).length,
               fieldsWithoutEvidence: records.filter(
