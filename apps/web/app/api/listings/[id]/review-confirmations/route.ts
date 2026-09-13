@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getDatabase } from "../../../../../lib/intake-runtime";
+import { buildReviewFieldRecords } from "../../../../../lib/review-field-records";
 import {
   ApiError,
   jsonResponse,
@@ -21,6 +22,9 @@ type ReviewConfirmationsRouteDeps = {
   };
 };
 
+// Strict, and deliberately without a fieldRecords key: the per-field record is
+// derived from rows the caller does not control, so a request carrying one is
+// refused rather than trusted.
 const bodySchema = z
   .object({
     versionId: z.string().uuid(),
@@ -99,9 +103,19 @@ export function createReviewConfirmationsHandler(
             );
           }
           // create-origin listings have no platform_products link, so the
-          // digest and import id the ledger records for them are both null.
+          // digest and import id the ledger records for them are both null,
+          // and so is every field record's `before`.
           const platformProduct =
             await repositories.platformProducts.getByListingId(id);
+
+          // What each field is being confirmed against: the confirmed version,
+          // its evidence and the imported row -- the same row whose digest is
+          // recorded as rowDigest below, so the two bindings cannot disagree.
+          const fieldRecords = buildReviewFieldRecords({
+            content: snapshot.activeVersion.content,
+            evidence: snapshot.evidence,
+            rawRow: platformProduct?.rawRow ?? null,
+          });
 
           const result = await repositories.reviewConfirmations.upsert({
             listingId: id,
@@ -110,10 +124,13 @@ export function createReviewConfirmationsHandler(
             negativeConfirmations: body.negativeConfirmations,
             sourceImportId: platformProduct?.sourceImportId ?? null,
             rowDigest: platformProduct?.contentDigest ?? null,
+            fieldRecords,
           });
 
-          // Metadata is identifiers only, matching this codebase's audit
-          // convention -- never the confirmed field/condition content itself.
+          const records = Object.values(fieldRecords);
+          // Metadata is identifiers and counts only, matching this codebase's
+          // audit convention -- never the confirmed content, and not the
+          // digests either: those are in the column.
           await repositories.audit.write({
             workspaceId: session.workspaceId,
             actorId: session.actorId,
@@ -122,6 +139,12 @@ export function createReviewConfirmationsHandler(
             metadata: {
               versionId: body.versionId,
               revision: result.revision,
+              fieldsWithSource: records.filter(
+                (record) => record.before !== null,
+              ).length,
+              fieldsWithoutEvidence: records.filter(
+                (record) => record.evidenceDigest === null,
+              ).length,
             },
           });
 
