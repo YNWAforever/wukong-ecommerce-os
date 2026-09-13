@@ -116,6 +116,54 @@ describe("buildReviewFieldRecords", () => {
     );
   });
 
+  it("ignores surrounding whitespace in the merchant's cell, as content storage does", () => {
+    // Content is stored through z.string().trim(), so the confirmed value never
+    // carries surrounding whitespace. A padded cell the merchant never changed
+    // must not read as changed. U+3000 is the ideographic space common in
+    // pasted Chinese product names.
+    const records = buildReviewFieldRecords({
+      content,
+      evidence: [],
+      rawRow: { nameZh: "  title-zh\u3000", summaryEn: "description-en\n" },
+    });
+    expect(records.nameZh?.before?.digest).toBe(records.nameZh?.afterDigest);
+    expect(records.summaryEn?.before?.digest).toBe(
+      records.summaryEn?.afterDigest,
+    );
+  });
+
+  it("keeps interior whitespace, so an interior edit still reads as changed", () => {
+    const records = buildReviewFieldRecords({
+      content: {
+        ...content,
+        title: { ...content.title, "zh-Hant": "title zh" },
+      },
+      evidence: [],
+      rawRow: { nameZh: "title  zh" },
+    });
+    expect(records.nameZh?.before?.digest).not.toBe(
+      records.nameZh?.afterDigest,
+    );
+  });
+
+  it("records seoKeywords' cell for provenance, but never as comparable", () => {
+    // The cell is a joined string and the content an array. Even a cell that
+    // joins to exactly the stored keywords must not claim they are unchanged:
+    // splitting it back would be unsafe, because joining is not injective.
+    const records = buildReviewFieldRecords({
+      content,
+      evidence: [],
+      rawRow: { seoKeywords: "keyword-b, keyword-a" },
+    });
+    expect(records.seoKeywords?.before).toEqual({
+      column: "seoKeywords",
+      digest: sha("keyword-b, keyword-a"),
+    });
+    expect(records.seoKeywords?.before?.digest).not.toBe(
+      records.seoKeywords?.afterDigest,
+    );
+  });
+
   it("records no before at all for a listing that was never imported", () => {
     const records = buildReviewFieldRecords({
       content,

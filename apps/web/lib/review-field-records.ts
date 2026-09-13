@@ -6,8 +6,10 @@ import type { ReviewFieldRecords } from "@wukong/db";
 import { REVIEW_FIELD_BINDINGS } from "./review-field-bindings";
 
 /**
- * sha256 hex of a JSON encoding. One encoding for before and after, so equal
- * digests mean equal values.
+ * sha256 hex of a JSON encoding. One encoding for before and after, so for a
+ * text field equal digests mean identical code points. Nothing is
+ * Unicode-normalised: folding full-width punctuation or CJK compatibility
+ * ideographs would hide a difference a storefront visibly shows.
  */
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -29,6 +31,13 @@ export type ReviewFieldRecordsInput = {
  * Server-only: it hashes with `node:crypto`. Every input comes from rows the
  * caller does not control -- the confirmed version, its evidence and the
  * imported row -- so nothing here can be supplied by a request.
+ *
+ * For the seven text fields, `before.digest === afterDigest` means the
+ * confirmed value is the merchant's cell exactly, ignoring leading and trailing
+ * whitespace. `seoKeywords` is the exception: its cell is a joined string and
+ * its content an array, so its `before` records provenance only and its
+ * digests are never comparable. Splitting the cell back into an array is not
+ * safe -- joining is not injective, which is why the array is digested.
  */
 export function buildReviewFieldRecords(
   input: ReviewFieldRecordsInput,
@@ -47,10 +56,14 @@ export function buildReviewFieldRecords(
       .sort();
     records[key] = {
       afterDigest: digest(binding.read(input.content)),
+      // Trimmed before digesting: content is stored through z.string().trim(),
+      // so a padded cell the merchant never changed would otherwise read as
+      // changed. Interior whitespace is kept -- content allows it, and
+      // collapsing it could hide a real edit.
       before:
         cell === null || cell.trim() === ""
           ? null
-          : { column: key, digest: digest(cell) },
+          : { column: key, digest: digest(cell.trim()) },
       evidenceDigest: grounding.length === 0 ? null : digest(grounding),
     };
   }

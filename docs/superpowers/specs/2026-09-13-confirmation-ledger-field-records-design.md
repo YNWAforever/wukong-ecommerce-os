@@ -126,9 +126,13 @@ relaxed.
   joined display string the review UI shows for keywords, because joining is
   not injective: `["a, b"]` and `["a", "b"]` both display as `a, b`.
 - **`before`** — `{ column, digest }`, where `column` is the bulk-form column
-  key (identical to the field key) and `digest` is taken over the raw cell as
-  imported. `null` when the listing has no imported row, or the cell is empty
-  or whitespace.
+  key (identical to the field key) and `digest` is taken over the cell **with
+  leading and trailing whitespace removed**. Content is stored through
+  `z.string().trim()`, so the confirmed value never carries surrounding
+  whitespace, and digesting the raw cell would make a padded cell the merchant
+  never changed read as changed. Interior whitespace is kept, because content
+  allows it and collapsing it could hide a real edit. `null` when the listing
+  has no imported row, or the cell is empty or whitespace.
 - **`evidenceDigest`** — the grounding the AI offered for the field: every
   evidence entry whose `field` equals the field's evidence key, reduced to
   `sourceAssetId`, `page`, `excerpt` and `confidence`, each encoded on its own
@@ -136,9 +140,18 @@ relaxed.
   `ORDER BY`, and the same grounding arriving in a different order must not
   look changed. `null` when there is none.
 
-Because `before` and `afterDigest` use the same encoding, **`before.digest`
-equal to `afterDigest` means the confirmed value is the merchant's own text,
-unchanged** -- readable from the record without seeing either value.
+For the seven text fields, **`before.digest` equal to `afterDigest` means the
+confirmed value is the merchant's cell exactly, ignoring leading and trailing
+whitespace** -- readable from the record without seeing either value. Nothing is
+Unicode-normalised: equality means identical code points, because folding
+full-width punctuation or CJK compatibility ideographs would hide a difference a
+storefront visibly shows. Unequal digests mean the values differ in some code
+point; on their own they do not show a meaningful edit.
+
+**`seoKeywords` is the exception.** Its cell is a joined string and its content
+an array, so its `before` records provenance only and its digests are never
+comparable. Splitting the cell back into an array is not safe: joining is not
+injective, which is why the array is digested in the first place.
 
 ### The negative confirmations stay booleans
 
