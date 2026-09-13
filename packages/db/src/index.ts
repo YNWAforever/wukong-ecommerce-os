@@ -66,6 +66,8 @@ export type {
 export type {
   ReviewConfirmation,
   ReviewConfirmationRepository,
+  ReviewFieldRecord,
+  ReviewFieldRecords,
   UpsertReviewConfirmationInput,
 } from "./repositories/review-confirmations.js";
 export type {
