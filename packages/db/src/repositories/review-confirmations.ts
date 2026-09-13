@@ -1,34 +1,15 @@
 import { and, eq, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
-import { reviewConfirmations } from "../schema.js";
+import {
+  reviewConfirmations,
+  type ReviewFieldRecord,
+  type ReviewFieldRecords,
+} from "../schema.js";
 
-/**
- * What one confirmed field was confirmed against.
- *
- * Digests rather than copies, so no merchant content enters a second table.
- * Each is sha256 hex of a JSON encoding:
- *
- * - `afterDigest` pins the value in the confirmed version.
- * - `before` pins the merchant's cell in the imported row. `null` when the
- *   listing has no imported row or the cell was blank -- a recorded fact that
- *   nothing was supplied, not a missing value.
- * - `evidenceDigest` pins the grounding the AI offered for the field, or `null`
- *   when it offered none. Content, not ids: evidence rows are replaced wholesale
- *   and copied forward under fresh ids, so an id identifies a row rather than
- *   the grounding it carries.
- *
- * Evidence about the confirmed version and its source -- not a transcript of
- * the reviewer's screen, which does not render the merchant's prior value.
- */
-export type ReviewFieldRecord = {
-  afterDigest: string;
-  before: { column: string; digest: string } | null;
-  evidenceDigest: string | null;
-};
-
-/** Keyed by confirmation field key. See 0027_review_confirmation_field_records.sql. */
-export type ReviewFieldRecords = Record<string, ReviewFieldRecord>;
+// The shape lives beside the column that stores it; re-exported here so the
+// repository remains the package's public source for it.
+export type { ReviewFieldRecord, ReviewFieldRecords };
 
 export type UpsertReviewConfirmationInput = {
   listingId: string;

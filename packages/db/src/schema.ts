@@ -779,6 +779,37 @@ export const sourceImports = pgTable(
   ],
 );
 
+/**
+ * What one confirmed field was confirmed against.
+ *
+ * Digests rather than copies, so no merchant content enters a second table.
+ * Each is sha256 hex of a JSON encoding:
+ *
+ * - `afterDigest` pins the value in the confirmed version.
+ * - `before` pins the merchant's cell in the imported row. `null` when the
+ *   listing has no imported row or the cell was blank -- a recorded fact that
+ *   nothing was supplied, not a missing value.
+ * - `evidenceDigest` pins the grounding the AI offered for the field, or `null`
+ *   when it offered none. Content, not ids: evidence rows are replaced wholesale
+ *   and copied forward under fresh ids, so an id identifies a row rather than
+ *   the grounding it carries.
+ *
+ * Evidence about the confirmed version and its source -- not a transcript of
+ * the reviewer's screen, which does not render the merchant's prior value.
+ *
+ * Defined here, beside the column that stores it, so the stored shape and the
+ * repository's shape cannot drift: two structural copies let an added optional
+ * property pass `tsc` silently.
+ */
+export type ReviewFieldRecord = {
+  afterDigest: string;
+  before: { column: string; digest: string } | null;
+  evidenceDigest: string | null;
+};
+
+/** Keyed by confirmation field key. See 0027_review_confirmation_field_records.sql. */
+export type ReviewFieldRecords = Record<string, ReviewFieldRecord>;
+
 export const reviewConfirmations = pgTable(
   "review_confirmations",
   {
@@ -798,18 +829,8 @@ export const reviewConfirmations = pgTable(
     sourceImportId: uuid("source_import_id"),
     rowDigest: text("row_digest"),
     // What each confirmed field was confirmed against (0027). NULL for every
-    // row written before it existed. Shape documented on ReviewFieldRecord in
-    // repositories/review-confirmations.ts.
-    fieldRecords: jsonb("field_records").$type<
-      Record<
-        string,
-        {
-          afterDigest: string;
-          before: { column: string; digest: string } | null;
-          evidenceDigest: string | null;
-        }
-      >
-    >(),
+    // row written before it existed. See ReviewFieldRecord above.
+    fieldRecords: jsonb("field_records").$type<ReviewFieldRecords>(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
