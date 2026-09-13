@@ -161,4 +161,47 @@ describe("review confirmations repository", () => {
       ).toBeNull();
     });
   });
+
+  // The dedicated migration-rehearsal harness drops the schema and is skipped
+  // in CI. This proves 0027 is replay-safe where CI actually runs it:
+  // beforeAll already migrated once, so this is the second application.
+  it("adds field_records as a nullable column that survives a repeated migration", async () => {
+    await database.migrate();
+
+    const [column] = await admin`
+      select is_nullable, data_type
+      from information_schema.columns
+      where table_name = 'review_confirmations'
+        and column_name = 'field_records'`;
+    expect(column).toEqual({ is_nullable: "YES", data_type: "jsonb" });
+
+    const constraints = await admin`
+      select conname from pg_constraint
+      where conrelid = 'review_confirmations'::regclass
+        and conname = 'review_confirmations_field_records_is_object'`;
+    expect(constraints).toHaveLength(1);
+  });
+
+  // Fake repositories cannot see a CHECK. Only a real write can.
+  it("refuses a field_records value that is not an object", async () => {
+    const { versionId } = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const { listingId, versionId } = await createDraftAndVersion(
+          repositories,
+          workspaceId,
+        );
+        await repositories.reviewConfirmations.upsert(
+          upsertInputFor(listingId, versionId),
+        );
+        return { versionId };
+      },
+    );
+
+    await expect(
+      admin`update review_confirmations
+        set field_records = '[]'::jsonb
+        where version_id = ${versionId}`,
+    ).rejects.toThrow(/review_confirmations_field_records_is_object/);
+  });
 });

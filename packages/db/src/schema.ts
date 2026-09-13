@@ -797,6 +797,19 @@ export const reviewConfirmations = pgTable(
     revision: integer("revision").notNull().default(0),
     sourceImportId: uuid("source_import_id"),
     rowDigest: text("row_digest"),
+    // What each confirmed field was confirmed against (0027). NULL for every
+    // row written before it existed. Shape documented on ReviewFieldRecord in
+    // repositories/review-confirmations.ts.
+    fieldRecords: jsonb("field_records").$type<
+      Record<
+        string,
+        {
+          afterDigest: string;
+          before: { column: string; digest: string } | null;
+          evidenceDigest: string | null;
+        }
+      >
+    >(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
