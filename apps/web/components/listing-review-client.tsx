@@ -1,6 +1,7 @@
 "use client";
 import { reviewErrorLabel } from "../lib/approval-ui-copy";
 import { useLocale } from "../lib/locale-context";
+import { REVIEW_FIELD_BINDINGS } from "../lib/review-field-bindings";
 import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
 
 import type {
@@ -331,7 +332,7 @@ export function mapListingView(
       label: "商品名稱（繁中）",
       englishLabel: "Title (Traditional Chinese)",
       value: content.title["zh-Hant"],
-      evidenceKey: "title.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.nameZh.evidenceKey,
     }),
     field(response.evidence, {
       key: "titleEn",
@@ -345,7 +346,7 @@ export function mapListingView(
       label: "商品描述（繁中）",
       englishLabel: "Description (Traditional Chinese)",
       value: content.description["zh-Hant"],
-      evidenceKey: "description.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.summaryZh.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -353,7 +354,7 @@ export function mapListingView(
       label: "商品描述（英文）",
       englishLabel: "Description (English)",
       value: content.description.en,
-      evidenceKey: "description.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.summaryEn.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -361,21 +362,21 @@ export function mapListingView(
       label: "SEO 標題（英文）",
       englishLabel: "SEO title (English)",
       value: content.seo.title.en,
-      evidenceKey: "seo.title.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoTitleEn.evidenceKey,
     }),
     field(response.evidence, {
       key: "seoTitleZh",
       label: "SEO 標題（繁中）",
       englishLabel: "SEO title (Traditional Chinese)",
       value: content.seo.title["zh-Hant"],
-      evidenceKey: "seo.title.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoTitleZh.evidenceKey,
     }),
     field(response.evidence, {
       key: "seoDescriptionEn",
       label: "SEO 描述（英文）",
       englishLabel: "SEO description (English)",
       value: content.seo.description.en,
-      evidenceKey: "seo.description.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoDescriptionEn.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -383,7 +384,7 @@ export function mapListingView(
       label: "SEO 描述（繁中）",
       englishLabel: "SEO description (Traditional Chinese)",
       value: content.seo.description["zh-Hant"],
-      evidenceKey: "seo.description.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoDescriptionZh.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -391,7 +392,7 @@ export function mapListingView(
       label: "SEO 關鍵字",
       englishLabel: "SEO keywords",
       value: content.tags.join(", "),
-      evidenceKey: "tags",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoKeywords.evidenceKey,
     }),
   ];
   const blockingFlags: BlockingFlag[] = response.flags.map((flag) => ({
