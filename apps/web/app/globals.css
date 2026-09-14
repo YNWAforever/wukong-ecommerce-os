@@ -2169,3 +2169,58 @@ button:disabled {
     max-width: 100%;
   }
 }
+
+/* Facts the extraction step recorded, shown while a listing still needs
+   information. Deliberately plain: this is read, not edited, and the editable
+   form lives on the review screen once a version exists. */
+/* A literal gap, not var(--space-2): no --space-* token is defined anywhere in
+   this stylesheet, so the five existing var(--space-N) declarations resolve to
+   an invalid value and are dropped. Worth fixing, but not from here. */
+.extracted-facts {
+  display: grid;
+  gap: 0.75rem;
+}
+.fact-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+.fact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  padding-block: 0.35rem;
+}
+.fact-row dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.fact-row dd {
+  color: var(--ink);
+  margin: 0;
+  text-align: right;
+}
+.missing-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.missing-fields li {
+  background: var(--stone);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  padding: 0.2rem 0.6rem;
+}
+/* Merchant-supplied fields are the operator's own action, not a retry's. */
+.missing-fields.merchant li {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--amber-dark);
+}

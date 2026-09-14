@@ -1,4 +1,8 @@
-import { LISTING_INGRESS_PATH, type ListingJob } from "@wukong/jobs";
+import {
+  LISTING_INGRESS_PATH,
+  listingRunKey,
+  type ListingJob,
+} from "@wukong/jobs";
 
 import {
   createCloudflareIngressClient,
@@ -7,7 +11,8 @@ import {
 } from "./cloudflare-queue-runtime";
 
 export function listingApplicationJobId(input: ListingJob): string {
-  return `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  // Shared with the Worker so both sides derive byte-identical keys.
+  return listingRunKey(input);
 }
 
 export type ListingPublisher = {

@@ -108,6 +108,19 @@ describe("review confirmations repository", () => {
     rowDigest: null,
   });
 
+  const fieldRecords = {
+    nameZh: {
+      afterDigest: "a".repeat(64),
+      before: { column: "nameZh", digest: "b".repeat(64) },
+      evidenceDigest: "c".repeat(64),
+    },
+    summaryEn: {
+      afterDigest: "d".repeat(64),
+      before: null,
+      evidenceDigest: null,
+    },
+  };
+
   it("creates a confirmation, reads it back, and increments revision on upsert", async () => {
     await database.forWorkspace(workspaceId, async (repositories) => {
       const { listingId, versionId } = await createDraftAndVersion(
@@ -160,5 +173,156 @@ describe("review confirmations repository", () => {
         await repositories.reviewConfirmations.getByVersionId(versionId),
       ).toBeNull();
     });
+  });
+
+  // The dedicated migration-rehearsal harness drops the schema and is skipped
+  // in CI. This proves 0027 is replay-safe where CI actually runs it:
+  // beforeAll already migrated once, so this is the second application.
+  it("adds field_records as a nullable column that survives a repeated migration", async () => {
+    await database.migrate();
+
+    const [column] = await admin`
+      select is_nullable, data_type
+      from information_schema.columns
+      where table_name = 'review_confirmations'
+        and column_name = 'field_records'`;
+    expect(column).toEqual({ is_nullable: "YES", data_type: "jsonb" });
+
+    const constraints = await admin`
+      select pg_get_constraintdef(oid) as definition from pg_constraint
+      where conrelid = 'review_confirmations'::regclass
+        and conname = 'review_confirmations_field_records_is_object'`;
+    expect(constraints).toHaveLength(1);
+    // The rule, not just the name: a loosened CHECK kept under the same name
+    // must fail here.
+    expect(constraints[0]?.definition).toContain(
+      "jsonb_typeof(field_records) = 'object'",
+    );
+  });
+
+  // Fake repositories cannot see a CHECK. Only a real write can.
+  it("refuses a field_records value that is not an object", async () => {
+    const { versionId } = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const { listingId, versionId } = await createDraftAndVersion(
+          repositories,
+          workspaceId,
+        );
+        await repositories.reviewConfirmations.upsert(
+          upsertInputFor(listingId, versionId),
+        );
+        return { versionId };
+      },
+    );
+
+    // A JSON null literal is not SQL NULL: jsonb_typeof('null'::jsonb) is
+    // 'null', so the CHECK refuses it too. The repository must never write one.
+    for (const refused of ["[]", "null"]) {
+      await expect(
+        admin`update review_confirmations
+          set field_records = ${refused}::jsonb
+          where version_id = ${versionId}`,
+      ).rejects.toThrow(/review_confirmations_field_records_is_object/);
+    }
+  });
+
+  it("stores the per-field record and reads it back without widening getByVersionId", async () => {
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const { listingId, versionId } = await createDraftAndVersion(
+        repositories,
+        workspaceId,
+      );
+
+      const created = await repositories.reviewConfirmations.upsert({
+        ...upsertInputFor(listingId, versionId),
+        fieldRecords,
+      });
+
+      // Six callers read this shape and one returns it to the browser.
+      expect(created).not.toHaveProperty("fieldRecords");
+      expect(
+        await repositories.reviewConfirmations.getByVersionId(versionId),
+      ).not.toHaveProperty("fieldRecords");
+      expect(
+        await repositories.reviewConfirmations.getFieldRecordsByVersionId(
+          versionId,
+        ),
+      ).toEqual(fieldRecords);
+    });
+  });
+
+  it("clears the record when a revision is written without one", async () => {
+    // The record describes the revision it was written with. Leaving the old
+    // one in place would make a previous revision's record look current.
+    await database.forWorkspace(workspaceId, async (repositories) => {
+      const { listingId, versionId } = await createDraftAndVersion(
+        repositories,
+        workspaceId,
+      );
+      await repositories.reviewConfirmations.upsert({
+        ...upsertInputFor(listingId, versionId),
+        fieldRecords,
+      });
+      await repositories.reviewConfirmations.upsert(
+        upsertInputFor(listingId, versionId),
+      );
+
+      expect(
+        await repositories.reviewConfirmations.getFieldRecordsByVersionId(
+          versionId,
+        ),
+      ).toBeNull();
+    });
+  });
+
+  it("never exposes a field record to another workspace", async () => {
+    const { versionId } = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const { listingId, versionId } = await createDraftAndVersion(
+          repositories,
+          workspaceId,
+        );
+        await repositories.reviewConfirmations.upsert({
+          ...upsertInputFor(listingId, versionId),
+          fieldRecords,
+        });
+        return { versionId };
+      },
+    );
+
+    await database.forWorkspace(otherWorkspaceId, async (repositories) => {
+      expect(
+        await repositories.reviewConfirmations.getFieldRecordsByVersionId(
+          versionId,
+        ),
+      ).toBeNull();
+    });
+  });
+
+  it("stores an explicit null record as SQL NULL, which the CHECK allows", async () => {
+    const { versionId } = await database.forWorkspace(
+      workspaceId,
+      async (repositories) => {
+        const { listingId, versionId } = await createDraftAndVersion(
+          repositories,
+          workspaceId,
+        );
+        await repositories.reviewConfirmations.upsert({
+          ...upsertInputFor(listingId, versionId),
+          fieldRecords: null,
+        });
+        return { versionId };
+      },
+    );
+
+    // Drizzle skips the jsonb encoder for a JS null, so this is SQL NULL rather
+    // than the JSON literal the CHECK refuses.
+    const [row] = await admin`
+      select field_records is null as is_sql_null
+      from review_confirmations
+      where version_id = ${versionId}`;
+    expect(row).toEqual({ is_sql_null: true });
   });
 });

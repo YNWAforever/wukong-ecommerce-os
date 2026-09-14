@@ -3,12 +3,30 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import { localized, type BilingualMessage } from "../lib/ui-copy.js";
 import {
   BulkImportPanel,
   MAX_BULK_IMPORT_BYTES,
   submitBulkImport,
+  type BulkImportOutcome,
   validateBulkImportFile,
 } from "./bulk-import-panel.js";
+
+/**
+ * The outcome as an English reader sees it.
+ *
+ * Every failure message is a `[zh, en]` pair now, so the cases below would
+ * otherwise have to restate both halves to assert one sentence. A separate
+ * case checks that the pair really does hold two languages.
+ */
+function inEnglish(outcome: BulkImportOutcome) {
+  return outcome.kind === "success"
+    ? outcome
+    : { ...outcome, message: localized("en", ...outcome.message) };
+}
+
+const englishOf = (message: BilingualMessage | null) =>
+  message === null ? null : localized("en", ...message);
 
 function xlsxFile(name: string, size: number): File {
   return new File([new Uint8Array(size)], name, {
@@ -19,14 +37,14 @@ function xlsxFile(name: string, size: number): File {
 describe("validateBulkImportFile", () => {
   it("rejects a file that is not .xlsx", () => {
     const file = xlsxFile("catalog.csv", 100);
-    expect(validateBulkImportFile(file)).toBe(
+    expect(englishOf(validateBulkImportFile(file))).toBe(
       "Choose an .xlsx SHOPLINE Bulk Update workbook.",
     );
   });
 
   it("rejects a file over the 4 MiB runtime limit", () => {
     const file = xlsxFile("catalog.xlsx", MAX_BULK_IMPORT_BYTES + 1);
-    expect(validateBulkImportFile(file)).toBe(
+    expect(englishOf(validateBulkImportFile(file))).toBe(
       "Workbook exceeds the 4 MiB runtime limit.",
     );
   });
@@ -47,7 +65,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "validation_error",
       message: "Choose an .xlsx SHOPLINE Bulk Update workbook.",
     });
@@ -61,7 +79,7 @@ describe("submitBulkImport", () => {
       "2026-08-01T08:00",
       { fetcher },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "validation_error",
       message: "Workbook exceeds the 4 MiB runtime limit.",
     });
@@ -79,7 +97,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
     });
@@ -98,7 +116,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
     });
@@ -133,7 +151,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "success",
       specVersion: "opak-2026-05",
       parsedRows: 2,
@@ -186,7 +204,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({ kind: "api_error", code, message });
+    expect(inEnglish(result)).toEqual({ kind: "api_error", code, message });
   });
 
   it("falls back to the server's message for an unrecognized error code", async () => {
@@ -205,7 +223,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "some_future_code",
       message: "server-provided detail",
@@ -225,7 +243,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "unknown_error",
       message: "server-provided detail",
@@ -243,7 +261,7 @@ describe("submitBulkImport", () => {
         fetcher,
       },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "unknown_error",
       message: "The import failed.",
@@ -254,6 +272,57 @@ describe("submitBulkImport", () => {
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("bilingual failure copy", () => {
+  /**
+   * The acceptance criterion for this surface: the toggle changes every
+   * string. A message this panel writes itself must therefore hold two
+   * languages, not one sentence repeated -- which is exactly what an
+   * English-only table looked like to a reader who chose Chinese.
+   */
+  it("gives its own failures a real translation, not the same sentence twice", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ code: "shopline_connection_missing" }, { status: 409 }),
+      );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+
+    expect(result.kind).toBe("api_error");
+    const [zh, en] = (result as { message: BilingualMessage }).message;
+    expect(zh).not.toBe(en);
+    expect(zh).toMatch(/[一-鿿]/);
+    expect(en).not.toMatch(/[一-鿿]/);
+  });
+
+  it("repeats a server-written message rather than inventing a translation", async () => {
+    // batch-list.tsx:87 takes the same position: text we did not write is
+    // shown as it stands, because translating it here would be invention.
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code: "some_future_code", message: "server-provided detail" },
+          { status: 400 },
+        ),
+      );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+
+    const [zh, en] = (result as { message: BilingualMessage }).message;
+    expect([zh, en]).toEqual([
+      "server-provided detail",
+      "server-provided detail",
+    ]);
+  });
+});
 
 describe("BulkImportPanel", () => {
   it("renders the real parsed/created/refreshed counts after a successful import", async () => {

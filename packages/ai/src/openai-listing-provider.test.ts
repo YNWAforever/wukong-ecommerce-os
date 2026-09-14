@@ -205,14 +205,14 @@ describe("OpenAIListingProvider", () => {
     };
     expect(JSON.stringify(request.input)).toContain('"type":"input_image"');
     expect(JSON.stringify(request.input)).toContain('"type":"input_file"');
-    expect(JSON.stringify(request.input)).toContain("listing-extraction@1.0.0");
+    expect(JSON.stringify(request.input)).toContain("listing-extraction@1.1.0");
     expect(result.usage).toEqual({
       inputTokens: 100,
       outputTokens: 50,
       estimatedCostUsd: 0.001,
       latencyMs: 25,
       model: "gpt-5.6-terra",
-      promptVersion: "1.0.0",
+      promptVersion: "1.1.0",
     });
   });
 
@@ -489,10 +489,15 @@ describe("OpenAIListingProvider", () => {
   it("rejects substring evidence collisions while accepting exact multiword, numeric, and source claims", async () => {
     const collisions = [
       {
-        note: `${groundingNote} product classification winery.`,
+        // `region` is a verbatim fact, so a longer word that merely contains it
+        // does not support it. This probe used to sit on `productType`, which is
+        // now a `classified` fact: a four-value enum has no verbatim form on a
+        // label, so it is grounded by citing the text it was judged from rather
+        // than by restating the value. See fact-grounding-rules.ts.
+        note: `${groundingNote} slope Moselle.`,
         facts: { ...facts },
         evidence: evidence.map((item) =>
-          item.field === "productType" ? { ...item, excerpt: "winery" } : item,
+          item.field === "region" ? { ...item, excerpt: "Moselle" } : item,
         ),
       },
       {

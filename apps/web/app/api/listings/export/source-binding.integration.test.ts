@@ -15,6 +15,7 @@ import {
   CONFIRMATION_NEGATIVE_KEYS,
 } from "../../../../lib/review-confirmation-keys";
 import { createExportListingsHandler } from "./route";
+import { createImportResultHandler } from "../[id]/shopline-import-result/route";
 
 // This suite deliberately requires explicit isolated test-service URLs.
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL!;
@@ -97,13 +98,27 @@ async function importPrice(price: string) {
   });
 }
 async function exportListing(listingId: string) {
+  // Reads the digest the operator would have been shown rather than taking a
+  // boolean on trust. The digest changes across this test -- a re-import
+  // rewrites it -- so it has to be read per call, not captured once.
+  const attestedDigest = await database.forWorkspace(workspaceId, async (r) => {
+    const link = await r.platformProducts.getByListingId(listingId);
+    return link?.contentDigest ?? null;
+  });
   const response = await exportHandler(
     new Request("http://localhost/api/listings/export", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         listingIds: [listingId],
-        freshnessAttested: true,
+        attestation: {
+          listings: [
+            {
+              listingId,
+              contentDigest: attestedDigest ?? "no-digest-recorded",
+            },
+          ],
+        },
       }),
     }),
   );
@@ -244,4 +259,39 @@ it("binds the real workbook, manifest and hash to approval; re-import cannot reu
     "100",
     "105",
   ]);
+
+  // The step the pilot journey performs next, and the one no test crossed.
+  //
+  // Recording a result re-validates the attempt's provenance against a schema
+  // owned by the db package, while the shape of that provenance is decided by
+  // the export route. Each side's own tests passed while the two disagreed,
+  // because nothing exercised an attempt this route actually wrote. Running
+  // the real export handler and then the real result handler against one
+  // Postgres is what makes that disagreement fail here instead of in UAT.
+  const recordResult = createImportResultHandler({
+    getDatabase: () => database,
+    sessionContext: {
+      async resolve() {
+        return { workspaceId, actorId, role: "reviewer" };
+      },
+    },
+  });
+  const recorded = await recordResult(
+    new Request("http://localhost/api/listings/" + listingId + "/result", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: "export",
+        outcome: "accepted",
+        exportAttemptId: second.exportAttemptId,
+        versionId,
+        idempotencyKey: "synthetic-" + second.exportAttemptId,
+      }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+  expect({
+    status: recorded.status,
+    body: await recorded.json(),
+  }).toMatchObject({ status: 201, body: { replayed: false } });
 });

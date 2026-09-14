@@ -10,11 +10,17 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { createBulkFormImportHandler } from "../app/api/listings/import/route.js";
 import type { BulkFormImportInput } from "../lib/bulk-form-import.js";
+import { LocaleProvider } from "../lib/locale-context.js";
 import {
   BulkImportPanel,
   merchantExportTimeToIso,
   submitBulkImport,
 } from "./bulk-import-panel.js";
+
+// LocaleProvider calls useRouter to refresh after a locale change. The panel
+// below never changes it -- the render just pins a language so the assertions
+// can name the sentence an English reader sees.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const workbook = () =>
   writeBulkFormWorkbook([
@@ -111,7 +117,14 @@ describe("browser import contract", () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
-    await act(async () => root.render(createElement(BulkImportPanel)));
+    await act(async () =>
+      root.render(
+        createElement(LocaleProvider, {
+          locale: "en",
+          children: createElement(BulkImportPanel),
+        }),
+      ),
+    );
     const fileInput =
       container.querySelector<HTMLInputElement>("#bulk-import-file")!;
     const timeInput = container.querySelector<HTMLInputElement>(

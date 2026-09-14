@@ -63,10 +63,32 @@ export class S3AssetStore implements AssetStore {
     this.#now = options.now ?? (() => new Date());
   }
 
+  /**
+   * `requestChecksumCalculation` is pinned to `WHEN_REQUIRED` on purpose.
+   *
+   * The SDK default is `WHEN_SUPPORTED`, which computes a request checksum and,
+   * when presigning, signs it into the URL as `x-amz-checksum-crc32`. A presign
+   * has no body, so that value is always the CRC32 of zero bytes --
+   * `AAAAAA==` -- baked into a URL the browser then PUTs real file bytes to.
+   * Backends differ in whether they enforce it, which is exactly what makes it
+   * dangerous: it works until a storage backend checks, and then every upload
+   * fails at once with a checksum mismatch nobody changed.
+   *
+   * `WHEN_REQUIRED` omits it unless the operation genuinely demands one, so the
+   * signature covers only what the client can actually honour. This does not
+   * weaken integrity: the upload is still bounded by a signed `ContentLength`
+   * and `ContentType`, and finalize re-reads the stored object.
+   *
+   * An explicit caller value still wins, so a deployment that needs a different
+   * policy can set one.
+   */
   static fromConfig(bucket: string, config: S3ClientConfig = {}): S3AssetStore {
     return new S3AssetStore({
       bucket,
-      transport: new S3Client(config) as S3Transport,
+      transport: new S3Client({
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        ...config,
+      }) as S3Transport,
     });
   }
 

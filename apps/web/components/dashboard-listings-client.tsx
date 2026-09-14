@@ -124,6 +124,7 @@ export function DashboardListingsClient() {
   return (
     <>
       <div
+        role="group"
         className="metric-strip"
         aria-label={localized(locale, "工作台摘要", "Workspace summary")}
       >

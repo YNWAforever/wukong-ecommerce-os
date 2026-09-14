@@ -28,7 +28,8 @@ export type DeliverInput = {
   actorId: string;
   draftId: string;
   method: "csv" | "shopline_api" | "bulk_form";
-  freshnessAttested?: boolean;
+  /** The digest the operator attested for this one listing, when they did. */
+  attestedContentDigest?: string;
 };
 
 export type DeliverySnapshot = {
@@ -501,7 +502,11 @@ async function deliverBulkForm(
     workspaceId: input.workspaceId,
     requestedBy: input.actorId,
     listingIds: [input.draftId],
-    freshnessAttested: input.freshnessAttested === true,
+    attestedDigests: new Map(
+      input.attestedContentDigest
+        ? [[input.draftId, input.attestedContentDigest]]
+        : [],
+    ),
   };
   try {
     const exported = await createBulkExport(exportInput, deps.bulkUpdate);

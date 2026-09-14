@@ -43,3 +43,37 @@ export function manifestReasonLabel(
   if (reason) return reasonLabel(reason, locale);
   return localized(locale, "未提供其他原因", "No additional reason provided");
 }
+
+/**
+ * Failure copy for the export route's own error codes -- returned instead of
+ * a manifest at all, before any per-listing outcome exists. Distinct from
+ * `manifestReasonLabel`/`readinessReasons`, which explain why one listing
+ * inside a completed manifest was excluded.
+ *
+ * A separate table from `approvalErrors` in `approval-ui-copy.ts` rather than
+ * a shared one, even where a code and its meaning coincide (`attestation_incomplete`
+ * is currently only ever thrown by this route, not the approve routes) --
+ * that table's own doc comment explains why approval and export remedies are
+ * kept apart, and `approvalErrorLabel`'s generic fallback ("Approval could
+ * not be completed...") would be wrong copy for an export failure.
+ *
+ * Returns null for an unrecognised code so the caller keeps its own generic
+ * fallback (mirrors `reviewErrorLabel`).
+ */
+const exportErrors = {
+  attestation_incomplete: [
+    "此確認未涵蓋你選取的商品，請重新確認後再試。",
+    "This confirmation does not cover the listings you selected. Confirm again and retry.",
+  ],
+} satisfies Record<string, readonly [string, string]>;
+
+export function exportErrorLabel(
+  code: string | undefined,
+  locale: Locale,
+): string | null {
+  if (!code) return null;
+  const copy = (exportErrors as Record<string, readonly [string, string]>)[
+    code
+  ];
+  return copy ? localized(locale, ...copy) : null;
+}

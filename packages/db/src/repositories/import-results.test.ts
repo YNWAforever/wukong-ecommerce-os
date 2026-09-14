@@ -39,6 +39,41 @@ const attempt: any = {
   },
 };
 describe("export result binding", () => {
+  /**
+   * The two eras of provenance, and the gap between them.
+   *
+   * The export route stopped writing `freshnessAttested` and started writing
+   * `rowDigestMismatchCount`, but this schema still demanded the old field.
+   * Every unit test on either side passed -- the export route never validates
+   * its own provenance against this schema, and this schema was only ever
+   * handed a fixture built with the old field -- so the break surfaced only in
+   * the real pilot journey, as a 409 when an operator recorded a result.
+   */
+  const withProvenance = (provenance: Record<string, unknown>) => ({
+    ...attempt,
+    provenance: { ...attempt.provenance, ...provenance },
+  });
+  it("accepts an export made since the attestation became real evidence", () =>
+    expect(() =>
+      validateExportResultBinding(
+        withProvenance({
+          freshnessAttested: undefined,
+          rowDigestMismatchCount: 0,
+        }),
+        "ws",
+        "listing",
+        "exported",
+      ),
+    ).not.toThrow());
+  it("refuses provenance that records no attestation from either era", () =>
+    expect(() =>
+      validateExportResultBinding(
+        withProvenance({ freshnessAttested: undefined }),
+        "ws",
+        "listing",
+        "exported",
+      ),
+    ).toThrow());
   it("binds the immutable included version", () =>
     expect(() =>
       validateExportResultBinding(attempt, "ws", "listing", "exported"),

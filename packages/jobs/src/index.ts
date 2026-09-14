@@ -2,6 +2,7 @@ export {
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  listingRunKey,
   shoplinePublishJobSchema,
   signQueueRequest,
   verifyQueueRequest,

@@ -284,6 +284,26 @@ function depsWith(
   return result;
 }
 
+/**
+ * The digest an operator would have to attest for `listingId` to pass the
+ * per-listing freshness gate, read straight from the same `deps` object the
+ * test is about to hand to `createBulkExport` -- so it can never drift from
+ * what the gate itself reads. Safe to call ahead of the real export call for
+ * every fixture in this file except the hand-rolled call-counting override in
+ * the "mixed 3-listing batch" test below, which is why that test instead
+ * sources its digests from separate, fresh `depsWith()` instances.
+ */
+async function digestFor(
+  deps: Parameters<typeof createBulkExport>[1],
+  listingId: string,
+): Promise<string> {
+  const link = await deps.getPlatformProductLink(listingId);
+  if (!link?.contentDigest) {
+    throw new Error(`fixture for ${listingId} has no content digest to attest`);
+  }
+  return link.contentDigest;
+}
+
 describe("createBulkExport", () => {
   it("includes only the changed, fresh listing from a mixed 3-listing batch", async () => {
     // `createBulkExport` reads the platform-product link once up front (to
@@ -309,12 +329,20 @@ describe("createBulkExport", () => {
         return links;
       },
     });
+    // Sourced from separate, fresh `depsWith()` instances -- not from `deps`
+    // above -- so computing these digests doesn't itself consume one of
+    // `staleCallCount`'s calls before the real export runs.
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(depsWith(), "listing_changed")],
+      ["listing_noop", await digestFor(depsWith(), "listing_noop")],
+      ["listing_stale", await digestFor(depsWith(), "listing_stale")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop", "listing_stale"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
@@ -340,14 +368,19 @@ describe("createBulkExport", () => {
   });
 
   it("does not write a no-op listing's row into the actual emitted workbook bytes", async () => {
+    const deps = depsWith();
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_noop", await digestFor(deps, "listing_noop")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop"],
-        freshnessAttested: true,
+        attestedDigests,
       },
-      depsWith(),
+      deps,
     );
     expect(result.rowCount).toBe(1);
 
@@ -394,12 +427,18 @@ describe("createBulkExport", () => {
         return depsWith().getActiveVersion(listingId);
       },
     });
+    const attestedDigests = new Map([
+      [
+        "listing_blank_trailing_column",
+        await digestFor(deps, "listing_blank_trailing_column"),
+      ],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_blank_trailing_column"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
@@ -419,13 +458,13 @@ describe("createBulkExport", () => {
     expect(dataRow.length).toBeLessThan(BULK_FORM_COLUMNS.length);
   });
 
-  it("excludes every import-origin listing with not_attested when freshnessAttested is false", async () => {
+  it("excludes every import-origin listing with not_attested when no digest was attested for it", async () => {
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed"],
-        freshnessAttested: false,
+        attestedDigests: new Map(),
       },
       depsWith(),
     );
@@ -461,7 +500,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_created"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: `origin: "created"` is rejected
+        // before `checkBulkUpdateEligibility` looks at the attestation.
+        attestedDigests: new Map(),
       },
       deps,
     );
@@ -477,14 +518,17 @@ describe("createBulkExport", () => {
   });
 
   it("produces rowCount 0 with a full manifest, not an error, when every listing is excluded", async () => {
+    const deps = depsWith();
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_noop"],
-        freshnessAttested: true,
+        attestedDigests: new Map([
+          ["listing_noop", await digestFor(deps, "listing_noop")],
+        ]),
       },
-      depsWith(),
+      deps,
     );
     expect(result.rowCount).toBe(0);
     expect(result.manifest).toHaveLength(1);
@@ -496,7 +540,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_missing"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: there's no active version to
+        // check eligibility for.
+        attestedDigests: new Map(),
       },
       depsWith({
         async getActiveVersion() {
@@ -542,7 +588,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_invalid_row"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: `isBulkFormRawRow` rejects the
+        // link's raw row first.
+        attestedDigests: new Map(),
       },
       deps,
     );
@@ -600,13 +648,17 @@ describe("createBulkExport", () => {
         return depsWith().getActiveVersion(listingId);
       },
     });
+    const attestedDigests = new Map([
+      ["listing_dup_a", await digestFor(deps, "listing_dup_a")],
+      ["listing_dup_b", await digestFor(deps, "listing_dup_b")],
+    ]);
     await expect(
       createBulkExport(
         {
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_dup_a", "listing_dup_b"],
-          freshnessAttested: true,
+          attestedDigests,
         },
         deps,
       ),
@@ -641,13 +693,17 @@ describe("createBulkExport", () => {
       },
     });
 
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_other_store", await digestFor(deps, "listing_other_store")],
+    ]);
     await expect(
       createBulkExport(
         {
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_changed", "listing_other_store"],
-          freshnessAttested: true,
+          attestedDigests,
         },
         deps,
       ),
@@ -691,16 +747,53 @@ describe("createBulkExport", () => {
         ? { ...confirmation, sourceImportId: "import_2" }
         : confirmation;
     };
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_other_import", await digestFor(deps, "listing_other_import")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_other_import"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
     expect(result.rowCount).toBe(2);
+  });
+});
+
+describe("per-listing attestation", () => {
+  it("excludes a listing whose attested digest no longer matches", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed"],
+        attestedDigests: new Map([["listing_changed", "stale-digest"]]),
+      },
+      depsWith(),
+    );
+
+    expect(result.manifest[0]).toMatchObject({
+      listingId: "listing_changed",
+      outcome: "excluded_stale",
+    });
+  });
+
+  it("treats a listing with no attestation as unattested", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed"],
+        attestedDigests: new Map(),
+      },
+      depsWith(),
+    );
+
+    expect(result.manifest[0]).toMatchObject({ outcome: "excluded_stale" });
   });
 });
 
@@ -709,7 +802,10 @@ describe("immutable export ordering", () => {
     const input = {
       workspaceId: "ws_1",
       requestedBy: "reviewer",
-      freshnessAttested: true,
+      attestedDigests: new Map([
+        ["listing_changed", await digestFor(depsWith(), "listing_changed")],
+        ["listing_stale", await digestFor(depsWith(), "listing_stale")],
+      ]),
     };
     const forward = await createBulkExport(
       { ...input, listingIds: ["listing_changed", "listing_stale"] },

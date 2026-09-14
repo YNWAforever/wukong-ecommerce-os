@@ -127,7 +127,10 @@ describe("listing pipeline recovery contract", () => {
   });
 
   it("returns null versionId for needs_info", async () => {
-    const { deps } = makeHarness({ missingFields: ["priceHkd"] });
+    // Driven by an unidentifiable product, which is what blocks a draft now.
+    // A missing price does not: it is merchant data the model may not read off
+    // a photograph, so the draft would never have become writable by waiting.
+    const { deps } = makeHarness({ unidentifiable: true });
     await expect(
       runListingPipeline(
         { workspaceId, draftId, activeVersionSequence: 0 },

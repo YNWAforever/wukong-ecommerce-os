@@ -1010,7 +1010,7 @@ describe("bulk-form export", () => {
           actorId: "reviewer_1",
           draftId: "missing",
           method: "bulk_form",
-          freshnessAttested: true,
+          attestedContentDigest: platformProduct.contentDigest,
         },
         {
           ...deps,
@@ -1034,7 +1034,7 @@ describe("bulk-form export", () => {
           actorId: "reviewer_1",
           draftId: "listing_1",
           method: "bulk_form",
-          freshnessAttested: true,
+          attestedContentDigest: platformProduct.contentDigest,
         },
         {
           ...deps,
@@ -1056,7 +1056,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1088,7 +1088,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1122,7 +1122,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1191,7 +1191,7 @@ describe("bulk-form export", () => {
           actorId: "reviewer_1",
           draftId: "listing_1",
           method: "bulk_form",
-          freshnessAttested: true,
+          attestedContentDigest: platformProduct.contentDigest,
         },
         deps,
       ),
@@ -1208,7 +1208,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1226,7 +1226,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1255,7 +1255,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );
@@ -1295,7 +1295,7 @@ describe("bulk-form export", () => {
         actorId: "reviewer_1",
         draftId: "listing_1",
         method: "bulk_form",
-        freshnessAttested: true,
+        attestedContentDigest: platformProduct.contentDigest,
       },
       deps,
     );

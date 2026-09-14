@@ -1,5 +1,5 @@
 import type {
-  CanonicalListing,
+  ReviewableListing,
   ListingFacts,
   ProductShotState,
 } from "@wukong/core";
@@ -327,7 +327,7 @@ export const listingVersions = pgTable(
     listingId: uuid("listing_id").notNull(),
     sequence: integer("sequence").notNull(),
     pipelineIdempotencyKey: text("pipeline_idempotency_key"),
-    content: jsonb("content").$type<CanonicalListing>().notNull(),
+    content: jsonb("content").$type<ReviewableListing>().notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
   },
@@ -779,6 +779,37 @@ export const sourceImports = pgTable(
   ],
 );
 
+/**
+ * What one confirmed field was confirmed against.
+ *
+ * Digests rather than copies, so no merchant content enters a second table.
+ * Each is sha256 hex of a JSON encoding:
+ *
+ * - `afterDigest` pins the value in the confirmed version.
+ * - `before` pins the merchant's cell in the imported row. `null` when the
+ *   listing has no imported row or the cell was blank -- a recorded fact that
+ *   nothing was supplied, not a missing value.
+ * - `evidenceDigest` pins the grounding the AI offered for the field, or `null`
+ *   when it offered none. Content, not ids: evidence rows are replaced wholesale
+ *   and copied forward under fresh ids, so an id identifies a row rather than
+ *   the grounding it carries.
+ *
+ * Evidence about the confirmed version and its source -- not a transcript of
+ * the reviewer's screen, which does not render the merchant's prior value.
+ *
+ * Defined here, beside the column that stores it, so the stored shape and the
+ * repository's shape cannot drift: two structural copies let an added optional
+ * property pass `tsc` silently.
+ */
+export type ReviewFieldRecord = {
+  afterDigest: string;
+  before: { column: string; digest: string } | null;
+  evidenceDigest: string | null;
+};
+
+/** Keyed by confirmation field key. See 0027_review_confirmation_field_records.sql. */
+export type ReviewFieldRecords = Record<string, ReviewFieldRecord>;
+
 export const reviewConfirmations = pgTable(
   "review_confirmations",
   {
@@ -797,6 +828,9 @@ export const reviewConfirmations = pgTable(
     revision: integer("revision").notNull().default(0),
     sourceImportId: uuid("source_import_id"),
     rowDigest: text("row_digest"),
+    // What each confirmed field was confirmed against (0027). NULL for every
+    // row written before it existed. See ReviewFieldRecord above.
+    fieldRecords: jsonb("field_records").$type<ReviewFieldRecords>(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -864,6 +898,10 @@ export const exportAttempts = pgTable(
       >()
       .notNull(),
     provenance: jsonb("provenance").$type<Record<string, unknown>>(),
+    sourceAttestation:
+      jsonb("source_attestation").$type<
+        Array<{ listingId: string; contentDigest: string }>
+      >(),
     artifactSha256: text("artifact_sha256"),
     artifactStatus: text("artifact_status").$type<
       "pending" | "ready" | "failed"
@@ -1039,6 +1077,55 @@ export const enrichmentBatches = pgTable(
       table.workspaceId,
       table.status,
     ),
+  ],
+);
+
+/**
+ * Work we have decided to send, written before we try to send it.
+ *
+ * The row is inserted in the same transaction that claims the work, so a
+ * process that dies before the queue call leaves an unambiguous record:
+ * `dispatched_at IS NULL` means nobody sent it, and re-sending is safe.
+ * Inferring the same thing from `listing_pipeline_runs` is impossible -- that
+ * row appears only once the pipeline claims its first step, so its absence
+ * cannot tell "never sent" from "sent and still queued".
+ *
+ * The partial index on undispatched rows is SQL-only (see migration 0023);
+ * Drizzle has no expression for it.
+ */
+export const listingDispatchOutbox = pgTable(
+  "listing_dispatch_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    /** The queue run key. Unique per workspace, so a retry cannot duplicate. */
+    dedupeKey: text("dedupe_key").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    createdAt: timestamps.createdAt,
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("listing_dispatch_outbox_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("listing_dispatch_outbox_dedupe_uq").on(
+      table.workspaceId,
+      table.dedupeKey,
+    ),
+    index("listing_dispatch_outbox_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    foreignKey({
+      name: "listing_dispatch_outbox_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
   ],
 );
 

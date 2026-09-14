@@ -10,6 +10,8 @@ import {
   withRouteErrors,
 } from "../../../../lib/route-support";
 import { getListingActivity } from "../../../../lib/listing-activity-service";
+import { readProcessingSummary } from "../../../../lib/listing-processing-summary";
+import { listingApplicationJobId } from "../../../../lib/listing-queue-runtime";
 import { authSessionContext } from "../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../lib/session-context-port";
 
@@ -127,6 +129,22 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             };
           }
 
+          // A run that ended in `needs_info` wrote no version, so without this
+          // the page can only say that information is needed. The extraction
+          // step is recorded with its full output before the missingFields
+          // check, so what the model did read off the sources is already
+          // durable -- this reads it back.
+          const revision = await repositories.listings.requireById(id);
+          const processing = readProcessingSummary(
+            await repositories.pipelineRuns.getState(
+              listingApplicationJobId({
+                workspaceId: session.workspaceId,
+                draftId: id,
+                activeVersionSequence: revision.activeVersionSequence,
+              }),
+            ),
+          );
+
           return {
             sourceReadiness: await readSourceReadiness(
               repositories,
@@ -136,6 +154,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,
+            processing,
             activeVersion: snapshot.activeVersion,
             evidence: snapshot.evidence,
             flags: snapshot.flags,

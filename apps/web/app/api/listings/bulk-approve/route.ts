@@ -2,6 +2,7 @@ import type { approveListing as domainApprove } from "@wukong/core";
 import { z } from "zod";
 
 import { approveOne } from "../../../../lib/listing-approval";
+import { MAX_BULK_APPROVE_ITEMS } from "../../../../lib/bulk-approve-limit";
 import { getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
@@ -11,14 +12,6 @@ import {
 } from "../../../../lib/route-support";
 import { authSessionContext } from "../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../lib/session-context-port";
-
-/**
- * 50 is a starting bound, not a load-bearing one — see the design spec's
- * open questions. Chosen to keep a worst-case sequential loop comfortably
- * sub-second; a client selecting more than this chunks into multiple
- * requests rather than the server accepting an unbounded list.
- */
-const MAX_BULK_APPROVE_ITEMS = 50;
 
 const bodySchema = z.object({
   items: z

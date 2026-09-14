@@ -16,6 +16,7 @@ import type { Database } from "@wukong/db";
 import {
   attachProductShotSource,
   requestProductShot,
+  acceptSourceWithoutDecoding,
   requestProductShotFromProcess,
 } from "./product-shot-request.js";
 const id = (n: number) =>
@@ -157,7 +158,9 @@ it.each([
     vi.stubEnv("QUEUE_INGRESS_URL", "https://queue.example");
     vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
     try {
-      expect(await requestProductShotFromProcess(input)).toEqual({
+      expect(
+        await requestProductShotFromProcess(input, acceptSourceWithoutDecoding),
+      ).toEqual({
         state: "setup_required",
       });
       expect(runtimeMocks.getDatabase).not.toHaveBeenCalled();
@@ -173,7 +176,9 @@ it("accepts the maximum repository budget before opening request runtime", async
   vi.stubEnv("QUEUE_INGRESS_URL", "https://queue.example");
   vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
   try {
-    expect(await requestProductShotFromProcess(input)).toEqual({
+    expect(
+      await requestProductShotFromProcess(input, acceptSourceWithoutDecoding),
+    ).toEqual({
       state: "no_source",
     });
   } finally {

@@ -59,7 +59,21 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const provenanceSchema = z.object({
   identityVersion: z.literal(1),
   workspaceId: z.string(),
-  freshnessAttested: z.literal(true),
+  /**
+   * Written by exports made before the attestation became real evidence.
+   *
+   * It was always the literal `true`, which is why it was replaced: it
+   * recorded that the request said it was attested, not that anyone attested
+   * anything. Still accepted because attempts carrying it exist and must stay
+   * recordable.
+   */
+  freshnessAttested: z.literal(true).optional(),
+  /**
+   * Written by exports made since. Its presence is what now stands for "this
+   * export was made under an attestation": the route refuses a request without
+   * one, and the evidence itself is on the attempt in `source_attestation`.
+   */
+  rowDigestMismatchCount: z.number().int().nonnegative().optional(),
   headerContractSha256: hash,
   specVersion: z.string().min(1),
   rowOrder: z.array(z.string()),
@@ -88,6 +102,17 @@ const provenanceSchema = z.object({
     }),
   ),
 });
+/**
+ * One era's marker or the other, never neither.
+ *
+ * Dropping the requirement outright would let a provenance record from no
+ * known export path satisfy the binding, which is the one thing this schema
+ * exists to prevent.
+ */
+const attestedProvenanceSchema = provenanceSchema.refine(
+  (p) => p.freshnessAttested === true || p.rowDigestMismatchCount !== undefined,
+  { message: "provenance records no attestation for this export" },
+);
 export function validateExportResultBinding(
   attempt: ExportAttempt | null,
   workspaceId: string,
@@ -97,7 +122,7 @@ export function validateExportResultBinding(
   if (!attempt) throw new ImportResultConflict("export_attempt_not_found", 404);
   if (attempt.artifactStatus !== "ready")
     throw new ImportResultConflict("export_artifact_not_ready");
-  const parsed = provenanceSchema.safeParse(attempt.provenance);
+  const parsed = attestedProvenanceSchema.safeParse(attempt.provenance);
   const included = attempt.manifest.filter((x) => x.outcome === "included");
   if (!parsed.success || !hash.safeParse(attempt.artifactSha256).success)
     throw new ImportResultConflict("export_provenance_incomplete");

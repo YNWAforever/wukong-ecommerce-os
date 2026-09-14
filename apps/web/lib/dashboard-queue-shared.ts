@@ -36,7 +36,7 @@ const nextActions: Record<QueueStatus, string> = {
   needs_info: "補充資料",
   in_review: "繼續審核",
   approved: "準備上架",
-  publishing: "查看發布狀態",
+  publishing: "查看發佈狀態",
   published: "查看商品",
   failed: "查看錯誤",
 };

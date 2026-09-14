@@ -144,3 +144,144 @@ describe("findStuckListingJobs", () => {
     expect(jobs.length).toBeLessThanOrEqual(1);
   });
 });
+
+/**
+ * The outbox heals only when somebody advances a batch.
+ *
+ * `dispatchOutbox.pending()` is read in exactly one place -- inside
+ * `advanceBatch` -- and `advanceBatch` has exactly one caller: the operator
+ * pressing Advance. So a workspace whose batches have all reached `completed`
+ * or `budget_exhausted`, or which nobody touches again, never re-reads its own
+ * outbox. Work recorded and never sent stays owed for ever.
+ *
+ * The existing sweeper cannot see it: `sweeper_find_stuck_listing_jobs` looks
+ * for drafts with a source asset and no run row, and a draft enriched from an
+ * import has no asset at all. These cases pin the cross-workspace read that
+ * gives the Worker's cron something it can act on.
+ */
+describe("findUndispatchedListingJobs", () => {
+  const admin = postgres(adminUrl, {
+    max: 1,
+    onnotice: () => undefined,
+    prepare: false,
+  });
+  const database = createDatabase(appUrl, { migrationUrl: adminUrl });
+  const outboxWorkspace = "ws_outbox_sweeper";
+
+  beforeAll(async () => {
+    await database.migrate();
+    // Outbox rows are ON DELETE RESTRICT against both workspaces and drafts --
+    // deliberately, since the row is the evidence work was owed. So they must
+    // go first or this cleanup fails on the second run.
+    await admin.unsafe(
+      `DELETE FROM listing_dispatch_outbox WHERE workspace_id = '${outboxWorkspace}'`,
+    );
+    await admin.unsafe(
+      `DELETE FROM workspaces WHERE id = '${outboxWorkspace}'`,
+    );
+  });
+
+  afterAll(async () => {
+    await admin.unsafe(
+      `DELETE FROM listing_dispatch_outbox WHERE workspace_id = '${outboxWorkspace}'`,
+    );
+    await database.close();
+    await admin.end();
+  });
+
+  /** Records one owed job and returns its outbox id. */
+  async function owe(dedupeKey: string): Promise<{
+    outboxId: string;
+    draftId: string;
+  }> {
+    return forWorkspace(database, outboxWorkspace, async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const [entry] = await repos.dispatchOutbox.record([
+        {
+          listingId: listing.id,
+          dedupeKey,
+          payload: {
+            workspaceId: outboxWorkspace,
+            draftId: listing.id,
+            activeVersionSequence: 0,
+          },
+        },
+      ]);
+      if (!entry) throw new Error("outbox row was not recorded");
+      return { outboxId: entry.id, draftId: listing.id };
+    });
+  }
+
+  function backdate(outboxId: string, seconds: number) {
+    return admin`update listing_dispatch_outbox set created_at = now() - make_interval(secs => ${seconds}) where id = ${outboxId}`;
+  }
+
+  it("finds work recorded and never confirmed as sent, across workspaces", async () => {
+    const { outboxId, draftId } = await owe("listing:outbox:stranded:0");
+    await backdate(outboxId, 600);
+
+    const jobs = await database.findUndispatchedListingJobs({
+      olderThanSeconds: 300,
+      maxRows: 20,
+      maxAttempts: 5,
+    });
+
+    expect(jobs).toContainEqual({
+      workspaceId: outboxWorkspace,
+      outboxId,
+      payload: {
+        workspaceId: outboxWorkspace,
+        draftId,
+        activeVersionSequence: 0,
+      },
+    });
+  });
+
+  it("ignores a row the queue already accepted", async () => {
+    const { outboxId } = await owe("listing:outbox:delivered:0");
+    await backdate(outboxId, 600);
+    await forWorkspace(database, outboxWorkspace, (repos) =>
+      repos.dispatchOutbox.markDispatched([outboxId]),
+    );
+
+    const jobs = await database.findUndispatchedListingJobs({
+      olderThanSeconds: 300,
+      maxRows: 20,
+      maxAttempts: 5,
+    });
+
+    expect(jobs.map((job) => job.outboxId)).not.toContain(outboxId);
+  });
+
+  it("leaves a wave that is dispatching right now alone", async () => {
+    // Not backdated. The web app's own grace window is 60s, so the sweeper's
+    // must be longer or the cron would re-send messages an advance is still in
+    // the middle of sending.
+    const { outboxId } = await owe("listing:outbox:inflight:0");
+
+    const jobs = await database.findUndispatchedListingJobs({
+      olderThanSeconds: 300,
+      maxRows: 20,
+      maxAttempts: 5,
+    });
+
+    expect(jobs.map((job) => job.outboxId)).not.toContain(outboxId);
+  });
+
+  it("stops retrying a row that has failed too many times", async () => {
+    // Otherwise a permanently unsendable payload is retried every five minutes
+    // for the life of the system. The count is what separates "the queue was
+    // down" from "this will never go".
+    const { outboxId } = await owe("listing:outbox:poison:0");
+    await backdate(outboxId, 600);
+    await admin`update listing_dispatch_outbox set attempts = 5 where id = ${outboxId}`;
+
+    const jobs = await database.findUndispatchedListingJobs({
+      olderThanSeconds: 300,
+      maxRows: 20,
+      maxAttempts: 5,
+    });
+
+    expect(jobs.map((job) => job.outboxId)).not.toContain(outboxId);
+  });
+});

@@ -7,7 +7,7 @@ import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
-import { SHELL_NAV_ITEMS } from "./shell-nav-items";
+import { visibleNavItems } from "./shell-nav-items";
 import { resolveWorkspaceChrome } from "./workspace-chrome";
 
 export default async function AppLayout({
@@ -26,7 +26,7 @@ export default async function AppLayout({
       </a>
       <header className="topbar">
         <AppShellNav
-          navItems={SHELL_NAV_ITEMS}
+          navItems={visibleNavItems(session?.role ?? null)}
           isAdmin={isAdmin}
           workspaceName={workspaceName}
           roleLabelZh={roleLabel.zh}

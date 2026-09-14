@@ -489,6 +489,13 @@ describe("workspace isolation", () => {
         ["workspace_id", "supersedes_result_id"],
         "import_results",
       ],
+      // The outbox holds a queue payload for a draft, so its reference carries
+      // the workspace like every other tenant relationship here.
+      [
+        "listing_dispatch_outbox",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
       [
         "listing_drafts",
         ["workspace_id", "active_version_id"],

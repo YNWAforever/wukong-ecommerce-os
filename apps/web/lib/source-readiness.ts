@@ -47,6 +47,17 @@ export async function evaluateSourceReadiness(
     source.headerContractSha256 === deps.currentHeaderContractSha256();
   // Advisory hypothetical evaluation is explicit. It performs the complete shared
   // policy including header checks; no attestation or authorization is persisted.
+  // There is no operator attestation to check here, so this asks the policy
+  // question with the attestation set aside: `{ kind: "advisory" }` tells
+  // `checkBulkUpdateEligibility` to compare against the digest carried by the
+  // link *it* reads internally, rather than accepting a digest from this
+  // caller. Supplying a digest here -- from `link`, this function's own read,
+  // above -- used to be exactly what made the reported reason diverge: `link`
+  // can differ from the row `checkBulkUpdateEligibility` resolves internally,
+  // because `platform_products` has no unique index on `listing_id`, and a
+  // digest mismatch between those two reads would surface as
+  // `row_digest_mismatch` and short-circuit the identity check below that is
+  // supposed to report `remote_link_changed` for exactly that divergence.
   const hypothetical =
     input.listingId && versionId
       ? await checkBulkUpdateEligibility(
@@ -54,7 +65,7 @@ export async function evaluateSourceReadiness(
             workspaceId: input.workspaceId,
             listingId: input.listingId,
             versionId,
-            freshnessAttested: true,
+            attestation: { kind: "advisory" },
           },
           deps,
         )

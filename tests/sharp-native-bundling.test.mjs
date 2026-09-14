@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
@@ -69,6 +70,16 @@ describe("POST /api/listings/[id]/approve bundles sharp's native libvips library
   it("includes a libvips shared library in its production build trace manifest", (t) => {
     const trace = readTrace(approveTraceFile, t);
     if (!trace) return;
+    // Windows bundles libvips inside @img/sharp-win32-x64 rather than its own
+    // package, so next.config.mjs's globs cannot match and this has nothing to
+    // measure. Failing here locally would be a false signal, and a false signal
+    // is how a real one gets ignored. Linux -- the deploy target -- still runs.
+    if (!libvipsIsSeparatePackage()) {
+      t.skip(
+        "this platform bundles libvips inside the arch package, so next.config.mjs's globs cannot apply here",
+      );
+      return;
+    }
     const libvipsSharedLibrary = trace.files.find(
       (file) =>
         /\.pnpm\/.*sharp-libvips/.test(file) &&
@@ -80,6 +91,109 @@ describe("POST /api/listings/[id]/approve bundles sharp's native libvips library
         "file (.so on Linux, .dylib locally) -- if this is missing, next.config.mjs's " +
         "outputFileTracingIncludes no longer covers this route and it will fail at runtime with " +
         "ERR_DLOPEN_FAILED whenever a reviewer actually approves a listing with a background choice",
+    );
+  });
+});
+
+/**
+ * Every route that imports sharp needs its native library traced.
+ *
+ * The check above pins the ONE route that was covered. That is the wrong shape
+ * for an invariant: `outputFileTracingIncludes` was scoped to `approve` alone
+ * while five other routes -- including every product-shot route, whose whole
+ * job is image work -- also carried sharp in their trace and would have thrown
+ * ERR_DLOPEN_FAILED the moment they actually decoded an image.
+ *
+ * So this derives the requirement from the build output instead of repeating a
+ * list: add a route that imports sharp and forget its tracing entry, and this
+ * fails rather than shipping a function that cannot load libvips.
+ */
+const appOutputRoot = `${root}apps/web/.next/server/app`;
+
+/** Trace manifests under the built app, with their route paths. */
+function routeTraces() {
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.endsWith(".nft.json")) continue;
+      found.push({
+        route: full
+          .slice(appOutputRoot.length + 1)
+          .split(path.sep)
+          .join("/")
+          .replace(/\/route\.js\.nft\.json$/, ""),
+        files: JSON.parse(readFileSync(full, "utf8")).files,
+      });
+    }
+  };
+  walk(appOutputRoot);
+  return found;
+}
+
+/**
+ * Whether this platform ships libvips as its own package.
+ *
+ * On Linux and macOS it is `@img/sharp-libvips-<platform>`, which is what the
+ * globs in next.config.mjs target. On Windows it lives inside
+ * `@img/sharp-win32-x64/lib/*.dll` instead, so those globs cannot match and the
+ * check has nothing to say -- the deploy target is Linux, and CI is where this
+ * is authoritative.
+ */
+function libvipsIsSeparatePackage() {
+  try {
+    return readdirSync(`${root}node_modules/.pnpm`).some((entry) =>
+      entry.startsWith("@img+sharp-libvips-"),
+    );
+  } catch {
+    return false;
+  }
+}
+
+describe("every route that imports sharp bundles libvips", () => {
+  it("has a libvips shared library in each such trace manifest", (t) => {
+    if (!existsSync(appOutputRoot)) {
+      t.skip(
+        "apps/web/.next build output not present -- run `pnpm --filter @wukong/web build` first",
+      );
+      return;
+    }
+    if (!libvipsIsSeparatePackage()) {
+      t.skip(
+        "this platform bundles libvips inside the arch package, so next.config.mjs's globs cannot apply here",
+      );
+      return;
+    }
+
+    const importsSharp = routeTraces().filter((trace) =>
+      trace.files.some((file) => /(^|\/)(sharp|@img\+sharp)/i.test(file)),
+    );
+    assert.ok(
+      importsSharp.length > 0,
+      "expected at least the approve route to import sharp -- if nothing does, this guard is measuring nothing",
+    );
+
+    const missingLibrary = importsSharp
+      .filter(
+        (trace) =>
+          !trace.files.some(
+            (file) =>
+              /\.pnpm\/.*sharp-libvips/.test(file) &&
+              /\.(so|dylib)(\.[0-9.]+)?$/.test(file),
+          ),
+      )
+      .map((trace) => trace.route);
+
+    assert.deepEqual(
+      missingLibrary,
+      [],
+      `these routes import sharp but have no libvips shared library traced, so they will throw ` +
+        `ERR_DLOPEN_FAILED at runtime: ${missingLibrary.join(", ")}. Add them to ` +
+        `outputFileTracingIncludes in apps/web/next.config.mjs, or stop them importing sharp.`,
     );
   });
 });

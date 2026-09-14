@@ -36,7 +36,12 @@ services:
       timeout: 2s
       retries: 20
   minio:
-    image: minio/minio:latest
+    # quay.io, not Docker Hub: `minio/minio` and `minio/mc` both stopped
+    # resolving on Hub ("repository does not exist") and took CI down with no
+    # code change. quay.io is MinIO's other published registry. Pinned rather
+    # than `:latest` so the next upstream move is a deliberate bump here
+    # instead of a red build on an unrelated PR.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: wukong

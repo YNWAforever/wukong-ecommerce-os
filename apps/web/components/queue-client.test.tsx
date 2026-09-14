@@ -552,3 +552,113 @@ describe("QueueClient pagination", () => {
     }
   });
 });
+
+/**
+ * A checkbox that looks live and does nothing.
+ *
+ * The queue capped the selection at 50 by refusing to add the 51st, and said
+ * nothing: the box stayed unchecked, the count stayed at 50, and the operator
+ * was left to conclude the row was somehow ineligible. Select-all had the same
+ * shape -- it stopped at 50 and dropped the rest in silence.
+ *
+ * The cap itself is right; it mirrors what the API accepts. Only the silence
+ * was the defect.
+ */
+describe("the bulk selection cap", () => {
+  /** Eligible rows, all on one page, so the cap is reachable in one click. */
+  function eligibleRows(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...eligibleItem,
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+  }
+
+  function listFetcher(count: number) {
+    return vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: eligibleRows(count),
+        totalMatching: count,
+        page: 1,
+        pageSize: 100,
+      }),
+    );
+  }
+
+  function checkboxes(container: HTMLElement): HTMLInputElement[] {
+    return Array.from(
+      container.querySelectorAll('input[type="checkbox"]'),
+    ) as HTMLInputElement[];
+  }
+
+  const CAP_NOTICE = "一次最多可選取 50 個項目";
+
+  it("tells the operator when select-all leaves rows behind", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+
+      expect(container.textContent).toContain("50 個項目已選取");
+      expect(container.textContent).toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("explains a checkbox click it refuses instead of ignoring it", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      // Make room, so the notice is gone and the next click is a fresh refusal
+      // rather than the leftover from select-all.
+      const [first] = checkboxes(container);
+      await act(async () => first!.click());
+      expect(container.textContent).toContain("49 個項目已選取");
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+      await act(async () => first!.click());
+      expect(container.textContent).toContain("50 個項目已選取");
+
+      const refused = checkboxes(container).find((box) => !box.checked);
+      await act(async () => refused!.click());
+
+      expect(container.textContent).toContain("50 個項目已選取");
+      expect(container.textContent).toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("stops warning once clearing the selection makes room again", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain(CAP_NOTICE);
+
+      await act(async () => findButtonByText(container, "清除選取")!.click());
+
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("never warns while the selection still has room", async () => {
+    const { container, root } = await mount(listFetcher(3));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+
+      expect(container.textContent).toContain("3 個項目已選取");
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+});

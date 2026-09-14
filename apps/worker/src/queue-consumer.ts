@@ -1,4 +1,8 @@
-import { consumeProductShotMessage as defaultConsumeProductShotMessage } from "./product-shot-consumer.js";
+import {
+  consumeProductShotMessage as defaultConsumeProductShotMessage,
+  PRODUCT_SHOT_MAX_ATTEMPTS,
+  type ProductShotAttempt,
+} from "./product-shot-consumer.js";
 import {
   consumeWebsiteMessage as defaultConsumeWebsiteMessage,
   type WebsiteConsumerOutcome,
@@ -38,6 +42,7 @@ type QueueDependencies = {
   consumeProductShotMessage?: (
     payload: unknown,
     env: WorkerEnv,
+    attempt: ProductShotAttempt,
   ) => Promise<"ack" | { retryAfterSeconds: number }>;
   consumeWebsiteMessage?: (
     payload: unknown,
@@ -91,10 +96,17 @@ export async function handleQueue(
       "kind" in message.body &&
       message.body.kind === "product_shot"
     ) {
+      // Product-shot messages ride the listing queue, so they share its retry
+      // budget. The consumer needs to know which delivery this is: the last one
+      // has to record a terminal state, because the listing DLQ has no consumer
+      // and the attempt row would otherwise stay `queued` for ever.
       const outcome = await (
         dependencies.consumeProductShotMessage ??
         defaultConsumeProductShotMessage
-      )(message.body, env);
+      )(message.body, env, {
+        attempt: message.attempts,
+        maxAttempts: PRODUCT_SHOT_MAX_ATTEMPTS,
+      });
       if (outcome === "ack") message.ack();
       else message.retry({ delaySeconds: outcome.retryAfterSeconds });
       continue;

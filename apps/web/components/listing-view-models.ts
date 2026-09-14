@@ -1,5 +1,3 @@
-import { queueLabels } from "./queue-labels";
-
 export type QueueStatus =
   | "received"
   | "processing"
@@ -73,6 +71,8 @@ export type DeliveryModel = {
     remoteProductId: string;
     origin?: "import" | "created";
   } | null;
+  /** The row digest the operator is currently looking at, for the single-listing Bulk Update export below. Null when no digest has been recorded for the linked row. */
+  contentDigest?: string | null;
   listingId?: string;
   versionId?: string;
   canRecordImportResult?: boolean;
@@ -86,31 +86,24 @@ export type DeliveryModel = {
   }>;
 };
 
-export const queueGroups: ReadonlyArray<{
-  status: QueueStatus;
-  label: string;
-  englishLabel: string;
-}> = [
-  { status: "received", label: queueLabels.received, englishLabel: "Received" },
-  {
-    status: "processing",
-    label: queueLabels.processing,
-    englishLabel: "Processing",
-  },
-  {
-    status: "needs_info",
-    label: "需要資料",
-    englishLabel: "Needs information",
-  },
-  { status: "in_review", label: "待審核", englishLabel: "In review" },
-  { status: "approved", label: "已批准", englishLabel: "Approved" },
-  { status: "published", label: "已上架", englishLabel: "Published" },
-  {
-    status: "publishing",
-    label: queueLabels.publishing,
-    englishLabel: "Publishing",
-  },
-  { status: "failed", label: "失敗", englishLabel: "Failed" },
+/**
+ * The queue's sections, in the order work moves through them.
+ *
+ * Carries order only. It used to carry its own copy as well, and the copy
+ * drifted: this list said 已上架 and 發布中 where `states` said 已發佈 and
+ * 發佈中, so one listing was named two different ways depending on which screen
+ * an operator was looking at -- and 發布 is the Simplified form of a word the
+ * rest of the product spells 發佈. `stateLabel` now answers for both.
+ */
+export const queueGroups: ReadonlyArray<{ status: QueueStatus }> = [
+  { status: "received" },
+  { status: "processing" },
+  { status: "needs_info" },
+  { status: "in_review" },
+  { status: "approved" },
+  { status: "published" },
+  { status: "publishing" },
+  { status: "failed" },
 ];
 
 export const fallbackQueue: QueueItem[] = [

@@ -17,8 +17,18 @@ export type {
 
 export type { AuditContext, AuditWriter, DomainAuditEvent } from "./audit.js";
 
-export { resolveFlag, scanCompliance } from "./compliance.js";
-export type { ComplianceFlag } from "./compliance.js";
+export {
+  carryResolutions,
+  claimPolicyCoverage,
+  localizedCopyFields,
+  resolveFlag,
+  scanCompliance,
+} from "./compliance.js";
+export type {
+  ClaimPolicyCoverage,
+  ComplianceFlag,
+  GroundedClaims,
+} from "./compliance.js";
 
 export { approveListing, reopenListing } from "./review.js";
 

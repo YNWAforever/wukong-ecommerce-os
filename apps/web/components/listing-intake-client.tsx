@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   ListingIntakeForm,
   type ListingIntakePayload,
+  type ListingIntakeProgress,
+  type ListingIntakeUpload,
 } from "./listing-intake-form";
 import { uploadSourceAsset } from "../lib/browser-asset-upload";
 
@@ -28,17 +30,43 @@ async function responseError(response: Response): Promise<Error> {
   }
 }
 
+/**
+ * Uploads whatever is not uploaded yet, then creates the draft from the lot.
+ *
+ * The loop used to collect asset ids into a local array and throw on the first
+ * failure, so a second photo failing discarded the first photo's completed
+ * upload -- the array went out of scope, the form reset every row to "ready",
+ * and the retry re-sent every byte over the connection that had just failed.
+ * Progress is now reported to the caller as each file lands, so a retry starts
+ * from where the last attempt stopped and the earlier uploads are reused rather
+ * than orphaned in the bucket.
+ */
 export async function createListingDraft(
   payload: ListingIntakePayload,
   dependencies: IntakeDependencies = {},
+  report?: ListingIntakeProgress,
 ): Promise<CreateListingDraftResult> {
   const fetcher = dependencies.fetcher ?? fetch;
   const sourceAssetIds: string[] = [];
 
-  for (const file of payload.files) {
-    sourceAssetIds.push(
-      await uploadSourceAsset(file, { ...dependencies, fetcher }),
+  for (const entry of payload.files) {
+    if (entry.assetId) {
+      // Already finalized by an earlier attempt. Re-finalizing is safe but
+      // pointless; re-uploading is neither.
+      sourceAssetIds.push(entry.assetId);
+      continue;
+    }
+    const uploaded = await uploadSourceAsset(
+      entry.file,
+      {
+        ...dependencies,
+        fetcher,
+        onStored: (key) => report?.(entry.id, { storedKey: key }),
+      },
+      entry.storedKey ? { key: entry.storedKey } : undefined,
     );
+    report?.(entry.id, { assetId: uploaded.assetId, storedKey: uploaded.key });
+    sourceAssetIds.push(uploaded.assetId);
   }
 
   let listingResponse: Response;
@@ -65,12 +93,14 @@ export async function createListingDraft(
   };
 }
 
+export type { ListingIntakeUpload };
+
 export function ListingIntakeClient() {
   const router = useRouter();
   return (
     <ListingIntakeForm
-      onCreate={async (payload) => {
-        const result = await createListingDraft(payload);
+      onCreate={async (payload, report) => {
+        const result = await createListingDraft(payload, {}, report);
         router.push(
           `/listings/${encodeURIComponent(result.listingId)}?processing=${result.processing}`,
         );

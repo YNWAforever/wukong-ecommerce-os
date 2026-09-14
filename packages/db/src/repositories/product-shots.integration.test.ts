@@ -507,6 +507,101 @@ describe("durable product shots", () => {
       ),
     ).toEqual([]);
   });
+  /**
+   * Ending an attempt no worker ever dispatched.
+   *
+   * `finishFailure` cannot do it: it requires `processing` plus a matching
+   * lease token, and an attempt nothing claimed has neither. So a message that
+   * was acknowledged without doing any work left the row `queued` with no
+   * terminal state, no error code and no audit event -- the review panel
+   * polled it for ever, and because listing approval refuses any listing whose
+   * product shot is not `approved`, the listing could never be approved either.
+   *
+   * These codes only exist because migration 0022 widened the `error_code`
+   * CHECK; under the original six-value constraint this write raises
+   * check_violation, which unit tests with fake repositories cannot see.
+   */
+  it("ends an undispatched attempt without pretending it was charged", async () => {
+    const f = await fixture(),
+      a = await f.ensure();
+
+    expect(
+      await db.forWorkspace(f.workspaceId, (r) =>
+        r.productShots.finishUndispatched({
+          attemptId: a.attemptId,
+          code: "provider_disabled",
+        }),
+      ),
+    ).toBe("ended");
+
+    expect(await f.get(a.attemptId)).toMatchObject({
+      state: "failed",
+      errorCode: "provider_disabled",
+      dispatchedAt: null,
+    });
+    // `failed`, not `outcome_unknown`: nothing reached a provider, so there is
+    // no possible charge to warn anyone about.
+    const result = await verifyAudit({
+      workspaceId: f.workspaceId,
+      draftId: f.listingId,
+      url: appUrl!,
+    });
+    expect(result.accessibleForeignRecordCount).toBe(0);
+    expect(
+      result.missingActions.filter((action) =>
+        action.startsWith("product_shot."),
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses to write off an attempt that already reached a provider", async () => {
+    // The guard that makes the whole thing safe. A dispatched attempt may have
+    // been billed, so it has to stay with finishFailure and outcome_unknown.
+    const f = await fixture(),
+      a = await f.ensure(),
+      c = await claim(f, a.attemptId);
+    if (c.kind !== "claimed") throw new Error("claim failed");
+
+    expect(
+      await db.forWorkspace(f.workspaceId, (r) =>
+        r.productShots.finishUndispatched({
+          attemptId: a.attemptId,
+          code: "provider_disabled",
+        }),
+      ),
+    ).toBe("skipped");
+
+    expect(await f.get(a.attemptId)).toMatchObject({ state: "processing" });
+  });
+
+  it("accepts every code the widened constraint allows, and no other", async () => {
+    for (const code of [
+      "provider_disabled",
+      "budget_exhausted",
+      "never_dispatched",
+    ]) {
+      const f = await fixture(),
+        a = await f.ensure();
+      await db.forWorkspace(f.workspaceId, (r) =>
+        r.productShots.finishUndispatched({ attemptId: a.attemptId, code }),
+      );
+      expect(await f.get(a.attemptId)).toMatchObject({ errorCode: code });
+    }
+    // An unrecognised code is normalised rather than passed through to the
+    // CHECK, so a caller cannot turn a typo into a failed transaction.
+    const f = await fixture(),
+      a = await f.ensure();
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.productShots.finishUndispatched({
+        attemptId: a.attemptId,
+        code: "https://private.example/secret",
+      }),
+    );
+    expect(await f.get(a.attemptId)).toMatchObject({
+      errorCode: "never_dispatched",
+    });
+  });
+
   it("sanitizes failure codes, prevents automatic retry and writes mutation audits transactionally", async () => {
     const f = await fixture(),
       a = await f.ensure(),

@@ -29,9 +29,27 @@ import {
 const bodySchema = z
   .object({
     method: z.enum(["csv", "shopline_api", "bulk_form"]),
-    freshnessAttested: z.boolean().optional(),
+    attestedContentDigest: z.string().min(1).optional(),
   })
   .strict();
+/**
+ * A bulk form delivery must say what the operator attested.
+ *
+ * The export path takes per-listing evidence; this path carries one listing,
+ * so it carries one digest. Refusing here keeps the two paths honest about
+ * the same thing rather than letting this one default its way past the gate.
+ */
+function requireAttestation(digest: string | undefined): string {
+  if (!digest) {
+    throw new ApiError(
+      400,
+      "attestation_incomplete",
+      "A bulk form delivery must carry the attested source digest.",
+    );
+  }
+  return digest;
+}
+
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 type DeliveryPort = { deliver(input: DeliverInput): Promise<DeliveryResult> };
@@ -157,7 +175,16 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
           draftId: id,
           method: body.method,
           ...(body.method === "bulk_form"
-            ? { freshnessAttested: body.freshnessAttested === true }
+            ? {
+                // Absence used to coerce to false and ride into createBulkExport
+                // as an unattested export, so the first UI wired to this method
+                // would have inherited a refusal nobody chose. There is no
+                // bulk_form UI today; when there is, it must fail loudly here
+                // rather than silently.
+                attestedContentDigest: requireAttestation(
+                  body.attestedContentDigest,
+                ),
+              }
             : {}),
         });
       } catch (error) {

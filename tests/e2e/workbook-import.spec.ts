@@ -24,6 +24,8 @@ import {
 
 // Synthetic bytes only. Every test owns a new localhost workspace with no connection.
 test.describe.configure({ mode: "serial" });
+/** Stands in for a digest the operator was shown; never compared here. */
+const SYNTHETIC_DIGEST = "synthetic-digest-not-compared";
 const datedName = "synthetic-BulkUpdateForm-2026-05-21-15-50_0.xlsx";
 const renamedName = "合成目錄 renamed &+?#.xlsx";
 const evidenceDir = resolve("node_modules/.workbook-evidence");
@@ -402,7 +404,17 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     assertBaseRequests(requests);
     const id = products[22]!.id;
     const exported = await page.request.post("/api/listings/export", {
-      data: { listingIds: [id], freshnessAttested: true },
+      // Well-formed attestation for a listing this workspace cannot see. The
+      // digest is never compared -- the listing resolves to
+      // `listing_not_found` first -- but it has to cover exactly `listingIds`,
+      // or the refusal would come from schema validation rather than from the
+      // workspace boundary this case exists to prove.
+      data: {
+        listingIds: [id],
+        attestation: {
+          listings: [{ listingId: id, contentDigest: SYNTHETIC_DIGEST }],
+        },
+      },
     });
     expect(exported.status()).toBe(200);
     expect(await exported.json()).toMatchObject({
@@ -412,7 +424,9 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     });
     for (const method of ["csv", "bulk_form", "shopline_api"]) {
       const response = await page.request.post(`/api/listings/${id}/deliver`, {
-        data: { method, freshnessAttested: true },
+        // `bulk_form` refuses outright without an attestation, so send one for
+        // every method: the status must come from the boundary, not the schema.
+        data: { method, attestedContentDigest: SYNTHETIC_DIGEST },
       });
       expect([404, 409]).toContain(response.status());
       expect(await response.json()).toMatchObject({

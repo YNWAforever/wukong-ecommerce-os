@@ -35,6 +35,27 @@ const statusCopy: Record<string, readonly [string, string]> = {
     "Product image processing is not configured",
   ],
 };
+/**
+ * What a failure means, when the bare word "failed" would mislead.
+ *
+ * `failed` alone tells the operator to start a fresh attempt. That is right for
+ * a rejected photo and wrong for the two failures below, where a fresh attempt
+ * either cannot help or has to wait -- and where the cause is not theirs.
+ */
+const failureCopy: Record<string, readonly [string, string]> = {
+  provider_disabled: [
+    "背景工作程序尚未啟用商品照服務，這不是相片的問題，請聯絡管理員。",
+    "Image processing is not enabled on the worker. This is a configuration problem rather than a problem with the photo -- ask an administrator to enable it.",
+  ],
+  budget_exhausted: [
+    "今日商品照額度已用完，明日可再嘗試。",
+    "Today's image allowance is used up. You can try again tomorrow.",
+  ],
+  never_dispatched: [
+    "商品照工作未能開始，沒有產生費用，可開始新嘗試。",
+    "Image processing never started, so nothing was charged. You can start a fresh attempt.",
+  ],
+};
 const replacementImageTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -171,7 +192,7 @@ export function ProductShotReview({
       setBusy(true);
       setError(false);
       try {
-        const sourceAssetId = await uploadSourceAsset(file);
+        const { assetId: sourceAssetId } = await uploadSourceAsset(file);
         if (signal.aborted) return;
         const response = await fetch(
           `/api/listings/${listingId}/product-shot/source`,
@@ -254,10 +275,13 @@ export function ProductShotReview({
         </button>
       </p>
     ) : null;
-  const status = statusCopy[view.state] ?? [
-    "請重新整理商品照狀態",
-    "Refresh the product image status",
-  ];
+  const status = (view.state === "failed" && view.errorCode
+    ? failureCopy[view.errorCode]
+    : undefined) ??
+    statusCopy[view.state] ?? [
+      "請重新整理商品照狀態",
+      "Refresh the product image status",
+    ];
   return (
     <section
       aria-labelledby={`shot-${listingId}`}

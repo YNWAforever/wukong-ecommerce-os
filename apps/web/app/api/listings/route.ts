@@ -1,5 +1,10 @@
 import { readSourceReadiness } from "../../../lib/source-readiness";
 import { z } from "zod";
+import {
+  isImageMimeType,
+  MAX_LISTING_IMAGES,
+  MAX_LISTING_PDFS,
+} from "@wukong/assets";
 import type { WorkspaceRepositories } from "@wukong/db";
 
 import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
@@ -8,6 +13,12 @@ import { allConfirmed } from "../../../lib/review-confirmation-keys";
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
+import {
+  acceptSourceWithoutDecoding,
+  requestProductShotFromProcess,
+  type ProductShotRequestInput,
+  type ProductShotRequestResult,
+} from "../../../lib/product-shot-request";
 import {
   ApiError,
   jsonResponse,
@@ -34,7 +45,18 @@ const listingSchema = z
   })
   .strict();
 
-export function createListingHandler(deps: IntakeRouteDeps<true>) {
+type CreateListingDeps = IntakeRouteDeps<true> & {
+  /**
+   * Optional so tests can leave image work out. Production wires the same
+   * requester the process route uses -- see the dispatch below for why creating
+   * a listing has to start image work at all.
+   */
+  requestProductShot?: (
+    input: ProductShotRequestInput,
+  ) => Promise<ProductShotRequestResult>;
+};
+
+export function createListingHandler(deps: CreateListingDeps) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
@@ -65,24 +87,54 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
               "One or more source assets were not found.",
             );
           }
-          if (assets.some(({ listingId }) => listingId !== null)) {
-            throw new ApiError(
-              409,
-              "source_asset_already_used",
-              "One or more source assets are already associated.",
-            );
+          // A create whose response was lost is the common case here, not an
+          // exotic one: the operator sees nothing happen and clicks again.
+          // Assets are single-use, so the previous attempt had already claimed
+          // them and the retry was answered with 409 -- leaving the listing
+          // stranded, reachable only by someone who knew to go looking for it.
+          //
+          // The asset set is itself the natural idempotency key. If EVERY
+          // requested asset is already attached to one and the same listing,
+          // this is that listing being created again, so return it. Anything
+          // else -- a partial overlap, assets split across listings -- is a
+          // genuine conflict and still refuses.
+          const attached = assets.filter(({ listingId }) => listingId !== null);
+          if (attached.length > 0) {
+            const owners = new Set(attached.map(({ listingId }) => listingId));
+            const owner = owners.size === 1 ? [...owners][0] : null;
+            const existing =
+              owner != null && attached.length === assets.length
+                ? await repositories.listings.getById(owner)
+                : null;
+            if (!existing) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "One or more source assets are already associated.",
+              );
+            }
+            // Same assets but different words is a different request wearing
+            // the same key. Returning the old listing would silently discard
+            // what the operator just typed, so say so instead.
+            if (existing.note !== (body.note.trim() || null)) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "These files already belong to another listing.",
+              );
+            }
+            return existing;
           }
 
-          const imageKinds = new Set(["image/jpeg", "image/png", "image/webp"]);
           const imageCount = assets.filter(({ kind }) =>
-            imageKinds.has(kind),
+            isImageMimeType(kind),
           ).length;
           const pdfCount = assets.filter(
             ({ kind }) => kind === "application/pdf",
           ).length;
           if (
-            imageCount > 10 ||
-            pdfCount > 1 ||
+            imageCount > MAX_LISTING_IMAGES ||
+            pdfCount > MAX_LISTING_PDFS ||
             imageCount + pdfCount !== assets.length
           ) {
             throw new ApiError(
@@ -121,12 +173,33 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
             errorCode: "queue_unavailable";
           };
 
+      // Image work starts here, not only when someone re-processes. Creating a
+      // listing from photographs used to enqueue the listing job alone, so no
+      // product shot existed until an operator happened to open the review
+      // screen and ask for one -- on the one path where the photos had just
+      // been uploaded. The two are dispatched together and independently: a
+      // shot that cannot start (provider disabled, queue unconfigured) answers
+      // `setup_required` and never blocks the text draft.
+      let productShot: ProductShotRequestResult | undefined;
       try {
-        const job = await deps.publisher.enqueue({
-          workspaceId: context.workspaceId,
-          draftId: listing.id,
-          activeVersionSequence: 0,
-        });
+        const [textResult, shotResult] = await Promise.allSettled([
+          deps.publisher.enqueue({
+            workspaceId: context.workspaceId,
+            draftId: listing.id,
+            activeVersionSequence: 0,
+          }),
+          deps.requestProductShot?.({
+            workspaceId: context.workspaceId,
+            listingId: listing.id,
+            actorId: context.actorId,
+          }) ?? Promise.resolve(undefined),
+        ]);
+        productShot =
+          shotResult.status === "fulfilled"
+            ? shotResult.value
+            : { state: "request_failed" };
+        if (textResult.status === "rejected") throw textResult.reason;
+        const job = textResult.value;
         processing = { state: "queued", jobId: job.id, errorCode: null };
         console.info(
           JSON.stringify({
@@ -164,6 +237,7 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
           target: listing.target,
         },
         processing,
+        ...(productShot ? { productShot } : {}),
       });
     });
   };
@@ -340,4 +414,12 @@ export const POST = createListingHandler({
   getAssetStore,
   getDatabase,
   publisher: listingPublisher,
+  // Deliberately NOT the decoding validator. It imports `sharp`, and a native
+  // module in this route's graph is what shipped 500s from the admin panel's
+  // home page once already -- Next's tracer cannot follow sharp's dlopen(), so
+  // libvips is dropped from the bundle and the route dies at runtime while
+  // building clean. `tests/sharp-native-bundling.test.mjs` guards this route
+  // specifically. See `acceptSourceWithoutDecoding` for what that costs.
+  requestProductShot: (input) =>
+    requestProductShotFromProcess(input, acceptSourceWithoutDecoding),
 });

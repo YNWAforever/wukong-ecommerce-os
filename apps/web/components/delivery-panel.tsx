@@ -3,7 +3,7 @@ import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
 
 import type { DeliveryModel } from "./listing-view-models";
-import { BulkExportPanel } from "./bulk-export-panel";
+import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
 import { ImportResultForm, ImportResultHistory } from "./import-result-form";
 import { useState } from "react";
 
@@ -31,13 +31,13 @@ const connectionCopy: Record<
     label: "連接錯誤",
     english: "Connection error",
     className: "status-danger",
-    detail: "連接未通過驗證。請修正設定後再嘗試發布。",
+    detail: "連接未通過驗證。請修正設定後再嘗試發佈。",
   },
   connected: {
     label: "已連接",
     english: "Connected",
     className: "status-success",
-    detail: "SHOPLINE 連接已驗證，可在批准後發布。",
+    detail: "SHOPLINE 連接已驗證，可在批准後發佈。",
   },
 };
 
@@ -138,7 +138,12 @@ export function DeliveryPanel({
       ) : null}
       {imported && model.listingId ? (
         <BulkExportPanel
-          listingIds={[model.listingId]}
+          listings={[
+            {
+              listingId: model.listingId,
+              contentDigest: model.contentDigest ?? NO_CONTENT_DIGEST,
+            },
+          ]}
           canGenerate={model.canReview}
         />
       ) : null}

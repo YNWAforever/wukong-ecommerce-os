@@ -26,8 +26,20 @@ export function ListingProcessingPanel({
 }: ListingProcessingPanelProps) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
+  // `failed` is offered too, because the server already supports it:
+  // POST /api/listings/[id]/process accepts received/needs_info/failed, and
+  // pipelineRuns.reopenFailed deletes the still-running step rows before
+  // re-enqueueing, so a retry starts clean rather than colliding with the
+  // lease the failed run left behind.
+  //
+  // `needs_info` is offered as well, now that a re-run carries its own
+  // attempt number. Its run completed with status `succeeded`, so before that
+  // the same route answered 409 processing_already_started no matter what the
+  // operator supplied, and this button would only have failed.
   const canStart =
-    status === "received" && enqueueState !== "queued" && canProcess;
+    (status === "received" || status === "failed" || status === "needs_info") &&
+    enqueueState !== "queued" &&
+    canProcess;
 
   let title: string;
   let explanation: string;
@@ -57,10 +69,10 @@ export function ListingProcessingPanel({
       "Add or check missing listing information before continuing review.",
     );
   } else {
-    title = t("AI 處理未完成", "Processing failed");
+    title = t("AI 處理未完成", "Processing did not finish");
     explanation = t(
-      "來源檔案已保留，請聯絡支援人員協助安全復原。",
-      "Source files are retained. Contact support for safe recovery.",
+      "來源檔案已保留，沒有內容被覆寫。你可以再處理一次。",
+      "Your source files are kept and nothing was overwritten. You can run processing again.",
     );
   }
 
@@ -73,7 +85,9 @@ export function ListingProcessingPanel({
         <button type="button" onClick={onProcess} disabled={busy}>
           {busy
             ? commonCopy[locale].loading
-            : t("開始處理", "Start processing")}
+            : status === "failed" || status === "needs_info"
+              ? t("再處理一次", "Run processing again")
+              : t("開始處理", "Start processing")}
         </button>
       ) : null}
     </section>

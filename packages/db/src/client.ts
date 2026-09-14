@@ -86,6 +86,10 @@ import {
   type EnrichmentBatchRepository,
 } from "./repositories/enrichment-batches.js";
 import {
+  createListingDispatchOutboxRepository,
+  type ListingDispatchOutboxRepository,
+} from "./repositories/listing-dispatch-outbox.js";
+import {
   createMembershipRepository,
   type MembershipRepository,
 } from "./repositories/memberships.js";
@@ -134,6 +138,8 @@ export type WorkspaceRepositories = {
   exportAttempts: ExportAttemptRepository;
   importResults: ImportResultRepository;
   enrichmentBatches: EnrichmentBatchRepository;
+  /** Work recorded before it is sent, so a crash mid-send stays recoverable. */
+  dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
   workspaces: WorkspaceRepository;
@@ -174,6 +180,24 @@ export type Database = {
       workspaceId: string;
       draftId: string;
       activeVersionSequence: number;
+    }>
+  >;
+  /**
+   * Work recorded in the outbox that no queue message ever carried.
+   *
+   * Cross-workspace, so the Worker's cron can heal a workspace nobody is
+   * advancing. `findStuckListingJobs` cannot answer this: it needs a draft
+   * with a source asset, and an imported draft has none.
+   */
+  findUndispatchedListingJobs(input: {
+    olderThanSeconds: number;
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<
+    Array<{
+      workspaceId: string;
+      outboxId: string;
+      payload: Record<string, unknown>;
     }>
   >;
   forWorkspace<T>(
@@ -308,6 +332,11 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        dispatchOutbox: createListingDispatchOutboxRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         pipelineRuns: createPipelineRunRepository(
           transaction,
           workspaceId,
@@ -400,6 +429,21 @@ export function createDatabase(
         workspaceId: String(row.workspace_id),
         draftId: String(row.draft_id),
         activeVersionSequence: Number(row.active_version_sequence),
+      }));
+    },
+    async findUndispatchedListingJobs({
+      olderThanSeconds,
+      maxRows,
+      maxAttempts,
+    }) {
+      const rows = await client`
+        select workspace_id, outbox_id, payload
+        from sweeper_find_undispatched_listing_jobs(${olderThanSeconds}, ${maxRows}, ${maxAttempts})
+      `;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        outboxId: String(row.outbox_id),
+        payload: row.payload as Record<string, unknown>,
       }));
     },
     forWorkspace: runForWorkspace,

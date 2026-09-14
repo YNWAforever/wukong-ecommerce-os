@@ -1,5 +1,7 @@
 "use client";
+import { reviewErrorLabel } from "../lib/approval-ui-copy";
 import { useLocale } from "../lib/locale-context";
+import { REVIEW_FIELD_BINDINGS } from "../lib/review-field-bindings";
 import { localized, commonCopy, stateLabel, safeUiError } from "../lib/ui-copy";
 
 import type {
@@ -18,7 +20,9 @@ import { ConfirmationChecklist } from "./confirmation-checklist";
 import { DeliveryPanel } from "./delivery-panel";
 import { EvidencePanel } from "./evidence-panel";
 import { ListingFieldsForm } from "./listing-fields-form";
+import { ListingExtractedFacts } from "./listing-extracted-facts";
 import { ListingProcessingPanel } from "./listing-processing-panel";
+import type { ListingProcessingSummary } from "../lib/listing-processing-summary";
 import type {
   BlockingFlag,
   DeliveryModel,
@@ -113,6 +117,10 @@ export type ListingViewResponse = {
     createdAt: string;
   }>;
   activity: WireListingActivityEntry[];
+  // Facts the extraction step already recorded. Present even when the run
+  // ended in needs_info and wrote no version, which is exactly when the rest
+  // of this snapshot has nothing to show.
+  processing?: ListingProcessingSummary | null;
 };
 
 type MappedListingView = {
@@ -191,6 +199,13 @@ const labels: Record<
   superlative: {
     label: "最高級聲稱",
     description: "核對最高級聲稱的來源，或記錄處理理由。",
+  },
+  // The workspace policy says exclusivity claims require evidence, but the
+  // listing schema carries no exclusivity fact to check against, so the flag
+  // asks a person rather than asserting the claim is unsupported.
+  exclusivity: {
+    label: "獨家聲稱",
+    description: "補充獨家代理或供應的證明，或記錄移除／保留理由。",
   },
 };
 
@@ -317,7 +332,7 @@ export function mapListingView(
       label: "商品名稱（繁中）",
       englishLabel: "Title (Traditional Chinese)",
       value: content.title["zh-Hant"],
-      evidenceKey: "title.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.nameZh.evidenceKey,
     }),
     field(response.evidence, {
       key: "titleEn",
@@ -331,7 +346,7 @@ export function mapListingView(
       label: "商品描述（繁中）",
       englishLabel: "Description (Traditional Chinese)",
       value: content.description["zh-Hant"],
-      evidenceKey: "description.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.summaryZh.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -339,7 +354,7 @@ export function mapListingView(
       label: "商品描述（英文）",
       englishLabel: "Description (English)",
       value: content.description.en,
-      evidenceKey: "description.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.summaryEn.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -347,21 +362,21 @@ export function mapListingView(
       label: "SEO 標題（英文）",
       englishLabel: "SEO title (English)",
       value: content.seo.title.en,
-      evidenceKey: "seo.title.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoTitleEn.evidenceKey,
     }),
     field(response.evidence, {
       key: "seoTitleZh",
       label: "SEO 標題（繁中）",
       englishLabel: "SEO title (Traditional Chinese)",
       value: content.seo.title["zh-Hant"],
-      evidenceKey: "seo.title.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoTitleZh.evidenceKey,
     }),
     field(response.evidence, {
       key: "seoDescriptionEn",
       label: "SEO 描述（英文）",
       englishLabel: "SEO description (English)",
       value: content.seo.description.en,
-      evidenceKey: "seo.description.en",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoDescriptionEn.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -369,7 +384,7 @@ export function mapListingView(
       label: "SEO 描述（繁中）",
       englishLabel: "SEO description (Traditional Chinese)",
       value: content.seo.description["zh-Hant"],
-      evidenceKey: "seo.description.zh-Hant",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoDescriptionZh.evidenceKey,
       kind: "textarea",
     }),
     field(response.evidence, {
@@ -377,7 +392,7 @@ export function mapListingView(
       label: "SEO 關鍵字",
       englishLabel: "SEO keywords",
       value: content.tags.join(", "),
-      evidenceKey: "tags",
+      evidenceKey: REVIEW_FIELD_BINDINGS.seoKeywords.evidenceKey,
     }),
   ];
   const blockingFlags: BlockingFlag[] = response.flags.map((flag) => ({
@@ -406,6 +421,7 @@ export function mapListingView(
       remoteProductUrl: null,
       remoteProductId: response.delivery?.remoteProductId ?? null,
       shoplineLink: response.shoplineLink,
+      contentDigest: response.contentDigest,
       listingId: response.listingId,
       versionId: version.id,
       canRecordImportResult:
@@ -427,14 +443,6 @@ function valueOf(fields: ListingField[], key: string): string {
   return value === null || value === undefined ? "" : String(value).trim();
 }
 
-function requiredNumber(fields: ListingField[], key: string): number {
-  const raw = valueOf(fields, key);
-  const value = Number(raw);
-  if (!raw || !Number.isFinite(value))
-    throw new Error(`${key} must be a valid number`);
-  return value;
-}
-
 function optionalNumber(fields: ListingField[], key: string): number | null {
   const raw = valueOf(fields, key);
   if (!raw) return null;
@@ -443,29 +451,42 @@ function optionalNumber(fields: ListingField[], key: string): number | null {
   return value;
 }
 
+/**
+ * Turn the edited form back into savable content.
+ *
+ * An empty commercial field means "not known yet", not "invalid". These used to
+ * go through `requiredNumber`, which threw before the request was ever made, so
+ * an operator waiting on the merchant's price could not save the producer,
+ * origin, vintage, volume and ABV they had already confirmed. `optionalNumber`
+ * still rejects text that is not a number -- absent and wrong stay different.
+ *
+ * Completeness is enforced at approval and delivery, where the listing is about
+ * to leave the workspace, rather than on every keystroke-to-save.
+ */
 export function applyListingFields(
   current: ReviewableListing,
   fields: ListingField[],
-): CanonicalListing {
+): ReviewableListing {
   return {
     ...current,
-    sku: valueOf(fields, "sku"),
-    producer: valueOf(fields, "producer"),
-    productType: valueOf(
-      fields,
-      "productType",
-    ) as CanonicalListing["productType"],
-    country: valueOf(fields, "country"),
+    sku: valueOf(fields, "sku") || null,
+    producer: valueOf(fields, "producer") || null,
+    productType:
+      (valueOf(fields, "productType") as ReviewableListing["productType"]) ||
+      null,
+    country: valueOf(fields, "country") || null,
     region: valueOf(fields, "region") || null,
     vintage: optionalNumber(fields, "vintage"),
     grapeVarieties: valueOf(fields, "grapeVarieties")
       .split(/[,，]/)
       .map((value) => value.trim())
       .filter(Boolean),
-    volumeMl: requiredNumber(fields, "volumeMl"),
-    abvPercent: requiredNumber(fields, "abvPercent"),
-    packQuantity: requiredNumber(fields, "packQuantity"),
-    priceHkd: requiredNumber(fields, "priceHkd"),
+    volumeMl: optionalNumber(fields, "volumeMl"),
+    abvPercent: optionalNumber(fields, "abvPercent"),
+    // The schema defaults this to 1, so an empty box means one bottle rather
+    // than an unanswered question.
+    packQuantity: optionalNumber(fields, "packQuantity") ?? 1,
+    priceHkd: optionalNumber(fields, "priceHkd"),
     stockQuantity: optionalNumber(fields, "stockQuantity"),
     title: {
       en: valueOf(fields, "titleEn"),
@@ -492,10 +513,36 @@ export function applyListingFields(
   };
 }
 
-async function responseError(response: Response): Promise<Error> {
-  const fallback = `Request failed (${response.status})`;
-  return new Error(fallback);
+type CodedError = Error & { code?: string };
+
+/**
+ * Keeps the server's error CODE, and nothing else.
+ *
+ * This used to discard the body entirely, so every action failure arrived as
+ * `Request failed (409)` and rendered as one sentence: "the AI is still working
+ * on this", "your copy of this page is stale" and "resolve the flags below"
+ * were the same sentence, and none of them said what to do.
+ *
+ * `message` is deliberately still dropped. Route handlers may put internals
+ * there, and the rule against leaking internals into a response body means
+ * nothing if the screen prints them instead. Only `code` -- a closed server
+ * enum -- crosses over. The Error's own message stays the status line, because
+ * `safeUiError` reads it to recognise 401/403.
+ */
+async function responseError(response: Response): Promise<CodedError> {
+  const error: CodedError = new Error(`Request failed (${response.status})`);
+  try {
+    const body = (await response.json()) as { code?: unknown };
+    if (typeof body?.code === "string") error.code = body.code;
+  } catch {
+    // A half-deployed edge answers with an HTML error page, so `json()` throws
+    // after the fetch resolved. Reporting a failure must not itself fail.
+  }
+  return error;
 }
+
+const errorCodeOf = (cause: unknown): string | undefined =>
+  cause instanceof Error ? (cause as CodedError).code : undefined;
 
 export function ListingReviewClient({
   listingId,
@@ -510,6 +557,7 @@ export function ListingReviewClient({
   const [processingState, setProcessingState] = useState(initialProcessing);
   const [errorKind, setErrorKind] = useState<"read" | "action">("read");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const [message, setMessage] = useState<readonly [string, string] | null>(
     null,
   );
@@ -517,6 +565,12 @@ export function ListingReviewClient({
   const requestId = useRef(0);
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
+  // A code the screen recognises says what to do about it. Anything else falls
+  // back to the generic sentence, which is also what renders the permission
+  // wording for 401/403 -- `insufficient_role` deliberately has no entry.
+  const actionErrorText =
+    reviewErrorLabel(errorCode, locale) ??
+    safeUiError(error, locale, errorKind);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -531,6 +585,7 @@ export function ListingReviewClient({
         if (requestId.current !== id || signal?.aborted) return;
         setSnapshot(next);
         setError(null);
+        setErrorCode(undefined);
         if (
           next.status === "processing" ||
           next.status === "needs_info" ||
@@ -545,6 +600,7 @@ export function ListingReviewClient({
           setError(
             cause instanceof Error ? cause.message : "Unable to load listing.",
           );
+          setErrorCode(errorCodeOf(cause));
         }
         // Background callers swallow rejection; imperative callers must observe it
         // even when a newer request owns the displayed snapshot and load error.
@@ -591,6 +647,7 @@ export function ListingReviewClient({
     async (work: () => Promise<void>, success: readonly [string, string]) => {
       setBusy(true);
       setError(null);
+      setErrorCode(undefined);
       setMessage(null);
       try {
         await work();
@@ -602,6 +659,7 @@ export function ListingReviewClient({
             ? runError.message
             : "Unable to complete request.",
         );
+        setErrorCode(errorCodeOf(runError));
       } finally {
         setBusy(false);
       }
@@ -644,7 +702,7 @@ export function ListingReviewClient({
       <div className="page-wrap review-page" aria-busy={busy}>
         {error ? (
           <p className="inline-warning" role="alert" id="listing-action-error">
-            {safeUiError(error, locale, errorKind)}
+            {actionErrorText}
             <button type="button" onClick={() => void load().catch(() => {})}>
               {commonCopy[locale].retry}
             </button>
@@ -663,6 +721,7 @@ export function ListingReviewClient({
           onProcess={startProcessing}
           busy={busy}
         />
+        <ListingExtractedFacts processing={snapshot.processing} />
       </div>
     );
   if (viewState.kind === "loading" || !snapshot || !mapped)
@@ -782,7 +841,7 @@ export function ListingReviewClient({
       });
       if (!response.ok) throw await responseError(response);
       await load();
-    }, ["已加入 SHOPLINE 發布佇列", "Publish queued"]);
+    }, ["已加入 SHOPLINE 發佈佇列", "Publish queued"]);
   }
 
   return (
@@ -813,7 +872,7 @@ export function ListingReviewClient({
       </div>
       {error ? (
         <p className="inline-warning" role="alert" id="listing-action-error">
-          {safeUiError(error, locale, errorKind)}
+          {actionErrorText}
           <button type="button" onClick={() => void load().catch(() => {})}>
             {commonCopy[locale].retry}
           </button>

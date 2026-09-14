@@ -11,6 +11,7 @@ import type {
   AuditContext,
   AuditWriter,
   CanonicalListing,
+  ComplianceFlag,
   FieldEvidence,
   ListingFacts,
   WorkspaceProfile,
@@ -99,9 +100,22 @@ export type HarnessState = {
     metadata: unknown;
   }>;
   sourceAssetsAttached: Array<{ listingId: string; assetIds: string[] }>;
+  /**
+   * Compliance flags the pipeline wrote for the generated copy. Recorded rather
+   * than dropped, because `replaceFlags` was a no-op here and nothing in this
+   * suite could see whether the scan produced anything at all.
+   */
+  flags: Array<{ rule: string; field: string; severity: string }>;
 };
 export type HarnessOptions = {
   missingFields?: string[];
+  /**
+   * Extraction that could not identify the product at all -- a blurred or
+   * obscured label. This, not a missing price, is what routes a run to
+   * `needs_info`: merchant data was never something the model could read off a
+   * photograph, so waiting on it stranded drafts that were perfectly writable.
+   */
+  unidentifiable?: boolean;
   extractError?: Error;
   generateError?: Error;
   generateProvider?: (input: GenerationInput) => Promise<GenerationResult>;
@@ -132,10 +146,13 @@ export function makeProvider(options: HarnessOptions = {}): ListingAIProvider {
   return {
     async extract(_input: ExtractionInput): Promise<ExtractionResult> {
       if (options.extractError) throw options.extractError;
-      return {
-        facts: options.missingFields?.includes("priceHkd")
+      const extracted = options.unidentifiable
+        ? { ...facts, producer: null }
+        : options.missingFields?.includes("priceHkd")
           ? { ...facts, priceHkd: null }
-          : facts,
+          : facts;
+      return {
+        facts: extracted,
         evidence: options.missingFields ? [] : evidence,
         missingFields: options.missingFields ?? [],
         usage,
@@ -160,6 +177,7 @@ export function makeHarness(options: HarnessOptions = {}): {
     audits: [],
     sourceAssetsCreated: [],
     sourceAssetsAttached: [],
+    flags: [],
   };
   let completeErrorConsumed = false;
   const audit: AuditWriter = {
@@ -196,7 +214,13 @@ export function makeHarness(options: HarnessOptions = {}): {
         return { id, sequence: 1 };
       },
       async replaceEvidence() {},
-      async replaceFlags() {},
+      async replaceFlags(_versionId: string, flags: ComplianceFlag[]) {
+        state.flags = flags.map((flag) => ({
+          rule: flag.rule,
+          field: flag.field,
+          severity: flag.severity,
+        }));
+      },
       async complete(
         _id: string,
         result,

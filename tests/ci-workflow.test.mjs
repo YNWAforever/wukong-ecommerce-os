@@ -4,9 +4,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { check } from "prettier";
+
 import {
   knownFormatDebtEntries,
   matchesKnownFormatDebt,
+  protectedUnrelatedFileEntries,
 } from "../scripts/check-runtime-format.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -240,14 +243,6 @@ test("keeps the formatting-debt waiver exact, hash-pinned, and fail-closed", () 
     [
       "apps/web/app/api/assets/finalize/route.test.ts",
       "3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b",
-    ],
-    [
-      "apps/web/app/api/assets/finalize/route.ts",
-      "5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2",
-    ],
-    [
-      "apps/web/app/api/assets/presign/route.ts",
-      "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
     ],
     [
       "apps/worker/src/listing-consumer.test.ts",
@@ -521,5 +516,71 @@ test("audits the workspace and draft emitted by the same completed browser fixtu
   assert.match(
     pilot,
     /writeFile\("test-results\/real-stack-draft-id\.txt", draftId!/,
+  );
+});
+
+test("keeps the protected-file exclusions exact and self-justifying", async () => {
+  // The gate has two escape hatches. knownFormatDebt is hash-pinned and has
+  // been pinned by a test for as long as it has existed. protectedUnrelatedFiles
+  // was neither exported nor tested, so a path added to it left the gate in
+  // silence -- and because the gate diff-scopes to merge-base..HEAD, a file
+  // already on main is never looked at either. That combination is how the
+  // 2026-08-30 specification sat unformatted while CI stayed green, with the
+  // failure waiting for the next commit that happened to touch it.
+  const expected = [
+    ".gitignore",
+    "apps/web/.gitignore",
+    "apps/web/auth.test.ts",
+    "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
+    "docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md",
+  ];
+
+  assert.deepEqual(protectedUnrelatedFileEntries(), expected);
+
+  // A Prettier-clean file must never be parked here. The list is for documents
+  // kept exactly as received; it is not a way to skip formatting. The two
+  // dotfiles are belt-and-braces: extname is "" for both, which is not in
+  // supportedExtensions, so the gate never reaches them regardless.
+  for (const file of expected) {
+    if (!file.endsWith(".md") && !file.endsWith(".ts")) continue;
+    const source = readFileSync(
+      new URL(file, new URL("../", import.meta.url)),
+      "utf8",
+    ).replaceAll("\r\n", "\n");
+    assert.equal(
+      await check(source, { filepath: file }),
+      false,
+      file + " is Prettier-clean, so it does not need an exemption",
+    );
+  }
+});
+
+test("keeps the three end-to-end ports disjoint", () => {
+  // The auth mode and the real-stack public-image server both claimed 49218.
+  // Whichever started second died on EADDRINUSE, and because
+  // real-stack-server.mjs binds the application port as well, losing the image
+  // port took the app down with it -- so the failure surfaced as a refused
+  // connection on 49217, a port that was never the conflict. Derived from the
+  // sources rather than restated, so moving a port cannot re-collide silently.
+  const config = readFileSync(
+    new URL("playwright.config.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  const harness = readFileSync(
+    new URL("tests/e2e/real-stack-server.mjs", new URL("../", import.meta.url)),
+    "utf8",
+  );
+
+  const authPort = /--port (\d+)"/.exec(config)?.[1];
+  const appPort = /PORT: "(\d+)"/.exec(config)?.[1];
+  const imagePort = /publicImagePort = (\d+);/.exec(harness)?.[1];
+
+  assert.ok(authPort, "auth-mode dev server port not found");
+  assert.ok(appPort, "real-stack app port not found");
+  assert.ok(imagePort, "public-image port not found");
+  assert.equal(
+    new Set([authPort, appPort, imagePort]).size,
+    3,
+    `ports collide: auth=${authPort} app=${appPort} image=${imagePort}`,
   );
 });

@@ -1,5 +1,5 @@
 import type {
-  CanonicalListing,
+  ReviewableListing,
   FieldEvidence,
   ListingFacts,
   WorkspaceProfile,
@@ -42,7 +42,12 @@ export type GenerationInput = {
 };
 
 export type GenerationResult = {
-  listing: CanonicalListing;
+  /**
+   * Reviewable, not canonical: a photo-only draft has no SKU, price or stock,
+   * and those are merchant data the model may not read off a label. Publishing
+   * still requires canonical, at `requireForPublish`.
+   */
+  listing: ReviewableListing;
   usage: AIUsage;
 };
 

@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import postgres from "postgres";
 import { afterAll, expect, it, vi } from "vitest";
 import { createDatabase } from "@wukong/db";
+import { validateProductShotSource } from "@wukong/assets/product-shot-render";
 import { S3AssetStore, readS3RuntimeConfig } from "@wukong/assets";
 import {
   prepareProductShot,
@@ -35,7 +36,13 @@ const config = readS3RuntimeConfig(process.env),
   store = S3AssetStore.fromConfig(config.bucket, config.client);
 const require = createRequire(import.meta.url),
   sharp = createRequire(require.resolve("@wukong/assets"))("sharp");
-const deps = { forWorkspace: db.forWorkspace, assetStore: store };
+// The real decoding validator: these cases run against a real store and a real
+// image, so they must exercise the path the product-shot route actually uses.
+const deps = {
+  forWorkspace: db.forWorkspace,
+  assetStore: store,
+  validateSource: validateProductShotSource,
+};
 afterAll(async () => {
   await db.close();
   await admin.end();

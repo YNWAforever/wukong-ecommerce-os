@@ -52,7 +52,14 @@ export type CreateBulkExportInput = {
   workspaceId: string;
   requestedBy: string;
   listingIds: readonly string[];
-  freshnessAttested: boolean;
+  /**
+   * The digest the operator attested, per listing id.
+   *
+   * A map rather than a boolean because the attestation is evidence about
+   * specific content: a listing absent from it was never attested, which the
+   * per-listing gate reports as `not_attested`.
+   */
+  attestedDigests: ReadonlyMap<string, string>;
 };
 
 /**
@@ -146,12 +153,16 @@ export async function createBulkExport(
       continue;
     }
 
+    const attestedRowDigest = input.attestedDigests.get(listingId);
     const eligibility = await checkBulkUpdateEligibility(
       {
         workspaceId: input.workspaceId,
         listingId,
         versionId: activeVersion.id,
-        freshnessAttested: input.freshnessAttested,
+        attestation:
+          attestedRowDigest === undefined
+            ? { kind: "none" as const }
+            : { kind: "operator" as const, rowDigest: attestedRowDigest },
       },
       deps,
     );
@@ -332,16 +343,25 @@ export class BulkUpdateEligibilityConflict extends Error {
 }
 
 export async function recheckBulkExport(
-  input: Pick<CreateBulkExportInput, "workspaceId" | "freshnessAttested">,
+  input: Pick<CreateBulkExportInput, "workspaceId" | "attestedDigests">,
   evidence: readonly BulkUpdateEvidence[],
   deps: BulkUpdateEligibilityDeps,
 ): Promise<void> {
   for (const expected of evidence) {
+    // Re-verifies evidence already captured for a listing that passed the
+    // per-listing gate earlier in this same export with a real operator
+    // attestation (see the main loop above) -- so the truthful re-check here
+    // is against that same attested digest, not an invented one.
+    const attestedRowDigest = input.attestedDigests.get(expected.listingId);
     const result = await checkBulkUpdateEligibility(
       {
-        ...input,
+        workspaceId: input.workspaceId,
         listingId: expected.listingId,
         versionId: expected.versionId,
+        attestation:
+          attestedRowDigest === undefined
+            ? { kind: "none" as const }
+            : { kind: "operator" as const, rowDigest: attestedRowDigest },
       },
       deps,
       expected,

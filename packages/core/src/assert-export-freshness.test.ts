@@ -10,9 +10,8 @@ const BASE_INPUT: AssertExportFreshnessInput = {
   workspaceId: "ws_opak",
   listingId: "listing_1",
   expectedSourceImportId: "source_import_1",
-  expectedRowDigest: "digest_1",
   expectedVersionId: "version_1",
-  freshnessAttested: true,
+  attestedRowDigest: "digest_1",
 };
 
 function depsWith(
@@ -41,9 +40,9 @@ describe("assertExportFreshness", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("rejects when freshness was not attested, before checking anything else", async () => {
+  it("rejects when no attestation was supplied, before checking anything else", async () => {
     const result = await assertExportFreshness(
-      { ...BASE_INPUT, freshnessAttested: false },
+      { ...BASE_INPUT, attestedRowDigest: null },
       depsWith({
         async getPlatformProductLink() {
           throw new Error("must not be called");
@@ -51,6 +50,18 @@ describe("assertExportFreshness", () => {
       }),
     );
     expect(result).toEqual({ ok: false, reason: "not_attested" });
+  });
+
+  it("rejects when the source moved since the operator looked", async () => {
+    // The operator attested the digest they were shown; the link now carries a
+    // different one. Before this change `expectedRowDigest` came from the
+    // caller's own read of the same link, so this compared a value with a
+    // re-read of itself and could only fail on a microsecond race.
+    const result = await assertExportFreshness(
+      { ...BASE_INPUT, attestedRowDigest: "digest_the_operator_saw" },
+      depsWith(),
+    );
+    expect(result).toEqual({ ok: false, reason: "row_digest_mismatch" });
   });
 
   it("rejects when the listing has no remote product link", async () => {
