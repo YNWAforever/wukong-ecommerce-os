@@ -1081,6 +1081,94 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(qualityMetrics.creationToApprovalMs.denominator).toBe(2);
   expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
   await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
+
+  // W7: re-importing the same workbook re-binds both approvals to a new source
+  // import. That must be visible when it happens, and the status must stay.
+  await page.goto("/listings/import");
+  await page.evaluate(() => {
+    document.cookie = "locale=en; path=/; max-age=31536000";
+  });
+  await page.reload();
+  await page.getByRole("tab", { name: "Workbook", exact: true }).click();
+  await page.locator("#connected-shopline-update > summary").click();
+  await page.locator("#bulk-import-file").setInputFiles({
+    name: "synthetic-task5-reimport.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: input,
+  });
+  await page
+    .locator("#merchant-attested-export-at")
+    .fill(
+      new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    );
+  const reimported = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/import" &&
+      r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Start import" }).click();
+  const reimportResponse = await reimported;
+  expect(reimportResponse.status()).toBe(201);
+  expect(await reimportResponse.json()).toMatchObject({
+    createdDrafts: 0,
+    invalidatedApprovals: 2,
+  });
+  await expect(page.getByText(/Approvals invalidated: 2/)).toBeVisible();
+
+  const statusCheck = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const statuses =
+      await statusCheck`SELECT status FROM listing_drafts WHERE workspace_id=${operator.workspaceId}`;
+    // Recorded, not reopened: neither listing went back to review.
+    expect(statuses.map((row) => row.status)).not.toContain("reopened");
+  } finally {
+    await statusCheck.end();
+  }
+
+  const afterReimport = await (await page.request.get("/api/jobs")).json();
+  expect(afterReimport.metrics.approvalInvalidations).toEqual({
+    confirmationChanged: 0,
+    reimportChanged: 0,
+    reimportUnchanged: 2,
+  });
+  await page.goto("/jobs");
+  const reimportTile = page
+    .locator(".jobs-metric-strip > div")
+    .filter({ hasText: "Approvals invalidated by re-import" });
+  await expect(reimportTile.locator(".metric-value")).toHaveText("2");
+
+  // The listing's own trail names what happened and why.
+  await page.goto("/listings/" + listingIds[0]);
+  await expect(
+    page.getByText("Approval invalidated (Re-imported, row unchanged)"),
+  ).toBeVisible();
+
+  // A confirmation change reopens the listing, and the reopen is shown as itself.
+  const confirmationSaved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + listingIds[0] + "/review-confirmations") &&
+      r.request().method() === "PATCH",
+  );
+  await page.locator("#confirmation-field-nameZh").click();
+  expect((await confirmationSaved).status()).toBe(200);
+  await page.reload();
+  await expect(page.locator(".review-status")).toHaveText(
+    stateLabel("reopened", "en"),
+  );
+  await expect(
+    page.getByText("Approval invalidated (Confirmations changed)"),
+  ).toBeVisible();
+  await page.goto("/queue");
+  const reopenedRow = page.locator("li.queue-item", {
+    has: page.locator('a[href="/listings/' + listingIds[0] + '"]'),
+  });
+  await expect(reopenedRow.locator(".status-tag")).toHaveText(
+    stateLabel("reopened", "en"),
+  );
+  const afterReopen = await (await page.request.get("/api/jobs")).json();
+  expect(afterReopen.metrics.approvalInvalidations.confirmationChanged).toBe(1);
+
   expect(pageErrors).toEqual([]);
 });
 
