@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createJobsHandler } from "./route.js";
 
@@ -307,7 +307,13 @@ describe("GET /api/jobs", () => {
                 async countByActionSince() {
                   return 3;
                 },
-                async countByActionAndMetadataKeySince() {
+                async countByActionAndMetadataKeySince(action: string) {
+                  if (action === "listing.approval_invalidated")
+                    return [
+                      { value: "confirmation_changed", count: 4 },
+                      { value: "source_reimported_changed", count: 2 },
+                      { value: "source_reimported_unchanged", count: 7 },
+                    ];
                   return [
                     { value: "version_conflict", count: 1 },
                     { value: "source_import_mismatch", count: 2 },
@@ -338,6 +344,106 @@ describe("GET /api/jobs", () => {
       versionConflicts: 1,
       staleSourceRejections: 2,
       importedRows: 120,
+      approvalInvalidations: {
+        confirmationChanged: 4,
+        reimportChanged: 2,
+        reimportUnchanged: 7,
+      },
     });
+  });
+
+  it("counts an unknown invalidation cause in no tile and logs only its value", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const noRows = {
+      async getByIds() {
+        return [];
+      },
+    };
+    try {
+      const handler = createJobsHandler({
+        sessionContext: {
+          async resolve() {
+            return {
+              workspaceId: "ws_opak",
+              actorId: "user_1",
+              role: "viewer",
+            };
+          },
+        },
+        getDatabase: () =>
+          ({
+            async forWorkspace<T>(
+              _workspaceId: string,
+              work: (repositories: any) => Promise<T>,
+            ) {
+              return work({
+                reads: {
+                  async jobsPage() {
+                    return {
+                      items: [],
+                      totalMatching: 0,
+                      total: 0,
+                      counts: {},
+                    };
+                  },
+                },
+                enrichmentBatches: noRows,
+                publishJobs: noRows,
+                pipelineRuns: noRows,
+                exportAttempts: noRows,
+                importResults: {
+                  ...noRows,
+                  async listForExportAttempts() {
+                    return [];
+                  },
+                },
+                audit: {
+                  async countByActionSince() {
+                    return 0;
+                  },
+                  async countByActionAndMetadataKeySince(action: string) {
+                    return action === "listing.approval_invalidated"
+                      ? [
+                          { value: "confirmation_changed", count: 1 },
+                          { value: "some_future_cause", count: 9 },
+                        ]
+                      : [];
+                  },
+                  async sumImportMetricsSince() {
+                    return {
+                      parsedRows: 0,
+                      createdDrafts: 0,
+                      refreshedProducts: 0,
+                      issueCount: 0,
+                    };
+                  },
+                },
+              });
+            },
+          }) as never,
+      });
+
+      const body = await (await handler()).json();
+
+      expect(body.metrics.approvalInvalidations).toEqual({
+        confirmationChanged: 1,
+        reimportChanged: 0,
+        reimportUnchanged: 0,
+      });
+      const logged = info.mock.calls
+        .map(([line]) => {
+          try {
+            return JSON.parse(String(line));
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry) => entry?.event === "jobs.unknown_invalidation_cause");
+      expect(logged).toEqual([
+        { event: "jobs.unknown_invalidation_cause", cause: "some_future_cause" },
+      ]);
+    } finally {
+      info.mockRestore();
+    }
   });
 });

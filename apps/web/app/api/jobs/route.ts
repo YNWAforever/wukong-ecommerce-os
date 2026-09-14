@@ -4,6 +4,10 @@ import {
   resultCapabilities,
 } from "../../../lib/export-reconciliation";
 import type { Database } from "@wukong/db";
+import {
+  APPROVAL_INVALIDATED_ACTION,
+  isApprovalInvalidationCause,
+} from "@wukong/core";
 
 import { getDatabase } from "../../../lib/intake-runtime";
 import { buildJobsLedger } from "../../../lib/jobs-ledger";
@@ -73,6 +77,7 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             publishRetries,
             reviewConflictsByReason,
             importSums,
+            invalidationsByCause,
           ] = await Promise.all([
             repositories.enrichmentBatches.getByIds(ids("batch")),
             repositories.publishJobs.getByIds(ids("publish_job")),
@@ -89,6 +94,11 @@ export function createJobsHandler(deps: JobsRouteDeps) {
               since,
             ),
             repositories.audit.sumImportMetricsSince(since),
+            repositories.audit.countByActionAndMetadataKeySince(
+              APPROVAL_INVALIDATED_ACTION,
+              "cause",
+              since,
+            ),
           ]);
 
           const readyExports = exports.filter(
@@ -106,6 +116,30 @@ export function createJobsHandler(deps: JobsRouteDeps) {
             } else {
               staleSourceRejections += row.count;
             }
+          }
+
+          const approvalInvalidations = {
+            confirmationChanged: 0,
+            reimportChanged: 0,
+            reimportUnchanged: 0,
+          };
+          for (const row of invalidationsByCause) {
+            if (!isApprovalInvalidationCause(row.value)) {
+              // A cause this build does not know must not be folded into a
+              // tile that claims to mean something else.
+              console.info(
+                JSON.stringify({
+                  event: "jobs.unknown_invalidation_cause",
+                  cause: row.value,
+                }),
+              );
+              continue;
+            }
+            if (row.value === "confirmation_changed")
+              approvalInvalidations.confirmationChanged += row.count;
+            else if (row.value === "source_reimported_changed")
+              approvalInvalidations.reimportChanged += row.count;
+            else approvalInvalidations.reimportUnchanged += row.count;
           }
 
           const ledgerOrder = new Map(
@@ -133,6 +167,7 @@ export function createJobsHandler(deps: JobsRouteDeps) {
               versionConflicts,
               staleSourceRejections,
               importedRows: importSums.parsedRows,
+              approvalInvalidations,
             },
           };
         });
