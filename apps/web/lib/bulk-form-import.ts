@@ -241,9 +241,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             : approvalStates[listingId];
           if (
             approvalState &&
-            APPROVAL_HOLDING_STATUSES.has(
-              approvalState.status as ListingStatus,
-            )
+            APPROVAL_HOLDING_STATUSES.has(approvalState.status)
           ) {
             invalidatedApprovals += 1;
             const cause: ApprovalInvalidationCause = isRefresh
