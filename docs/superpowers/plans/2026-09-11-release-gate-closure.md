@@ -290,6 +290,26 @@ It is listed sixth, not first, because nothing is currently wrong at runtime —
 approval binding works. What is missing is the evidence a UAT stage has to
 produce ("complete audit evidence", §18 go/no-go). It must land before Stage 2.
 
+**Done (2026-09-14).** Designed in
+[confirmation-ledger field records](../specs/2026-09-13-confirmation-ledger-field-records-design.md)
+and implemented as one nullable column, `review_confirmations.field_records`
+(`0027`), plus a binding module the review UI now shares with the ledger.
+
+The premise needed the same correction W1's did. All three ingredients already
+existed -- `listing_versions`, the imported row, `field_evidence` -- and what was
+missing was the ledger binding a field-granular tick to them. Each field now
+records a digest of the confirmed value, of the merchant's own cell or `null`,
+and of the grounding the AI offered or `null`, derived server-side so a request
+cannot supply it. The `review_confirmation.updated` audit event gains
+`fieldsWithImportedCell` and `fieldsWithoutEvidence`.
+
+What it does not yet deliver: under today's AI pipeline the evidence digest is
+`null` for all eight fields, because evidence is persisted only for extracted
+facts, never for copy. The ledger records that truthfully rather than inventing
+grounding; see the design's "Found during implementation".
+
+Approval is unchanged: this is evidence for a stage review, not a new gate.
+
 ### W7 — Approval invalidation is invisible
 
 `invalidateApprovalForConfirmationChange`

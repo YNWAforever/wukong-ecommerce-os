@@ -38,6 +38,32 @@ corrected here rather than silently rewritten.
 Also found: the deployment-ordering record never listed `0026`, shipped this
 week. It is now listed beside `0027`.
 
+## Found during implementation
+
+**The evidence digest is `null` for all eight fields under today's pipeline.**
+The evidence keys are correct -- each is byte-identical to the key the review UI
+already uses. What is missing is evidence itself: the AI pipeline persists
+evidence only for extraction-stage facts. The prompt restricts an evidence
+item's field to fact names such as `productType` and `vintage`
+(`packages/ai/src/prompts.ts:24`), the output schema enforces that list
+(`packages/ai/src/listing-output-validation.ts:39`), and the copywriting step
+that produces titles, descriptions, SEO copy and keywords writes no evidence of
+its own (`apps/worker/src/listing-pipeline.ts:546` persists
+`extraction.evidence` only).
+
+So in production every record's `evidenceDigest` is `null`, and the
+`review_confirmation.updated` audit event's `fieldsWithoutEvidence` is 8. That
+is a truthful record of the pipeline, not a defect in the ledger: the review UI
+shows no evidence for these fields either. It changes the day the copywriting
+step starts persisting evidence, and the audit count is kept precisely so that
+change is visible. Making the pipeline ground copy fields is outside W6.
+
+Two corrections to `before` were made during implementation and are reflected in
+"What the column holds" below: the cell is digested with leading and trailing
+whitespace removed, so a padded cell the merchant never changed does not read as
+changed; and `seoKeywords`' `before` is recorded for provenance only, because a
+joined string and an array can never compare.
+
 ## The problem, stated precisely
 
 W6 says the stored ledger "records neither". That is true of the ledger and

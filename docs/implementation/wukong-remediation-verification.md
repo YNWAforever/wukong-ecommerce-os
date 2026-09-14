@@ -213,7 +213,7 @@ Postgres was started this session, so these are no longer assumptions:
    from enrichment_batches where status = 'budget_exhausted';
    ```
 
-## Deployment order, now four constraints
+## Deployment order, now six constraints
 
 1. **Migration `0022` before the Worker.** A Worker that writes
    `provider_disabled` against the un-widened CHECK raises `check_violation` on
@@ -233,6 +233,17 @@ Postgres was started this session, so these are no longer assumptions:
    every export at the insert -- after the operator has already ticked the
    attestation box, which is the worst possible moment to discover it. The
    column is additive and nullable, so the migration is safe to run ahead.
+5. **Migration `0026` before the web deploy.** Since W1 the export route writes
+   `rowDigestMismatchCount` instead of `freshnessAttested` into provenance, and
+   the `guard_import_result_insert` trigger from `0017` refuses any import
+   result recorded against such an attempt with
+   `export_provenance_incomplete`. `0026` replaces the trigger. It runs in the
+   same `migrate()` invocation as `0025`, so the runner cannot split them; it is
+   listed because it was missing, not because it adds a separate hazard.
+6. **Migration `0027` before the web deploy.** The review-confirmations route
+   writes `review_confirmations.field_records`. A web deploy that lands first
+   fails every confirmation tick at the upsert. The column is additive and
+   nullable, so the migration is safe to run ahead.
 
 ## Follow-up work, with what each was measured against
 
