@@ -50,8 +50,10 @@ transaction. `stale`, `publishing` and `unchanged` outcomes write nothing. Statu
 unchanged.
 
 **Re-import.** Before the row loop, the importer calls a new narrow read,
-`listings.getStatusesByIds(ids)`, which returns `{ id, status, activeVersionId }[]` and is
-workspace-scoped. `getByIds` is not reused because it loads version content. For each row whose
+`listings.approvalStatesByIds(ids)`, which returns `Record<id, { status, activeVersionId }>` and
+is workspace-scoped. It sits beside the existing `statusesByIds`, which omits `activeVersionId`
+(needed for the event's `versionId`). `getByIds` is not reused because it loads version content.
+For each row whose
 existing listing's status is `approved`, `published`, `publish_failed` or `publishing`, the
 importer writes the event. The cause comes from the existing `isRefresh` flag:
 `source_reimported_changed` if true, else `source_reimported_unchanged`. `publishing` is included
@@ -128,9 +130,10 @@ review locks out of bulk import.
   "Reopened", and the queue tag with grouping unchanged, in both locales.
 
 **Integration (Postgres):**
-- `getStatusesByIds` returns nothing for a foreign workspace's ids.
-- Re-importing an approved listing records the event, keeps `approved`, and eligibility reports
-  `source_import_mismatch`.
+- `approvalStatesByIds` returns nothing for a foreign workspace's ids.
+- Re-importing an approved listing records the event, keeps `approved`, and the catalog shows it
+  as not exportable: covered by the real-stack Playwright journey, as no importer integration
+  harness exists.
 - `audit:verify` passes.
 
 **Acceptance (Playwright, extend `tests/e2e/workbook-import.spec.ts`):**
@@ -144,3 +147,15 @@ review locks out of bulk import.
 
 - `docs/superpowers/plans/2026-09-11-release-gate-closure.md`: mark W7 done when complete; amend the
   /quality clause.
+
+## Corrections found while planning
+
+1. **Read name.** `statusesByIds` already exists on `ListingRepository`, so the new read is
+   `approvalStatesByIds`, not `getStatusesByIds`.
+2. **Approval must accept `reopened`.** `listing-fields-form.tsx` disabled approval unless the
+   review status was `in_review`, which worked for reopened listings only because they were
+   masked. Unmasking therefore also changes that condition to accept `reopened`, which the approve
+   path already handles (`listings.ts:653`); without it, unmasking would lock every reopened
+   listing.
+3. **Re-import against the real gate.** No integration harness exists for the bulk-form importer,
+   so that check is part of the real-stack Playwright journey.
