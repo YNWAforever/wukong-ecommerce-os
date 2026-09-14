@@ -136,12 +136,12 @@ review locks out of bulk import.
   harness exists.
 - `audit:verify` passes.
 
-**Acceptance (Playwright, extend `tests/e2e/workbook-import.spec.ts`):**
-1. Import and approve a listing, then re-import the same workbook.
-2. The import panel shows "Approvals invalidated: 1".
-3. /jobs shows the re-import tile at 1.
-4. The activity panel shows the cause.
-5. A confirmation change then shows "Reopened" in the queue and on the review page.
+**Acceptance (Playwright, extend the attended journey in `tests/e2e/bulk-update-pilot.spec.ts`):**
+1. That journey already imports and approves two listings. At its end, re-import the same workbook.
+2. The import panel shows "Approvals invalidated: 2", and neither listing's status becomes `reopened`.
+3. /jobs shows the re-import tile at 2.
+4. The first listing's activity panel shows the cause.
+5. A confirmation change on that listing then shows "Reopened" on its review page and in the queue, and the /jobs confirmation count becomes 1.
 
 ## Docs
 
@@ -159,3 +159,6 @@ review locks out of bulk import.
    listing.
 3. **Re-import against the real gate.** No integration harness exists for the bulk-form importer,
    so that check is part of the real-stack Playwright journey.
+4. **Acceptance test location.** `tests/e2e/workbook-import.spec.ts` exercises the workbook
+   importer, not the SHOPLINE bulk form. The journey extends `tests/e2e/bulk-update-pilot.spec.ts`,
+   whose attended test already approves two listings, so the expected counts are 2.
