@@ -174,6 +174,45 @@ describe("ActivityPanel", () => {
 
     await unmount(root);
   });
+
+  it.each([
+    ["confirmation_changed", "確認內容已變更"],
+    ["source_reimported_changed", "重新匯入，來源資料已變更"],
+    ["source_reimported_unchanged", "重新匯入，來源資料未變"],
+  ])("names an approval invalidated by %s and its cause", async (cause, text) => {
+    const { container, root } = await mount([
+      {
+        kind: "audit",
+        id: "audit_inv",
+        action: "listing.approval_invalidated",
+        metadata: { cause, fromStatus: "approved", versionId: "v1" },
+        createdAt: "2026-09-14T00:00:00.000Z",
+      },
+    ]);
+
+    expect(container.textContent).toContain("批准已失效");
+    expect(container.textContent).toContain(text);
+    expect(container.textContent).not.toContain(cause);
+
+    await unmount(root);
+  });
+
+  it("names an invalidation with an unknown cause without printing the raw value", async () => {
+    const { container, root } = await mount([
+      {
+        kind: "audit",
+        id: "audit_inv",
+        action: "listing.approval_invalidated",
+        metadata: { cause: "some_future_cause" },
+        createdAt: "2026-09-14T00:00:00.000Z",
+      },
+    ]);
+
+    expect(container.textContent).toContain("批准已失效");
+    expect(container.textContent).not.toContain("some_future_cause");
+
+    await unmount(root);
+  });
 });
 
 it("shows artifact failure separately from included membership", async () => {
