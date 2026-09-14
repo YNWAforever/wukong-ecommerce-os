@@ -149,6 +149,13 @@ describe("listing review client mapping", () => {
     });
   });
 
+  it("keeps a reopened listing visibly reopened instead of calling it in review", () => {
+    const mapped = mapListingView({ ...response, status: "reopened" });
+
+    expect(mapped.model.status).toBe("reopened");
+    expect(mapped.delivery.status).toBe("reopened");
+  });
+
   it("maps the stored remote SHOPLINE product id after publishing", () => {
     const mapped = mapListingView({
       ...response,

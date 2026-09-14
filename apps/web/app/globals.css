@@ -909,6 +909,7 @@ button:disabled {
   border-color: #edcfaa;
 }
 .status-in_review,
+.status-reopened,
 .status-needs_info {
   color: var(--amber-dark);
   background: var(--amber-soft);

@@ -132,7 +132,9 @@ export function ListingFieldsForm({
     hasOpenBlockingFlag ||
     confirmationsIncomplete ||
     isDirty ||
-    model.status !== "in_review";
+    // Reopened listings are approvable: the approve path submits them for
+    // review first (packages/db/src/repositories/listings.ts, approve).
+    (model.status !== "in_review" && model.status !== "reopened");
 
   function updateField(key: string, value: string) {
     setFields((current) =>

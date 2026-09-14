@@ -53,6 +53,7 @@ export type ListingReviewModel = {
     | "processing"
     | "needs_info"
     | "in_review"
+    | "reopened"
     | "approved"
     | "published"
     | "failed";
