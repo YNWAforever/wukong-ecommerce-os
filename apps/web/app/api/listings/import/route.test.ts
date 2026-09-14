@@ -7,6 +7,7 @@ const okResult = {
   parsedRows: 2,
   createdDrafts: 2,
   refreshedProducts: 0,
+  invalidatedApprovals: 0,
   issues: [],
 };
 
