@@ -139,7 +139,17 @@ export function ListingQueue({
                           >
                             {item.title}
                           </Link>
-                          <p>{item.subtitle}</p>
+                          <p>
+                            {item.subtitle}
+                            {item.reopened ? (
+                              <>
+                                {" · "}
+                                <span className="status-tag">
+                                  {stateLabel("reopened", locale)}
+                                </span>
+                              </>
+                            ) : null}
+                          </p>
                           <time dateTime={item.updatedAt}>
                             {formatHkDate(item.updatedAt, locale)}
                           </time>

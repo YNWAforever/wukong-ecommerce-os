@@ -67,6 +67,7 @@ export function mapDashboardItems(
               failed: "View error",
             }[status],
       openBlockingFlagCount: item.openBlockingFlagCount,
+      reopened: item.status === "reopened",
     };
   });
 }

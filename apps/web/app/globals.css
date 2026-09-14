@@ -915,6 +915,10 @@ button:disabled {
   background: var(--amber-soft);
   border-color: #edcfaa;
 }
+.status-tag {
+  color: var(--amber-dark);
+  font-weight: 600;
+}
 .status-approved,
 .status-published {
   color: var(--success);

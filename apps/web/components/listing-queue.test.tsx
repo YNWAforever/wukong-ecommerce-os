@@ -168,3 +168,35 @@ describe("queue group headings", () => {
     }
   });
 });
+
+describe("reopened listings", () => {
+  it("stay in the review group and carry a Reopened tag", async () => {
+    const { container, root } = await mount([
+      buildQueueItem({
+        id: "listing_r",
+        title: "Reopened Riesling",
+        reopened: true,
+      }),
+      buildQueueItem({ id: "listing_i", title: "Fresh Riesling" }),
+    ]);
+    try {
+      const group = container.querySelector(
+        'section[aria-labelledby="queue-in_review"]',
+      )!;
+      const items = Array.from(group.querySelectorAll("li.queue-item"));
+      expect(items).toHaveLength(2);
+      const reopened = items.find((item) =>
+        item.textContent?.includes("Reopened Riesling"),
+      )!;
+      const fresh = items.find((item) =>
+        item.textContent?.includes("Fresh Riesling"),
+      )!;
+      expect(reopened.querySelector(".status-tag")?.textContent).toBe(
+        stateLabel("reopened", "zh-Hant"),
+      );
+      expect(fresh.querySelector(".status-tag")).toBeNull();
+    } finally {
+      await unmount(root);
+    }
+  });
+});

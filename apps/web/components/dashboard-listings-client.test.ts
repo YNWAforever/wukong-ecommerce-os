@@ -73,6 +73,15 @@ describe("mapDashboardItems", () => {
     const [item] = mapDashboardItems([baseItem]);
     expect(item?.openBlockingFlagCount).toBe(0);
   });
+
+  it("keeps a reopened listing in review but marks it reopened", () => {
+    const [reopened, inReview] = mapDashboardItems([
+      { ...baseItem, id: "listing_r", status: "reopened" },
+      baseItem,
+    ]);
+    expect(reopened).toMatchObject({ status: "in_review", reopened: true });
+    expect(inReview).toMatchObject({ status: "in_review", reopened: false });
+  });
 });
 
 describe("dashboardMetricsFromCounts", () => {
