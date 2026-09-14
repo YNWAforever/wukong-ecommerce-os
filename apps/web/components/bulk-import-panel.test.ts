@@ -130,6 +130,7 @@ describe("submitBulkImport", () => {
           parsedRows: 2,
           createdDrafts: 2,
           refreshedProducts: 0,
+          invalidatedApprovals: 2,
           issues: [
             {
               code: "quantity_negative",
@@ -157,6 +158,7 @@ describe("submitBulkImport", () => {
       parsedRows: 2,
       createdDrafts: 2,
       refreshedProducts: 0,
+      invalidatedApprovals: 2,
       issues: [
         {
           code: "quantity_negative",
@@ -172,6 +174,27 @@ describe("submitBulkImport", () => {
       "/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00.000Z&filename=catalog.xlsx",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("treats a response without invalidatedApprovals as zero", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          specVersion: "opak-2026-05",
+          parsedRows: 1,
+          createdDrafts: 1,
+          refreshedProducts: 0,
+          issues: [],
+        },
+        { status: 201 },
+      ),
+    );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+    expect(result).toMatchObject({ kind: "success", invalidatedApprovals: 0 });
   });
 
   it.each([
@@ -386,6 +409,80 @@ describe("BulkImportPanel", () => {
     });
 
     expect(container.textContent).toContain("2");
+    expect(container.textContent).not.toMatch(/已失效批准|Approvals invalidated/);
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("shows how many approvals the import invalidated", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          specVersion: "opak-2026-05",
+          parsedRows: 2,
+          createdDrafts: 2,
+          refreshedProducts: 0,
+          invalidatedApprovals: 2,
+          issues: [],
+        },
+        { status: 201 },
+      ),
+    );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        connection: { shopDomain: "synthetic.myshopline.com" },
+        canImport: true,
+        canManageConnection: false,
+        credentialStorageConfigured: true,
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.xlsx", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const timeInput = container.querySelector<HTMLInputElement>(
+      "#merchant-attested-export-at",
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(timeInput, "2026-08-01T08:00");
+    await act(async () => {
+      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(
+      /已失效批准 2 筆|Approvals invalidated: 2/,
+    );
+    expect(container.textContent).toMatch(
+      /須重新批准才能匯出|need renewed approval before export/,
+    );
 
     await act(async () => root.unmount());
     document.body.innerHTML = "";

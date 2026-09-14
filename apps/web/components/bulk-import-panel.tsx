@@ -27,6 +27,7 @@ export type BulkImportSuccess = {
   parsedRows: number;
   createdDrafts: number;
   refreshedProducts: number;
+  invalidatedApprovals: number;
   issues: BulkImportIssue[];
 };
 
@@ -205,6 +206,11 @@ export async function submitBulkImport(
     parsedRows: body.parsedRows as number,
     createdDrafts: body.createdDrafts as number,
     refreshedProducts: body.refreshedProducts as number,
+    // Older servers omit it; absent means nothing was invalidated.
+    invalidatedApprovals:
+      typeof body.invalidatedApprovals === "number"
+        ? body.invalidatedApprovals
+        : 0,
     issues: (body.issues as BulkImportIssue[]) ?? [],
   };
 }
@@ -320,6 +326,14 @@ export function BulkImportPanel() {
                 `Rows parsed: ${outcome.parsedRows} · Drafts created: ${outcome.createdDrafts} · Products updated: ${outcome.refreshedProducts}`,
               )}
             </li>
+            {outcome.invalidatedApprovals > 0 ? (
+              <li>
+                {t(
+                  `已失效批准 ${outcome.invalidatedApprovals} 筆 · 這些商品須重新批准才能匯出`,
+                  `Approvals invalidated: ${outcome.invalidatedApprovals} · These listings need renewed approval before export`,
+                )}
+              </li>
+            ) : null}
             {outcome.issues.map((issue, index) => (
               // Server-written, so shown as it stands in either language.
               <li key={index}>{issue.message}</li>

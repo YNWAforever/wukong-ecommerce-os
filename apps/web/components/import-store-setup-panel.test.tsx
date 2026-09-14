@@ -70,6 +70,7 @@ it("keeps actual selected file and time through inline connect and imports origi
       parsedRows: 1,
       createdDrafts: 1,
       refreshedProducts: 0,
+      invalidatedApprovals: 0,
       issues: [],
     });
   });
