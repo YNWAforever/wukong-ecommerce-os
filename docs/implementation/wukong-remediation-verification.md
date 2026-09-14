@@ -243,7 +243,14 @@ Postgres was started this session, so these are no longer assumptions:
 6. **Migration `0027` before the web deploy.** The review-confirmations route
    writes `review_confirmations.field_records`. A web deploy that lands first
    fails every confirmation tick at the upsert. The column is additive and
-   nullable, so the migration is safe to run ahead.
+   nullable, so the migration is safe to run ahead. A web **rollback** after
+   `0027` is not clean, though, and neither is old and new code overlapping
+   during a rollout: pre-W6 code's upsert does not set `field_records` on
+   conflict, so a revision it writes keeps the previous revision's record
+   instead of storing NULL. `afterDigest` stays correct, because the record is
+   per version and a version's content never changes; `before` and
+   `evidenceDigest` can be stale. Treat `field_records` on revisions written
+   during a rollback or rollout overlap as unreliable.
 
 ## Follow-up work, with what each was measured against
 

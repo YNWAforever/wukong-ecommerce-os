@@ -64,6 +64,12 @@ whitespace removed, so a padded cell the merchant never changed does not read as
 changed; and `seoKeywords`' `before` is recorded for provenance only, because a
 joined string and an array can never compare.
 
+The audit count designed as `fieldsWithSource` was renamed
+`fieldsWithImportedCell` before any row was written. In this codebase "source"
+already means evidence source assets and source imports, while the count
+measures fields whose imported cell was present and non-blank. The historical
+execution plan still uses the old name.
+
 ## The problem, stated precisely
 
 W6 says the stored ledger "records neither". That is true of the ledger and
@@ -261,7 +267,8 @@ non-object value and expects the constraint to refuse it.
 ## Audit
 
 The existing `review_confirmation.updated` event
-(`review-confirmations/route.ts:121`) gains two counts beside `versionId` and
+(`createReviewConfirmationsHandler` in `review-confirmations/route.ts`) gains two
+counts beside `versionId` and
 `revision`: `fieldsWithImportedCell` and `fieldsWithoutEvidence`. Digests stay in the
 column; audit metadata stays small and keeps the route's rule -- identifiers and
 counts, never confirmed content.
