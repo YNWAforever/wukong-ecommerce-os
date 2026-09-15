@@ -456,7 +456,11 @@ describe("ListingReviewClient processing orchestration", () => {
     expect(fetcher).toHaveBeenNthCalledWith(
       2,
       "/api/listings/00000000-0000-4000-8000-000000000101/process",
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedInputRevision: 0, baseVersionId: null }),
+      },
     );
     expect(fetcher).toHaveBeenNthCalledWith(
       3,
@@ -467,6 +471,72 @@ describe("ListingReviewClient processing orchestration", () => {
     expect(container.textContent).not.toContain("Start processing");
   });
 
+  it("binds a terminal retry to the displayed immutable run", async () => {
+    const failed = {
+      ...processingSnapshot("failed"),
+      inputRevision: 7,
+      currentRun: {
+        runId: "00000000-0000-4000-8000-000000000777",
+        state: "failed",
+        attempt: 2,
+        retryOfRunId: "00000000-0000-4000-8000-000000000666",
+        acceptedAt: "2026-09-16T00:00:00.000Z",
+        errorCode: "timeout",
+        inputRevision: 7,
+        baseVersionId: null,
+      },
+    } satisfies ListingViewResponse;
+    const fetcher = processingFetcher()
+      .mockResolvedValueOnce(Response.json(failed))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            processing: {
+              runId: "00000000-0000-4000-8000-000000000888",
+              state: "queued",
+            },
+          },
+          { status: 202 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ...failed,
+          status: "processing",
+          currentRun: {
+            ...failed.currentRun!,
+            runId: "00000000-0000-4000-8000-000000000888",
+            state: "queued",
+            attempt: 3,
+            retryOfRunId: failed.currentRun!.runId,
+          },
+        }),
+      );
+    const { container } = await mountReview("retry_required");
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (item) => item.textContent?.includes("Run processing again"),
+    );
+    await act(async () => {
+      button!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/listings/00000000-0000-4000-8000-000000000101/process",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedInputRevision: 7,
+          baseVersionId: null,
+          retryOfRunId: failed.currentRun!.runId,
+        }),
+      },
+    );
+  });
   it("polls every three seconds for received and processing, then stops at failed", async () => {
     const fetcher = processingFetcher()
       .mockResolvedValueOnce(Response.json(processingSnapshot("received")))
@@ -587,3 +657,113 @@ it.each(["en", "zh-Hant"] as const)(
     }
   },
 );
+
+it("binds generated review saves to the observed input revision", async () => {
+  const snapshot = { ...response, inputRevision: 7 };
+  const fetcher = processingFetcher()
+    .mockResolvedValueOnce(Response.json(snapshot))
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json(snapshot));
+  const { container, root } = await mountReview();
+  try {
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+    });
+    expect(
+      JSON.parse(fetcher.mock.calls[1]![1]?.body as string)
+        .expectedInputRevision,
+    ).toBe(7);
+  } finally {
+    await unmountReview(root);
+    vi.unstubAllGlobals();
+  }
+});
+it("shows active-version working sources and blocks review confirmations while they are dirty", async () => {
+  const snapshot = {
+    ...response,
+    workingInput: {
+      revision: 3,
+      baseVersionId: null,
+      note: "Saved note",
+      workingContent: response.activeVersion!.content,
+      fieldStates: {},
+      sources: [],
+    },
+    reviewConfirmation: {
+      revision: 4,
+      fieldConfirmations: {},
+      negativeConfirmations: {},
+    },
+  };
+  const fetcher = processingFetcher().mockResolvedValueOnce(
+    Response.json(snapshot),
+  );
+  const { container, root } = await mountReview();
+  try {
+    expect(container.textContent).toContain(
+      "Edit sources, notes and working draft",
+    );
+    const note = container.querySelector(
+      ".working-input-details textarea",
+    ) as HTMLTextAreaElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!.set!.call(note, "Dirty note");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(
+      [...container.querySelectorAll('input[id^="confirmation-"]')].every(
+        (i) => (i as HTMLInputElement).disabled,
+      ),
+    ).toBe(true);
+    const save = container.querySelector(
+      '.working-input-details [data-action="save"]',
+    ) as HTMLButtonElement;
+    fetcher
+      .mockResolvedValueOnce(Response.json({ inputRevision: 4 }))
+      .mockResolvedValueOnce(Response.json(snapshot));
+    await act(async () => save.click());
+    expect(
+      JSON.parse(fetcher.mock.calls[1]![1]?.body as string).baseVersionId,
+    ).toBe(response.activeVersion!.id);
+  } finally {
+    await unmountReview(root);
+    vi.unstubAllGlobals();
+  }
+});
+it("binds checklist updates to the displayed ledger revision", async () => {
+  const snapshot = {
+    ...response,
+    reviewConfirmation: {
+      revision: 4,
+      fieldConfirmations: {},
+      negativeConfirmations: {},
+    },
+  };
+  const fetcher = processingFetcher()
+    .mockResolvedValueOnce(Response.json(snapshot))
+    .mockResolvedValueOnce(Response.json({ revision: 5 }))
+    .mockResolvedValueOnce(Response.json(snapshot));
+  const { container, root } = await mountReview();
+  try {
+    await act(async () => {
+      (
+        container.querySelector(
+          'input[id^="confirmation-field-"]',
+        ) as HTMLInputElement
+      ).click();
+    });
+    expect(JSON.parse(fetcher.mock.calls[1]![1]?.body as string)).toMatchObject(
+      { versionId: response.activeVersion!.id, expectedRevision: 4 },
+    );
+  } finally {
+    await unmountReview(root);
+    vi.unstubAllGlobals();
+  }
+});

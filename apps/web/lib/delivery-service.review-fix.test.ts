@@ -1328,3 +1328,45 @@ it("binds image resolution to the observed approved version and blocks missing p
     "version_1",
   );
 });
+
+describe("approval-first delivery admission", () => {
+  it("returns approval_required for incomplete unapproved content before strict publish reads or external I/O", async () => {
+    const requireForPublish = vi.fn(async () => {
+      throw new Error("active listing version content is invalid");
+    });
+    const imageUrls = vi.fn(async () => []);
+    const connection = vi.fn(async () => ({
+      id: "00000000-0000-4000-8000-000000000301",
+      verified: true,
+    }));
+    const publisher = vi.fn(async () => "job_1");
+
+    const result = await deliverListing(
+      {
+        workspaceId: "ws_opak",
+        actorId: "operator_1",
+        draftId: "listing_1",
+        method: "csv",
+      },
+      {
+        listings: {
+          approvalState: async () => ({
+            status: "in_review",
+            activeVersionId: "version_incomplete",
+          }),
+          requireForPublish,
+        },
+        imageUrls,
+        connection,
+        audit: { write: vi.fn(async () => undefined) },
+        publisher: { enqueue: publisher },
+      },
+    );
+
+    expect(result).toEqual({ kind: "approval_required" });
+    expect(requireForPublish).not.toHaveBeenCalled();
+    expect(imageUrls).not.toHaveBeenCalled();
+    expect(connection).not.toHaveBeenCalled();
+    expect(publisher).not.toHaveBeenCalled();
+  });
+});

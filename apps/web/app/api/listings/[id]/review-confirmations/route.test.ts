@@ -65,6 +65,7 @@ function makeHandler(
     snapshotExists?: boolean;
     invalidation?: "unchanged" | "reopened" | "publishing" | "stale";
     evidence?: FieldEvidence[];
+    currentRevision?: number | null;
     platformProduct?: {
       sourceImportId: string | null;
       contentDigest: string | null;
@@ -91,6 +92,7 @@ function makeHandler(
           calls.push(["forWorkspace", workspaceId]);
           return work({
             listings: {
+              async lockReviewState() {},
               async invalidateApprovalForConfirmationChange(
                 id: string,
                 observedVersionId: string,
@@ -122,6 +124,12 @@ function makeHandler(
               },
             },
             reviewConfirmations: {
+              async getByVersionId() {
+                return options.currentRevision === undefined ||
+                  options.currentRevision === null
+                  ? null
+                  : { revision: options.currentRevision };
+              },
               async upsert(input: any) {
                 calls.push(["upsert", input]);
                 return {
@@ -480,4 +488,25 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
     expect(await response.json()).toMatchObject({ code: "listing_not_found" });
     expect(calls).toEqual([]);
   });
+});
+
+it("rejects a competing confirmation revision before invalidating approval", async () => {
+  const { handler, calls } = makeHandler({ currentRevision: 2 });
+  const response = await handler(
+    request({
+      versionId,
+      expectedRevision: 1,
+      fieldConfirmations: { title: true },
+      negativeConfirmations: {},
+    }),
+    routeContext(),
+  );
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({
+    code: "confirmation_revision_conflict",
+  });
+  expect(upsertInput(calls)).toBeUndefined();
+  expect(
+    calls.some((c: any) => c[0] === "invalidateApprovalForConfirmationChange"),
+  ).toBe(false);
 });

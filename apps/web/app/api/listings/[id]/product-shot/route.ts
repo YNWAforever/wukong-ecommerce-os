@@ -39,7 +39,8 @@ export type ProductShotRouteDeps = {
 const sourceBody = z
   .object({
     sourceAssetId: z.uuid().optional(),
-    expectedVersionId: z.uuid(),
+    expectedVersionId: z.uuid().nullable(),
+    expectedInputRevision: z.number().int().positive().optional(),
     explicitFreshAttempt: z.boolean().default(false),
   })
   .strict();
@@ -50,10 +51,17 @@ const attachBody = z
   })
   .strict();
 const prepareBody = z
-  .object({ attemptId: z.uuid(), expectedVersionId: z.uuid() })
+  .object({
+    attemptId: z.uuid(),
+    expectedVersionId: z.uuid().nullable(),
+    expectedInputRevision: z.number().int().positive().optional(),
+  })
   .strict();
 const approvalBody = prepareBody
-  .extend({ candidateDigest: z.string().regex(/^[a-f0-9]{64}$/) })
+  .extend({
+    expectedVersionId: z.uuid(),
+    candidateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
   .strict();
 export function createProductShotHandler(
   deps: ProductShotRouteDeps,
@@ -94,6 +102,15 @@ export function createProductShotHandler(
       try {
         if (action === "request") {
           const body = sourceBody.parse(await request.json());
+          if (
+            body.expectedVersionId === null &&
+            body.expectedInputRevision === undefined
+          )
+            throw new ApiError(
+              400,
+              "input_revision_required",
+              "Observe saved inputs before requesting an image.",
+            );
           const found = await db.forWorkspace(session.workspaceId, (r) =>
             r.listings.getReviewSnapshot(id),
           );
@@ -156,6 +173,15 @@ export function createProductShotHandler(
         const body = (action === "prepare" ? prepareBody : approvalBody).parse(
           await request.json(),
         );
+        if (
+          body.expectedVersionId === null &&
+          body.expectedInputRevision === undefined
+        )
+          throw new ApiError(
+            400,
+            "input_revision_required",
+            "Observe saved inputs before preparing an image.",
+          );
         const service = {
           forWorkspace: db.forWorkspace,
           assetStore: deps.getAssetStore(),

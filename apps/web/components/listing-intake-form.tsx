@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   isImageMimeType,
@@ -26,6 +26,7 @@ export type ListingIntakeFile = {
   message?: string;
   assetId?: string;
   storedKey?: string;
+  previewUrl?: string;
 };
 
 /**
@@ -43,6 +44,8 @@ export type ListingIntakeUpload = Pick<
 export type ListingIntakePayload = {
   files: ListingIntakeUpload[];
   note: string;
+  processingMode?: "ai" | "manual";
+  idempotencyKey?: string;
 };
 
 /** Reports one file's progress so it outlives a failure later in the batch. */
@@ -77,7 +80,10 @@ const rejectionCopy: Record<MediaRejection, string> = {
   too_many_pdfs: "PDF 數量已達上限。",
 };
 
-type CandidateFile = Pick<ListingIntakeFile, "file" | "assetId" | "storedKey">;
+type CandidateFile = Pick<
+  ListingIntakeFile,
+  "file" | "assetId" | "storedKey" | "previewUrl"
+>;
 
 /**
  * Applies the SHARED media policy, so what this form accepts is what presign,
@@ -117,6 +123,7 @@ function validateFiles(candidates: CandidateFile[]): {
       file,
       assetId: candidate.assetId,
       storedKey: candidate.storedKey,
+      previewUrl: candidate.previewUrl,
       status:
         rejection !== null
           ? "error"
@@ -135,12 +142,29 @@ function readyCount(files: ListingIntakeFile[]): number {
 
 export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
   const [files, setFiles] = useState<ListingIntakeFile[]>([]);
+  const filesRef = useRef<ListingIntakeFile[]>([]);
   const [note, setNote] = useState("");
+  const [processingMode, setProcessingMode] = useState<"ai" | "manual">("ai");
+  const createAttempt = useRef<{ signature: string; key: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const validFiles = useMemo(
     () => files.filter((item) => item.status !== "error"),
     [files],
+  );
+
+  function commitFiles(next: ListingIntakeFile[]) {
+    filesRef.current = next;
+    setFiles(next);
+  }
+
+  useEffect(
+    () => () => {
+      for (const item of filesRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+    },
+    [],
   );
 
   /**
@@ -152,32 +176,41 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
    * find the file again. Re-validating the union rather than only the new files
    * keeps the 10-image and 1-PDF caps meaningful across both trips.
    */
-  function handleFiles(nextFiles: FileList | null) {
-    if (!nextFiles || nextFiles.length === 0) return;
-    setFiles((current) => {
-      const seen = new Set(current.map((item) => fileIdentity(item.file)));
-      const added = Array.from(nextFiles)
-        .filter((file) => !seen.has(fileIdentity(file)))
-        .map((file) => ({ file }));
-      const parsed = validateFiles([...current, ...added]);
-      setMessage(
-        parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
-      );
-      return parsed.accepted;
-    });
+  function handleFiles(nextFiles: File[]) {
+    if (nextFiles.length === 0) return;
+    const current = filesRef.current;
+    const seen = new Set(current.map((item) => fileIdentity(item.file)));
+    const unique = nextFiles.filter((file) => !seen.has(fileIdentity(file)));
+    const duplicates = nextFiles.length - unique.length;
+    const added = unique.map((file) => ({
+      file,
+      previewUrl: isImageMimeType(file.type)
+        ? URL.createObjectURL(file)
+        : undefined,
+    }));
+    const parsed = validateFiles([...current, ...added]);
+    commitFiles(parsed.accepted);
+    setMessage(
+      parsed.errors[0] ??
+        (duplicates > 0
+          ? `已略過 ${duplicates} 個重複檔案；${readyCount(parsed.accepted)} 個檔案已準備。`
+          : `${readyCount(parsed.accepted)} 個檔案已準備`),
+    );
   }
 
   function removeFile(id: string) {
-    setFiles((current) => {
-      // Re-validate what is left: dropping an image can bring a file that was
-      // over the cap back under it, and leaving it marked as an error would
-      // strand a file the operator can now actually use.
-      const parsed = validateFiles(current.filter((item) => item.id !== id));
-      setMessage(
-        parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
-      );
-      return parsed.accepted;
-    });
+    const removed = filesRef.current.find((item) => item.id === id);
+    // Re-validate what is left: dropping an image can bring a file that was
+    // over the cap back under it, and leaving it marked as an error would
+    // strand a file the operator can now actually use.
+    const parsed = validateFiles(
+      filesRef.current.filter((item) => item.id !== id),
+    );
+    commitFiles(parsed.accepted);
+    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    setMessage(
+      parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
+    );
   }
 
   /**
@@ -190,8 +223,8 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
     id: string,
     progress: { assetId?: string; storedKey?: string },
   ) {
-    setFiles((current) =>
-      current.map((item) =>
+    commitFiles(
+      filesRef.current.map((item) =>
         item.id === id
           ? {
               ...item,
@@ -206,29 +239,44 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (validFiles.length === 0) {
-      setMessage("請先加入至少一個圖片或 PDF 檔案。");
+    const normalizedNote = note.trim();
+    if (validFiles.length === 0 && normalizedNote.length === 0) {
+      setMessage("請加入至少一個檔案，或填寫可保存的產品資料。");
       return;
+    }
+    const signature = JSON.stringify({
+      files: validFiles.map((item) => item.id),
+      note: normalizedNote,
+      processingMode,
+    });
+    if (createAttempt.current?.signature !== signature) {
+      createAttempt.current = { signature, key: crypto.randomUUID() };
     }
     setBusy(true);
     setMessage("正在準備上傳…");
-    setFiles((current) =>
-      current.map((item) =>
+    commitFiles(
+      filesRef.current.map((item) =>
         item.status === "ready" ? { ...item, status: "uploading" } : item,
       ),
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
       await onCreate?.(
-        { files: validFiles, note: note.trim() },
+        {
+          files: validFiles,
+          note: normalizedNote,
+          processingMode,
+          idempotencyKey: createAttempt.current.key,
+        },
         reportProgress,
       );
-      setFiles((current) =>
-        current.map((item) =>
+      commitFiles(
+        filesRef.current.map((item) =>
           item.status === "uploading" ? { ...item, status: "uploaded" } : item,
         ),
       );
       setMessage("草稿已建立，下一步會進入 AI 處理佇列。");
+      createAttempt.current = null;
     } catch (error) {
       const failure =
         error instanceof Error
@@ -237,27 +285,23 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
       // The count has to be read from the NEXT state, not the render-time
       // snapshot: `reportProgress` committed each completed upload while this
       // submit was still running, so the closed-over `files` predates them.
-      setFiles((current) => {
-        // Only the files that did NOT finish go back to the queue. A file with
-        // an assetId is done, and saying otherwise is what re-sent it.
-        const next = current.map((item) =>
-          item.status === "uploading"
-            ? {
-                ...item,
-                status: item.assetId
-                  ? ("uploaded" as const)
-                  : ("ready" as const),
-              }
-            : item,
-        );
-        const reusable = next.filter((item) => item.assetId).length;
-        setMessage(
-          reusable > 0
-            ? `${failure} 已上傳的 ${reusable} 個檔案會保留，重試只會上傳其餘檔案。`
-            : failure,
-        );
-        return next;
-      });
+      // Only the files that did NOT finish go back to the queue. A file with
+      // an assetId is done, and saying otherwise is what re-sent it.
+      const next = filesRef.current.map((item) =>
+        item.status === "uploading"
+          ? {
+              ...item,
+              status: item.assetId ? ("uploaded" as const) : ("ready" as const),
+            }
+          : item,
+      );
+      const reusable = next.filter((item) => item.assetId).length;
+      commitFiles(next);
+      setMessage(
+        reusable > 0
+          ? `${failure} 已上傳的 ${reusable} 個檔案會保留，重試只會上傳其餘檔案。`
+          : failure,
+      );
     } finally {
       setBusy(false);
     }
@@ -281,11 +325,14 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           accept="image/jpeg,image/png,image/webp,application/pdf"
           multiple
           onChange={(event) => {
-            handleFiles(event.target.files);
+            // A native FileList is live: clearing the input empties it. Copy
+            // the File objects synchronously before React schedules any work.
+            const selected = Array.from(event.currentTarget.files ?? []);
             // Clear the input so choosing the SAME file again still fires a
             // change event -- otherwise removing a file and re-picking it does
             // nothing, which reads as the picker being broken.
-            event.target.value = "";
+            event.currentTarget.value = "";
+            handleFiles(selected);
           }}
         />
         <p className="upload-limit">
@@ -297,6 +344,16 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
         <ul className="file-list" aria-live="polite">
           {files.map((item) => (
             <li className={`file-row file-${item.status}`} key={item.id}>
+              {item.previewUrl ? (
+                <img
+                  className="file-preview"
+                  src={item.previewUrl}
+                  alt={`${item.file.name} 預覽`}
+                  width={64}
+                  height={64}
+                  style={{ objectFit: "cover" }}
+                />
+              ) : null}
               <div>
                 <strong>{item.file.name}</strong>
                 <span>
@@ -310,7 +367,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
                   : item.status === "uploading"
                     ? "上傳中…"
                     : item.status === "uploaded"
-                      ? "已完成"
+                      ? "已上傳"
                       : item.message}
               </span>
               {item.status === "uploading" ? null : (
@@ -343,11 +400,37 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
         <span className="character-count">{note.length}/5000</span>
       </div>
 
+      <fieldset className="processing-mode">
+        <legend>建立草稿後</legend>
+        <label>
+          <input
+            type="radio"
+            name="processing-mode"
+            value="ai"
+            checked={processingMode === "ai"}
+            onChange={() => setProcessingMode("ai")}
+          />
+          儲存並開始 AI 處理
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="processing-mode"
+            value="manual"
+            checked={processingMode === "manual"}
+            onChange={() => setProcessingMode("manual")}
+          />
+          只儲存草稿，稍後手動處理
+        </label>
+      </fieldset>
+
       <div className="form-actions intake-actions">
         <button
           className="primary-button"
           type="submit"
-          disabled={busy || validFiles.length === 0}
+          disabled={
+            busy || (validFiles.length === 0 && note.trim().length === 0)
+          }
         >
           建立上架草稿 <span>Create listing draft</span>
         </button>

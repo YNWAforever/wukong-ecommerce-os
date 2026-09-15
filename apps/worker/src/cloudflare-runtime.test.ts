@@ -6,6 +6,7 @@ vi.mock("@wukong/db", () => ({ createDatabase: dbMocks.createDatabase }));
 
 import {
   authenticatedWorkerHealth,
+  workerHealth,
   createCloudflareRuntime,
   createWorkerDatabase,
   createProductShotRuntime,
@@ -385,7 +386,7 @@ it("constructs OpenRouter without OpenAI configuration and records its provider"
         }) as never,
     },
   );
-  expect(runtime.dependencies.ai).toBeInstanceOf(OpenRouterListingProvider);
+  expect(runtime.dependencies.ai.extract).toBeTypeOf("function");
   await runtime.dependencies.withWorkspace("ws", async (r) => {
     await r.aiRuns.append({ draftId: "listing", task: "extract" } as never);
   });
@@ -394,7 +395,7 @@ it("constructs OpenRouter without OpenAI configuration and records its provider"
   );
 });
 it.each(["OPENROUTER_API_KEY", "OPENROUTER_LISTING_MODEL"])(
-  "requires %s for OpenRouter",
+  "requires %s when an OpenRouter operation starts",
   (missing) => {
     expect(() =>
       createCloudflareRuntime(
@@ -404,8 +405,11 @@ it.each(["OPENROUTER_API_KEY", "OPENROUTER_LISTING_MODEL"])(
           OPENROUTER_LISTING_MODEL: "vendor/model-1",
           [missing]: undefined,
         } as never,
-        { assetStoreFactory: () => ({}) as never },
-      ),
+        {
+          assetStoreFactory: () => ({}) as never,
+          databaseFactory: () => ({}) as never,
+        },
+      ).dependencies.ai.extract({ assets: [], note: null }),
     ).toThrow(missing);
   },
 );
@@ -431,4 +435,19 @@ it("exposes only allowlisted provider health metadata", async () => {
     productShotProvider: "unknown",
   });
   expect(JSON.stringify(unsafe)).not.toContain("secret-marker");
+});
+it("includes recovery schema readiness only in authenticated health", async () => {
+  const health = await authenticatedWorkerHealth(env(), {
+    createDatabase: () =>
+      ({
+        ping: async () => undefined,
+        close: async () => undefined,
+        inspectListingRecoveryCompatibility: async () => ({
+          ready: true,
+          missing: [],
+        }),
+      }) as never,
+  });
+  expect(health.checks.listingRecoveryReady).toBe(true);
+  expect(workerHealth(env())).not.toHaveProperty("checks");
 });

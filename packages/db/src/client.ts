@@ -1,3 +1,16 @@
+import {
+  createListingEnrichmentRepository,
+  type ListingEnrichmentRepository,
+} from "./repositories/listing-enrichment.js";
+import { inspectListingRecoveryCompatibility } from "./listing-recovery-compatibility.js";
+import {
+  createAiBudgetReservationRepository,
+  type AiBudgetReservationRepository,
+} from "./repositories/ai-budget-reservations.js";
+import {
+  createListingInputRepository,
+  type ListingInputRepository,
+} from "./repositories/listing-inputs.js";
 import { createHash } from "node:crypto";
 import {
   createProductShotRepository,
@@ -129,6 +142,8 @@ export type WorkspaceRepositories = {
   sourceRows: SourceRowRepository;
   approvalReceipts: ApprovalReceiptRepository;
   listings: ListingRepository;
+  listingInputs: ListingInputRepository;
+  listingEnrichment: ListingEnrichmentRepository;
   sourceAssets: SourceAssetRepository;
   publishJobs: PublishJobRepository;
   shoplineConnections: ShoplineConnectionRepository;
@@ -142,6 +157,7 @@ export type WorkspaceRepositories = {
   dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
   aiRuns: AiRunRepository;
+  aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
   memberships: MembershipRepository;
   audit: WorkspaceAuditWriter;
@@ -156,6 +172,16 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  inspectListingRecoveryCompatibility(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
+  findAbandonedListingOperations(input: {
+    olderThanSeconds: number;
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<Array<{ workspaceId: string; runId: string }>>;
   lookupPublishedImage(token: string): Promise<{
     workspaceId: string;
     storageKey: string;
@@ -287,6 +313,16 @@ export function createDatabase(
           scope,
         ),
         listings: createListingRepository(transaction, workspaceId, scope),
+        listingEnrichment: createListingEnrichmentRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        listingInputs: createListingInputRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         sourceAssets: createSourceAssetRepository(
           transaction,
           workspaceId,
@@ -343,6 +379,11 @@ export function createDatabase(
           scope,
         ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
+        aiBudgetReservations: createAiBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
         memberships: createMembershipRepository(
           transaction,
@@ -360,6 +401,30 @@ export function createDatabase(
   };
 
   return {
+    inspectListingRecoveryCompatibility: () =>
+      inspectListingRecoveryCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
+    async findAbandonedListingOperations(input) {
+      if (
+        !Number.isSafeInteger(input.olderThanSeconds) ||
+        input.olderThanSeconds < 900 ||
+        input.olderThanSeconds > 86400 ||
+        !Number.isSafeInteger(input.maxRows) ||
+        input.maxRows < 1 ||
+        input.maxRows > 20 ||
+        !Number.isSafeInteger(input.maxAttempts) ||
+        input.maxAttempts < 5 ||
+        input.maxAttempts > 100
+      )
+        throw new Error("invalid recovery bounds");
+      const rows =
+        await client`select * from sweeper_find_abandoned_listing_operations(${input.olderThanSeconds},${input.maxRows},${input.maxAttempts})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        runId: String(row.run_id),
+      }));
+    },
     async lookupPublishedImage(token) {
       if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
       const hash = createHash("sha256").update(token).digest("hex");

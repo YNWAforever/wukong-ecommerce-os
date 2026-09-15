@@ -1,5 +1,6 @@
 "use client";
 
+import { WorkspacePolicyPanel } from "./workspace-policy-panel";
 import { useCallback, useEffect, useState } from "react";
 
 async function responseError(response: Response): Promise<Error> {
@@ -66,38 +67,43 @@ export function AdminSettingsPanel() {
     })();
 
   return (
-    <section className="settings-panel" aria-busy={busy}>
-      {error ? (
-        <p className="inline-warning" role="alert">
-          {error}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="success-note" role="status">
-          {message}
-        </p>
-      ) : null}
-      {loaded ? (
-        <>
-          <label>
-            品牌背景色 Brand background color
-            <input
-              type="color"
-              value={brandBackgroundColor ?? "#ffffff"}
+    <>
+      <section className="settings-panel" aria-busy={busy}>
+        {error ? (
+          <p className="inline-warning" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="success-note" role="status">
+            {message}
+          </p>
+        ) : null}
+        {loaded ? (
+          <>
+            <label>
+              品牌背景色 Brand background color
+              <input
+                type="color"
+                value={brandBackgroundColor ?? "#ffffff"}
+                disabled={busy}
+                onChange={(event) =>
+                  setBrandBackgroundColor(event.target.value)
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="primary-button"
               disabled={busy}
-              onChange={(event) => setBrandBackgroundColor(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={busy}
-            onClick={save}
-          >
-            儲存 Save
-          </button>
-        </>
-      ) : null}
-    </section>
+              onClick={save}
+            >
+              儲存 Save
+            </button>
+          </>
+        ) : null}
+      </section>
+      <WorkspacePolicyPanel />
+    </>
   );
 }

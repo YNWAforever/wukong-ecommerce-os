@@ -65,7 +65,13 @@ export type DeliveryResult =
 export type DeliveryDeps = {
   /** Mandatory for bulk_form; unused by the separate create CSV/API flows. */
   bulkUpdate?: CreateBulkExportDeps;
-  listings: { requireForPublish(draftId: string): Promise<DeliverySnapshot> };
+  listings: {
+    approvalState?(draftId: string): Promise<{
+      status: ListingStatus;
+      activeVersionId: string | null;
+    } | null>;
+    requireForPublish(draftId: string): Promise<DeliverySnapshot>;
+  };
   imageUrls(
     workspaceId: string,
     draftId: string,
@@ -139,7 +145,33 @@ export function createDeliverySnapshotReader(
   async function read(
     input: Pick<DeliverInput, "workspaceId" | "draftId" | "method">,
   ): Promise<DeliveryPolicySnapshot> {
+    const approvalState = await deps.listings.approvalState?.(input.draftId);
+    if (
+      approvalState &&
+      (approvalState.status !== "approved" || !approvalState.activeVersionId)
+    ) {
+      return {
+        listing: {
+          workspaceId: input.workspaceId,
+          draftId: input.draftId,
+          target: "shopline",
+          status: approvalState.status,
+          activeVersion: null,
+          flags: [],
+        },
+        imageUrls: [],
+        connection: null,
+        job: null,
+        platformProductLink: null,
+        existingDelivery: null,
+      };
+    }
     const source = await deps.listings.requireForPublish(input.draftId);
+    if (
+      approvalState?.activeVersionId &&
+      source.activeVersion?.id !== approvalState.activeVersionId
+    )
+      throw new Error("active listing version changed during delivery read");
     const listing: DeliveryListingSnapshot = {
       workspaceId: input.workspaceId,
       draftId: input.draftId,

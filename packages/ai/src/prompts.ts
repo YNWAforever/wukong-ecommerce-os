@@ -1,14 +1,15 @@
+import { LISTING_PROMPT_VERSIONS } from "@wukong/core";
 export const EXTRACTION_PROMPT = {
   name: "listing-extraction",
   // 1.1.0 tells the model how to cite a fact the label states in another unit,
   // language or format, and forbids reading merchant data off a photograph.
   // Matches the grounding modes in fact-grounding-rules.ts.
-  version: "1.1.0",
+  version: LISTING_PROMPT_VERSIONS.extraction,
 } as const;
 
 export const GENERATION_PROMPT = {
   name: "listing-generation",
-  version: "1.0.0",
+  version: LISTING_PROMPT_VERSIONS.generation,
 } as const;
 
 export const PRODUCT_SHOT_PROMPT = {

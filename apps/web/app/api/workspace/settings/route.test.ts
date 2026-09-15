@@ -22,7 +22,7 @@ const baseProfile = {
 
 describe("POST /api/workspace/settings", () => {
   it("rejects a role below admin", async () => {
-    const updateProfile = vi.fn();
+    const updateSettings = vi.fn();
     const requireProfile = vi.fn(async () => baseProfile);
     const auditWrite = vi.fn(async () => {});
     const handler = createSettingsHandler({
@@ -39,7 +39,7 @@ describe("POST /api/workspace/settings", () => {
         ({
           forWorkspace: async (_id: string, work: any) =>
             work({
-              workspaces: { requireProfile, updateProfile },
+              workspaces: { requireProfile, updateSettings },
               audit: { write: auditWrite },
             }),
         }) as any,
@@ -48,12 +48,12 @@ describe("POST /api/workspace/settings", () => {
       makeRequest({ brandBackgroundColor: "#112233" }),
     );
     expect(response.status).toBe(403);
-    expect(updateProfile).not.toHaveBeenCalled();
+    expect(updateSettings).not.toHaveBeenCalled();
     expect(auditWrite).not.toHaveBeenCalled();
   });
 
   it("updates the brand background color for admin and above", async () => {
-    const updateProfile = vi.fn(async () => {});
+    const updateSettings = vi.fn(async () => {});
     const requireProfile = vi.fn(async () => baseProfile);
     const auditWrite = vi.fn(async () => {});
     const handler = createSettingsHandler({
@@ -70,7 +70,7 @@ describe("POST /api/workspace/settings", () => {
         ({
           forWorkspace: async (_id: string, work: any) =>
             work({
-              workspaces: { requireProfile, updateProfile },
+              workspaces: { requireProfile, updateSettings },
               audit: { write: auditWrite },
             }),
         }) as any,
@@ -79,7 +79,7 @@ describe("POST /api/workspace/settings", () => {
       makeRequest({ brandBackgroundColor: "#112233" }),
     );
     expect(response.status).toBe(200);
-    expect(updateProfile).toHaveBeenCalledWith(
+    expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ brandBackgroundColor: "#112233" }),
     );
     expect(auditWrite).toHaveBeenCalledWith({

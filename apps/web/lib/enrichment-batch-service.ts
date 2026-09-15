@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   Database,
   EnrichmentBatch,
@@ -10,6 +11,7 @@ import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
 import { ApiError } from "./route-support";
+import { acceptListingOperation } from "./listing-operation-service";
 import { MAX_ENRICHMENT_WAVE_SIZE } from "./enrichment-wave-limit";
 
 export type { EnrichmentBatch };
@@ -44,12 +46,17 @@ export type AdvanceBatchInput = {
   workspaceId: string;
   actorId: string;
   batchId: string;
+  expectedControlRevision?: number;
+  idempotencyKey?: string;
 };
 
 export type AdvanceBatchResult = {
   batchId: string;
-  status: "running" | "completed" | "budget_exhausted";
+  status: EnrichmentBatch["status"];
+  controlRevision?: number;
+  acceptedRunIds?: string[];
   enqueued: number;
+  dispatchPending?: number;
   spentUsd: number;
   budgetUsd: number;
 };
@@ -61,6 +68,10 @@ export type GetBatchInput = { workspaceId: string; batchId: string };
 export type GetBatchResult = {
   batch: EnrichmentBatch;
   counts: EnrichmentBatchCounts;
+  items?: Awaited<
+    ReturnType<WorkspaceRepositories["enrichmentBatches"]["listItemDetails"]>
+  >;
+  spentUsd?: number;
 };
 
 /**
@@ -103,6 +114,14 @@ const UNRESOLVED_STATUSES = ["needs_info", "reopened"] as const;
 
 /** Exactly what the publisher accepts, so the two cannot drift apart. */
 type WaveJob = Parameters<ListingPublisher["enqueue"]>[0];
+type WaveDispatch = {
+  id: string;
+  listingId: string;
+  dedupeKey: string;
+  payload: Record<string, unknown>;
+  attempts: number;
+};
+class BatchBudgetExceeded extends Error {}
 
 /**
  * How long a recorded-but-unsent job waits before another advance re-sends it.
@@ -257,9 +276,9 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     repositories: WorkspaceRepositories,
     input: AdvanceBatchInput,
     wave: readonly string[],
-  ): Promise<WaveJob[]> {
+  ): Promise<WaveDispatch[]> {
     const statuses = await repositories.listings.statusesByIds([...wave]);
-    const jobs: WaveJob[] = [];
+    const jobs: WaveDispatch[] = [];
     const finished: string[] = [];
     const unusable: string[] = [];
     for (const draftId of wave) {
@@ -272,22 +291,52 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         );
         continue;
       }
+      if (!(repositories.enrichmentBatches as { bindRun?: unknown }).bindRun) {
+        const revision = await repositories.listings.requireById(draftId);
+        const recordedRuns = await repositories.pipelineRuns.countRuns({
+          listingId: draftId,
+          activeVersionSequence: revision.activeVersionSequence,
+        });
+        jobs.push({
+          workspaceId: input.workspaceId,
+          draftId,
+          activeVersionSequence: revision.activeVersionSequence,
+          ...(recordedRuns > 0 ? { runAttempt: recordedRuns } : {}),
+        } as unknown as WaveDispatch);
+        continue;
+      }
       const revision = await repositories.listings.requireById(draftId);
-      // Runs for a revision are numbered from 0, so N recorded runs means the
-      // next free number is N. The batch always wants a NEW run.
-      const recordedRuns = await repositories.pipelineRuns.countRuns({
-        listingId: draftId,
-        activeVersionSequence: revision.activeVersionSequence,
-      });
-      jobs.push({
+      const snapshot = await repositories.listingInputs.getCurrent(draftId);
+      if (!snapshot) {
+        unusable.push(draftId);
+        continue;
+      }
+      const previous =
+        await repositories.pipelineRuns.getCurrentOperation(draftId);
+      const accepted = await acceptListingOperation(repositories, {
         workspaceId: input.workspaceId,
-        draftId,
-        activeVersionSequence: revision.activeVersionSequence,
-        // Attempt 0 must not put the field on the wire at all: a Worker
-        // deployed before `runAttempt` existed parses strictly and would
-        // silently ack the message away.
-        ...(recordedRuns > 0 ? { runAttempt: recordedRuns } : {}),
+        listingId: draftId,
+        expectedInputRevision: snapshot.revision,
+        baseVersionId: revision.activeVersionId,
+        operationKey: randomUUID(),
+        actorId: input.actorId,
+        ...(previous &&
+        ["failed", "superseded", "succeeded"].includes(previous.executionState)
+          ? { retryOfRunId: previous.id }
+          : {}),
       });
+      if (
+        !(await repositories.enrichmentBatches.bindRun({
+          batchId: input.batchId,
+          listingId: draftId,
+          pipelineRunId: accepted.run.id,
+          inputRevision: accepted.run.inputRevision,
+        }))
+      )
+        throw new BatchBudgetExceeded(
+          "batch reservation exceeds its approved cap",
+        );
+      jobs.push(...accepted.outbox);
     }
     await markItems(repositories, input.batchId, finished, "succeeded");
     await markItems(repositories, input.batchId, unusable, "skipped");
@@ -300,6 +349,57 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     const plan = await deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
+        // The row lock spans admission, reservation and durable outbox recording.
+        const command = input.idempotencyKey
+          ? await repositories.enrichmentBatches.beginCommand({
+              batchId: input.batchId,
+              expectedControlRevision: input.expectedControlRevision!,
+              idempotencyKey: input.idempotencyKey,
+              digest: "advance",
+            })
+          : null;
+        if (command?.replay)
+          return { ...command.replay, dispatches: [] } as unknown as {
+            batch: EnrichmentBatch;
+            spentUsd: number;
+            dispatches: WaveDispatch[];
+            done: boolean;
+            controlRevision?: number;
+            acceptedRunIds?: string[];
+          };
+        const finish = async (plan: {
+          batch: EnrichmentBatch;
+          spentUsd: number;
+          dispatches: WaveDispatch[];
+          done: boolean;
+        }) => {
+          const result = {
+            ...plan,
+            controlRevision: command?.revision,
+            acceptedRunIds: plan.dispatches
+              .map((d) => String(d.payload.runId ?? ""))
+              .filter(Boolean),
+          };
+          if (input.idempotencyKey) {
+            await repositories.enrichmentBatches.finishCommand({
+              batchId: input.batchId,
+              idempotencyKey: input.idempotencyKey,
+              digest: "advance",
+              result: { ...result, dispatches: [] },
+            });
+            await repositories.audit.write({
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              entityId: input.batchId,
+              action: "enrichment_batch.wave_accepted",
+              metadata: {
+                controlRevision: command!.revision,
+                acceptedRunIds: result.acceptedRunIds,
+              },
+            });
+          }
+          return result;
+        };
         const batch = await repositories.enrichmentBatches.getById(
           input.batchId,
         );
@@ -311,29 +411,41 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           );
         }
 
+        if (["paused", "cancelled", "completed"].includes(batch.status))
+          return finish({
+            batch,
+            spentUsd: await repositories.enrichmentBatches.sumBoundRunCost(
+              input.batchId,
+            ),
+            dispatches: [],
+            done: batch.status === "completed",
+          });
         // Reconcile before doing anything else. A queued draft that has since
         // reached a terminal state is no longer in flight, and until it is
         // recorded as such the batch can never report itself complete and a
         // failed product would look like work still pending.
-        const queued = await repositories.enrichmentBatches.listItemsByStatus(
-          input.batchId,
-          "queued",
-        );
-        if (queued.length > 0) {
+        if (repositories.enrichmentBatches.reconcileBoundRuns)
+          await repositories.enrichmentBatches.reconcileBoundRuns(
+            input.batchId,
+          );
+        else {
+          const queued = await repositories.enrichmentBatches.listItemsByStatus(
+            input.batchId,
+            "queued",
+          );
           const statuses = await repositories.listings.statusesByIds(queued);
-          const succeeded = queued.filter((id) =>
-            includes(SUCCEEDED_STATUSES, statuses[id]),
+          await markItems(
+            repositories,
+            input.batchId,
+            queued.filter((id) => includes(SUCCEEDED_STATUSES, statuses[id])),
+            "succeeded",
           );
-          const failed = queued.filter((id) =>
-            includes(FAILED_STATUSES, statuses[id]),
+          await markItems(
+            repositories,
+            input.batchId,
+            queued.filter((id) => includes(FAILED_STATUSES, statuses[id])),
+            "failed",
           );
-          await markItems(repositories, input.batchId, succeeded, "succeeded");
-          // A failed product does not block the batch and is not retried here;
-          // re-running failures is a new, separately budgeted batch.
-          await markItems(repositories, input.batchId, failed, "failed");
-          // Neither succeeded nor failed, and previously in neither list, so
-          // the item sat `queued` for ever and `done` below could never become
-          // true. The batch has nothing further to try for these.
           await markItems(
             repositories,
             input.batchId,
@@ -345,24 +457,36 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         // Work an earlier advance recorded and never confirmed as sent. The
         // grace window keeps a wave that is dispatching right now out of this,
         // so a second advance cannot race the one currently sending.
-        const stranded = await repositories.dispatchOutbox.pending({
+        let stranded = await repositories.dispatchOutbox.pending({
           olderThanSeconds: OUTBOX_GRACE_SECONDS,
           maxRows: 100,
         });
 
+        if (repositories.enrichmentBatches.listItemDetails) {
+          const bound = new Set(
+            (
+              await repositories.enrichmentBatches.listItemDetails(
+                input.batchId,
+              )
+            ).map((item) => item.pipelineRunId),
+          );
+          stranded = stranded.filter((entry) =>
+            bound.has(String(entry.payload.runId)),
+          );
+        }
         // Budget is enforced on observed spend, never on a stored running
         // total, so it cannot drift out of sync with the runs it counts.
-        const itemIds = await repositories.enrichmentBatches.listItemIds(
-          input.batchId,
-        );
         // Bounded to this batch's own lifetime. Unbounded, the sum is every
         // run those drafts have ever had, so a second batch over a cohort an
         // earlier one already enriched opened pre-charged with that spend --
         // and could exhaust its budget on the first advance without enqueuing
         // anything, with no budget an operator could set to escape it.
-        const spentUsd = await repositories.aiRuns.sumCostForListings(itemIds, {
-          since: batch.createdAt,
-        });
+        const spentUsd = repositories.enrichmentBatches.sumBoundRunCost
+          ? await repositories.enrichmentBatches.sumBoundRunCost(input.batchId)
+          : await repositories.aiRuns.sumCostForListings(
+              await repositories.enrichmentBatches.listItemIds(input.batchId),
+              { since: batch.createdAt },
+            );
 
         if (spentUsd >= batch.budgetUsd) {
           await repositories.enrichmentBatches.setStatus(
@@ -372,7 +496,12 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           // Stranded work still goes out. The money was committed when the
           // item was claimed; the message merely never left. Withholding it
           // now would leave the item queued for ever with nothing owed to it.
-          return { batch, spentUsd, dispatches: stranded, done: false };
+          return finish({
+            batch: { ...batch, status: "budget_exhausted" },
+            spentUsd,
+            dispatches: stranded,
+            done: false,
+          });
         }
 
         // The cap applies to the wave actually claimed, not only to the one
@@ -410,7 +539,7 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
               "completed",
             );
           }
-          return { batch, spentUsd, dispatches: stranded, done };
+          return finish({ batch, spentUsd, dispatches: stranded, done });
         }
 
         await repositories.enrichmentBatches.setStatus(
@@ -423,27 +552,80 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         // was owed. `listing_pipeline_runs` cannot answer that question --
         // it appears only once the pipeline claims its first step, so its
         // absence cannot tell "never sent" from "sent and still queued".
-        const recorded = await repositories.dispatchOutbox.record(
-          jobs.map((job) => ({
-            listingId: job.draftId,
-            dedupeKey: listingRunKey(job),
-            payload: job as unknown as Record<string, unknown>,
-          })),
-        );
-        return {
+        const recorded =
+          jobs.length > 0 && !("payload" in jobs[0]!)
+            ? await repositories.dispatchOutbox.record(
+                (jobs as unknown as WaveJob[]).map((job) => ({
+                  listingId: job.draftId,
+                  dedupeKey: listingRunKey(job),
+                  payload: job as unknown as Record<string, unknown>,
+                })),
+              )
+            : jobs;
+        return finish({
           batch,
           spentUsd,
           dispatches: [...stranded, ...recorded],
           done: false,
-        };
+        });
+      })
+      .catch(async (error) => {
+        if (!(error instanceof BatchBudgetExceeded)) throw error;
+        return deps
+          .getDatabase()
+          .forWorkspace(input.workspaceId, async (repositories) => {
+            const command = input.idempotencyKey
+              ? await repositories.enrichmentBatches.beginCommand({
+                  batchId: input.batchId,
+                  expectedControlRevision: input.expectedControlRevision!,
+                  idempotencyKey: input.idempotencyKey,
+                  digest: "advance",
+                })
+              : null;
+            if (command?.replay)
+              return { ...command.replay, dispatches: [] } as unknown as {
+                batch: EnrichmentBatch;
+                spentUsd: number;
+                dispatches: WaveDispatch[];
+                done: boolean;
+              };
+            const batch = await repositories.enrichmentBatches.getById(
+              input.batchId,
+            );
+            if (!batch) throw error;
+            await repositories.enrichmentBatches.setStatus(
+              input.batchId,
+              "budget_exhausted",
+            );
+            const result = {
+              controlRevision: command?.revision,
+              acceptedRunIds: [] as string[],
+              batch: { ...batch, status: "budget_exhausted" as const },
+              spentUsd: await repositories.enrichmentBatches.sumBoundRunCost(
+                input.batchId,
+              ),
+              dispatches: [],
+              done: false,
+            };
+            if (input.idempotencyKey)
+              await repositories.enrichmentBatches.finishCommand({
+                batchId: input.batchId,
+                idempotencyKey: input.idempotencyKey,
+                digest: "advance",
+                result,
+              });
+            return result;
+          });
       });
 
     // Derived once. Sending stranded work no longer implies the batch is
     // running: a budget-exhausted batch can still owe messages from a wave it
     // paid for, and reporting that as `running` told the operator the batch had
     // resumed when it had not.
-    const status =
-      plan.spentUsd >= plan.batch.budgetUsd
+    const status = ["paused", "cancelled"].includes(plan.batch.status)
+      ? plan.batch.status
+      : plan.batch.status === "budget_exhausted" ||
+          plan.spentUsd >= plan.batch.budgetUsd
         ? ("budget_exhausted" as const)
         : plan.done
           ? ("completed" as const)
@@ -456,6 +638,12 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         enqueued: 0,
         spentUsd: plan.spentUsd,
         budgetUsd: plan.batch.budgetUsd,
+        controlRevision:
+          "controlRevision" in plan
+            ? (plan.controlRevision as number)
+            : undefined,
+        acceptedRunIds:
+          "acceptedRunIds" in plan ? (plan.acceptedRunIds as string[]) : [],
       };
     }
 
@@ -506,20 +694,36 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         enqueued,
         spentUsd: plan.spentUsd,
         budgetUsd: plan.batch.budgetUsd,
+        controlRevision:
+          "controlRevision" in plan
+            ? (plan.controlRevision as number)
+            : undefined,
+        acceptedRunIds:
+          "acceptedRunIds" in plan ? (plan.acceptedRunIds as string[]) : [],
       }),
     );
 
     // Nothing reached the queue. The work is safe -- every job is recorded and
     // the next advance re-sends it -- but answering 200 with `enqueued: 0`
     // would tell the operator the queue is healthy when it plainly is not.
-    if (enqueued === 0 && unsent.length > 0) throw firstFailure;
+    // Versioned callers receive the durable accepted identities even when the
+    // optional immediate send fails. Outbox recovery owns those same runs.
+    if (enqueued === 0 && unsent.length > 0 && !input.idempotencyKey)
+      throw firstFailure;
 
     return {
       batchId: input.batchId,
       status,
       enqueued,
+      dispatchPending: unsent.length,
       spentUsd: plan.spentUsd,
       budgetUsd: plan.batch.budgetUsd,
+      controlRevision:
+        "controlRevision" in plan
+          ? (plan.controlRevision as number)
+          : undefined,
+      acceptedRunIds:
+        "acceptedRunIds" in plan ? (plan.acceptedRunIds as string[]) : [],
     };
   }
 
@@ -550,7 +754,26 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         const counts = await repositories.enrichmentBatches.countByStatus(
           input.batchId,
         );
-        return { batch, counts };
+        if (repositories.enrichmentBatches.reconcileBoundRuns)
+          await repositories.enrichmentBatches.reconcileBoundRuns(
+            input.batchId,
+          );
+        return {
+          batch,
+          counts:
+            typeof repositories.enrichmentBatches.reconcileBoundRuns ===
+            "function"
+              ? await repositories.enrichmentBatches.countByStatus(
+                  input.batchId,
+                )
+              : counts,
+          items: await repositories.enrichmentBatches.listItemDetails?.(
+            input.batchId,
+          ),
+          spentUsd: await repositories.enrichmentBatches.sumBoundRunCost?.(
+            input.batchId,
+          ),
+        };
       });
   }
 

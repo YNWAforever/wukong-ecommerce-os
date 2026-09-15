@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-
 import {
   OPAK_WORKSPACE_ID,
   enrollAndSignInOpakAdmin,
@@ -10,6 +9,11 @@ import {
   verifyUploadedAsset,
 } from "./real-stack-fixture.js";
 
+async function onePagePdf(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  document.addPage([72, 72]);
+  return Buffer.from(await document.save());
+}
 function parseCsvRow(row: string): string[] {
   const fields: string[] = [];
   let field = "";
@@ -49,24 +53,46 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   test.setTimeout(120_000);
   await enrollAndSignInOpakAdmin(page);
 
-  await page.locator("#listing-files").setInputFiles([
-    {
-      name: "bottle-label.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    },
-    {
-      name: "supplier-sheet.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(
-        "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
-        "utf8",
-      ),
-    },
+  const bottleLabel = {
+    name: "bottle-label.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  };
+  const fileInput = page.locator("#listing-files");
+  await fileInput.setInputFiles(bottleLabel);
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "bottle-label.png",
   ]);
+
+  await fileInput.setInputFiles({
+    name: "back-label.png",
+    mimeType: "image/png",
+    buffer: bottleLabel.buffer,
+  });
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "bottle-label.png",
+    "back-label.png",
+  ]);
+
+  await page
+    .locator(".file-row", { hasText: "bottle-label.png" })
+    .getByRole("button", { name: /移除/ })
+    .click();
+  await fileInput.setInputFiles(bottleLabel);
+  await fileInput.setInputFiles([]);
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "back-label.png",
+    "bottle-label.png",
+  ]);
+  await expect(page.locator(".file-preview")).toHaveCount(2);
+  await page.screenshot({
+    path: "test-results/t03-native-selection.png",
+    fullPage: true,
+  });
+
   await page
     .getByLabel("補充備註")
     .fill(
@@ -98,10 +124,47 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
     page.getByRole("heading", { name: "Listing fields" }),
   ).toBeVisible();
   await expect(
-    page.locator("blockquote").filter({ hasText: "SKU OPAK-DEMO-001" }),
+    page.locator("blockquote").filter({ hasText: "Opak Cellar" }).first(),
   ).toBeVisible();
   await expect(
     page.getByText("No open compliance flags", { exact: true }),
+  ).toBeVisible();
+
+  // Commercial facts remain operator-owned. Save them through the working
+  // document, then process that immutable revision before reviewing its version.
+  await page
+    .getByText("Edit sources, notes and working draft", { exact: true })
+    .click();
+  await page.getByLabel("Merchant SKU").fill("OPAK-DEMO-001");
+  await page.getByLabel("Selling price (HK$)").fill("288");
+  await page.getByLabel("Stock", { exact: true }).fill("12");
+  await page.getByRole("button", { name: "Save and process with AI" }).click();
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/listings/${draftId}`);
+        if (!response.ok()) return null;
+        const body = (await response.json()) as {
+          activeVersion?: {
+            content?: {
+              sku?: string | null;
+              priceHkd?: number | null;
+              stockQuantity?: number | null;
+            };
+          } | null;
+        };
+        return body.activeVersion?.content ?? null;
+      },
+      { timeout: 45_000 },
+    )
+    .toMatchObject({
+      sku: "OPAK-DEMO-001",
+      priceHkd: 288,
+      stockQuantity: 12,
+    });
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Listing fields" }),
   ).toBeVisible();
 
   const title = page.getByLabel("Title (English)", { exact: true });
@@ -166,17 +229,20 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   expect(csv).toContain("OPAK-DEMO-001,Opak Cellar Riesling 2024 — reviewed");
 
   const csvRows = csv.trimEnd().split("\r\n");
-  const csvImageUrl = parseCsvRow(csvRows[1]!)[13];
-  expect(csvImageUrl).toMatch(/^https?:\/\//);
-  // The CSV contains a presigned GET URL: verify the actual image download.
-  const imageResponse = await page.request.get(csvImageUrl!);
-  expect(imageResponse.ok()).toBe(true);
-  expect(imageResponse.headers()["content-type"]).toMatch(/^image\//);
-  const imageBytes = await imageResponse.body();
-  expect(imageBytes.byteLength).toBeGreaterThan(0);
-  expect(Number(imageResponse.headers()["content-length"])).toBe(
-    imageBytes.byteLength,
-  );
+  const csvImageUrls = parseCsvRow(csvRows[1]!)[13]?.split(";") ?? [];
+  expect(csvImageUrls).toHaveLength(2);
+  // Verify every presigned image URL emitted in the multi-image CSV field.
+  for (const csvImageUrl of csvImageUrls) {
+    expect(csvImageUrl).toMatch(/^https?:\/\//);
+    const imageResponse = await page.request.get(csvImageUrl);
+    expect(imageResponse.ok()).toBe(true);
+    expect(imageResponse.headers()["content-type"]).toMatch(/^image\//);
+    const imageBytes = await imageResponse.body();
+    expect(imageBytes.byteLength).toBeGreaterThan(0);
+    expect(Number(imageResponse.headers()["content-length"])).toBe(
+      imageBytes.byteLength,
+    );
+  }
 
   const queuedResponse = page.waitForResponse(
     (response) =>
@@ -221,6 +287,10 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   await expect(page.getByText(expectedRemoteProductId)).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await writeFile("test-results/real-stack-draft-id.txt", draftId!, "utf8");
+  await page.screenshot({
+    path: "test-results/listing-pilot-complete.png",
+    fullPage: true,
+  });
   await writeFile(
     "test-results/real-stack-workspace-id.txt",
     OPAK_WORKSPACE_ID,
@@ -229,7 +299,12 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
 
   const audit = await verifyCompletedAudit(draftId!);
   expect(audit.missingActions).toEqual([]);
-  expect(audit.aiRunTasks).toEqual(["extract", "generate"]);
+  expect(audit.aiRunTasks).toEqual([
+    "extract",
+    "generate",
+    "extract",
+    "generate",
+  ]);
   expect(audit.accessibleForeignRecordCount).toBe(0);
   expect(audit.accessibleForeignTables).toEqual([]);
   expect(audit.passed).toBe(true);

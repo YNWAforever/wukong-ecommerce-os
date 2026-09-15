@@ -222,13 +222,13 @@ export function ProductShotReview({
       !canOperate ||
       busy ||
       error ||
-      !view.expectedVersionId
+      (!view.expectedVersionId && !view.inputRevision)
     )
       return;
     const prepare = view.state === "cutout_ready";
     const request = view.state === "not_requested" && view.sources.length === 1;
     if (!prepare && !request) return;
-    const key = `${view.attemptId ?? view.sources[0]?.assetId}:${view.expectedVersionId}:${prepare}`;
+    const key = `${view.attemptId ?? view.sources[0]?.assetId}:${view.expectedVersionId}:${view.inputRevision}:${prepare}`;
     if (auto.current.has(key)) return;
     auto.current.add(key);
     void mutate(
@@ -237,11 +237,13 @@ export function ProductShotReview({
         ? {
             attemptId: view.attemptId,
             expectedVersionId: view.expectedVersionId,
+            expectedInputRevision: view.inputRevision,
           }
         : {
             sourceAssetId: view.sources[0]!.assetId,
             expectedVersionId: view.expectedVersionId,
             explicitFreshAttempt: false,
+            expectedInputRevision: view.inputRevision,
           },
     );
   }, [view, canOperate, busy, error, mutate]);
@@ -256,7 +258,16 @@ export function ProductShotReview({
     }, 3000);
     return () => clearInterval(timer);
   }, [view?.state, load, busy]);
-  if (view?.enabled === false) return <>{legacy}</>;
+  if (view?.enabled === false)
+    return (
+      <>
+        {legacy}
+        <section aria-label={t("商品照", "Product image")}>
+          <h2>{t("商品照", "Product image")}</h2>
+          <p role="status">{t(...statusCopy.setup_required!)}</p>
+        </section>
+      </>
+    );
   if (!view)
     return error ? (
       <p role="alert">
@@ -419,6 +430,7 @@ export function ProductShotReview({
                 sourceAssetId: selected,
                 expectedVersionId: view.expectedVersionId,
                 explicitFreshAttempt: false,
+                expectedInputRevision: view.inputRevision,
               })
             }
           >
@@ -437,6 +449,7 @@ export function ProductShotReview({
               sourceAssetId: view.sources[0]!.assetId,
               expectedVersionId: view.expectedVersionId,
               explicitFreshAttempt: false,
+              expectedInputRevision: view.inputRevision,
             })
           }
         >
@@ -451,6 +464,7 @@ export function ProductShotReview({
             void mutate("prepare", {
               attemptId: view.attemptId,
               expectedVersionId: view.expectedVersionId,
+              expectedInputRevision: view.inputRevision,
             })
           }
         >
@@ -466,6 +480,7 @@ export function ProductShotReview({
               sourceAssetId: view.sourceAssetId,
               expectedVersionId: view.expectedVersionId,
               explicitFreshAttempt: false,
+              expectedInputRevision: view.inputRevision,
             })
           }
         >
@@ -511,6 +526,7 @@ export function ProductShotReview({
                 sourceAssetId: view.sourceAssetId,
                 expectedVersionId: view.expectedVersionId,
                 explicitFreshAttempt: true,
+                expectedInputRevision: view.inputRevision,
               })
             }
           >

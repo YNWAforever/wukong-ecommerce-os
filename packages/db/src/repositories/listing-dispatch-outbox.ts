@@ -100,6 +100,8 @@ export function createListingDispatchOutboxRepository(
             and(
               eq(listingDispatchOutbox.workspaceId, workspaceId),
               isNull(listingDispatchOutbox.dispatchedAt),
+              sql`not exists(select 1 from listing_pipeline_runs r where r.workspace_id=${listingDispatchOutbox.workspaceId} and r.idempotency_key=${listingDispatchOutbox.dedupeKey} and r.execution_state in ('cancelled','superseded','failed','succeeded'))`,
+              sql`not exists(select 1 from enrichment_batch_items i join enrichment_batches b on b.workspace_id=i.workspace_id and b.id=i.batch_id join listing_pipeline_runs r on r.workspace_id=i.workspace_id and r.id=i.pipeline_run_id where r.workspace_id=${listingDispatchOutbox.workspaceId} and r.idempotency_key=${listingDispatchOutbox.dedupeKey} and b.status in ('paused','cancelled'))`,
               lt(
                 listingDispatchOutbox.createdAt,
                 sql`now() - make_interval(secs => ${olderThanSeconds})`,

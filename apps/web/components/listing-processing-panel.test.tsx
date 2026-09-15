@@ -80,10 +80,7 @@ describe("ListingProcessingPanel", () => {
   });
 
   it("offers a retry for a failed listing, which the server accepts", () => {
-    // POST /api/listings/[id]/process lists `failed` as retryable and calls
-    // pipelineRuns.reopenFailed first, so this button is a real action rather
-    // than one that 409s. Before this, a failed listing was a dead end whose
-    // only on-screen guidance was to contact support.
+    // Explicit retries create new operations and preserve failed history.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
         status="failed"
@@ -94,7 +91,8 @@ describe("ListingProcessingPanel", () => {
     );
 
     expect(markup).toContain("Processing did not finish");
-    expect(markup).toContain("nothing was overwritten");
+    expect(markup).toContain("photos and saved work are retained");
+    expect(markup).toContain("save the draft manually");
     expect(markup).toContain("Run processing again");
   });
 
@@ -124,6 +122,20 @@ describe("ListingProcessingPanel", () => {
     );
 
     expect(markup).not.toContain("Start processing");
+  });
+  it("shows an accepted retry as queued even while the old draft status is failed", () => {
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="failed"
+        enqueueState="queued"
+        canProcess
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+    expect(markup).toContain("Queued for processing");
+    expect(markup).not.toContain("Processing did not finish");
+    expect(markup).not.toContain("Run processing again");
   });
 });
 

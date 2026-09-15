@@ -131,6 +131,8 @@ const wrangler = {
       : {}),
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,
+    LISTING_PAID_OPERATIONS_ENABLED:
+      process.env.LISTING_PAID_OPERATIONS_ENABLED === "true" ? "true" : "false",
     ...listingModel,
     SHOPLINE_ADAPTER: environment === "preview" ? "mock" : "disabled",
     SHOPLINE_PUBLISH_ENABLED: "false",

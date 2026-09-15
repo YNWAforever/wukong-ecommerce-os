@@ -1,3 +1,7 @@
+import {
+  runPersistedListingOperation,
+  type PipelineOperationHooks,
+} from "./listing-operation-pipeline.js";
 import type {
   AuditContext,
   AuditWriter,
@@ -51,6 +55,7 @@ export type PipelineListing = {
 export type PipelineAuditWriter = AuditWriter;
 
 export type PipelineRepositories = {
+  operations?: PipelineOperationHooks;
   listings: {
     requireById(id: string): Promise<PipelineListing>;
     startProcessing(
@@ -156,6 +161,11 @@ export type PipelineRepositories = {
 };
 
 export type PipelineDependencies = {
+  aiForOperation?(
+    workspaceId: string,
+    run: import("@wukong/db").ListingOperation,
+  ): ListingAIProvider;
+  settleOperation?(workspaceId: string, runId: string): Promise<void>;
   withWorkspace<T>(
     workspaceId: string,
     work: (repositories: PipelineRepositories) => Promise<T>,
@@ -181,7 +191,10 @@ export type PipelineDependencies = {
   };
 };
 export type PipelineErrorCode =
-  "provider_timeout" | "provider_failure" | "pipeline_failure";
+  | "provider_timeout"
+  | "provider_failure"
+  | "pipeline_failure"
+  | import("@wukong/ai").ProviderFailureCategory;
 export class PipelineTimeoutError extends Error {
   constructor(message = "listing provider timed out") {
     super(message);
@@ -237,6 +250,14 @@ function aiRunFrom(
 // same eight fields. A private copy here is how a rule ends up enforced on
 // generated copy and not on edited copy.
 function classifyError(error: unknown): PipelineErrorCode {
+  if (
+    error instanceof ProviderApiError ||
+    error instanceof ProviderOutputError ||
+    error instanceof ProviderRefusalError
+  ) {
+    if (error.diagnostic.category !== "internal")
+      return error.diagnostic.category;
+  }
   if (error instanceof PipelineTimeoutError) return "provider_timeout";
   const message = error instanceof Error ? error.message : "";
   if (
@@ -278,7 +299,7 @@ function asGenerated(value: unknown): { versionId: string } | null {
   return value as { versionId: string };
 }
 
-export async function runListingPipeline(
+async function executeListingPipeline(
   input: ListingPipelineInput,
   deps: PipelineDependencies,
   options: PipelineAttemptOptions = {},
@@ -638,4 +659,19 @@ export async function runListingPipeline(
     });
     throw error;
   }
+}
+
+export async function runListingPipeline(
+  input: ListingPipelineInput,
+  deps: PipelineDependencies,
+  options: PipelineAttemptOptions = {},
+): Promise<PipelineResult> {
+  if (input.runId)
+    return runPersistedListingOperation(
+      input,
+      deps,
+      options,
+      executeListingPipeline,
+    );
+  return executeListingPipeline(input, deps, options);
 }

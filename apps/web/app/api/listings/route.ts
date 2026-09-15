@@ -1,3 +1,7 @@
+import { requireListingRecovery } from "../../../lib/listing-recovery-readiness";
+import { createHash } from "node:crypto";
+import { acceptListingOperation } from "../../../lib/listing-operation-service";
+import { dispatchListingOperation } from "../../../lib/dispatch-listing-operation";
 import { readSourceReadiness } from "../../../lib/source-readiness";
 import { z } from "zod";
 import {
@@ -35,15 +39,19 @@ const listingSchema = z
   .object({
     sourceAssetIds: z
       .array(z.string().uuid())
-      .min(1)
       .max(11)
       .refine(
         (ids) => new Set(ids).size === ids.length,
         "Asset IDs must be unique",
       ),
     note: z.string().max(5_000).optional().default(""),
+    processingMode: z.enum(["ai", "manual"]).default("ai"),
   })
-  .strict();
+  .strict()
+  .refine(
+    (body) => body.sourceAssetIds.length > 0 || body.note.trim().length > 0,
+    "Add a source or a note.",
+  );
 
 type CreateListingDeps = IntakeRouteDeps<true> & {
   /**
@@ -56,6 +64,29 @@ type CreateListingDeps = IntakeRouteDeps<true> & {
   ) => Promise<ProductShotRequestResult>;
 };
 
+const recoverableAdmission = new Set([
+  "ai_configuration_required",
+  "provider_capability",
+  "budget_blocked",
+]);
+async function acceptOrSave(
+  repositories: WorkspaceRepositories,
+  input: Parameters<typeof acceptListingOperation>[1],
+) {
+  try {
+    return {
+      accepted: await acceptListingOperation(repositories, input),
+      blocked: null,
+    };
+  } catch (error) {
+    if (error instanceof ApiError && recoverableAdmission.has(error.code))
+      return {
+        accepted: null,
+        blocked: { code: error.code, message: error.message },
+      };
+    throw error;
+  }
+}
 export function createListingHandler(deps: CreateListingDeps) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
@@ -70,9 +101,45 @@ export function createListingHandler(deps: CreateListingDeps) {
 
       const body = listingSchema.parse(await request.json());
 
-      const listing = await deps
+      const requestKey = request.headers.get("Idempotency-Key");
+      if (requestKey) z.string().uuid().parse(requestKey);
+      if (body.sourceAssetIds.length === 0 && !requestKey)
+        throw new ApiError(
+          400,
+          "idempotency_key_required",
+          "A request key is required for a note-only draft.",
+        );
+      await requireListingRecovery(deps.getDatabase());
+      const createDigest = createHash("sha256")
+        .update(JSON.stringify(body))
+        .digest("hex");
+      const acceptedCreate = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
+          if (requestKey) {
+            await repositories.pipelineRuns.lockCreateRequests();
+            const prior =
+              await repositories.pipelineRuns.findCreateRequest(requestKey);
+            if (prior) {
+              if (prior.digest !== createDigest)
+                throw new ApiError(
+                  409,
+                  "idempotency_conflict",
+                  "This request key has different inputs.",
+                );
+              return { ...prior.response, replayed: true } as any;
+            }
+          }
+          const finish = async (value: any) => {
+            if (requestKey)
+              await repositories.pipelineRuns.recordCreateRequest(
+                requestKey,
+                createDigest,
+                value.listing.id,
+                value,
+              );
+            return value;
+          };
           const assets = await repositories.sourceAssets.getByIds(
             body.sourceAssetIds,
           );
@@ -123,7 +190,22 @@ export function createListingHandler(deps: CreateListingDeps) {
                 "These files already belong to another listing.",
               );
             }
-            return existing;
+            const snapshot = await repositories.listingInputs.initialize(
+              { listingId: existing.id, actorId: context.actorId },
+              { ...context, entityId: existing.id },
+              repositories.audit,
+            );
+            const admission =
+              body.processingMode === "manual"
+                ? { accepted: null, blocked: null }
+                : await acceptOrSave(repositories, {
+                    ...context,
+                    listingId: existing.id,
+                    expectedInputRevision: snapshot.revision,
+                    baseVersionId: snapshot.baseVersionId,
+                    operationKey: `create:${existing.id}`,
+                  });
+            return finish({ listing: existing, ...admission, snapshot });
           }
 
           const imageCount = assets.filter(({ kind }) =>
@@ -162,72 +244,49 @@ export function createListingHandler(deps: CreateListingDeps) {
               hasNote: body.note.trim().length > 0,
             },
           });
-          return created;
+          const snapshot = await repositories.listingInputs.initialize(
+            { listingId: created.id, actorId: context.actorId },
+            { ...context, entityId: created.id },
+            repositories.audit,
+          );
+          const admission =
+            body.processingMode === "manual"
+              ? { accepted: null, blocked: null }
+              : await acceptOrSave(repositories, {
+                  ...context,
+                  listingId: created.id,
+                  expectedInputRevision: snapshot.revision,
+                  baseVersionId: null,
+                  operationKey: `create:${created.id}`,
+                });
+          return finish({ listing: created, ...admission, snapshot });
         });
 
-      let processing:
-        | { state: "queued"; jobId: string; errorCode: null }
-        | {
-            state: "retry_required";
-            jobId: null;
-            errorCode: "queue_unavailable";
-          };
-
-      // Image work starts here, not only when someone re-processes. Creating a
-      // listing from photographs used to enqueue the listing job alone, so no
-      // product shot existed until an operator happened to open the review
-      // screen and ask for one -- on the one path where the photos had just
-      // been uploaded. The two are dispatched together and independently: a
-      // shot that cannot start (provider disabled, queue unconfigured) answers
-      // `setup_required` and never blocks the text draft.
+      const { listing, accepted, snapshot, blocked } = acceptedCreate;
+      if (accepted && !acceptedCreate.replayed)
+        await dispatchListingOperation(
+          deps.getDatabase(),
+          context.workspaceId,
+          accepted,
+          deps.publisher,
+        );
+      const processing = accepted?.processing ?? null;
       let productShot: ProductShotRequestResult | undefined;
-      try {
-        const [textResult, shotResult] = await Promise.allSettled([
-          deps.publisher.enqueue({
-            workspaceId: context.workspaceId,
-            draftId: listing.id,
-            activeVersionSequence: 0,
-          }),
-          deps.requestProductShot?.({
+      if (
+        accepted &&
+        !acceptedCreate.replayed &&
+        body.processingMode === "ai" &&
+        deps.requestProductShot
+      ) {
+        try {
+          productShot = await deps.requestProductShot({
             workspaceId: context.workspaceId,
             listingId: listing.id,
             actorId: context.actorId,
-          }) ?? Promise.resolve(undefined),
-        ]);
-        productShot =
-          shotResult.status === "fulfilled"
-            ? shotResult.value
-            : { state: "request_failed" };
-        if (textResult.status === "rejected") throw textResult.reason;
-        const job = textResult.value;
-        processing = { state: "queued", jobId: job.id, errorCode: null };
-        console.info(
-          JSON.stringify({
-            event: "listing.enqueue_accepted",
-            workspaceId: context.workspaceId,
-            listingId: listing.id,
-            jobId: job.id,
-          }),
-        );
-      } catch (error) {
-        processing = {
-          state: "retry_required",
-          jobId: null,
-          errorCode: "queue_unavailable",
-        };
-        // The draft is deliberately kept and the request still succeeds, so
-        // this log is the only record of why the queue could not take it.
-        // Without the reason, an unset variable and an unreachable Worker are
-        // the same line.
-        console.error(
-          JSON.stringify({
-            event: "listing.enqueue_failed",
-            workspaceId: context.workspaceId,
-            listingId: listing.id,
-            errorCode: "queue_unavailable",
-            queueReason: queueIngressReason(error) ?? "unknown",
-          }),
-        );
+          });
+        } catch {
+          productShot = { state: "request_failed" };
+        }
       }
 
       return jsonResponse(201, {
@@ -236,7 +295,10 @@ export function createListingHandler(deps: CreateListingDeps) {
           status: listing.status,
           target: listing.target,
         },
+        inputRevision: snapshot.revision,
+        activeVersionId: snapshot.baseVersionId,
         processing,
+        ...(blocked ? { processingBlocked: blocked } : {}),
         ...(productShot ? { productShot } : {}),
       });
     });

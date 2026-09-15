@@ -1,4 +1,8 @@
 import {
+  inspectUploadedSource,
+  SourceInspectionError,
+} from "@wukong/assets/inspect-source";
+import {
   assertAssetKey,
   MAX_ASSET_SIZE,
   SUPPORTED_ASSET_MIME_TYPES,
@@ -68,6 +72,19 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
+      let inspection;
+      try {
+        inspection = await inspectUploadedSource(
+          deps.getAssetStore(),
+          context.workspaceId,
+          body.key,
+          body,
+        );
+      } catch (error) {
+        if (error instanceof SourceInspectionError)
+          throw new ApiError(422, error.code, error.message);
+        throw error;
+      }
       const finalized = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
@@ -99,7 +116,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
               size: object.size,
               mimeType: object.mimeType,
               clientSha256: body.sha256,
-              hashVerified: false,
+              ...inspection,
             },
           });
           await repositories.audit.write({
@@ -110,7 +127,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
             metadata: {
               size: object.size,
               mimeType: object.mimeType,
-              hashVerified: false,
+              ...inspection,
             },
           });
           return { asset: created, replayed: false };

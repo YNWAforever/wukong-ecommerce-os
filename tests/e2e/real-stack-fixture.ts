@@ -121,7 +121,20 @@ async function ensureRuntimeRole() {
   }
 }
 
+function assertFixtureDatabaseAlignment() {
+  const admin = new URL(ADMIN_URL);
+  const runtime = new URL(RUNTIME_URL);
+  const identity = (url: URL) =>
+    `${url.hostname.toLowerCase()}:${url.port || "5432"}${url.pathname}`;
+  if (identity(admin) !== identity(runtime)) {
+    throw new Error(
+      "TEST_DATABASE_ADMIN_URL and TEST_DATABASE_URL must target the same host, port, and database for the real-stack fixture.",
+    );
+  }
+}
+
 export async function prepareRealStackFixture() {
+  assertFixtureDatabaseAlignment();
   await ensureRuntimeRole();
   await runPnpm(["--filter", "@wukong/db", "db:migrate"], {
     ...process.env,
@@ -167,22 +180,43 @@ type MailpitMessage = {
 
 async function latestEmailUrl(recipient: string): Promise<string> {
   let message: MailpitMessage | undefined;
-  await expect
-    .poll(async () => {
-      const response = await fetch(`${MAILPIT_URL}/api/v1/messages`);
-      if (!response.ok) return false;
-      const payload = (await response.json()) as {
-        messages?: MailpitMessage[];
-      };
-      message = payload.messages?.find(
-        (candidate) =>
-          candidate.To?.some(
-            (entry) => entry.Address.toLowerCase() === recipient,
-          ) && /reset your wukong password/i.test(candidate.Subject),
+  try {
+    await expect
+      .poll(async () => {
+        const response = await fetch(`${MAILPIT_URL}/api/v1/messages`);
+        if (!response.ok) return false;
+        const payload = (await response.json()) as {
+          messages?: MailpitMessage[];
+        };
+        message = payload.messages?.find(
+          (candidate) =>
+            candidate.To?.some(
+              (entry) => entry.Address.toLowerCase() === recipient,
+            ) && /reset your wukong password/i.test(candidate.Subject),
+        );
+        return Boolean(message);
+      })
+      .toBe(true);
+  } catch (error) {
+    const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+    try {
+      const audits = await admin<
+        Array<{ outcome: string; reason: string | null }>
+      >`
+        SELECT outcome, reason
+        FROM auth_audit_events
+        WHERE lower(email) = lower(${recipient})
+        ORDER BY created_at DESC
+        LIMIT 3
+      `;
+      throw new Error(
+        `Enrollment email absent; auth audit: ${JSON.stringify(audits)}`,
+        { cause: error },
       );
-      return Boolean(message);
-    })
-    .toBe(true);
+    } finally {
+      await admin.end();
+    }
+  }
   const detail = (await fetch(
     `${MAILPIT_URL}/api/v1/message/${message!.ID}`,
   ).then((response) => response.json())) as { Text?: string; HTML?: string };

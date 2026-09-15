@@ -38,6 +38,8 @@ function handlerFor(
     };
     exportAttempts?: { listContainingListing: (id: string) => Promise<any[]> };
     pipelineRuns?: { getState: (key: string) => Promise<any> };
+    listingInputs?: { getCurrent: (id: string) => Promise<any> };
+    listingSnapshot?: any;
   } = {},
 ) {
   return createListingViewHandler({
@@ -56,15 +58,17 @@ function handlerFor(
             productShots: overrides.productShots,
             listings: {
               async getReviewSnapshot() {
-                return {
-                  listing: { id: listingId, status: "in_review" },
-                  activeVersion: {
-                    id: "version_1",
-                    content: { sku: "OPAK-1" },
-                  },
-                  evidence: [],
-                  flags: [],
-                };
+                return (
+                  overrides.listingSnapshot ?? {
+                    listing: { id: listingId, status: "in_review" },
+                    activeVersion: {
+                      id: "version_1",
+                      content: { sku: "OPAK-1" },
+                    },
+                    evidence: [],
+                    flags: [],
+                  }
+                );
               },
               // The handler derives the pipeline run key from the current
               // revision, the same way POST .../process does.
@@ -76,9 +80,32 @@ function handlerFor(
                 };
               },
             },
-            pipelineRuns: overrides.pipelineRuns ?? {
-              async getState() {
+            listingInputs: overrides.listingInputs ?? {
+              async getCurrent() {
                 return null;
+              },
+            },
+            pipelineRuns: {
+              async getCurrentOperation() {
+                return overrides.pipelineRuns
+                  ? {
+                      id: "00000000-0000-4000-8000-000000000201",
+                      idempotencyKey: "current-run-key",
+                      executionState: "queued",
+                      runAttempt: 1,
+                      retryOfRunId: "00000000-0000-4000-8000-000000000200",
+                      acceptedAt: new Date("2026-09-16T00:00:00.000Z"),
+                      errorCode: null,
+                      inputRevision: 1,
+                      baseVersionId: null,
+                    }
+                  : null;
+              },
+              async getLatestState() {
+                return null;
+              },
+              async getState(key: string) {
+                return overrides.pipelineRuns?.getState(key) ?? null;
               },
             },
             importResults: overrides.importResults ?? {
@@ -137,7 +164,7 @@ function handlerFor(
     getAssetStore: () =>
       (overrides.assetStore ?? {
         async createReadUrl() {
-          throw new Error("createReadUrl should not have been called");
+          return { url: "https://assets.example/source" };
         },
       }) as never,
   });
@@ -224,7 +251,9 @@ it("derives connected status from the workspace SHOPLINE connection", async () =
 });
 
 it("returns null productShot when no cutout asset exists for the listing", async () => {
-  const createReadUrl = vi.fn();
+  const createReadUrl = vi.fn(async () => ({
+    url: "https://assets.example/source.jpg",
+  }));
   const response = await handlerFor("reviewer", false, {
     sourceAssets: {
       async listForListing() {
@@ -245,7 +274,7 @@ it("returns null productShot when no cutout asset exists for the listing", async
 
   const body = await response.json();
   expect(body.productShot).toBeNull();
-  expect(createReadUrl).not.toHaveBeenCalled();
+  expect(createReadUrl).toHaveBeenCalledOnce();
 });
 
 it("resolves a preview URL and the workspace brand color when a cutout exists", async () => {
@@ -465,8 +494,8 @@ it.each([
                   },
                 ]
               : [
-                  { kind: "image/png", metadata: {} },
-                  { kind: "image/jpeg", metadata: {} },
+                  { kind: "image/png", metadata: {}, storageKey: "front.png" },
+                  { kind: "image/jpeg", metadata: {}, storageKey: "back.jpg" },
                 ],
         },
         assetStore: { createReadUrl: async () => ({ url: "/legacy" }) },
@@ -583,4 +612,176 @@ describe("processing summary", () => {
 
     expect((await response.json()).processing).toBeNull();
   });
+});
+
+it("returns the current run and source working document without an active version", async () => {
+  const workingContent = {
+    title: { en: "", "zh-Hant": "" },
+    description: { en: "", "zh-Hant": "" },
+  };
+  const response = await handlerFor("operator", false, {
+    listingSnapshot: {
+      listing: {
+        id: listingId,
+        status: "received",
+        note: "Front label only",
+        inputRevision: 1,
+      },
+      activeVersion: null,
+      evidence: [],
+      flags: [],
+    },
+    listingInputs: {
+      async getCurrent() {
+        return {
+          revision: 1,
+          baseVersionId: null,
+          note: "Front label only",
+          workingContent,
+          fieldStates: {},
+          sources: ["00000000-0000-4000-8000-000000000301"],
+        };
+      },
+    },
+    pipelineRuns: {
+      async getState() {
+        return {
+          status: "started",
+          resultStatus: null,
+          errorCode: null,
+          steps: new Map(),
+        };
+      },
+    },
+    sourceAssets: {
+      async listForListing() {
+        return [
+          {
+            id: "00000000-0000-4000-8000-000000000301",
+            kind: "image/png",
+            storageKey: "ws/ws_opak/sources/front.png",
+            metadata: { fileName: "front.png" },
+          },
+        ];
+      },
+    },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    activeVersion: null,
+    inputRevision: 1,
+    workingInput: {
+      revision: 1,
+      note: "Front label only",
+      workingContent,
+    },
+    sources: [
+      {
+        assetId: "00000000-0000-4000-8000-000000000301",
+        mimeType: "image/png",
+        name: "front.png",
+        previewUrl: "https://assets.example/source",
+      },
+    ],
+    currentRun: {
+      runId: "00000000-0000-4000-8000-000000000201",
+      state: "queued",
+      attempt: 1,
+      retryOfRunId: "00000000-0000-4000-8000-000000000200",
+      inputRevision: 1,
+      baseVersionId: null,
+    },
+  });
+});
+
+it("keeps attached legacy originals selected in a revision-zero recovery document", async () => {
+  const assetId = "00000000-0000-4000-8000-000000000301";
+  const response = await handlerFor("operator", false, {
+    listingSnapshot: {
+      listing: {
+        id: listingId,
+        status: "failed",
+        note: "Legacy note",
+        inputRevision: 0,
+      },
+      activeVersion: null,
+      evidence: [],
+      flags: [],
+    },
+    sourceAssets: {
+      listForListing: async () => [
+        {
+          id: assetId,
+          kind: "image/png",
+          storageKey: "source.png",
+          metadata: { clientSha256: "a".repeat(64), size: 10 },
+        },
+      ],
+    },
+    assetStore: {
+      createReadUrl: async () => ({ url: "https://assets.example/original" }),
+    },
+  })(new Request("https://test"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.workingInput.sources).toEqual([
+    {
+      assetId,
+      role: "other_image",
+      use: "analyse",
+      hero: false,
+      digest: "a".repeat(64),
+    },
+  ]);
+  expect(result.workingInput.workingContent.imageAssetIds).toEqual([assetId]);
+});
+it("shows generated active fields in the working editor while retaining manual values", async () => {
+  const { emptyWorkingListing } = await import("@wukong/core");
+  const working = {
+    revision: 1,
+    baseVersionId: null,
+    note: null,
+    workingContent: { ...emptyWorkingListing(), producer: "Human producer" },
+    fieldStates: {
+      producer: {
+        owner: "operator",
+        state: "manual",
+        locked: true,
+        evidenceRefs: [],
+      },
+    },
+    sources: [],
+  };
+  const active = {
+    ...emptyWorkingListing(),
+    producer: "AI producer",
+    title: { en: "Generated title", "zh-Hant": "生成名稱" },
+  };
+  const handler = handlerFor("operator", false, {
+    listingInputs: { getCurrent: async () => working },
+    listingSnapshot: {
+      listing: { id: listingId, status: "in_review", inputRevision: 1 },
+      activeVersion: {
+        id: "00000000-0000-4000-8000-000000000202",
+        content: active,
+      },
+      evidence: [],
+      flags: [],
+    },
+  });
+  const response = await handler(new Request("https://test"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.workingInput.workingContent.title.en).toBe("Generated title");
+  expect(result.workingInput.workingContent.producer).toBe("Human producer");
+  expect(result.workingInput.baseVersionId).toBe(
+    "00000000-0000-4000-8000-000000000202",
+  );
 });

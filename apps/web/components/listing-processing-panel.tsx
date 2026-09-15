@@ -11,6 +11,7 @@ type ProcessingStatus = Extract<
 
 type ListingProcessingPanelProps = {
   status: ProcessingStatus;
+  errorCode?: string | null;
   enqueueState?: "queued" | "retry_required";
   canProcess: boolean;
   onProcess: () => void | Promise<void>;
@@ -19,6 +20,7 @@ type ListingProcessingPanelProps = {
 
 export function ListingProcessingPanel({
   status,
+  errorCode,
   enqueueState,
   canProcess,
   onProcess,
@@ -26,16 +28,7 @@ export function ListingProcessingPanel({
 }: ListingProcessingPanelProps) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
-  // `failed` is offered too, because the server already supports it:
-  // POST /api/listings/[id]/process accepts received/needs_info/failed, and
-  // pipelineRuns.reopenFailed deletes the still-running step rows before
-  // re-enqueueing, so a retry starts clean rather than colliding with the
-  // lease the failed run left behind.
-  //
-  // `needs_info` is offered as well, now that a re-run carries its own
-  // attempt number. Its run completed with status `succeeded`, so before that
-  // the same route answered 409 processing_already_started no matter what the
-  // operator supplied, and this button would only have failed.
+  // An explicit retry creates a new immutable operation.
   const canStart =
     (status === "received" || status === "failed" || status === "needs_info") &&
     enqueueState !== "queued" &&
@@ -44,7 +37,7 @@ export function ListingProcessingPanel({
   let title: string;
   let explanation: string;
 
-  if (status === "received" && enqueueState === "queued") {
+  if (enqueueState === "queued") {
     title = t("已加入處理佇列", "Queued for processing");
     explanation = t(
       "AI 工作程序將在可用時開始處理。",
@@ -71,8 +64,8 @@ export function ListingProcessingPanel({
   } else {
     title = t("AI 處理未完成", "Processing did not finish");
     explanation = t(
-      "來源檔案已保留，沒有內容被覆寫。你可以再處理一次。",
-      "Your source files are kept and nothing was overwritten. You can run processing again.",
+      "相片及已儲存資料仍然保留。你可以重試 AI，或在下方手動填寫並儲存草稿。",
+      "Your photos and saved work are retained. Retry AI or complete and save the draft manually below.",
     );
   }
 
@@ -81,6 +74,37 @@ export function ListingProcessingPanel({
       <p className="eyebrow">{t("商品處理", "Listing processing")}</p>
       <h1>{title}</h1>
       <p className="lede">{explanation}</p>
+      {errorCode === "missing_configuration" ||
+      errorCode === "ai_configuration_required" ? (
+        <p role="status">
+          {t(
+            "AI 設定尚未完成。你仍可儲存及手動完成草稿。",
+            "AI setup needs attention. You can still save and complete the draft manually.",
+          )}
+        </p>
+      ) : errorCode === "invalid_media" ||
+        errorCode === "provider_capability" ? (
+        <p role="status">
+          {t(
+            "請檢查相片，或將不支援的檔案標記為僅供參考並手動輸入資料。",
+            "Check the photos, or mark unsupported files as reference-only and enter their facts manually.",
+          )}
+        </p>
+      ) : errorCode === "rate_limited" ? (
+        <p role="status">
+          {t(
+            "AI 服務暫時限流。稍後可建立新的重試。",
+            "The AI service is rate-limited. You can start a new retry later.",
+          )}
+        </p>
+      ) : errorCode === "budget_blocked" ? (
+        <p role="status">
+          {t(
+            "AI 預算已用盡。你仍可手動儲存草稿。",
+            "The AI budget is exhausted. Manual saving is still available.",
+          )}
+        </p>
+      ) : null}
       {canStart ? (
         <button type="button" onClick={onProcess} disabled={busy}>
           {busy

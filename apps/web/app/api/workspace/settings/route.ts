@@ -47,9 +47,7 @@ export function createSettingsHandler(deps: SettingsRouteDeps) {
       await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
-          const current = await repositories.workspaces.requireProfile();
-          await repositories.workspaces.updateProfile({
-            ...current,
+          await repositories.workspaces.updateSettings({
             brandBackgroundColor: parsed.data.brandBackgroundColor,
           });
           await repositories.audit.write({

@@ -605,3 +605,38 @@ it.each([
     }
   },
 );
+it("shows image setup state even when the provider is disabled", async () => {
+  await mount({
+    ...base,
+    enabled: false,
+    attemptId: null,
+    state: "not_requested",
+  });
+  expect(host.textContent).toContain(
+    "Product image processing is not configured",
+  );
+});
+it("keeps original and persisted result visible without a text version", async () => {
+  await mount({ ...base, expectedVersionId: null, allowedActions: [] });
+  expect(host.querySelector('img[src="/original.png"]')).not.toBeNull();
+  expect(host.querySelector('img[src="/exact.jpg"]')).not.toBeNull();
+});
+it("sends the saved input revision when requesting an image before text exists", async () => {
+  const fetcher = await mount({
+    ...base,
+    state: "not_requested",
+    attemptId: null,
+    expectedVersionId: null,
+    inputRevision: 3,
+    candidatePreviewUrl: null,
+    allowedActions: ["request"],
+  });
+  const post = fetcher.mock.calls.find(
+    (call: any) => call[1]?.method === "POST",
+  ) as any;
+  expect(post).toBeDefined();
+  expect(JSON.parse(post[1].body)).toMatchObject({
+    expectedVersionId: null,
+    expectedInputRevision: 3,
+  });
+});

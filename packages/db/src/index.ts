@@ -164,3 +164,9 @@ export type {
   ProductShotOutputMetadata,
   ProductShotClaim,
 } from "./repositories/product-shots.js";
+export * from "./repositories/listing-inputs.js";
+export type { ListingOperation } from "./repositories/listing-operations.js";
+export type {
+  ListingEnrichmentSuggestion,
+  ListingEnrichmentPayload,
+} from "./repositories/listing-enrichment.js";

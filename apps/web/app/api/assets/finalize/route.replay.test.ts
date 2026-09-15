@@ -12,7 +12,7 @@
  * asset; the same key with DIFFERENT content is still a conflict.
  */
 import { MemoryAssetStore } from "@wukong/assets";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createFinalizeAssetHandler } from "./route.js";
 
@@ -177,3 +177,8 @@ describe("POST /api/assets/finalize replayed", () => {
     expect(response.status).toBe(404);
   });
 });
+
+vi.mock("@wukong/assets/inspect-source", () => ({
+  SourceInspectionError: class extends Error {},
+  inspectUploadedSource: async () => ({ hashVerified: true }),
+}));

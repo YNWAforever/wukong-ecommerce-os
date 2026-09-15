@@ -93,6 +93,10 @@ const approvalErrors = {
  * response body, so they do not belong in a table keyed on server codes.
  */
 const reviewErrors = {
+  confirmation_revision_conflict: [
+    "確認清單已被其他人更新。請重新載入並檢查後再確認。",
+    "Someone updated the confirmation checklist. Reload and check it before confirming again.",
+  ],
   stale_version: [
     "這個頁面顯示的是較舊的版本，請重新載入後再試一次，以免蓋掉別人的修改。",
     "This page is showing an older version. Reload before trying again, so you do not overwrite someone else's change.",

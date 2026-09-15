@@ -1,4 +1,10 @@
 "use client";
+import { ListingWorkingCopy } from "./listing-working-copy";
+import type {
+  WorkingListing,
+  WorkingFieldStates,
+  ResolvedSourceSelection,
+} from "@wukong/core";
 import { reviewErrorLabel } from "../lib/approval-ui-copy";
 import { useLocale } from "../lib/locale-context";
 import { REVIEW_FIELD_BINDINGS } from "../lib/review-field-bindings";
@@ -74,6 +80,31 @@ type WireListingActivityEntry =
     };
 
 export type ListingViewResponse = {
+  inputRevision?: number;
+  workingInput?: {
+    revision: number;
+    baseVersionId: string | null;
+    note: string | null;
+    workingContent: WorkingListing;
+    fieldStates: WorkingFieldStates;
+    sources: ResolvedSourceSelection[];
+  };
+  sources?: {
+    assetId: string;
+    mimeType: string;
+    name: string;
+    previewUrl: string;
+  }[];
+  currentRun?: {
+    runId: string;
+    state: string;
+    attempt: number;
+    retryOfRunId: string | null;
+    acceptedAt: string;
+    errorCode: string | null;
+    inputRevision: number;
+    baseVersionId: string | null;
+  } | null;
   sourceReadiness?: SourceReadiness;
   listingId: string;
   status: ListingStatus;
@@ -564,6 +595,10 @@ export function ListingReviewClient({
   );
   const [busy, setBusy] = useState(false);
   const requestId = useRef(0);
+  const trackedRunId = useRef<string | null>(null);
+  const processKey = useRef<string | null>(null);
+  const [reviewDirty, setReviewDirty] = useState(false);
+  const [workingDirty, setWorkingDirty] = useState(false);
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
   // A code the screen recognises says what to do about it. Anything else falls
@@ -587,11 +622,21 @@ export function ListingReviewClient({
         setSnapshot(next);
         setError(null);
         setErrorCode(undefined);
+        const current = next.currentRun;
         if (
-          next.status === "processing" ||
-          next.status === "needs_info" ||
-          next.status === "in_review" ||
-          next.status === "failed"
+          current &&
+          (!trackedRunId.current || trackedRunId.current === current.runId)
+        ) {
+          trackedRunId.current = current.runId;
+          setProcessingState(
+            ["queued", "running"].includes(current.state)
+              ? "queued"
+              : undefined,
+          );
+        } else if (
+          !trackedRunId.current &&
+          !current &&
+          next.status !== "received"
         ) {
           setProcessingState(undefined);
         }
@@ -622,13 +667,17 @@ export function ListingReviewClient({
   }, [load]);
 
   useEffect(() => {
-    if (snapshot?.status !== "received" && snapshot?.status !== "processing")
+    if (
+      processingState !== "queued" &&
+      snapshot?.status !== "received" &&
+      snapshot?.status !== "processing"
+    )
       return;
     const timer = window.setInterval(() => {
       void load().catch(() => {});
     }, 3_000);
     return () => window.clearInterval(timer);
-  }, [load, snapshot?.status]);
+  }, [load, snapshot?.status, processingState]);
 
   let mapped: MappedListingView | null = null;
   let mappingError: string | null = null;
@@ -670,8 +719,25 @@ export function ListingReviewClient({
 
   async function startProcessing() {
     await run(async () => {
+      const terminalRun =
+        snapshot?.currentRun &&
+        ["failed", "superseded", "succeeded"].includes(
+          snapshot.currentRun.state,
+        )
+          ? snapshot.currentRun
+          : null;
       const response = await fetch(`/api/listings/${listingId}/process`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          expectedInputRevision:
+            snapshot?.workingInput?.revision ?? snapshot?.inputRevision ?? 0,
+          baseVersionId:
+            snapshot?.workingInput?.baseVersionId ??
+            snapshot?.activeVersion?.id ??
+            null,
+          ...(terminalRun ? { retryOfRunId: terminalRun.runId } : {}),
+        }),
       });
       if (!response.ok) throw await responseError(response);
       setProcessingState("queued");
@@ -714,15 +780,58 @@ export function ListingReviewClient({
             {localized(locale, ...message)}
           </p>
         ) : null}
-        <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
+        {snapshot.sourceImportId ? (
+          <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
+        ) : null}
         <ListingProcessingPanel
           status={viewState.status}
+          errorCode={
+            snapshot.currentRun?.errorCode ?? snapshot.processing?.errorCode
+          }
           enqueueState={processingState}
           canProcess={snapshot.permissions.canProcess}
           onProcess={startProcessing}
           busy={busy}
         />
+        {snapshot.currentRun ? (
+          <details>
+            <summary>{t("處理詳情", "Processing details")}</summary>
+            <p>
+              {t("參考編號", "Reference")}: {snapshot.currentRun.runId}
+            </p>
+            <p>
+              {snapshot.currentRun.state} ·{" "}
+              {snapshot.currentRun.errorCode ?? ""}
+            </p>
+            {snapshot.currentRun.retryOfRunId ? (
+              <p>
+                {t("重試來源", "Retry of")}: {snapshot.currentRun.retryOfRunId}
+              </p>
+            ) : null}
+          </details>
+        ) : null}
+        {snapshot.workingInput ? (
+          <ListingWorkingCopy
+            currentRunId={snapshot.currentRun?.runId}
+            listingId={listingId}
+            input={snapshot.workingInput}
+            sources={snapshot.sources ?? []}
+            canEdit={snapshot.permissions.canEdit}
+            onSaved={load}
+            onProcessingAccepted={(run) => {
+              trackedRunId.current = run.runId;
+              setProcessingState("queued");
+            }}
+          />
+        ) : null}
         <ListingExtractedFacts processing={snapshot.processing} />
+        {snapshot.productShotWorkflow || snapshot.workingInput ? (
+          <ProductShotReview
+            listingId={listingId}
+            canOperate={snapshot.permissions.canProcess}
+            canApprove={snapshot.permissions.canApprove}
+          />
+        ) : null}
       </div>
     );
   if (viewState.kind === "loading" || !snapshot || !mapped)
@@ -738,13 +847,17 @@ export function ListingReviewClient({
   const content = snapshot.activeVersion?.content;
 
   async function save(fields: ListingField[], baseVersionId: string) {
-    if (!content) throw new Error("Listing is not ready for review");
+    if (!content || !snapshot)
+      throw new Error("Listing is not ready for review");
+    const observedInputRevision =
+      snapshot.inputRevision ?? snapshot.workingInput?.revision ?? 0;
     await run(async () => {
       const response = await fetch(`/api/listings/${listingId}/review`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           baseVersionId,
+          expectedInputRevision: observedInputRevision,
           listing: applyListingFields(content, fields),
         }),
       });
@@ -800,6 +913,7 @@ export function ListingReviewClient({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             versionId: model.versionId,
+            expectedRevision: snapshot?.reviewConfirmation?.revision ?? null,
             fieldConfirmations: nextFieldConfirmations,
             negativeConfirmations: nextNegativeConfirmations,
           }),
@@ -901,11 +1015,44 @@ export function ListingReviewClient({
               onChoiceChange={setProductShotChoice}
             />
           ) : null}
+          {snapshot.workingInput ? (
+            <details className="working-input-details">
+              <summary>
+                {t(
+                  "修改來源、備註及工作草稿",
+                  "Edit sources, notes and working draft",
+                )}
+              </summary>
+              <p>
+                {t(
+                  "以下修改會先保存至工作草稿。請另存為審核版本，才會更新下方已保存的審核內容。",
+                  "Changes here save to the working draft. Save as a review version to update the saved review content below.",
+                )}
+              </p>
+              <ListingWorkingCopy
+                listingId={listingId}
+                input={{
+                  ...snapshot.workingInput,
+                  baseVersionId: model.versionId,
+                }}
+                sources={snapshot.sources ?? []}
+                canEdit={permissions.canEdit && !reviewDirty}
+                busy={busy}
+                currentRunId={snapshot.currentRun?.runId}
+                onSaved={load}
+                onDirtyChange={setWorkingDirty}
+                onProcessingAccepted={(run) => {
+                  trackedRunId.current = run.runId;
+                  setProcessingState("queued");
+                }}
+              />
+            </details>
+          ) : null}
           <ListingFieldsForm
             key={model.versionId}
             model={model}
-            canApprove={permissions.canApprove && !busy}
-            canEdit={permissions.canEdit && !busy}
+            canApprove={permissions.canApprove && !busy && !workingDirty}
+            canEdit={permissions.canEdit && !busy && !workingDirty}
             fieldConfirmations={snapshot.reviewConfirmation?.fieldConfirmations}
             negativeConfirmations={
               snapshot.reviewConfirmation?.negativeConfirmations
@@ -914,6 +1061,7 @@ export function ListingReviewClient({
             actionErrorId={error ? "listing-action-error" : undefined}
             busy={busy}
             onSave={save}
+            onDirtyChange={setReviewDirty}
           />
           <ConfirmationChecklist
             fieldConfirmations={
@@ -922,7 +1070,9 @@ export function ListingReviewClient({
             negativeConfirmations={
               snapshot.reviewConfirmation?.negativeConfirmations ?? {}
             }
-            canConfirm={permissions.canEdit && !busy}
+            canConfirm={
+              permissions.canEdit && !busy && !reviewDirty && !workingDirty
+            }
             onChange={saveConfirmations}
           />
           <ComplianceFlags

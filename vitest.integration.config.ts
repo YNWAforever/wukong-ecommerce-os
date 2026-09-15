@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: [
+      "tests/integration/**/*.integration.test.ts",
       "packages/**/src/**/*.integration.test.ts",
       "apps/**/src/**/*.integration.test.ts",
       // apps/web has no `src` dir (Next.js App Router) -- its route-level

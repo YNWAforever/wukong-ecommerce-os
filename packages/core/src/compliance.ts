@@ -69,9 +69,125 @@ const EXCLUSIVITY_CLAIM =
  * "something in the source said so".
  */
 export type GroundedClaims = {
-  criticScores: readonly unknown[];
-  awards: readonly unknown[];
+  criticScores: ReadonlyArray<{
+    source?: unknown;
+    score?: unknown;
+    evidenceId?: unknown;
+  }>;
+  awards: ReadonlyArray<{
+    name?: unknown;
+    year?: unknown;
+    evidenceId?: unknown;
+  }>;
 };
+
+const CRITIC_ALIASES: ReadonlyArray<{
+  pattern: RegExp;
+  factPattern: RegExp;
+}> = [
+  {
+    pattern: /\b(?:robert\s+parker|RP|wine\s+advocate|WA)\b/i,
+    factPattern: /robert\s+parker|wine\s+advocate|\bRP\b|\bWA\b/i,
+  },
+  {
+    pattern: /\b(?:wine\s+spectator|WS)\b/i,
+    factPattern: /wine\s+spectator|\bWS\b/i,
+  },
+  {
+    pattern: /\b(?:james\s+suckling|JS)\b/i,
+    factPattern: /james\s+suckling|\bJS\b/i,
+  },
+  {
+    pattern: /\b(?:antonio\s+galloni|AG)\b/i,
+    factPattern: /antonio\s+galloni|\bAG\b/i,
+  },
+  { pattern: /\bdecanter\b/i, factPattern: /decanter/i },
+  { pattern: /\bjancis\s+robinson\b/i, factPattern: /jancis\s+robinson/i },
+  { pattern: /帕克/i, factPattern: /robert\s+parker|帕克|\bRP\b/i },
+];
+
+function ratingClaimSupported(value: string, claims: GroundedClaims): boolean {
+  const hasEvidence = (fact: { evidenceId?: unknown }) =>
+    typeof fact.evidenceId === "string" && fact.evidenceId.trim().length > 0;
+  const scoreValue = (score: unknown) =>
+    String(score ?? "")
+      .trim()
+      .match(/^(\d{1,3})(?:\/(?:20|100))?$/)?.[1];
+  let recognized = false;
+  // Check every named critic separately, binding its adjacent score when present.
+  for (const critic of CRITIC_ALIASES) {
+    for (const match of value.matchAll(
+      new RegExp(critic.pattern.source, "gi"),
+    )) {
+      recognized = true;
+      const before = value.slice(0, match.index);
+      const after = value.slice(match.index! + match[0].length);
+      const score =
+        after.match(
+          /^\s*(?:(?:awarded|rated|score[sd]?|評分|給予|[:：-])\s*)?(\d{2,3})(?:\b|\s*分)/i,
+        )?.[1] ??
+        before.match(
+          /(\d{2,3})\s*(?:points|pts|分)\s*(?:(?:by|from)\s*)?$/i,
+        )?.[1];
+      if (
+        !claims.criticScores.some(
+          (fact) =>
+            hasEvidence(fact) &&
+            typeof fact.source === "string" &&
+            critic.factPattern.test(fact.source) &&
+            (!score || scoreValue(fact.score) === score),
+        )
+      )
+        return false;
+    }
+  }
+  // A supported first claim never licenses another unsupported number later in the field.
+  for (const match of value.matchAll(
+    /\b(\d{2,3})\s*(?:points|pts)\b|\b(?:RP|WS|JS|WA|AG)\s?(\d{2,3})\b|\b(\d{2,3})\s*分/gi,
+  )) {
+    recognized = true;
+    const score = match.slice(1).find(Boolean);
+    if (
+      !claims.criticScores.some(
+        (fact) => hasEvidence(fact) && scoreValue(fact.score) === score,
+      )
+    )
+      return false;
+  }
+  const medals = [
+    { claim: /\bgold\s+medal\b|金獎/gi, fact: /\bgold\b|金獎/i },
+    { claim: /\bsilver\s+medal\b|銀獎/gi, fact: /\bsilver\b|銀獎/i },
+    { claim: /\bbronze\s+medal\b|銅獎/gi, fact: /\bbronze\b|銅獎/i },
+  ];
+  for (const medal of medals)
+    for (const match of value.matchAll(medal.claim)) {
+      recognized = true;
+      const clause =
+        value
+          .slice(0, match.index)
+          .split(/[;.!?\n；。]/)
+          .at(-1)! + value.slice(match.index).split(/[;.!?\n；。]/)[0]!;
+      const years = clause.match(/\b(?:19|20)\d{2}\b/g) ?? [];
+      const competition = clause.match(
+        /\b(?:decanter|IWSC|IWC|international\s+wine\s+challenge|international\s+wine\s+and\s+spirit\s+competition)\b/i,
+      )?.[0];
+      if (
+        !claims.awards.some(
+          (fact) =>
+            hasEvidence(fact) &&
+            typeof fact.name === "string" &&
+            medal.fact.test(fact.name) &&
+            years.every((year) =>
+              (fact.name + " " + String(fact.year ?? "")).includes(year),
+            ) &&
+            (!competition ||
+              fact.name.toLowerCase().includes(competition.toLowerCase())),
+        )
+      )
+        return false;
+    }
+  return recognized;
+}
 
 /**
  * Flags in generated or edited copy.
@@ -91,10 +207,8 @@ export function scanCompliance(
   fields: Record<string, string>,
   claims?: GroundedClaims,
 ): ComplianceFlag[] {
-  const canSupportARating =
-    claims === undefined ||
-    claims.criticScores.length > 0 ||
-    claims.awards.length > 0;
+  const canSupportRatingClaim = (value: string): boolean =>
+    claims === undefined || ratingClaimSupported(value, claims);
   return Object.entries(fields).flatMap(([field, value]) => {
     const flags: ComplianceFlag[] = blockingPatterns
       .filter(({ pattern }) => pattern.test(value))
@@ -106,7 +220,7 @@ export function scanCompliance(
         status: "open" as const,
         resolutionReason: null,
       }));
-    if (!canSupportARating && RATING_CLAIM.test(value)) {
+    if (!canSupportRatingClaim(value) && RATING_CLAIM.test(value)) {
       flags.push({
         id: `${field}:rating_without_evidence:0`,
         field,

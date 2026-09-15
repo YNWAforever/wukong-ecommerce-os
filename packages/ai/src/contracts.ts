@@ -35,6 +35,8 @@ export type ExtractionResult = {
 };
 
 export type GenerationInput = {
+  /** Internal trusted provenance, derived from the accepted working-copy snapshot. */
+  operatorProvidedFields?: Array<keyof ListingFacts>;
   facts: ListingFacts;
   evidence: FieldEvidence[];
   profile: WorkspaceProfile;

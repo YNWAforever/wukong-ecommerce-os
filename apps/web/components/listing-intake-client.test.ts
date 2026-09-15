@@ -19,6 +19,42 @@ import {
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("live listing intake", () => {
+  it("sends the supplied stable idempotency key and manual mode", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json(
+        {
+          listing: { id: "00000000-0000-4000-8000-000000000101" },
+          processing: null,
+        },
+        { status: 201 },
+      ),
+    );
+
+    await createListingDraft(
+      {
+        files: [],
+        note: "Manual source note",
+        processingMode: "manual",
+        idempotencyKey: "00000000-0000-4000-8000-000000000501",
+      },
+      { fetcher },
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/listings",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Idempotency-Key": "00000000-0000-4000-8000-000000000501",
+        }),
+        body: JSON.stringify({
+          sourceAssetIds: [],
+          note: "Manual source note",
+          processingMode: "manual",
+        }),
+      }),
+    );
+  });
+
   it("presigns, uploads, finalizes, and creates a listing with the finalized assets", async () => {
     const file = new File(["bottle"], "bottle.png", { type: "image/png" });
     const fetcher = vi
@@ -106,6 +142,7 @@ describe("live listing intake", () => {
         body: JSON.stringify({
           sourceAssetIds: ["00000000-0000-4000-8000-000000000301"],
           note: "Opak pilot",
+          processingMode: "ai",
         }),
       }),
     );

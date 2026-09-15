@@ -5,7 +5,11 @@ import { createFinalizeAssetHandler } from "./route.js";
 
 const sessionContext = {
   async resolve() {
-    return { workspaceId: "ws_opak", actorId: "user_1", role: "operator" } as const;
+    return {
+      workspaceId: "ws_opak",
+      actorId: "user_1",
+      role: "operator",
+    } as const;
   },
 };
 
@@ -150,11 +154,13 @@ describe("POST /api/assets/finalize", () => {
           size: 1200,
           mimeType: "application/pdf",
           clientSha256: "a".repeat(64),
-          hashVerified: false,
+          hashVerified: true,
         },
       },
     ]);
-    expect(audits).toMatchObject([{ action: "asset.finalized", entityId: "asset_1" }]);
+    expect(audits).toMatchObject([
+      { action: "asset.finalized", entityId: "asset_1" },
+    ]);
   });
 
   it("returns 409 when server-observable metadata differs", async () => {
@@ -165,7 +171,10 @@ describe("POST /api/assets/finalize", () => {
       mimeType: "application/pdf",
       size: 1200,
     });
-    store.putObject("ws_opak", upload.key, { size: 999, mimeType: "application/pdf" });
+    store.putObject("ws_opak", upload.key, {
+      size: 999,
+      mimeType: "application/pdf",
+    });
     const handler = createFinalizeAssetHandler({
       sessionContext,
       getAssetStore: () => store,
@@ -182,7 +191,9 @@ describe("POST /api/assets/finalize", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ code: "asset_metadata_mismatch" });
+    expect(await response.json()).toMatchObject({
+      code: "asset_metadata_mismatch",
+    });
   });
 
   it("rejects workspace and actor IDs in request JSON", async () => {
@@ -205,3 +216,8 @@ describe("POST /api/assets/finalize", () => {
     expect(response.status).toBe(400);
   });
 });
+
+vi.mock("@wukong/assets/inspect-source", () => ({
+  SourceInspectionError: class extends Error {},
+  inspectUploadedSource: async () => ({ hashVerified: true }),
+}));

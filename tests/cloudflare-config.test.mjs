@@ -101,6 +101,7 @@ test("renders deterministic non-secret Wrangler config", () => {
       PRODUCT_SHOT_PROVIDER: "disabled",
       BUILD_SHA: safeRendererInputs.BUILD_SHA,
       AI_PROVIDER: "fake",
+      LISTING_PAID_OPERATIONS_ENABLED: "false",
       OPENAI_LISTING_MODEL: "gpt-5-mini",
       SHOPLINE_ADAPTER: "mock",
       SHOPLINE_PUBLISH_ENABLED: "false",
@@ -148,6 +149,7 @@ test("renders deterministic non-secret Wrangler config", () => {
   assert.deepEqual(Object.keys(config.vars).sort(), [
     "AI_PROVIDER",
     "BUILD_SHA",
+    "LISTING_PAID_OPERATIONS_ENABLED",
     "OPENAI_LISTING_MODEL",
     "PRODUCT_SHOT_PROVIDER",
     "S3_BUCKET",

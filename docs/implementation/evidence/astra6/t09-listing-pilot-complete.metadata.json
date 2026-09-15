@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-09-15T20:55:04.0976623Z",
+  "harness": "synthetic local real stack",
+  "browser": "Chromium",
+  "database": "local Postgres 127.0.0.1:54329/wukong",
+  "aiProvider": "fake",
+  "shoplineAdapter": "mock",
+  "productionWrites": false,
+  "scenario": "two image intake, operator commercial facts, two immutable AI runs, approval, CSV image download, mock SHOPLINE publication",
+  "test": "tests/e2e/listing-pilot.spec.ts",
+  "result": "passed"
+}

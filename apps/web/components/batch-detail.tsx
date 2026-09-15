@@ -1,4 +1,5 @@
 "use client";
+import { BatchControls } from "./batch-controls";
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -18,9 +19,20 @@ type BatchDetailData = {
     budgetUsd: number;
     waveSize: number;
     status: string;
+    controlRevision?: number;
     createdBy: string;
     createdAt: string;
   };
+  spentUsd?: number;
+  items?: Array<{
+    id: string;
+    listingId: string;
+    pipelineRunId: string | null;
+    outcome: string | null;
+    status: string;
+    isCurrent: boolean;
+    retryOfItemId: string | null;
+  }>;
   counts: {
     pending: number;
     queued: number;
@@ -131,6 +143,14 @@ export function BatchDetail({ batchId }: { batchId: string }) {
     return () => controller.abort();
   }, [reload]);
 
+  useEffect(() => {
+    if (!data?.counts.queued) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void reload();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [data?.counts.queued, reload]);
+
   if (error) {
     return (
       <p className="inline-warning" role="alert">
@@ -162,7 +182,26 @@ export function BatchDetail({ batchId }: { batchId: string }) {
           </li>
         ))}
       </ul>
-      <AdvanceBatchButton batchId={batchId} onAdvanced={() => void reload()} />
+      <p>
+        {localized(locale, "已記錄費用及保留金額", "Recorded cost and holds")}:
+        ${data.spentUsd ?? 0}
+      </p>
+      {!["paused", "cancelled", "completed"].includes(data.batch.status) && (
+        <AdvanceBatchButton
+          batchId={batchId}
+          controlRevision={data.batch.controlRevision}
+          onAdvanced={() => void reload()}
+        />
+      )}
+      {data.batch.controlRevision !== undefined && (
+        <BatchControls
+          batchId={batchId}
+          revision={data.batch.controlRevision}
+          status={data.batch.status}
+          items={data.items ?? []}
+          onChanged={() => void reload()}
+        />
+      )}
     </div>
   );
 }
