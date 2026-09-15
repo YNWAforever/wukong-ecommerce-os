@@ -1,4 +1,9 @@
 "use client";
+import {
+  APPROVAL_INVALIDATED_ACTION,
+  isApprovalInvalidationCause,
+  type ApprovalInvalidationCause,
+} from "@wukong/core";
 import { useLocale } from "../lib/locale-context";
 import { localized, formatHkDate, stateLabel } from "../lib/ui-copy";
 import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
@@ -36,12 +41,15 @@ const auditActions: Record<string, readonly [string, string]> = {
   "listing.publish_failed": ["發佈失敗", "Publish failed"],
   "listing.bulk_export_created": ["已加入批量匯出", "Included in bulk export"],
   "listing.review_conflict": ["審核衝突", "Review conflict"],
-  "listing.approval_invalidated": ["批准已失效", "Approval invalidated"],
+  [APPROVAL_INVALIDATED_ACTION]: ["批准已失效", "Approval invalidated"],
   "compliance.flag_resolved": ["合規標記已處理", "Compliance flag resolved"],
   "listing.transition": ["狀態變更", "Status changed"],
 };
 
-const invalidationCauses: Record<string, readonly [string, string]> = {
+const invalidationCauses: Record<
+  ApprovalInvalidationCause,
+  readonly [string, string]
+> = {
   confirmation_changed: ["確認內容已變更", "Confirmations changed"],
   source_reimported_changed: [
     "重新匯入，來源資料已變更",
@@ -68,11 +76,13 @@ function summarize(
     if (!action) return t("其他活動記錄", "Other activity");
     const label = localized(locale, ...action);
     const causeKey =
-      entry.action === "listing.approval_invalidated"
+      entry.action === APPROVAL_INVALIDATED_ACTION
         ? causeOf(entry.metadata)
         : undefined;
     const cause =
-      causeKey !== undefined && Object.hasOwn(invalidationCauses, causeKey)
+      causeKey !== undefined &&
+      Object.hasOwn(invalidationCauses, causeKey) &&
+      isApprovalInvalidationCause(causeKey)
         ? invalidationCauses[causeKey]
         : undefined;
     // An unknown cause shows the label alone rather than a raw enum value.

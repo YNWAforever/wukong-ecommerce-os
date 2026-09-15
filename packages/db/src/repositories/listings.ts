@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
 import type {
+  ApprovalInvalidationCause,
   AuditContext,
   AuditWriter,
   CanonicalListing,
@@ -830,7 +831,7 @@ export function createListingRepository(
         ...context,
         action: APPROVAL_INVALIDATED_ACTION,
         metadata: {
-          cause: "confirmation_changed",
+          cause: "confirmation_changed" satisfies ApprovalInvalidationCause,
           fromStatus: listing.status,
           versionId,
         },
