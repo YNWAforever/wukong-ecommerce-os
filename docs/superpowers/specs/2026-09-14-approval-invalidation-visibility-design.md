@@ -93,9 +93,10 @@ review locks out of bulk import.
   before export. The copy is bilingual via `t(...)`.
 - **Review page:** `reviewStatus` no longer maps `reopened` → `in_review`.
   `ListingReviewModel["status"]` adds `"reopened"`, and the header's `stateLabel` renders "Reopened".
-- **Queue:** `QueueItem` gains `reopened: boolean`, which renders a "Reopened" tag. Items stay in
-  the "Needs review" group. `QueueStatus`, `queueGroups`, bulk-approve and the dashboard counts are
-  unchanged.
+- **Queue:** `QueueItem` gains an optional `reopened?: boolean`, always set by
+  `mapDashboardItems`, which renders a "Reopened" tag. The dashboard teaser shows the same tag.
+  Items stay in the "Needs review" group. `QueueStatus`, `queueGroups`, bulk-approve and the
+  dashboard counts are unchanged.
 - An approved listing invalidated by a re-import keeps status `approved`. The existing catalog
   source-readiness label continues to show its reason.
 
