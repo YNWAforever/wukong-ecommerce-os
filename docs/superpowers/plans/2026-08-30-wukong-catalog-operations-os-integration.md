@@ -203,6 +203,30 @@ Rendered as one structured entry per route rather than a single wide table — t
 - **Runtime, [Observed, resolving the prior Unverified item]:** `apps/web/app/(app)/listings/new/page.tsx` renders `ListingIntakeClient` exclusively — this is the original photo/PDF wine-listing intake flow (breadcrumb "建立草稿"/"Create Draft", copy about uploading bottle photos and supplier data for AI extraction), i.e. exactly the flow the master instruction says should become the pilot's _blocked_ "New products" tab. `POST /api/listings/import` (`apps/web/app/api/listings/import/route.ts`, backed by `apps/web/lib/bulk-form-import.ts`'s `createBulkFormImporter`) is a complete, tested, operator-role-gated Bulk Update import endpoint — but **zero UI anywhere calls it**. So the route isn't ambiguously wired; it's unambiguously wired to the wrong flow for this pilot, with the right flow's backend built but entirely unreachable from any page.
 - **Parity:** visual — Site-only concept (Site's 3-tab layout has no runtime analogue at all today). Interaction — Missing (Bulk Update import has no UI path). Real capability — Runtime-only-partial (the import API itself is fully functional and tested; only its UI entry point is missing).
 - **Missing contract:** restructure this route into the Site's 3-tab IA (Existing products primary / Supporting evidence / New products blocked), with the "Existing products" tab calling the existing `POST /api/listings/import`, and the current `ListingIntakeClient` flow moving to the disabled "New products" tab (ADR-2, §9).
+
+> **As built (2026-09-15).** The proposal above was not built on this route. What exists:
+>
+> - **Host route:** `/listings/import` (`apps/web/app/(app)/listings/import/page.tsx`), titled
+>   "Catalog import", renders `ListingIntakeTabs` (`apps/web/components/listing-intake-tabs.tsx`,
+>   first added in `34064f1`), with scanning/importing disabled for a viewer session.
+> - **Tabs — four, not three** (`listing-intake-tabs.tsx:16-24`): Website (the default,
+>   `:13`; `WebsiteImportPanel`, `/api/website-scans`), Workbook (`WorkbookImportPanel`,
+>   `/api/workbook-imports`, with the Bulk Update `BulkImportPanel` calling
+>   `POST /api/listings/import` inside a collapsed "Connected SHOPLINE update" section, `:85-99`;
+>   `bulk-import-panel.tsx:176`), Supporting evidence (`SupportingEvidencePanel`), and New
+>   products.
+> - **New products is blocked:** the tab renders only `NewProductBlockedPanel`
+>   (`apps/web/components/new-product-blocked-panel.tsx:10-23`), which explains that the Bulk
+>   Update export cannot create products and offers no action.
+> - **`/listings/new` is unchanged in shape:** `apps/web/app/(app)/listings/new/page.tsx` still
+>   renders `ListingIntakeClient` (photo/PDF AI draft intake, `POST /api/listings`), now localised
+>   (release-gate-closure W4). It was not moved into the blocked tab, and it is still linked from
+>   `/catalog`, the queue and the shell nav (`apps/web/app/(app)/shell-nav-items.ts:35`) beside
+>   `/listings/import` (`:11`).
+>
+> So "Existing products primary" became a Workbook tab that is not the default, and the
+> photo/PDF flow the proposal would have disabled remains reachable on its own route.
+
 - **Disposition:** extend — build a new primary tab wired to the already-working import API; move (don't discard) the existing intake flow into the blocked tab.
 - **Priority:** high (this is the entry point for the entire Opak flow).
 - **Dependencies:** none — the backend it needs already exists and is tested.
@@ -454,6 +478,11 @@ All twelve marked **Proposed**. Decision owners are roles (runtime tech lead / O
 - **Migration path:** Package E.
 - **Reversal trigger:** if the wiring-confirmation task reveals `/listings/new` already serves a different, incompatible purpose that can't be safely tabbed.
 - **Decision owner:** runtime tech lead.
+
+> **As built (2026-09-15).** The one-route tabbed IA was adopted, but on a new route,
+> `/listings/import`, not on `/listings/new`, and with four tabs rather than three. See the
+> as-built note under §5 `/listings/new` for the citations. `/listings/new` was neither tabbed nor
+> redirected: it still serves the photo/PDF draft flow.
 
 ### ADR-3: Plain-CSS design tokens and component reuse
 
@@ -817,6 +846,13 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Outcome:** the four highest-severity items land: sheet-name fix (§7 G6, **done**, PR #51), Variant ID hard block (§7 G7, **done**, PR #51), `/listings/new` restructured into the Site's 3-tab IA with the "Existing products" tab wired to the already-working `POST /api/listings/import` (§7 G11, resolved-and-scoped, not yet built), and the source-import/freshness-gate function (§11, not yet built).
 - **Dependencies:** Package A only — this can start immediately and should be prioritized ahead of B–D if resourcing is constrained, since it's the highest-risk area.
 - **Files:** `packages/shopline/src/bulk-form-xlsx.ts` (sheet name, done), `packages/shopline/src/bulk-form.ts` (Variant ID, done), `apps/web/app/(app)/listings/new/page.tsx` (add 3-tab layout; move existing `ListingIntakeClient` into the disabled "New products" tab; new "Existing products" tab component calling `POST /api/listings/import`), new `sourceImportId` entity + `assertExportFreshness` service (§11), `apps/web/lib/bulk-form-import.ts` (call the new freshness assertion).
+
+> **As built (2026-09-15).** The 3-tab restructure of `apps/web/app/(app)/listings/new/page.tsx`
+> did not happen; that page still renders `ListingIntakeClient`. The tabbed intake was built on
+> `/listings/import` as four tabs (Website, Workbook, Supporting evidence, New products — blocked)
+> in `apps/web/components/listing-intake-tabs.tsx:16-24`. Full citations in the as-built note under
+> §5 `/listings/new`.
+
 - **Reuse disposition:** extend, narrow fixes (§6) — this package touches the strongest-built code in the repo and should change as little as possible beyond the specific defects named.
 - **API/data/migration impact:** possible new table/columns for the explicit `sourceImportId` entity if one doesn't already exist under another name (**verify first**, §11) — full expand/contract migration discipline required if so (§10).
 - **Feature flag:** none — these are correctness fixes, not experimental features.
