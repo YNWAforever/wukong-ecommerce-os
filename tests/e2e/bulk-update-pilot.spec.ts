@@ -1084,6 +1084,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
 
   // W7: re-importing the same workbook re-binds both approvals to a new source
   // import. That must be visible when it happens, and the status must stay.
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/listings/import");
   await page.evaluate(() => {
     document.cookie = "locale=en; path=/; max-age=31536000";
