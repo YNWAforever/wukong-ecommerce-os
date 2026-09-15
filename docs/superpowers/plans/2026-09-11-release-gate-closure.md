@@ -465,6 +465,26 @@ Three claims are now false and are load-bearing for the readiness verdict:
    (`ListingIntakeTabs`, localised). Record the IA decision rather than leaving
    the plan describing a shape the product does not have.
 
+**Done (2026-09-15).**
+
+1. §18 now carries a dated reconciled table above the original (`2430aa8`); every stage stays not
+   started, blocked on merchant evidence and the `partial` tails in §2.
+2. The three bullets carry dated corrections, and decisions D17 a dated follow-up (`9da1998`).
+3. As-built notes sit beside the §5 clause, ADR-2 and Package E's Files line (`5405b40`).
+
+Corrections to the wording above, found while doing it:
+
+- **`7cc1332` did not make `claimPolicy` read by a deterministic checker at runtime.** It added the
+  exclusivity rule to `scanCompliance`, which applies fixed rules and never reads the policy, and
+  `claimPolicyCoverage`, which does read it but has no production caller — only a test with the
+  policy copied in (`packages/core/src/compliance.test.ts:421`). The claim narrowed; it did not
+  flip. The verification record says so.
+- **`/listings/import` has four tabs, not the three the proposal named** — Website, the default,
+  was added — and the Bulk Update import sits inside the Workbook tab rather than being a primary
+  tab (`apps/web/components/listing-intake-tabs.tsx:13-24`, `:85-99`).
+- §2's G12 citation has drifted: create validation is now
+  `apps/web/lib/enrichment-batch-service.ts:169`, not `:166-168`.
+
 ## 5. Sequence
 
 W2 and W3 are independent and can land immediately. W1 needs its decision made
