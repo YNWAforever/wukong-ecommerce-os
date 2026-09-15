@@ -221,6 +221,11 @@ it("renders populated English dashboard, queue, job filters and all six quality 
                   versionConflicts: 0,
                   staleSourceRejections: 0,
                   importedRows: 1234,
+                  approvalInvalidations: {
+                    confirmationChanged: 0,
+                    reimportChanged: 0,
+                    reimportUnchanged: 0,
+                  },
                 },
                 page: 1,
                 pageSize: 50,
@@ -284,6 +289,11 @@ it.each(["zh-Hant", "en"] as const)(
             versionConflicts: 0,
             staleSourceRejections: 0,
             importedRows: 0,
+            approvalInvalidations: {
+              confirmationChanged: 0,
+              reimportChanged: 0,
+              reimportUnchanged: 0,
+            },
           },
           page: 1,
           pageSize: 50,

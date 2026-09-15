@@ -17,6 +17,13 @@ export type QueueItem = {
   nextAction: string;
   /** 0 means eligible for bulk approval when status is "in_review". */
   openBlockingFlagCount: number;
+  /**
+   * The listing held an approval that stopped holding. It is grouped with
+   * in-review work because the work is the same, but it is marked so it does
+   * not look like a listing that was never approved. Optional so fixtures and
+   * fallbacks need not state it; absent means false.
+   */
+  reopened?: boolean;
 };
 
 export type Evidence = {
@@ -53,6 +60,7 @@ export type ListingReviewModel = {
     | "processing"
     | "needs_info"
     | "in_review"
+    | "reopened"
     | "approved"
     | "published"
     | "failed";

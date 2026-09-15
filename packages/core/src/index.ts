@@ -35,6 +35,13 @@ export { approveListing, reopenListing } from "./review.js";
 export { transitionListing } from "./workflow.js";
 export type { ListingAction, ListingStatus } from "./workflow.js";
 
+export {
+  APPROVAL_INVALIDATED_ACTION,
+  APPROVAL_INVALIDATION_CAUSES,
+  isApprovalInvalidationCause,
+} from "./approval-invalidation.js";
+export type { ApprovalInvalidationCause } from "./approval-invalidation.js";
+
 export { assertExportFreshness } from "./assert-export-freshness.js";
 export type {
   AssertExportFreshnessDeps,

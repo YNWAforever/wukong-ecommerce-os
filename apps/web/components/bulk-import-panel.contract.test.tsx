@@ -66,6 +66,7 @@ describe("browser import contract", () => {
       parsedRows: 1,
       createdDrafts: 1,
       refreshedProducts: 0,
+      invalidatedApprovals: 0,
       issues: [],
     }));
     const handler = createBulkFormImportHandler({

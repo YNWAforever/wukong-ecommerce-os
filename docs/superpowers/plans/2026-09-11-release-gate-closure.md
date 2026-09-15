@@ -318,6 +318,35 @@ Package G's Outcome requires those events visible in `/jobs` and `/quality`. An
 operator whose approval was invalidated by a source change currently learns it
 by finding the listing un-approved.
 
+**Done (2026-09-15).** Design:
+`docs/superpowers/specs/2026-09-14-approval-invalidation-visibility-design.md`. Both paths now write
+`listing.approval_invalidated` with a `cause`:
+
+- a confirmation change writes it beside its existing reopen transition;
+- a re-import writes it for every approved, published, publish-failed or publishing listing it
+  re-binds, and leaves their status as it is.
+
+Two corrections to the paragraph above:
+
+- **Re-imports were the larger gap.** The confirmation path was already audited, as a generic
+  `listing.transition`. A re-import recorded nothing, yet every re-import invalidates, even of an
+  unchanged row, because the approval receipt binds the source import id
+  (`bulk-update-eligibility.ts:210`).
+- **/quality is deliberately unchanged.** It measures content quality. Invalidation is
+  operational, so it appears on /jobs as two 30-day tiles, split by cause in
+  `metrics.approvalInvalidations`.
+
+The event is also visible in:
+
+- the listing activity panel, with its label and cause;
+- the import panel ("Approvals invalidated: N");
+- the review page and queue, which now show `reopened` as itself instead of `in_review`.
+
+The approve button stays enabled for reopened listings, as the approve path already allowed. No
+migration. The attended Bulk Update Playwright journey
+(`tests/e2e/bulk-update-pilot.spec.ts`) now re-imports, checks the count, status, /jobs tiles and
+activity, then changes a confirmation and checks "Reopened".
+
 ### W8 — The wave cap protects creation, not advancement
 
 `enrichment-batch-service.ts:166-168` validates `waveSize` on create; `:377-379`
@@ -435,6 +464,26 @@ Three claims are now false and are load-bearing for the readiness verdict:
    never built there. The capability exists on `/listings/import`
    (`ListingIntakeTabs`, localised). Record the IA decision rather than leaving
    the plan describing a shape the product does not have.
+
+**Done (2026-09-15).**
+
+1. §18 now carries a dated reconciled table above the original (`2430aa8`); every stage stays not
+   started, blocked on merchant evidence and the `partial` tails in §2.
+2. The three bullets carry dated corrections, and decisions D17 a dated follow-up (`9da1998`).
+3. As-built notes sit beside the §5 clause, ADR-2 and Package E's Files line (`5405b40`).
+
+Corrections to the wording above, found while doing it:
+
+- **`7cc1332` did not make `claimPolicy` read by a deterministic checker at runtime.** It added the
+  exclusivity rule to `scanCompliance`, which applies fixed rules and never reads the policy, and
+  `claimPolicyCoverage`, which does read it but has no production caller — only a test with the
+  policy copied in (`packages/core/src/compliance.test.ts:421`). The claim narrowed; it did not
+  flip. The verification record says so.
+- **`/listings/import` has four tabs, not the three the proposal named** — Website, the default,
+  was added — and the Bulk Update import sits inside the Workbook tab rather than being a primary
+  tab (`apps/web/components/listing-intake-tabs.tsx:13-24`, `:85-99`).
+- §2's G12 citation has drifted: create validation is now
+  `apps/web/lib/enrichment-batch-service.ts:169`, not `:166-168`.
 
 ## 5. Sequence
 

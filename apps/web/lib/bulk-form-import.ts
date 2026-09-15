@@ -10,8 +10,23 @@ import {
   type BulkFormIssue,
   type BulkFormSheet,
 } from "@wukong/shopline";
+import {
+  APPROVAL_INVALIDATED_ACTION,
+  type ApprovalInvalidationCause,
+  type ListingStatus,
+} from "@wukong/core";
 
 import { ApiError } from "./route-support";
+
+// Statuses whose approval a re-import breaks. `publishing` is included even
+// though a confirmation change refuses it: nothing is transitioned here, and a
+// publish running under a stale approval is exactly what must not go unseen.
+const APPROVAL_HOLDING_STATUSES: ReadonlySet<ListingStatus> = new Set([
+  "approved",
+  "published",
+  "publish_failed",
+  "publishing",
+]);
 
 export type BulkFormImportDeps = { getDatabase(): Database };
 
@@ -36,6 +51,8 @@ export type BulkFormImportResult = {
   parsedRows: number;
   createdDrafts: number;
   refreshedProducts: number;
+  /** Approved, published, publish-failed or publishing listings this import re-bound. */
+  invalidatedApprovals: number;
   issues: BulkFormIssue[];
 };
 
@@ -144,6 +161,17 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           known.map((product) => [product.remoteProductId, product]),
         );
 
+        // One read for every linked listing, not one per row. It sees this
+        // transaction's snapshot: a listing approved concurrently after it is
+        // missed here, and since its receipt still names an older import, the
+        // next re-import records it.
+        const approvalStates = await repositories.listings.approvalStatesByIds(
+          known
+            .map((product) => product.listingId)
+            .filter((id): id is string => id !== null),
+        );
+        let invalidatedApprovals = 0;
+
         let createdDrafts = 0;
         let refreshedProducts = 0;
         const mirrors: UpsertPlatformProductInput[] = [];
@@ -208,6 +236,34 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             });
           }
 
+          const approvalState = isNewDraft
+            ? undefined
+            : approvalStates[listingId];
+          if (
+            approvalState &&
+            APPROVAL_HOLDING_STATUSES.has(approvalState.status)
+          ) {
+            invalidatedApprovals += 1;
+            const cause: ApprovalInvalidationCause = isRefresh
+              ? "source_reimported_changed"
+              : "source_reimported_unchanged";
+            // Identifiers only. Status is deliberately left alone: the event,
+            // not a transition, is what makes the lost approval visible.
+            await repositories.audit.write({
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              entityId: listingId,
+              action: APPROVAL_INVALIDATED_ACTION,
+              metadata: {
+                cause,
+                fromStatus: approvalState.status,
+                versionId: approvalState.activeVersionId,
+                sourceImportId: sourceImport.id,
+                priorSourceImportId: prior?.sourceImportId ?? null,
+              },
+            });
+          }
+
           sourceRows.push({
             listingId,
             connectionId: connection.id,
@@ -251,6 +307,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             parsedRows: parsed.rows.length,
             createdDrafts,
             refreshedProducts,
+            invalidatedApprovals,
             issueCount: parsed.issues.length,
           },
         });
@@ -260,6 +317,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           parsedRows: parsed.rows.length,
           createdDrafts,
           refreshedProducts,
+          invalidatedApprovals,
           issues: [...parsed.issues],
         };
       });

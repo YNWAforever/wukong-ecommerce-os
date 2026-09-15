@@ -206,7 +206,17 @@ export function DashboardListingsClient() {
                   >
                     {item.title}
                   </Link>
-                  <p>{item.subtitle}</p>
+                  <p>
+                    {item.subtitle}
+                    {item.reopened ? (
+                      <>
+                        {" · "}
+                        <span className="status-tag">
+                          {stateLabel("reopened", locale)}
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
                   <SourceReadinessSummary
                     readiness={
                       data.items.find((source) => source.id === item.id)

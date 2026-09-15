@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ListingStatus } from "@wukong/core";
 
+import { stateLabel } from "../lib/ui-copy";
 import {
   DashboardListingsClient,
   dashboardMetricsFromCounts,
@@ -72,6 +73,15 @@ describe("mapDashboardItems", () => {
   it("carries a zero count through unchanged", () => {
     const [item] = mapDashboardItems([baseItem]);
     expect(item?.openBlockingFlagCount).toBe(0);
+  });
+
+  it("keeps a reopened listing in review but marks it reopened", () => {
+    const [reopened, inReview] = mapDashboardItems([
+      { ...baseItem, id: "listing_r", status: "reopened" },
+      baseItem,
+    ]);
+    expect(reopened).toMatchObject({ status: "in_review", reopened: true });
+    expect(inReview).toMatchObject({ status: "in_review", reopened: false });
   });
 });
 
@@ -241,6 +251,44 @@ describe("DashboardListingsClient", () => {
     // multi-lane view (queue-groups) must not appear here.
     expect(container.querySelector(".queue-groups")).toBeNull();
     expect(container.querySelectorAll(".queue-item").length).toBe(5);
+
+    await unmount(root);
+  });
+
+  it("shows a Reopened tag only on the reopened teaser item", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [
+          {
+            ...baseItem,
+            id: "listing_r",
+            title: "Reopened Riesling",
+            status: "reopened",
+          },
+          {
+            ...baseItem,
+            id: "listing_i",
+            title: "Fresh Riesling",
+            status: "in_review",
+          },
+        ],
+        counts: { ...zeroCounts, in_review: 1, reopened: 1 },
+      }),
+    );
+
+    const { container, root } = await mount(fetcher);
+
+    const reopenedLink = container.querySelector(
+      'a[href="/listings/listing_r"]',
+    )!;
+    const reopenedItem = reopenedLink.closest("li.queue-item")!;
+    const freshLink = container.querySelector('a[href="/listings/listing_i"]')!;
+    const freshItem = freshLink.closest("li.queue-item")!;
+
+    expect(reopenedItem.querySelector(".status-tag")?.textContent).toBe(
+      stateLabel("reopened", "zh-Hant"),
+    );
+    expect(freshItem.querySelector(".status-tag")).toBeNull();
 
     await unmount(root);
   });

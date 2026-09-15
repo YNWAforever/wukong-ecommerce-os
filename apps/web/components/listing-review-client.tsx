@@ -210,7 +210,8 @@ const labels: Record<
 };
 
 function reviewStatus(status: ListingStatus): ListingReviewModel["status"] {
-  if (status === "reopened") return "in_review";
+  // `reopened` is shown as itself: an approval that stopped holding must not
+  // look like a listing that was never approved.
   if (status === "publishing") return "approved";
   if (status === "publish_failed") return "failed";
   return status;

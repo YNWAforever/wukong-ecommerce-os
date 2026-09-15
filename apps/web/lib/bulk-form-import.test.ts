@@ -43,7 +43,13 @@ type Recorded = {
     origin?: string;
     sourceImportId?: string;
   }[];
-  audits: { action: string; entityId: string }[];
+  audits: {
+    workspaceId?: string;
+    actorId?: string;
+    action: string;
+    entityId: string;
+    metadata?: Record<string, unknown>;
+  }[];
   notes: { listingId: string; note: string }[];
   sourceImportCreates: {
     connectionId: string;
@@ -56,11 +62,19 @@ type Recorded = {
     importerId: string;
     specVersion: string;
   }[];
+  statusWrites: string[];
 };
 
-function importerWith(
-  existing: Record<string, { listingId: string; contentDigest: string }> = {},
-) {
+type Existing = {
+  listingId: string;
+  contentDigest: string;
+  sourceImportId?: string | null;
+  /** Absent means the linked draft no longer exists. */
+  status?: string;
+  activeVersionId?: string | null;
+};
+
+function importerWith(existing: Record<string, Existing> = {}) {
   const recorded: Recorded = {
     sourceRows: [],
     created: [],
@@ -68,6 +82,7 @@ function importerWith(
     audits: [],
     notes: [],
     sourceImportCreates: [],
+    statusWrites: [],
   };
   let nextDraft = 0;
 
@@ -125,6 +140,28 @@ function importerWith(
               },
               async updateNote(listingId: string, note: string) {
                 recorded.notes.push({ listingId, note });
+              },
+              async approvalStatesByIds(ids: readonly string[]) {
+                return Object.fromEntries(
+                  Object.values(existing)
+                    .filter(
+                      (entry) =>
+                        ids.includes(entry.listingId) &&
+                        entry.status !== undefined,
+                    )
+                    .map((entry) => [
+                      entry.listingId,
+                      {
+                        status: entry.status,
+                        activeVersionId: entry.activeVersionId ?? null,
+                      },
+                    ]),
+                );
+              },
+              // Not a real repository method: a trap that fails loudly if the
+              // importer ever starts writing status.
+              async updateStatus(id: string) {
+                recorded.statusWrites.push(id);
               },
             },
             audit: {
@@ -550,11 +587,156 @@ describe("bulk form importer", () => {
           parsedRows: result.parsedRows,
           createdDrafts: result.createdDrafts,
           refreshedProducts: result.refreshedProducts,
+          invalidatedApprovals: result.invalidatedApprovals,
           issueCount: result.issues.length,
         },
       }),
     );
   });
+
+  const reimportInput = {
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    rawBytes: RAW_BYTES,
+    merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+    filename: FILENAME,
+    sheetName: SHEET_NAME,
+  };
+
+  async function digestOfDefaultRow() {
+    const first = importerWith();
+    await first.importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
+    return first.recorded.upserts[0]!.contentDigest;
+  }
+
+  const invalidationsIn = (recorded: Recorded) =>
+    recorded.audits.filter(
+      (event) => event.action === "listing.approval_invalidated",
+    );
+
+  it.each(["approved", "published", "publish_failed", "publishing"])(
+    "records an invalidated approval when a re-import touches a %s listing",
+    async (status) => {
+      const { importBulkForm, recorded } = importerWith({
+        remote_1: {
+          listingId: "draft_existing",
+          contentDigest: await digestOfDefaultRow(),
+          sourceImportId: "source_import_prior",
+          status,
+          activeVersionId: "version_1",
+        },
+      });
+
+      const result = await importBulkForm({
+        ...reimportInput,
+        sheet: sheetOf(rowFor()),
+      });
+
+      expect(invalidationsIn(recorded)).toEqual([
+        {
+          workspaceId: "ws_opak",
+          actorId: "user_1",
+          entityId: "draft_existing",
+          action: "listing.approval_invalidated",
+          metadata: {
+            cause: "source_reimported_unchanged",
+            fromStatus: status,
+            versionId: "version_1",
+            sourceImportId: "source_import_1",
+            priorSourceImportId: "source_import_prior",
+          },
+        },
+      ]);
+      expect(result.invalidatedApprovals).toBe(1);
+      expect(recorded.statusWrites).toEqual([]);
+    },
+  );
+
+  it("names a changed row as the cause when the re-imported row differs", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      remote_1: {
+        listingId: "draft_existing",
+        contentDigest: "stale",
+        sourceImportId: "source_import_prior",
+        status: "approved",
+        activeVersionId: "version_1",
+      },
+    });
+
+    await importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
+
+    expect(invalidationsIn(recorded)).toHaveLength(1);
+    expect(invalidationsIn(recorded)[0]?.metadata).toMatchObject({
+      cause: "source_reimported_changed",
+    });
+  });
+
+  it.each(["in_review", "reopened", "needs_info", "received"])(
+    "records nothing for a %s listing, which holds no approval",
+    async (status) => {
+      const { importBulkForm, recorded } = importerWith({
+        remote_1: {
+          listingId: "draft_existing",
+          contentDigest: "stale",
+          status,
+          activeVersionId: "version_1",
+        },
+      });
+
+      const result = await importBulkForm({
+        ...reimportInput,
+        sheet: sheetOf(rowFor()),
+      });
+
+      expect(invalidationsIn(recorded)).toEqual([]);
+      expect(result.invalidatedApprovals).toBe(0);
+    },
+  );
+
+  it("records nothing for a new draft or a linked draft that no longer exists", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      // Linked, but the draft is gone: no status comes back for it.
+      remote_2: { listingId: "draft_deleted", contentDigest: "stale" },
+    });
+
+    const result = await importBulkForm({
+      ...reimportInput,
+      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+    });
+
+    expect(invalidationsIn(recorded)).toEqual([]);
+    expect(result.invalidatedApprovals).toBe(0);
+  });
+
+  it("counts invalidated approvals on the aggregate import event", async () => {
+    const { importBulkForm, recorded } = importerWith({
+      remote_1: {
+        listingId: "draft_a",
+        contentDigest: "stale",
+        status: "approved",
+        activeVersionId: "version_a",
+      },
+      remote_2: {
+        listingId: "draft_b",
+        contentDigest: "stale",
+        status: "published",
+        activeVersionId: "version_b",
+      },
+    });
+
+    const result = await importBulkForm({
+      ...reimportInput,
+      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+    });
+
+    expect(result.invalidatedApprovals).toBe(2);
+    expect(
+      recorded.audits.find(
+        (event) => event.action === "listing.bulk_form_import_completed",
+      )?.metadata,
+    ).toMatchObject({ invalidatedApprovals: 2 });
+  });
+
   it("preserves a separate immutable row for each import including pass-through changes", async () => {
     const { importBulkForm, recorded } = importerWith({
       remote_1: { listingId: "draft_existing", contentDigest: "prior" },

@@ -50,6 +50,11 @@ const SAMPLE_METRICS = {
   versionConflicts: 1,
   staleSourceRejections: 2,
   importedRows: 120,
+  approvalInvalidations: {
+    confirmationChanged: 4,
+    reimportChanged: 2,
+    reimportUnchanged: 7,
+  },
 };
 
 const SAMPLE_ENTRIES = [
@@ -132,6 +137,32 @@ describe("JobsLedgerClient", () => {
     expect(container.textContent).toContain("Publish failed");
     expect(container.textContent).toContain("Batch 1 (wave 3, $5.00)");
     expect(container.textContent).toContain("open");
+  });
+
+  it("shows approval invalidations by confirmation and by re-import", async () => {
+    stubFetch({ entries: [], metrics: SAMPLE_METRICS });
+
+    const { container } = await mountLedger();
+
+    const tiles = Array.from(
+      container.querySelectorAll(".jobs-metric-strip > div"),
+    ).map((tile) => ({
+      value: tile.querySelector(".metric-value")?.textContent,
+      label: tile.querySelector(".metric-label")?.textContent,
+    }));
+    expect(tiles).toContainEqual({
+      value: "4",
+      label: expect.stringMatching(
+        /由確認變更導致的批准失效|Approvals invalidated by confirmation/,
+      ),
+    });
+    // Changed plus unchanged rows: 2 + 7.
+    expect(tiles).toContainEqual({
+      value: "9",
+      label: expect.stringMatching(
+        /由重新匯入導致的批准失效|Approvals invalidated by re-import/,
+      ),
+    });
   });
 
   it("renders a listing link only when listingId is non-null", async () => {
@@ -285,7 +316,7 @@ describe("JobsLedgerClient", () => {
     const values = Array.from(
       container.querySelectorAll(".jobs-metric-strip .metric-value"),
     ).map((tile) => tile.textContent);
-    expect(values).toEqual(["3", "1", "2", "120"]);
+    expect(values).toEqual(["3", "1", "2", "120", "4", "9"]);
   });
   it("renders mixed export reconciliation totals and correction history", async () => {
     stubFetch({

@@ -7,6 +7,7 @@ const okResult = {
   parsedRows: 2,
   createdDrafts: 2,
   refreshedProducts: 0,
+  invalidatedApprovals: 1,
   issues: [],
 };
 
@@ -46,6 +47,7 @@ describe("POST /api/listings/import", () => {
       parsedRows: 2,
       createdDrafts: 2,
       refreshedProducts: 0,
+      invalidatedApprovals: 1,
     });
   });
 

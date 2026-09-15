@@ -123,7 +123,13 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
   **separate and outstanding**.
 - **Classification accuracy.** `productType` is now grounded by citing the text
   it was judged from rather than by restating the value, which grounding cannot
-  police without a knowledge base. This needs golden-set measurement.
+  police without a knowledge base. _Corrected 2026-09-15:_ the golden set now
+  exists (`e2f3c20`): `PRODUCT_TYPE_GOLDEN_SET` in
+  `packages/ai/src/product-type-eval.ts:59`, with trap cases (baijiu, Cognac,
+  Port) and per-class floors, scored by a pure function that calls no provider
+  (`:185`). What remains outstanding is running it against a real provider; a
+  pass under the fake-AI harness is not evidence of the deployed model's
+  accuracy.
 - **The country alias table's coverage.** It is a closed table; unlisted
   languages fall back to verbatim matching and fail closed.
 - **That a real queue rejects an over-long retry delay.** The product-shot budget
@@ -135,8 +141,17 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
 - **That the claim patterns catch a claim phrased outside them.** They are
   deterministic, English and Chinese only, and match wording rather than meaning.
   A score asserted in words the table does not list passes, and there is still no
-  HK alcohol advertising rule set — `workspaceProfile.claimPolicy` is pasted into
-  the model prompt and read by no deterministic checker.
+  HK alcohol advertising rule set. _Corrected 2026-09-15 (`7cc1332`):_ all five
+  lines of the seeded Opak `claimPolicy` now map to a deterministic rule —
+  exclusivity was the one without a checker, and `scanCompliance` now raises it
+  as a warning (`packages/core/src/compliance.ts:61`, `:119`).
+  `claimPolicyCoverage` (`compliance.ts:262`) reads `claimPolicy` and reports
+  any line no rule implements, and a test asserts the pilot's policy has none
+  (`compliance.test.ts:421`). Its limits: it has no production caller (only the
+  test and the `index.ts:22` export), the test copies the policy rather than
+  reading the seed, and the scanner applies fixed rules regardless of what a
+  workspace's policy says — so a new policy line is still pasted into the prompt
+  and enforced by nothing unless someone adds a rule.
 - **That the superlative rule has no false positives.** One is already known and
   recorded in its own test: "best served at 10°C" is read as a rank claim. It is
   a warning, so a reviewer clears it, but the rate across real copy is unmeasured.
@@ -145,7 +160,19 @@ Layer legend: **U** unit/contract · **I** DB/queue/storage integration ·
   injected fakes; no request was actually killed mid-dispatch against a live
   queue. Recovery also happens on the next advance of the same batch, not on a
   timer, so a batch nobody advances again keeps its pending rows indefinitely --
-  visible and safe, but not self-healing.
+  visible and safe, but not self-healing. _Corrected 2026-09-15 (`89f5241`):_
+  it is now healed on a timer. The Worker's scheduled handler
+  (`apps/worker/src/cloudflare.ts:11`, cron `*/5 * * * *` in
+  `cloudflare-runtime.config.json:36`) calls `recoverOutbox`
+  (`apps/worker/src/sweeper.ts:83`), which reads undispatched rows across
+  workspaces through the `SECURITY DEFINER` function in
+  `packages/db/drizzle/0024_outbox_sweeper.sql` and re-sends them. Its limits:
+  rows must be older than 300 s (`sweeper.ts:20`); at most 20 rows per tick
+  (`:21`); a row stops being retried after 5 attempts (`:29`) and stays in the
+  table, with retention still undecided; a payload naming a different workspace
+  is refused. It is proven by unit tests and `sweeper.integration.test.ts`
+  against Postgres, not by a killed request against a live queue and a deployed
+  cron, so "recovers in production" is still unsupported.
 - **That the doctor's new checks read a real deployment.** `listing-provider` and
   `local-ingress-env` are pure functions tested against synthetic payloads. The
   command was not run against production, which is also why it is still unknown

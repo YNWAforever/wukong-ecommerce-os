@@ -587,7 +587,7 @@ button:disabled {
   grid-template-columns: repeat(4, 1fr);
 }
 .jobs-metric-strip {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
 }
 .section-heading {
   display: flex;
@@ -909,10 +909,15 @@ button:disabled {
   border-color: #edcfaa;
 }
 .status-in_review,
+.status-reopened,
 .status-needs_info {
   color: var(--amber-dark);
   background: var(--amber-soft);
   border-color: #edcfaa;
+}
+.status-tag {
+  color: var(--amber-dark);
+  font-weight: 600;
 }
 .status-approved,
 .status-published {

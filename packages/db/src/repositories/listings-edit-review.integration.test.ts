@@ -11,6 +11,7 @@ const appUrl =
   process.env.TEST_DATABASE_URL ??
   "postgres://wukong_app:wukong-app-local@localhost:54329/wukong";
 const workspaceId = "ws_edit_review";
+const otherWorkspaceId = "ws_edit_review_foreign";
 
 const listingContent: CanonicalListing = {
   sku: "OPAK-001",
@@ -64,15 +65,33 @@ describe("listing review edits guard in-flight states", () => {
     entityId: listingId,
   });
 
+  const invalidationEvents = async (listingId: string) =>
+    (
+      await admin<{ action: string; metadata: Record<string, unknown> }[]>`
+        select action, metadata from audit_events
+        where workspace_id = ${workspaceId} and entity_id = ${listingId}
+        order by created_at, id`
+    ).map((row) => ({ action: row.action, metadata: row.metadata }));
+
   beforeAll(async () => {
     await admin.unsafe(
       "DO $role$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $role$;",
     );
     await database.migrate();
     await admin.unsafe(`DELETE FROM workspaces WHERE id = '${workspaceId}'`);
+    await admin.unsafe(
+      `DELETE FROM workspaces WHERE id = '${otherWorkspaceId}'`,
+    );
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${otherWorkspaceId}', '${otherWorkspaceId}', '{}'::jsonb)
+    `);
   });
 
   afterAll(async () => {
+    await admin.unsafe(
+      `DELETE FROM workspaces WHERE id = '${otherWorkspaceId}'`,
+    );
     await database.close();
     await admin.end();
   });
@@ -318,7 +337,7 @@ describe("listing review edits guard in-flight states", () => {
   });
 
   it.each(["approved", "published", "publish_failed"])(
-    "reopens %s when its current confirmation ledger changes",
+    "reopens %s when its current confirmation ledger changes, and records why",
     async (status) => {
       const { listingId, versionId } = await seedListing(status);
       const result = await forWorkspace(database, workspaceId, (repos) =>
@@ -335,6 +354,24 @@ describe("listing review edits guard in-flight states", () => {
       expect(result).toBe("reopened");
       expect(after?.status).toBe("reopened");
       expect(after?.activeVersionId).toBe(versionId);
+      // `audit_events.id` is a random uuid (not monotonic) and both events can
+      // land in the same transaction with the same `created_at`, so ordering
+      // by (created_at, id) is not reliable here -- we only assert that both
+      // the transition and the invalidation were recorded.
+      const events = await invalidationEvents(listingId);
+      const transitionEvent = events.find(
+        (row) => row.action === "listing.transition",
+      );
+      const invalidationEvent = events.find(
+        (row) => row.action === "listing.approval_invalidated",
+      );
+      expect(transitionEvent).toBeDefined();
+      expect(invalidationEvent).toBeDefined();
+      expect(invalidationEvent!.metadata).toEqual({
+        cause: "confirmation_changed",
+        fromStatus: status,
+        versionId,
+      });
     },
   );
 
@@ -353,6 +390,11 @@ describe("listing review edits guard in-flight states", () => {
     );
     expect(result).toBe("publishing");
     expect(after?.status).toBe("publishing");
+    expect(
+      (await invalidationEvents(listingId)).filter(
+        (row) => row.action === "listing.approval_invalidated",
+      ),
+    ).toEqual([]);
   });
 
   it("rejects a confirmation write observed against a superseded version", async () => {
@@ -367,5 +409,37 @@ describe("listing review edits guard in-flight states", () => {
         ),
       ),
     ).resolves.toBe("stale");
+  });
+
+  it("reads approval states for exactly the requested listings in this workspace", async () => {
+    const approved = await seedListing("approved");
+    const inReview = await seedListing("in_review");
+
+    const states = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.approvalStatesByIds([
+        approved.listingId,
+        inReview.listingId,
+      ]),
+    );
+    expect(states).toEqual({
+      [approved.listingId]: {
+        status: "approved",
+        activeVersionId: approved.versionId,
+      },
+      [inReview.listingId]: {
+        status: "in_review",
+        activeVersionId: inReview.versionId,
+      },
+    });
+    expect(
+      await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.approvalStatesByIds([]),
+      ),
+    ).toEqual({});
+    expect(
+      await forWorkspace(database, otherWorkspaceId, (repos) =>
+        repos.listings.approvalStatesByIds([approved.listingId]),
+      ),
+    ).toEqual({});
   });
 });

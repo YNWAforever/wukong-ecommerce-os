@@ -45,6 +45,11 @@ type JobsMetrics = {
   versionConflicts: number;
   staleSourceRejections: number;
   importedRows: number;
+  approvalInvalidations: {
+    confirmationChanged: number;
+    reimportChanged: number;
+    reimportUnchanged: number;
+  };
 };
 
 type JobsResponse = {
@@ -283,6 +288,37 @@ function JobsLedger({
           </span>
           <span className="metric-label">
             {localized(locale, "近期匯入列數", "Recent imported rows")}
+          </span>
+        </div>
+        <div>
+          <span className="metric-value">
+            {formatNumber(
+              response.metrics.approvalInvalidations.confirmationChanged,
+              locale,
+            )}
+          </span>
+          <span className="metric-label">
+            {localized(
+              locale,
+              "由確認變更導致的批准失效",
+              "Approvals invalidated by confirmation",
+            )}
+          </span>
+        </div>
+        <div>
+          <span className="metric-value">
+            {formatNumber(
+              response.metrics.approvalInvalidations.reimportChanged +
+                response.metrics.approvalInvalidations.reimportUnchanged,
+              locale,
+            )}
+          </span>
+          <span className="metric-label">
+            {localized(
+              locale,
+              "由重新匯入導致的批准失效",
+              "Approvals invalidated by re-import",
+            )}
           </span>
         </div>
       </div>

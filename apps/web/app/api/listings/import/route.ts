@@ -167,6 +167,7 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
           parsedRows: result.parsedRows,
           createdDrafts: result.createdDrafts,
           refreshedProducts: result.refreshedProducts,
+          invalidatedApprovals: result.invalidatedApprovals,
           issueCount: result.issues.length,
         }),
       );
@@ -176,6 +177,7 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         parsedRows: result.parsedRows,
         createdDrafts: result.createdDrafts,
         refreshedProducts: result.refreshedProducts,
+        invalidatedApprovals: result.invalidatedApprovals,
         issues: result.issues.slice(0, MAX_ECHOED_ISSUES),
       });
     });

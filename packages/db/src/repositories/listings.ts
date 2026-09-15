@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
 import type {
+  ApprovalInvalidationCause,
   AuditContext,
   AuditWriter,
   CanonicalListing,
@@ -11,7 +12,7 @@ import type {
   ListingStatus,
   ReviewableListing,
 } from "@wukong/core";
-import { transitionListing } from "@wukong/core";
+import { APPROVAL_INVALIDATED_ACTION, transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import {
   complianceFlags,
@@ -64,6 +65,16 @@ export type ListingRepository = {
    * round trip per product.
    */
   statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
+  /**
+   * Status and active version for each of the given drafts, keyed by draft ID.
+   * The importer needs the version to say which approval a re-import
+   * invalidated; `statusesByIds` omits it and `getByIds` loads content.
+   */
+  approvalStatesByIds(
+    ids: readonly string[],
+  ): Promise<
+    Record<string, { status: ListingStatus; activeVersionId: string | null }>
+  >;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   /**
    * Fetches exactly the listings with the given ids, unbounded by
@@ -357,6 +368,33 @@ export function createListingRepository(
         );
       return Object.fromEntries(
         rows.map((row) => [row.id, row.status as ListingStatus]),
+      );
+    },
+
+    async approvalStatesByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return {};
+      const rows = await transaction
+        .select({
+          id: listingDrafts.id,
+          status: listingDrafts.status,
+          activeVersionId: listingDrafts.activeVersionId,
+        })
+        .from(listingDrafts)
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, [...ids]),
+          ),
+        );
+      return Object.fromEntries(
+        rows.map((row) => [
+          row.id,
+          {
+            status: row.status as ListingStatus,
+            activeVersionId: row.activeVersionId,
+          },
+        ]),
       );
     },
 
@@ -787,6 +825,17 @@ export function createListingRepository(
         .returning({ id: listingDrafts.id });
       if (updated.length !== 1)
         throw new Error("listing changed while updating confirmations");
+      // The transition record says the status moved; this says why the
+      // approval stopped holding, which is what an operator needs to see.
+      await audit.write({
+        ...context,
+        action: APPROVAL_INVALIDATED_ACTION,
+        metadata: {
+          cause: "confirmation_changed" satisfies ApprovalInvalidationCause,
+          fromStatus: listing.status,
+          versionId,
+        },
+      });
       return "reopened";
     },
     async editReview(

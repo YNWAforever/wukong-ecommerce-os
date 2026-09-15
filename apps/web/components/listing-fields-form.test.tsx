@@ -159,7 +159,49 @@ describe("ListingFieldsForm", () => {
 
     expect(markup).not.toContain('disabled=""');
   });
+
+  it("keeps approval available for a reopened listing, which the approve path resubmits", () => {
+    const reopenedModel: ListingReviewModel = {
+      ...model,
+      status: "reopened",
+      blockingFlags: [],
+    };
+
+    const markup = renderToStaticMarkup(
+      <ListingFieldsForm
+        model={reopenedModel}
+        fieldConfirmations={completeFieldConfirmations}
+        negativeConfirmations={completeNegativeConfirmations}
+      />,
+    );
+
+    expect(approveButtonDisabled(markup)).toBe(false);
+  });
+
+  it("still disables approval for an already approved listing", () => {
+    const approvedModel: ListingReviewModel = {
+      ...model,
+      status: "approved",
+      blockingFlags: [],
+    };
+
+    const markup = renderToStaticMarkup(
+      <ListingFieldsForm
+        model={approvedModel}
+        fieldConfirmations={completeFieldConfirmations}
+        negativeConfirmations={completeNegativeConfirmations}
+      />,
+    );
+
+    expect(approveButtonDisabled(markup)).toBe(true);
+  });
 });
+
+function approveButtonDisabled(markup: string): boolean {
+  const match = markup.match(/<button[^>]*>批准上架<\/button>/);
+  if (!match) throw new Error("approve button not found in markup");
+  return match[0].includes('disabled=""');
+}
 
 // Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
 vi.mock("../lib/locale-context", () => ({ useLocale: () => "zh-Hant" }));
