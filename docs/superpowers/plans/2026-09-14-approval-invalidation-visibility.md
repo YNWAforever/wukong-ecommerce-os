@@ -5,6 +5,7 @@
 **Goal:** Make every approval invalidation visible as a named audit event: a confirmation change that reopens a listing, and a re-import that breaks an approval's source binding. Surface it in the activity panel, /jobs metrics, the import panel, and the review page and queue.
 
 **Architecture:** One new audit action, `listing.approval_invalidated`, with a `cause` in its metadata.
+
 - The listings repository writes it where it already reopens on a confirmation change.
 - The bulk-form importer writes it for each affected listing, without changing status.
 - /jobs counts it by `cause` with the existing `countByActionAndMetadataKeySince`.
@@ -29,6 +30,7 @@
 - **Out of bounds:** do not change `transitionListing`, the eligibility checks, approval receipts, `REQUIRED_AUDIT_SEQUENCE` or the schema.
 
 **Integration env** (for `corepack pnpm test:integration`, which uses the root `vitest.integration.config.ts`):
+
 - `TEST_DATABASE_ADMIN_URL=postgres://wukong:wukong@localhost:54329/wukong`
 - `TEST_DATABASE_URL=postgres://wukong_app:wukong-app-local@localhost:54329/wukong`
 - `DATABASE_ADMIN_URL` and `DATABASE_URL` take the same two values.
@@ -39,37 +41,39 @@ Services: `docker compose up -d postgres minio minio-tls mailpit`.
 
 ## File map
 
-| File | Responsibility | Task |
-|---|---|---|
-| `docs/superpowers/specs/2026-09-14-approval-invalidation-visibility-design.md` | Corrections found while planning | 1 |
-| `packages/core/src/approval-invalidation.ts` (new) + test | The action name and cause union, shared by db and web | 2 |
-| `packages/core/src/index.ts` | Export it | 2 |
-| `packages/db/src/repositories/listings.ts` | `approvalStatesByIds`; event on the reopen branch | 3 |
-| `packages/db/src/repositories/listings-edit-review.integration.test.ts` | Postgres coverage | 3 |
-| `apps/web/lib/bulk-form-import.ts` + test | Re-import events, `invalidatedApprovals` | 4 |
-| `apps/web/app/api/listings/import/route.ts` + test | Echo the count | 5 |
-| `apps/web/components/bulk-import-panel.tsx` + tests | Show the count and guidance | 5 |
-| `apps/web/app/api/jobs/route.ts` + test | `metrics.approvalInvalidations` | 6 |
-| `apps/web/components/jobs-ledger-client.tsx` + test | Two tiles | 6 |
-| `apps/web/components/activity-panel.tsx` + test | Label and cause | 7 |
-| `apps/web/components/listing-view-models.ts` | Widen review status; `QueueItem.reopened` | 8, 9 |
-| `apps/web/components/listing-review-client.tsx` + test | Stop masking `reopened` | 8 |
-| `apps/web/components/listing-fields-form.tsx` + test | Keep reopened listings approvable | 8 |
-| `apps/web/app/globals.css` | Badge colour for `status-reopened`, `.status-tag` | 8, 9 |
-| `apps/web/lib/dashboard-queue-shared.ts`, `apps/web/components/listing-queue.tsx` + tests | Reopened tag | 9 |
-| `tests/e2e/bulk-update-pilot.spec.ts` | Acceptance journey | 10 |
-| `docs/superpowers/plans/2026-09-11-release-gate-closure.md` | Close W7 | 11 |
+| File                                                                                      | Responsibility                                        | Task |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---- |
+| `docs/superpowers/specs/2026-09-14-approval-invalidation-visibility-design.md`            | Corrections found while planning                      | 1    |
+| `packages/core/src/approval-invalidation.ts` (new) + test                                 | The action name and cause union, shared by db and web | 2    |
+| `packages/core/src/index.ts`                                                              | Export it                                             | 2    |
+| `packages/db/src/repositories/listings.ts`                                                | `approvalStatesByIds`; event on the reopen branch     | 3    |
+| `packages/db/src/repositories/listings-edit-review.integration.test.ts`                   | Postgres coverage                                     | 3    |
+| `apps/web/lib/bulk-form-import.ts` + test                                                 | Re-import events, `invalidatedApprovals`              | 4    |
+| `apps/web/app/api/listings/import/route.ts` + test                                        | Echo the count                                        | 5    |
+| `apps/web/components/bulk-import-panel.tsx` + tests                                       | Show the count and guidance                           | 5    |
+| `apps/web/app/api/jobs/route.ts` + test                                                   | `metrics.approvalInvalidations`                       | 6    |
+| `apps/web/components/jobs-ledger-client.tsx` + test                                       | Two tiles                                             | 6    |
+| `apps/web/components/activity-panel.tsx` + test                                           | Label and cause                                       | 7    |
+| `apps/web/components/listing-view-models.ts`                                              | Widen review status; `QueueItem.reopened`             | 8, 9 |
+| `apps/web/components/listing-review-client.tsx` + test                                    | Stop masking `reopened`                               | 8    |
+| `apps/web/components/listing-fields-form.tsx` + test                                      | Keep reopened listings approvable                     | 8    |
+| `apps/web/app/globals.css`                                                                | Badge colour for `status-reopened`, `.status-tag`     | 8, 9 |
+| `apps/web/lib/dashboard-queue-shared.ts`, `apps/web/components/listing-queue.tsx` + tests | Reopened tag                                          | 9    |
+| `tests/e2e/bulk-update-pilot.spec.ts`                                                     | Acceptance journey                                    | 10   |
+| `docs/superpowers/plans/2026-09-11-release-gate-closure.md`                               | Close W7                                              | 11   |
 
 ---
 
 ### Task 1: Record the spec corrections found while planning
 
 Three facts found while planning change the spec:
+
 - **Read name.** `ListingRepository` already has `statusesByIds` (`listings.ts:66`), so the new read is named `approvalStatesByIds`.
 - **Approval button.** `listing-fields-form.tsx:135` disables approval unless `model.status === "in_review"`. Unmasking `reopened` would silently make reopened listings unapprovable. The approve path accepts `reopened` (`listings.ts:653`), so the form must accept it too.
 - **Test coverage.** No integration harness exists for the bulk-form importer. The "status stays `approved` and eligibility refuses it" check therefore moves to the real-stack E2E (Task 10).
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-09-14-approval-invalidation-visibility-design.md`
 
 - [ ] **Step 1: Rename the read in the spec**
@@ -129,6 +133,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 2: Shared action name and cause union
 
 **Files:**
+
 - Create: `packages/core/src/approval-invalidation.ts`
 - Create: `packages/core/src/approval-invalidation.test.ts`
 - Modify: `packages/core/src/index.ts` (named exports, next to `export { transitionListing } from "./workflow.js";` at `:35`)
@@ -206,7 +211,6 @@ export function isApprovalInvalidationCause(
 In `packages/core/src/index.ts`, directly after line 36 (`export type { ListingAction, ListingStatus } from "./workflow.js";`), add:
 
 ```ts
-
 export {
   APPROVAL_INVALIDATED_ACTION,
   APPROVAL_INVALIDATION_CAUSES,
@@ -235,6 +239,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 3: Repository read and the confirmation-change event
 
 **Files:**
+
 - Modify: `packages/db/src/repositories/listings.ts` (import `:14`; interface after `:66`; implementation after `statusesByIds` ending `:361`; `invalidateApprovalForConfirmationChange` `:788-790`)
 - Modify: `packages/db/src/repositories/listings-edit-review.integration.test.ts`
 
@@ -243,98 +248,98 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 In `listings-edit-review.integration.test.ts`, add inside the `describe`, directly after the `contextFor` definition:
 
 ```ts
-  const invalidationEvents = async (listingId: string) =>
-    (
-      await admin<{ action: string; metadata: Record<string, unknown> }[]>`
+const invalidationEvents = async (listingId: string) =>
+  (
+    await admin<{ action: string; metadata: Record<string, unknown> }[]>`
         select action, metadata from audit_events
         where workspace_id = ${workspaceId} and entity_id = ${listingId}
         order by created_at, id`
-    ).map((row) => ({ action: row.action, metadata: row.metadata }));
+  ).map((row) => ({ action: row.action, metadata: row.metadata }));
 ```
 
 Replace the whole `it.each(["approved", "published", "publish_failed"])(…)` block ("reopens %s when its current confirmation ledger changes") with:
 
 ```ts
-  it.each(["approved", "published", "publish_failed"])(
-    "reopens %s when its current confirmation ledger changes, and records why",
-    async (status) => {
-      const { listingId, versionId } = await seedListing(status);
-      const result = await forWorkspace(database, workspaceId, (repos) =>
-        repos.listings.invalidateApprovalForConfirmationChange(
-          listingId,
-          versionId,
-          contextFor(listingId),
-          repos.audit,
-        ),
-      );
-      const after = await forWorkspace(database, workspaceId, (repos) =>
-        repos.listings.getById(listingId),
-      );
-      expect(result).toBe("reopened");
-      expect(after?.status).toBe("reopened");
-      expect(after?.activeVersionId).toBe(versionId);
-      const events = await invalidationEvents(listingId);
-      const transitionAt = events.findIndex(
-        (row) => row.action === "listing.transition",
-      );
-      const invalidationAt = events.findIndex(
-        (row) => row.action === "listing.approval_invalidated",
-      );
-      expect(transitionAt).toBeGreaterThanOrEqual(0);
-      expect(invalidationAt).toBeGreaterThan(transitionAt);
-      expect(events[invalidationAt]!.metadata).toEqual({
-        cause: "confirmation_changed",
-        fromStatus: status,
+it.each(["approved", "published", "publish_failed"])(
+  "reopens %s when its current confirmation ledger changes, and records why",
+  async (status) => {
+    const { listingId, versionId } = await seedListing(status);
+    const result = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.invalidateApprovalForConfirmationChange(
+        listingId,
         versionId,
-      });
-    },
-  );
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+    const after = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getById(listingId),
+    );
+    expect(result).toBe("reopened");
+    expect(after?.status).toBe("reopened");
+    expect(after?.activeVersionId).toBe(versionId);
+    const events = await invalidationEvents(listingId);
+    const transitionAt = events.findIndex(
+      (row) => row.action === "listing.transition",
+    );
+    const invalidationAt = events.findIndex(
+      (row) => row.action === "listing.approval_invalidated",
+    );
+    expect(transitionAt).toBeGreaterThanOrEqual(0);
+    expect(invalidationAt).toBeGreaterThan(transitionAt);
+    expect(events[invalidationAt]!.metadata).toEqual({
+      cause: "confirmation_changed",
+      fromStatus: status,
+      versionId,
+    });
+  },
+);
 ```
 
 In "fails closed while publishing and keeps the in-flight status", add after `expect(after?.status).toBe("publishing");`:
 
 ```ts
-    expect(
-      (await invalidationEvents(listingId)).filter(
-        (row) => row.action === "listing.approval_invalidated",
-      ),
-    ).toEqual([]);
+expect(
+  (await invalidationEvents(listingId)).filter(
+    (row) => row.action === "listing.approval_invalidated",
+  ),
+).toEqual([]);
 ```
 
 Add a new test at the end of the `describe`:
 
 ```ts
-  it("reads approval states for exactly the requested listings in this workspace", async () => {
-    const approved = await seedListing("approved");
-    const inReview = await seedListing("in_review");
+it("reads approval states for exactly the requested listings in this workspace", async () => {
+  const approved = await seedListing("approved");
+  const inReview = await seedListing("in_review");
 
-    const states = await forWorkspace(database, workspaceId, (repos) =>
-      repos.listings.approvalStatesByIds([
-        approved.listingId,
-        inReview.listingId,
-      ]),
-    );
-    expect(states).toEqual({
-      [approved.listingId]: {
-        status: "approved",
-        activeVersionId: approved.versionId,
-      },
-      [inReview.listingId]: {
-        status: "in_review",
-        activeVersionId: inReview.versionId,
-      },
-    });
-    expect(
-      await forWorkspace(database, workspaceId, (repos) =>
-        repos.listings.approvalStatesByIds([]),
-      ),
-    ).toEqual({});
-    expect(
-      await forWorkspace(database, "ws_edit_review_foreign", (repos) =>
-        repos.listings.approvalStatesByIds([approved.listingId]),
-      ),
-    ).toEqual({});
+  const states = await forWorkspace(database, workspaceId, (repos) =>
+    repos.listings.approvalStatesByIds([
+      approved.listingId,
+      inReview.listingId,
+    ]),
+  );
+  expect(states).toEqual({
+    [approved.listingId]: {
+      status: "approved",
+      activeVersionId: approved.versionId,
+    },
+    [inReview.listingId]: {
+      status: "in_review",
+      activeVersionId: inReview.versionId,
+    },
   });
+  expect(
+    await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.approvalStatesByIds([]),
+    ),
+  ).toEqual({});
+  expect(
+    await forWorkspace(database, "ws_edit_review_foreign", (repos) =>
+      repos.listings.approvalStatesByIds([approved.listingId]),
+    ),
+  ).toEqual({});
+});
 ```
 
 - [ ] **Step 2: Run and confirm failure**
@@ -403,28 +408,28 @@ import { APPROVAL_INVALIDATED_ACTION, transitionListing } from "@wukong/core";
 In `invalidateApprovalForConfirmationChange`, replace:
 
 ```ts
-      if (updated.length !== 1)
-        throw new Error("listing changed while updating confirmations");
-      return "reopened";
+if (updated.length !== 1)
+  throw new Error("listing changed while updating confirmations");
+return "reopened";
 ```
 
 with:
 
 ```ts
-      if (updated.length !== 1)
-        throw new Error("listing changed while updating confirmations");
-      // The transition record says the status moved; this says why the
-      // approval stopped holding, which is what an operator needs to see.
-      await audit.write({
-        ...context,
-        action: APPROVAL_INVALIDATED_ACTION,
-        metadata: {
-          cause: "confirmation_changed",
-          fromStatus: listing.status,
-          versionId,
-        },
-      });
-      return "reopened";
+if (updated.length !== 1)
+  throw new Error("listing changed while updating confirmations");
+// The transition record says the status moved; this says why the
+// approval stopped holding, which is what an operator needs to see.
+await audit.write({
+  ...context,
+  action: APPROVAL_INVALIDATED_ACTION,
+  metadata: {
+    cause: "confirmation_changed",
+    fromStatus: listing.status,
+    versionId,
+  },
+});
+return "reopened";
 ```
 
 - [ ] **Step 5: Build, run, lint**
@@ -447,6 +452,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 4: Re-import events in the bulk-form importer
 
 **Files:**
+
 - Modify: `apps/web/lib/bulk-form-import.ts` (`BulkFormImportResult` `:34-40`; transaction body `:138-264`)
 - Modify: `apps/web/lib/bulk-form-import.test.ts`
 - Modify: `apps/web/app/api/listings/import/route.test.ts:5-11` (fixture type only)
@@ -518,148 +524,148 @@ Existing tests that pass `{ listingId, contentDigest }` without `status` keep be
 Add at the end of `describe("bulk form importer", ...)`:
 
 ```ts
-  const reimportInput = {
-    workspaceId: "ws_opak",
-    actorId: "user_1",
-    rawBytes: RAW_BYTES,
-    merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
-    filename: FILENAME,
-    sheetName: SHEET_NAME,
-  };
+const reimportInput = {
+  workspaceId: "ws_opak",
+  actorId: "user_1",
+  rawBytes: RAW_BYTES,
+  merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+  filename: FILENAME,
+  sheetName: SHEET_NAME,
+};
 
-  async function digestOfDefaultRow() {
-    const first = importerWith();
-    await first.importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
-    return first.recorded.upserts[0]!.contentDigest;
-  }
+async function digestOfDefaultRow() {
+  const first = importerWith();
+  await first.importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
+  return first.recorded.upserts[0]!.contentDigest;
+}
 
-  const invalidationsIn = (recorded: Recorded) =>
-    recorded.audits.filter(
-      (event) => event.action === "listing.approval_invalidated",
-    );
-
-  it.each(["approved", "published", "publish_failed", "publishing"])(
-    "records an invalidated approval when a re-import touches a %s listing",
-    async (status) => {
-      const { importBulkForm, recorded } = importerWith({
-        remote_1: {
-          listingId: "draft_existing",
-          contentDigest: await digestOfDefaultRow(),
-          sourceImportId: "source_import_prior",
-          status,
-          activeVersionId: "version_1",
-        },
-      });
-
-      const result = await importBulkForm({
-        ...reimportInput,
-        sheet: sheetOf(rowFor()),
-      });
-
-      expect(invalidationsIn(recorded)).toEqual([
-        {
-          workspaceId: "ws_opak",
-          actorId: "user_1",
-          entityId: "draft_existing",
-          action: "listing.approval_invalidated",
-          metadata: {
-            cause: "source_reimported_unchanged",
-            fromStatus: status,
-            versionId: "version_1",
-            sourceImportId: "source_import_1",
-            priorSourceImportId: "source_import_prior",
-          },
-        },
-      ]);
-      expect(result.invalidatedApprovals).toBe(1);
-      expect(recorded.statusWrites).toEqual([]);
-    },
+const invalidationsIn = (recorded: Recorded) =>
+  recorded.audits.filter(
+    (event) => event.action === "listing.approval_invalidated",
   );
 
-  it("names a changed row as the cause when the re-imported row differs", async () => {
+it.each(["approved", "published", "publish_failed", "publishing"])(
+  "records an invalidated approval when a re-import touches a %s listing",
+  async (status) => {
     const { importBulkForm, recorded } = importerWith({
       remote_1: {
         listingId: "draft_existing",
-        contentDigest: "stale",
+        contentDigest: await digestOfDefaultRow(),
         sourceImportId: "source_import_prior",
-        status: "approved",
+        status,
         activeVersionId: "version_1",
       },
     });
 
-    await importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
-
-    expect(invalidationsIn(recorded)).toHaveLength(1);
-    expect(invalidationsIn(recorded)[0]?.metadata).toMatchObject({
-      cause: "source_reimported_changed",
+    const result = await importBulkForm({
+      ...reimportInput,
+      sheet: sheetOf(rowFor()),
     });
+
+    expect(invalidationsIn(recorded)).toEqual([
+      {
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        entityId: "draft_existing",
+        action: "listing.approval_invalidated",
+        metadata: {
+          cause: "source_reimported_unchanged",
+          fromStatus: status,
+          versionId: "version_1",
+          sourceImportId: "source_import_1",
+          priorSourceImportId: "source_import_prior",
+        },
+      },
+    ]);
+    expect(result.invalidatedApprovals).toBe(1);
+    expect(recorded.statusWrites).toEqual([]);
+  },
+);
+
+it("names a changed row as the cause when the re-imported row differs", async () => {
+  const { importBulkForm, recorded } = importerWith({
+    remote_1: {
+      listingId: "draft_existing",
+      contentDigest: "stale",
+      sourceImportId: "source_import_prior",
+      status: "approved",
+      activeVersionId: "version_1",
+    },
   });
 
-  it.each(["in_review", "reopened", "needs_info", "received"])(
-    "records nothing for a %s listing, which holds no approval",
-    async (status) => {
-      const { importBulkForm, recorded } = importerWith({
-        remote_1: {
-          listingId: "draft_existing",
-          contentDigest: "stale",
-          status,
-          activeVersionId: "version_1",
-        },
-      });
+  await importBulkForm({ ...reimportInput, sheet: sheetOf(rowFor()) });
 
-      const result = await importBulkForm({
-        ...reimportInput,
-        sheet: sheetOf(rowFor()),
-      });
+  expect(invalidationsIn(recorded)).toHaveLength(1);
+  expect(invalidationsIn(recorded)[0]?.metadata).toMatchObject({
+    cause: "source_reimported_changed",
+  });
+});
 
-      expect(invalidationsIn(recorded)).toEqual([]);
-      expect(result.invalidatedApprovals).toBe(0);
-    },
-  );
-
-  it("records nothing for a new draft or a linked draft that no longer exists", async () => {
+it.each(["in_review", "reopened", "needs_info", "received"])(
+  "records nothing for a %s listing, which holds no approval",
+  async (status) => {
     const { importBulkForm, recorded } = importerWith({
-      // Linked, but the draft is gone: no status comes back for it.
-      remote_2: { listingId: "draft_deleted", contentDigest: "stale" },
+      remote_1: {
+        listingId: "draft_existing",
+        contentDigest: "stale",
+        status,
+        activeVersionId: "version_1",
+      },
     });
 
     const result = await importBulkForm({
       ...reimportInput,
-      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+      sheet: sheetOf(rowFor()),
     });
 
     expect(invalidationsIn(recorded)).toEqual([]);
     expect(result.invalidatedApprovals).toBe(0);
+  },
+);
+
+it("records nothing for a new draft or a linked draft that no longer exists", async () => {
+  const { importBulkForm, recorded } = importerWith({
+    // Linked, but the draft is gone: no status comes back for it.
+    remote_2: { listingId: "draft_deleted", contentDigest: "stale" },
   });
 
-  it("counts invalidated approvals on the aggregate import event", async () => {
-    const { importBulkForm, recorded } = importerWith({
-      remote_1: {
-        listingId: "draft_a",
-        contentDigest: "stale",
-        status: "approved",
-        activeVersionId: "version_a",
-      },
-      remote_2: {
-        listingId: "draft_b",
-        contentDigest: "stale",
-        status: "published",
-        activeVersionId: "version_b",
-      },
-    });
-
-    const result = await importBulkForm({
-      ...reimportInput,
-      sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
-    });
-
-    expect(result.invalidatedApprovals).toBe(2);
-    expect(
-      recorded.audits.find(
-        (event) => event.action === "listing.bulk_form_import_completed",
-      )?.metadata,
-    ).toMatchObject({ invalidatedApprovals: 2 });
+  const result = await importBulkForm({
+    ...reimportInput,
+    sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
   });
+
+  expect(invalidationsIn(recorded)).toEqual([]);
+  expect(result.invalidatedApprovals).toBe(0);
+});
+
+it("counts invalidated approvals on the aggregate import event", async () => {
+  const { importBulkForm, recorded } = importerWith({
+    remote_1: {
+      listingId: "draft_a",
+      contentDigest: "stale",
+      status: "approved",
+      activeVersionId: "version_a",
+    },
+    remote_2: {
+      listingId: "draft_b",
+      contentDigest: "stale",
+      status: "published",
+      activeVersionId: "version_b",
+    },
+  });
+
+  const result = await importBulkForm({
+    ...reimportInput,
+    sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
+  });
+
+  expect(result.invalidatedApprovals).toBe(2);
+  expect(
+    recorded.audits.find(
+      (event) => event.action === "listing.bulk_form_import_completed",
+    )?.metadata,
+  ).toMatchObject({ invalidatedApprovals: 2 });
+});
 ```
 
 In the existing test "writes one aggregate listing.bulk_form_import_completed audit event per import, entityId'd to the source import", add `invalidatedApprovals: result.invalidatedApprovals,` to the `metadata` object after `refreshedProducts`.
@@ -712,48 +718,43 @@ export type BulkFormImportResult = {
 After the `knownByRemoteId` map is built, add:
 
 ```ts
-        // One read for every linked listing, not one per row. It sees this
-        // transaction's snapshot: a listing approved concurrently after it is
-        // missed here, and since its receipt still names an older import, the
-        // next re-import records it.
-        const approvalStates = await repositories.listings.approvalStatesByIds(
-          known
-            .map((product) => product.listingId)
-            .filter((id): id is string => id !== null),
-        );
-        let invalidatedApprovals = 0;
+// One read for every linked listing, not one per row. It sees this
+// transaction's snapshot: a listing approved concurrently after it is
+// missed here, and since its receipt still names an older import, the
+// next re-import records it.
+const approvalStates = await repositories.listings.approvalStatesByIds(
+  known
+    .map((product) => product.listingId)
+    .filter((id): id is string => id !== null),
+);
+let invalidatedApprovals = 0;
 ```
 
 Inside the row loop, directly after the closing brace of the existing `if (isNewDraft || isRefresh) { … }` audit block, add:
 
 ```ts
-          const approvalState = isNewDraft
-            ? undefined
-            : approvalStates[listingId];
-          if (
-            approvalState &&
-            APPROVAL_HOLDING_STATUSES.has(approvalState.status)
-          ) {
-            invalidatedApprovals += 1;
-            const cause: ApprovalInvalidationCause = isRefresh
-              ? "source_reimported_changed"
-              : "source_reimported_unchanged";
-            // Identifiers only. Status is deliberately left alone: the event,
-            // not a transition, is what makes the lost approval visible.
-            await repositories.audit.write({
-              workspaceId: input.workspaceId,
-              actorId: input.actorId,
-              entityId: listingId,
-              action: APPROVAL_INVALIDATED_ACTION,
-              metadata: {
-                cause,
-                fromStatus: approvalState.status,
-                versionId: approvalState.activeVersionId,
-                sourceImportId: sourceImport.id,
-                priorSourceImportId: prior?.sourceImportId ?? null,
-              },
-            });
-          }
+const approvalState = isNewDraft ? undefined : approvalStates[listingId];
+if (approvalState && APPROVAL_HOLDING_STATUSES.has(approvalState.status)) {
+  invalidatedApprovals += 1;
+  const cause: ApprovalInvalidationCause = isRefresh
+    ? "source_reimported_changed"
+    : "source_reimported_unchanged";
+  // Identifiers only. Status is deliberately left alone: the event,
+  // not a transition, is what makes the lost approval visible.
+  await repositories.audit.write({
+    workspaceId: input.workspaceId,
+    actorId: input.actorId,
+    entityId: listingId,
+    action: APPROVAL_INVALIDATED_ACTION,
+    metadata: {
+      cause,
+      fromStatus: approvalState.status,
+      versionId: approvalState.activeVersionId,
+      sourceImportId: sourceImport.id,
+      priorSourceImportId: prior?.sourceImportId ?? null,
+    },
+  });
+}
 ```
 
 In the aggregate `listing.bulk_form_import_completed` metadata, add `invalidatedApprovals,` after `refreshedProducts,`. In the returned object, add `invalidatedApprovals,` after `refreshedProducts,`.
@@ -779,6 +780,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 5: Import route and import panel
 
 **Files:**
+
 - Modify: `apps/web/app/api/listings/import/route.ts:160-180`
 - Modify: `apps/web/app/api/listings/import/route.test.ts`
 - Modify: `apps/web/components/bulk-import-panel.tsx` (success type `:25-31`, parse `:203-208`, render `:313-328`)
@@ -788,35 +790,37 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] **Step 1: Write the failing tests**
 
 `route.test.ts`:
+
 - Change `okResult.invalidatedApprovals` to `1`.
 - In "imports for an operator and returns the counts", add `invalidatedApprovals: 1,` to the `toMatchObject`.
 
 `bulk-import-panel.test.ts`, "returns a success outcome with the real response fields": add `invalidatedApprovals: 2,` after `refreshedProducts: 0,` in both the mocked response body and the expected `toEqual` object. Then add after that test:
 
 ```ts
-  it("treats a response without invalidatedApprovals as zero", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json(
-        {
-          specVersion: "opak-2026-05",
-          parsedRows: 1,
-          createdDrafts: 1,
-          refreshedProducts: 0,
-          issues: [],
-        },
-        { status: 201 },
-      ),
-    );
-    const result = await submitBulkImport(
-      xlsxFile("catalog.xlsx", 100),
-      "2026-08-01T08:00",
-      { fetcher },
-    );
-    expect(result).toMatchObject({ kind: "success", invalidatedApprovals: 0 });
-  });
+it("treats a response without invalidatedApprovals as zero", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json(
+      {
+        specVersion: "opak-2026-05",
+        parsedRows: 1,
+        createdDrafts: 1,
+        refreshedProducts: 0,
+        issues: [],
+      },
+      { status: 201 },
+    ),
+  );
+  const result = await submitBulkImport(
+    xlsxFile("catalog.xlsx", 100),
+    "2026-08-01T08:00",
+    { fetcher },
+  );
+  expect(result).toMatchObject({ kind: "success", invalidatedApprovals: 0 });
+});
 ```
 
 In `describe("BulkImportPanel", ...)`, "renders the real parsed/created/refreshed counts after a successful import":
+
 1. Read the test to its end and find the assertion(s) on the rendered counts.
 2. Directly after them, add `expect(container.textContent).not.toMatch(/已失效批准|Approvals invalidated/);`.
 3. Duplicate the whole test as "shows how many approvals the import invalidated", with two changes:
@@ -824,12 +828,12 @@ In `describe("BulkImportPanel", ...)`, "renders the real parsed/created/refreshe
    - its final assertions are replaced with:
 
 ```ts
-    expect(container.textContent).toMatch(
-      /已失效批准 2 筆|Approvals invalidated: 2/,
-    );
-    expect(container.textContent).toMatch(
-      /須重新批准才能匯出|need renewed approval before export/,
-    );
+expect(container.textContent).toMatch(
+  /已失效批准 2 筆|Approvals invalidated: 2/,
+);
+expect(container.textContent).toMatch(
+  /須重新批准才能匯出|need renewed approval before export/,
+);
 ```
 
 In `bulk-import-panel.contract.test.tsx:68` and `import-store-setup-panel.test.tsx:72`, add `invalidatedApprovals: 0,` after `refreshedProducts: 0,`.
@@ -844,6 +848,7 @@ Expected: FAIL. The route omits `invalidatedApprovals`, the parsed outcome lacks
 `route.ts`: add `invalidatedApprovals: result.invalidatedApprovals,` after `refreshedProducts: result.refreshedProducts,` in both the log object (`:169`) and the `jsonResponse(201, {...})` body (`:178`).
 
 `bulk-import-panel.tsx`:
+
 - Success type: add `invalidatedApprovals: number;` after `refreshedProducts: number;`.
 - Success parse: after `refreshedProducts: body.refreshedProducts as number,` add:
 
@@ -858,14 +863,16 @@ Expected: FAIL. The route omits `invalidatedApprovals`, the parsed outcome lacks
 - Render: directly after the counts `<li>…</li>` (ending `:322`), add:
 
 ```tsx
-            {outcome.invalidatedApprovals > 0 ? (
-              <li>
-                {t(
-                  `已失效批准 ${outcome.invalidatedApprovals} 筆 · 這些商品須重新批准才能匯出`,
-                  `Approvals invalidated: ${outcome.invalidatedApprovals} · These listings need renewed approval before export`,
-                )}
-              </li>
-            ) : null}
+{
+  outcome.invalidatedApprovals > 0 ? (
+    <li>
+      {t(
+        `已失效批准 ${outcome.invalidatedApprovals} 筆 · 這些商品須重新批准才能匯出`,
+        `Approvals invalidated: ${outcome.invalidatedApprovals} · These listings need renewed approval before export`,
+      )}
+    </li>
+  ) : null;
+}
 ```
 
 - [ ] **Step 4: Run, lint**
@@ -888,6 +895,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 6: /jobs metrics and tiles
 
 **Files:**
+
 - Modify: `apps/web/app/api/jobs/route.ts` (imports; `Promise.all` `:67-92`; after the bucketing loop `:109`; `metrics` `:131-136`)
 - Modify: `apps/web/app/api/jobs/route.test.ts`
 - Modify: `apps/web/components/jobs-ledger-client.tsx` (`JobsMetrics` `:43-48`; metric strip `:251-288`)
@@ -915,116 +923,116 @@ In `route.test.ts`, "includes a metrics summary alongside the ledger entries", r
 and its `expect(body.metrics).toEqual({...})` with:
 
 ```ts
-    expect(body.metrics).toEqual({
-      publishRetries: 3,
-      versionConflicts: 1,
-      staleSourceRejections: 2,
-      importedRows: 120,
-      approvalInvalidations: {
-        confirmationChanged: 4,
-        reimportChanged: 2,
-        reimportUnchanged: 7,
-      },
-    });
+expect(body.metrics).toEqual({
+  publishRetries: 3,
+  versionConflicts: 1,
+  staleSourceRejections: 2,
+  importedRows: 120,
+  approvalInvalidations: {
+    confirmationChanged: 4,
+    reimportChanged: 2,
+    reimportUnchanged: 7,
+  },
+});
 ```
 
 Add after that test (inside the same `describe`):
 
 ```ts
-  it("counts an unknown invalidation cause in no tile and logs only its value", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    const noRows = {
-      async getByIds() {
-        return [];
-      },
-    };
-    try {
-      const handler = createJobsHandler({
-        sessionContext: {
-          async resolve() {
-            return {
-              workspaceId: "ws_opak",
-              actorId: "user_1",
-              role: "viewer",
-            };
-          },
+it("counts an unknown invalidation cause in no tile and logs only its value", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const noRows = {
+    async getByIds() {
+      return [];
+    },
+  };
+  try {
+    const handler = createJobsHandler({
+      sessionContext: {
+        async resolve() {
+          return {
+            workspaceId: "ws_opak",
+            actorId: "user_1",
+            role: "viewer",
+          };
         },
-        getDatabase: () =>
-          ({
-            async forWorkspace<T>(
-              _workspaceId: string,
-              work: (repositories: any) => Promise<T>,
-            ) {
-              return work({
-                reads: {
-                  async jobsPage() {
-                    return {
-                      items: [],
-                      totalMatching: 0,
-                      total: 0,
-                      counts: {},
-                    };
-                  },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _workspaceId: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work({
+              reads: {
+                async jobsPage() {
+                  return {
+                    items: [],
+                    totalMatching: 0,
+                    total: 0,
+                    counts: {},
+                  };
                 },
-                enrichmentBatches: noRows,
-                publishJobs: noRows,
-                pipelineRuns: noRows,
-                exportAttempts: noRows,
-                importResults: {
-                  ...noRows,
-                  async listForExportAttempts() {
-                    return [];
-                  },
+              },
+              enrichmentBatches: noRows,
+              publishJobs: noRows,
+              pipelineRuns: noRows,
+              exportAttempts: noRows,
+              importResults: {
+                ...noRows,
+                async listForExportAttempts() {
+                  return [];
                 },
-                audit: {
-                  async countByActionSince() {
-                    return 0;
-                  },
-                  async countByActionAndMetadataKeySince(action: string) {
-                    return action === "listing.approval_invalidated"
-                      ? [
-                          { value: "confirmation_changed", count: 1 },
-                          { value: "some_future_cause", count: 9 },
-                        ]
-                      : [];
-                  },
-                  async sumImportMetricsSince() {
-                    return {
-                      parsedRows: 0,
-                      createdDrafts: 0,
-                      refreshedProducts: 0,
-                      issueCount: 0,
-                    };
-                  },
+              },
+              audit: {
+                async countByActionSince() {
+                  return 0;
                 },
-              });
-            },
-          }) as never,
-      });
+                async countByActionAndMetadataKeySince(action: string) {
+                  return action === "listing.approval_invalidated"
+                    ? [
+                        { value: "confirmation_changed", count: 1 },
+                        { value: "some_future_cause", count: 9 },
+                      ]
+                    : [];
+                },
+                async sumImportMetricsSince() {
+                  return {
+                    parsedRows: 0,
+                    createdDrafts: 0,
+                    refreshedProducts: 0,
+                    issueCount: 0,
+                  };
+                },
+              },
+            });
+          },
+        }) as never,
+    });
 
-      const body = await (await handler()).json();
+    const body = await (await handler()).json();
 
-      expect(body.metrics.approvalInvalidations).toEqual({
-        confirmationChanged: 1,
-        reimportChanged: 0,
-        reimportUnchanged: 0,
-      });
-      const logged = info.mock.calls
-        .map(([line]) => {
-          try {
-            return JSON.parse(String(line));
-          } catch {
-            return null;
-          }
-        })
-        .filter((entry) => entry?.event === "jobs.unknown_invalidation_cause");
-      expect(logged).toEqual([
-        { event: "jobs.unknown_invalidation_cause", cause: "some_future_cause" },
-      ]);
-    } finally {
-      info.mockRestore();
-    }
-  });
+    expect(body.metrics.approvalInvalidations).toEqual({
+      confirmationChanged: 1,
+      reimportChanged: 0,
+      reimportUnchanged: 0,
+    });
+    const logged = info.mock.calls
+      .map(([line]) => {
+        try {
+          return JSON.parse(String(line));
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry) => entry?.event === "jobs.unknown_invalidation_cause");
+    expect(logged).toEqual([
+      { event: "jobs.unknown_invalidation_cause", cause: "some_future_cause" },
+    ]);
+  } finally {
+    info.mockRestore();
+  }
+});
 ```
 
 Add `vi` to the file's `vitest` import if absent.
@@ -1058,29 +1066,29 @@ Add `invalidationsByCause,` as the last name in the destructuring list (after `i
 After the `for (const row of reviewConflictsByReason) { … }` loop, add:
 
 ```ts
-          const approvalInvalidations = {
-            confirmationChanged: 0,
-            reimportChanged: 0,
-            reimportUnchanged: 0,
-          };
-          for (const row of invalidationsByCause) {
-            if (!isApprovalInvalidationCause(row.value)) {
-              // A cause this build does not know must not be folded into a
-              // tile that claims to mean something else.
-              console.info(
-                JSON.stringify({
-                  event: "jobs.unknown_invalidation_cause",
-                  cause: row.value,
-                }),
-              );
-              continue;
-            }
-            if (row.value === "confirmation_changed")
-              approvalInvalidations.confirmationChanged += row.count;
-            else if (row.value === "source_reimported_changed")
-              approvalInvalidations.reimportChanged += row.count;
-            else approvalInvalidations.reimportUnchanged += row.count;
-          }
+const approvalInvalidations = {
+  confirmationChanged: 0,
+  reimportChanged: 0,
+  reimportUnchanged: 0,
+};
+for (const row of invalidationsByCause) {
+  if (!isApprovalInvalidationCause(row.value)) {
+    // A cause this build does not know must not be folded into a
+    // tile that claims to mean something else.
+    console.info(
+      JSON.stringify({
+        event: "jobs.unknown_invalidation_cause",
+        cause: row.value,
+      }),
+    );
+    continue;
+  }
+  if (row.value === "confirmation_changed")
+    approvalInvalidations.confirmationChanged += row.count;
+  else if (row.value === "source_reimported_changed")
+    approvalInvalidations.reimportChanged += row.count;
+  else approvalInvalidations.reimportUnchanged += row.count;
+}
 ```
 
 In `metrics: { … }`, add `approvalInvalidations,` after `importedRows: importSums.parsedRows,`.
@@ -1110,31 +1118,31 @@ const SAMPLE_METRICS = {
 Add inside the first `describe`:
 
 ```ts
-  it("shows approval invalidations by confirmation and by re-import", async () => {
-    stubFetch({ entries: [], metrics: SAMPLE_METRICS });
+it("shows approval invalidations by confirmation and by re-import", async () => {
+  stubFetch({ entries: [], metrics: SAMPLE_METRICS });
 
-    const { container } = await mountLedger();
+  const { container } = await mountLedger();
 
-    const tiles = Array.from(
-      container.querySelectorAll(".jobs-metric-strip > div"),
-    ).map((tile) => ({
-      value: tile.querySelector(".metric-value")?.textContent,
-      label: tile.querySelector(".metric-label")?.textContent,
-    }));
-    expect(tiles).toContainEqual({
-      value: "4",
-      label: expect.stringMatching(
-        /由確認變更導致的批准失效|Approvals invalidated by confirmation/,
-      ),
-    });
-    // Changed plus unchanged rows: 2 + 7.
-    expect(tiles).toContainEqual({
-      value: "9",
-      label: expect.stringMatching(
-        /由重新匯入導致的批准失效|Approvals invalidated by re-import/,
-      ),
-    });
+  const tiles = Array.from(
+    container.querySelectorAll(".jobs-metric-strip > div"),
+  ).map((tile) => ({
+    value: tile.querySelector(".metric-value")?.textContent,
+    label: tile.querySelector(".metric-label")?.textContent,
+  }));
+  expect(tiles).toContainEqual({
+    value: "4",
+    label: expect.stringMatching(
+      /由確認變更導致的批准失效|Approvals invalidated by confirmation/,
+    ),
   });
+  // Changed plus unchanged rows: 2 + 7.
+  expect(tiles).toContainEqual({
+    value: "9",
+    label: expect.stringMatching(
+      /由重新匯入導致的批准失效|Approvals invalidated by re-import/,
+    ),
+  });
+});
 ```
 
 - [ ] **Step 6: Run and confirm failure**
@@ -1218,6 +1226,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 7: Activity panel label and cause
 
 **Files:**
+
 - Modify: `apps/web/components/activity-panel.tsx:31-52`
 - Modify: `apps/web/components/activity-panel.test.tsx`
 
@@ -1226,44 +1235,44 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 The file mocks the locale to `zh-Hant`. Add inside `describe("ActivityPanel", ...)`:
 
 ```ts
-  it.each([
-    ["confirmation_changed", "確認內容已變更"],
-    ["source_reimported_changed", "重新匯入，來源資料已變更"],
-    ["source_reimported_unchanged", "重新匯入，來源資料未變"],
-  ])("names an approval invalidated by %s and its cause", async (cause, text) => {
-    const { container, root } = await mount([
-      {
-        kind: "audit",
-        id: "audit_inv",
-        action: "listing.approval_invalidated",
-        metadata: { cause, fromStatus: "approved", versionId: "v1" },
-        createdAt: "2026-09-14T00:00:00.000Z",
-      },
-    ]);
+it.each([
+  ["confirmation_changed", "確認內容已變更"],
+  ["source_reimported_changed", "重新匯入，來源資料已變更"],
+  ["source_reimported_unchanged", "重新匯入，來源資料未變"],
+])("names an approval invalidated by %s and its cause", async (cause, text) => {
+  const { container, root } = await mount([
+    {
+      kind: "audit",
+      id: "audit_inv",
+      action: "listing.approval_invalidated",
+      metadata: { cause, fromStatus: "approved", versionId: "v1" },
+      createdAt: "2026-09-14T00:00:00.000Z",
+    },
+  ]);
 
-    expect(container.textContent).toContain("批准已失效");
-    expect(container.textContent).toContain(text);
-    expect(container.textContent).not.toContain(cause);
+  expect(container.textContent).toContain("批准已失效");
+  expect(container.textContent).toContain(text);
+  expect(container.textContent).not.toContain(cause);
 
-    await unmount(root);
-  });
+  await unmount(root);
+});
 
-  it("names an invalidation with an unknown cause without printing the raw value", async () => {
-    const { container, root } = await mount([
-      {
-        kind: "audit",
-        id: "audit_inv",
-        action: "listing.approval_invalidated",
-        metadata: { cause: "some_future_cause" },
-        createdAt: "2026-09-14T00:00:00.000Z",
-      },
-    ]);
+it("names an invalidation with an unknown cause without printing the raw value", async () => {
+  const { container, root } = await mount([
+    {
+      kind: "audit",
+      id: "audit_inv",
+      action: "listing.approval_invalidated",
+      metadata: { cause: "some_future_cause" },
+      createdAt: "2026-09-14T00:00:00.000Z",
+    },
+  ]);
 
-    expect(container.textContent).toContain("批准已失效");
-    expect(container.textContent).not.toContain("some_future_cause");
+  expect(container.textContent).toContain("批准已失效");
+  expect(container.textContent).not.toContain("some_future_cause");
 
-    await unmount(root);
-  });
+  await unmount(root);
+});
 ```
 
 - [ ] **Step 2: Run and confirm failure**
@@ -1304,17 +1313,17 @@ function causeOf(metadata: unknown): string | undefined {
 In `summarize`, replace the audit branch:
 
 ```ts
-  if (entry.kind === "audit") {
-    const action = auditActions[entry.action];
-    if (!action) return t("其他活動記錄", "Other activity");
-    const label = localized(locale, ...action);
-    const cause =
-      entry.action === "listing.approval_invalidated"
-        ? invalidationCauses[causeOf(entry.metadata) ?? ""]
-        : undefined;
-    // An unknown cause shows the label alone rather than a raw enum value.
-    return cause ? label + " (" + localized(locale, ...cause) + ")" : label;
-  }
+if (entry.kind === "audit") {
+  const action = auditActions[entry.action];
+  if (!action) return t("其他活動記錄", "Other activity");
+  const label = localized(locale, ...action);
+  const cause =
+    entry.action === "listing.approval_invalidated"
+      ? invalidationCauses[causeOf(entry.metadata) ?? ""]
+      : undefined;
+  // An unknown cause shows the label alone rather than a raw enum value.
+  return cause ? label + " (" + localized(locale, ...cause) + ")" : label;
+}
 ```
 
 - [ ] **Step 4: Run, lint**
@@ -1337,6 +1346,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 8: Stop masking `reopened` on the review page
 
 **Files:**
+
 - Modify: `apps/web/components/listing-view-models.ts:51-58`
 - Modify: `apps/web/components/listing-review-client.tsx:212-217`
 - Modify: `apps/web/components/listing-fields-form.tsx:130-135`
@@ -1349,12 +1359,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 `listing-review-client.test.ts`, inside `describe("listing review client mapping", ...)`:
 
 ```ts
-  it("keeps a reopened listing visibly reopened instead of calling it in review", () => {
-    const mapped = mapListingView({ ...response, status: "reopened" });
+it("keeps a reopened listing visibly reopened instead of calling it in review", () => {
+  const mapped = mapListingView({ ...response, status: "reopened" });
 
-    expect(mapped.model.status).toBe("reopened");
-    expect(mapped.delivery.status).toBe("reopened");
-  });
+  expect(mapped.model.status).toBe("reopened");
+  expect(mapped.delivery.status).toBe("reopened");
+});
 ```
 
 `listing-fields-form.test.tsx`, inside `describe("ListingFieldsForm", ...)` after "enables approval once every field and negative confirmation is checked and no flags block it":
@@ -1421,15 +1431,15 @@ function reviewStatus(status: ListingStatus): ListingReviewModel["status"] {
 `listing-fields-form.tsx`: replace the last line of `approvalDisabled`
 
 ```ts
-    model.status !== "in_review";
+model.status !== "in_review";
 ```
 
 with
 
 ```ts
-    // Reopened listings are approvable: the approve path submits them for
-    // review first (packages/db/src/repositories/listings.ts, approve).
-    (model.status !== "in_review" && model.status !== "reopened");
+// Reopened listings are approvable: the approve path submits them for
+// review first (packages/db/src/repositories/listings.ts, approve).
+model.status !== "in_review" && model.status !== "reopened";
 ```
 
 `globals.css`: change the selector at `:911-912` from
@@ -1469,6 +1479,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 9: Reopened tag in the queue
 
 **Files:**
+
 - Modify: `apps/web/components/listing-view-models.ts:11-20`
 - Modify: `apps/web/lib/dashboard-queue-shared.ts:50-70`
 - Modify: `apps/web/components/listing-queue.tsx:142`
@@ -1481,14 +1492,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 `dashboard-listings-client.test.ts`, inside `describe("mapDashboardItems", ...)`:
 
 ```ts
-  it("keeps a reopened listing in review but marks it reopened", () => {
-    const [reopened, inReview] = mapDashboardItems([
-      { ...baseItem, id: "listing_r", status: "reopened" },
-      baseItem,
-    ]);
-    expect(reopened).toMatchObject({ status: "in_review", reopened: true });
-    expect(inReview).toMatchObject({ status: "in_review", reopened: false });
-  });
+it("keeps a reopened listing in review but marks it reopened", () => {
+  const [reopened, inReview] = mapDashboardItems([
+    { ...baseItem, id: "listing_r", status: "reopened" },
+    baseItem,
+  ]);
+  expect(reopened).toMatchObject({ status: "in_review", reopened: true });
+  expect(inReview).toMatchObject({ status: "in_review", reopened: false });
+});
 ```
 
 `listing-queue.test.tsx`, append:
@@ -1557,17 +1568,15 @@ Expected: FAIL. `reopened` is `undefined` on mapped items, and there is no `.sta
 `listing-queue.tsx`, replace `<p>{item.subtitle}</p>` with:
 
 ```tsx
-                          <p>
-                            {item.subtitle}
-                            {item.reopened ? (
-                              <>
-                                {" · "}
-                                <span className="status-tag">
-                                  {stateLabel("reopened", locale)}
-                                </span>
-                              </>
-                            ) : null}
-                          </p>
+<p>
+  {item.subtitle}
+  {item.reopened ? (
+    <>
+      {" · "}
+      <span className="status-tag">{stateLabel("reopened", locale)}</span>
+    </>
+  ) : null}
+</p>
 ```
 
 `globals.css`, directly after the `.status-in_review, .status-reopened, .status-needs_info { … }` rule:
@@ -1599,12 +1608,14 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 10: Acceptance journey in the real-stack E2E
 
 The attended Bulk Update journey (`tests/e2e/bulk-update-pilot.spec.ts:198`, "reviewer completes attended Bulk Update and reconciles mixed operator reports") already imports two rows, enriches them, approves both, exports and reconciles. The new steps go at its very end:
+
 - after `await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);` (`:1083`)
 - before `expect(pageErrors).toEqual([]);` (`:1084`)
 
 So everything earlier in the test still sees the original statuses. `input`, `listingIds`, `operator`, `ADMIN_URL`, `postgres` and `stateLabel` are already in scope.
 
 **Files:**
+
 - Modify: `tests/e2e/bulk-update-pilot.spec.ts:1083-1084`
 
 - [ ] **Step 1: Add the journey steps**
@@ -1612,88 +1623,84 @@ So everything earlier in the test still sees the original statuses. `input`, `li
 Insert between `:1083` and `:1084`:
 
 ```ts
+// W7: re-importing the same workbook re-binds both approvals to a new source
+// import. That must be visible when it happens, and the status must stay.
+await page.goto("/listings/import");
+await page.locator("#connected-shopline-update > summary").click();
+await page.locator("#bulk-import-file").setInputFiles({
+  name: "synthetic-task5-reimport.xlsx",
+  mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  buffer: input,
+});
+await page
+  .locator("#merchant-attested-export-at")
+  .fill(new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16));
+const reimported = page.waitForResponse(
+  (r) =>
+    new URL(r.url()).pathname === "/api/listings/import" &&
+    r.request().method() === "POST",
+);
+await page.getByRole("button", { name: "Start import" }).click();
+const reimportResponse = await reimported;
+expect(reimportResponse.status()).toBe(201);
+expect(await reimportResponse.json()).toMatchObject({
+  createdDrafts: 0,
+  invalidatedApprovals: 2,
+});
+await expect(page.getByText(/Approvals invalidated: 2/)).toBeVisible();
 
-  // W7: re-importing the same workbook re-binds both approvals to a new source
-  // import. That must be visible when it happens, and the status must stay.
-  await page.goto("/listings/import");
-  await page.locator("#connected-shopline-update > summary").click();
-  await page.locator("#bulk-import-file").setInputFiles({
-    name: "synthetic-task5-reimport.xlsx",
-    mimeType:
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: input,
-  });
-  await page
-    .locator("#merchant-attested-export-at")
-    .fill(
-      new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    );
-  const reimported = page.waitForResponse(
-    (r) =>
-      new URL(r.url()).pathname === "/api/listings/import" &&
-      r.request().method() === "POST",
-  );
-  await page.getByRole("button", { name: "Start import" }).click();
-  const reimportResponse = await reimported;
-  expect(reimportResponse.status()).toBe(201);
-  expect(await reimportResponse.json()).toMatchObject({
-    createdDrafts: 0,
-    invalidatedApprovals: 2,
-  });
-  await expect(page.getByText(/Approvals invalidated: 2/)).toBeVisible();
+const statusCheck = postgres(ADMIN_URL, { max: 1, prepare: false });
+try {
+  const statuses =
+    await statusCheck`SELECT status FROM listing_drafts WHERE workspace_id=${operator.workspaceId}`;
+  // Recorded, not reopened: neither listing went back to review.
+  expect(statuses.map((row) => row.status)).not.toContain("reopened");
+} finally {
+  await statusCheck.end();
+}
 
-  const statusCheck = postgres(ADMIN_URL, { max: 1, prepare: false });
-  try {
-    const statuses =
-      await statusCheck`SELECT status FROM listing_drafts WHERE workspace_id=${operator.workspaceId}`;
-    // Recorded, not reopened: neither listing went back to review.
-    expect(statuses.map((row) => row.status)).not.toContain("reopened");
-  } finally {
-    await statusCheck.end();
-  }
+const afterReimport = await (await page.request.get("/api/jobs")).json();
+expect(afterReimport.metrics.approvalInvalidations).toEqual({
+  confirmationChanged: 0,
+  reimportChanged: 0,
+  reimportUnchanged: 2,
+});
+await page.goto("/jobs");
+const reimportTile = page
+  .locator(".jobs-metric-strip > div")
+  .filter({ hasText: "Approvals invalidated by re-import" });
+await expect(reimportTile.locator(".metric-value")).toHaveText("2");
 
-  const afterReimport = await (await page.request.get("/api/jobs")).json();
-  expect(afterReimport.metrics.approvalInvalidations).toEqual({
-    confirmationChanged: 0,
-    reimportChanged: 0,
-    reimportUnchanged: 2,
-  });
-  await page.goto("/jobs");
-  const reimportTile = page
-    .locator(".jobs-metric-strip > div")
-    .filter({ hasText: "Approvals invalidated by re-import" });
-  await expect(reimportTile.locator(".metric-value")).toHaveText("2");
+// The listing's own trail names what happened and why.
+await page.goto("/listings/" + listingIds[0]);
+await expect(
+  page.getByText("Approval invalidated (Re-imported, row unchanged)"),
+).toBeVisible();
 
-  // The listing's own trail names what happened and why.
-  await page.goto("/listings/" + listingIds[0]);
-  await expect(
-    page.getByText("Approval invalidated (Re-imported, row unchanged)"),
-  ).toBeVisible();
-
-  // A confirmation change reopens the listing, and the reopen is shown as itself.
-  const confirmationSaved = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/" + listingIds[0] + "/review-confirmations") &&
-      r.request().method() === "PATCH",
-  );
-  await page.locator("#confirmation-field-nameZh").click();
-  expect((await confirmationSaved).status()).toBe(200);
-  await page.reload();
-  await expect(page.locator(".review-status")).toHaveText(
-    stateLabel("reopened", "en"),
-  );
-  await expect(
-    page.getByText("Approval invalidated (Confirmations changed)"),
-  ).toBeVisible();
-  await page.goto("/queue");
-  const reopenedRow = page.locator("li.queue-item", {
-    has: page.locator('a[href="/listings/' + listingIds[0] + '"]'),
-  });
-  await expect(reopenedRow.locator(".status-tag")).toHaveText(
-    stateLabel("reopened", "en"),
-  );
-  const afterReopen = await (await page.request.get("/api/jobs")).json();
-  expect(afterReopen.metrics.approvalInvalidations.confirmationChanged).toBe(1);
+// A confirmation change reopens the listing, and the reopen is shown as itself.
+const confirmationSaved = page.waitForResponse(
+  (r) =>
+    r.url().endsWith("/" + listingIds[0] + "/review-confirmations") &&
+    r.request().method() === "PATCH",
+);
+await page.locator("#confirmation-field-nameZh").click();
+expect((await confirmationSaved).status()).toBe(200);
+await page.reload();
+await expect(page.locator(".review-status")).toHaveText(
+  stateLabel("reopened", "en"),
+);
+await expect(
+  page.getByText("Approval invalidated (Confirmations changed)"),
+).toBeVisible();
+await page.goto("/queue");
+const reopenedRow = page.locator("li.queue-item", {
+  has: page.locator('a[href="/listings/' + listingIds[0] + '"]'),
+});
+await expect(reopenedRow.locator(".status-tag")).toHaveText(
+  stateLabel("reopened", "en"),
+);
+const afterReopen = await (await page.request.get("/api/jobs")).json();
+expect(afterReopen.metrics.approvalInvalidations.confirmationChanged).toBe(1);
 ```
 
 - [ ] **Step 2: Run the journey**
@@ -1703,6 +1710,7 @@ Run: `PLAYWRIGHT_E2E=1 corepack pnpm test:e2e -- tests/e2e/bulk-update-pilot.spe
 Expected: PASS.
 
 If a step fails, diagnose from the Playwright trace before changing an assertion:
+
 - **Re-import is refused (409/422).** Read the response body. The attested-export-time field may reject a time later than now, in which case subtract a minute instead.
 - **`invalidatedApprovals` is not 2.** Query `SELECT status FROM listing_drafts` at that point. Recording operator results can move a listing to another status; only statuses outside approved, published, publish_failed and publishing legitimately give fewer.
 - **The confirmation checkbox is disabled.** Confirmations are editable only with `permissions.canEdit` (`listing-review-client.tsx:924`). Check the operator fixture's role before changing anything.
@@ -1723,6 +1731,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 11: Close W7 in the release-gate plan
 
 **Files:**
+
 - Modify: `docs/superpowers/plans/2026-09-11-release-gate-closure.md` (W7 section, after `:319`)
 
 - [ ] **Step 1: Append the closure note**
@@ -1730,7 +1739,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 Insert after the paragraph ending "by finding the listing un-approved." (`:319`):
 
 ```markdown
-
 **Done (2026-09-14).** Design:
 `docs/superpowers/specs/2026-09-14-approval-invalidation-visibility-design.md`. Both paths now write
 `listing.approval_invalidated` with a `cause`:
@@ -1785,6 +1793,7 @@ corepack pnpm build
 (With the integration env from the ground rules exported.)
 
 Expected:
+
 - **Migrate:** exits 0; there are no new migrations.
 - **Lint:** all tasks successful.
 - **Test:** all tasks successful.
@@ -1799,6 +1808,7 @@ RELEASE_BASE_SHA=9f72a37ebeb6549f1041bae673bcee841bf72402 corepack pnpm format:r
 ```
 
 Expected:
+
 - **`audit:verify`:** 0 missing actions and 0 accessible foreign records.
 - **Format check:** `runtime files checked: N` with no failures. It reads the committed diff, so run it only after committing.
 

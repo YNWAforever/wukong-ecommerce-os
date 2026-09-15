@@ -282,9 +282,7 @@ describe("DashboardListingsClient", () => {
       'a[href="/listings/listing_r"]',
     )!;
     const reopenedItem = reopenedLink.closest("li.queue-item")!;
-    const freshLink = container.querySelector(
-      'a[href="/listings/listing_i"]',
-    )!;
+    const freshLink = container.querySelector('a[href="/listings/listing_i"]')!;
     const freshItem = freshLink.closest("li.queue-item")!;
 
     expect(reopenedItem.querySelector(".status-tag")?.textContent).toBe(

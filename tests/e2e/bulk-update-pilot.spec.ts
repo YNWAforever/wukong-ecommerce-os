@@ -1100,9 +1100,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   });
   await page
     .locator("#merchant-attested-export-at")
-    .fill(
-      new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    );
+    .fill(new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16));
   const reimported = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === "/api/listings/import" &&

@@ -440,7 +440,10 @@ describe("GET /api/jobs", () => {
         })
         .filter((entry) => entry?.event === "jobs.unknown_invalidation_cause");
       expect(logged).toEqual([
-        { event: "jobs.unknown_invalidation_cause", cause: "some_future_cause" },
+        {
+          event: "jobs.unknown_invalidation_cause",
+          cause: "some_future_cause",
+        },
       ]);
     } finally {
       info.mockRestore();

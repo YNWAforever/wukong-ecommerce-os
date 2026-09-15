@@ -409,7 +409,9 @@ describe("BulkImportPanel", () => {
     });
 
     expect(container.textContent).toContain("2");
-    expect(container.textContent).not.toMatch(/已失效批准|Approvals invalidated/);
+    expect(container.textContent).not.toMatch(
+      /已失效批准|Approvals invalidated/,
+    );
 
     await act(async () => root.unmount());
     document.body.innerHTML = "";

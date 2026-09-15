@@ -22,12 +22,12 @@ An approval can stop holding in two ways, and neither is visible as such:
 
 ## Decisions (from brainstorming)
 
-| Question | Decision |
-|---|---|
-| Scope | Both paths become visible events; a re-import records the event at that moment |
-| Which re-imports | Every re-import of an affected listing; cause distinguishes changed and unchanged rows |
-| Status on re-import | Record only; status is not changed |
-| Approach | One audit action, surfaced in activity, /jobs tiles and the import panel; no migration |
+| Question            | Decision                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| Scope               | Both paths become visible events; a re-import records the event at that moment         |
+| Which re-imports    | Every re-import of an affected listing; cause distinguishes changed and unchanged rows |
+| Status on re-import | Record only; status is not changed                                                     |
+| Approach            | One audit action, surfaced in activity, /jobs tiles and the import panel; no migration |
 
 ## Design
 
@@ -119,6 +119,7 @@ review locks out of bulk import.
 ## Testing
 
 **Unit (Vitest):**
+
 - **Importer:**
   - One event per affected status (approved, published, publish_failed, publishing).
   - None for in_review, reopened or new drafts.
@@ -131,6 +132,7 @@ review locks out of bulk import.
   "Reopened", and the queue tag with grouping unchanged, in both locales.
 
 **Integration (Postgres):**
+
 - `approvalStatesByIds` returns nothing for a foreign workspace's ids.
 - Re-importing an approved listing records the event, keeps `approved`, and the catalog shows it
   as not exportable: covered by the real-stack Playwright journey, as no importer integration
@@ -138,6 +140,7 @@ review locks out of bulk import.
 - `audit:verify` passes.
 
 **Acceptance (Playwright, extend the attended journey in `tests/e2e/bulk-update-pilot.spec.ts`):**
+
 1. That journey already imports and approves two listings. At its end, re-import the same workbook.
 2. The import panel shows "Approvals invalidated: 2", and neither listing's status becomes `reopened`.
 3. /jobs shows the re-import tile at 2.
