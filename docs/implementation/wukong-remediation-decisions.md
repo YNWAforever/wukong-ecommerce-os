@@ -582,6 +582,12 @@ visible and safe, but not self-healing. A cron sweep would need a cross-workspac
 `SECURITY DEFINER` function like `sweeper_find_stuck_listing_jobs`, and rows are
 never pruned, so retention is an open question rather than a solved one.
 
+> **Follow-up (2026-09-15).** The cron sweep described above was built in
+> `89f5241`: migration `0024_outbox_sweeper.sql` adds the cross-workspace
+> function, and `recoverOutbox` (`apps/worker/src/sweeper.ts:83`) re-sends rows
+> older than 300 s, up to 5 attempts each. Retention is still open. See the
+> verification record's corrected bullet.
+
 ---
 
 ## D18 — Write down what each surface needs, and derive the check from the code
