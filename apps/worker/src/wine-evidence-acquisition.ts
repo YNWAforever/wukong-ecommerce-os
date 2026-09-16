@@ -161,6 +161,14 @@ export async function acquireWineEvidence(
   const acceptedAt = context.acceptedAt,
     deadlineAt = context.deadlineAt;
   const now = () => (ports.now?.() ?? new Date()).toISOString();
+  let deadlineExpired = false;
+  function expired() {
+    if (!deadlineExpired && Date.parse(now()) >= Date.parse(deadlineAt)) {
+      deadlineExpired = true;
+      warnings.push("deadline_expired");
+    }
+    return deadlineExpired;
+  }
   const key = {
     identityKey: await hash(wineEvidenceCacheKey(input)),
     policyVersion: input.policyDigest,
@@ -201,6 +209,7 @@ export async function acquireWineEvidence(
     perform: () => Promise<TavilyResponse>,
     urls?: string[],
   ): Promise<{ output: WineSearchOutput; capturedAt: string } | null> {
+    if (expired()) return null;
     const admission = await ports.store.admit(input, call);
     if (admission.state === "completed")
       return {
@@ -287,6 +296,7 @@ export async function acquireWineEvidence(
     }
   }
   async function document(source: EvidenceSource) {
+    if (expired()) return null;
     try {
       const result = wineDocumentResultSchema.parse(
         await ports.document({
@@ -297,6 +307,7 @@ export async function acquireWineEvidence(
           kind: "product",
         }),
       );
+      if (expired()) return null;
       if (
         !publicUrl(result.url, input.allowedDomains) ||
         result.sourceId !== source.id ||
@@ -332,6 +343,7 @@ export async function acquireWineEvidence(
       };
     const approved: WineDocumentResult[] = [];
     for (const id of ids) {
+      if (expired()) break;
       const source = old.find((s) => s.id === id);
       if (
         !source ||
@@ -362,6 +374,7 @@ export async function acquireWineEvidence(
       );
       if (response)
         for (const result of response.output.results) {
+          if (expired()) break;
           const origin = approved.find((r) => r.url === result.url)!;
           // The independently pinned document is the provenance anchor; changed text must be verified later.
           const source: EvidenceSource = {
@@ -406,6 +419,7 @@ export async function acquireWineEvidence(
       throw new Error("invalid acquisition stage");
     const seen = new Set<string>();
     for (const slot of slots) {
+      if (expired()) break;
       const query = queries[slot === "basic_2" ? 1 : 0],
         depth = slot === "advanced_1" ? "advanced" : "basic";
       const call = {
@@ -422,6 +436,7 @@ export async function acquireWineEvidence(
       );
       if (!response) break;
       for (const result of response.output.results) {
+        if (expired()) break;
         const url = publicUrl(result.url, input.allowedDomains);
         if (!url || seen.has(url)) continue;
         seen.add(url);

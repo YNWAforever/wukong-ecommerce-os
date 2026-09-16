@@ -88,3 +88,18 @@ Final checks:
 ## Files and self-review
 New Worker wine-document-client.ts/.test.ts, wine-evidence-acquisition.ts/.test.ts/.integration.test.ts. New DB repositories/wine-acquisition-calls.ts/.integration.test.ts; only two-line composition/export addition to existing wine-acquisition.ts/index.ts. This report.
 Self-review fixed missing-output admission, directly malformed callback, replay array aliasing, and deadline after reservation-lock wait. All physical failures conservatively retain unknown cost holds; no automatic provider retry/reclaim exists. No known failing checks. Cache publication still respects the existing200KB aggregate repository bound; exceptionally large aggregate evidence is rejected by that existing bound rather than relaxing storage constraints. Acquisition/ledger code remains a focused boundary; full queue recovery is intentionally deferred. Task5 overall is not yet complete.
+
+## Independent review follow-up — callback deadline (2026-09-16)
+Addressed Important finding: document() previously checked no deadline immediately before ports.document, so sequential product callbacks (including Extract preflight) could start after expiry. Added an invocation-local sticky expiry check immediately before callback I/O, after callback completion, and at subsequent source/slot loops and physical admission. Once expiry is observed, later callbacks/provider calls stop; a completed callback does not lead to new document persistence after expiry. Warnings include deadline_expired. Existing DB admission/usage semantics are unchanged.
+
+RED:
+`pnpm.cmd --filter @wukong/worker exec vitest run src/wine-evidence-acquisition.test.ts`
+=>3 failed/18 passed. Synthetic first callback advances clock to exact deadline or1ms beyond: second callback was called (expected1, received2). Extract preflight likewise called a second source after expiry. Tests also assert no later basic slot/Extract slot is admitted and no later document evidence is written.
+An intermediate edit left2 failures due to unmatched Windows/newline insertion; fixed the callback insertion and reran.
+
+GREEN:
+Same command =>1file21/21 PASS, clean output.
+`pnpm.cmd --filter @wukong/worker typecheck` =>PASS.
+No DB integration rerun was needed: this change only fences the existing Worker callback/control loops, covered with synthetic-clock tests; repository SQL and signed transport are unchanged.
+
+Cross-task cache note: acquisition currently stores the requested stage's sources. Task8 must aggregate basic/deep/Extract stage evidence and establish a complete reusable cache rather than treating one stage snapshot as the entire enrichment evidence pool. This remains a Task8 integration obligation, not completed by5c or this review fix.

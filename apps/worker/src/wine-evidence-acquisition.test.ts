@@ -482,3 +482,75 @@ it("preserves measured cost discrepancy and stops the next basic query", async (
   expect(result.warnings).toContain("cost_discrepancy");
   expect(h.calls.get("basic_1")?.diagnostic?.measuredCredits).toBe(9);
 });
+
+describe("document callback deadline", () => {
+  it.each([0, 1])(
+    "stops callbacks and later search slots when the first callback reaches deadline + %s ms",
+    async (offset) => {
+      const h = harness();
+      let clock = Date.parse(now);
+      h.now = () => new Date(clock);
+      h.provider.search.mockResolvedValue({
+        credits: 1,
+        requestId: null,
+        results: ["a", "b"].map((path) => ({
+          url: `https://wine.test/${path}`,
+          title: "Wine",
+          content: "snippet",
+          rawContent: null,
+        })),
+      });
+      const original = h.document;
+      h.document = vi.fn(async (input) => {
+        const result = await original(input);
+        clock = Date.parse("2026-09-16T00:14:00.000Z") + offset;
+        return result;
+      });
+      const result = await acquireWineEvidence(
+        request,
+        { stage: "basic", slots: ["basic_1", "basic_2"] },
+        h,
+      );
+      expect(h.document).toHaveBeenCalledTimes(1);
+      expect(h.provider.search).toHaveBeenCalledTimes(1);
+      expect(h.calls.has("basic_2")).toBe(false);
+      expect(h.sources).toHaveLength(1);
+      expect(result.warnings).toContain("deadline_expired");
+    },
+  );
+  it("stops later Extract preflight callbacks and never starts Extract after expiry", async () => {
+    const h = harness();
+    let clock = Date.parse(now);
+    h.now = () => new Date(clock);
+    h.sources.push(
+      ...[
+        "00000000-0000-4000-8000-000000000002",
+        "00000000-0000-4000-8000-000000000003",
+      ].map((id, index) =>
+        webEvidence({
+          id,
+          url: `https://wine.test/${index}`,
+          domain: "wine.test",
+          contentScope: "snippet",
+          location: "tavily:basic_1",
+          capturedAt: now,
+        }),
+      ),
+    );
+    const original = h.document;
+    h.document = vi.fn(async (input) => {
+      const result = await original(input);
+      clock = Date.parse("2026-09-16T00:14:00.001Z");
+      return result;
+    });
+    const result = await acquireWineEvidence(
+      request,
+      { stage: "extract", sourceIds: h.sources.map((source) => source.id) },
+      h,
+    );
+    expect(h.document).toHaveBeenCalledTimes(1);
+    expect(h.provider.extract).not.toHaveBeenCalled();
+    expect(h.calls.has("extract_1")).toBe(false);
+    expect(result.warnings).toContain("deadline_expired");
+  });
+});
