@@ -114,3 +114,5 @@ export * from "./wine-identity-match.js";
 export * from "./wine-source-authority.js";
 export * from "./wine-claim-policy.js";
 export * from "./wine-enrichment-budget.js";
+
+export * from "./wine-content.js";

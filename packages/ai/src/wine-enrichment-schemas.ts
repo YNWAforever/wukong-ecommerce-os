@@ -124,12 +124,30 @@ export type WineEnrichmentProviderConfig = Omit<
 
 import { wineContentSchema, sectionKeySchema } from "@wukong/core";
 /** Server-owned accepted claims and lock snapshot, bound to the immutable operation. */
+export const wineGenerationOwnershipContextSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    priorKind: z.enum(["structured", "legacy", "empty"]),
+    metadata: wineContentSchema.omit({ sections: true }),
+    legacyDescription: z
+      .object({ en: z.string(), "zh-Hant": z.string() })
+      .strict()
+      .nullable(),
+    lockedPaths: z.array(z.string().min(1)),
+    provenanceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+  .refine(
+    (v) => (v.priorKind === "legacy") === (v.legacyDescription !== null),
+    "Legacy description binding",
+  );
 export const wineGenerationRequestSchema = z
   .object({
     schemaVersion: z.literal(1),
     binding: wineFrozenContextSchema.shape.binding,
     claims: z.array(supportedClaimSchema),
     current: wineContentSchema.nullable(),
+    ownership: wineGenerationOwnershipContextSchema.optional(),
     lockedPaths: z.array(z.string().min(1)),
     tone: z.string(),
     claimPolicy: z.array(z.string()),

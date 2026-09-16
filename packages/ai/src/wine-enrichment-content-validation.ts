@@ -28,6 +28,40 @@ function locked(path: string, r: WineGenerationRequest) {
   return r.lockedPaths.some((p) => path === p || path.startsWith(p + "."));
 }
 export function validateWineGenerationRequest(r: WineGenerationRequest): void {
+  if (r.ownership) {
+    requireValue(
+      JSON.stringify([...r.lockedPaths].sort()) ===
+        JSON.stringify([...r.ownership.lockedPaths].sort()),
+      "Ownership locks disagree",
+    );
+    requireValue(
+      (r.ownership.priorKind === "structured") === (r.current !== null),
+      "Ownership current disagrees",
+    );
+    if (r.current)
+      requireValue(
+        JSON.stringify({
+          title: r.current.title,
+          seo: r.current.seo,
+          tags: r.current.tags,
+        }) === JSON.stringify(r.ownership.metadata),
+        "Ownership metadata disagrees",
+      );
+    requireValue(
+      (r.ownership.priorKind === "legacy") ===
+        (r.ownership.legacyDescription !== null),
+      "Ownership legacy disagrees",
+    );
+    if (r.current)
+      for (const section of r.current.sections)
+        if (section.locked || section.owner === "operator")
+          requireValue(
+            r.lockedPaths.some(
+              (p) => p === "sections" || p === `sections.${section.key}`,
+            ),
+            "Ownership section lock absent",
+          );
+  }
   unique(
     r.claims.map((c) => c.id),
     "claims",
@@ -95,7 +129,7 @@ export function validateWineGenerationRequest(r: WineGenerationRequest): void {
   for (const p of r.lockedPaths)
     requireValue(allowed.has(p), "Unknown locked content path");
   requireValue(
-    r.current || r.lockedPaths.length === 0,
+    r.current || r.ownership || r.lockedPaths.length === 0,
     "Locks require current content",
   );
 }
@@ -107,8 +141,13 @@ export function wineCandidateIssues(
   const issues: QualityIssue[] = [];
   const issue = (path: string, code: string) =>
     issues.push({ path, code, blocking: true, evidenceIds: [] });
+  const ownershipCurrent =
+    r.current ??
+    (r.ownership ? { ...r.ownership.metadata, sections: [] } : null);
   const paths = wineTextPaths(c.content),
-    old = r.current ? wineTextPaths(r.current) : new Map<string, string>();
+    old = ownershipCurrent
+      ? wineTextPaths(ownershipCurrent)
+      : new Map<string, string>();
   if (
     new Set(c.content.sections.map((s) => s.key)).size !==
     c.content.sections.length
@@ -163,6 +202,12 @@ export function wineCandidateIssues(
         issue("tags", "protected_content_changed");
     }
   }
+  if (
+    ownershipCurrent &&
+    locked("tags", r) &&
+    JSON.stringify(c.content.tags) !== JSON.stringify(ownershipCurrent.tags)
+  )
+    issue("tags", "protected_content_changed");
   for (const s of c.content.sections) {
     const previous = r.current?.sections.find((o) => o.key === s.key);
     if (

@@ -1,3 +1,9 @@
+import {
+  wineOwnershipSchema,
+  hasWineSectionMapping,
+  mergeWineSections,
+  renderWineDescription,
+} from "./wine-content.js";
 import { z } from "zod";
 import {
   listingFactsSchema,
@@ -9,6 +15,7 @@ const copy = z.object({
   "zh-Hant": z.string().trim().max(20000).default(""),
 });
 export const workingListingSchema = listingFactsSchema.extend({
+  wineOwnership: wineOwnershipSchema.optional(),
   packQuantity: z.number().int().positive().nullable(),
   title: copy,
   description: copy,
@@ -151,6 +158,7 @@ export function applyWorkingChanges(
   const fieldStates = structuredClone(states);
   for (const raw of changes) {
     const change = workingChangeSchema.parse(raw);
+    if (change.field.startsWith("description.")) delete next.wineOwnership;
     setField(
       next,
       change.field,
@@ -182,6 +190,48 @@ export function mergeWorkingCandidate(
       !states[field]?.locked
     )
       setField(next, field, readWorkingField(candidate, field));
+  if (
+    "wineOwnership" in candidate &&
+    candidate.wineOwnership &&
+    hasWineSectionMapping(candidate)
+  ) {
+    const wholeProtected = (
+      ["description.en", "description.zh-Hant"] as const
+    ).some((f) => states[f]?.owner === "operator" || states[f]?.locked);
+    if (!wholeProtected) {
+      const proposed = {
+        ...candidate,
+        sections: candidate.wineOwnership.sections,
+      };
+      const merged = hasWineSectionMapping(content)
+        ? mergeWineSections(
+            { ...content, sections: content.wineOwnership!.sections },
+            proposed,
+          )
+        : proposed;
+      next.wineOwnership = { schemaVersion: 1, sections: merged.sections };
+      next.description = {
+        en: renderWineDescription(merged, "en"),
+        "zh-Hant": renderWineDescription(merged, "zh-Hant"),
+      };
+    }
+  }
+  if (
+    hasWineSectionMapping(content) &&
+    content.wineOwnership!.sections.some(
+      (s) => s.locked || s.owner === "operator",
+    ) &&
+    !(
+      "wineOwnership" in candidate &&
+      candidate.wineOwnership &&
+      hasWineSectionMapping(candidate)
+    )
+  ) {
+    next.description = structuredClone(content.description);
+    next.wineOwnership = structuredClone(content.wineOwnership);
+  }
+  if (next.wineOwnership && !hasWineSectionMapping(next))
+    delete next.wineOwnership;
   return workingListingSchema.parse(next);
 }
 

@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   applyWorkingChanges,
+  editWineSections,
+  inheritWineOwnership,
+  type WineSectionChange,
   workingBaselineForReview,
   emptyWorkingListing,
   sourceSelectionSchema,
@@ -51,6 +54,7 @@ export type SaveListingInput = {
   sources?: SourceSelection[];
   changes: WorkingChange[];
   reviewContent?: WorkingListing;
+  sectionChanges?: WineSectionChange[];
   websiteEvidenceRefsByField?: Partial<Record<WorkingField, string[]>>;
   candidateLineage?: {
     runId: string;
@@ -265,6 +269,8 @@ export function createListingInputRepository(
       return draft ? repository.getRevision(id, draft.revision) : null;
     },
     async initialize(input, context, audit) {
+      if (input.workingContent?.wineOwnership !== undefined)
+        throw new ListingInputError("wine_ownership_server_only");
       const draft = await lock(input.listingId);
       const current = await repository.getCurrent(input.listingId);
       if (current) return current;
@@ -427,13 +433,26 @@ export function createListingInputRepository(
         current.fieldStates,
         activeVersion?.content,
       );
+      if (
+        input.sectionChanges?.length &&
+        input.changes.some((c) => c.field.startsWith("description."))
+      )
+        throw new ListingInputError("wine_description_edit_conflict");
       const changed = applyWorkingChanges(
         input.reviewContent
-          ? workingListingSchema.parse(input.reviewContent)
+          ? inheritWineOwnership(
+              baseline.workingContent,
+              workingListingSchema.parse(input.reviewContent),
+            )
           : baseline.workingContent,
         baseline.fieldStates,
         input.changes,
       );
+      if (input.sectionChanges?.length)
+        changed.content = editWineSections(
+          changed.content,
+          input.sectionChanges,
+        );
       if (input.websiteEvidenceRefsByField)
         for (const change of input.changes)
           changed.fieldStates[change.field] = {
