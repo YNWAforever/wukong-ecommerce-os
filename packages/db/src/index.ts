@@ -183,3 +183,11 @@ export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibil
 
 export * from "./repositories/wine-acquisition.js";
 export * from "./repositories/wine-acquisition-calls.js";
+export {
+  createWineGoStore,
+  type WineGoStore,
+  type WineGoCoordinates,
+  type WineGoCall,
+  type WineGoCompletion,
+  type WineGoStage,
+} from "./repositories/wine-go-invocations.js";

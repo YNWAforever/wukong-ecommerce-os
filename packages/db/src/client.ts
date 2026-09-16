@@ -1,3 +1,4 @@
+import { createWineGoInvocationRepository } from "./repositories/wine-go-invocations.js";
 import {
   createWineAcquisitionRepository,
   type WineAcquisitionRepository,
@@ -172,6 +173,7 @@ export type WorkspaceRepositories = {
   /** Work recorded before it is sent, so a crash mid-send stays recoverable. */
   dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
+  wineGoInvocations: ReturnType<typeof createWineGoInvocationRepository>;
   aiRuns: AiRunRepository;
   aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
@@ -410,6 +412,11 @@ export function createDatabase(
           scope,
         ),
         searchBudgetReservations: createSearchBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineGoInvocations: createWineGoInvocationRepository(
           transaction,
           workspaceId,
           scope,
