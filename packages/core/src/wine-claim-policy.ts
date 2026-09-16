@@ -161,7 +161,31 @@ function adjudicate(
       )
     )
       return result("unknown", "unresolved_factual_premises");
-    return result("accepted", "grounded_recommendation");
+    const evidenceIds: string[] = [];
+    for (const [premise] of premises) {
+      // Premises are already adjudicated in this operation. Resolve their actual
+      // source records again before deriving citations; generation's citations
+      // are deliberately discarded.
+      for (const id of premise!.evidenceIds) {
+        const records = sources.filter((source) => source.id === id);
+        const sourceIdentity = records[0]?.identity;
+        if (
+          records.length !== 1 ||
+          !sourceIdentity ||
+          matchWineIdentity(
+            identityForClaim(identity, premise!.field),
+            identityForClaim(sourceIdentity, premise!.field),
+            context,
+          ).state !== "matched"
+        )
+          return result("unknown", "unresolved_premise_evidence");
+        evidenceIds.push(id);
+      }
+    }
+    return {
+      ...result("accepted", "grounded_recommendation"),
+      evidenceIds: [...new Set(evidenceIds)],
+    };
   }
   if (claim.scope === "brand" && !brandFields.has(claim.field))
     return result("rejected", "invalid_brand_scope");

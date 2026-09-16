@@ -452,3 +452,58 @@ describe("adoption applicability and citations", () => {
     ).toEqual([id]);
   });
 });
+
+describe("recommendation citation integrity", () => {
+  const recommendation = {
+    ...claim,
+    id: "00000000-0000-4000-8000-000000000003",
+    field: "pairing" as const,
+    kind: "recommendation" as const,
+    value: "Try roast duck",
+    premiseClaimIds: [second],
+  };
+  it.each(["missing", "unrelated"] as const)(
+    "derives premise citations instead of retaining %s citations",
+    (scenario) => {
+      const unsupported = "00000000-0000-4000-8000-000000000004";
+      const sources =
+        scenario === "missing"
+          ? [source]
+          : [
+              source,
+              {
+                ...source,
+                id: unsupported,
+                identity: wineIdentity({ productName: "Other" }),
+              },
+            ];
+      const result = decide({
+        claim: { ...recommendation, evidenceIds: [unsupported] },
+        sources,
+        context: { ...context, acceptedPremises: [decide()] },
+      });
+      expect(result.state).toBe("accepted");
+      expect(result.evidenceIds).toEqual([id]);
+    },
+  );
+  it("does not derive citations from unavailable premise sources", () => {
+    expect(
+      decide({
+        claim: { ...recommendation, evidenceIds: [] },
+        sources: [],
+        context: { ...context, acceptedPremises: [decide()] },
+      }).state,
+    ).toBe("unknown");
+  });
+  it("does not derive citations from a source for another product", () => {
+    expect(
+      decide({
+        claim: { ...recommendation, evidenceIds: [] },
+        sources: [
+          { ...source, identity: wineIdentity({ productName: "Other" }) },
+        ],
+        context: { ...context, acceptedPremises: [decide()] },
+      }).state,
+    ).toBe("unknown");
+  });
+});

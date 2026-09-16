@@ -60,7 +60,12 @@ export function matchWineIdentity(
       );
     if (!sameProductIdentity(a, b) && !alias) conflict(field);
   }
-  if (observed.vintage.state !== "unknown") {
+  if (
+    observed.vintage.state === "unknown" &&
+    candidate.vintage.state !== "unknown"
+  ) {
+    reasons.push("vintage_unobserved");
+  } else if (observed.vintage.state !== "unknown") {
     if (candidate.vintage.state === "unknown") reasons.push("vintage_missing");
     else if (
       observed.vintage.state !== candidate.vintage.state ||

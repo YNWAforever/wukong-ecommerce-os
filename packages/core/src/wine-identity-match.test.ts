@@ -124,3 +124,39 @@ describe("exact wine identity", () => {
     expect(matchWineIdentity(a, wineIdentity()).state).toBe("ambiguous");
   });
 });
+
+describe("vintage ambiguity is symmetric", () => {
+  const unknown = { state: "unknown", year: null } as const;
+  const nv = { state: "not_applicable", year: null } as const;
+  const known = { state: "known", year: 2019 } as const;
+  it.each([
+    [unknown, nv, "vintage_unobserved"],
+    [unknown, known, "vintage_unobserved"],
+    [nv, unknown, "vintage_missing"],
+    [known, unknown, "vintage_missing"],
+  ] as const)(
+    "does not resolve an unknown vintage from the other identity",
+    (observed, candidate, reason) => {
+      expect(
+        matchWineIdentity(
+          wineIdentity({ vintage: observed }),
+          wineIdentity({ vintage: candidate }),
+        ),
+      ).toEqual({ state: "ambiguous", reasons: [reason] });
+    },
+  );
+  it.each([
+    [nv, known],
+    [known, nv],
+  ] as const)(
+    "conflicts on explicit NV versus known year",
+    (observed, candidate) => {
+      expect(
+        matchWineIdentity(
+          wineIdentity({ vintage: observed }),
+          wineIdentity({ vintage: candidate }),
+        ),
+      ).toEqual({ state: "mismatch", reasons: ["vintage_conflict"] });
+    },
+  );
+});
