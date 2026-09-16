@@ -106,3 +106,6 @@ export * from "./workspace-policy.js";
 export * from "./external-claim-support.js";
 
 export * from "./copy-claim-support.js";
+
+export * from "./wine-enrichment-contracts.js";
+export * from "./wine-enrichment-fixtures.js";
