@@ -2408,9 +2408,7 @@ export const wineEvidenceCache = pgTable(
     identityKey: text("identity_key").notNull(),
     policyVersion: text("policy_version").notNull(),
     rulesVersion: text("rules_version").notNull(),
-    capturedAt: timestamp("captured_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     payload: jsonb("payload").notNull(),
   },
   (t) => [

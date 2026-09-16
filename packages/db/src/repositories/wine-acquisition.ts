@@ -268,23 +268,42 @@ export function createWineAcquisitionRepository(
         schemaVersion: 1,
         sources: rows.map((row) => row.payload),
       });
-      await tx.execute(
-        sql`insert into wine_evidence_cache(workspace_id,snapshot_id,run_id,identity_key,policy_version,rules_version,payload) values(${workspaceId},${input.snapshotId},${input.runId},${key.identityKey},${key.policyVersion},${key.rulesVersion},${JSON.stringify(payload)}::jsonb) on conflict do nothing`,
-      );
-      const saved = await tx.execute(
+      const capturedAt = new Date(
+        Math.min(
+          ...payload.sources.map((source) => Date.parse(source.capturedAt)),
+        ),
+      ).toISOString();
+      const existing = await tx.execute(
         sql`select *,payload=${JSON.stringify(payload)}::jsonb as same from wine_evidence_cache where workspace_id=${workspaceId} and snapshot_id=${input.snapshotId}`,
       );
-      const row = saved[0];
+      if (existing[0]) {
+        const row = existing[0];
+        if (
+          !row.same ||
+          row.run_id !== input.runId ||
+          row.identity_key !== key.identityKey ||
+          row.policy_version !== key.policyVersion ||
+          row.rules_version !== key.rulesVersion ||
+          new Date(row.captured_at as string).toISOString() !== capturedAt
+        )
+          throw new Error("immutable cache snapshot conflict");
+        return cacheRecord(row);
+      }
+      const clock = await tx.execute(sql`select clock_timestamp() as time`);
+      const now = new Date(clock[0]!.time as string).getTime();
       if (
-        !row ||
-        !row.same ||
-        row.run_id !== input.runId ||
-        row.identity_key !== key.identityKey ||
-        row.policy_version !== key.policyVersion ||
-        row.rules_version !== key.rulesVersion
+        payload.sources.some(
+          (source) =>
+            Date.parse(source.capturedAt) > now ||
+            Date.parse(source.capturedAt) <= now - 7 * 86400000,
+        )
       )
-        throw new Error("immutable cache snapshot conflict");
-      return cacheRecord(row);
+        throw new Error("expired or future cache source timestamp");
+      // SQL independently rechecks time/provenance immediately before publication.
+      const saved = await tx.execute(
+        sql`insert into wine_evidence_cache(workspace_id,snapshot_id,run_id,identity_key,policy_version,rules_version,captured_at,payload) values(${workspaceId},${input.snapshotId},${input.runId},${key.identityKey},${key.policyVersion},${key.rulesVersion},${capturedAt}::timestamptz,${JSON.stringify(payload)}::jsonb) returning *`,
+      );
+      return cacheRecord(saved[0]!);
     },
     async readCacheSnapshot(
       raw: WineCacheKey,
@@ -292,7 +311,7 @@ export function createWineAcquisitionRepository(
       scope.assertOpen();
       const key = cacheKeySchema.parse(raw);
       const rows = await tx.execute(
-        sql`select * from wine_evidence_cache where workspace_id=${workspaceId} and identity_key=${key.identityKey} and policy_version=${key.policyVersion} and rules_version=${key.rulesVersion} and captured_at<=clock_timestamp() and captured_at>clock_timestamp()-interval '7 days' order by captured_at desc,snapshot_id desc limit 1`,
+        sql`select * from wine_evidence_cache where workspace_id=${workspaceId} and identity_key=${key.identityKey} and policy_version=${key.policyVersion} and rules_version=${key.rulesVersion} and not exists(select 1 from jsonb_array_elements(payload->'sources') source where (source->>'capturedAt')::timestamptz>clock_timestamp()) and captured_at=wine_cache_source_captured_at(payload) and captured_at<=clock_timestamp() and captured_at>clock_timestamp()-interval '7 days' order by captured_at desc,snapshot_id desc limit 1`,
       );
       return rows[0] ? cacheRecord(rows[0]) : null;
     },

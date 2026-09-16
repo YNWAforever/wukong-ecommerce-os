@@ -12,7 +12,15 @@ const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, {
 });
 const app = postgres(process.env.TEST_DATABASE_URL!, { onnotice: () => {} });
 const ws = `acquisition-${randomUUID()}`;
-beforeAll(() => db.migrate());
+beforeAll(async () => {
+  await db.migrate();
+  await admin.unsafe(
+    await readFile(
+      new URL("../../drizzle/0042_wine_acquisition.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+});
 afterAll(async () => {
   await db.close();
   await admin.end();
@@ -309,9 +317,11 @@ describe("durable wine acquisition", () => {
         await tx`update wine_evidence_cache set captured_at=clock_timestamp() where snapshot_id=${snapshot.snapshotId}`;
       }),
     ).rejects.toThrow();
-    // Synthetic owner fixture preserves trigger and all runtime guards; never updates history.
+    // A raw caller cannot invent a captured timestamp to renew or backdate the payload.
     const expiredId = randomUUID();
-    await admin`insert into wine_evidence_cache(workspace_id,snapshot_id,run_id,identity_key,policy_version,rules_version,captured_at,payload) values(${ws},${expiredId},${f.run.id},'expired','p1','r1',clock_timestamp()-interval '7 days',${admin.json(saved.payload)})`;
+    await expect(
+      admin`insert into wine_evidence_cache(workspace_id,snapshot_id,run_id,identity_key,policy_version,rules_version,captured_at,payload) values(${ws},${expiredId},${f.run.id},'expired','p1','r1',clock_timestamp()-interval '7 days',${admin.json(saved.payload)})`,
+    ).rejects.toThrow();
     expect(
       await db.forWorkspace(ws, (r) =>
         r.wineAcquisition.readCacheSnapshot({ ...key, identityKey: "expired" }),
@@ -519,6 +529,132 @@ describe("final durable boundary checks", () => {
       });
     } finally {
       await admin.unsafe(row!.definition);
+    }
+  });
+});
+describe("cache source-time freshness", () => {
+  async function sourcesAt(times: string[]) {
+    const f = await fixture();
+    const sources = times.map((capturedAt) =>
+      webEvidence({ id: randomUUID(), capturedAt }),
+    );
+    await db.forWorkspace(ws, (r) =>
+      r.wineEnrichment.saveEvidence(f.run.id, sources),
+    );
+    return {
+      f,
+      sources,
+      input: {
+        snapshotId: randomUUID(),
+        runId: f.run.id,
+        identityKey: randomUUID(),
+        policyVersion: "p1",
+        rulesVersion: "r1",
+        sourceIds: sources.map((s) => s.id),
+      },
+    };
+  }
+  it.each([8 * 86400000, 7 * 86400000, -60000])(
+    "rejects first publication at invalid source age %s",
+    async (age) => {
+      const { input } = await sourcesAt([
+        new Date(Date.now() - age).toISOString(),
+      ]);
+      await expect(
+        db.forWorkspace(ws, (r) => r.wineAcquisition.saveCacheSnapshot(input)),
+      ).rejects.toThrow("source");
+    },
+  );
+  it("anchors mixed source ages to the oldest capture and preserves replay", async () => {
+    const times = [
+      new Date(Date.now() - 6 * 86400000).toISOString(),
+      new Date().toISOString(),
+    ];
+    const { input } = await sourcesAt(times);
+    const saved = await db.forWorkspace(ws, (r) =>
+      r.wineAcquisition.saveCacheSnapshot(input),
+    );
+    expect(saved.capturedAt).toBe(times[0]);
+    expect(
+      await db.forWorkspace(ws, (r) =>
+        r.wineAcquisition.saveCacheSnapshot(input),
+      ),
+    ).toEqual(saved);
+  });
+  it("rejects a future member mixed with a valid older source", async () => {
+    const { input } = await sourcesAt([
+      new Date(Date.now() - 1000).toISOString(),
+      new Date(Date.now() + 60000).toISOString(),
+    ]);
+    await expect(
+      db.forWorkspace(ws, (r) => r.wineAcquisition.saveCacheSnapshot(input)),
+    ).rejects.toThrow("source");
+  });
+  it("does not refresh copied old evidence by giving it fresh IDs", async () => {
+    const old = new Date(Date.now() - 8 * 86400000).toISOString();
+    const first = await sourcesAt([old]);
+    const copied = { ...first.sources[0]!, id: randomUUID() };
+    await db.forWorkspace(ws, (r) =>
+      r.wineEnrichment.saveEvidence(first.f.run.id, [copied]),
+    );
+    await expect(
+      db.forWorkspace(ws, (r) =>
+        r.wineAcquisition.saveCacheSnapshot({
+          ...first.input,
+          snapshotId: randomUUID(),
+          sourceIds: [copied.id],
+        }),
+      ),
+    ).rejects.toThrow("source");
+  });
+  it("expires a valid snapshot when the oldest source reaches seven days", async () => {
+    const { input } = await sourcesAt([
+      new Date(Date.now() - 7 * 86400000 + 1500).toISOString(),
+    ]);
+    await db.forWorkspace(ws, (r) =>
+      r.wineAcquisition.saveCacheSnapshot(input),
+    );
+    await admin`select pg_sleep(1.6)`;
+    expect(
+      await db.forWorkspace(ws, (r) =>
+        r.wineAcquisition.readCacheSnapshot({
+          identityKey: input.identityKey,
+          policyVersion: "p1",
+          rulesVersion: "r1",
+        }),
+      ),
+    ).toBeNull();
+  });
+  it("rejects raw SQL publication-time renewal and expired source insertion", async () => {
+    const { f, sources } = await sourcesAt([
+      new Date(Date.now() - 6 * 86400000).toISOString(),
+    ]);
+    const insert = (capturedAt: string, payload: unknown) =>
+      app.begin(async (tx) => {
+        await tx`select set_config('app.workspace_id',${ws},true)`;
+        await tx`insert into wine_evidence_cache(workspace_id,snapshot_id,run_id,identity_key,policy_version,rules_version,captured_at,payload) values(${ws},${randomUUID()},${f.run.id},'raw-time','p1','r1',${capturedAt},${tx.json(payload as never)})`;
+      });
+    await expect(
+      insert(new Date().toISOString(), { schemaVersion: 1, sources }),
+    ).rejects.toThrow();
+    const old = new Date(Date.now() - 8 * 86400000).toISOString();
+    await expect(
+      insert(old, {
+        schemaVersion: 1,
+        sources: [{ ...sources[0], capturedAt: old }],
+      }),
+    ).rejects.toThrow();
+  });
+});
+describe("cache freshness readiness", () => {
+  it("fails closed if the source-time insert guard is disabled", async () => {
+    try {
+      await admin`alter table wine_evidence_cache disable trigger wine_cache_freshness_guard`;
+      expect(await db.inspectWineEnrichmentCompatibility()).toMatchObject({
+        ready: false,
+      });
+    } finally {
+      await admin`alter table wine_evidence_cache enable trigger wine_cache_freshness_guard`;
     }
   });
 });

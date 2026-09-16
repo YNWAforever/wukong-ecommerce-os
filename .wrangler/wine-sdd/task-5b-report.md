@@ -101,3 +101,25 @@ No known failing checks. Added deadline predicates at actual insert/update after
 5c must use committed factory for callback, map normalized/truncated provider output, interpret started or legacy output-less terminal rows conservatively, persist fresh source IDs for successful documents/force refresh, apply current source registry/revocations, and wire actual Worker/Node POST.7/8 acceptance must set immutable coordinates above using database-compatible acceptance/deadline time; this slice intentionally does not change acceptance orchestration.
 
 Final callback regression: pnpm.cmd --filter @wukong/web exec vitest run lib/website/wine-document-service.test.ts lib/website/wine-document-handler.test.ts =>2files/27tests PASS. Final DB unit/typecheck/build rerun also PASS after all changes.
+
+## Independent review fix: anchor cache freshness to source capture (2026-09-16)
+Important review finding corrected. This section supersedes the earlier statement that cache capturedAt is DB time at publication: it is now the OLDEST retained EvidenceSource.capturedAt. Seven-day expiry is measured from that source capture, regardless of publication time or new source IDs. Source payloads/provenance are still immutable.
+
+Implementation:
+- Repository computes the minimum source capture; first publication rejects any future source or any source at/beyond7days using the current PostgreSQL clock. Mixed-age snapshots expire with the oldest source. Copying an8dayold source to fresh IDs does not renew it.
+- Exact same valid snapshot replay returns the original historical capturedAt, including after expiry; readCacheSnapshot remains the freshness gate and cannot return expired snapshots. Conflicting or legacy publication-time snapshots fail closed; no timestamp rewriting/backfill.
+-0042 now drops the publication-time captured_at default. SQL BEFORE INSERT guard independently checks the oldest-source timestamp binding, rejects expired/future members using clock_timestamp, and requires each retained payload to exactly equal a persisted evidence record in the same workspace/run. The immutable UPDATE/DELETE guard remains.
+- Read lookup verifies captured_at equals the oldest source timestamp and no source is future-dated, so earlier local publication-time snapshots cannot become fresh through lookup. Existing historical rows are left untouched.
+- Readiness checks the exact enabled BEFORE INSERT trigger/function binding and captured_at timestamptz/NOT NULL/no-default definition. Drizzle drops the default. Shared jobs schemas are unchanged.
+- The acquisition test beforeAll explicitly replays unpublished0042 after normal migrate so this already-migrated dedicated rehearsalDB receives the additive review refinement. Production migration/rehearsal remains a later gate.
+
+RED source freshness:
+`pnpm.cmd exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/wine-acquisition.integration.test.ts`
+=>8failed/15passed. Reproduced first publication of8dayold/exact7day/future sources, mixed-age publication timestamp, future member mixed with a valid source, copied old evidence with fresh IDs, source-age expiry after publication, and directSQL publication-time renewal.
+GREEN intermediate: same command =>23/23PASS after repository/SQL fixes.
+RED readiness: same command =>1failed/23passed because disabled source-time guard still reported ready:true.
+Final GREEN: same command =>1file/24testsPASS after readiness refinement, output clean. This includes the original acquisition regressions and literal0042 replay twice.
+`pnpm.cmd --filter @wukong/db typecheck` =>PASS.
+`pnpm.cmd --filter @wukong/db build` =>PASS.
+`git diff --check` =>PASS (normal Windows LF/CRLF notices only).
+All DB operations used the explicit localhost test URLs from task-3-environment.md. No production calls, shared-schema changes, or broad regression reruns. No outstanding findings known in this fix.

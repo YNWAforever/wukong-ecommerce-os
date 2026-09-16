@@ -51,3 +51,31 @@ DO $$ DECLARE tab text; BEGIN
   END IF;
  END LOOP;
 END $$;
+-- Cache age is source age, never publication age. Existing snapshots remain immutable;
+-- repositories fail closed on legacy snapshots whose timestamps do not match their sources.
+ALTER TABLE wine_evidence_cache ALTER COLUMN captured_at DROP DEFAULT;
+CREATE OR REPLACE FUNCTION wine_cache_source_captured_at(payload jsonb) RETURNS timestamptz LANGUAGE plpgsql IMMUTABLE STRICT AS $$
+DECLARE source jsonb; captured timestamptz; oldest timestamptz;
+BEGIN
+ IF jsonb_typeof(payload->'sources') IS DISTINCT FROM 'array' OR jsonb_array_length(payload->'sources') NOT BETWEEN 1 AND 20 THEN RAISE EXCEPTION 'invalid cache source timestamps'; END IF;
+ FOR source IN SELECT value FROM jsonb_array_elements(payload->'sources') LOOP
+  IF jsonb_typeof(source->'capturedAt') IS DISTINCT FROM 'string' OR (source->>'capturedAt') !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$' THEN RAISE EXCEPTION 'invalid cache source timestamp'; END IF;
+  captured := (source->>'capturedAt')::timestamptz;
+  IF oldest IS NULL OR captured<oldest THEN oldest:=captured; END IF;
+ END LOOP;
+ RETURN oldest;
+END $$;
+CREATE OR REPLACE FUNCTION guard_wine_cache_freshness() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE oldest timestamptz; current_time_at_write timestamptz; source jsonb;
+BEGIN
+ oldest:=wine_cache_source_captured_at(NEW.payload);
+ current_time_at_write:=clock_timestamp();
+ IF oldest IS NULL OR NEW.captured_at IS DISTINCT FROM oldest OR oldest<=current_time_at_write-interval '7 days' THEN RAISE EXCEPTION 'expired or misbound cache source timestamp'; END IF;
+ FOR source IN SELECT value FROM jsonb_array_elements(NEW.payload->'sources') LOOP
+  IF (source->>'capturedAt')::timestamptz>current_time_at_write THEN RAISE EXCEPTION 'future cache source timestamp'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM wine_evidence e WHERE e.workspace_id=NEW.workspace_id AND e.run_id=NEW.run_id AND e.source_id::text=source->>'id' AND e.payload=source) THEN RAISE EXCEPTION 'cache source provenance mismatch'; END IF;
+ END LOOP;
+ RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS wine_cache_freshness_guard ON wine_evidence_cache;
+CREATE TRIGGER wine_cache_freshness_guard BEFORE INSERT ON wine_evidence_cache FOR EACH ROW EXECUTE FUNCTION guard_wine_cache_freshness();

@@ -185,7 +185,9 @@ export async function inspectWineEnrichmentCompatibility(
     AND t.tgfoid=to_regprocedure(CASE WHEN name='wine_document_requests' THEN 'public.guard_wine_document_terminal()' WHEN name IN ('wine_stages','wine_search_calls','search_budget_reservations')
       THEN 'public.guard_wine_terminal()' ELSE 'public.guard_immutable_enrichment_suggestion()' END))
  ) AS ready FROM required
- UNION ALL SELECT 'runtime_role',current_user='wukong_app' AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user)
+ UNION ALL SELECT 'wine_cache.source_time_guard',EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgrelid=to_regclass('public.wine_evidence_cache') AND t.tgname='wine_cache_freshness_guard' AND NOT t.tgisinternal AND t.tgenabled='O' AND t.tgtype=7 AND t.tgqual IS NULL AND t.tgnargs=0 AND t.tgfoid=to_regprocedure('public.guard_wine_cache_freshness()'))
+ UNION ALL SELECT 'wine_cache.captured_at_source_owned',EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='wine_evidence_cache' AND column_name='captured_at' AND data_type='timestamp with time zone' AND is_nullable='NO' AND column_default IS NULL)
+ UNION ALL SELECT 'runtime_role' ,current_user='wukong_app' AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user)
  UNION ALL SELECT 'constraint.'||e.tab||'.'||e.name,EXISTS(
   SELECT 1 FROM pg_constraint c WHERE c.conrelid=to_regclass('public.'||e.tab) AND c.conname=e.name AND c.convalidated
    AND ${normalized("pg_get_constraintdef(c.oid)")}=${normalized("e.definition")}
@@ -199,7 +201,7 @@ export async function inspectWineEnrichmentCompatibility(
     .map((row) => String(row.capability));
   if (
     rows.length !==
-    tables.length + 1 + constraints.length + 16 + indexes.length
+    tables.length + 3 + constraints.length + 16 + indexes.length
   )
     missing.push("wine.catalog_incomplete");
   return {
