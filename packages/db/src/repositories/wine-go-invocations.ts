@@ -73,6 +73,44 @@ const repairMetadataSchema = z.strictObject({
 function sameDomains(a: readonly string[], b: readonly string[]) {
   return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 }
+// Fixed reviewed Go bounds/rates; server-editable fields never supply accounting estimates.
+const reviewedGo = wineEnrichmentPolicySchema.parse({});
+function financialAnomaly(
+  rows: Record<string, unknown>[],
+  reservedUsd: string,
+): boolean {
+  let totalMicros = 0;
+  for (const row of rows) {
+    if (row.usage_certainty === "unknown" || row.estimated_cost_usd === null)
+      continue;
+    const input = Number(row.input_tokens),
+      output = Number(row.output_tokens),
+      cost = Number(row.estimated_cost_usd);
+    if (
+      row.input_tokens === null ||
+      row.output_tokens === null ||
+      !Number.isSafeInteger(input) ||
+      !Number.isSafeInteger(output) ||
+      input < 0 ||
+      output < 0 ||
+      input > reviewedGo.maxInputTokens ||
+      output > reviewedGo.maxOutputTokens ||
+      !Number.isFinite(cost) ||
+      cost < 0
+    )
+      return true;
+    const expected = Number(
+      (
+        (input * reviewedGo.inputUsdPerMillion +
+          output * reviewedGo.outputUsdPerMillion) /
+        1_000_000
+      ).toFixed(6),
+    );
+    if (cost !== expected) return true;
+    totalMicros += Math.round(cost * 1_000_000);
+  }
+  return totalMicros > Math.round(Number(reservedUsd) * 1_000_000);
+}
 export function createWineGoInvocationRepository(
   tx: WorkspaceTransaction,
   workspaceId: string,
@@ -151,6 +189,18 @@ export function createWineGoInvocationRepository(
       const rows = await tx.execute(
         sql`select * from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${input.runId}`,
       );
+      if (financialAnomaly(rows, b.goReservedUsd)) {
+        await createAiBudgetReservationRepository(
+          tx,
+          workspaceId,
+          scope,
+        ).settle({
+          pipelineRunId: input.runId,
+          outcome: "unknown",
+          settledUsd: null,
+        });
+        return deny;
+      }
       if (
         rows.length >= b.goPhysicalCalls ||
         rows.some(
@@ -249,7 +299,7 @@ export function createWineGoInvocationRepository(
         throw new Error("invalid wine Go usage");
       // Do not fence terminal usage on current state/deadline. Only the committed run/slot binding.
       const rows = await tx.execute(
-        sql`select a.id from ai_runs a join listing_pipeline_runs r on r.workspace_id=a.workspace_id and r.id=a.pipeline_run_id where a.workspace_id=${workspaceId} and a.pipeline_run_id=${input.runId} and r.input_revision=${input.inputRevision} and a.stage=${call.stage} and a.call_ordinal=${call.callOrdinal} and a.input->>'promptVersion'=${call.promptVersion} and a.status='started'`,
+        sql`select a.id,r.execution from ai_runs a join listing_pipeline_runs r on r.workspace_id=a.workspace_id and r.id=a.pipeline_run_id where a.workspace_id=${workspaceId} and a.pipeline_run_id=${input.runId} and r.input_revision=${input.inputRevision} and a.stage=${call.stage} and a.call_ordinal=${call.callOrdinal} and a.input->>'promptVersion'=${call.promptVersion} and a.status='started'`,
       );
       if (!rows[0]) return false;
       const output = {
@@ -263,12 +313,31 @@ export function createWineGoInvocationRepository(
         sql`update ai_runs set status=${call.status},input_tokens=${call.inputTokens},output_tokens=${call.outputTokens},latency_ms=${call.latencyMs},estimated_cost_usd=${call.estimatedCostUsd}::numeric,usage_certainty=${call.usageCertainty},failure_category=${call.failureCategory ?? null},http_status=${call.httpStatus ?? null},provider_code=${call.providerCode ?? null},provider_request_id=${call.providerRequestId ?? null},output=${JSON.stringify(output)}::jsonb,completed_at=now() where workspace_id=${workspaceId} and pipeline_run_id=${input.runId} and stage=${call.stage} and call_ordinal=${call.callOrdinal} and status='started' returning id`,
       );
       const saved = Boolean(updated[0]);
-      if (saved && unknown)
-        await createAiBudgetReservationRepository(
+      if (saved) {
+        const ledger = await tx.execute(
+          sql`select * from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${input.runId}`,
+        );
+        const acceptedBudget = wineBudgetSnapshotSchema.safeParse(
+          (rows[0]!.execution as Record<string, unknown>).wineBudget,
+        );
+        const budgetRepository = createAiBudgetReservationRepository(
           tx,
           workspaceId,
           scope,
-        ).settleFromInvocations(input.runId);
+        );
+        if (
+          !acceptedBudget.success ||
+          financialAnomaly(ledger, acceptedBudget.data.goReservedUsd)
+        ) {
+          // Preserve actual tokens/cost. The full hold remains unknown until explicit reconciliation.
+          await budgetRepository.settle({
+            pipelineRunId: input.runId,
+            outcome: "unknown",
+            settledUsd: null,
+          });
+        } else if (unknown)
+          await budgetRepository.settleFromInvocations(input.runId);
+      }
       return saved;
     },
   };
