@@ -109,6 +109,8 @@ export function createWineAcquisitionRepository(
     );
     if (
       !policy.success ||
+      policy.data.allowedDomains.length === 0 ||
+      !["full", "research"].includes(String(execution.wineMode)) ||
       execution.schemaVersion !== 1 ||
       execution.flowVersion !== "wine-enrichment-v1" ||
       !["queued", "running"].includes(String(r.execution_state)) ||

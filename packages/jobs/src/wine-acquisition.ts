@@ -1,5 +1,7 @@
 import { z } from "zod";
-/** Immutable accepted coordinates, stored once at execution.wineAcquisition. */
+/** Immutable accepted coordinates, stored once at execution.wineAcquisition.
+ * Empty domains represent search-free execution. Actual acquisition and full/research
+ * admission must separately require approved domains; this schema grants no network access. */
 export const wineAcquisitionPolicySchema = z.strictObject({
   schemaVersion: z.literal(1),
   deadlineAt: z.iso.datetime(),
@@ -14,7 +16,6 @@ export const wineAcquisitionPolicySchema = z.strictObject({
           /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
         ),
     )
-    .min(1)
     .max(100),
 });
 export type WineAcquisitionPolicy = z.infer<typeof wineAcquisitionPolicySchema>;

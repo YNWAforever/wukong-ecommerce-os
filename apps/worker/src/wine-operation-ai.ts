@@ -53,6 +53,8 @@ export function wineOperationAI(
     e.flowVersion !== "wine-enrichment-v1" ||
     e.wineMode !== budget.mode ||
     !policy.enabled ||
+    (["full", "research"].includes(budget.mode) &&
+      acquisition.allowedDomains.length === 0) ||
     !e.wineEnrichment ||
     Object.keys(policy).some((k) => !(k in (e.wineEnrichment as object))) ||
     go.rulesVersion !== policy.rulesVersion ||

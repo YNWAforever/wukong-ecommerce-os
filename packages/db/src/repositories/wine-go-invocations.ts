@@ -167,6 +167,8 @@ export function createWineGoInvocationRepository(
       // Persist the complete parsed server policy: omitted defaults are not an accepted snapshot.
       if (
         Object.keys(p).some((key) => !(key in (e.wineEnrichment as object))) ||
+        (["full", "research"].includes(b.mode) &&
+          a.allowedDomains.length === 0) ||
         a.policyVersion !== p.policyVersion ||
         a.rulesVersion !== p.rulesVersion ||
         !sameDomains(a.allowedDomains, p.allowedDomains) ||

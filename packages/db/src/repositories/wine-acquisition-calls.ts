@@ -68,6 +68,7 @@ export function createWineAcquisitionCallGuard(
       accepted = new Date(r.created_at as string).getTime();
     if (
       !policy.success ||
+      policy.data.allowedDomains.length === 0 ||
       execution.schemaVersion !== 1 ||
       execution.flowVersion !== "wine-enrichment-v1" ||
       !["full", "research"].includes(String(execution.wineMode)) ||

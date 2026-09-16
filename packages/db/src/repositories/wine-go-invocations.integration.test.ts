@@ -492,3 +492,23 @@ it("charges anomalous actual spend across runs for reservations and held physica
   expect(holds[0]).toMatchObject({ state: "unknown" });
   expect(Number(holds[0]!.reserved_usd)).toBe(3.19488);
 });
+
+it.each(["copy", "section", "full", "research"] as const)(
+  "enforces empty-domain mode policy for %s physical Go admission",
+  async (mode) => {
+    const input = await fixture(mode, (e) => {
+      e.wineEnrichment = wineEnrichmentPolicySchema.parse({
+        enabled: true,
+        tavilyCreditCap: mode === "copy" || mode === "section" ? 0 : 5,
+      });
+      e.wineAcquisition.allowedDomains = [];
+    });
+    expect(
+      await store.admit(input, {
+        stage: "generation",
+        callOrdinal: 1,
+        promptVersion: prompts.generate,
+      }),
+    ).toEqual({ claimed: mode === "copy" || mode === "section" });
+  },
+);

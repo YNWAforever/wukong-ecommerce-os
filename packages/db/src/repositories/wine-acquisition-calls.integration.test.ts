@@ -14,6 +14,7 @@ afterAll(async () => {
 async function fixture(
   deadlineAt = new Date(Date.now() + 840000).toISOString(),
   wineMode: unknown = "full",
+  allowedDomains = ["wine.test"],
 ) {
   const run = await db.forWorkspace(workspaceId, async (r) => {
     const listing = await r.listings.create({ target: "shopline" });
@@ -33,7 +34,7 @@ async function fixture(
           deadlineAt,
           policyVersion: "p1",
           rulesVersion: "r1",
-          allowedDomains: ["wine.test"],
+          allowedDomains,
         },
       },
     });
@@ -51,7 +52,7 @@ async function fixture(
     inputRevision: 0,
     policyDigest: "p1",
     rulesVersion: "r1",
-    allowedDomains: ["wine.test"],
+    allowedDomains,
   };
 }
 const call = {
@@ -242,3 +243,16 @@ it("rejects optional-only model deep-search reasons", async () => {
     }).success,
   ).toBe(false);
 });
+
+it.each(["full", "research", "copy", "section"])(
+  "never authorizes empty-domain %s acquisition",
+  async (mode) => {
+    const input = await fixture(undefined, mode, []);
+    const store = createWineEvidenceStore(db);
+    expect(await store.context(input)).toBeNull();
+    expect(await store.admit(input, call)).toEqual({ state: "blocked" });
+    expect(
+      await admin`select slot from wine_search_calls where run_id=${input.runId}`,
+    ).toHaveLength(0);
+  },
+);

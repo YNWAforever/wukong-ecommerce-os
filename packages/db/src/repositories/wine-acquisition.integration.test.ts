@@ -43,6 +43,7 @@ async function fixture(change: Record<string, unknown> = {}) {
       execution: {
         schemaVersion: 1,
         flowVersion: "wine-enrichment-v1",
+        wineMode: "full",
         wineAcquisition: {
           schemaVersion: 1,
           deadlineAt: new Date(Date.now() + 840000).toISOString(),

@@ -34,7 +34,12 @@ afterAll(async () => {
 });
 
 async function fixture(
-  options: { workspaceId?: string; deadlineAt?: string } = {},
+  options: {
+    workspaceId?: string;
+    deadlineAt?: string;
+    wineMode?: string;
+    allowedDomains?: string[];
+  } = {},
 ) {
   const workspaceId = options.workspaceId ?? `route-${randomUUID()}`;
   const source = webEvidence({
@@ -55,13 +60,14 @@ async function fixture(
       execution: {
         schemaVersion: 1,
         flowVersion: "wine-enrichment-v1",
+        wineMode: options.wineMode ?? "full",
         wineAcquisition: {
           schemaVersion: 1,
           deadlineAt:
             options.deadlineAt ?? new Date(Date.now() + 840_000).toISOString(),
           policyVersion: "p1",
           rulesVersion: "r1",
-          allowedDomains: ["example.test"],
+          allowedDomains: options.allowedDomains ?? ["example.test"],
         },
       },
     });
@@ -206,3 +212,26 @@ describe("wine evidence document route with durable store", () => {
     expect(r.publicFetch).not.toHaveBeenCalled();
   });
 });
+
+it.each(["full", "research", "copy", "section"])(
+  "never fetches documents under empty-domain %s policy",
+  async (wineMode) => {
+    const f = await fixture({ wineMode, allowedDomains: [] });
+    const r = route();
+    expect(await (await r.post(await signedRequest(f.request))).json()).toEqual(
+      { status: "stale" },
+    );
+    expect(r.publicFetch).not.toHaveBeenCalled();
+  },
+);
+it.each(["copy", "section", "unknown"])(
+  "never fetches documents for non-research mode %s",
+  async (wineMode) => {
+    const f = await fixture({ wineMode });
+    const r = route();
+    expect(await (await r.post(await signedRequest(f.request))).json()).toEqual(
+      { status: "stale" },
+    );
+    expect(r.publicFetch).not.toHaveBeenCalled();
+  },
+);

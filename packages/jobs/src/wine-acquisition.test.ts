@@ -19,16 +19,19 @@ describe("accepted acquisition coordinates", () => {
         .success,
     ).toBe(false);
   });
-  it.each([
-    [],
-    ["Example.test"],
-    ["https://example.test"],
-    ["example.test:443"],
-  ])("rejects ambiguous domain lists %j", (allowedDomains) =>
+  it("retains empty domains for search-free accepted execution", () => {
     expect(
-      wineAcquisitionPolicySchema.safeParse({ ...policy, allowedDomains })
-        .success,
-    ).toBe(false),
+      wineAcquisitionPolicySchema.parse({ ...policy, allowedDomains: [] })
+        .allowedDomains,
+    ).toEqual([]);
+  });
+  it.each([["Example.test"], ["https://example.test"], ["example.test:443"]])(
+    "rejects ambiguous domain lists %j",
+    (allowedDomains) =>
+      expect(
+        wineAcquisitionPolicySchema.safeParse({ ...policy, allowedDomains })
+          .success,
+      ).toBe(false),
   );
 });
 describe("bounded terminal search persistence", () => {

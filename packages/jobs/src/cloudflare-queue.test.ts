@@ -4,6 +4,8 @@ import {
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  wineListingJobSchema,
+  wineStageMessageKey,
   listingRunKey,
   shoplinePublishJobSchema,
   signQueueRequest,
@@ -154,5 +156,61 @@ describe("listing run identity", () => {
     for (const runAttempt of [-1, 1.5, 1000]) {
       expect(() => listingJobSchema.parse({ ...base, runAttempt })).toThrow();
     }
+  });
+});
+
+describe("wine stage envelope", () => {
+  const runId = "987330b0-9c2b-43eb-956d-e924052e3cb5";
+  const message = {
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    workspaceId: "ws_wine",
+    draftId,
+    runId,
+    inputRevision: 1,
+    activeVersionSequence: 0,
+    stage: "extraction",
+  };
+  it("parses marked stage coordinates without enabling the legacy consumer", () => {
+    expect(wineListingJobSchema.parse(message)).toEqual(message);
+    expect(listingJobSchema.safeParse(message).success).toBe(false);
+    expect(wineStageMessageKey(runId, "extraction")).toBe(
+      `wine-run:${runId}:extraction`,
+    );
+    expect(wineStageMessageKey(runId, "generation")).not.toBe(
+      wineStageMessageKey(runId, "extraction"),
+    );
+  });
+  it.each([
+    "schemaVersion",
+    "flowVersion",
+    "workspaceId",
+    "draftId",
+    "runId",
+    "inputRevision",
+    "activeVersionSequence",
+    "stage",
+  ])("requires %s", (key) => {
+    const malformed = { ...message } as Record<string, unknown>;
+    delete malformed[key];
+    expect(wineListingJobSchema.safeParse(malformed).success).toBe(false);
+  });
+  it.each([
+    { flowVersion: "unknown" },
+    { stage: "publish" },
+    { inputRevision: 0 },
+    { runId: "bad" },
+    { schemaVersion: 1 },
+    { wineMode: "copy" },
+    { policy: {} },
+    { runAttempt: 1 },
+  ])("rejects altered or unowned coordinates %j", (change) => {
+    expect(
+      wineListingJobSchema.safeParse({ ...message, ...change }).success,
+    ).toBe(false);
+  });
+  it("validates key coordinates at runtime", () => {
+    expect(() => wineStageMessageKey("bad:id", "extraction")).toThrow();
+    expect(() => wineStageMessageKey(runId, "publish" as never)).toThrow();
   });
 });

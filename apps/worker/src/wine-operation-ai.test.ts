@@ -213,3 +213,33 @@ describe("stored wine flow factory", () => {
     expect(s.create).toThrow(/flow/);
   });
 });
+
+describe("mode-aware empty domains", () => {
+  it.each(["copy", "section"] as const)(
+    "allows search-free %s factory with zero search allowance",
+    (mode) => {
+      const run = acceptedRun();
+      run.execution.wineMode = mode;
+      run.execution.wineBudget = createWineBudgetSnapshot(mode);
+      run.execution.wineEnrichment = wineEnrichmentPolicySchema.parse({
+        enabled: true,
+      });
+      run.execution.wineAcquisition.allowedDomains = [];
+      expect(setup(run).create().flowVersion).toBe("wine-enrichment-v1");
+    },
+  );
+  it.each(["full", "research"] as const)(
+    "rejects %s without approved domains",
+    (mode) => {
+      const run = acceptedRun();
+      run.execution.wineMode = mode;
+      run.execution.wineBudget = createWineBudgetSnapshot(mode);
+      run.execution.wineEnrichment = wineEnrichmentPolicySchema.parse({
+        enabled: true,
+        tavilyCreditCap: 5,
+      });
+      run.execution.wineAcquisition.allowedDomains = [];
+      expect(() => setup(run).create()).toThrow();
+    },
+  );
+});
