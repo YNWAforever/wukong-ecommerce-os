@@ -452,3 +452,170 @@ describe("section snapshots and credit edge cases", () => {
     });
   });
 });
+
+describe("review fixes: null-safe ledgers and security definitions", () => {
+  const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, {
+    onnotice: () => {},
+  });
+  const app = postgres(process.env.TEST_DATABASE_URL!, { onnotice: () => {} });
+  afterAll(async () => {
+    await admin.end();
+    await app.end();
+  });
+  it.each(["succeeded", "failed"])(
+    "rejects missing measured credits for %s at repository and SQL boundaries",
+    async (status) => {
+      const operation = await db.forWorkspace(ws, async (r) => {
+        const op = await run(r);
+        await r.searchBudgetReservations.reserve({
+          pipelineRunId: op.id,
+          reservedCredits: 5,
+          workspaceCapCredits: 10000,
+          policyVersion: "v1",
+        });
+        await r.wineEnrichment.beginSearchCall({
+          runId: op.id,
+          slot: "basic_1",
+          maximumCredits: 1,
+          requestDigest: "null-probe",
+        });
+        return op;
+      });
+      await expect
+        .soft(
+          db.forWorkspace(ws, async (r) => {
+            await r.wineEnrichment.finishSearchCall({
+              runId: operation.id,
+              slot: "basic_1",
+              maximumCredits: 1,
+              requestDigest: "null-probe",
+              credits: null,
+              status,
+            });
+            throw new Error("probe unexpectedly accepted");
+          }),
+        )
+        .rejects.toThrow("credits");
+      await expect(
+        app.begin(async (tx) => {
+          await tx`select set_config('app.workspace_id',${ws},true)`;
+          await tx`update wine_search_calls set status=${status},credits=null where workspace_id=${ws} and run_id=${operation.id}`;
+          throw new Error("probe unexpectedly accepted");
+        }),
+      ).rejects.toThrow("check constraint");
+    },
+  );
+  it("rejects settled reservation without measured credits in raw runtime SQL", async () => {
+    const op = await db.forWorkspace(ws, async (r) => {
+      const op = await run(r);
+      await r.searchBudgetReservations.reserve({
+        pipelineRunId: op.id,
+        reservedCredits: 5,
+        workspaceCapCredits: 10000,
+        policyVersion: "v1",
+      });
+      return op;
+    });
+    await expect(
+      app.begin(async (tx) => {
+        await tx`select set_config('app.workspace_id',${ws},true)`;
+        await tx`update search_budget_reservations set state='settled',settled_credits=null where workspace_id=${ws} and pipeline_run_id=${op.id}`;
+        throw new Error("probe unexpectedly accepted");
+      }),
+    ).rejects.toThrow("check constraint");
+  });
+  it.each([
+    "wine_evidence",
+    "wine_section_snapshots",
+    "wine_source_authorities",
+    "wine_trusted_contexts",
+  ])("rejects null and string schemaVersion in %s", async (table) => {
+    const op = await db.forWorkspace(ws, run);
+    const version = randomUUID();
+    await admin`insert into listing_versions(id,workspace_id,listing_id,sequence,content,created_by) values(${version},${ws},${op.listingId},1,'{}','fixture')`;
+    for (const schemaVersion of [null, "1"]) {
+      await expect(
+        app.begin(async (tx) => {
+          await tx`select set_config('app.workspace_id',${ws},true)`;
+          if (table === "wine_evidence")
+            await tx`insert into wine_evidence(workspace_id,run_id,source_id,payload) values(${ws},${op.id},${randomUUID()},${tx.json({ schemaVersion })})`;
+          if (table === "wine_section_snapshots")
+            await tx`insert into wine_section_snapshots(workspace_id,run_id,listing_id,version_id,payload) values(${ws},${op.id},${op.listingId},${version},${tx.json({ schemaVersion })})`;
+          if (table === "wine_source_authorities")
+            await tx`insert into wine_source_authorities(workspace_id,reviewer_id,payload) values(${ws},'fixture',${tx.json({ schemaVersion })})`;
+          if (table === "wine_trusted_contexts")
+            await tx`insert into wine_trusted_contexts(workspace_id,run_id,context_key,input_digest,payload) values(${ws},${op.id},'fixture','fixture',${tx.json({ schemaVersion })})`;
+          throw new Error("probe unexpectedly accepted");
+        }),
+      ).rejects.toThrow("check constraint");
+    }
+  });
+  it.each([
+    "FOR ALL TO wukong_app USING(true) WITH CHECK(true)",
+    "FOR ALL TO PUBLIC USING (workspace_id=(SELECT nullif(current_setting('app.workspace_id',true),''))) WITH CHECK (workspace_id=(SELECT nullif(current_setting('app.workspace_id',true),'')))",
+    "FOR SELECT TO wukong_app USING (workspace_id=(SELECT nullif(current_setting('app.workspace_id',true),'')))",
+  ])("detects policy definition drift: %s", async (definition) => {
+    await admin`drop policy wine_workspace_policy on wine_evidence`;
+    try {
+      await admin.unsafe(
+        `create policy wine_workspace_policy on wine_evidence ${definition}`,
+      );
+      expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(false);
+    } finally {
+      await admin`drop policy if exists wine_workspace_policy on wine_evidence`;
+      await admin`create policy wine_workspace_policy on wine_evidence for all to wukong_app using (workspace_id=(select nullif(current_setting('app.workspace_id',true),''))) with check (workspace_id=(select nullif(current_setting('app.workspace_id',true),'')))`;
+    }
+  });
+  it.each(["ineffective", "misbound"])(
+    "detects %s constraint despite matching name",
+    async (variant) => {
+      const original =
+        await admin`select pg_get_constraintdef(oid) definition from pg_constraint where conrelid='public.wine_search_calls'::regclass and conname='wine_calls_units_check'`;
+      await admin`alter table wine_search_calls drop constraint wine_calls_units_check`;
+      try {
+        if (variant === "ineffective")
+          await admin`alter table wine_search_calls add constraint wine_calls_units_check check(true)`;
+        else
+          await admin`alter table wine_stages add constraint wine_calls_units_check check(true)`;
+        expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(
+          false,
+        );
+      } finally {
+        await admin`alter table wine_search_calls drop constraint if exists wine_calls_units_check`;
+        await admin`alter table wine_stages drop constraint if exists wine_calls_units_check`;
+        await admin.unsafe(
+          `alter table wine_search_calls add constraint wine_calls_units_check ${original[0]!.definition}`,
+        );
+      }
+    },
+  );
+  it.each([
+    "BEFORE UPDATE OR DELETE ON wine_stages FOR EACH ROW EXECUTE FUNCTION guard_immutable_enrichment_suggestion()",
+    "AFTER UPDATE ON wine_stages FOR EACH ROW EXECUTE FUNCTION guard_wine_terminal()",
+  ])("detects trigger function or event drift: %s", async (definition) => {
+    await admin`drop trigger wine_immutable_guard on wine_stages`;
+    try {
+      await admin.unsafe(`create trigger wine_immutable_guard ${definition}`);
+      expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(false);
+    } finally {
+      await admin`drop trigger if exists wine_immutable_guard on wine_stages`;
+      await admin`create trigger wine_immutable_guard before update or delete on wine_stages for each row execute function guard_wine_terminal()`;
+    }
+  });
+});
+
+describe("additional permissive policy drift", () => {
+  it("rejects an extra permissive policy even when the expected policy remains correct", async () => {
+    const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, {
+      onnotice: () => {},
+    });
+    try {
+      await admin`create policy wine_extra_permissive on wine_evidence for all to wukong_app using(true) with check(true)`;
+      expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(false);
+    } finally {
+      await admin`drop policy if exists wine_extra_permissive on wine_evidence`;
+      await admin.end();
+    }
+    expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(true);
+  });
+});

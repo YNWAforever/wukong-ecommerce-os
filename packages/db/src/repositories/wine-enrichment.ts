@@ -195,6 +195,17 @@ export function createWineEnrichmentRepository(
       scope.assertOpen();
       if (!["succeeded", "failed", "unknown"].includes(input.status))
         throw new Error("terminal search status required");
+      if (
+        input.status === "unknown"
+          ? input.credits !== null
+          : input.credits === null ||
+            !Number.isSafeInteger(input.credits) ||
+            input.credits < 0 ||
+            input.credits > input.maximumCredits
+      )
+        throw new Error(
+          "valid measured credits required for terminal search status",
+        );
       const rows = await tx.execute(
         sql`update wine_search_calls set credits=${input.credits},status=${input.status},updated_at=now() where workspace_id=${workspaceId} and run_id=${input.runId} and slot=${input.slot} and request_digest=${input.requestDigest} and maximum_credits=${input.maximumCredits} and status='started' returning run_id`,
       );
