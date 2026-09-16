@@ -272,10 +272,14 @@ function numericOutputSupported(
 ): boolean {
   if (!wineNumericValueSupported(field, token, value)) return false;
 
-  const unit = token
+  let unit = token
     .replace(/^[+\-\d.,\s/⁄]+/, "")
     .trim()
     .toLowerCase();
+  // This exact bottle-format phrase is prose, not a second measurement unit.
+  // Do not strip arbitrary Han suffixes: 公斤, 盎司 and concatenated units must fail.
+  if (field === "volumeMl")
+    unit = unit.replace(/^(毫升|厘升|公升|升)瓶裝$/u, "$1");
   const allowed: Record<string, string[]> = {
     volumeMl: [
       "",

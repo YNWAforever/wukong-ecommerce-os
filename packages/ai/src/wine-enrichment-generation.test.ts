@@ -429,3 +429,21 @@ describe("independent review regressions", () => {
     );
   });
 });
+
+it("allows natural bilingual bottle-format prose after a recognized volume unit", async () => {
+  const c = candidate();
+  c.content.sections[0].en = c.annotations[0].span = "750 ml bottle.";
+  c.content.sections[0]["zh-Hant"] = c.annotations[1].span = "750毫升瓶裝。";
+  expect((await setup([c]).provider.generate(request())).status).toBe(
+    "candidate",
+  );
+});
+
+it.each(["750毫升瓶裝公斤", "750毫升公斤瓶裝"])(
+  "does not treat an unknown or second unit as bottle prose: %s",
+  async (span) => {
+    const c = candidate();
+    c.content.sections[0]["zh-Hant"] = c.annotations[1].span = span;
+    await expect(setup([c]).provider.generate(request())).rejects.toThrow();
+  },
+);
