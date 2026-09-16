@@ -86,9 +86,17 @@ describe("wine evidence document POST route", () => {
     expect(JSON.stringify(await response.json())).not.toContain(
       "private-source-token",
     );
-    expect(
-      JSON.stringify(await f.post(await signedRequest("{"))),
-    ).not.toContain("SyntaxError");
+    expect(f.getDatabase).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes malformed signed JSON before resolving the database", async () => {
+    const f = fixture();
+    const malformed = await f.post(await signedRequest("{"));
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({
+      code: "invalid_request",
+      message: "Request body is invalid.",
+    });
     expect(f.getDatabase).not.toHaveBeenCalled();
   });
 });

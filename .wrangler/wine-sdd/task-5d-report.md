@@ -44,3 +44,12 @@ A first integration run reached the real successful route path but had one test-
 The route is a thin adapter: HMAC/schema/error behavior remains owned by the existing handler, document policy and pinned Node fetch remain owned by the existing service, and durable authorization/claim/finish remain owned by the Task 5b repository. Database creation remains absent at module/build time. No fake store or repository object appears in route tests.
 
 Task 5 route integration is complete for this narrowed slice. Task 8 must still compose Queue orchestration/recovery and aggregate cross-stage evidence/cache behavior. Task 13 must still run the full browser/runtime environment harness and deployment compatibility checks. Production migrations/rehearsal, Tavily credentials and allowance, activation, real merchant acceptance, and any production calls remain explicit later release gates.
+## Review follow-up — malformed JSON assertion
+The route implementation was unchanged. Review found the original assertion serialized the `Response` wrapper itself, which always produced `{}` and therefore could not prove parser details were sanitized. The malformed signed JSON behavior now has its own named test that awaits the response, asserts status 400, asserts the exact safe body `{code:"invalid_request",message:"Request body is invalid."}`, and retains the no-database-resolution assertion.
+
+RED:
+`pnpm.cmd --filter @wukong/web exec vitest run app/api/internal/wine-evidence-document/route.test.ts`
+failed 1/3 at the new exact body assertion while deliberately expecting `message: "SyntaxError"`; the received body was `message: "Request body is invalid."`. This proves the assertion observes the response payload and rejects an unsafe/incorrect message.
+
+GREEN:
+The same command passed 1 file, 4 tests after setting the exact established sanitized response and splitting it into a descriptively named test. Output clean.
