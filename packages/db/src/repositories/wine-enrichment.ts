@@ -1,3 +1,5 @@
+import { createAiBudgetReservationRepository } from "./ai-budget-reservations.js";
+import { createSearchBudgetReservationRepository } from "./search-budget-reservations.js";
 import {
   wineSearchOutputSchema,
   wineSearchDiagnosticSchema,
@@ -90,6 +92,7 @@ export type SearchCallRecord = SearchCall & {
   updatedAt: string;
 };
 export type WineEnrichmentRepository = {
+  settleTerminalBudgets(runId: string): Promise<void>;
   readSearchCall(
     runId: string,
     slot: SearchCall["slot"],
@@ -167,6 +170,40 @@ export function createWineEnrichmentRepository(
       throw new Error("immutable wine snapshot conflict");
   }
   return {
+    async settleTerminalBudgets(runId) {
+      scope.assertOpen();
+      // Caller holds listing/run locks and fenced the operation before settlement.
+      const runs = await tx.execute(
+        sql`select execution_state from listing_pipeline_runs where workspace_id=${workspaceId} and id=${runId} for update`,
+      );
+      if (
+        !runs[0] ||
+        ["queued", "running"].includes(String(runs[0].execution_state))
+      )
+        throw Error("terminal operation required for wine settlement");
+      await tx.execute(
+        sql`select id from workspaces where id=${workspaceId} for no key update`,
+      );
+      await tx.execute(
+        sql`select id from ai_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${runId} for update`,
+      );
+      const calls = await tx.execute(
+        sql`select count(*)::integer count from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${runId}`,
+      );
+      const go = createAiBudgetReservationRepository(tx, workspaceId, scope);
+      if (calls[0]?.count === 0)
+        await go.settle({
+          pipelineRunId: runId,
+          outcome: "settled",
+          settledUsd: "0",
+        });
+      else await go.settleFromInvocations(runId);
+      await createSearchBudgetReservationRepository(
+        tx,
+        workspaceId,
+        scope,
+      ).settleFromCalls(runId);
+    },
     async claimStage(input) {
       scope.assertOpen();
       const rows = await tx.execute(

@@ -55,6 +55,16 @@ export function createListingOperationRepository(
   };
   return {
     getOperation,
+    /** Listing first, then run: also shared by the wine stage coordinator. */
+    async lockOperation(id: string) {
+      scope.assertOpen();
+      await tx.execute(
+        sql`select d.id from listing_drafts d join listing_pipeline_runs r on r.workspace_id=d.workspace_id and r.listing_id=d.id where r.workspace_id=${workspaceId} and r.id=${id}::uuid for update of d`,
+      );
+      await tx.execute(
+        sql`select id from listing_pipeline_runs where workspace_id=${workspaceId} and id=${id}::uuid for update`,
+      );
+    },
     /** Roll back acceptance on this connection while retaining saved intake. */
     async withAcceptanceSavepoint<T>(work: () => Promise<T>): Promise<T> {
       scope.assertOpen();
