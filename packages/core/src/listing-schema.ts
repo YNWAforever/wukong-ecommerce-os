@@ -1,3 +1,4 @@
+import { wineEnrichmentPolicySchema } from "./wine-enrichment-budget.js";
 import { sourcePreferencesSchema } from "./workspace-policy.js";
 import { z } from "zod";
 
@@ -52,6 +53,7 @@ export const canonicalListingSchema = listingFactsSchema.extend({
 });
 
 export const workspaceProfileSchema = z.object({
+  wineEnrichment: wineEnrichmentPolicySchema.optional(),
   sourcePreferences: sourcePreferencesSchema.optional(),
   listingAi: z
     .object({

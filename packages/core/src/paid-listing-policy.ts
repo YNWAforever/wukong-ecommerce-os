@@ -17,6 +17,12 @@ const contextCeilings: Record<
   "openai:gpt-4.1-2025-04-14": { tokens: 1047576, input: 2, output: 8 },
 };
 
+/** Return an immutable copy so consumers cannot rewrite the reviewed registry. */
+export function getReviewedModelCostBound(provider: string, model: string) {
+  const bound = contextCeilings[`${provider}:${model}`];
+  if (!bound) throw new Error("unverified_model_budget_bound");
+  return Object.freeze({ ...bound });
+}
 /**
  * Reserve the full documented model context, including media, for every call.
  * This avoids claiming an unenforced small per-image/token estimate as a cap.
