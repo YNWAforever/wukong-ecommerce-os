@@ -112,3 +112,34 @@ export type {
 } from "./tavily-provider.js";
 export { TypedJsonCompletionClient } from "./typed-json-completion.js";
 export type { TypedJsonCompletionConfig } from "./typed-json-completion.js";
+export {
+  WineEnrichmentProvider,
+  validateWineSupportProposal,
+  wineExtractionSchema,
+  wineVerificationProposalSchema,
+  wineSupportProposalSchema,
+  wineFrozenContextSchema,
+  wineQualityIssueSchema,
+} from "./wine-enrichment-provider.js";
+export type {
+  WineExtraction,
+  WineSupportProposal,
+  WineFrozenContext,
+  WineVerificationRequest,
+  WineVerificationResult,
+  WineObserverCoordinate,
+  WineObserverFactory,
+  WineEnrichmentProviderConfig,
+} from "./wine-enrichment-provider.js";
+export {
+  WINE_PROMPT_VERSIONS,
+  WINE_PROMPTS,
+  WINE_STAGE_ROLES,
+  WINE_EXECUTION_SNAPSHOT,
+  wineExecutionSnapshotSchema,
+} from "./wine-enrichment-prompts.js";
+export type {
+  WineRole,
+  WineLogicalStage,
+  WineExecutionSnapshot,
+} from "./wine-enrichment-prompts.js";

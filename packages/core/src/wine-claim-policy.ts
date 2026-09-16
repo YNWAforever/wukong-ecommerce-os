@@ -143,6 +143,8 @@ function adjudicate(
     return result("rejected", "invalid_claim");
   if (!context) return result("unknown", "missing_adjudication_context");
   if (claim.kind === "recommendation") {
+    if (claim.scope !== "product")
+      return result("rejected", "invalid_recommendation_scope");
     if (!recommendationFields.has(claim.field))
       return result("rejected", "invalid_recommendation_field");
     const premises = claim.premiseClaimIds.map(

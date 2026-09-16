@@ -507,3 +507,25 @@ describe("recommendation citation integrity", () => {
     ).toBe("unknown");
   });
 });
+
+describe("recommendation claim scope", () => {
+  it("rejects brand recommendations with otherwise valid product premises", () => {
+    const result = decide({
+      claim: {
+        ...claim,
+        id: "00000000-0000-4000-8000-000000000003",
+        field: "pairing",
+        value: "Consider grilled vegetables",
+        kind: "recommendation",
+        scope: "brand",
+        premiseClaimIds: [second],
+      },
+      context: {
+        ...context,
+        acceptedPremises: [{ ...claim, state: "accepted" }],
+      },
+    });
+    expect(result.state).toBe("rejected");
+    expect(result.reason).toBe("invalid_recommendation_scope");
+  });
+});
