@@ -29,7 +29,7 @@ function env(): WorkerEnv {
     LISTING_QUEUE: { send: vi.fn(async () => undefined) } as never,
     SHOPLINE_QUEUE: { send: vi.fn(async () => undefined) } as never,
     QUEUE_INGRESS_SECRET: secret,
-    BUILD_SHA: "abc123",
+    BUILD_SHA: "abc1234",
     SHOPLINE_ADAPTER: "disabled",
   };
 }
@@ -191,7 +191,7 @@ describe("Cloudflare Worker ingress", () => {
     expect(await response.json()).toEqual({
       aiProvider: "openai",
       productShotProvider: "disabled",
-      buildSha: "abc123",
+      buildSha: "abc1234",
       adapterMode: "disabled",
       bindings: {
         hyperdrive: true,

@@ -1,3 +1,4 @@
+import { wineCapabilitySchema } from "@wukong/jobs";
 import { operationAI } from "./operation-ai.js";
 import { productImagePublicationForDelivery } from "./shopline-runtime.js";
 import { createHash } from "node:crypto";
@@ -8,6 +9,7 @@ import {
   type AssetStore,
 } from "@wukong/assets";
 import {
+  WINE_EXECUTION_SNAPSHOT,
   FakeListingProvider,
   PhotoroomProductShotProvider,
   PHOTOROOM_ESTIMATED_COST_USD,
@@ -268,6 +270,13 @@ export function createCloudflareRuntime(
   };
 }
 
+function safeBuildSha(value: string | undefined) {
+  return /^[a-f0-9]{7,40}$/.test(value?.trim() ?? "")
+    ? value!.trim()
+    : "unknown";
+}
+// Task 8: change only when wine ingress AND Queue dispatch are wired and verified.
+export const WINE_CONSUMER_SUPPORTED = false;
 export function workerHealth(env: WorkerEnv) {
   return {
     aiProvider: ["fake", "openai", "openrouter", "opencode-go"].includes(
@@ -280,7 +289,7 @@ export function workerHealth(env: WorkerEnv) {
     )
       ? (env.PRODUCT_SHOT_PROVIDER ?? "disabled")
       : "unknown",
-    buildSha: env.BUILD_SHA?.trim() || "unknown",
+    buildSha: safeBuildSha(env.BUILD_SHA),
     adapterMode:
       env.SHOPLINE_ADAPTER === "mock" || env.SHOPLINE_ADAPTER === "real"
         ? env.SHOPLINE_ADAPTER
@@ -305,6 +314,7 @@ export async function authenticatedWorkerHealth(
   const create = deps.createDatabase ?? createWorkerDatabase;
   let hyperdriveConnects = false;
   let listingRecoveryReady = false;
+  let wineDatabaseReady = false;
   let database: Database | undefined;
   try {
     database = create(env);
@@ -312,6 +322,9 @@ export async function authenticatedWorkerHealth(
     hyperdriveConnects = true;
     listingRecoveryReady =
       (await database.inspectListingRecoveryCompatibility?.())?.ready === true;
+    const wine = await database.inspectWineEnrichmentCompatibility?.();
+    wineDatabaseReady =
+      wine?.ready === true && wine.version === "wine-enrichment-0042-v1";
   } catch {
     // A health probe reports the failure; it must never propagate it, or the
     // caller learns "the worker is down" instead of "the database is down".
@@ -323,6 +336,18 @@ export async function authenticatedWorkerHealth(
     ...workerHealth(env),
     authenticated: true,
     checks: { hyperdriveConnects, listingRecoveryReady },
+    wine: wineCapabilitySchema.parse({
+      schemaVersion: 1,
+      execution: WINE_EXECUTION_SNAPSHOT,
+      databaseSchemaVersion: "wine-enrichment-0042-v1",
+      buildSha: safeBuildSha(env.BUILD_SHA),
+      consumerSupported: WINE_CONSUMER_SUPPORTED,
+      goConfigured: Boolean(env.OPENCODE_GO_API_KEY?.trim()),
+      tavilyConfigured: Boolean(env.TAVILY_API_KEY?.trim()),
+      queueReady: typeof env.LISTING_QUEUE?.send === "function",
+      databaseReady:
+        hyperdriveConnects && listingRecoveryReady && wineDatabaseReady,
+    }),
   } as const;
 }
 

@@ -24,6 +24,7 @@ export type WorkerEnv = {
   LISTING_PAID_OPERATIONS_ENABLED?: "true" | "false";
   AI_PROVIDER?: "openai" | "fake" | "openrouter" | "opencode-go";
   OPENCODE_GO_API_KEY?: string;
+  TAVILY_API_KEY?: string;
   OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
