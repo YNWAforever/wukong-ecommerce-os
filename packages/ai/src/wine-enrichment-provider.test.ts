@@ -386,3 +386,38 @@ describe("recommendation scope boundary", () => {
     expect(sent).toHaveLength(1);
   });
 });
+
+describe("wine adapter numeric units", () => {
+  it.each([
+    [750, "75 cl", true],
+    [75, "75 cl", false],
+    [5.5, "5x5 years", false],
+  ] as const)(
+    "checks normalized value %s from %s",
+    async (value, span, valid) => {
+      const ctx = context();
+      ctx.sources = [{ ...source, excerpt: span }];
+      ctx.supports = [];
+      const proposal: any = output();
+      proposal.claims = [];
+      proposal.supportProposals = [
+        {
+          sourceId: id,
+          field: span.includes("years") ? "ageYears" : "volumeMl",
+          value,
+          span,
+        },
+      ];
+      const { provider, sent } = setup([envelope(proposal)]);
+      if (valid)
+        await expect(
+          provider.verify({ context: ctx, stage: "verification" }),
+        ).resolves.toMatchObject({ claims: [] });
+      else
+        await expect(
+          provider.verify({ context: ctx, stage: "verification" }),
+        ).rejects.toThrow();
+      expect(sent).toHaveLength(1);
+    },
+  );
+});
