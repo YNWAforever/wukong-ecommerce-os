@@ -16,12 +16,12 @@ import { S3AssetStore } from "../../packages/assets/src/s3-asset-store.js";
 import { verifyAudit } from "../../packages/db/src/cli/audit-verify.js";
 import { runPnpm } from "./run-pnpm.js";
 
-export const OPAK_WORKSPACE_ID = `ws_opak_${randomUUID().replaceAll("-", "")}`;
-export const OPAK_ADMIN_EMAIL = `opak-admin-e2e-${randomUUID()}@local.invalid`;
-export const OPAK_ADMIN_USER_ID = `user_opak_admin_e2e_${randomUUID()}`;
+export let OPAK_WORKSPACE_ID = `ws_opak_${randomUUID().replaceAll("-", "")}`;
+export let OPAK_ADMIN_EMAIL = `opak-admin-e2e-${randomUUID()}@local.invalid`;
+export let OPAK_ADMIN_USER_ID = `user_opak_admin_e2e_${randomUUID()}`;
 export const OPAK_ADMIN_PASSWORD = "Local-only admin password 1!";
-export const OPAK_CONNECTION_ID = randomUUID();
-export const FOREIGN_WORKSPACE_ID = `ws_foreign_e2e_${randomUUID().replaceAll("-", "")}`;
+export let OPAK_CONNECTION_ID = randomUUID();
+export let FOREIGN_WORKSPACE_ID = `ws_foreign_e2e_${randomUUID().replaceAll("-", "")}`;
 
 export const ADMIN_URL =
   process.env.TEST_DATABASE_ADMIN_URL ??
@@ -135,6 +135,14 @@ function assertFixtureDatabaseAlignment() {
 
 export async function prepareRealStackFixture() {
   assertFixtureDatabaseAlignment();
+  // Each setup gets a fresh tenant. Earlier tests' immutable runs/outbox and
+  // audit evidence must survive for the release audit after all browser files.
+  OPAK_WORKSPACE_ID = `ws_opak_${randomUUID().replaceAll("-", "")}`;
+  OPAK_ADMIN_EMAIL = `opak-admin-e2e-${randomUUID()}@local.invalid`;
+  OPAK_ADMIN_USER_ID = `user_opak_admin_e2e_${randomUUID()}`;
+  OPAK_CONNECTION_ID = randomUUID();
+  FOREIGN_WORKSPACE_ID = `ws_foreign_e2e_${randomUUID().replaceAll("-", "")}`;
+
   await ensureRuntimeRole();
   await runPnpm(["--filter", "@wukong/db", "db:migrate"], {
     ...process.env,
@@ -151,8 +159,6 @@ export async function prepareRealStackFixture() {
     await admin`DELETE FROM password_login_guards`;
     await admin`DELETE FROM auth_accounts`;
     await admin`DELETE FROM auth_audit_events`;
-    await admin`DELETE FROM workspaces WHERE id IN (${OPAK_WORKSPACE_ID}, ${FOREIGN_WORKSPACE_ID})`;
-    await admin`DELETE FROM users WHERE email = ${OPAK_ADMIN_EMAIL}`;
     await admin`INSERT INTO workspaces (id, name, profile) VALUES (${OPAK_WORKSPACE_ID}, 'Opak Cellar', ${OPAK_PROFILE}::jsonb)`;
     await admin`INSERT INTO users (id, email) VALUES (${OPAK_ADMIN_USER_ID}, ${OPAK_ADMIN_EMAIL})`;
     await admin`INSERT INTO memberships (workspace_id, user_id, role) VALUES (${OPAK_WORKSPACE_ID}, ${OPAK_ADMIN_USER_ID}, 'admin')`;

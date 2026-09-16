@@ -261,7 +261,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     { timeout: 10_000 },
   );
   await page.getByRole("button", { name: /Advance/ }).click();
-  expect((await advanced).status()).toBe(200);
+  expect((await advanced).status()).toBe(202);
   const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
   let listingIds: string[];
   try {
@@ -293,7 +293,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   );
   await page.getByRole("button", { name: /Advance/ }).click();
   const batchResponse = await reconciledBatch;
-  expect(batchResponse.status()).toBe(200);
+  expect(batchResponse.status()).toBe(202);
   expect(await batchResponse.json()).toMatchObject({
     status: "completed",
     enqueued: 0,

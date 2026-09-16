@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { emptyWorkingListing } from "@wukong/core";
 import type {
   Database,
   EnrichmentBatch,
@@ -305,11 +306,42 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         } as unknown as WaveDispatch);
         continue;
       }
+      await repositories.listings.lockReviewState(draftId);
       const revision = await repositories.listings.requireById(draftId);
-      const snapshot = await repositories.listingInputs.getCurrent(draftId);
-      if (!snapshot) {
-        unusable.push(draftId);
+      if (!includes(RUNNABLE_STATUSES, revision.status)) {
+        (includes(SUCCEEDED_STATUSES, revision.status)
+          ? finished
+          : unusable
+        ).push(draftId);
         continue;
+      }
+      let snapshot = await repositories.listingInputs.getCurrent(draftId);
+      if (!snapshot) {
+        // Imported/legacy drafts predate saved input revisions. Seed once from
+        // stored merchant facts; never replace an existing revision or version.
+        const imported = revision.activeVersionId
+          ? null
+          : await repositories.platformProducts.getByListingId(draftId);
+        snapshot = await repositories.listingInputs.initialize(
+          {
+            listingId: draftId,
+            actorId: input.actorId,
+            ...(imported?.origin === "import" && imported.factsPrefill
+              ? {
+                  workingContent: {
+                    ...emptyWorkingListing(),
+                    ...imported.factsPrefill,
+                  },
+                }
+              : {}),
+          },
+          {
+            workspaceId: input.workspaceId,
+            actorId: input.actorId,
+            entityId: draftId,
+          },
+          repositories.audit,
+        );
       }
       const previous =
         await repositories.pipelineRuns.getCurrentOperation(draftId);
