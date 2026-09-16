@@ -143,3 +143,14 @@ export type {
   WineLogicalStage,
   WineExecutionSnapshot,
 } from "./wine-enrichment-prompts.js";
+export {
+  wineGenerationRequestSchema,
+  wineOutputAnnotationSchema,
+  wineGenerationCandidateSchema,
+  wineCheckResponseSchema,
+  type WineGenerationRequest,
+  type WineGenerationCandidate,
+  type WineGenerationResult,
+  type WineCheckRequest,
+  type WineCheckResult,
+} from "./wine-enrichment-schemas.js";

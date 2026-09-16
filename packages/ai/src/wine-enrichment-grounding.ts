@@ -36,7 +36,7 @@ const numberToken = new RegExp(
 );
 const volumeUnit =
   /^\s*(millilitres?|milliliters?|centilitres?|centiliters?|decilitres?|deciliters?|litres?|liters?|ml|cl|dl|l)\b|^\s*(毫升|厘升|公升|升)/i;
-function wineNumericValueSupported(
+export function wineNumericValueSupported(
   field: string,
   span: string,
   value: number,

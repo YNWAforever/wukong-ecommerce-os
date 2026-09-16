@@ -1,4 +1,18 @@
 import {
+  wineGenerationRequestSchema,
+  wineGenerationCandidateSchema,
+  wineCheckResponseSchema,
+  type WineGenerationRequest,
+  type WineGenerationResult,
+  type WineCheckRequest,
+  type WineCheckResult,
+} from "./wine-enrichment-schemas.js";
+import {
+  validateWineGenerationRequest,
+  wineCandidateIssues,
+  wineTextPaths,
+} from "./wine-enrichment-content-validation.js";
+import {
   decideWineClaim,
   sameWineValue,
   type WineClaimContext,
@@ -297,6 +311,80 @@ export class WineEnrichmentProvider {
       candidates: parsed.candidates.map((c) => ({ ...c, status: "candidate" })),
       claims,
       issues,
+      usage,
+    };
+  }
+  async generate(input: WineGenerationRequest): Promise<WineGenerationResult> {
+    const request = wineGenerationRequestSchema.parse(input);
+    validateWineGenerationRequest(request);
+    const { parsed, usage } = await this.client("generation").complete(
+      [
+        { role: "system", content: WINE_PROMPTS.generate },
+        { role: "user", content: JSON.stringify(request) },
+      ],
+      wineGenerationCandidateSchema,
+      "wine_generation",
+      WINE_PROMPT_VERSIONS.generate,
+      (parsed) => {
+        const issues = wineCandidateIssues(request, parsed);
+        requireValue(
+          issues.length === 0,
+          `Invalid wine candidate: ${JSON.stringify(issues)}`,
+        );
+      },
+    );
+    return {
+      ...parsed,
+      status: "candidate",
+      requiresQualityCheck: true,
+      requiresMerchantReview: true,
+      usage,
+    };
+  }
+  async check(input: WineCheckRequest): Promise<WineCheckResult> {
+    const request = wineGenerationRequestSchema.parse(input.request);
+    validateWineGenerationRequest(request);
+    const candidate = wineGenerationCandidateSchema.parse({
+      schemaVersion: input.candidate.schemaVersion,
+      content: input.candidate.content,
+      annotations: input.candidate.annotations,
+    });
+    const deterministic = wineCandidateIssues(request, candidate);
+    const paths = new Set([
+      ...wineTextPaths(candidate.content).keys(),
+      "sections",
+      "title",
+      "seo",
+      "tags",
+      ...candidate.content.sections.map((s) => `sections.${s.key}`),
+    ]);
+    const evidence = new Set(request.claims.flatMap((c) => c.evidenceIds));
+    const { parsed, usage } = await this.client("quality_check").complete(
+      [
+        { role: "system", content: WINE_PROMPTS.check },
+        {
+          role: "user",
+          content: JSON.stringify({
+            request,
+            candidate,
+            deterministicIssues: deterministic,
+          }),
+        },
+      ],
+      wineCheckResponseSchema,
+      "wine_quality_check",
+      WINE_PROMPT_VERSIONS.check,
+      (parsed) => {
+        for (const issue of parsed.issues) {
+          requireValue(paths.has(issue.path), "Unknown quality issue path");
+          references(issue.evidenceIds, evidence);
+        }
+      },
+    );
+    return {
+      ...parsed,
+      issues: [...deterministic, ...parsed.issues],
+      requiresMerchantReview: true,
       usage,
     };
   }

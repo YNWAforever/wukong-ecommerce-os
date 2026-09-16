@@ -121,3 +121,59 @@ export type WineEnrichmentProviderConfig = Omit<
   snapshot: WineExecutionSnapshot;
   observerFactory?: WineObserverFactory;
 };
+
+import { wineContentSchema, sectionKeySchema } from "@wukong/core";
+/** Server-owned accepted claims and lock snapshot, bound to the immutable operation. */
+export const wineGenerationRequestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    binding: wineFrozenContextSchema.shape.binding,
+    claims: z.array(supportedClaimSchema),
+    current: wineContentSchema.nullable(),
+    lockedPaths: z.array(z.string().min(1)),
+    tone: z.string(),
+    claimPolicy: z.array(z.string()),
+    section: sectionKeySchema.nullable(),
+  })
+  .strict();
+export type WineGenerationRequest = z.infer<typeof wineGenerationRequestSchema>;
+export const wineOutputAnnotationSchema = z
+  .object({
+    path: z.string().min(1),
+    span: z.string().min(1),
+    claimId: z.uuid(),
+    value: supportedClaimSchema.shape.value,
+    evidenceIds: z.array(z.uuid()),
+    premiseClaimIds: z.array(z.uuid()),
+  })
+  .strict();
+export const wineGenerationCandidateSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    content: wineContentSchema,
+    annotations: z.array(wineOutputAnnotationSchema),
+  })
+  .strict();
+export type WineGenerationCandidate = z.infer<
+  typeof wineGenerationCandidateSchema
+>;
+export type WineGenerationResult = WineGenerationCandidate & {
+  status: "candidate";
+  requiresQualityCheck: true;
+  requiresMerchantReview: true;
+  usage: AIUsage;
+};
+export const wineCheckResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    issues: z.array(wineQualityIssueSchema),
+  })
+  .strict();
+export type WineCheckRequest = {
+  request: WineGenerationRequest;
+  candidate: WineGenerationCandidate;
+};
+export type WineCheckResult = z.infer<typeof wineCheckResponseSchema> & {
+  requiresMerchantReview: true;
+  usage: AIUsage;
+};
