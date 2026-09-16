@@ -44,7 +44,12 @@ import {
 const listingSchema = z
   .object({
     sourceAssetIds: z
-      .array(z.string().uuid())
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((value) => value.toLowerCase()),
+      )
       .max(11)
       .refine(
         (ids) => new Set(ids).size === ids.length,
@@ -113,7 +118,8 @@ export function createListingHandler(deps: CreateListingDeps) {
 
       const body = listingSchema.parse(await request.json());
 
-      const requestKey = request.headers.get("Idempotency-Key");
+      const requestKey =
+        request.headers.get("Idempotency-Key")?.toLowerCase() ?? null;
       if (requestKey) z.string().uuid().parse(requestKey);
       if (body.sourceAssetIds.length === 0 && !requestKey)
         throw new ApiError(

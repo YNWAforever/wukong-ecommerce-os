@@ -181,7 +181,7 @@ export function createWineGoInvocationRepository(
       )
         return deny;
       await tx.execute(
-        sql`select id from workspaces where id=${workspaceId} for update`,
+        sql`select id from workspaces where id=${workspaceId} for no key update`,
       );
       const reservations = await tx.execute(
         sql`select * from ai_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${input.runId} for update`,
@@ -316,7 +316,7 @@ export function createWineGoInvocationRepository(
       if (!rows[0]) return false;
       // Serialize observed-spend publication with new reservations and wine admission.
       await tx.execute(
-        sql`select id from workspaces where id=${workspaceId} for update`,
+        sql`select id from workspaces where id=${workspaceId} for no key update`,
       );
       const output = {
         schemaVersion: 1,

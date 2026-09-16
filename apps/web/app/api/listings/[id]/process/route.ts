@@ -63,7 +63,8 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
         );
       }
 
-      const { id } = await context.params;
+      const { id: requestedId } = await context.params;
+      const id = requestedId.toLowerCase();
       if (!/^[0-9a-f-]{36}$/i.test(id)) {
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       }
@@ -72,8 +73,17 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
       const body = z
         .object({
           expectedInputRevision: z.number().int().nonnegative().optional(),
-          baseVersionId: z.string().uuid().nullable().optional(),
-          retryOfRunId: z.string().uuid().optional(),
+          baseVersionId: z
+            .string()
+            .uuid()
+            .transform((value) => value.toLowerCase())
+            .nullable()
+            .optional(),
+          retryOfRunId: z
+            .string()
+            .uuid()
+            .transform((value) => value.toLowerCase())
+            .optional(),
           wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
         })
         .strict()
@@ -81,6 +91,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
       const operationKey = z
         .string()
         .uuid()
+        .transform((value) => value.toLowerCase())
         .parse(_request.headers.get("Idempotency-Key") ?? randomUUID());
       await requireListingRecovery(deps.getDatabase());
       const wineAdmission = await prepareWineAdmission(

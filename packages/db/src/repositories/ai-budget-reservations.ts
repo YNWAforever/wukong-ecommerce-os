@@ -50,7 +50,7 @@ export function createAiBudgetReservationRepository(
       if (!input.pricingVersion || input.pricingVersion.length > 128)
         throw new Error("pricingVersion is required");
       await transaction.execute(
-        sql`select id from workspaces where id=${workspaceId} for update`,
+        sql`select id from workspaces where id=${workspaceId} for no key update`,
       );
       const existing = await transaction.execute(
         sql`select state from ai_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${input.pipelineRunId}`,

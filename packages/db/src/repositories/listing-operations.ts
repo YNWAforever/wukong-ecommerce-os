@@ -90,9 +90,15 @@ export function createListingOperationRepository(
       // Advisory locks serialize creates without reversing the runtime row locks.
       const keys = [
         ...(requestKey
-          ? [JSON.stringify(["listing-create", workspaceId, requestKey])]
+          ? [
+              JSON.stringify([
+                "listing-create",
+                workspaceId,
+                requestKey.toLowerCase(),
+              ]),
+            ]
           : []),
-        ...[...new Set(sourceAssetIds)]
+        ...[...new Set(sourceAssetIds.map((id) => id.toLowerCase()))]
           .sort()
           .map((id) =>
             JSON.stringify(["listing-create-asset", workspaceId, id]),
@@ -105,8 +111,10 @@ export function createListingOperationRepository(
     },
     async lockAdmissionBudget() {
       scope.assertOpen();
+      // Serialize budget writers while allowing KEY SHARE from new tenant-FK rows.
+      // FOR UPDATE would deadlock concurrent creates/saves upgrading those locks.
       await tx.execute(
-        sql`select id from workspaces where id=${workspaceId} for update`,
+        sql`select id from workspaces where id=${workspaceId} for no key update`,
       );
     },
     async findCreateRequest(key: string) {

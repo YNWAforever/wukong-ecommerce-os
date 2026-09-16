@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -196,25 +197,20 @@ import { createListingHandler } from "./route";
 import { createProcessListingHandler } from "./[id]/process/route";
 import { createListingInputsHandler } from "./[id]/inputs/route";
 function routeDeps(workspaceId: string) {
-  let active = 0;
+  const transactionContext = new AsyncLocalStorage<boolean>();
   const database = {
     ...db,
     async forWorkspace<T>(
       ws: string,
       work: (r: any) => Promise<T>,
     ): Promise<T> {
-      return db.forWorkspace(ws, async (r) => {
-        active++;
-        try {
-          return await work(r);
-        } finally {
-          active--;
-        }
-      });
+      return db.forWorkspace(ws, (r) =>
+        transactionContext.run(true, () => work(r)),
+      );
     },
   };
   const preflight = vi.fn(async () => {
-    expect(active).toBe(0);
+    expect(transactionContext.getStore()).not.toBe(true);
     return receipt();
   });
   return {
@@ -231,7 +227,7 @@ function routeDeps(workspaceId: string) {
     preflightWineCapability: preflight,
   };
 }
-function request(body: object, method = "POST", key = randomUUID()) {
+function request(body: object, method = "POST", key: string = randomUUID()) {
   return new Request("http://local/api/listings", {
     method,
     headers: { "Content-Type": "application/json", "Idempotency-Key": key },
@@ -882,3 +878,235 @@ it.each(["identical-no-key", "overlapping-keys"])(
       expect((await responses[1].json()).listing.id).toBe(firstBody.listing.id);
   },
 );
+it.each([
+  ["create", 10],
+  ["inputs", 10],
+  ["create", 5],
+  ["inputs", 5],
+] as const)(
+  "FK-bearing concurrent %s transactions with cap%d serialize budget admission without losing saved inputs",
+  async (kind, cap) => {
+    const input = await fixture({ tavilyCreditCap: cap });
+    const secondInput = await anotherListing(input);
+    let arrived = 0,
+      release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const database = {
+      ...db,
+      forWorkspace: <T>(ws: string, work: (r: any) => Promise<T>) =>
+        db.forWorkspace(ws, (r) =>
+          work({
+            ...r,
+            pipelineRuns: {
+              ...r.pipelineRuns,
+              lockAdmissionBudget: async () => {
+                if (++arrived === 2) release();
+                await gate;
+                return r.pipelineRuns.lockAdmissionBudget();
+              },
+            },
+          }),
+        ),
+    };
+    const deps = {
+      ...routeDeps(input.workspaceId),
+      getDatabase: () => database,
+    };
+    const requests = [input, secondInput].map((current, i) =>
+      kind === "create"
+        ? createListingHandler(deps as never)(
+            request({ sourceAssetIds: [], note: `Concurrent wine ${i}` }),
+          )
+        : createListingInputsHandler(deps)(
+            request(
+              {
+                expectedInputRevision: current.expectedInputRevision,
+                baseVersionId: null,
+                action: "save_and_process",
+                note: `Concurrent wine ${i}`,
+              },
+              "PATCH",
+            ),
+            { params: Promise.resolve({ id: current.listingId }) },
+          ),
+    );
+    const responses = await Promise.all(requests);
+    const bodies = await Promise.all(responses.map((r) => r.json()));
+    expect(
+      responses.map((r) => r.status).sort(),
+      JSON.stringify(bodies),
+    ).toEqual(
+      kind === "create" ? [201, 201] : cap === 5 ? [200, 202] : [202, 202],
+    );
+    expect(
+      bodies
+        .filter((b) => b.processingBlocked)
+        .map((b) => b.processingBlocked.code),
+    ).toEqual(cap === 5 ? ["wine_search_budget_blocked"] : []);
+    expect(bodies.filter((b) => !!b.processing?.runId)).toHaveLength(
+      cap === 5 ? 1 : 2,
+    );
+    const holds =
+      await admin`select pipeline_run_id from search_budget_reservations where workspace_id=${input.workspaceId}`;
+    expect(holds).toHaveLength(cap === 5 ? 1 : 2);
+    for (let i = 0; i < 2; i++) {
+      const id =
+        kind === "create"
+          ? bodies[i].listing.id
+          : [input, secondInput][i]!.listingId;
+      const saved = await db.forWorkspace(input.workspaceId, (r) =>
+        r.listingInputs.getCurrent(id),
+      );
+      expect(saved?.note).toBe(`Concurrent wine ${i}`);
+    }
+  },
+);
+it("mixed-case create request and asset UUIDs replay semantically identical inputs", async () => {
+  const input = await fixture();
+  const deps = routeDeps(input.workspaceId);
+  const key = randomUUID();
+  const asset = await db.forWorkspace(input.workspaceId, (r) =>
+    r.sourceAssets.create({
+      storageKey: `case/${randomUUID()}`,
+      kind: "image/jpeg",
+      metadata: { sha256: "a".repeat(64), size: 10 },
+    }),
+  );
+  const handler = createListingHandler(deps);
+  const first = await handler(
+    request(
+      {
+        sourceAssetIds: [asset.id],
+        note: "Case-safe wine",
+        processingMode: "manual",
+      },
+      "POST",
+      key,
+    ),
+  );
+  const replay = await handler(
+    request(
+      {
+        sourceAssetIds: [asset.id.toUpperCase()],
+        note: "Case-safe wine",
+        processingMode: "manual",
+      },
+      "POST",
+      key.toUpperCase(),
+    ),
+  );
+  expect(first.status).toBe(201);
+  expect(replay.status).toBe(201);
+  expect(await replay.json()).toEqual(await first.json());
+});
+it.each(["request", "asset"])(
+  "mixed-case %s UUIDs use the same transaction advisory lock",
+  async (kind) => {
+    const input = await fixture();
+    const key = randomUUID(),
+      asset = randomUUID();
+    await db.forWorkspace(input.workspaceId, async (r) => {
+      await r.pipelineRuns.lockCreateRequests(
+        kind === "request" ? key : null,
+        kind === "asset" ? [asset] : [],
+      );
+      const expected =
+        await admin`select classid,objid from pg_locks where locktype='advisory' and granted`;
+      await r.pipelineRuns.lockCreateRequests(
+        kind === "request" ? key.toUpperCase() : null,
+        kind === "asset" ? [asset.toUpperCase(), asset] : [],
+      );
+      const actual =
+        await admin`select classid,objid from pg_locks where locktype='advisory' and granted`;
+      expect(actual).toEqual(expected);
+    });
+  },
+);
+it("captures stale capability as the saved create result and replays that exact blocked result", async () => {
+  const input = await fixture();
+  const deps = routeDeps(input.workspaceId);
+  deps.preflightWineCapability.mockImplementationOnce(() =>
+    receipt(Date.now() - 31000),
+  );
+  const handler = createListingHandler(deps);
+  const key = randomUUID();
+  const body = { sourceAssetIds: [], note: "Receipt diagnostic wine" };
+  const first = await handler(request(body, "POST", key));
+  const original = await first.json();
+  expect(first.status).toBe(201);
+  expect(original).toMatchObject({
+    processing: null,
+    processingBlocked: { code: "wine_capability_stale" },
+  });
+  const replay = await handler(request(body, "POST", key));
+  expect(await replay.json()).toEqual(original);
+  expect(
+    await admin`select id from listing_pipeline_runs where workspace_id=${input.workspaceId}`,
+  ).toHaveLength(0);
+});
+it.each(["inputs", "process"])(
+  "mixed-case %s operation UUID and listing coordinate replay the original run",
+  async (kind) => {
+    const input = await fixture();
+    const deps = routeDeps(input.workspaceId);
+    const key = randomUUID();
+    const invoke = (id: string, operation: string) =>
+      kind === "inputs"
+        ? createListingInputsHandler(deps)(
+            request(
+              {
+                expectedInputRevision: 1,
+                baseVersionId: null,
+                note: "UUID replay",
+                action: "save_and_process",
+              },
+              "PATCH",
+              operation,
+            ),
+            { params: Promise.resolve({ id }) },
+          )
+        : createProcessListingHandler(deps)(
+            request({ expectedInputRevision: 1 }, "POST", operation),
+            { params: Promise.resolve({ id }) },
+          );
+    const first = await invoke(input.listingId, key);
+    const replay = await invoke(
+      input.listingId.toUpperCase(),
+      key.toUpperCase(),
+    );
+    expect(first.status).toBe(202);
+    expect(replay.status).toBe(202);
+    expect((await replay.json()).processing.runId).toBe(
+      (await first.json()).processing.runId,
+    );
+  },
+);
+it("transaction-boundary harness allows independent request preflight but rejects same-context preflight", async () => {
+  const input = await fixture();
+  const deps = routeDeps(input.workspaceId);
+  let started!: () => void, release!: () => void;
+  const entered = new Promise<void>((r) => {
+      started = r;
+    }),
+    gate = new Promise<void>((r) => {
+      release = r;
+    });
+  const otherRequest = deps
+    .getDatabase()
+    .forWorkspace(input.workspaceId, async () => {
+      started();
+      await gate;
+    });
+  await entered;
+  try {
+    await expect(deps.preflightWineCapability()).resolves.toBeDefined();
+  } finally {
+    release();
+    await otherRequest;
+  }
+  await deps.getDatabase().forWorkspace(input.workspaceId, async () => {
+    await expect(deps.preflightWineCapability()).rejects.toThrow();
+  });
+});

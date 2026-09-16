@@ -29,9 +29,21 @@ import type { SessionContextPort } from "../../../../../lib/session-context-port
 const bodySchema = z
   .object({
     expectedInputRevision: z.number().int().nonnegative(),
-    baseVersionId: z.string().uuid().nullable(),
+    baseVersionId: z
+      .string()
+      .uuid()
+      .transform((value) => value.toLowerCase())
+      .nullable(),
     note: z.string().trim().max(5000).nullable().optional(),
-    sources: z.array(sourceSelectionSchema).max(11).optional(),
+    sources: z
+      .array(
+        sourceSelectionSchema.transform((source) => ({
+          ...source,
+          assetId: source.assetId.toLowerCase(),
+        })),
+      )
+      .max(11)
+      .optional(),
     changes: z.array(workingChangeSchema).max(100).default([]),
     action: z.enum(["save", "save_and_process"]).default("save"),
     wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
@@ -83,13 +95,15 @@ export function createListingInputsHandler(deps: {
           "insufficient_role",
           "Operator access is required.",
         );
-      const { id } = await context.params;
+      const { id: requestedId } = await context.params;
+      const id = requestedId.toLowerCase();
       if (!z.string().uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       const body = bodySchema.parse(await request.json());
       const operationKey = z
         .string()
         .uuid()
+        .transform((value) => value.toLowerCase())
         .parse(request.headers.get("Idempotency-Key"));
       await requireListingRecovery(deps.getDatabase());
       const wineAdmission =
