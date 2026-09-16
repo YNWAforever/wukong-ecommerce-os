@@ -99,6 +99,7 @@ function harness(
       },
     },
     pipelineRuns: {
+      async lockCreateRequests() {},
       async findOperationRequest() {
         return acceptedRun;
       },

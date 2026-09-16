@@ -11,6 +11,8 @@ export async function dispatchListingOperation(
   publisher: ListingPublisher,
 ): Promise<void> {
   for (const row of accepted.outbox) {
+    // Task 8 installs wine dispatch. Keep durable intent untouched until then.
+    if (row.payload.flowVersion === "wine-enrichment-v1") continue;
     try {
       await publisher.enqueue(listingJobSchema.parse(row.payload));
       await database.forWorkspace(workspaceId, (repos) =>

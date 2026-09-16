@@ -55,13 +55,55 @@ export function createListingOperationRepository(
   };
   return {
     getOperation,
+    /** Roll back acceptance on this connection while retaining saved intake. */
+    async withAcceptanceSavepoint<T>(work: () => Promise<T>): Promise<T> {
+      scope.assertOpen();
+      return tx.transaction(async () => work());
+    },
+    async acceptanceTimestamp(): Promise<string> {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select clock_timestamp() as accepted_at`,
+      );
+      return new Date(rows[0]!.accepted_at as string).toISOString();
+    },
     async retainOperationCandidate(id: string, candidate: unknown) {
       scope.assertOpen();
       await tx.execute(
         sql`update listing_pipeline_runs set execution=execution || jsonb_build_object('candidate',${JSON.stringify(candidate)}::jsonb) where workspace_id=${workspaceId} and id=${id}::uuid and execution_state is not null`,
       );
     },
-    async lockCreateRequests() {
+    async lockCreateRequests(
+      requestKey: string | null,
+      sourceAssetIds: readonly string[] = [],
+    ) {
+      scope.assertOpen();
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (
+        (requestKey !== null && !uuid.test(requestKey)) ||
+        sourceAssetIds.length > 11 ||
+        sourceAssetIds.some((id) => !uuid.test(id))
+      )
+        throw new Error("invalid create lock coordinates");
+      // Order: request -> sorted unique assets -> listing/run -> workspace budget.
+      // Advisory locks serialize creates without reversing the runtime row locks.
+      const keys = [
+        ...(requestKey
+          ? [JSON.stringify(["listing-create", workspaceId, requestKey])]
+          : []),
+        ...[...new Set(sourceAssetIds)]
+          .sort()
+          .map((id) =>
+            JSON.stringify(["listing-create-asset", workspaceId, id]),
+          ),
+      ];
+      for (const key of keys)
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${key},0))`,
+        );
+    },
+    async lockAdmissionBudget() {
       scope.assertOpen();
       await tx.execute(
         sql`select id from workspaces where id=${workspaceId} for update`,
@@ -129,6 +171,7 @@ export function createListingOperationRepository(
       requestDigest: string;
       retryOfRunId?: string;
       execution: Record<string, unknown>;
+      acceptedAt?: string;
     }): Promise<ListingOperation> {
       scope.assertOpen();
       const drafts = await tx.execute(
@@ -163,9 +206,9 @@ export function createListingOperationRepository(
       const id = randomUUID();
       const key = `listing-run:${id}`;
       const rows = await tx.execute(sql`insert into listing_pipeline_runs
-        (id,workspace_id,listing_id,active_version_sequence,idempotency_key,status,input_revision,base_version_id,run_attempt,retry_of_run_id,request_key,request_digest,execution_state,execution)
+        (id,workspace_id,listing_id,active_version_sequence,idempotency_key,status,input_revision,base_version_id,run_attempt,retry_of_run_id,request_key,request_digest,execution_state,execution,created_at)
         select ${id}::uuid,${workspaceId},${input.listingId}::uuid,${input.activeVersionSequence},${key},'started',${input.inputRevision},${input.baseVersionId}::uuid,
-        coalesce(max(run_attempt),0)+1,${input.retryOfRunId ?? null}::uuid,${input.requestKey},${input.requestDigest},'queued',${JSON.stringify(input.execution)}::jsonb
+        coalesce(max(run_attempt),0)+1,${input.retryOfRunId ?? null}::uuid,${input.requestKey},${input.requestDigest},'queued',${JSON.stringify(input.execution)}::jsonb,coalesce(${input.acceptedAt ?? null}::timestamptz,now())
         from listing_pipeline_runs where workspace_id=${workspaceId} and listing_id=${input.listingId}::uuid returning *`);
       await tx.execute(
         sql`update listing_drafts set current_run_id=${id}::uuid,updated_at=now() where workspace_id=${workspaceId} and id=${input.listingId}::uuid`,

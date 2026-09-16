@@ -1,3 +1,8 @@
+import {
+  prepareWineAdmission,
+  recoverableWineAdmission,
+} from "../../../../../lib/wine-enrichment-service";
+import { preflightWineCapability } from "../../../../../lib/wine-capability-client";
 import { requireListingRecovery } from "../../../../../lib/listing-recovery-readiness";
 import { dispatchListingOperation } from "../../../../../lib/dispatch-listing-operation";
 import {
@@ -29,6 +34,7 @@ const bodySchema = z
     sources: z.array(sourceSelectionSchema).max(11).optional(),
     changes: z.array(workingChangeSchema).max(100).default([]),
     action: z.enum(["save", "save_and_process"]).default("save"),
+    wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
   })
   .strict();
 export function mapListingInputError(error: unknown): never {
@@ -60,6 +66,7 @@ export function mapListingInputError(error: unknown): never {
 }
 export function createListingInputsHandler(deps: {
   sessionContext: SessionContextPort;
+  preflightWineCapability?: typeof preflightWineCapability;
   getDatabase: () => Pick<Database, "forWorkspace">;
   acceptProcessing?: typeof acceptListingOperation;
   publisher?: ListingPublisher;
@@ -85,6 +92,15 @@ export function createListingInputsHandler(deps: {
         .uuid()
         .parse(request.headers.get("Idempotency-Key"));
       await requireListingRecovery(deps.getDatabase());
+      const wineAdmission =
+        body.action === "save_and_process"
+          ? await prepareWineAdmission(
+              deps.getDatabase(),
+              session.workspaceId,
+              body.wineMode,
+              deps.preflightWineCapability,
+            )
+          : {};
       try {
         const result = await deps
           .getDatabase()
@@ -104,20 +120,34 @@ export function createListingInputsHandler(deps: {
               },
               repos.audit,
             );
-            const accepted =
-              body.action === "save_and_process"
-                ? await (deps.acceptProcessing ?? acceptListingOperation)(
-                    repos,
-                    {
-                      workspaceId: session.workspaceId,
-                      listingId: id,
-                      expectedInputRevision: saved.revision,
-                      baseVersionId: saved.baseVersionId,
-                      operationKey,
-                      actorId: session.actorId,
-                    },
-                  )
-                : null;
+            let accepted = null;
+            let processingBlocked: { code: string; message: string } | null =
+              null;
+            if (body.action === "save_and_process") {
+              try {
+                accepted = await (
+                  deps.acceptProcessing ?? acceptListingOperation
+                )(
+                  repos,
+                  {
+                    workspaceId: session.workspaceId,
+                    listingId: id,
+                    expectedInputRevision: saved.revision,
+                    baseVersionId: saved.baseVersionId,
+                    operationKey,
+                    actorId: session.actorId,
+                    wineMode: body.wineMode,
+                  },
+                  wineAdmission,
+                );
+              } catch (error) {
+                if (!recoverableWineAdmission(error)) throw error;
+                processingBlocked = {
+                  code: error.code,
+                  message: error.message,
+                };
+              }
+            }
             return {
               accepted,
               body: {
@@ -130,6 +160,7 @@ export function createListingInputsHandler(deps: {
                   ? "reviewable"
                   : "partial",
                 processing: accepted?.processing ?? null,
+                ...(processingBlocked ? { processingBlocked } : {}),
               },
             };
           });
@@ -141,7 +172,9 @@ export function createListingInputsHandler(deps: {
             deps.publisher,
           );
         return jsonResponse(
-          body.action === "save_and_process" ? 202 : 200,
+          body.action === "save_and_process" && !result.body.processingBlocked
+            ? 202
+            : 200,
           result.body,
         );
       } catch (error) {

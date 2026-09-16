@@ -218,7 +218,7 @@ describe("immutable listing operations", () => {
   it("stores a tenant-scoped create response independently of later listing changes", async () => {
     const key = randomUUID();
     await db.forWorkspace(ws, async (repos) => {
-      await repos.pipelineRuns.lockCreateRequests();
+      await repos.pipelineRuns.lockCreateRequests(key);
       const draft = await repos.listings.create({
         target: "shopline",
         note: "original",
