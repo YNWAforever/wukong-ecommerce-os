@@ -423,3 +423,24 @@ test("listing secret helper preserves legacy choices and rejects invalid provide
     /AI_PROVIDER/,
   );
 });
+test("renders pinned Go model and its dedicated secret without leaking values", () => {
+  const result = render({
+    AI_PROVIDER: "opencode-go",
+    OPENAI_LISTING_MODEL: "",
+    OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+    OPENCODE_GO_API_KEY: "go-secret-marker",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.equal(config.vars.OPENCODE_GO_LISTING_MODEL, "deepseek-v4.1-flash");
+  assert.equal(config.vars.OPENAI_LISTING_MODEL, undefined);
+  assert.ok(config.secrets.required.includes("OPENCODE_GO_API_KEY"));
+  assert.ok(!config.secrets.required.includes("OPENAI_API_KEY"));
+  assert.doesNotMatch(JSON.stringify(config), /go-secret-marker/);
+  for (const model of ["", "deepseek-flash", "deepseek-v4-flash", "auto"])
+    assert.notEqual(
+      render({ AI_PROVIDER: "opencode-go", OPENCODE_GO_LISTING_MODEL: model })
+        .status,
+      0,
+    );
+});

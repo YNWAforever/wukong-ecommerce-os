@@ -111,7 +111,7 @@ export async function acceptListingOperation(
       "ai_configuration_required",
       "AI needs an approved model and budget configuration. You can save without AI.",
     );
-  if (provider === "openrouter") {
+  if (provider === "openrouter" || provider === "opencode-go") {
     const assets = await repos.sourceAssets.getByIds(
       snapshot.sources
         .filter((source) => source.use === "analyse")

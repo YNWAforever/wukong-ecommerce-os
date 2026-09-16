@@ -6,6 +6,11 @@ const contextCeilings: Record<
   string,
   { tokens: number; input: number; output: number }
 > = {
+  "opencode-go:deepseek-v4.1-flash": {
+    tokens: 1048576,
+    input: 0.3,
+    output: 1.2,
+  },
   "openai:gpt-4o": { tokens: 128000, input: 2.5, output: 10 },
   "openai:gpt-4o-2024-08-06": { tokens: 128000, input: 2.5, output: 10 },
   "openai:gpt-4.1": { tokens: 1047576, input: 2, output: 8 },

@@ -55,7 +55,7 @@ export const workspaceProfileSchema = z.object({
   sourcePreferences: sourcePreferencesSchema.optional(),
   listingAi: z
     .object({
-      provider: z.enum(["openai", "openrouter"]),
+      provider: z.enum(["openai", "openrouter", "opencode-go"]),
       model: z.string().min(1).max(200),
       pricingVersion: z.string().min(1).max(128),
       runCeilingUsd: z.string().regex(/^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/),

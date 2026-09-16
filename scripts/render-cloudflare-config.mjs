@@ -1,6 +1,7 @@
 import {
   listingProviderSecretNames,
   validateOpenRouterListingModel,
+  validateOpenCodeGoListingModel,
   productShotSecretNames,
 } from "./listing-provider-config.mjs";
 
@@ -37,23 +38,29 @@ const buildSha = safeToken(
   /^[A-Za-z0-9._-]{7,128}$/,
 );
 const aiProvider = requiredInput("AI_PROVIDER");
-if (!new Set(["fake", "openai", "openrouter"]).has(aiProvider)) {
+if (!new Set(["fake", "openai", "openrouter", "opencode-go"]).has(aiProvider)) {
   throw new Error("AI_PROVIDER is invalid");
 }
 const listingModel =
-  aiProvider === "openrouter"
+  aiProvider === "opencode-go"
     ? {
-        OPENROUTER_LISTING_MODEL: validateOpenRouterListingModel(
-          requiredInput("OPENROUTER_LISTING_MODEL"),
+        OPENCODE_GO_LISTING_MODEL: validateOpenCodeGoListingModel(
+          requiredInput("OPENCODE_GO_LISTING_MODEL"),
         ),
       }
-    : {
-        OPENAI_LISTING_MODEL: safeToken(
-          "OPENAI_LISTING_MODEL",
-          requiredInput("OPENAI_LISTING_MODEL"),
-          /^[A-Za-z0-9._:-]{1,128}$/,
-        ),
-      };
+    : aiProvider === "openrouter"
+      ? {
+          OPENROUTER_LISTING_MODEL: validateOpenRouterListingModel(
+            requiredInput("OPENROUTER_LISTING_MODEL"),
+          ),
+        }
+      : {
+          OPENAI_LISTING_MODEL: safeToken(
+            "OPENAI_LISTING_MODEL",
+            requiredInput("OPENAI_LISTING_MODEL"),
+            /^[A-Za-z0-9._:-]{1,128}$/,
+          ),
+        };
 const s3Bucket = requiredInput("S3_BUCKET");
 if (s3Bucket !== selected.r2Bucket) {
   throw new Error("S3_BUCKET does not match the selected environment");

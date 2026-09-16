@@ -1,6 +1,13 @@
 export function listingProviderSecretNames(base, provider) {
-  if (!["fake", "openai", "openrouter"].includes(provider))
+  if (!["fake", "openai", "openrouter", "opencode-go"].includes(provider))
     throw new Error("AI_PROVIDER is invalid");
+  if (provider === "opencode-go")
+    return [
+      ...base.filter(
+        (name) => name !== "OPENAI_API_KEY" && name !== "OPENROUTER_API_KEY",
+      ),
+      "OPENCODE_GO_API_KEY",
+    ];
   return provider === "openrouter"
     ? [
         ...base.filter((name) => name !== "OPENAI_API_KEY"),
@@ -25,4 +32,10 @@ export function productShotSecretNames(base, provider) {
   if (!["disabled", "fake", "photoroom"].includes(provider))
     throw new Error("PRODUCT_SHOT_PROVIDER is invalid");
   return provider === "photoroom" ? [...base, "PHOTOROOM_API_KEY"] : base;
+}
+
+export function validateOpenCodeGoListingModel(value) {
+  if (value !== "deepseek-v4.1-flash")
+    throw new Error("OPENCODE_GO_LISTING_MODEL is invalid");
+  return value;
 }
