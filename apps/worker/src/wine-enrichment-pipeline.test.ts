@@ -231,3 +231,47 @@ it("rejects malformed frozen quality wrapper, request, candidate and content mis
     expect(() => parseWineStageResult(value, "generation")).toThrow();
   }
 });
+it("frozen verification parsing copies exact context and rejects added trusted fields", () => {
+  const frozen = {
+    schemaVersion: 1,
+    binding: { workspaceId: "ws", operationId: "run", inputRevision: 1 },
+    identity: wineIdentity(),
+    sources: [],
+    supports: [],
+    authorities: [],
+    reliableSourceIds: [],
+    trustedObservationSourceIds: [],
+    acceptedPremises: [],
+    verifiedAliases: [],
+    lockedFields: ["title.en"],
+    now: "2026-09-16T00:00:00.000Z",
+  };
+  const value = {
+    schemaVersion: 1,
+    state: "succeeded",
+    stage: "verification",
+    identity: wineIdentity(),
+    claims: [],
+    needsDeepSearch: false,
+    deepSearchReasons: [],
+    issues: [],
+    frozenVerification: frozen,
+  };
+  const parsed = parseWineStageResult(value, "verification");
+  frozen.lockedFields.push("tags");
+  expect(parsed).toMatchObject({
+    frozenVerification: { lockedFields: ["title.en"] },
+  });
+  expect(() =>
+    parseWineStageResult(
+      { ...value, frozenVerification: { ...frozen, trusted: true } },
+      "verification",
+    ),
+  ).toThrow();
+  expect(() =>
+    parseWineStageResult(
+      { ...value, frozenVerification: { ...frozen, now: "invalid" } },
+      "verification",
+    ),
+  ).toThrow();
+});

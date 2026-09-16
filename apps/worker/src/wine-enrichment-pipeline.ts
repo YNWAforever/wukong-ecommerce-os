@@ -12,6 +12,8 @@ import {
 } from "@wukong/core";
 import {
   wineQualityIssueSchema,
+  wineFrozenContextSchema,
+  type WineFrozenContext,
   wineGenerationRequestSchema,
   wineGenerationCandidateSchema,
   type WineGenerationRequest,
@@ -61,6 +63,7 @@ export type WineStageResult =
       {
         identity: ProductIdentity;
         claims: SupportedClaim[];
+        frozenVerification?: WineFrozenContext;
         needsDeepSearch: boolean;
         deepSearchReasons: ("identity_gap" | "core_fact_gap" | "conflict")[];
         issues: QualityIssue[];
@@ -202,6 +205,13 @@ export function parseWineStageResult(
     )
       throw Error("invalid cache origin");
     keys[stage].push("cacheOrigin");
+  }
+  if (
+    (stage === "verification" || stage === "verification_deep") &&
+    "frozenVerification" in r
+  ) {
+    wineFrozenContextSchema.parse(r.frozenVerification);
+    keys[stage].push("frozenVerification");
   }
   if (stage === "generation" && "frozenQuality" in r) {
     const frozen = r.frozenQuality;

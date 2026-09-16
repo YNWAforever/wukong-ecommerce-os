@@ -258,6 +258,61 @@ export function createWineStageStore(
           code: "generation_binding_mismatch",
         };
     }
+    if (
+      result.state === "succeeded" &&
+      (result.stage === "verification" ||
+        result.stage === "verification_deep") &&
+      result.frozenVerification
+    ) {
+      const verification = result;
+      const frozen = result.frozenVerification,
+        binding = frozen.binding;
+      const now = Date.parse(await r.pipelineRuns.acceptanceTimestamp());
+      const observed = Date.parse(frozen.now);
+      const sources = await r.wineEnrichment.readEvidence(run.id);
+      const provenance = (source: (typeof sources)[number]) => {
+        const { identity: _identity, trust: _trust, ...retained } = source;
+        return retained;
+      };
+      const poolDigest = (pool: typeof sources) =>
+        listingInputDigest(
+          pool.map(provenance).sort((a, b) => a.id.localeCompare(b.id)),
+        );
+      if (
+        binding.workspaceId !== job.workspaceId ||
+        binding.operationId !== run.id ||
+        binding.inputRevision !== run.inputRevision ||
+        !Number.isFinite(observed) ||
+        new Date(observed).toISOString() !== frozen.now ||
+        observed < Date.parse(run.acceptedAt) ||
+        observed > now ||
+        observed >=
+          Date.parse(
+            (run.execution.wineAcquisition as { deadlineAt: string })
+              .deadlineAt,
+          ) ||
+        listingInputDigest(await r.wineEnrichment.readAuthorities()) !==
+          listingInputDigest(frozen.authorities) ||
+        poolDigest(sources) !== poolDigest(frozen.sources) ||
+        listingInputDigest(frozen.identity) !==
+          listingInputDigest(result.identity) ||
+        frozen.acceptedPremises.some(
+          (p) =>
+            p.kind !== "fact" ||
+            p.scope !== "product" ||
+            p.state !== "accepted" ||
+            !verification.claims.some(
+              (claim) => listingInputDigest(claim) === listingInputDigest(p),
+            ),
+        )
+      )
+        result = {
+          schemaVersion: 1,
+          stage: result.stage,
+          state: "blocked",
+          code: "verification_binding_mismatch",
+        };
+    }
     const stale = projected ? null : await fence(r, run);
     // Results survive a revision change, but cannot enqueue or adopt into the current listing.
     const terminal = {
