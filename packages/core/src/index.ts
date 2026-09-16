@@ -109,3 +109,7 @@ export * from "./copy-claim-support.js";
 
 export * from "./wine-enrichment-contracts.js";
 export * from "./wine-enrichment-fixtures.js";
+export * from "./fact-normalization.js";
+export * from "./wine-identity-match.js";
+export * from "./wine-source-authority.js";
+export * from "./wine-claim-policy.js";
