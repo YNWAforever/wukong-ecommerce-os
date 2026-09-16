@@ -42,7 +42,12 @@ export type WineStageResult =
     >
   | Success<
       "search_basic" | "search_deep",
-      { evidence: EvidenceSource[]; partial: boolean; issues: QualityIssue[] }
+      {
+        evidence: EvidenceSource[];
+        partial: boolean;
+        issues: QualityIssue[];
+        cacheOrigin?: { schemaVersion: 1; runId: string; snapshotId: string };
+      }
     >
   | Success<
       "verification" | "verification_deep",
@@ -148,6 +153,20 @@ export function parseWineStageResult(
     quality_check: ["contentDigest", "outcome", "issues"],
     commit_candidate: ["versionId", "outcome"],
   };
+  if (["search_basic", "search_deep"].includes(stage) && "cacheOrigin" in r) {
+    const origin = r.cacheOrigin;
+    if (!origin || typeof origin !== "object" || Array.isArray(origin))
+      throw Error("invalid cache origin");
+    const value = origin as Record<string, unknown>;
+    strictKeys(value, ["schemaVersion", "runId", "snapshotId"]);
+    if (
+      value.schemaVersion !== 1 ||
+      !wineListingJobSchema.shape.runId.safeParse(value.runId).success ||
+      !wineListingJobSchema.shape.runId.safeParse(value.snapshotId).success
+    )
+      throw Error("invalid cache origin");
+    keys[stage].push("cacheOrigin");
+  }
   strictKeys(r, [...base, ...keys[stage]]);
   if (
     stage === "extraction" &&

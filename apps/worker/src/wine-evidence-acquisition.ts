@@ -40,6 +40,8 @@ export type WineAcquisitionStage =
   | { stage: "deep" }
   | { stage: "extract"; sourceIds: string[] };
 export type WineAcquisitionPorts = {
+  /** Server-owned complete pool integration bypasses legacy invocation snapshots. */
+  cacheMode?: "invocation" | "complete_pool";
   store: WineEvidenceStore;
   provider: Pick<TavilyProvider, "search" | "extract">;
   document: (input: WineDocumentRequest) => Promise<WineDocumentResult>;
@@ -61,6 +63,31 @@ export function wineEvidenceCacheKey(input: EvidenceRequest): string {
   return JSON.stringify({
     workspaceId: input.workspaceId,
     identity: normalize(productIdentitySchema.parse(input.identity)),
+    policyDigest: input.policyDigest,
+    rulesVersion: input.rulesVersion,
+    allowedDomains: [...input.allowedDomains].sort(),
+  });
+}
+/** Semantic complete-pool key; provenance is checked separately against committed origin records. */
+export function wineCompleteEvidenceCacheKey(input: EvidenceRequest): string {
+  const identity = productIdentitySchema.parse(input.identity);
+  const observations = (
+    values: ProductIdentity["observations"] | ProductIdentity["category"],
+  ) =>
+    Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [
+        key,
+        value && { value: value.value, state: value.state },
+      ]),
+    );
+  return JSON.stringify({
+    namespace: "wine-complete-evidence@1",
+    workspaceId: input.workspaceId,
+    identity: normalize({
+      ...identity,
+      observations: observations(identity.observations),
+      category: observations(identity.category),
+    }),
     policyDigest: input.policyDigest,
     rulesVersion: input.rulesVersion,
     allowedDomains: [...input.allowedDomains].sort(),
@@ -180,7 +207,11 @@ export async function acquireWineEvidence(
     !!publicUrl(source.url, input.allowedDomains) &&
     Date.parse(source.capturedAt) <= Date.parse(context.now) &&
     Date.parse(source.capturedAt) > Date.parse(context.now) - 7 * 86400000;
-  if (stage.stage === "basic" && !input.forceRefresh) {
+  if (
+    ports.cacheMode !== "complete_pool" &&
+    stage.stage === "basic" &&
+    !input.forceRefresh
+  ) {
     const cached = await ports.store.cache(input, key);
     if (
       cached &&
@@ -486,7 +517,11 @@ export async function acquireWineEvidence(
       }
     }
   }
-  if (sources.length && warnings.length === 0) {
+  if (
+    ports.cacheMode !== "complete_pool" &&
+    sources.length &&
+    warnings.length === 0
+  ) {
     const ids = sources.map((s) => s.id).sort(),
       snapshotId = await evidenceId(
         input.runId + key.identityKey + JSON.stringify(ids),
@@ -515,6 +550,7 @@ export async function acquireWineEvidence(
 /** Task 8 constructs this inside its invocation using server-owned bindings, never a searched URL. */
 export function createWineEvidenceAcquisition(config: {
   database: Pick<Database, "forWorkspace">;
+  cacheMode?: "invocation" | "complete_pool";
   tavilyApiKey: string;
   websiteFetchBaseUrl: string;
   queueSecret: string;
@@ -522,6 +558,7 @@ export function createWineEvidenceAcquisition(config: {
   now?: () => Date;
 }) {
   const ports: WineAcquisitionPorts = {
+    cacheMode: config.cacheMode,
     store: createWineEvidenceStore(config.database),
     provider: new TavilyProvider({
       apiKey: config.tavilyApiKey,

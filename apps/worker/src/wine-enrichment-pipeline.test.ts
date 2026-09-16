@@ -117,3 +117,33 @@ it("requires exact server observation timestamp even for empty extraction", () =
       parseWineStageResult({ ...extraction, observedAt }, "extraction"),
     ).toThrow();
 });
+it("accepts only strict server cache provenance on search results", () => {
+  const basic = {
+    schemaVersion: 1,
+    state: "succeeded",
+    stage: "search_basic",
+    evidence: [],
+    partial: false,
+    issues: [],
+    cacheOrigin: {
+      schemaVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000001",
+      snapshotId: "00000000-0000-4000-8000-000000000002",
+    },
+  };
+  expect(parseWineStageResult(basic, "search_basic")).toEqual(basic);
+  for (const cacheOrigin of [
+    { ...basic.cacheOrigin, forceRefresh: false },
+    { ...basic.cacheOrigin, runId: "invalid" },
+    { ...basic.cacheOrigin, schemaVersion: 2 },
+  ])
+    expect(() =>
+      parseWineStageResult({ ...basic, cacheOrigin }, "search_basic"),
+    ).toThrow();
+  expect(() =>
+    parseWineStageResult(
+      { ...extraction, cacheOrigin: basic.cacheOrigin },
+      "extraction",
+    ),
+  ).toThrow();
+});

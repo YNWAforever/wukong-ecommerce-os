@@ -7,6 +7,7 @@ import {
   acquireWineEvidence,
   wineEvidenceCacheKey,
   wineIdentityQueries,
+  wineCompleteEvidenceCacheKey,
 } from "./wine-evidence-acquisition.js";
 const now = "2026-09-16T00:00:00.000Z";
 const request = {
@@ -553,4 +554,69 @@ describe("document callback deadline", () => {
     expect(h.calls.has("extract_1")).toBe(false);
     expect(result.warnings).toContain("deadline_expired");
   });
+});
+
+it("complete-pool ownership disables invocation cache reads and writes", async () => {
+  const h = harness();
+  const cache = vi.fn(async () => {
+    throw Error("partial cache must not be read");
+  });
+  h.store.cache = cache;
+  const result = await acquireWineEvidence(
+    request,
+    { stage: "basic", slots: ["basic_1", "basic_2"] },
+    { ...h, cacheMode: "complete_pool" },
+  );
+  expect(result.sources.length).toBeGreaterThan(0);
+  expect(h.provider.search).toHaveBeenCalledTimes(2);
+  expect(cache).not.toHaveBeenCalled();
+  expect(h.store.saveCache).not.toHaveBeenCalled();
+});
+it("semantic cache identity ignores only observation evidence references", () => {
+  const identity = wineIdentity();
+  const other = structuredClone(identity);
+  other.observations.producer!.evidenceIds = [
+    "00000000-0000-4000-8000-000000000002",
+  ];
+  expect(wineCompleteEvidenceCacheKey({ ...request, identity })).toBe(
+    wineCompleteEvidenceCacheKey({ ...request, identity: other }),
+  );
+  other.observations.producer!.state = "conflict";
+  expect(wineCompleteEvidenceCacheKey({ ...request, identity })).not.toBe(
+    wineCompleteEvidenceCacheKey({ ...request, identity: other }),
+  );
+});
+
+it.each([
+  { vintage: { state: "known", year: 2021 } },
+  { vintage: { state: "not_applicable", year: null } },
+  { volumeMl: 1500 },
+  { packQuantity: 6 },
+  { marketVariant: "HK" },
+  { barcode: "123456789" },
+  { cuvee: "Another cuvee" },
+])("complete semantic key retains product discriminator %j", (change) => {
+  const base = wineIdentity();
+  const identity = wineIdentity(change as Parameters<typeof wineIdentity>[0]);
+  expect(wineCompleteEvidenceCacheKey({ ...request, identity })).not.toBe(
+    wineCompleteEvidenceCacheKey({ ...request, identity: base }),
+  );
+});
+it("complete semantic key canonicalizes property order while retaining domains and policy", () => {
+  const identity = wineIdentity();
+  const reversed = Object.fromEntries(
+    Object.entries(identity).reverse(),
+  ) as typeof identity;
+  expect(wineCompleteEvidenceCacheKey({ ...request, identity })).toBe(
+    wineCompleteEvidenceCacheKey({ ...request, identity: reversed }),
+  );
+  for (const change of [
+    { allowedDomains: ["other.test"] },
+    { policyDigest: "p2" },
+    { rulesVersion: "r2" },
+    { workspaceId: "other" },
+  ])
+    expect(wineCompleteEvidenceCacheKey({ ...request, ...change })).not.toBe(
+      wineCompleteEvidenceCacheKey(request),
+    );
 });
