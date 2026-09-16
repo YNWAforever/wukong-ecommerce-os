@@ -1,3 +1,5 @@
+import { createDatabase, type Database } from "@wukong/db";
+import { createWineStageStore } from "./wine-enrichment-runtime.js";
 import { afterAll, expect, it } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { db, extracted } from "./wine-research.integration-fixture.js";
@@ -152,6 +154,7 @@ async function authority(f: F, domain = "wine.test", reliable = false) {
   await db.forWorkspace(f.workspaceId, (r) =>
     r.wineEnrichment.recordReviewedAuthority(reviewer, value),
   );
+  return value;
 }
 function verifier(
   f: F,
@@ -731,7 +734,11 @@ it("cache publication failure diagnostics cannot block committed next stage", as
 it("rejects current registry changes during verification without a second model call", async () => {
   const f = await setup({ abv: false, market: true });
   await researched(f, { docs: { "wine.test": label + "\nABV: 13 %" } });
-  const s = verifier(f, { beforeResponse: () => authority(f) });
+  const s = verifier(f, {
+    beforeResponse: async () => {
+      await authority(f);
+    },
+  });
   expect(
     await runWineStage(
       { ...f.job, stage: "verification" },
@@ -842,4 +849,149 @@ it("oversized complete cache is diagnostic only and retains the entire pool", as
   expect((await stored(f)).frozenVerification!.sources).toHaveLength(
     sources.length,
   );
+});
+function signal() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+function taggedDatabase(name: string) {
+  const url = new URL(process.env.TEST_DATABASE_URL!);
+  url.searchParams.set("application_name", name);
+  return createDatabase(url.toString(), { maxConnections: 1 });
+}
+async function blockedBy(
+  waiter: string,
+  holder: string,
+  completed: () => boolean,
+) {
+  for (let probe = 0; probe < 100 && !completed(); probe++) {
+    const rows =
+      await admin`select w.pid,pg_blocking_pids(w.pid) blockers,h.pid holder from pg_stat_activity w cross join pg_stat_activity h where w.application_name=${waiter} and h.application_name=${holder}`;
+    if (
+      rows.some((row: { blockers: number[]; holder: number }) =>
+        row.blockers.includes(row.holder),
+      )
+    )
+      return true;
+  }
+  return false;
+}
+it("registry revocation waits for the verification transaction after comparison through COMMIT", async () => {
+  const f = await setup();
+  const active = await authority(f);
+  await researched(f, { empty: true });
+  const s = verifier(f);
+  const claim = await f.store.claim({ ...f.job, stage: "verification" });
+  if (claim.status !== "claimed") throw Error("claim");
+  const output = await s.execute(claim.context);
+  const finishTag = `wine-finish-${randomUUID()}`,
+    writerTag = `wine-revoke-${randomUUID()}`,
+    finishDb = taggedDatabase(finishTag),
+    writerDb = taggedDatabase(writerTag);
+  const atTerminal = signal(),
+    release = signal();
+  let writerDone = false;
+  const wrapped: Pick<Database, "forWorkspace"> = {
+    forWorkspace: (ws, work) =>
+      finishDb.forWorkspace(ws, (r) =>
+        work({
+          ...r,
+          wineEnrichment: {
+            ...r.wineEnrichment,
+            finishStage: async (input) => {
+              atTerminal.resolve();
+              await release.promise;
+              return r.wineEnrichment.finishStage(input);
+            },
+          },
+        }),
+      ),
+  };
+  const finishing = createWineStageStore(wrapped).finish(claim.context, output);
+  await Promise.race([
+    atTerminal.promise,
+    finishing.then(() => {
+      throw Error("finish bypassed terminal barrier");
+    }),
+  ]);
+  const revoking = writerDb
+    .forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.recordReviewedAuthority(active.verifierId, {
+        ...active,
+        revokedAt: new Date().toISOString(),
+      }),
+    )
+    .finally(() => {
+      writerDone = true;
+    });
+  try {
+    expect(await blockedBy(writerTag, finishTag, () => writerDone)).toBe(true);
+    const persisted =
+      await admin`select state from wine_stages where run_id=${f.run.id} and stage='verification'`;
+    expect(persisted[0]!.state).toBe("started");
+  } finally {
+    release.resolve();
+    await Promise.all([finishing, revoking]);
+    await Promise.all([finishDb.close(), writerDb.close()]);
+  }
+  expect(await finishing).toMatchObject({ status: "advanced" });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readAuthorities(),
+    ),
+  ).toHaveLength(2);
+});
+it("registry revocation committed first makes waiting verification finish reject", async () => {
+  const f = await setup();
+  const active = await authority(f);
+  await researched(f, { empty: true });
+  const s = verifier(f);
+  const claim = await f.store.claim({ ...f.job, stage: "verification" });
+  if (claim.status !== "claimed") throw Error("claim");
+  const output = await s.execute(claim.context);
+  const finishTag = `wine-finish-${randomUUID()}`,
+    writerTag = `wine-revoke-${randomUUID()}`,
+    finishDb = taggedDatabase(finishTag),
+    writerDb = taggedDatabase(writerTag);
+  const inserted = signal(),
+    release = signal();
+  let finished = false;
+  const revoking = writerDb.forWorkspace(f.workspaceId, async (r) => {
+    await r.wineEnrichment.recordReviewedAuthority(active.verifierId, {
+      ...active,
+      revokedAt: new Date().toISOString(),
+    });
+    inserted.resolve();
+    await release.promise;
+  });
+  await Promise.race([
+    inserted.promise,
+    revoking.then(() => {
+      throw Error("writer bypassed insert barrier");
+    }),
+  ]);
+  const finishing = createWineStageStore(finishDb)
+    .finish(claim.context, output)
+    .finally(() => {
+      finished = true;
+    });
+  try {
+    expect(await blockedBy(finishTag, writerTag, () => finished)).toBe(true);
+  } finally {
+    release.resolve();
+    await Promise.all([finishing, revoking]);
+    await Promise.all([finishDb.close(), writerDb.close()]);
+  }
+  expect(await finishing).toMatchObject({
+    status: "blocked",
+    code: "verification_binding_mismatch",
+  });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readStage(f.run.id, "generation"),
+    ),
+  ).toBeNull();
 });

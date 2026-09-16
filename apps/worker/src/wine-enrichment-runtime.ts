@@ -264,6 +264,8 @@ export function createWineStageStore(
         result.stage === "verification_deep") &&
       result.frozenVerification
     ) {
+      // Hold the shared registry lock through stage/outbox COMMIT; sample time after any wait.
+      await r.wineEnrichment.lockAuthorities();
       const verification = result;
       const frozen = result.frozenVerification,
         binding = frozen.binding;

@@ -117,6 +117,8 @@ export type WineEnrichmentRepository = {
     authenticatedActorId: string,
     authority: WineSourceAuthority,
   ): Promise<void>;
+  /** Hold workspace NO KEY UPDATE through the authoritative decision transaction. */
+  lockAuthorities(): Promise<void>;
   readAuthorities(): Promise<WineSourceAuthority[]>;
   saveTrustedContext(input: {
     runId: string;
@@ -168,6 +170,14 @@ export function createWineEnrichmentRepository(
     );
     if (rows[0]?.same !== true)
       throw new Error("immutable wine snapshot conflict");
+  }
+  // Same row/mode as budget coordination. Call only after any listing/run locks;
+  // registry writers acquire this before membership locks and never request listing/run locks.
+  async function lockAuthorities() {
+    scope.assertOpen();
+    await tx.execute(
+      sql`select id from workspaces where id=${workspaceId} for no key update`,
+    );
   }
   return {
     async settleTerminalBudgets(runId) {
@@ -327,9 +337,11 @@ export function createWineEnrichmentRepository(
       );
       return rows.map((row) => evidenceSourceSchema.parse(row.payload));
     },
+    lockAuthorities,
     async recordReviewedAuthority(authenticatedActorId, authority) {
       scope.assertOpen();
       const parsed = wineSourceAuthoritySchema.parse(authority);
+      await lockAuthorities();
       const membership = await tx.execute(
         sql`select role from memberships where workspace_id=${workspaceId} and user_id=${authenticatedActorId} for share`,
       );
