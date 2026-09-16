@@ -2200,3 +2200,170 @@ export const listingVersionClaimSupports = pgTable(
     }),
   ],
 );
+
+// Migration 0041 owns RLS, grants and immutable triggers for these tables.
+export const wineStages = pgTable(
+  "wine_stages",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    stage: text("stage").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    inputDigest: text("input_digest").notNull(),
+    dependencyDigest: text("dependency_digest").notNull(),
+    state: text("state").notNull().default("started"),
+    output: jsonb("output"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.stage] }),
+    foreignKey({
+      name: "wine_stages_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineEvidence = pgTable(
+  "wine_evidence",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.sourceId] }),
+    foreignKey({
+      name: "wine_evidence_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineSectionSnapshots = pgTable(
+  "wine_section_snapshots",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.versionId] }),
+    foreignKey({
+      name: "wine_sections_run_fk",
+      columns: [t.workspaceId, t.listingId, t.runId],
+      foreignColumns: [
+        listingPipelineRuns.workspaceId,
+        listingPipelineRuns.listingId,
+        listingPipelineRuns.id,
+      ],
+    }),
+    foreignKey({
+      name: "wine_sections_version_fk",
+      columns: [t.workspaceId, t.listingId, t.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+    index("wine_sections_version_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.versionId,
+    ),
+  ],
+);
+export const wineSourceAuthorities = pgTable(
+  "wine_source_authorities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    reviewerId: text("reviewer_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index("wine_authorities_workspace_idx").on(t.workspaceId)],
+);
+export const wineTrustedContexts = pgTable(
+  "wine_trusted_contexts",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    contextKey: text("context_key").notNull(),
+    inputDigest: text("input_digest").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.contextKey] }),
+    foreignKey({
+      name: "wine_context_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const searchBudgetReservations = pgTable(
+  "search_budget_reservations",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    pipelineRunId: uuid("pipeline_run_id").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    reservedCredits: integer("reserved_credits").notNull(),
+    settledCredits: integer("settled_credits"),
+    state: text("state").notNull().default("held"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.pipelineRunId] }),
+    foreignKey({
+      name: "search_budget_run_fk",
+      columns: [t.workspaceId, t.pipelineRunId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineSearchCalls = pgTable(
+  "wine_search_calls",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    slot: text("slot").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    maximumCredits: integer("maximum_credits").notNull(),
+    credits: integer("credits"),
+    status: text("status").notNull().default("started"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.slot] }),
+    foreignKey({
+      name: "wine_calls_reservation_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [
+        searchBudgetReservations.workspaceId,
+        searchBudgetReservations.pipelineRunId,
+      ],
+    }),
+  ],
+);

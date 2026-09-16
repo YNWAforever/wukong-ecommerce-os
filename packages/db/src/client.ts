@@ -1,4 +1,13 @@
 import {
+  createWineEnrichmentRepository,
+  type WineEnrichmentRepository,
+} from "./repositories/wine-enrichment.js";
+import {
+  createSearchBudgetReservationRepository,
+  type SearchBudgetReservationRepository,
+} from "./repositories/search-budget-reservations.js";
+import { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
+import {
   createListingEnrichmentRepository,
   type ListingEnrichmentRepository,
 } from "./repositories/listing-enrichment.js";
@@ -132,6 +141,8 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  wineEnrichment: WineEnrichmentRepository;
+  searchBudgetReservations: SearchBudgetReservationRepository;
   productShots: ProductShotRepository;
   workbench: WorkbenchReadRepository;
   workbookCatalog: WorkbookCatalogRepository;
@@ -172,6 +183,11 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  inspectWineEnrichmentCompatibility(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
   inspectListingRecoveryCompatibility(): Promise<{
     version: string;
     ready: boolean;
@@ -378,6 +394,16 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        wineEnrichment: createWineEnrichmentRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        searchBudgetReservations: createSearchBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         aiBudgetReservations: createAiBudgetReservationRepository(
           transaction,
@@ -401,6 +427,10 @@ export function createDatabase(
   };
 
   return {
+    inspectWineEnrichmentCompatibility: () =>
+      inspectWineEnrichmentCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
     inspectListingRecoveryCompatibility: () =>
       inspectListingRecoveryCompatibility(async (statement) => [
         ...(await client.unsafe(statement)),

@@ -170,3 +170,12 @@ export type {
   ListingEnrichmentSuggestion,
   ListingEnrichmentPayload,
 } from "./repositories/listing-enrichment.js";
+export type {
+  WineEnrichmentRepository,
+  StageRecord,
+  SearchCall,
+  WineTrustedContext,
+} from "./repositories/wine-enrichment.js";
+export { wineTrustedContextSchema } from "./repositories/wine-enrichment.js";
+export type { SearchBudgetReservationRepository } from "./repositories/search-budget-reservations.js";
+export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";

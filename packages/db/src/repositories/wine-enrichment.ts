@@ -1,0 +1,289 @@
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import {
+  evidenceSourceSchema,
+  wineSourceAuthoritySchema,
+  wineContentSchema,
+  productIdentitySchema,
+  supportedClaimSchema,
+  type EvidenceSource,
+  type WineSourceAuthority,
+  type WineStage,
+  type WineContent,
+} from "@wukong/core";
+import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
+export type StageRecord = {
+  runId: string;
+  stage: WineStage;
+  inputDigest: string;
+  state: "started" | "succeeded" | "failed" | "skipped" | "unknown";
+  output: unknown;
+  dependencyDigest: string;
+  updatedAt: string;
+};
+export type SearchCall = {
+  runId: string;
+  slot: "basic_1" | "basic_2" | "advanced_1" | "extract_1";
+  maximumCredits: number;
+  requestDigest: string;
+};
+// Server-only context. Acquisition/generation inputs must never be mapped into these trust arrays.
+export const wineTrustedContextSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    identity: productIdentitySchema,
+    policyVersion: z.string().min(1),
+    authorities: z.array(wineSourceAuthoritySchema),
+    supports: z.array(
+      z
+        .object({
+          sourceId: z.uuid(),
+          field: supportedClaimSchema.shape.field,
+          value: supportedClaimSchema.shape.value,
+          span: z.string().min(1),
+          originalAuthority: z.string().min(1).optional(),
+          applicableVintage: z
+            .union([
+              z
+                .object({
+                  state: z.literal("known"),
+                  year: z.number().int().min(1800).max(2200),
+                })
+                .strict(),
+              z
+                .object({
+                  state: z.enum(["unknown", "not_applicable"]),
+                  year: z.null(),
+                })
+                .strict(),
+            ])
+            .optional(),
+        })
+        .strict(),
+    ),
+    reliableSourceIds: z.array(z.uuid()),
+    trustedObservationSourceIds: z.array(z.uuid()),
+    acceptedPremises: z.array(supportedClaimSchema),
+    verifiedAliases: z.array(
+      z
+        .object({
+          producer: z.string().min(1),
+          canonicalName: z.string().min(1),
+          alias: z.string().min(1),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export type WineTrustedContext = z.infer<typeof wineTrustedContextSchema>;
+export type WineEnrichmentRepository = {
+  claimStage(
+    input: Omit<StageRecord, "output" | "updatedAt" | "state">,
+  ): Promise<boolean>;
+  readStage(runId: string, stage: WineStage): Promise<StageRecord | null>;
+  finishStage(input: StageRecord): Promise<boolean>;
+  beginSearchCall(input: SearchCall): Promise<boolean>;
+  finishSearchCall(
+    input: SearchCall & { credits: number | null; status: string },
+  ): Promise<boolean>;
+  saveEvidence(runId: string, sources: EvidenceSource[]): Promise<void>;
+  readEvidence(runId: string): Promise<EvidenceSource[]>;
+  recordReviewedAuthority(
+    authenticatedActorId: string,
+    authority: WineSourceAuthority,
+  ): Promise<void>;
+  readAuthorities(): Promise<WineSourceAuthority[]>;
+  saveTrustedContext(input: {
+    runId: string;
+    contextKey: string;
+    inputDigest: string;
+    context: WineTrustedContext;
+  }): Promise<void>;
+  readTrustedContext(
+    runId: string,
+    contextKey: string,
+    inputDigest: string,
+  ): Promise<WineTrustedContext | null>;
+  saveSections(input: {
+    runId: string;
+    listingId: string;
+    versionId: string;
+    content: WineContent;
+  }): Promise<void>;
+  readSections(runId: string, versionId: string): Promise<WineContent | null>;
+};
+const json = (value: unknown) => JSON.stringify(value);
+export function createWineEnrichmentRepository(
+  tx: WorkspaceTransaction,
+  workspaceId: string,
+  scope: WorkspaceScope,
+): WineEnrichmentRepository {
+  async function immutableInsert(
+    table: string,
+    keys: Record<string, string>,
+    payload: unknown,
+  ) {
+    scope.assertOpen();
+    const predicates = Object.entries(keys).map(
+      ([key, value]) => sql`${sql.identifier(key)}=${value}`,
+    );
+    const columns = ["workspace_id", ...Object.keys(keys), "payload"].map(
+      (key) => sql.identifier(key),
+    );
+    const values = [
+      sql`${workspaceId}`,
+      ...Object.values(keys).map((value) => sql`${value}`),
+      sql`${json(payload)}::jsonb`,
+    ];
+    await tx.execute(
+      sql`insert into ${sql.identifier(table)}(${sql.join(columns, sql`,`)}) values(${sql.join(values, sql`,`)}) on conflict do nothing`,
+    );
+    const rows = await tx.execute(
+      sql`select payload=${json(payload)}::jsonb as same from ${sql.identifier(table)} where workspace_id=${workspaceId} and ${sql.join(predicates, sql` and `)}`,
+    );
+    if (rows[0]?.same !== true)
+      throw new Error("immutable wine snapshot conflict");
+  }
+  return {
+    async claimStage(input) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`insert into wine_stages(workspace_id,run_id,stage,input_digest,dependency_digest) values(${workspaceId},${input.runId},${input.stage},${input.inputDigest},${input.dependencyDigest}) on conflict do nothing returning run_id`,
+      );
+      return !!rows[0];
+    },
+    async readStage(runId, stage) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select * from wine_stages where workspace_id=${workspaceId} and run_id=${runId} and stage=${stage}`,
+      );
+      const row = rows[0];
+      return row
+        ? {
+            runId: String(row.run_id),
+            stage: row.stage as WineStage,
+            inputDigest: String(row.input_digest),
+            dependencyDigest: String(row.dependency_digest),
+            state: row.state as StageRecord["state"],
+            output: row.output,
+            updatedAt: new Date(row.updated_at as string).toISOString(),
+          }
+        : null;
+    },
+    async finishStage(input) {
+      scope.assertOpen();
+      if (input.state === "started") throw new Error("terminal stage required");
+      const rows = await tx.execute(
+        sql`update wine_stages set state=${input.state},output=${json(input.output)}::jsonb,updated_at=now() where workspace_id=${workspaceId} and run_id=${input.runId} and stage=${input.stage} and input_digest=${input.inputDigest} and dependency_digest=${input.dependencyDigest} and state='started' returning run_id`,
+      );
+      return !!rows[0];
+    },
+    async beginSearchCall(input) {
+      scope.assertOpen();
+      const reservation = await tx.execute(
+        sql`select state,reserved_credits from search_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${input.runId} for update`,
+      );
+      if (reservation[0]?.state !== "held") return false;
+      const rows =
+        await tx.execute(sql`insert into wine_search_calls(workspace_id,run_id,slot,maximum_credits,request_digest)
+    select ${workspaceId},${input.runId},${input.slot},${input.maximumCredits},${input.requestDigest}
+    where (select coalesce(sum(maximum_credits),0) from wine_search_calls where workspace_id=${workspaceId} and run_id=${input.runId})+${input.maximumCredits}<=${reservation[0].reserved_credits}
+    on conflict do nothing returning run_id`);
+      return !!rows[0];
+    },
+    async finishSearchCall(input) {
+      scope.assertOpen();
+      if (!["succeeded", "failed", "unknown"].includes(input.status))
+        throw new Error("terminal search status required");
+      const rows = await tx.execute(
+        sql`update wine_search_calls set credits=${input.credits},status=${input.status},updated_at=now() where workspace_id=${workspaceId} and run_id=${input.runId} and slot=${input.slot} and request_digest=${input.requestDigest} and maximum_credits=${input.maximumCredits} and status='started' returning run_id`,
+      );
+      return !!rows[0];
+    },
+    async saveEvidence(runId, sources) {
+      scope.assertOpen();
+      const valid = sources.map((source) => evidenceSourceSchema.parse(source));
+      for (const source of valid)
+        await immutableInsert(
+          "wine_evidence",
+          { run_id: runId, source_id: source.id },
+          source,
+        );
+    },
+    async readEvidence(runId) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select payload from wine_evidence where workspace_id=${workspaceId} and run_id=${runId} order by source_id`,
+      );
+      return rows.map((row) => evidenceSourceSchema.parse(row.payload));
+    },
+    async recordReviewedAuthority(authenticatedActorId, authority) {
+      scope.assertOpen();
+      const parsed = wineSourceAuthoritySchema.parse(authority);
+      const membership = await tx.execute(
+        sql`select role from memberships where workspace_id=${workspaceId} and user_id=${authenticatedActorId} for share`,
+      );
+      if (
+        !["reviewer", "admin", "owner"].includes(String(membership[0]?.role)) ||
+        parsed.verifierId !== authenticatedActorId
+      )
+        throw new Error("authorized reviewer required");
+      await tx.execute(
+        sql`insert into wine_source_authorities(workspace_id,reviewer_id,payload) values(${workspaceId},${authenticatedActorId},${json(parsed)}::jsonb)`,
+      );
+    },
+    async readAuthorities() {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select payload from wine_source_authorities where workspace_id=${workspaceId} order by created_at,id`,
+      );
+      return rows.map((row) => wineSourceAuthoritySchema.parse(row.payload));
+    },
+    async saveTrustedContext(input) {
+      const context = wineTrustedContextSchema.parse(input.context);
+      await immutableInsert(
+        "wine_trusted_contexts",
+        {
+          run_id: input.runId,
+          context_key: input.contextKey,
+          input_digest: input.inputDigest,
+        },
+        context,
+      );
+    },
+    async readTrustedContext(runId, contextKey, inputDigest) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select payload from wine_trusted_contexts where workspace_id=${workspaceId} and run_id=${runId} and context_key=${contextKey} and input_digest=${inputDigest}`,
+      );
+      return rows[0] ? wineTrustedContextSchema.parse(rows[0].payload) : null;
+    },
+    async saveSections(input) {
+      scope.assertOpen();
+      const operation = await tx.execute(
+        sql`select id from listing_pipeline_runs where workspace_id=${workspaceId} and id=${input.runId} and listing_id=${input.listingId}`,
+      );
+      if (!operation[0]) throw new Error("section run/listing mismatch");
+      await immutableInsert(
+        "wine_section_snapshots",
+        {
+          run_id: input.runId,
+          listing_id: input.listingId,
+          version_id: input.versionId,
+        },
+        { schemaVersion: 1, content: wineContentSchema.parse(input.content) },
+      );
+    },
+    async readSections(runId, versionId) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select payload from wine_section_snapshots where workspace_id=${workspaceId} and run_id=${runId} and version_id=${versionId}`,
+      );
+      return rows[0]
+        ? wineContentSchema.parse(
+            (rows[0].payload as { content: unknown }).content,
+          )
+        : null;
+    },
+  };
+}
