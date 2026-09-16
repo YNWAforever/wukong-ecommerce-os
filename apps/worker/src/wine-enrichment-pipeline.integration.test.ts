@@ -34,10 +34,12 @@ afterAll(async () => {
   await db.close();
   await admin.end();
 });
+let observedAt = new Date().toISOString();
 const extracted = (): WineStageResult => ({
   schemaVersion: 1,
   state: "succeeded",
   stage: "extraction",
+  observedAt,
   identity: wineIdentity(),
   evidence: [],
   issues: [],
@@ -97,6 +99,7 @@ async function fixture() {
     });
     return run;
   });
+  observedAt = run.acceptedAt;
   const job: WineListingJob = {
     schemaVersion: 2,
     flowVersion: "wine-enrichment-v1",
@@ -876,4 +879,21 @@ it("rechecks time after dependency reads immediately before committing a new cla
     }),
   ).toMatchObject({ status: "stopped", code: "operation_deadline" });
   expect(calls).toBe(0);
+});
+it("rejects extraction capture times outside accepted server interval", async () => {
+  for (const value of [
+    "2001-01-01T00:00:00.000Z",
+    "2200-01-01T00:00:00.000Z",
+  ]) {
+    const f = await fixture();
+    expect(
+      await runWineStage(f.job, {
+        store: f.store,
+        execute: async () => ({ ...extracted(), observedAt: value }),
+      }),
+    ).toMatchObject({
+      status: "blocked",
+      code: "extraction_observation_time_invalid",
+    });
+  }
 });

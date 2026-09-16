@@ -574,3 +574,24 @@ it.each(["revoked", "expired", "future", "fake"])(
     expect(r.result.context.reliableSourceIds).not.toContain(id);
   },
 );
+it("keeps source-only OCR ambiguity actionable without granting model matched status", () => {
+  const data = input();
+  data.records[0]!.source.identity = {
+    ...data.records[0]!.source.identity!,
+    status: "needs_confirmation",
+  };
+  const result = groundWineEvidence(data);
+  expect(result.context.identity.status).toBe("needs_confirmation");
+  expect(result.context.sources[0]!.identity!.status).toBe(
+    "needs_confirmation",
+  );
+  expect(result.issues).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "observation_identity_ambiguous",
+        blocking: true,
+        evidenceIds: [photoId],
+      }),
+    ]),
+  );
+});

@@ -421,3 +421,22 @@ describe("wine adapter numeric units", () => {
     },
   );
 });
+it.each(["needs_confirmation", "matched"] as const)(
+  "retains conservative extraction %s status on aggregate and source identities",
+  async (status) => {
+    const raw = extraction();
+    raw.identity.status = status;
+    raw.evidence[0]!.identity!.status = status;
+    const { provider } = setup([envelope(raw)]);
+    const result = await provider.extract({
+      assets: [],
+      note: "Fixture Estate Reserve Red",
+    });
+    expect(result.identity.status).toBe(
+      status === "needs_confirmation" ? status : "candidate",
+    );
+    expect(result.evidence[0]!.identity!.status).toBe(
+      status === "needs_confirmation" ? status : "candidate",
+    );
+  },
+);

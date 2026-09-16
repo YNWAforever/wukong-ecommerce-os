@@ -481,7 +481,19 @@ export function groundWineEvidence(
           }
         }
         source.identity = sanitized;
-        source.identity.status = "candidate";
+        source.identity.status =
+          proposed.status === "needs_confirmation"
+            ? "needs_confirmation"
+            : "candidate";
+        if (proposed.status === "needs_confirmation") {
+          identity.status = "needs_confirmation";
+          issues.push({
+            path: `sources.${source.id}.identity`,
+            code: "observation_identity_ambiguous",
+            blocking: true,
+            evidenceIds: [source.id],
+          });
+        }
         if (bound.length) {
           supports.push(...bound);
           trustedObservationIds.add(source.id);

@@ -230,6 +230,27 @@ export function createWineStageStore(
       context.dependencyDigest !== digest
     )
       return blocked("stage_dependency_mismatch");
+    if (result.state === "succeeded" && result.stage === "extraction") {
+      const observedAt = result.observedAt;
+      const time = Date.parse(observedAt);
+      const serverTime = (await now(r)).getTime();
+      if (
+        time < Date.parse(run.acceptedAt) ||
+        time > serverTime ||
+        time >=
+          Date.parse(
+            (run.execution.wineAcquisition as { deadlineAt: string })
+              .deadlineAt,
+          ) ||
+        result.evidence.some((s) => s.capturedAt !== observedAt)
+      )
+        result = {
+          schemaVersion: 1,
+          stage: "extraction",
+          state: "blocked",
+          code: "extraction_observation_time_invalid",
+        };
+    }
     const stale = projected ? null : await fence(r, run);
     // Results survive a revision change, but cannot enqueue or adopt into the current listing.
     const terminal = {

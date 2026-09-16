@@ -5,6 +5,7 @@ const extraction = {
   schemaVersion: 1,
   state: "succeeded",
   stage: "extraction",
+  observedAt: "2026-09-16T00:00:00.000Z",
   identity: wineIdentity(),
   evidence: [],
   issues: [],
@@ -101,4 +102,18 @@ it("projection version coordinates must be genuine UUIDs", () => {
       "commit_candidate",
     ),
   ).toThrow();
+});
+it("requires exact server observation timestamp even for empty extraction", () => {
+  expect(parseWineStageResult(extraction, "extraction")).toMatchObject({
+    observedAt: extraction.observedAt,
+  });
+  for (const observedAt of [
+    undefined,
+    "yesterday",
+    "2026-02-30T00:00:00.000Z",
+    "2026-09-16T00:00:00+08:00",
+  ])
+    expect(() =>
+      parseWineStageResult({ ...extraction, observedAt }, "extraction"),
+    ).toThrow();
 });

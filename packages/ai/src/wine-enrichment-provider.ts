@@ -171,11 +171,25 @@ export class WineEnrichmentProvider {
     );
     return {
       ...parsed,
-      identity: { ...parsed.identity, status: "candidate" },
+      identity: {
+        ...parsed.identity,
+        status:
+          parsed.identity.status === "needs_confirmation"
+            ? "needs_confirmation"
+            : "candidate",
+      },
       evidence: parsed.evidence.map((s) => ({
         ...s,
         trust: "unverified",
-        identity: s.identity ? { ...s.identity, status: "candidate" } : null,
+        identity: s.identity
+          ? {
+              ...s.identity,
+              status:
+                s.identity.status === "needs_confirmation"
+                  ? "needs_confirmation"
+                  : "candidate",
+            }
+          : null,
       })),
       usage,
     };

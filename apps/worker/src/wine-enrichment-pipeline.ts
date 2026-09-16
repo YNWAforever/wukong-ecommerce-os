@@ -34,6 +34,7 @@ export type WineStageResult =
   | Success<
       "extraction",
       {
+        observedAt: string;
         identity: ProductIdentity;
         evidence: EvidenceSource[];
         issues: QualityIssue[];
@@ -126,7 +127,7 @@ export function parseWineStageResult(
   }
   if (r.state !== "succeeded") throw Error("invalid stage outcome");
   const keys: Record<WineStage, string[]> = {
-    extraction: ["identity", "evidence", "issues"],
+    extraction: ["observedAt", "identity", "evidence", "issues"],
     search_basic: ["evidence", "partial", "issues"],
     verification: [
       "identity",
@@ -148,6 +149,14 @@ export function parseWineStageResult(
     commit_candidate: ["versionId", "outcome"],
   };
   strictKeys(r, [...base, ...keys[stage]]);
+  if (
+    stage === "extraction" &&
+    (typeof r.observedAt !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(r.observedAt) ||
+      !Number.isFinite(Date.parse(r.observedAt)) ||
+      new Date(r.observedAt).toISOString() !== r.observedAt)
+  )
+    throw Error("invalid extraction observation time");
   if ("identity" in r) productIdentitySchema.parse(r.identity);
   if ("evidence" in r) evidenceSourceSchema.array().parse(r.evidence);
   if ("claims" in r) supportedClaimSchema.array().parse(r.claims);
