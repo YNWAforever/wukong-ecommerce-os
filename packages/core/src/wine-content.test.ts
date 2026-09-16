@@ -114,3 +114,53 @@ it("legacy candidates cannot erase protected structured sections", () => {
   expect(result.workingContent.description).toEqual(c.description);
   expect(result.workingContent.wineOwnership).toEqual(c.wineOwnership);
 });
+it.each(
+  (["en", "zh-Hant"] as const).flatMap((locale) =>
+    (["operator", "lock"] as const).flatMap((fieldProtection) =>
+      (["operator", "lock"] as const).map((sectionProtection) => ({
+        locale,
+        fieldProtection,
+        sectionProtection,
+      })),
+    ),
+  ),
+)(
+  "composes $locale whole-field $fieldProtection with bilingual section $sectionProtection",
+  ({ locale, fieldProtection, sectionProtection }) => {
+    const current = workingListingSchema.parse(listing());
+    current.wineOwnership!.sections[0]!.owner =
+      sectionProtection === "operator" ? "operator" : "automatic";
+    current.wineOwnership!.sections[0]!.locked = sectionProtection === "lock";
+    const candidate = workingListingSchema.parse(listing());
+    candidate.wineOwnership!.sections[0]!.en = "Candidate English";
+    candidate.wineOwnership!.sections[0]!["zh-Hant"] = "Candidate Chinese";
+    candidate.description = {
+      en: "Candidate English",
+      "zh-Hant": "Candidate Chinese",
+    };
+    const states = {
+      [`description.${locale}`]: {
+        owner:
+          fieldProtection === "operator"
+            ? ("operator" as const)
+            : ("ai" as const),
+        state: "manual" as const,
+        locked: fieldProtection === "lock",
+        evidenceRefs: [],
+      },
+    };
+    const result = workingBaselineForReview(
+      current,
+      states,
+      candidate,
+    ).workingContent;
+    expect(result.description).toEqual(current.description);
+    expect(result.wineOwnership).toEqual(current.wineOwnership);
+    expect(result.description.en).toBe(
+      renderWineDescription(result.wineOwnership!, "en"),
+    );
+    expect(result.description["zh-Hant"]).toBe(
+      renderWineDescription(result.wineOwnership!, "zh-Hant"),
+    );
+  },
+);

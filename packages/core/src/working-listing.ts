@@ -183,8 +183,18 @@ export function mergeWorkingCandidate(
   candidate: WorkingListing | ReviewableListing,
 ): WorkingListing {
   const next = structuredClone(content);
+  const wholeProtected = (
+    ["description.en", "description.zh-Hant"] as const
+  ).some(
+    (field) => states[field]?.owner === "operator" || states[field]?.locked,
+  );
+  // A recognized mapping is bilingual. Retaining either whole locale must retain
+  // the complete mapping before the generic field merge can replace its other half.
+  const preserveMappedDescription =
+    hasWineSectionMapping(content) && wholeProtected;
   for (const field of workingFields)
     if (
+      !(preserveMappedDescription && field.startsWith("description.")) &&
       !["sku", "priceHkd", "stockQuantity"].includes(field) &&
       states[field]?.owner !== "operator" &&
       !states[field]?.locked
@@ -195,9 +205,6 @@ export function mergeWorkingCandidate(
     candidate.wineOwnership &&
     hasWineSectionMapping(candidate)
   ) {
-    const wholeProtected = (
-      ["description.en", "description.zh-Hant"] as const
-    ).some((f) => states[f]?.owner === "operator" || states[f]?.locked);
     if (!wholeProtected) {
       const proposed = {
         ...candidate,
