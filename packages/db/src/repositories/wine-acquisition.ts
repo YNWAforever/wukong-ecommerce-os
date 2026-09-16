@@ -1,3 +1,4 @@
+import { createWineAcquisitionCallGuard } from "./wine-acquisition-calls.js";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { evidenceSourceSchema, type EvidenceSource } from "@wukong/core";
@@ -194,6 +195,7 @@ export function createWineAcquisitionRepository(
     return value;
   }
   return {
+    ...createWineAcquisitionCallGuard(tx, workspaceId, scope),
     async claimDocument(
       input: WineDocumentRequest,
     ): Promise<WineDocumentClaim> {

@@ -182,3 +182,4 @@ export type { SearchBudgetReservationRepository } from "./repositories/search-bu
 export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
 
 export * from "./repositories/wine-acquisition.js";
+export * from "./repositories/wine-acquisition-calls.js";
