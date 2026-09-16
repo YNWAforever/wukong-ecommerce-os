@@ -10,7 +10,14 @@ import {
   type WineStage,
   type QualityIssue,
 } from "@wukong/core";
-import { wineQualityIssueSchema } from "@wukong/ai";
+import {
+  wineQualityIssueSchema,
+  wineGenerationRequestSchema,
+  wineGenerationCandidateSchema,
+  type WineGenerationRequest,
+  type WineGenerationCandidate,
+} from "@wukong/ai";
+import { listingInputDigest } from "@wukong/db";
 import { wineListingJobSchema, type WineListingJob } from "@wukong/jobs";
 import type { ListingOperation, StageRecord } from "@wukong/db";
 
@@ -59,7 +66,19 @@ export type WineStageResult =
         issues: QualityIssue[];
       }
     >
-  | Success<"generation", { content: WineContent; issues: QualityIssue[] }>
+  | Success<
+      "generation",
+      {
+        content: WineContent;
+        issues: QualityIssue[];
+        /** Required by semantic quality handlers; optional for older lifecycle checkpoints. */
+        frozenQuality?: {
+          schemaVersion: 1;
+          request: WineGenerationRequest;
+          candidate: WineGenerationCandidate;
+        };
+      }
+    >
   | Success<
       "quality_check",
       {
@@ -85,9 +104,24 @@ export type WineStageContext = {
   dependencyDigest: string;
   dependencies: StageRecord[];
 };
+export type WinePostCommitDiagnostic = {
+  code: "post_commit_skipped" | "post_commit_oversized" | "post_commit_failed";
+};
+export type WineCommittedStage = {
+  context: WineStageContext;
+  result: Extract<WineStageResult, { state: "succeeded" }>;
+};
+/** Idempotent optional work; re-read committed authority before any side effects. */
+export type WineAfterCommit = (
+  committed: WineCommittedStage,
+) => Promise<void | { code: "post_commit_skipped" | "post_commit_oversized" }>;
 export type WineDeliveryResult =
-  | { status: "advanced"; nextStage: WineStage }
-  | { status: "duplicate" }
+  | {
+      status: "advanced";
+      nextStage: WineStage;
+      postCommitDiagnostic?: WinePostCommitDiagnostic;
+    }
+  | { status: "duplicate"; postCommitDiagnostic?: WinePostCommitDiagnostic }
   | {
       status: "completed";
       versionId: string | null;
@@ -95,7 +129,9 @@ export type WineDeliveryResult =
     }
   | { status: "blocked" | "stopped"; code: string };
 export type WineClaim =
-  WineDeliveryResult | { status: "claimed"; context: WineStageContext };
+  | Exclude<WineDeliveryResult, { status: "duplicate" }>
+  | { status: "duplicate"; committed?: WineCommittedStage }
+  | { status: "claimed"; context: WineStageContext };
 export type WineStageStore = {
   claim(job: WineListingJob): Promise<WineClaim>;
   finish(
@@ -167,6 +203,20 @@ export function parseWineStageResult(
       throw Error("invalid cache origin");
     keys[stage].push("cacheOrigin");
   }
+  if (stage === "generation" && "frozenQuality" in r) {
+    const frozen = r.frozenQuality;
+    if (!frozen || typeof frozen !== "object" || Array.isArray(frozen))
+      throw Error("invalid frozen quality artifact");
+    const value = frozen as Record<string, unknown>;
+    strictKeys(value, ["schemaVersion", "request", "candidate"]);
+    if (value.schemaVersion !== 1)
+      throw Error("invalid frozen quality artifact");
+    wineGenerationRequestSchema.parse(value.request);
+    const candidate = wineGenerationCandidateSchema.parse(value.candidate);
+    if (listingInputDigest(candidate.content) !== listingInputDigest(r.content))
+      throw Error("generation content mismatch");
+    keys.generation.push("frozenQuality");
+  }
   strictKeys(r, [...base, ...keys[stage]]);
   if (
     stage === "extraction" &&
@@ -219,10 +269,23 @@ export function parseWineStageResult(
 /** A delivery owns one stage. Awaiting claim has already COMMITTED before execute. */
 export async function runWineStage(
   raw: WineListingJob,
-  deps: { store: WineStageStore; execute: WineStageExecutor },
+  deps: {
+    store: WineStageStore;
+    execute: WineStageExecutor;
+    afterCommit?: WineAfterCommit;
+  },
 ): Promise<WineDeliveryResult> {
   const job = wineListingJobSchema.parse(raw),
     claim = await deps.store.claim(job);
+  if (claim.status === "duplicate") {
+    return claim.committed
+      ? afterCommitted(
+          { status: "duplicate" },
+          claim.committed,
+          deps.afterCommit,
+        )
+      : { status: "duplicate" };
+  }
   if (claim.status !== "claimed") return claim;
   if (job.stage === "commit_candidate")
     return deps.store.commitCandidate(claim.context);
@@ -241,5 +304,40 @@ export async function runWineStage(
     };
   }
   // A DB failure is propagated, never converted into a fresh execution attempt.
-  return deps.store.finish(claim.context, result);
+  const delivery = await deps.store.finish(claim.context, result);
+  if (delivery.status === "advanced" && result.state === "succeeded")
+    return afterCommitted(
+      delivery,
+      { context: claim.context, result },
+      deps.afterCommit,
+    );
+  return delivery;
+}
+
+/** Hook diagnostics never rewrite a checkpoint or remove an already committed outbox. */
+async function afterCommitted(
+  delivery: Extract<WineDeliveryResult, { status: "advanced" | "duplicate" }>,
+  committed: WineCommittedStage,
+  hook?: WineAfterCommit,
+): Promise<WineDeliveryResult> {
+  if (!hook) return delivery;
+  try {
+    const diagnostic = await hook(structuredClone(committed));
+    if (diagnostic === undefined) return delivery;
+    if (
+      !diagnostic ||
+      typeof diagnostic !== "object" ||
+      Object.keys(diagnostic).length !== 1 ||
+      !["post_commit_skipped", "post_commit_oversized"].includes(
+        diagnostic.code,
+      )
+    )
+      throw Error("invalid postcommit diagnostic");
+    return { ...delivery, postCommitDiagnostic: { code: diagnostic.code } };
+  } catch {
+    return {
+      ...delivery,
+      postCommitDiagnostic: { code: "post_commit_failed" },
+    };
+  }
 }

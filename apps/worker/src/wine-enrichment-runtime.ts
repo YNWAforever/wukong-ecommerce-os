@@ -240,6 +240,24 @@ export function createWineStageStore(
           code: "extraction_observation_time_invalid",
         };
     }
+    if (
+      result.state === "succeeded" &&
+      result.stage === "generation" &&
+      result.frozenQuality
+    ) {
+      const binding = result.frozenQuality.request.binding;
+      if (
+        binding.workspaceId !== job.workspaceId ||
+        binding.operationId !== run.id ||
+        binding.inputRevision !== run.inputRevision
+      )
+        result = {
+          schemaVersion: 1,
+          stage: "generation",
+          state: "blocked",
+          code: "generation_binding_mismatch",
+        };
+    }
     const stale = projected ? null : await fence(r, run);
     // Results survive a revision change, but cannot enqueue or adopt into the current listing.
     const terminal = {
@@ -352,10 +370,35 @@ export function createWineStageStore(
         if (stale) return stop(r, run, stale);
         const all = await records(r, run.id),
           existing = all.find((x) => x.stage === job.stage);
-        if (existing)
-          return existing.state === "started"
-            ? blocked("stage_outcome_unknown")
-            : { status: "duplicate" };
+        if (existing) {
+          if (existing.state === "started")
+            return blocked("stage_outcome_unknown");
+          const dependencies = all.filter(
+            (x) =>
+              WINE_STAGE_ORDER.indexOf(x.stage) <
+              WINE_STAGE_ORDER.indexOf(job.stage),
+          );
+          if (existing.state !== "succeeded") return { status: "duplicate" };
+          if (!validDependencies(run, [...dependencies, existing]))
+            return blocked("stage_dependency_mismatch");
+          const result = savedResult(existing);
+          if (result.state !== "succeeded") return { status: "duplicate" };
+          const lastFence = await fence(r, run);
+          if (lastFence) return stop(r, run, lastFence);
+          return {
+            status: "duplicate",
+            committed: {
+              context: {
+                schemaVersion: 1,
+                job,
+                run,
+                dependencyDigest: existing.dependencyDigest,
+                dependencies,
+              },
+              result,
+            },
+          };
+        }
         const expected = WINE_STAGE_ORDER.find(
           (stage) =>
             !all.some(

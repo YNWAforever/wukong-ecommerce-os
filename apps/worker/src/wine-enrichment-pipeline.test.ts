@@ -147,3 +147,87 @@ it("accepts only strict server cache provenance on search results", () => {
     ),
   ).toThrow();
 });
+
+const frozenGeneration = () => {
+  const content = {
+    title: { en: "Fixture", "zh-Hant": "測試" },
+    sections: [],
+    seo: {
+      title: { en: "", "zh-Hant": "" },
+      description: { en: "", "zh-Hant": "" },
+    },
+    tags: [],
+  };
+  return {
+    schemaVersion: 1,
+    state: "succeeded",
+    stage: "generation",
+    content,
+    issues: [],
+    frozenQuality: {
+      schemaVersion: 1,
+      request: {
+        schemaVersion: 1,
+        binding: {
+          workspaceId: "fixture",
+          operationId: "fixture",
+          inputRevision: 0,
+        },
+        claims: [],
+        current: null,
+        lockedPaths: ["tags"],
+        tone: "neutral",
+        claimPolicy: [],
+        section: null,
+      },
+      candidate: {
+        schemaVersion: 1,
+        content: structuredClone(content),
+        annotations: [
+          {
+            path: "title.en",
+            span: "Fixture",
+            claimId: "00000000-0000-4000-8000-000000000001",
+            value: "Fixture",
+            evidenceIds: ["00000000-0000-4000-8000-000000000002"],
+            premiseClaimIds: [],
+          },
+        ],
+      },
+    },
+  };
+};
+it("preserves complete frozen quality request and annotations without shared references", () => {
+  const value = frozenGeneration();
+  const parsed = parseWineStageResult(value, "generation");
+  expect(parsed).toEqual(value);
+  value.frozenQuality.candidate.annotations[0]!.span = "mutated";
+  value.frozenQuality.request.lockedPaths.push("title");
+  expect(parsed).not.toEqual(value);
+});
+it("rejects malformed frozen quality wrapper, request, candidate and content mismatch", () => {
+  for (const alter of [
+    (x: any) => {
+      x.frozenQuality.extra = true;
+    },
+    (x: any) => {
+      x.frozenQuality.schemaVersion = 2;
+    },
+    (x: any) => {
+      x.frozenQuality.request.claimedAuthority = true;
+    },
+    (x: any) => {
+      x.frozenQuality.candidate.accepted = true;
+    },
+    (x: any) => {
+      x.frozenQuality.candidate.annotations[0].claimId = "invalid";
+    },
+    (x: any) => {
+      x.frozenQuality.candidate.content.title.en = "different";
+    },
+  ]) {
+    const value = frozenGeneration();
+    alter(value);
+    expect(() => parseWineStageResult(value, "generation")).toThrow();
+  }
+});

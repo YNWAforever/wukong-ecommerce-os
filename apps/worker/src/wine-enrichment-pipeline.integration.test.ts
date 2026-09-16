@@ -897,3 +897,338 @@ it("rejects extraction capture times outside accepted server interval", async ()
     });
   }
 });
+
+it("postcommit hook sees committed output and outbox and retries on duplicate without executor replay", async () => {
+  const { job, store } = await fixture();
+  let calls = 0,
+    hooks = 0;
+  const execute = async () => {
+    calls++;
+    return extracted();
+  };
+  const afterCommit = async ({ context, result }: any) => {
+    hooks++;
+    expect(result.stage).toBe("extraction");
+    const stage = await db.forWorkspace(job.workspaceId, (r) =>
+      r.wineEnrichment.readStage(job.runId, job.stage),
+    );
+    expect(stage?.state).toBe("succeeded");
+    const rows =
+      await admin`select * from listing_dispatch_outbox where workspace_id=${job.workspaceId}`;
+    expect(rows).toHaveLength(1);
+    context.run.execution.schemaVersion = 999;
+    result.identity.producer = "mutated hook";
+  };
+  expect(await runWineStage(job, { store, execute, afterCommit })).toEqual({
+    status: "advanced",
+    nextStage: "search_basic",
+  });
+  expect(await runWineStage(job, { store, execute, afterCommit })).toEqual({
+    status: "duplicate",
+  });
+  expect({ calls, hooks }).toEqual({ calls: 1, hooks: 2 });
+  const stage = await db.forWorkspace(job.workspaceId, (r) =>
+    r.wineEnrichment.readStage(job.runId, job.stage),
+  );
+  expect(stage?.output).toMatchObject({ result: extracted() });
+});
+it("postcommit failure is bounded and nonblocking with durable next outbox and duplicate retry", async () => {
+  const { job, store } = await fixture();
+  const afterCommit = async () => {
+    throw Error("secret provider payload");
+  };
+  expect(
+    await runWineStage(job, {
+      store,
+      execute: async () => extracted(),
+      afterCommit,
+    }),
+  ).toEqual({
+    status: "advanced",
+    nextStage: "search_basic",
+    postCommitDiagnostic: { code: "post_commit_failed" },
+  });
+  expect(
+    await runWineStage(job, {
+      store,
+      execute: async () => {
+        throw Error("replay");
+      },
+      afterCommit: async () => ({ code: "post_commit_oversized" as const }),
+    }),
+  ).toEqual({
+    status: "duplicate",
+    postCommitDiagnostic: { code: "post_commit_oversized" },
+  });
+  const rows =
+    await admin`select * from listing_dispatch_outbox where workspace_id=${job.workspaceId}`;
+  expect(rows).toHaveLength(1);
+});
+it("postcommit never runs for stale, unknown, failed or uncommitted work", async () => {
+  let hooks = 0;
+  const afterCommit = async () => {
+    hooks++;
+  };
+  for (const state of ["unknown", "blocked", "stale"] as const) {
+    const { job, store } = await fixture();
+    const execute = async (): Promise<WineStageResult> => {
+      if (state === "stale") {
+        await admin`update listing_drafts set input_revision=input_revision+1 where id=${job.draftId}`;
+        return extracted();
+      }
+      return { schemaVersion: 1, state, stage: "extraction", code: "fixture" };
+    };
+    await runWineStage(job, { store, execute, afterCommit });
+    await runWineStage(job, { store, execute, afterCommit });
+  }
+  const { job, store } = await fixture();
+  const faulty = createWineStageStore({
+    forWorkspace: (ws, work) =>
+      db.forWorkspace(ws, (r) =>
+        work({
+          ...r,
+          dispatchOutbox: {
+            ...r.dispatchOutbox,
+            record: async () => {
+              throw Error("rollback");
+            },
+          },
+        }),
+      ),
+  });
+  await expect(
+    runWineStage(job, {
+      store: faulty,
+      execute: async () => extracted(),
+      afterCommit,
+    }),
+  ).rejects.toThrow("rollback");
+  await runWineStage(job, {
+    store,
+    execute: async () => extracted(),
+    afterCommit,
+  });
+  expect(hooks).toBe(0);
+});
+async function beforeGeneration() {
+  const f = await fixture();
+  for (const result of [
+    matched(),
+    {
+      schemaVersion: 1,
+      state: "succeeded",
+      stage: "search_basic",
+      evidence: [],
+      partial: false,
+      issues: [],
+    },
+    {
+      schemaVersion: 1,
+      state: "succeeded",
+      stage: "verification",
+      identity: wineIdentity({ status: "matched" }),
+      claims: [],
+      needsDeepSearch: false,
+      deepSearchReasons: [],
+      issues: [],
+    },
+  ] as WineStageResult[])
+    expect(
+      await runWineStage(
+        { ...f.job, stage: result.stage },
+        { store: f.store, execute: async () => result },
+      ),
+    ).toMatchObject({ status: "advanced" });
+  return f;
+}
+function generationFor(job: WineListingJob) {
+  return {
+    schemaVersion: 1 as const,
+    stage: "generation" as const,
+    state: "succeeded" as const,
+    content: content(),
+    issues: [],
+    frozenQuality: {
+      schemaVersion: 1 as const,
+      request: {
+        schemaVersion: 1 as const,
+        binding: {
+          workspaceId: job.workspaceId,
+          operationId: job.runId,
+          inputRevision: job.inputRevision,
+        },
+        claims: [],
+        current: null,
+        lockedPaths: ["title.en"],
+        tone: "neutral",
+        claimPolicy: ["fixture"],
+        section: null,
+      },
+      candidate: {
+        schemaVersion: 1 as const,
+        content: content(),
+        annotations: [
+          {
+            path: "title.en",
+            span: "Fixture",
+            claimId: randomUUID(),
+            value: "Fixture",
+            evidenceIds: [randomUUID()],
+            premiseClaimIds: [],
+          },
+        ],
+      },
+    },
+  };
+}
+it("frozen quality artifact survives committed generation and quality claim with exact binding and annotations", async () => {
+  const f = await beforeGeneration();
+  const value = generationFor(f.job);
+  expect(
+    await runWineStage(
+      { ...f.job, stage: "generation" },
+      { store: f.store, execute: async () => value },
+    ),
+  ).toMatchObject({ status: "advanced", nextStage: "quality_check" });
+  const claim = await f.store.claim({ ...f.job, stage: "quality_check" });
+  expect(claim.status).toBe("claimed");
+  if (claim.status !== "claimed") throw Error("claim");
+  expect(
+    claim.context.dependencies.find((x) => x.stage === "generation")?.output,
+  ).toMatchObject({ result: value });
+});
+it("frozen quality rejects foreign run, workspace and revision bindings at the committed boundary", async () => {
+  for (const key of ["workspaceId", "operationId", "inputRevision"] as const) {
+    const f = await beforeGeneration();
+    const value = generationFor(f.job);
+    if (key === "inputRevision")
+      value.frozenQuality.request.binding.inputRevision++;
+    else value.frozenQuality.request.binding[key] = randomUUID();
+    expect(
+      await runWineStage(
+        { ...f.job, stage: "generation" },
+        { store: f.store, execute: async () => value },
+      ),
+    ).toMatchObject({ status: "blocked", code: "generation_binding_mismatch" });
+    expect(
+      await db.forWorkspace(f.job.workspaceId, (r) =>
+        r.wineEnrichment.readStage(f.job.runId, "quality_check"),
+      ),
+    ).toBeNull();
+  }
+});
+
+it("postcommit duplicate recovery sees committed deep skips; skipped deliveries run no hook", async () => {
+  const f = await beforeGeneration();
+  let hooks = 0;
+  const afterCommit = async () => {
+    hooks++;
+    for (const stage of ["search_deep", "verification_deep"] as const)
+      expect(
+        (
+          await db.forWorkspace(f.job.workspaceId, (r) =>
+            r.wineEnrichment.readStage(f.job.runId, stage),
+          )
+        )?.state,
+      ).toBe("skipped");
+    const rows =
+      await admin`select * from listing_dispatch_outbox where workspace_id=${f.job.workspaceId} and dedupe_key=${wineStageMessageKey(f.job.runId, "generation")}`;
+    expect(rows).toHaveLength(1);
+    return { code: "post_commit_skipped" as const };
+  };
+  const execute = async (): Promise<WineStageResult> => {
+    throw Error("must not replay");
+  };
+  expect(
+    await runWineStage(
+      { ...f.job, stage: "verification" },
+      { store: f.store, execute, afterCommit },
+    ),
+  ).toEqual({
+    status: "duplicate",
+    postCommitDiagnostic: { code: "post_commit_skipped" },
+  });
+  expect(
+    await runWineStage(
+      { ...f.job, stage: "search_deep" },
+      { store: f.store, execute, afterCommit },
+    ),
+  ).toEqual({ status: "duplicate" });
+  expect(hooks).toBe(1);
+});
+it("postcommit sanitizes invalid diagnostics without retaining arbitrary hook data", async () => {
+  const { job, store } = await fixture();
+  const outcome = await runWineStage(job, {
+    store,
+    execute: async () => extracted(),
+    afterCommit: async () => ({
+      code: "post_commit_skipped",
+      payload: "private",
+    }),
+  });
+  expect(outcome).toEqual({
+    status: "advanced",
+    nextStage: "search_basic",
+    postCommitDiagnostic: { code: "post_commit_failed" },
+  });
+});
+it("frozen quality stale generation remains inspectable but cannot enqueue quality or run hook", async () => {
+  const f = await beforeGeneration();
+  const value = generationFor(f.job);
+  let hooks = 0;
+  expect(
+    await runWineStage(
+      { ...f.job, stage: "generation" },
+      {
+        store: f.store,
+        execute: async () => {
+          await admin`update listing_drafts set input_revision=input_revision+1 where id=${f.job.draftId}`;
+          return value;
+        },
+        afterCommit: async () => {
+          hooks++;
+        },
+      },
+    ),
+  ).toMatchObject({ status: "stopped", code: "operation_superseded" });
+  const stage = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.wineEnrichment.readStage(f.job.runId, "generation"),
+  );
+  expect(stage?.output).toMatchObject({ result: value, fresh: false });
+  const rows =
+    await admin`select * from listing_dispatch_outbox where workspace_id=${f.job.workspaceId} and dedupe_key=${wineStageMessageKey(f.job.runId, "quality_check")}`;
+  expect(rows).toHaveLength(0);
+  expect(hooks).toBe(0);
+});
+it("postcommit suppresses duplicate recovery after cancellation or deadline", async () => {
+  for (const stop of ["cancel", "deadline"] as const) {
+    const f = await fixture();
+    let hooks = 0;
+    await runWineStage(f.job, {
+      store: f.store,
+      execute: async () => extracted(),
+    });
+    if (stop === "cancel")
+      await db.forWorkspace(f.job.workspaceId, (r) =>
+        r.pipelineRuns.setOperationState(f.job.runId, "cancelled"),
+      );
+    const store =
+      stop === "deadline"
+        ? createWineStageStore(db, {
+            now: () => new Date(Date.parse(f.run.acceptedAt) + 900000),
+          })
+        : f.store;
+    expect(
+      await runWineStage(f.job, {
+        store,
+        execute: async () => {
+          throw Error("replay");
+        },
+        afterCommit: async () => {
+          hooks++;
+        },
+      }),
+    ).toMatchObject({ status: "stopped" });
+    expect(hooks).toBe(0);
+  }
+});
