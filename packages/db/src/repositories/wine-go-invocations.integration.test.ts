@@ -34,8 +34,8 @@ async function fixture(
   mode: WineMode = "full",
   mutate: (e: any) => void = () => {},
   reserve = true,
+  workspaceId = `go-${randomUUID()}`,
 ) {
-  const workspaceId = `go-${randomUUID()}`;
   const execution: any = {
     schemaVersion: 1,
     flowVersion: "wine-enrichment-v1",
@@ -467,4 +467,28 @@ it("retains a full unknown hold when aggregate recorded costs exceed the reserva
   const total =
     await admin`select sum(estimated_cost_usd) as cost from ai_runs where pipeline_run_id=${input.runId}`;
   expect(Number(total[0]!.cost)).toBe(3.514368);
+});
+
+it("charges anomalous actual spend across runs for reservations and held physical calls", async () => {
+  const first = await fixture();
+  const second = await fixture("full", () => {}, true, first.workspaceId);
+  expect(await store.admit(first, call)).toEqual({ claimed: true });
+  expect(
+    await store.finish(first, { ...completion, estimatedCostUsd: "10.000000" }),
+  ).toBe(true);
+  expect(await store.admit(second, call)).toEqual({ claimed: false });
+  const third = await fixture("full", () => {}, false, first.workspaceId);
+  const reserved = await db.forWorkspace(first.workspaceId, (r) =>
+    r.aiBudgetReservations.reserve({
+      pipelineRunId: third.runId,
+      reservedUsd: "3.194880",
+      workspaceCapUsd: "10",
+      pricingVersion: "wine-enrichment@1",
+    }),
+  );
+  expect(reserved).toEqual({ accepted: false, state: "budget_blocked" });
+  const holds =
+    await admin`select state,reserved_usd from ai_budget_reservations where pipeline_run_id=${first.runId}`;
+  expect(holds[0]).toMatchObject({ state: "unknown" });
+  expect(Number(holds[0]!.reserved_usd)).toBe(3.19488);
 });

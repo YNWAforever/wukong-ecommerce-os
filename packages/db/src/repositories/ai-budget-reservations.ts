@@ -11,6 +11,17 @@ function money(value: string, name: string, allowZero = false): string {
   return value;
 }
 
+/** Existing reservation scope only; actual recorded spend can never reduce its charge. */
+export function workspaceAiBudgetChargeSql(workspaceId: string) {
+  return sql`(select coalesce(sum(greatest(
+    case when r.state in ('held','unknown') then r.reserved_usd when r.state='settled' then r.settled_usd else 0 end,
+    coalesce(c.known_cost,0))),0)
+    from ai_budget_reservations r
+    left join (select pipeline_run_id,sum(estimated_cost_usd) known_cost from ai_runs
+      where workspace_id=${workspaceId} and pipeline_run_id is not null group by pipeline_run_id) c
+      on c.pipeline_run_id=r.pipeline_run_id
+    where r.workspace_id=${workspaceId})`;
+}
 export type AiBudgetReservationRepository = {
   reserve(input: {
     pipelineRunId: string;
@@ -49,7 +60,7 @@ export function createAiBudgetReservationRepository(
       const inserted = await transaction.execute(sql`
         insert into ai_budget_reservations(workspace_id,pipeline_run_id,pricing_version,reserved_usd,state)
         select ${workspaceId},${input.pipelineRunId},${input.pricingVersion},${reserved}::numeric,'held'
-        where (select coalesce(sum(case when state in ('held','unknown') then reserved_usd when state='settled' then settled_usd else 0 end),0) from ai_budget_reservations where workspace_id=${workspaceId}) + ${reserved}::numeric <= ${cap}::numeric
+        where ${workspaceAiBudgetChargeSql(workspaceId)} + ${reserved}::numeric <= ${cap}::numeric
         returning state
       `);
       return inserted[0]

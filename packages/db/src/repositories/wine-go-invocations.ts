@@ -14,7 +14,10 @@ import {
   createAiRunRepository,
   type FinalizeAiInvocationInput,
 } from "./ai-runs.js";
-import { createAiBudgetReservationRepository } from "./ai-budget-reservations.js";
+import {
+  createAiBudgetReservationRepository,
+  workspaceAiBudgetChargeSql,
+} from "./ai-budget-reservations.js";
 const stages = {
   extraction: "extract",
   verification: "verify",
@@ -127,7 +130,7 @@ export function createWineGoInvocationRepository(
       const parsed = callSchema.safeParse(raw);
       if (input.workspaceId !== workspaceId || !parsed.success) return deny;
       const call = parsed.data;
-      // Same listing -> run -> reservation lock order as accepted operations and cancellation.
+      // Listing -> run -> workspace -> reservation matches accepted operation budget ordering.
       const drafts = await tx.execute(
         sql`select d.* from listing_drafts d join listing_pipeline_runs r on r.workspace_id=d.workspace_id and r.listing_id=d.id where r.workspace_id=${workspaceId} and r.id=${input.runId} for update of d`,
       );
@@ -175,6 +178,9 @@ export function createWineGoInvocationRepository(
           !["generation", "quality_check"].includes(call.stage))
       )
         return deny;
+      await tx.execute(
+        sql`select id from workspaces where id=${workspaceId} for update`,
+      );
       const reservations = await tx.execute(
         sql`select * from ai_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${input.runId} for update`,
       );
@@ -229,6 +235,10 @@ export function createWineGoInvocationRepository(
         )
       )
         return deny;
+      const charge = await tx.execute(
+        sql`select ${workspaceAiBudgetChargeSql(workspaceId)} as usd`,
+      );
+      if (Number(charge[0]!.usd) > Number(p.budgetCapUsd)) return deny;
       // Read the real clock after ALL waits, immediately before durable insertion.
       const clock = await tx.execute(sql`select clock_timestamp() as time`);
       const now = new Date(clock[0]!.time as string).getTime(),
@@ -302,6 +312,10 @@ export function createWineGoInvocationRepository(
         sql`select a.id,r.execution from ai_runs a join listing_pipeline_runs r on r.workspace_id=a.workspace_id and r.id=a.pipeline_run_id where a.workspace_id=${workspaceId} and a.pipeline_run_id=${input.runId} and r.input_revision=${input.inputRevision} and a.stage=${call.stage} and a.call_ordinal=${call.callOrdinal} and a.input->>'promptVersion'=${call.promptVersion} and a.status='started'`,
       );
       if (!rows[0]) return false;
+      // Serialize observed-spend publication with new reservations and wine admission.
+      await tx.execute(
+        sql`select id from workspaces where id=${workspaceId} for update`,
+      );
       const output = {
         schemaVersion: 1,
         wineInvocation: {
