@@ -98,3 +98,15 @@ export {
   OpenCodeGoListingProvider,
   type OpenCodeGoListingProviderConfig,
 } from "./opencode-go-listing-provider.js";
+export {
+  TAVILY_REQUEST_TIMEOUT_MS,
+  TAVILY_RESPONSE_LIMIT_BYTES,
+  TavilyProvider,
+  TavilyProviderError,
+} from "./tavily-provider.js";
+export type {
+  TavilyProviderConfig,
+  TavilyProviderErrorCode,
+  TavilyResponse,
+  TavilyResult,
+} from "./tavily-provider.js";
