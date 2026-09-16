@@ -110,3 +110,5 @@ export type {
   TavilyResponse,
   TavilyResult,
 } from "./tavily-provider.js";
+export { TypedJsonCompletionClient } from "./typed-json-completion.js";
+export type { TypedJsonCompletionConfig } from "./typed-json-completion.js";

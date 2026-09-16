@@ -1,0 +1,465 @@
+import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { z } from "zod";
+import type { AIUsage } from "./contracts.js";
+import {
+  ProviderApiError,
+  ProviderOutputError,
+  ProviderRefusalError,
+  providerFailureDiagnostic,
+  type PhysicalInvocationObserver,
+} from "./listing-provider-errors.js";
+export type TypedJsonCompletionConfig = {
+  backend: "openrouter" | "opencode-go";
+  sessionId?: string;
+  apiKey: string;
+  model: string;
+  fetch?: typeof fetch;
+  now?: () => number;
+  timeoutMs?: number;
+  invocationObserver?: PhysicalInvocationObserver;
+  maxOutputTokens?: number;
+};
+
+// Require explicit model slugs and reject known routing aliases and variants.
+function validModel(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length <= 128 &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) &&
+    !/(?:^|[\/._-])(auto|free|latest|online|search)(?:$|[._-])/i.test(value) &&
+    !value.toLowerCase().startsWith("openrouter/")
+  );
+}
+const usageSchema = z.object({
+  prompt_tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  completion_tokens: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(Number.MAX_SAFE_INTEGER),
+  cost: z.number().finite().nonnegative(),
+});
+const envelopeSchema = z.object({
+  usage: usageSchema,
+  model: z.unknown().optional(),
+  choices: z
+    .array(z.object({ finish_reason: z.string(), message: z.unknown() }))
+    .length(1),
+});
+const messageSchema = z.object({
+  role: z.literal("assistant"),
+  content: z.string(),
+  refusal: z.string().nullable().optional(),
+});
+const ERROR_CODES = new Set([
+  "invalid_api_key",
+  "insufficient_quota",
+  "rate_limit_exceeded",
+  "model_not_found",
+  "invalid_json_schema",
+  "invalid_request_error",
+  "unsupported_parameter",
+  "invalid_value",
+  "server_error",
+  "invalid_image",
+  "invalid_image_url",
+  "image_parse_error",
+]);
+function reportProviderFailure(
+  error: unknown,
+  phase: "request" | "repair",
+  provider: "openrouter" | "opencode-go",
+): void {
+  const detail = error && typeof error === "object" ? error : {};
+  const rawStatus = "status" in detail ? detail.status : null;
+  const status =
+    typeof rawStatus === "number" &&
+    Number.isInteger(rawStatus) &&
+    rawStatus >= 400 &&
+    rawStatus <= 599
+      ? rawStatus
+      : null;
+  const rawCode = "code" in detail ? detail.code : null;
+  const code =
+    typeof rawCode === "string" && ERROR_CODES.has(rawCode)
+      ? rawCode
+      : "unknown";
+  console.error(
+    JSON.stringify({
+      event: "listing_provider_failure",
+      provider,
+      phase,
+      status,
+      code,
+    }),
+  );
+}
+
+export class TypedJsonCompletionClient {
+  private readonly client: OpenAI;
+  private readonly backend: "openrouter" | "opencode-go";
+  private validResponseModel(value: unknown): value is string {
+    return this.backend === "opencode-go"
+      ? value === "deepseek-v4.1-flash"
+      : validModel(value);
+  }
+  private readonly model: string;
+  private readonly timeoutMs: number;
+  private readonly now: () => number;
+  private readonly invocationObserver?: PhysicalInvocationObserver;
+  private readonly maxOutputTokens: number;
+
+  constructor(config: TypedJsonCompletionConfig) {
+    if (typeof config.apiKey !== "string" || !config.apiKey.trim())
+      throw new TypeError("apiKey must be non-empty");
+    this.backend = config.backend;
+    if (
+      this.backend === "opencode-go" &&
+      !/^[A-Za-z0-9_-]{1,128}$/.test(config.sessionId ?? "")
+    )
+      throw new TypeError("Go requires a stable operation session ID");
+    if (!this.validResponseModel(config.model))
+      throw new TypeError(
+        this.backend === "opencode-go"
+          ? "model must be deepseek-v4.1-flash"
+          : "model must be an explicit safe author/model slug",
+      );
+    this.model = config.model;
+    this.timeoutMs = config.timeoutMs ?? 120_000;
+    if (
+      !Number.isInteger(this.timeoutMs) ||
+      this.timeoutMs < 1000 ||
+      this.timeoutMs > 600_000
+    )
+      throw new TypeError(
+        "timeoutMs must be an integer between 1000 and 600000",
+      );
+    this.now = config.now ?? Date.now;
+    this.invocationObserver = config.invocationObserver;
+    this.maxOutputTokens = config.maxOutputTokens ?? 4096;
+    if (
+      !Number.isInteger(this.maxOutputTokens) ||
+      this.maxOutputTokens < 1 ||
+      this.maxOutputTokens > 100000
+    )
+      throw new TypeError(
+        "maxOutputTokens must be an integer between 1 and 100000",
+      );
+    this.client = new OpenAI({
+      apiKey: config.apiKey.trim(),
+      baseURL:
+        this.backend === "opencode-go"
+          ? "https://opencode.ai/zen/go/v1"
+          : "https://openrouter.ai/api/v1",
+      ...(this.backend === "opencode-go"
+        ? {
+            defaultHeaders: {
+              "user-agent": "WukongEcommerceOS/1.0 (listing-processing)",
+              "x-opencode-session": config.sessionId!,
+            },
+          }
+        : {}),
+      maxRetries: 0,
+      timeout: this.timeoutMs,
+      ...(config.fetch ? { fetch: config.fetch } : {}),
+    });
+  }
+
+  private async observeTerminal(
+    attempt: number,
+    outcome: "refusal" | "invalid_output",
+    usage: {
+      inputTokens: number | null;
+      outputTokens: number | null;
+      costUsd: number | null;
+      certainty: "measured" | "estimated" | "unknown";
+    },
+  ): Promise<void> {
+    await this.invocationObserver?.({
+      ordinal: attempt + 1,
+      phase: attempt === 0 ? "request" : "repair",
+      outcome,
+      diagnostic: {
+        category: outcome,
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: null,
+      },
+      usage,
+    });
+  }
+
+  async complete<T>(
+    messages: ChatCompletionMessageParam[],
+    schema: z.ZodType<T>,
+    schemaName: string,
+    promptVersion: string,
+    validate: (parsed: T) => void,
+  ): Promise<{ parsed: T; usage: AIUsage }> {
+    const start = this.now();
+    if (this.backend === "opencode-go") {
+      messages = [
+        ...messages,
+        {
+          role: "system",
+          content: `Return a JSON object matching this schema: ${JSON.stringify(z.toJSONSchema(schema))}`,
+        },
+      ];
+    }
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let estimatedCostUsd = 0;
+    let responseModel: string | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const request = {
+        model: this.model,
+        stream: false as const,
+        max_tokens: this.maxOutputTokens,
+        messages:
+          attempt === 0
+            ? messages
+            : [
+                ...messages,
+                {
+                  role: "system" as const,
+                  content:
+                    "Bounded repair: return only a complete response matching the required schema.",
+                },
+              ],
+        ...(this.backend === "opencode-go"
+          ? { response_format: { type: "json_object" as const } }
+          : {
+              response_format: zodResponseFormat(schema, schemaName),
+              provider: { require_parameters: true },
+            }),
+      };
+      let raw: unknown;
+      const signal = AbortSignal.timeout(this.timeoutMs);
+      await this.invocationObserver?.({
+        ordinal: attempt + 1,
+        phase: attempt === 0 ? "request" : "repair",
+        outcome: "started",
+        diagnostic: {
+          category: "internal",
+          retryable: false,
+          httpStatus: null,
+          providerCode: null,
+          requestId: null,
+        },
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
+      try {
+        raw = await this.client.chat.completions.create(request, { signal });
+      } catch (error) {
+        reportProviderFailure(
+          error,
+          attempt === 0 ? "request" : "repair",
+          this.backend,
+        );
+        const diagnostic = providerFailureDiagnostic(error);
+        await this.invocationObserver?.({
+          ordinal: attempt + 1,
+          phase: attempt === 0 ? "request" : "repair",
+          outcome: "api_error",
+          diagnostic,
+          usage: {
+            inputTokens: null,
+            outputTokens: null,
+            costUsd: null,
+            certainty: "unknown",
+          },
+        });
+        throw new ProviderApiError(
+          signal.aborted || error instanceof OpenAI.APIConnectionTimeoutError
+            ? "AI provider request timed out"
+            : "AI provider request failed",
+          diagnostic,
+        );
+      }
+      // Accounting and completion integrity are terminal; never spend a repair on them.
+      // Go reports tokens, not a billed cost. Use reviewed peak rates without cache discounts.
+      // Keep missing/invalid token accounting terminal and unknown.
+      const goEnvelope = envelopeSchema.extend({
+        usage: usageSchema.omit({ cost: true }),
+      });
+      const goParsed =
+        this.backend === "opencode-go" ? goEnvelope.safeParse(raw) : null;
+      const normalized = goParsed?.success
+        ? {
+            ...goParsed.data,
+            usage: {
+              ...goParsed.data.usage,
+              cost:
+                (goParsed.data.usage.prompt_tokens * 0.3 +
+                  goParsed.data.usage.completion_tokens * 1.2) /
+                1_000_000,
+            },
+          }
+        : raw;
+      const envelope = envelopeSchema.safeParse(normalized);
+      const certainty =
+        this.backend === "opencode-go"
+          ? ("estimated" as const)
+          : ("measured" as const);
+      if (!envelope.success) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        });
+        throw new ProviderOutputError(
+          "AI provider returned an invalid response envelope or usage",
+        );
+      }
+      const response = envelope.data;
+      const model =
+        response.model === undefined && this.backend === "openrouter"
+          ? this.model
+          : response.model;
+      if (
+        !this.validResponseModel(model) ||
+        (responseModel !== undefined && responseModel !== model)
+      ) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: this.backend === "opencode-go" ? null : response.usage.cost,
+          certainty: this.backend === "opencode-go" ? "unknown" : certainty,
+        });
+        throw new ProviderOutputError(
+          "AI provider returned an invalid or inconsistent model identity",
+        );
+      }
+      responseModel = model;
+      inputTokens += response.usage.prompt_tokens;
+      outputTokens += response.usage.completion_tokens;
+      estimatedCostUsd += response.usage.cost;
+      if (
+        !Number.isSafeInteger(inputTokens) ||
+        !Number.isSafeInteger(outputTokens) ||
+        !Number.isFinite(estimatedCostUsd)
+      ) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty,
+        });
+        throw new ProviderOutputError(
+          "AI provider usage exceeded safe accounting bounds",
+        );
+      }
+      const choice = response.choices[0]!;
+      const message = choice.message;
+      if (
+        choice.finish_reason === "content_filter" ||
+        (message !== null &&
+          typeof message === "object" &&
+          "refusal" in message &&
+          typeof message.refusal === "string" &&
+          message.refusal.length > 0)
+      ) {
+        await this.observeTerminal(attempt, "refusal", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty,
+        });
+        throw new ProviderRefusalError("AI provider refused the request");
+      }
+      if (choice.finish_reason !== "stop") {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty,
+        });
+        throw new ProviderOutputError(
+          "AI provider returned an incomplete response",
+        );
+      }
+      const content = messageSchema.safeParse(message);
+      if (!content.success) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty,
+        });
+        throw new ProviderOutputError(
+          "AI provider returned an invalid message envelope",
+        );
+      }
+      let json: unknown;
+      try {
+        json = JSON.parse(content.data.content);
+      } catch {
+        json = undefined;
+      }
+      const parsed = schema.safeParse(json);
+      if (parsed.success) {
+        try {
+          validate(parsed.data);
+        } catch (error) {
+          await this.observeTerminal(attempt, "invalid_output", {
+            inputTokens: response.usage.prompt_tokens,
+            outputTokens: response.usage.completion_tokens,
+            costUsd: response.usage.cost,
+            certainty,
+          });
+          throw error;
+        }
+      }
+      await this.invocationObserver?.({
+        ordinal: attempt + 1,
+        phase: attempt === 0 ? "request" : "repair",
+        outcome: parsed.success ? "response" : "invalid_output",
+        diagnostic: {
+          category: parsed.success ? "internal" : "invalid_output",
+          retryable: false,
+          httpStatus: 200,
+          providerCode: null,
+          requestId: null,
+        },
+        usage: {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty,
+        },
+      });
+      if (!parsed.success) continue;
+      const end = this.now();
+      const latencyMs =
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        end >= start &&
+        Number.isFinite(end - start)
+          ? Math.round(end - start)
+          : 0;
+      return {
+        parsed: parsed.data,
+        usage: {
+          inputTokens,
+          outputTokens,
+          estimatedCostUsd,
+          model: responseModel,
+          promptVersion,
+          latencyMs,
+        },
+      };
+    }
+    throw new ProviderOutputError(
+      "AI provider output did not match the required schema after bounded repair",
+    );
+  }
+}
