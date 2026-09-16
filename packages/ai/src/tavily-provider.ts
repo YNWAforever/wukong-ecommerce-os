@@ -62,11 +62,11 @@ const responseMetadata = {
   usage: z.object({ credits: z.number().int().nonnegative() }).optional(),
 };
 const searchResponse = z.object({
-  results: z.array(searchResult),
+  results: z.array(searchResult).max(5),
   ...responseMetadata,
 });
 const extractResponse = z.object({
-  results: z.array(extractResult),
+  results: z.array(extractResult).max(5),
   ...responseMetadata,
 });
 const searchInput = z.object({
@@ -140,22 +140,18 @@ function parseProviderResponse(
     });
   const results =
     kind === "search"
-      ? searchResponse
-          .parse(value)
-          .results.map((result) => ({
-            url: result.url,
-            title: result.title,
-            content: result.content,
-            rawContent: result.raw_content ?? null,
-          }))
-      : extractResponse
-          .parse(value)
-          .results.map((result) => ({
-            url: result.url,
-            title: "",
-            content: result.raw_content,
-            rawContent: result.raw_content,
-          }));
+      ? searchResponse.parse(value).results.map((result) => ({
+          url: result.url,
+          title: result.title,
+          content: result.content,
+          rawContent: result.raw_content ?? null,
+        }))
+      : extractResponse.parse(value).results.map((result) => ({
+          url: result.url,
+          title: "",
+          content: result.raw_content,
+          rawContent: result.raw_content,
+        }));
   return { results, requestId, credits };
 }
 
@@ -228,6 +224,7 @@ export class TavilyProvider {
     }
     const requestId = safeRequestId(response.headers.get("x-request-id"));
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       if (response.status === 429)
         throw new TavilyProviderError("rate_limited", {
           status: response.status,

@@ -298,6 +298,78 @@ describe("TavilyProvider", () => {
     ).rejects.toMatchObject({ code: "invalid_output" });
   });
 
+  it.each(["search", "extract"] as const)(
+    "rejects an over-returned %s result array",
+    async (kind) => {
+      const results = Array.from({ length: 6 }, (_, index) =>
+        kind === "search"
+          ? {
+              url: `https://producer.example/${index}`,
+              title: `Result ${index}`,
+              content: "Excerpt",
+            }
+          : {
+              url: `https://producer.example/${index}`,
+              raw_content: "Extracted document",
+            },
+      );
+      const provider = new TavilyProvider({
+        apiKey: "fixture",
+        fetch: async () =>
+          jsonResponse({
+            request_id: "over-returned",
+            usage: { credits: 1 },
+            results,
+          }),
+      });
+
+      const call =
+        kind === "search"
+          ? provider.search({
+              query: "Fixture",
+              depth: "basic",
+              allowedDomains: [],
+            })
+          : provider.extract({ urls: ["https://producer.example/reserve"] });
+      await expect(call).rejects.toMatchObject({ code: "invalid_output" });
+    },
+  );
+
+  it.each([
+    [401, "rejected"],
+    [429, "rate_limited"],
+    [500, "outcome_unknown"],
+  ] as const)(
+    "cancels an unread provider body before mapping status %i to %s",
+    async (status, code) => {
+      let cancelled = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(1024 * 1024));
+        },
+        cancel() {
+          cancelled += 1;
+        },
+      });
+      const fetch = vi.fn(
+        async () =>
+          new Response(stream, {
+            status,
+            headers: { "x-request-id": "safe-request-id" },
+          }),
+      );
+      const error = await caught(
+        new TavilyProvider({
+          apiKey: "fixture",
+          fetch: fetch as typeof globalThis.fetch,
+        }).search({ query: "Fixture", depth: "basic", allowedDomains: [] }),
+      );
+
+      expect(error).toMatchObject({ code, status });
+      expect(cancelled).toBe(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
   it("rejects a streamed response beyond 8 MiB without Content-Length", async () => {
     const chunk = new Uint8Array(1024 * 1024);
     const stream = new ReadableStream<Uint8Array>({

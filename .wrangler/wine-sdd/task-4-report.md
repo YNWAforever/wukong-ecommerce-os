@@ -75,3 +75,19 @@ Result: 19/19 tests passed after adding endpoint-specific response schemas and d
 ## Concerns
 
 None.
+
+## Review fix verification
+
+Review fixes applied:
+
+- Both Search and Extract response schemas now reject provider result arrays above the requested maximum of five.
+- Every non-2xx response body is cancelled without reading or logging it before the sanitized status error is thrown. Cancellation failure remains best-effort and cannot expose provider content or replace status classification.
+
+### Review RED
+
+- `pnpm.cmd --filter @wukong/ai exec vitest run src/tavily-provider.test.ts` — 5 expected failures: over-returned Search and Extract arrays resolved, and 401/429/500 response streams were not cancelled.
+
+### Review GREEN
+
+- `pnpm.cmd --filter @wukong/ai exec vitest run src/tavily-provider.test.ts` — 1 file, 24 tests passed.
+- `pnpm.cmd --filter @wukong/ai typecheck` — both TypeScript checks passed.
