@@ -13,11 +13,16 @@ export type ProductShotServiceDeps = {
   render?: typeof renderProductShot;
 };
 type Scope = { workspaceId: string; listingId: string; actorId: string };
-type Observation = Scope & { attemptId: string; expectedVersionId: string };
+type Observation = Scope & {
+  attemptId: string;
+  expectedVersionId: string | null;
+  expectedInputRevision?: number;
+};
 export type ProductShotView = {
   state: string;
   attemptId: string | null;
   expectedVersionId: string | null;
+  inputRevision?: number;
   sourceAssetId: string | null;
   sourcePreviewUrl: string | null;
   candidatePreviewUrl: string | null;
@@ -67,6 +72,12 @@ async function snapshot(
         review.listing.activeVersionId !== version)
     )
       conflict("version_conflict");
+    if (
+      observation?.expectedVersionId === null &&
+      (observation.expectedInputRevision === undefined ||
+        observation.expectedInputRevision !== review.listing.inputRevision)
+    )
+      conflict("input_revision_conflict");
     const attempt = await r.productShots.currentForListing(input.listingId);
     if (
       observation &&
@@ -81,7 +92,12 @@ async function snapshot(
       (a) =>
         a.workspaceId === input.workspaceId && a.listingId === input.listingId,
     );
-    return { version, attempt, assets };
+    return {
+      version,
+      attempt,
+      assets,
+      inputRevision: review.listing.inputRevision ?? 0,
+    };
   });
 }
 export async function readProductShot(
@@ -89,7 +105,7 @@ export async function readProductShot(
   deps: ProductShotServiceDeps,
 ): Promise<ProductShotView> {
   const first = await snapshot(input, deps);
-  const { attempt, assets, version } = first;
+  const { attempt, assets, version, inputRevision } = first;
   const url = async (id: string | undefined | null) => {
     const asset = assets.find((a) => a.id === id);
     return asset
@@ -112,6 +128,7 @@ export async function readProductShot(
   const last = await snapshot(input, deps);
   if (
     last.version !== version ||
+    last.inputRevision !== inputRevision ||
     last.attempt?.attemptId !== attempt?.attemptId ||
     last.attempt?.state !== attempt?.state ||
     last.attempt?.candidate?.digest !== attempt?.candidate?.digest
@@ -124,13 +141,14 @@ export async function readProductShot(
       : sources.length > 1
         ? "source_selection_required"
         : "not_requested");
-  const allowedActions = version ? ["select_source"] : [];
-  if (version && !attempt && sources.length === 1)
+  const allowedActions = version || inputRevision > 0 ? ["select_source"] : [];
+  if ((version || inputRevision > 0) && !attempt && sources.length === 1)
     allowedActions.push("request");
   if (attempt?.state === "cutout_ready") allowedActions.push("prepare");
   if (
     (attempt?.state === "candidate_ready" || attempt?.state === "approved") &&
-    candidatePreviewUrl
+    candidatePreviewUrl &&
+    version
   )
     allowedActions.push("approve");
   if (attempt?.state === "failed" || attempt?.state === "outcome_unknown")
@@ -140,6 +158,7 @@ export async function readProductShot(
     state,
     attemptId: attempt?.attemptId ?? null,
     expectedVersionId: version,
+    inputRevision,
     sourceAssetId: attempt?.sourceAssetId ?? null,
     sourcePreviewUrl,
     candidatePreviewUrl,
@@ -220,10 +239,16 @@ export async function prepareProductShot(
     await r.listings.lockReviewState(input.listingId);
     const review = await r.listings.getReviewSnapshot(input.listingId);
     if (
-      review?.activeVersion?.id !== input.expectedVersionId ||
+      !review ||
+      (review.activeVersion?.id ?? null) !== input.expectedVersionId ||
       review.listing.activeVersionId !== input.expectedVersionId
     )
       conflict("version_conflict");
+    if (
+      input.expectedVersionId === null &&
+      review.listing.inputRevision !== input.expectedInputRevision
+    )
+      conflict("input_revision_conflict");
     const current = await r.productShots.currentForListing(input.listingId);
     if (
       !current ||
@@ -270,11 +295,12 @@ export async function prepareProductShot(
   return readProductShot(input, deps);
 }
 export async function approveProductShot(
-  input: Observation & { candidateDigest: string },
+  input: Observation & { expectedVersionId: string; candidateDigest: string },
   deps: ProductShotServiceDeps,
 ): Promise<void> {
   await deps.forWorkspace(input.workspaceId, async (r) => {
     await r.listings.lockReviewState(input.listingId);
+
     const current = await r.productShots.currentForListing(input.listingId);
     if (
       !current ||

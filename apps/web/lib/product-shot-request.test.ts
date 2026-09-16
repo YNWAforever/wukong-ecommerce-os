@@ -424,3 +424,31 @@ it("rejects publishing after source I/O at the final request fence", async () =>
   expect(f.ensure).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
 });
+it("requests before a text version and rejects a stale input revision", async () => {
+  const f = await fixture();
+  const original = f.deps.forWorkspace;
+  f.deps.forWorkspace = async (ws, fn) =>
+    original(ws, async (r) =>
+      fn({
+        ...r,
+        listings: {
+          lockReviewState: async () => {},
+          getReviewSnapshot: async () => ({
+            listing: { activeVersionId: null, inputRevision: 3 },
+            activeVersion: null,
+          }),
+        },
+      } as never),
+    );
+  const observed = {
+    ...input,
+    expectedVersionId: null,
+    expectedInputRevision: 3,
+  };
+  expect((await requestProductShot(observed, f.deps)).state).toBe("queued");
+  expect(f.ensure).toHaveBeenCalledTimes(1);
+  await expect(
+    requestProductShot({ ...observed, expectedInputRevision: 2 }, f.deps),
+  ).rejects.toMatchObject({ code: "input_revision_conflict" });
+  expect(f.ensure).toHaveBeenCalledTimes(1);
+});

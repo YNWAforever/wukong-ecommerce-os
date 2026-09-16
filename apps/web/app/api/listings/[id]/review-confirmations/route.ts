@@ -28,6 +28,7 @@ type ReviewConfirmationsRouteDeps = {
 const bodySchema = z
   .object({
     versionId: z.string().uuid(),
+    expectedRevision: z.number().int().nonnegative().nullable().optional(),
     fieldConfirmations: z.record(z.string(), z.boolean()),
     negativeConfirmations: z.record(z.string(), z.boolean()),
   })
@@ -62,6 +63,7 @@ export function createReviewConfirmationsHandler(
       const confirmation = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
+          await repositories.listings.lockReviewState(id);
           const snapshot = await repositories.listings.getReviewSnapshot(id);
           if (!snapshot) {
             throw new ApiError(404, "listing_not_found", "Listing not found.");
@@ -77,6 +79,20 @@ export function createReviewConfirmationsHandler(
             );
           }
 
+          const currentConfirmation =
+            await repositories.reviewConfirmations.getByVersionId(
+              body.versionId,
+            );
+          if (
+            (currentConfirmation?.revision ?? null) !==
+            (body.expectedRevision ?? null)
+          ) {
+            throw new ApiError(
+              409,
+              "confirmation_revision_conflict",
+              "Review confirmations changed. Reload before confirming again.",
+            );
+          }
           const invalidation =
             await repositories.listings.invalidateApprovalForConfirmationChange(
               id,

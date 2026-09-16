@@ -129,7 +129,7 @@ beforeAll(async () => {
   if (!adminUrl || !appUrl)
     throw new Error("Explicit isolated TEST_DATABASE URLs required");
   await database.migrate();
-  await admin`insert into workspaces(id,name,profile) values (${workspaceId},'Synthetic Task 3','{}')`;
+  await admin`insert into workspaces(id,name,profile) values (${workspaceId},'Synthetic Task 3',${admin.json({ name: "Synthetic Task 3", currency: "HKD", locales: ["en", "zh-Hant"], tone: "clear", claimPolicy: [], requiredFields: [] })})`;
   await admin`insert into shopline_connections(workspace_id,shop_domain,encrypted_access_token) values (${workspaceId},'synthetic.invalid','synthetic-disabled')`;
 });
 afterAll(async () => {

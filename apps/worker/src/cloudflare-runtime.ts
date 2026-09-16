@@ -1,3 +1,4 @@
+import { operationAI } from "./operation-ai.js";
 import { productImagePublicationForDelivery } from "./shopline-runtime.js";
 import { createHash } from "node:crypto";
 import type { ProductShotPipelineDeps } from "./product-shot-pipeline.js";
@@ -95,6 +96,52 @@ function mapRepositories(
   providerName: string,
 ): PipelineRepositories {
   return {
+    operations: {
+      async reusableExtraction(run) {
+        if (!run.retryOfRunId || !run.execution.promptVersions) return null;
+        const parent = await repositories.pipelineRuns.getOperation(
+          run.retryOfRunId,
+        );
+        const digest = (
+          run.execution.input as { inputDigest?: string } | undefined
+        )?.inputDigest;
+        if (
+          !parent ||
+          parent.listingId !== run.listingId ||
+          !digest ||
+          digest !==
+            (parent.execution.input as { inputDigest?: string } | undefined)
+              ?.inputDigest ||
+          JSON.stringify(parent.execution.aiPolicy) !==
+            JSON.stringify(run.execution.aiPolicy) ||
+          JSON.stringify(parent.execution.promptVersions) !==
+            JSON.stringify(run.execution.promptVersions)
+        )
+          return null;
+        const checkpoint = (
+          await repositories.pipelineRuns.getState(parent.idempotencyKey)
+        )?.steps.get("extracted");
+        return checkpoint?.state === "completed" ? checkpoint.output : null;
+      },
+      retainCandidate: (id, candidate) =>
+        repositories.pipelineRuns.retainOperationCandidate(id, candidate),
+      get: (id) => repositories.pipelineRuns.getOperation(id),
+      async matches(run) {
+        await repositories.listings.lockReviewState(run.listingId);
+        const listing = await repositories.listings.getById(run.listingId);
+        const current = await repositories.pipelineRuns.getCurrentOperation(
+          run.listingId,
+        );
+        return Boolean(
+          listing &&
+          listing.inputRevision === run.inputRevision &&
+          listing.activeVersionId === run.baseVersionId &&
+          current?.id === run.id &&
+          ["queued", "running"].includes(current.executionState),
+        );
+      },
+      mark: (...args) => repositories.pipelineRuns.setOperationState(...args),
+    },
     listings: repositories.listings,
     workspaces: repositories.workspaces,
     pipelineRuns: repositories.pipelineRuns,
@@ -123,7 +170,12 @@ function mapRepositories(
               "string"
               ? (asset.metadata as { mimeType: string }).mimeType
               : asset.kind,
-          storageKey: asset.storageKey,
+          storageKey:
+            typeof (asset.metadata as { normalizedStorageKey?: unknown } | null)
+              ?.normalizedStorageKey === "string"
+              ? (asset.metadata as { normalizedStorageKey: string })
+                  .normalizedStorageKey
+              : asset.storageKey,
         }));
       },
     },
@@ -135,10 +187,24 @@ export function createCloudflareRuntime(
   config: CloudflareRuntimeConfig = {},
 ): CloudflareRuntime {
   const assetStore = (config.assetStoreFactory ?? createAssetStore)(env);
-  const ai = (config.providerFactory ?? createProvider)(env);
+  const ai = config.providerFactory
+    ? config.providerFactory(env)
+    : {
+        extract: (request: Parameters<ListingAIProvider["extract"]>[0]) =>
+          createProvider(env).extract(request),
+        generate: (request: Parameters<ListingAIProvider["generate"]>[0]) =>
+          createProvider(env).generate(request),
+      };
   const database = (config.databaseFactory ?? createWorkerDatabase)(env);
   const providerName = env.AI_PROVIDER ?? "openai";
   const dependencies: PipelineDependencies = {
+    aiForOperation: (workspaceId, run) =>
+      operationAI(database, env, workspaceId, run),
+    settleOperation: async (workspaceId, runId) => {
+      await database.forWorkspace(workspaceId, (repos) =>
+        repos.aiBudgetReservations.settleFromInvocations(runId),
+      );
+    },
     async withWorkspace<T>(
       workspaceId: string,
       work: (repositories: PipelineRepositories) => Promise<T>,
@@ -234,11 +300,14 @@ export async function authenticatedWorkerHealth(
 ) {
   const create = deps.createDatabase ?? createWorkerDatabase;
   let hyperdriveConnects = false;
+  let listingRecoveryReady = false;
   let database: Database | undefined;
   try {
     database = create(env);
     await database.ping();
     hyperdriveConnects = true;
+    listingRecoveryReady =
+      (await database.inspectListingRecoveryCompatibility?.())?.ready === true;
   } catch {
     // A health probe reports the failure; it must never propagate it, or the
     // caller learns "the worker is down" instead of "the database is down".
@@ -249,7 +318,7 @@ export async function authenticatedWorkerHealth(
   return {
     ...workerHealth(env),
     authenticated: true,
-    checks: { hyperdriveConnects },
+    checks: { hyperdriveConnects, listingRecoveryReady },
   } as const;
 }
 

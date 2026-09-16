@@ -43,7 +43,7 @@ async function fixture(initializeAttempt = true) {
     listingId = randomUUID(),
     versionId = randomUUID(),
     actorId = "reviewer_" + randomUUID();
-  await admin`insert into workspaces(id,name,profile) values (${workspaceId},'Synthetic','{}')`;
+  await admin`insert into workspaces(id,name,profile) values (${workspaceId},'Synthetic','{"name":"Synthetic","currency":"HKD","locales":["en","zh-Hant"],"tone":"clear","claimPolicy":[],"requiredFields":[]}')`;
   await admin`insert into users(id,email) values (${actorId},${actorId + "@example.invalid"})`;
   await admin`insert into memberships(workspace_id,user_id,role) values (${workspaceId},${actorId},'reviewer')`;
   await admin`insert into listing_drafts(id,workspace_id,status) values (${listingId},${workspaceId},'in_review')`;

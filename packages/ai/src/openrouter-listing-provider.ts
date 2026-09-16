@@ -16,6 +16,8 @@ import {
   ProviderOutputError,
   ProviderRefusalError,
   UnsupportedAssetError,
+  providerFailureDiagnostic,
+  type PhysicalInvocationObserver,
 } from "./listing-provider-errors.js";
 import {
   FACT_KEYS,
@@ -39,6 +41,8 @@ export type OpenRouterListingProviderConfig = {
   fetch?: typeof fetch;
   now?: () => number;
   timeoutMs?: number;
+  invocationObserver?: PhysicalInvocationObserver;
+  maxOutputTokens?: number;
 };
 
 // Require explicit model slugs and reject known routing aliases and variants.
@@ -120,6 +124,8 @@ export class OpenRouterListingProvider implements ListingAIProvider {
   private readonly model: string;
   private readonly timeoutMs: number;
   private readonly now: () => number;
+  private readonly invocationObserver?: PhysicalInvocationObserver;
+  private readonly maxOutputTokens: number;
 
   constructor(config: OpenRouterListingProviderConfig) {
     if (typeof config.apiKey !== "string" || !config.apiKey.trim())
@@ -137,6 +143,16 @@ export class OpenRouterListingProvider implements ListingAIProvider {
         "timeoutMs must be an integer between 1000 and 600000",
       );
     this.now = config.now ?? Date.now;
+    this.invocationObserver = config.invocationObserver;
+    this.maxOutputTokens = config.maxOutputTokens ?? 4096;
+    if (
+      !Number.isInteger(this.maxOutputTokens) ||
+      this.maxOutputTokens < 1 ||
+      this.maxOutputTokens > 100000
+    )
+      throw new TypeError(
+        "maxOutputTokens must be an integer between 1 and 100000",
+      );
     this.client = new OpenAI({
       apiKey: config.apiKey.trim(),
       baseURL: "https://openrouter.ai/api/v1",
@@ -146,11 +162,37 @@ export class OpenRouterListingProvider implements ListingAIProvider {
     });
   }
 
+  private async observeTerminal(
+    attempt: number,
+    outcome: "refusal" | "invalid_output",
+    usage: {
+      inputTokens: number | null;
+      outputTokens: number | null;
+      costUsd: number | null;
+      certainty: "measured" | "unknown";
+    },
+  ): Promise<void> {
+    await this.invocationObserver?.({
+      ordinal: attempt + 1,
+      phase: attempt === 0 ? "request" : "repair",
+      outcome,
+      diagnostic: {
+        category: outcome,
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: null,
+      },
+      usage,
+    });
+  }
+
   private async complete<T>(
     messages: ChatCompletionMessageParam[],
     schema: z.ZodType<T>,
     schemaName: string,
     promptVersion: string,
+    validate: (parsed: T) => void,
   ): Promise<{ parsed: T; usage: AIUsage }> {
     const start = this.now();
     let inputTokens = 0;
@@ -161,6 +203,7 @@ export class OpenRouterListingProvider implements ListingAIProvider {
       const request = {
         model: this.model,
         stream: false as const,
+        max_tokens: this.maxOutputTokens,
         messages:
           attempt === 0
             ? messages
@@ -177,31 +220,77 @@ export class OpenRouterListingProvider implements ListingAIProvider {
       };
       let raw: unknown;
       const signal = AbortSignal.timeout(this.timeoutMs);
+      await this.invocationObserver?.({
+        ordinal: attempt + 1,
+        phase: attempt === 0 ? "request" : "repair",
+        outcome: "started",
+        diagnostic: {
+          category: "internal",
+          retryable: false,
+          httpStatus: null,
+          providerCode: null,
+          requestId: null,
+        },
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
       try {
         raw = await this.client.chat.completions.create(request, { signal });
       } catch (error) {
         reportProviderFailure(error, attempt === 0 ? "request" : "repair");
+        const diagnostic = providerFailureDiagnostic(error);
+        await this.invocationObserver?.({
+          ordinal: attempt + 1,
+          phase: attempt === 0 ? "request" : "repair",
+          outcome: "api_error",
+          diagnostic,
+          usage: {
+            inputTokens: null,
+            outputTokens: null,
+            costUsd: null,
+            certainty: "unknown",
+          },
+        });
         throw new ProviderApiError(
           signal.aborted || error instanceof OpenAI.APIConnectionTimeoutError
             ? "AI provider request timed out"
             : "AI provider request failed",
+          diagnostic,
         );
       }
       // Accounting and completion integrity are terminal; never spend a repair on them.
       const envelope = envelopeSchema.safeParse(raw);
-      if (!envelope.success)
+      if (!envelope.success) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        });
         throw new ProviderOutputError(
           "AI provider returned an invalid response envelope or usage",
         );
+      }
       const response = envelope.data;
       const model = response.model === undefined ? this.model : response.model;
       if (
         !validModel(model) ||
         (responseModel !== undefined && responseModel !== model)
-      )
+      ) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        });
         throw new ProviderOutputError(
           "AI provider returned an invalid or inconsistent model identity",
         );
+      }
       responseModel = model;
       inputTokens += response.usage.prompt_tokens;
       outputTokens += response.usage.completion_tokens;
@@ -210,10 +299,17 @@ export class OpenRouterListingProvider implements ListingAIProvider {
         !Number.isSafeInteger(inputTokens) ||
         !Number.isSafeInteger(outputTokens) ||
         !Number.isFinite(estimatedCostUsd)
-      )
+      ) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        });
         throw new ProviderOutputError(
           "AI provider usage exceeded safe accounting bounds",
         );
+      }
       const choice = response.choices[0]!;
       const message = choice.message;
       if (
@@ -223,17 +319,38 @@ export class OpenRouterListingProvider implements ListingAIProvider {
           "refusal" in message &&
           typeof message.refusal === "string" &&
           message.refusal.length > 0)
-      )
+      ) {
+        await this.observeTerminal(attempt, "refusal", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        });
         throw new ProviderRefusalError("AI provider refused the request");
-      if (choice.finish_reason !== "stop")
+      }
+      if (choice.finish_reason !== "stop") {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        });
         throw new ProviderOutputError(
           "AI provider returned an incomplete response",
         );
+      }
       const content = messageSchema.safeParse(message);
-      if (!content.success)
+      if (!content.success) {
+        await this.observeTerminal(attempt, "invalid_output", {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        });
         throw new ProviderOutputError(
           "AI provider returned an invalid message envelope",
         );
+      }
       let json: unknown;
       try {
         json = JSON.parse(content.data.content);
@@ -241,6 +358,37 @@ export class OpenRouterListingProvider implements ListingAIProvider {
         json = undefined;
       }
       const parsed = schema.safeParse(json);
+      if (parsed.success) {
+        try {
+          validate(parsed.data);
+        } catch (error) {
+          await this.observeTerminal(attempt, "invalid_output", {
+            inputTokens: response.usage.prompt_tokens,
+            outputTokens: response.usage.completion_tokens,
+            costUsd: response.usage.cost,
+            certainty: "measured",
+          });
+          throw error;
+        }
+      }
+      await this.invocationObserver?.({
+        ordinal: attempt + 1,
+        phase: attempt === 0 ? "request" : "repair",
+        outcome: parsed.success ? "response" : "invalid_output",
+        diagnostic: {
+          category: parsed.success ? "internal" : "invalid_output",
+          retryable: false,
+          httpStatus: 200,
+          providerCode: null,
+          requestId: null,
+        },
+        usage: {
+          inputTokens: response.usage.prompt_tokens,
+          outputTokens: response.usage.completion_tokens,
+          costUsd: response.usage.cost,
+          certainty: "measured",
+        },
+      });
       if (!parsed.success) continue;
       const end = this.now();
       const latencyMs =
@@ -312,6 +460,14 @@ export class OpenRouterListingProvider implements ListingAIProvider {
       extractionOutputSchema,
       "listing_extraction",
       EXTRACTION_PROMPT.version,
+      (parsed) => {
+        const allowedSources = new Set(input.assets.map((asset) => asset.id));
+        allowedSources.add(NOTE_SOURCE_ID);
+        assertFactsGrounded(parsed.facts, parsed.evidence, {
+          allowedSources,
+          note: input.note,
+        });
+      },
     );
     const allowedSources = new Set(input.assets.map((asset) => asset.id));
     allowedSources.add(NOTE_SOURCE_ID);
@@ -333,7 +489,9 @@ export class OpenRouterListingProvider implements ListingAIProvider {
         "AI generation input did not match the required schema",
       );
     const validatedInput = validated.data;
-    assertFactsGrounded(validatedInput.facts, validatedInput.evidence);
+    assertFactsGrounded(validatedInput.facts, validatedInput.evidence, {
+      operatorProvidedFields: validatedInput.operatorProvidedFields,
+    });
     const safeListing = buildSafeListing(validatedInput);
     const messages: ChatCompletionMessageParam[] = [
       {
@@ -354,6 +512,7 @@ export class OpenRouterListingProvider implements ListingAIProvider {
       generationOutputSchema,
       "listing_generation",
       GENERATION_PROMPT.version,
+      (parsed) => assertGenerationGrounding(parsed.listing, validatedInput),
     );
     assertGenerationGrounding(parsed.listing, validatedInput);
     return { listing: parsed.listing, usage };

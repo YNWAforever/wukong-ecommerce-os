@@ -1,3 +1,4 @@
+import { claimIdentitySnapshot } from "@wukong/core";
 import { describe, expect, it } from "vitest";
 import {
   BULK_FORM_COLUMNS,
@@ -133,6 +134,20 @@ function fixture() {
 }
 
 describe("durable Bulk Update approval binding", () => {
+  it("enforces tenant-required fields before approval or receipt mutation", async () => {
+    const { repos, context, deps, calls } = fixture();
+    const withPolicy = {
+      ...repos,
+      workspaces: {
+        requireProfile: async () => ({ requiredFields: ["stockQuantity"] }),
+      },
+    };
+    await expect(
+      approveOne("listing-1", context, withPolicy as never, deps),
+    ).rejects.toMatchObject({ code: "workspace_required_fields" });
+    expect(calls).not.toContain("approve");
+    expect(calls).not.toContain("receipt");
+  });
   it("locks review state before reading and records the exact approved source and checklist", async () => {
     const { repos, context, deps, calls, receipts } = fixture();
     await approveOne("listing-1", context, repos as never, deps);
@@ -259,4 +274,97 @@ it("promotes exact JPEG identity and binds publication after promotion without c
     versionId: "version-final",
     publicationToken: "token",
   });
+});
+
+it("carries exact reviewed claim support to image-only promoted version", async () => {
+  const { repos, context, deps } = fixture(),
+    bindings: unknown[] = [];
+  const text = "Robert Parker: 95/100 points (2022).",
+    content = {
+      imageAssetIds: [],
+      producer: "Maker",
+      productType: "wine",
+      country: "France",
+      region: null,
+      vintage: 2020,
+      volumeMl: 750,
+      packQuantity: 1,
+      title: { en: "Wine", "zh-Hant": "Wine" },
+      description: { en: text, "zh-Hant": "Wine" },
+    };
+  const original = repos.listings.getReviewSnapshot;
+  repos.listings.getReviewSnapshot = async () => ({
+    ...(await original()),
+    activeVersion: { id: "version-1", content },
+  });
+  const enriched = {
+    ...repos,
+    listingInputs: {
+      getCurrent: async () => ({
+        revision: 3,
+        note: "Market variant: HK",
+        sources: [],
+      }),
+    },
+    listingEnrichment: {
+      claimSupportReady: async () => true,
+      versionClaimIds: async () => ["support-1"],
+      claimSupports: async () => [
+        {
+          id: "support-1",
+          suggestion_id: "suggestion",
+          input_revision: 2,
+          actor_id: "operator",
+          invalidated: false,
+          payload: {
+            copyField: "description.en",
+            copyText: text,
+            claimText: text,
+            identitySnapshot: claimIdentitySnapshot(content),
+            sourceSnapshot: { note: "Market variant: HK", sources: [] },
+            claim: {
+              kind: "rating",
+              critic: "Robert Parker",
+              value: "95",
+              scale: "100",
+              year: 2022,
+              product: {
+                producer: "Maker",
+                productName: "Wine",
+                vintage: 2020,
+                volumeMl: 750,
+                packQuantity: 1,
+                marketVariant: "HK",
+              },
+            },
+            source: {
+              kind: "website",
+              url: "https://producer.example/wine",
+              documentDigest: "a".repeat(64),
+              retrievedAt: "2026-09-16T00:00:00Z",
+              excerpt: "Robert Parker 95 100 2022",
+              location: "Attributes",
+            },
+          },
+        },
+      ],
+      bindVersionClaims: async (value: unknown) => {
+        bindings.push(value);
+      },
+    },
+  };
+  await approveOne("listing-1", context, enriched as never, {
+    ...deps,
+    precomputedFinalAsset: {
+      storageKey: "synthetic-key",
+      priorFinalAssetIds: [],
+    },
+  });
+  expect(bindings).toEqual([
+    expect.objectContaining({
+      versionId: "version-final",
+      supportIds: ["support-1"],
+      inputRevision: 3,
+    }),
+  ]);
 });

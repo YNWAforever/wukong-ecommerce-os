@@ -13,7 +13,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MAX_ASSET_SIZE } from "@wukong/assets/media-policy";
 
-import { ListingIntakeForm } from "./listing-intake-form.js";
+import {
+  ListingIntakeForm,
+  type ListingIntakePayload,
+} from "./listing-intake-form.js";
 
 function png(name: string, bytes = 1024): File {
   return new File([new Uint8Array(bytes)], name, { type: "image/png" });
@@ -38,6 +41,7 @@ afterEach(() => {
   }
   root = undefined;
   host = undefined;
+  vi.unstubAllGlobals();
 });
 
 async function mount() {
@@ -67,6 +71,29 @@ async function choose(input: HTMLInputElement, files: File[]) {
   });
 }
 
+/** Chromium empties the live FileList as soon as the input value is cleared. */
+async function chooseWithLiveFileList(input: HTMLInputElement, files: File[]) {
+  let current = files;
+  const list = {
+    get length() {
+      return current.length;
+    },
+    item: (index: number) => current[index] ?? null,
+    [Symbol.iterator]: () => current[Symbol.iterator](),
+  } as unknown as FileList;
+  Object.defineProperty(input, "files", { value: list, configurable: true });
+  Object.defineProperty(input, "value", {
+    configurable: true,
+    get: () => "",
+    set: () => {
+      current = [];
+    },
+  });
+  await act(async () => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function names(container: HTMLElement): string[] {
   return [...container.querySelectorAll(".file-row strong")].map(
     (node) => node.textContent ?? "",
@@ -74,6 +101,14 @@ function names(container: HTMLElement): string[] {
 }
 
 describe("selecting files more than once", () => {
+  it("snapshots Chromium's live FileList before clearing the input", async () => {
+    const { container, input } = await mount();
+
+    await chooseWithLiveFileList(input, [png("front.png")]);
+
+    expect(names(container)).toEqual(["front.png"]);
+  });
+
   it("keeps the first photo when a second is added", async () => {
     const { container, input } = await mount();
 
@@ -93,6 +128,7 @@ describe("selecting files more than once", () => {
     await choose(input, [front]);
 
     expect(names(container)).toEqual(["front.png"]);
+    expect(container.textContent).toContain("已略過 1 個重複檔案");
   });
 
   it("applies the image cap across both selections, not each one", async () => {
@@ -120,6 +156,24 @@ describe("selecting files more than once", () => {
     await choose(input, [pdf("other.pdf")]);
 
     expect(container.querySelectorAll(".file-error")).toHaveLength(1);
+  });
+});
+
+describe("image previews", () => {
+  it("shows a preview and releases it when the file is removed", async () => {
+    const createObjectURL = vi.fn(() => "blob:front-preview");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const { container, input } = await mount();
+
+    await choose(input, [png("front.png")]);
+
+    expect(
+      container.querySelector<HTMLImageElement>(".file-preview")?.src,
+    ).toBe("blob:front-preview");
+    const remove = container.querySelector<HTMLButtonElement>(".file-remove")!;
+    await act(async () => remove.click());
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:front-preview");
   });
 });
 
@@ -210,5 +264,43 @@ describe("the shared media policy", () => {
     ]);
 
     expect(container.querySelectorAll(".file-error")).toHaveLength(1);
+  });
+});
+
+it("creates a manual note-only draft with a stable operation key", async () => {
+  const onCreate = vi.fn(async (_payload: ListingIntakePayload) => undefined);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () =>
+    root!.render(<ListingIntakeForm onCreate={onCreate} />),
+  );
+
+  const note = host.querySelector<HTMLTextAreaElement>("#listing-note")!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(note, "Supplier confirmed the product identity");
+    note.dispatchEvent(new Event("input", { bubbles: true }));
+    note.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const manual = host.querySelector<HTMLInputElement>(
+    'input[name="processing-mode"][value="manual"]',
+  )!;
+  await act(async () => manual.click());
+  await act(async () => {
+    host!
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+
+  expect(onCreate).toHaveBeenCalledOnce();
+  expect(onCreate.mock.calls[0]![0]).toMatchObject({
+    files: [],
+    note: "Supplier confirmed the product identity",
+    processingMode: "manual",
+    idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/i),
   });
 });

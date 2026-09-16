@@ -112,6 +112,35 @@ describe("claims the listing cannot support", () => {
     expect(flags).toEqual([]);
   });
 
+  it("does not let an unrelated award bypass a critic score claim", () => {
+    const flags = scanCompliance(
+      { descriptionEn: "Awarded 100 points by Robert Parker." },
+      {
+        criticScores: [],
+        awards: [{ name: "Bronze medal", year: "2020", evidenceId: "ev_1" }],
+      },
+    );
+
+    expect(flags).toEqual([
+      expect.objectContaining({ rule: "rating_without_evidence" }),
+    ]);
+  });
+
+  it("requires the claimed critic and score to match grounded evidence", () => {
+    const flags = scanCompliance(
+      { descriptionEn: "Awarded 100 points by Robert Parker." },
+      {
+        criticScores: [
+          { source: "Wine Spectator", score: "85", evidenceId: "ev_1" },
+        ],
+        awards: [],
+      },
+    );
+
+    expect(flags).toEqual([
+      expect.objectContaining({ rule: "rating_without_evidence" }),
+    ]);
+  });
   it("accepts an award fact as support for an award claim", () => {
     const flags = scanCompliance(
       { descriptionZhHant: "曾獲金獎。" },
@@ -469,5 +498,57 @@ describe("exclusivity claims", () => {
     ]) {
       expect(scanCompliance({ descriptionEn: copy })).toEqual([]);
     }
+  });
+});
+
+describe("independent rating and award claim binding", () => {
+  const rp = { source: "RP", score: "90", evidenceId: "source" };
+  it.each([
+    [
+      "Gold medal",
+      {
+        criticScores: [],
+        awards: [{ name: "Bronze medal", evidenceId: "source" }],
+      },
+    ],
+    [
+      "RP 90 points; Wine Spectator 100 points",
+      { criticScores: [rp], awards: [] },
+    ],
+    [
+      "Decanter 100 points",
+      { criticScores: [{ ...rp, score: "100" }], awards: [] },
+    ],
+    ["RP 90 points and Gold medal", { criticScores: [rp], awards: [] }],
+    [
+      "2024 Gold medal",
+      {
+        criticScores: [],
+        awards: [{ name: "2023 Gold medal", evidenceId: "source" }],
+      },
+    ],
+  ])("flags unsupported claim: %s", (text, claims) => {
+    expect(
+      scanCompliance({ descriptionEn: text }, claims).some(
+        (flag) => flag.rule === "rating_without_evidence",
+      ),
+    ).toBe(true);
+  });
+  it("allows independently supported critic claims and a matching award", () => {
+    expect(
+      scanCompliance(
+        {
+          descriptionEn:
+            "RP 90 points; Wine Spectator 95 points; 2024 Gold medal",
+        },
+        {
+          criticScores: [
+            rp,
+            { source: "Wine Spectator", score: "95", evidenceId: "second" },
+          ],
+          awards: [{ name: "2024 Gold medal", evidenceId: "award" }],
+        },
+      ),
+    ).toEqual([]);
   });
 });

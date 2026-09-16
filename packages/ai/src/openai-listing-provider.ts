@@ -18,6 +18,8 @@ import {
   ProviderOutputError,
   ProviderRefusalError,
   UnsupportedAssetError,
+  providerFailureDiagnostic,
+  type PhysicalInvocationObserver,
 } from "./listing-provider-errors.js";
 import {
   FACT_KEYS,
@@ -44,6 +46,7 @@ import {
 } from "./prompts.js";
 
 type ProviderResponse = {
+  _request_id?: string;
   output_parsed?: unknown;
   usage?: {
     input_tokens?: number | null;
@@ -59,7 +62,7 @@ export type ResponsesClientPort = {
   responses: {
     parse(
       request: unknown,
-      options?: { signal?: AbortSignal },
+      options?: { signal?: AbortSignal; maxRetries?: number },
     ): Promise<ProviderResponse>;
   };
 };
@@ -79,6 +82,8 @@ export type OpenAIListingProviderConfig = {
   clientFactory?: () => ResponsesClientPort;
   apiKey?: string;
   timeoutMs?: number;
+  invocationObserver?: PhysicalInvocationObserver;
+  maxOutputTokens?: number;
 };
 
 const DEFAULT_MODEL = "gpt-5.6-terra";
@@ -192,6 +197,8 @@ export class OpenAIListingProvider implements ListingAIProvider {
   private readonly now: () => number;
   private readonly clientFactory: () => ResponsesClientPort;
   private readonly timeoutMs: number;
+  private readonly invocationObserver?: PhysicalInvocationObserver;
+  private readonly maxOutputTokens: number;
 
   constructor(
     client?: ResponsesClientPort,
@@ -214,10 +221,21 @@ export class OpenAIListingProvider implements ListingAIProvider {
     this.clientFactory =
       config.clientFactory ??
       (() =>
-        new OpenAI(
-          config.apiKey === undefined ? undefined : { apiKey: config.apiKey },
-        ) as unknown as ResponsesClientPort);
+        new OpenAI({
+          ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
+          maxRetries: 0,
+        }) as unknown as ResponsesClientPort);
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.invocationObserver = config.invocationObserver;
+    this.maxOutputTokens = config.maxOutputTokens ?? 4096;
+    if (
+      !Number.isInteger(this.maxOutputTokens) ||
+      this.maxOutputTokens < 1 ||
+      this.maxOutputTokens > 100000
+    )
+      throw new TypeError(
+        "maxOutputTokens must be an integer between 1 and 100000",
+      );
     if (
       !Number.isInteger(this.timeoutMs) ||
       this.timeoutMs < 1_000 ||
@@ -235,25 +253,143 @@ export class OpenAIListingProvider implements ListingAIProvider {
     return this.client;
   }
 
+  private physicalUsage(
+    response: ProviderResponse,
+  ): import("./listing-provider-errors.js").PhysicalInvocationUsage {
+    const token = (value: unknown) =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+        ? value
+        : null;
+    const inputTokens = token(response.usage?.input_tokens),
+      outputTokens = token(response.usage?.output_tokens);
+    return {
+      inputTokens,
+      outputTokens,
+      costUsd:
+        inputTokens === null || outputTokens === null
+          ? null
+          : makeUsage(response, this.model, "physical", this.pricing, 0)
+              .estimatedCostUsd,
+      certainty:
+        inputTokens === null || outputTokens === null ? "unknown" : "estimated",
+    };
+  }
+  private async observeResponse(
+    response: ProviderResponse,
+    ordinal: number,
+    phase: "request" | "repair",
+  ): Promise<void> {
+    const refusal = containsRefusal(response);
+    const outcome = refusal
+      ? "refusal"
+      : response.output_parsed == null
+        ? "invalid_output"
+        : "response";
+    await this.invocationObserver?.({
+      ordinal,
+      phase,
+      outcome,
+      diagnostic: {
+        category: refusal
+          ? "refusal"
+          : response.output_parsed == null
+            ? "invalid_output"
+            : "internal",
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: providerFailureDiagnostic({
+          request_id: response._request_id,
+        }).requestId,
+      },
+      usage: this.physicalUsage(response),
+    });
+  }
+  private async observeInvalidOutput(
+    response: ProviderResponse,
+    ordinal: number,
+    phase: "request" | "repair",
+  ): Promise<void> {
+    await this.invocationObserver?.({
+      ordinal,
+      phase,
+      outcome: "invalid_output",
+      diagnostic: {
+        category: "invalid_output",
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: this.physicalUsage(response),
+    });
+  }
   private async parseWithOneRepair(
     request: Record<string, unknown>,
+    validate: (output: unknown) => void,
   ): Promise<ProviderResponse> {
     let response: ProviderResponse;
+    let ordinal = 1;
+    await this.invocationObserver?.({
+      ordinal: 1,
+      phase: "request",
+      outcome: "started",
+      diagnostic: {
+        category: "internal",
+        retryable: false,
+        httpStatus: null,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        certainty: "unknown",
+      },
+    });
     try {
       response = await this.getClient().responses.parse(request, {
         signal: AbortSignal.timeout(this.timeoutMs),
+        maxRetries: 0,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      const diagnostic = providerFailureDiagnostic(error);
+      await this.invocationObserver?.({
+        ordinal,
+        phase: ordinal === 1 ? "request" : "repair",
+        outcome: "api_error",
+        diagnostic,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)
           ? "AI provider request timed out"
           : "AI provider request failed",
+        diagnostic,
       );
     }
-    if (containsRefusal(response))
+    if (containsRefusal(response)) {
+      await this.observeResponse(response, 1, "request");
       throw new ProviderRefusalError("AI provider refused the request");
-    if (response.output_parsed != null) return response;
+    }
+    if (response.output_parsed != null) {
+      try {
+        validate(response.output_parsed);
+      } catch (error) {
+        await this.observeInvalidOutput(response, 1, "request");
+        throw error;
+      }
+      await this.observeResponse(response, 1, "request");
+      return response;
+    }
+    await this.observeResponse(response, 1, "request");
     const repairRequest = {
       ...request,
       input: [
@@ -265,22 +401,67 @@ export class OpenAIListingProvider implements ListingAIProvider {
         },
       ],
     };
+    ordinal = 2;
+    await this.invocationObserver?.({
+      ordinal: 2,
+      phase: "repair",
+      outcome: "started",
+      diagnostic: {
+        category: "internal",
+        retryable: false,
+        httpStatus: null,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        certainty: "unknown",
+      },
+    });
     try {
       response = await this.getClient().responses.parse(repairRequest, {
         signal: AbortSignal.timeout(this.timeoutMs),
+        maxRetries: 0,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      const diagnostic = providerFailureDiagnostic(error);
+      await this.invocationObserver?.({
+        ordinal,
+        phase: ordinal === 1 ? "request" : "repair",
+        outcome: "api_error",
+        diagnostic,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)
           ? "AI provider request timed out"
           : "AI provider request failed",
+        diagnostic,
       );
     }
-    if (containsRefusal(response))
+    if (containsRefusal(response)) {
+      await this.observeResponse(response, 2, "repair");
       throw new ProviderRefusalError("AI provider refused the request");
-    if (response.output_parsed == null)
+    }
+    if (response.output_parsed == null) {
+      await this.observeResponse(response, 2, "repair");
       throw new ProviderOutputError("AI provider returned no parsed output");
+    }
+    try {
+      validate(response.output_parsed);
+    } catch (error) {
+      await this.observeInvalidOutput(response, 2, "repair");
+      throw error;
+    }
+    await this.observeResponse(response, 2, "repair");
     return response;
   }
 
@@ -289,7 +470,10 @@ export class OpenAIListingProvider implements ListingAIProvider {
     const start = this.now();
     const request = {
       model: this.model,
-      reasoning: { effort: "low" },
+      max_output_tokens: this.maxOutputTokens,
+      ...(/^(?:gpt-5|o[1-9])/.test(this.model)
+        ? { reasoning: { effort: "low" } }
+        : {}),
       input: [
         {
           role: "system",
@@ -314,7 +498,15 @@ export class OpenAIListingProvider implements ListingAIProvider {
         format: zodTextFormat(extractionOutputSchema, "listing_extraction"),
       },
     };
-    const response = await this.parseWithOneRepair(request);
+    const response = await this.parseWithOneRepair(request, (output) => {
+      const parsed = extractionOutputSchema.parse(output);
+      const allowedSources = new Set(input.assets.map((asset) => asset.id));
+      allowedSources.add(NOTE_SOURCE_ID);
+      assertFactsGrounded(parsed.facts, parsed.evidence, {
+        allowedSources,
+        note: input.note,
+      });
+    });
     let parsed: z.infer<typeof extractionOutputSchema>;
     try {
       parsed = extractionOutputSchema.parse(response.output_parsed);
@@ -347,7 +539,9 @@ export class OpenAIListingProvider implements ListingAIProvider {
     let validatedInput: GenerationInput;
     try {
       validatedInput = generationInputRuntimeSchema.parse(input);
-      assertFactsGrounded(validatedInput.facts, validatedInput.evidence);
+      assertFactsGrounded(validatedInput.facts, validatedInput.evidence, {
+        operatorProvidedFields: validatedInput.operatorProvidedFields,
+      });
     } catch (error) {
       if (error instanceof ProviderOutputError) throw error;
       throw new ProviderOutputError(
@@ -359,7 +553,10 @@ export class OpenAIListingProvider implements ListingAIProvider {
     const start = this.now();
     const request = {
       model: this.model,
-      reasoning: { effort: "low" },
+      max_output_tokens: this.maxOutputTokens,
+      ...(/^(?:gpt-5|o[1-9])/.test(this.model)
+        ? { reasoning: { effort: "low" } }
+        : {}),
       input: [
         {
           role: "system",
@@ -381,7 +578,10 @@ export class OpenAIListingProvider implements ListingAIProvider {
         format: zodTextFormat(generationOutputSchema, "listing_generation"),
       },
     };
-    const response = await this.parseWithOneRepair(request);
+    const response = await this.parseWithOneRepair(request, (output) => {
+      const parsed = generationOutputSchema.parse(output);
+      assertGenerationGrounding(parsed.listing, validatedInput);
+    });
     let modelListing: z.infer<typeof generationOutputSchema>["listing"];
     try {
       modelListing = generationOutputSchema.parse(

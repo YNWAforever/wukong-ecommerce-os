@@ -40,7 +40,10 @@ function harness(
   existing: { id: string; note: string | null } | null = null,
   requestProductShot?: (input: unknown) => Promise<{ state: string }>,
 ) {
+  vi.stubEnv("AI_PROVIDER", "fake");
   const mutations: string[] = [];
+  let created = false;
+  let acceptedRun: Record<string, unknown> | null = null;
   const repositories = {
     sourceAssets: {
       async getByIds() {
@@ -52,14 +55,83 @@ function harness(
     },
     listings: {
       async create() {
+        created = true;
         mutations.push("create");
-        return { id: listingId, status: "received", target: "shopline" };
+        return {
+          id: listingId,
+          status: "received",
+          target: "shopline",
+          activeVersionId: null,
+          activeVersionSequence: 0,
+        };
+      },
+      async lockReviewState() {},
+      async requireById() {
+        return { activeVersionSequence: 0 };
       },
       async getById(id: string) {
         return existing && existing.id === id
-          ? { ...existing, status: "received", target: "shopline" }
-          : null;
+          ? {
+              ...existing,
+              status: "received",
+              target: "shopline",
+              activeVersionId: null,
+              activeVersionSequence: 0,
+            }
+          : created && id === listingId
+            ? {
+                id: listingId,
+                note: null,
+                status: "received",
+                target: "shopline",
+                activeVersionId: null,
+                activeVersionSequence: 0,
+              }
+            : null;
       },
+    },
+    listingInputs: {
+      async initialize() {
+        return { revision: 1, baseVersionId: null };
+      },
+      async getCurrent() {
+        return { revision: 1, baseVersionId: null, workingContent: {} };
+      },
+    },
+    pipelineRuns: {
+      async findOperationRequest() {
+        return acceptedRun;
+      },
+      async acceptOperation(input: {
+        requestKey: string;
+        requestDigest: string;
+      }) {
+        acceptedRun = {
+          id: "00000000-0000-4000-8000-000000000201",
+          idempotencyKey: input.requestKey,
+          inputRevision: 1,
+          baseVersionId: null,
+          runAttempt: 1,
+          executionState: "queued",
+          activeVersionSequence: 0,
+          requestDigest: input.requestDigest,
+        };
+        return acceptedRun;
+      },
+    },
+    dispatchOutbox: {
+      async record(
+        rows: Array<{ dedupeKey: string; payload: Record<string, unknown> }>,
+      ) {
+        return rows.map((row) => ({
+          ...row,
+          id: "outbox_1",
+          listingId,
+          attempts: 0,
+        }));
+      },
+      async markDispatched() {},
+      async markAttempted() {},
     },
     audit: {
       async write() {
@@ -102,8 +174,8 @@ describe("POST /api/listings replayed after a lost response", () => {
 
     expect(response.status).toBe(201);
     expect((await response.json()).listing.id).toBe(listingId);
-    // No second listing, and no second attach or audit event for one.
-    expect(mutations).toEqual([]);
+    // No second listing or attachment. Processing acceptance has its own audit.
+    expect(mutations).toEqual(["audit"]);
   });
 
   it("re-enqueues, because the first attempt's enqueue may have failed", async () => {
@@ -118,7 +190,11 @@ describe("POST /api/listings replayed after a lost response", () => {
     await handler(post([assetA]));
 
     expect(enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ draftId: listingId }),
+      expect.objectContaining({
+        schemaVersion: 2,
+        draftId: listingId,
+        runId: "00000000-0000-4000-8000-000000000201",
+      }),
     );
   });
 

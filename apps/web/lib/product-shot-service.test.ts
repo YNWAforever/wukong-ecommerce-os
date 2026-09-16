@@ -245,3 +245,23 @@ it("rejects source replacement during candidate storage IO", async () => {
   expect(f.assets).toHaveLength(2);
   expect(f.calls).not.toContain("save");
 });
+it("prepares an exact persisted image before text and fences the observed input revision", async () => {
+  const f = await fixture();
+  f.repos.listings.getReviewSnapshot = async () => ({
+    listing: { activeVersionId: null, inputRevision: 3 },
+    activeVersion: null,
+  });
+  const observed = {
+    ...input,
+    expectedVersionId: null,
+    expectedInputRevision: 3,
+  };
+  const result = await prepareProductShot(observed, f.deps);
+  expect(result.state).toBe("candidate_ready");
+  expect(result.candidatePreviewUrl).toBeTruthy();
+  expect(result.expectedVersionId).toBeNull();
+  expect(result.allowedActions).not.toContain("approve");
+  await expect(
+    prepareProductShot({ ...observed, expectedInputRevision: 2 }, f.deps),
+  ).rejects.toMatchObject({ code: "input_revision_conflict" });
+});

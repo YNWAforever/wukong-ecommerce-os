@@ -63,7 +63,7 @@ afterEach(() => {
   host = undefined;
 });
 
-async function mount(onApprove = vi.fn()) {
+async function mount(onApprove = vi.fn(), onDirtyChange = vi.fn()) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -74,6 +74,7 @@ async function mount(onApprove = vi.fn()) {
         fieldConfirmations={fieldConfirmations}
         negativeConfirmations={negativeConfirmations}
         onApprove={onApprove}
+        onDirtyChange={onDirtyChange}
       />,
     );
   });
@@ -144,4 +145,14 @@ describe("approving with unsaved edits", () => {
 
     expect(approve.disabled).toBe(true);
   });
+});
+
+it("reports unsaved review state to the shared confirmation controls", async () => {
+  const dirty = vi.fn();
+  const { producer } = await mount(vi.fn(), dirty);
+  expect(dirty).toHaveBeenLastCalledWith(false);
+  await type(producer, "Changed");
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await type(producer, "Opak Cellar");
+  expect(dirty).toHaveBeenLastCalledWith(false);
 });

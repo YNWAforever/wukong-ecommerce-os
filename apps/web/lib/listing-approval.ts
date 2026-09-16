@@ -1,11 +1,15 @@
+import { readCopyClaimSupports } from "./listing-claim-support";
 import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
+  missingWorkspaceFields,
+  readWorkingField,
   approveListing as domainApprove,
   assertApprovalFreshness,
   type AuditContext,
   type CanonicalListing,
 } from "@wukong/core";
 import type {
+  WorkspaceRepository,
   ProductShotRepository,
   AuditWriter,
   SourceRowRepository,
@@ -15,6 +19,7 @@ import type {
   PlatformProductRepository,
   ReviewConfirmationRepository,
   SourceAssetRepository,
+  WorkspaceRepositories,
 } from "@wukong/db";
 
 import {
@@ -38,6 +43,9 @@ import { ApiError } from "./route-support";
  * that's not a barrier to calling these functions from there.
  */
 export type ApproveOneRepositories = {
+  workspaces?: Pick<WorkspaceRepository, "requireProfile">;
+  listingEnrichment?: WorkspaceRepositories["listingEnrichment"];
+  listingInputs?: WorkspaceRepositories["listingInputs"];
   productShots?: Pick<
     ProductShotRepository,
     "currentForListing" | "approvedForAsset" | "bindApprovedVersion"
@@ -239,6 +247,84 @@ export async function approveOne(
     );
   }
 
+  if (repositories.workspaces) {
+    const profile = await repositories.workspaces.requireProfile();
+    const missing = missingWorkspaceFields(
+      snapshot.activeVersion.content as unknown as Record<string, unknown>,
+      profile.requiredFields,
+    );
+    if (missing.length)
+      throw new ApiError(
+        409,
+        "workspace_required_fields",
+        `Complete workspace-required fields: ${missing.join(", ")}`,
+      );
+  }
+  let reviewedClaimSupportIds: string[] = [];
+  let reviewedClaimInputRevision = 0;
+  if (repositories.listingEnrichment && repositories.listingInputs) {
+    const supports = await readCopyClaimSupports(
+      {
+        listingEnrichment: repositories.listingEnrichment,
+        listingInputs: repositories.listingInputs,
+      },
+      id,
+      snapshot.activeVersion.content as unknown as Record<string, unknown>,
+    );
+    const bound = supports.length
+      ? await repositories.listingEnrichment.versionClaimIds(
+          id,
+          snapshot.activeVersion.id,
+        )
+      : [];
+    reviewedClaimSupportIds = supports
+      .filter((support) => support.valid && bound.includes(support.id))
+      .map((support) => support.id);
+    reviewedClaimInputRevision =
+      (await repositories.listingInputs.getCurrent(id))?.revision ?? 0;
+    if (
+      supports.some(
+        (support) =>
+          support.valid &&
+          !bound.includes(support.id) &&
+          !supports.some(
+            (other) =>
+              other.valid &&
+              other.field === support.field &&
+              other.text === support.text &&
+              bound.includes(other.id),
+          ),
+      )
+    )
+      throw new ApiError(
+        422,
+        "claim_review_required",
+        "Save the supported copy as a review version before approval.",
+      );
+    if (
+      supports.some(
+        (support) =>
+          !support.valid &&
+          String(
+            readWorkingField(
+              snapshot.activeVersion!.content,
+              support.copyField,
+            ),
+          ).includes(support.text) &&
+          !supports.some(
+            (other) =>
+              other.valid &&
+              other.field === support.field &&
+              other.text === support.text,
+          ),
+      )
+    )
+      throw new ApiError(
+        422,
+        "claim_support_stale",
+        "Claim evidence changed. Review and accept matching evidence again before approval.",
+      );
+  }
   const confirmation = await repositories.reviewConfirmations.getByVersionId(
     snapshot.activeVersion.id,
   );
@@ -428,6 +514,18 @@ export async function approveOne(
     versionIdToApprove = newVersion.id;
   }
 
+  if (
+    versionIdToApprove !== snapshot.activeVersion.id &&
+    reviewedClaimSupportIds.length
+  ) {
+    await repositories.listingEnrichment!.bindVersionClaims({
+      listingId: id,
+      versionId: versionIdToApprove,
+      supportIds: reviewedClaimSupportIds,
+      inputRevision: reviewedClaimInputRevision,
+      actorId: auditContext.actorId,
+    });
+  }
   try {
     const approved = await (deps.approve ?? domainApprove)(
       versionIdToApprove,

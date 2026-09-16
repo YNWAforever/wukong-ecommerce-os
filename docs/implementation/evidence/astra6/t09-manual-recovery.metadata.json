@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-09-16T03:25:36.1592283+08:00",
+  "evidence": "synthetic-local-browser-harness",
+  "browser": "Chromium via Playwright",
+  "baseUrl": "http://127.0.0.1:49217",
+  "database": "isolated local Postgres fixture",
+  "provider": "fake",
+  "paidCalls": false,
+  "scenario": "manual note-only create persists with no active version or run; corrected note and producer save as input revision 2 and survive reload",
+  "result": "passed",
+  "command": "PLAYWRIGHT_E2E=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:49217 pnpm exec playwright test tests/e2e/native-intake-selection.spec.ts --project=chromium --workers=1 --grep 'manual note-only'"
+}

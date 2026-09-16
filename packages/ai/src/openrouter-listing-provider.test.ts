@@ -605,3 +605,44 @@ describe("OpenRouter envelope and diagnostic edge cases", () => {
     }
   });
 });
+
+describe("trusted manual generation inputs", () => {
+  const input = () => ({
+    ...generation,
+    evidence: generation.evidence.filter(
+      (e) => !["producer", "sku", "priceHkd"].includes(e.field),
+    ),
+    operatorProvidedFields: ["producer", "sku", "priceHkd"] as Array<
+      keyof typeof fullFacts
+    >,
+  });
+  it("generates from manual facts through mocked SDK transport", async () => {
+    const request = input();
+    const { provider, sent } = setup(
+      envelope({ listing: buildSafeListing(request) }),
+    );
+    const result = await provider.generate(request);
+    expect(sent).toHaveLength(1);
+    expect(result.listing.producer).toBe(fullFacts.producer);
+    expect(result.listing.priceHkd).toBe(fullFacts.priceHkd);
+  });
+  it("still refuses unsupported automatic facts before transport", async () => {
+    const request = input();
+    request.evidence = request.evidence.filter((e) => e.field !== "country");
+    const { provider, sent } = setup();
+    await expect(provider.generate(request)).rejects.toThrow(
+      "no supporting evidence",
+    );
+    expect(sent).toHaveLength(0);
+  });
+  it("still rejects provider mutation of a manual fact", async () => {
+    const request = input();
+    const { provider, sent } = setup(
+      envelope({
+        listing: { ...buildSafeListing(request), producer: "Changed producer" },
+      }),
+    );
+    await expect(provider.generate(request)).rejects.toThrow("protected fact");
+    expect(sent).toHaveLength(1);
+  });
+});

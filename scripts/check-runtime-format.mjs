@@ -45,14 +45,6 @@ export function protectedUnrelatedFileEntries() {
 }
 const knownFormatDebt = new Map([
   [
-    "apps/web/app/api/assets/finalize/route.test.ts",
-    "3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b",
-  ],
-  [
-    "apps/worker/src/listing-consumer.test.ts",
-    "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
-  ],
-  [
     "packages/db/src/publish-jobs-schema.test.ts",
     "8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8",
   ],

@@ -57,13 +57,13 @@ describe("workspace isolation", () => {
     expect(database.forWorkspace).toBeTypeOf("function");
   });
 
-  it("defines required AI latency and cost telemetry in schema and catalog", async () => {
+  it("defines required latency and nullable unknown AI cost in schema and catalog", async () => {
     const drizzleColumns = getTableColumns(aiRuns) as Record<
       string,
       { notNull?: boolean }
     >;
     expect(drizzleColumns.latencyMs?.notNull).toBe(true);
-    expect(drizzleColumns.estimatedCostUsd?.notNull).toBe(true);
+    expect(drizzleColumns.estimatedCostUsd?.notNull).toBe(false);
 
     const columns = await admin`
       select column_name, is_nullable, data_type, numeric_precision, numeric_scale
@@ -76,7 +76,7 @@ describe("workspace isolation", () => {
     expect(columns).toMatchObject([
       {
         column_name: "estimated_cost_usd",
-        is_nullable: "NO",
+        is_nullable: "YES",
         data_type: "numeric",
         numeric_precision: 14,
         numeric_scale: 6,
@@ -430,6 +430,111 @@ describe("workspace isolation", () => {
 
   it("uses workspace-consistent composite foreign keys for every tenant relationship", async () => {
     const expected = [
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "support_id"],
+        "listing_claim_supports",
+      ],
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "ai_budget_reservations",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "retry_of_item_id"],
+        "enrichment_batch_items",
+      ],
+      [
+        "listing_create_requests",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_drafts",
+        ["workspace_id", "current_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "listing_input_revisions",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_input_revisions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "retry_of_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "suggestion_id"],
+        "listing_enrichment_suggestions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "suggestion_id"],
+        "listing_enrichment_suggestions",
+      ],
       ["ai_runs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["ai_runs", ["workspace_id", "prompt_version_id"], "prompt_versions"],
       [
@@ -649,8 +754,16 @@ describe("workspace isolation", () => {
     `;
 
     expect(
-      rows.map((row) => [row.child_table, row.child_columns, row.parent_table]),
-    ).toEqual(expected);
+      rows
+        .map((row) =>
+          JSON.stringify([
+            row.child_table,
+            row.child_columns,
+            row.parent_table,
+          ]),
+        )
+        .sort(),
+    ).toEqual(expected.map((row) => JSON.stringify(row)).sort());
     expect(rows.every(({ child_fk_indexed }) => child_fk_indexed)).toBe(true);
   });
 

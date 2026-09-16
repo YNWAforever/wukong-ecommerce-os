@@ -129,6 +129,13 @@ export type ListingRepository = {
     context: AuditContext,
     audit: AuditWriter,
   ): Promise<"unchanged" | "reopened" | "publishing" | "stale">;
+  promoteManual(
+    id: string,
+    content: ReviewableListing,
+    context: AuditContext,
+    audit: AuditWriter,
+    flags: ComplianceFlag[],
+  ): Promise<ListingVersion>;
   editReview(
     id: string,
     baseVersionId: string,
@@ -837,6 +844,36 @@ export function createListingRepository(
         },
       });
       return "reopened";
+    },
+    async promoteManual(id, content, context, audit, flags) {
+      scope.assertOpen();
+      await this.lockReviewState(id);
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== null)
+        throw new Error("stale review version");
+      const parsed = reviewableListingSchema.parse(content);
+      const next = await transitionListing(
+        listing.status,
+        "submit_manual",
+        context,
+        audit,
+      );
+      const version = await this.appendVersion(id, parsed, context, audit);
+      await this.replaceFlags(version.id, flags);
+      await transaction
+        .update(listingDrafts)
+        .set({
+          activeVersionId: version.id,
+          status: next,
+          updatedAt: new Date(),
+        })
+        .where(byId(id));
+      await audit.write({
+        ...context,
+        action: "listing.manual_submitted",
+        metadata: { versionId: version.id },
+      });
+      return version;
     },
     async editReview(
       id,

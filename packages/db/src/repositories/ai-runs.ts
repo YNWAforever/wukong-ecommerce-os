@@ -20,7 +20,35 @@ export type AppendAiRunInput = {
   error?: string | null;
 };
 
+export type BeginAiInvocationInput = {
+  listingId: string;
+  pipelineRunId: string;
+  task: "extract" | "generate" | "product_shot";
+  stage: string;
+  callOrdinal: number;
+  provider: string;
+  model: string;
+  promptVersion: string;
+};
+export type FinalizeAiInvocationInput = {
+  pipelineRunId: string;
+  stage: string;
+  callOrdinal: number;
+  status: "succeeded" | "failed";
+  inputTokens: number | null;
+  outputTokens: number | null;
+  latencyMs: number;
+  estimatedCostUsd: string | null;
+  usageCertainty: "measured" | "estimated" | "unknown";
+  failureCategory?: string | null;
+  httpStatus?: number | null;
+  providerCode?: string | null;
+  providerRequestId?: string | null;
+};
+
 export type AiRunRepository = {
+  beginInvocation(input: BeginAiInvocationInput): Promise<{ claimed: boolean }>;
+  finalizeInvocation(input: FinalizeAiInvocationInput): Promise<boolean>;
   append(input: AppendAiRunInput): Promise<void>;
   /**
    * Observed spend across the given drafts, in USD.
@@ -30,13 +58,9 @@ export type AiRunRepository = {
    * on this number rather than on a running total stored elsewhere, so the
    * budget can never drift out of sync with the runs it is counting.
    *
-   * `since` bounds it to runs recorded at or after a point in time. Without it
-   * the answer is every run those drafts have ever had -- the right number for
-   * a workspace cost report, and the wrong one for a budget belonging to a
-   * single batch: a second batch over the same drafts opened already charged
-   * for the first batch's spend, and could exhaust its budget before enqueuing
-   * anything. There is deliberately no batch id on `ai_runs`; the listing
-   * pipeline stays generic, and a time bound needs no column at all.
+   * `since` remains available for legacy reports. New enrichment batches bind
+   * every item to an exact immutable pipeline run and account through that
+   * run's reservation, so their admission does not use this time window.
    */
   sumCostForListings(
     listingIds: readonly string[],
@@ -50,6 +74,20 @@ export function createAiRunRepository(
   scope: WorkspaceScope,
 ): AiRunRepository {
   return {
+    async beginInvocation(input) {
+      scope.assertOpen();
+      const inserted = await transaction.execute(
+        sql`insert into ai_runs(workspace_id,listing_id,task,idempotency_key,provider,model,status,input,latency_ms,pipeline_run_id,stage,call_ordinal,usage_certainty) values(${workspaceId},${input.listingId},${input.task},${`${input.pipelineRunId}:${input.stage}:${input.callOrdinal}`},${input.provider},${input.model},'started',${JSON.stringify({ promptVersion: input.promptVersion })}::jsonb,0,${input.pipelineRunId},${input.stage},${input.callOrdinal},'unknown') on conflict (workspace_id,pipeline_run_id,stage,call_ordinal) where pipeline_run_id is not null do nothing returning id`,
+      );
+      return { claimed: Boolean(inserted[0]) };
+    },
+    async finalizeInvocation(input) {
+      scope.assertOpen();
+      const updated = await transaction.execute(
+        sql`update ai_runs set status=${input.status},input_tokens=${input.inputTokens},output_tokens=${input.outputTokens},latency_ms=${input.latencyMs},estimated_cost_usd=${input.estimatedCostUsd}::numeric,usage_certainty=${input.usageCertainty},failure_category=${input.failureCategory ?? null},http_status=${input.httpStatus ?? null},provider_code=${input.providerCode ?? null},provider_request_id=${input.providerRequestId ?? null},completed_at=now() where workspace_id=${workspaceId} and pipeline_run_id=${input.pipelineRunId} and stage=${input.stage} and call_ordinal=${input.callOrdinal} and status='started' returning id`,
+      );
+      return Boolean(updated[0]);
+    },
     async append(input) {
       scope.assertOpen();
       await transaction

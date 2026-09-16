@@ -51,10 +51,10 @@ beforeEach(() => {
 });
 
 describe("Cloudflare listing consumer", () => {
-  it("parses before runtime/database access and acknowledges malformed payloads", async () => {
+  it("parses before runtime/database access and retains malformed payloads for bounded DLQ quarantine", async () => {
     await expect(
       consumeListingMessage({ ...valid, token: "secret" }, {} as never),
-    ).resolves.toBe("ack");
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
     expect(runtimeMocks.createCloudflareRuntime).not.toHaveBeenCalled();
   });
 
@@ -80,16 +80,22 @@ describe("Cloudflare listing consumer", () => {
   });
 
   it("keeps a terminal acknowledgement when runtime cleanup fails", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     const { state } = runtimeHarness(
       new ProviderOutputError("AI evidence invalid secret-content-123"),
       new Error("cleanup failed secret-content-123"),
     );
 
-    await expect(consumeListingMessage(valid, {} as never)).resolves.toBe("ack");
+    await expect(consumeListingMessage(valid, {} as never)).resolves.toBe(
+      "ack",
+    );
     expect(state.failure).toBe("provider_failure");
     expect(logged).not.toHaveBeenCalled();
-    expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-content-123");
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(
+      "secret-content-123",
+    );
     logged.mockRestore();
   });
 
@@ -159,7 +165,9 @@ describe("Cloudflare listing consumer", () => {
   });
 
   it("keeps a transient retry outcome when runtime cleanup fails", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logged = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     runtimeHarness(
       new ProviderApiError("AI provider unavailable secret-content-123"),
       new Error("cleanup failed secret-content-123"),
@@ -169,7 +177,9 @@ describe("Cloudflare listing consumer", () => {
       retryAfterSeconds: 30,
     });
     expect(logged).not.toHaveBeenCalled();
-    expect(JSON.stringify(logged.mock.calls)).not.toContain("secret-content-123");
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(
+      "secret-content-123",
+    );
     logged.mockRestore();
   });
 

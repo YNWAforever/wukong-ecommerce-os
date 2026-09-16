@@ -33,7 +33,7 @@ export const LISTING_LEASE_MARGIN_MS = 60_000;
 // the same extraction twice.
 if (
   PIPELINE_STEP_LEASE_MS <=
-  LISTING_PROVIDER_REQUEST_TIMEOUT_MS + LISTING_LEASE_MARGIN_MS
+  2 * LISTING_PROVIDER_REQUEST_TIMEOUT_MS + LISTING_LEASE_MARGIN_MS
 ) {
   throw new Error("listing pipeline lease budget is unsafe");
 }
@@ -63,7 +63,15 @@ export async function consumeListingMessage(
   attempt: ListingAttempt = { attempt: 1, maxAttempts: LISTING_MAX_ATTEMPTS },
 ): Promise<ListingConsumerOutcome> {
   const parsed = listingJobSchema.safeParse(payload);
-  if (!parsed.success) return "ack";
+  if (!parsed.success) {
+    console.info(
+      JSON.stringify({
+        event: "listing.message_quarantined",
+        reason: "unsupported_envelope",
+      }),
+    );
+    return { retryAfterSeconds: RETRY_AFTER_SECONDS };
+  }
 
   let runtime;
   try {

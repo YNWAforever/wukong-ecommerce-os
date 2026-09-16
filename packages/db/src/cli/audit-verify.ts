@@ -38,6 +38,13 @@ export const REQUIRED_AUDIT_SEQUENCE = [
  * literals from this module, never user input, so interpolating them is safe.
  */
 export const TENANT_TABLES = [
+  "listing_enrichment_suggestions",
+  "listing_enrichment_decisions",
+  "listing_claim_supports",
+  "listing_version_claim_supports",
+  "listing_create_requests",
+  "ai_budget_reservations",
+  "listing_input_revisions",
   "product_shot_attempts",
   "product_shot_selections",
   "product_shot_daily_dispatches",

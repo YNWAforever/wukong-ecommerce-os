@@ -21,6 +21,7 @@ export type WorkerEnv = {
   SHOPLINE_ADAPTER?: "disabled" | "mock" | "real";
   SHOPLINE_PUBLISH_ENABLED?: "true" | "false";
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
+  LISTING_PAID_OPERATIONS_ENABLED?: "true" | "false";
   AI_PROVIDER?: "openai" | "fake" | "openrouter";
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;

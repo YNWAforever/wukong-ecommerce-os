@@ -31,30 +31,31 @@ const OUTBOX_MAX_ATTEMPTS = 5;
 type SweeperDatabase = Pick<
   Database,
   "findStuckWebsiteScans" | "forWorkspace"
-> & {
-  findStuckListingJobs(input: {
-    olderThanSeconds: number;
-    maxRows: number;
-  }): Promise<
-    Array<{
-      workspaceId: string;
-      draftId: string;
-      activeVersionSequence: number;
-    }>
-  >;
-  findUndispatchedListingJobs(input: {
-    olderThanSeconds: number;
-    maxRows: number;
-    maxAttempts: number;
-  }): Promise<
-    Array<{
-      workspaceId: string;
-      outboxId: string;
-      payload: Record<string, unknown>;
-    }>
-  >;
-  close(): Promise<void>;
-};
+> &
+  Partial<Pick<Database, "findAbandonedListingOperations">> & {
+    findStuckListingJobs(input: {
+      olderThanSeconds: number;
+      maxRows: number;
+    }): Promise<
+      Array<{
+        workspaceId: string;
+        draftId: string;
+        activeVersionSequence: number;
+      }>
+    >;
+    findUndispatchedListingJobs(input: {
+      olderThanSeconds: number;
+      maxRows: number;
+      maxAttempts: number;
+    }): Promise<
+      Array<{
+        workspaceId: string;
+        outboxId: string;
+        payload: Record<string, unknown>;
+      }>
+    >;
+    close(): Promise<void>;
+  };
 
 /** Groups ids by workspace, since every outbox write is workspace-scoped. */
 function addTo(
@@ -117,6 +118,19 @@ async function recoverOutbox(
       continue;
     }
     try {
+      if ("schemaVersion" in parsed.data && parsed.data.schemaVersion === 2) {
+        const runId = parsed.data.runId;
+        if (!runId) continue;
+        const operation = await database.forWorkspace(
+          row.workspaceId,
+          (repos) => repos.pipelineRuns.getOperation(runId),
+        );
+        if (
+          !operation ||
+          !["queued", "running"].includes(operation.executionState)
+        )
+          continue;
+      }
       await env.LISTING_QUEUE.send(parsed.data);
       addTo(dispatched, row.workspaceId, row.outboxId);
       requeued += 1;
@@ -172,6 +186,39 @@ export async function handleScheduled(
 ): Promise<void> {
   const database = (dependencies.createDatabase ?? createWorkerDatabase)(env);
   try {
+    if (database.findAbandonedListingOperations) {
+      const abandoned = await database.findAbandonedListingOperations({
+        olderThanSeconds: 900,
+        maxRows: 20,
+        maxAttempts: OUTBOX_MAX_ATTEMPTS,
+      });
+      let terminalized = 0;
+      for (const row of abandoned) {
+        const result = await database.forWorkspace(row.workspaceId, (repos) =>
+          repos.pipelineRuns.failAbandonedOperation(
+            {
+              runId: row.runId,
+              olderThanSeconds: 900,
+              maxAttempts: OUTBOX_MAX_ATTEMPTS,
+            },
+            {
+              workspaceId: row.workspaceId,
+              actorId: "system:sweeper",
+              entityId: row.runId,
+            },
+            repos.audit,
+          ),
+        );
+        if (result.failed) terminalized++;
+      }
+      console.info(
+        JSON.stringify({
+          event: "operation_sweeper.completed",
+          examined: abandoned.length,
+          terminalized,
+        }),
+      );
+    }
     const jobs = await database.findStuckListingJobs({
       olderThanSeconds: SWEEP_OLDER_THAN_SECONDS,
       maxRows: SWEEP_MAX_ROWS,

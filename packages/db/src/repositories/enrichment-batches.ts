@@ -1,10 +1,16 @@
+import { createBatchControlRepository } from "./enrichment-batch-controls.js";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { enrichmentBatchItems, enrichmentBatches } from "../schema.js";
 
 export type EnrichmentBatchStatus =
-  "open" | "running" | "completed" | "budget_exhausted" | "cancelled";
+  | "paused"
+  | "open"
+  | "running"
+  | "completed"
+  | "budget_exhausted"
+  | "cancelled";
 
 export type EnrichmentBatchItemStatus =
   "pending" | "queued" | "succeeded" | "failed" | "skipped";
@@ -15,6 +21,7 @@ export type EnrichmentBatch = {
   budgetUsd: number;
   waveSize: number;
   status: EnrichmentBatchStatus;
+  controlRevision?: number;
   createdBy: string;
   createdAt: Date;
 };
@@ -29,7 +36,9 @@ export type CreateEnrichmentBatchInput = {
 
 export type EnrichmentBatchCounts = Record<EnrichmentBatchItemStatus, number>;
 
-export type EnrichmentBatchRepository = {
+export type EnrichmentBatchRepository = ReturnType<
+  typeof createBatchControlRepository
+> & {
   create(input: CreateEnrichmentBatchInput): Promise<EnrichmentBatch>;
   getById(id: string): Promise<EnrichmentBatch | null>;
   listItemIds(batchId: string): Promise<string[]>;
@@ -63,10 +72,19 @@ export type EnrichmentBatchRepository = {
     listingIds: readonly string[],
     status: EnrichmentBatchItemStatus,
   ): Promise<void>;
+  bindRun(input: {
+    batchId: string;
+    listingId: string;
+    pipelineRunId: string;
+    inputRevision: number;
+  }): Promise<boolean>;
+  reconcileBoundRuns(batchId: string): Promise<void>;
+  sumBoundRunCost(batchId: string): Promise<number>;
   setStatus(batchId: string, status: EnrichmentBatchStatus): Promise<void>;
 };
 
 const COLUMNS = {
+  controlRevision: enrichmentBatches.controlRevision,
   id: enrichmentBatches.id,
   label: enrichmentBatches.label,
   budgetUsd: enrichmentBatches.budgetUsd,
@@ -107,9 +125,11 @@ export function createEnrichmentBatchRepository(
     and(
       eq(enrichmentBatchItems.workspaceId, workspaceId),
       eq(enrichmentBatchItems.batchId, batchId),
+      eq(enrichmentBatchItems.isCurrent, true),
     );
 
   return {
+    ...createBatchControlRepository(transaction, workspaceId, scope),
     async create(input) {
       scope.assertOpen();
       const [row] = await transaction
@@ -273,6 +293,10 @@ export function createEnrichmentBatchRepository(
       if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
         throw new Error("enrichment wave limit must be between 1 and 1000");
       }
+      const active = await transaction.execute(
+        sql`select id from enrichment_batches where workspace_id=${workspaceId} and id=${batchId}::uuid and status in ('open','running') for update`,
+      );
+      if (!active.length) return [];
       // Claim and read in one statement, so two concurrent advances cannot
       // hand the same draft to two waves. The CTE picks the wave and locks it
       // (`skip locked`: a concurrent advance takes the next rows instead of
@@ -312,7 +336,18 @@ export function createEnrichmentBatchRepository(
       if (listingIds.length === 0) return;
       await transaction
         .update(enrichmentBatchItems)
-        .set({ status, updatedAt: new Date() })
+        .set({
+          status,
+          outcome:
+            status === "succeeded"
+              ? "already_prepared"
+              : status === "failed"
+                ? "failed"
+                : status === "skipped"
+                  ? "skipped"
+                  : null,
+          updatedAt: new Date(),
+        })
         .where(
           and(
             itemsOfBatch(batchId),
@@ -321,6 +356,82 @@ export function createEnrichmentBatchRepository(
         );
     },
 
+    async bindRun(input) {
+      scope.assertOpen();
+      // Serialize admission on the batch row. The next statement then gets a
+      // fresh READ COMMITTED snapshot containing reservations committed by a
+      // concurrent Advance that waited on the same lock.
+      await transaction.execute(sql`
+        select id from enrichment_batches
+        where workspace_id=${workspaceId} and id=${input.batchId}::uuid
+        for update`);
+      const rows = await transaction.execute(sql`
+        with charge as (
+          select coalesce((
+            select reserved_usd from ai_budget_reservations
+            where workspace_id=${workspaceId}
+              and pipeline_run_id=${input.pipelineRunId}::uuid
+          ), 0::numeric) amount
+        )
+        update enrichment_batch_items i set
+          pipeline_run_id=${input.pipelineRunId}::uuid,
+          input_revision=${input.inputRevision},
+          reserved_usd=charge.amount,
+          updated_at=now()
+        from charge, enrichment_batches b
+        where i.workspace_id=${workspaceId}
+          and i.batch_id=${input.batchId}::uuid
+          and i.listing_id=${input.listingId}::uuid
+          and i.status='queued' and i.is_current and i.pipeline_run_id is null
+          and b.workspace_id=i.workspace_id and b.id=i.batch_id
+          and (select coalesce(sum(existing.reserved_usd), 0::numeric)
+               from enrichment_batch_items existing
+               where existing.workspace_id=i.workspace_id
+                 and existing.batch_id=i.batch_id) + charge.amount <= b.budget_usd
+        returning i.id`);
+      return Boolean(rows[0]);
+    },
+
+    async reconcileBoundRuns(batchId) {
+      scope.assertOpen();
+      await transaction.execute(sql`
+        update enrichment_batch_items i set
+          status=case
+            when r.execution_state='succeeded' and r.result_status='in_review' then 'succeeded'::enrichment_batch_item_status
+            when r.execution_state='failed' then 'failed'::enrichment_batch_item_status
+            when r.execution_state in ('succeeded','superseded','cancelled') then 'skipped'::enrichment_batch_item_status
+            else i.status end,
+          outcome=case
+            when r.execution_state='succeeded' and r.result_status='in_review' then 'this_run_success'
+            when r.execution_state='succeeded' and r.result_status='needs_info' then 'needs_input'
+            when r.execution_state='failed' then 'failed'
+            when r.execution_state='superseded' then 'superseded'
+            when r.execution_state='cancelled' then 'cancelled'
+            else i.outcome end,
+          updated_at=case when r.execution_state in ('succeeded','failed','superseded','cancelled') then now() else i.updated_at end
+        from listing_pipeline_runs r
+        where i.workspace_id=${workspaceId} and i.batch_id=${batchId}::uuid
+          and i.status='queued' and i.pipeline_run_id=r.id and r.workspace_id=i.workspace_id`);
+    },
+
+    async sumBoundRunCost(batchId) {
+      scope.assertOpen();
+      const rows = await transaction.execute(sql`
+        select coalesce(sum(coalesce(reservation.settled_usd,
+                                     reservation.reserved_usd,
+                                     calls.total)), 0)::text total
+        from enrichment_batch_items i
+        left join ai_budget_reservations reservation
+          on reservation.workspace_id=i.workspace_id
+          and reservation.pipeline_run_id=i.pipeline_run_id
+        left join lateral (
+          select sum(a.estimated_cost_usd) total from ai_runs a
+          where a.workspace_id=i.workspace_id
+            and a.pipeline_run_id=i.pipeline_run_id
+        ) calls on true
+        where i.workspace_id=${workspaceId} and i.batch_id=${batchId}::uuid`);
+      return Number(rows[0]?.total ?? 0);
+    },
     async setStatus(batchId, status) {
       scope.assertOpen();
       const updated = await transaction

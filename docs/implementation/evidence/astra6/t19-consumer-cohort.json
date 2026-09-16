@@ -1,0 +1,367 @@
+{
+  "capturedAt": "2026-09-15T20:27:07.929Z",
+  "environment": "local PostgreSQL and consumer; synthetic fake provider; queue transport in memory",
+  "workspaceId": "consumer-cohort-b3aee9a3-1f1c-4e2c-bde0-915ed6f701a2",
+  "batchId": "7b162afb-2c6d-4537-a00a-232f9c7976b5",
+  "counts": {
+    "succeeded": 20,
+    "failed": 10,
+    "superseded": 10,
+    "cancelled": 10
+  },
+  "extracts": 50,
+  "generations": 30,
+  "duplicateDeliveries": 50,
+  "runs": [
+    {
+      "runId": "897d8990-2400-48a7-8a29-6ba9ccda8bae",
+      "listingId": "b5c9bc55-9d15-4cd0-b430-91f219f118e5",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "4fef5d22-1e7b-49fb-b73c-193ca6b97af6",
+      "listingId": "50c4ac5f-e057-454a-b898-6f2814d057da",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "b09edb13-cf2a-4c35-8adb-24ef03872ddb",
+      "listingId": "a72f8e30-1cba-4404-b72d-762f81b1587b",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "ce6af42c-3521-478d-8b7f-1f6f8557bbc9",
+      "listingId": "e8162d44-545c-47e7-b64f-04de4f114b5a",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "94a7da89-2c4e-44c5-bf06-f3d6b0d9f7c3",
+      "listingId": "dc86b61d-d3da-4c82-ac1b-b696a84dad27",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "01ecc6d7-bf79-482b-9f76-50cd925b9251",
+      "listingId": "4347f45d-2ce1-43a4-8dd8-6ee277cae1e5",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "ed8f89fe-b26d-4adb-93cd-87192824da06",
+      "listingId": "1c3dc8af-ab05-4bf7-b444-4828cd8f859e",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "1181e383-7af5-47af-ab6c-b55ec08e6aaf",
+      "listingId": "3525a31a-fc60-4380-8197-255259b2d19e",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "f9d1a380-e811-42a9-805a-b91385031613",
+      "listingId": "8209e531-87ec-4e28-84f8-7e042f217e90",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "6893c451-d4a7-4e11-80b8-bfcfb121c5c3",
+      "listingId": "8043a6da-f718-41d9-a2bc-d355ea25dc98",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "7606f8e2-44e2-4a14-89dd-acf4977ce576",
+      "listingId": "b485fb11-5c9d-4a7d-8772-54770571110c",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "4b619bca-b86e-4ef5-a352-b4c2ed50824f",
+      "listingId": "1c04fe8a-ebe1-4b56-9e67-3618323c140b",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "c577d543-112b-4c16-b681-e8353e8d4ad1",
+      "listingId": "19915d3e-9e75-4395-b742-0ef818df26df",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "82ebe71a-c435-4279-bb43-60c7f64c6f60",
+      "listingId": "f43680af-bdab-4a95-89fe-041b5105d75b",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "b793d5da-72b8-4267-a04e-bb4759e7f800",
+      "listingId": "7e7b8869-ffad-4ef3-8ca8-7816e4484d86",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "37bf0a62-70b5-442a-a520-fa7699a68dcf",
+      "listingId": "f270d5c1-d3b4-410a-b69e-0ce156c6f5d7",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "0d84e75a-19c6-4654-953c-0628c6536a1c",
+      "listingId": "6a6fb911-32b4-4601-b032-c626a3370d0c",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "b86554d1-5760-4437-8ae3-70dab894b013",
+      "listingId": "db1cfab8-cac0-47da-bad5-339805a19e56",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "d5966194-458f-49c7-8c5c-0b4828e6e448",
+      "listingId": "40cd1c63-37fe-4719-ba54-88d4e4de168c",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "5f56f31e-ece3-437f-b6f7-9567bc0050e6",
+      "listingId": "ec69fe65-43f5-424b-be42-8a17301024e8",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "a86421f6-020d-4ff8-9e9a-5240c876bf54",
+      "listingId": "4448f3c4-0555-4831-a70d-b649bcdd29ee",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "c3e26920-df87-4e37-a84f-456479541f26",
+      "listingId": "11db3d28-604f-46a4-9631-80af6ebbea12",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "d5871c66-3694-406b-9ed9-c573164a855b",
+      "listingId": "6d836af6-f193-4850-8737-6ab751e6a6b1",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "23572288-a108-4b54-bffe-de73732c05dc",
+      "listingId": "5870db9f-a500-4335-ab59-8f9b82d662e5",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "ba348230-3adc-40d1-804e-7ff9cb57337a",
+      "listingId": "f15980a1-179b-489c-a481-d04b7a9ad764",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "964d4815-e7d6-4fc0-bca2-afb18066e41d",
+      "listingId": "0c64dbed-ddd6-47cd-a32f-76bf5967a61e",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "8ccd9e48-c86c-41bf-8ed4-b47df9a423ec",
+      "listingId": "dd1bcf64-5bf3-4075-b146-a3078f03e48f",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "14e24369-42b2-47ef-a1f7-ee348a9c6d4e",
+      "listingId": "54ff8a5d-c37e-4539-b3fd-1874b347c783",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "2e996fc7-36b8-4eac-a9e8-f1a6ec734848",
+      "listingId": "08401932-458d-428e-9e39-667f03d6be94",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "0c8b377d-ca06-4596-bea6-619eb66c1c3e",
+      "listingId": "8f97ebb1-748a-41bc-a3fb-ac12655753ac",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "024382a6-9f37-473f-b9a5-fa2b3648bbd9",
+      "listingId": "8a785fa9-c1e1-4ff2-a976-536625710aa3",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "1eab6b23-005f-43d6-a690-3932dc0f6518",
+      "listingId": "9c39c026-eaba-4b14-9b81-6c5e038de011",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "861ad94f-9202-492f-b441-7a008f6070dd",
+      "listingId": "f510f63d-32fe-405c-a8ab-ead8f31f84a4",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "afb1bc1d-8477-437a-ad7b-b9a060f31f30",
+      "listingId": "c60951a2-7fa8-431b-87cb-be4c54baeb4f",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "c74841a1-3d3e-4730-8c49-e316071effd0",
+      "listingId": "bc7a165f-672a-4b86-9c4e-135bfd622a86",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "8a4d333a-2de2-4270-9f55-7f994a3f8ad8",
+      "listingId": "320a72fa-f88d-461d-87c2-e37c52687706",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "837bbf7a-2711-4aef-bc6e-309c0c291dd9",
+      "listingId": "6222a0f9-e248-43d1-ba87-9b1b3bf5c7f7",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "f3ebc1c3-a86e-43a9-9762-38955a7fbc38",
+      "listingId": "8b9ee412-2160-48b1-bd0d-2963a7a45da4",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "b871e333-bd4e-42e8-bb73-863cc62ddb9e",
+      "listingId": "0a3d93c8-006c-41c6-bc80-7adcca062d92",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "16151f86-55df-4008-8bd3-41b826f64c8e",
+      "listingId": "5524387d-0d6d-46ad-84d5-9a680796089c",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "8799e622-9c89-4644-8c3d-c89a6823521b",
+      "listingId": "859205ac-7bf3-4f40-b3eb-98da3a481ea7",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "30b8520a-4d9d-464a-b403-c4813290f5d8",
+      "listingId": "914ae675-a160-4acb-b9f3-cafd92c9d373",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "bd7c54b0-77e8-474d-8978-213e1372198e",
+      "listingId": "4beb9fb6-20a6-40a5-8b53-a47174ff821f",
+      "state": "failed",
+      "inputRevision": 1,
+      "errorCode": "pipeline_failure"
+    },
+    {
+      "runId": "9900af96-7af3-4fcb-a4c7-36ce533e5f06",
+      "listingId": "d10d8686-f56e-4286-bba4-344dd14f26d3",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "dac8dd97-9d22-4f1d-a41f-15b0a7b5605c",
+      "listingId": "cc5e4f7e-0a68-4c69-afb7-31f8c3f2ff34",
+      "state": "superseded",
+      "inputRevision": 1,
+      "errorCode": "input_superseded"
+    },
+    {
+      "runId": "b7f24fd0-c881-4ab1-aeec-7650dbc991a8",
+      "listingId": "b12360a9-74f5-490c-8bea-79cfd76d5ca2",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "2816b6d5-e082-4fea-9a52-fb452409da98",
+      "listingId": "6623ae47-005e-46d1-94e8-86750f5c1941",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "7be3014d-baeb-4b69-a006-97eb0e651a52",
+      "listingId": "f719d06f-7896-4e88-be14-f168898d93f8",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "6c4996d6-f4d2-4c5d-bd44-28cb77b65333",
+      "listingId": "359066e1-2c32-4823-b38b-16fddbb6d79a",
+      "state": "succeeded",
+      "inputRevision": 1,
+      "errorCode": null
+    },
+    {
+      "runId": "e00ee339-631e-4792-a385-a41c996ed0e1",
+      "listingId": "0d17ca68-b8bf-4e3c-8971-66a5657c5ffc",
+      "state": "cancelled",
+      "inputRevision": 1,
+      "errorCode": null
+    }
+  ]
+}

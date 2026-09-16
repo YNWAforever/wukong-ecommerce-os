@@ -1,3 +1,4 @@
+import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
 import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
 import { readSourceReadiness } from "../../../../lib/source-readiness";
 import type { AssetStore } from "@wukong/assets";
@@ -134,15 +135,61 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           // step is recorded with its full output before the missingFields
           // check, so what the model did read off the sources is already
           // durable -- this reads it back.
-          const revision = await repositories.listings.requireById(id);
+          const originalAssets = listingAssets.filter(
+            (asset: any) =>
+              !["product_shot_cutout", "product_shot_candidate"].includes(
+                asset.metadata?.role,
+              ),
+          );
+          const legacyWorkingContent = snapshot.activeVersion?.content ?? {
+            ...emptyWorkingListing(),
+            imageAssetIds: originalAssets
+              .filter((asset: any) => asset.kind.startsWith("image/"))
+              .map((asset: any) => asset.id),
+          };
+          const legacyWorkingInput = {
+            revision: 0,
+            baseVersionId: snapshot.activeVersion?.id ?? null,
+            note: snapshot.listing.note ?? null,
+            workingContent: legacyWorkingContent,
+            fieldStates: {},
+            sources: originalAssets.map((asset: any) => ({
+              assetId: asset.id,
+              role: asset.kind.startsWith("image/")
+                ? "other_image"
+                : "supplier_document",
+              use: "analyse",
+              hero: false,
+              digest:
+                asset.metadata?.sha256 ?? asset.metadata?.clientSha256 ?? "",
+            })),
+          };
+          const workingInput =
+            (await repositories.listingInputs?.getCurrent(id)) ?? null;
+          const currentRun =
+            (await repositories.pipelineRuns.getCurrentOperation?.(id)) ?? null;
           const processing = readProcessingSummary(
-            await repositories.pipelineRuns.getState(
-              listingApplicationJobId({
-                workspaceId: session.workspaceId,
-                draftId: id,
-                activeVersionSequence: revision.activeVersionSequence,
-              }),
-            ),
+            currentRun
+              ? await repositories.pipelineRuns.getState(
+                  currentRun.idempotencyKey,
+                )
+              : await repositories.pipelineRuns.getLatestState?.(id),
+          );
+          const sources = await Promise.all(
+            originalAssets.map(async (asset: any) => {
+              const read = await deps
+                .getAssetStore()
+                .createReadUrl(session.workspaceId, asset.storageKey, {
+                  expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
+                });
+              return {
+                assetId: asset.id,
+                mimeType: asset.kind,
+                name:
+                  asset.metadata?.fileName ?? asset.storageKey.split("/").pop(),
+                previewUrl: read.url,
+              };
+            }),
           );
 
           return {
@@ -154,6 +201,31 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,
+            inputRevision: snapshot.listing.inputRevision ?? 0,
+            workingInput: workingInput
+              ? {
+                  ...workingInput,
+                  ...workingBaselineForReview(
+                    workingInput.workingContent,
+                    workingInput.fieldStates,
+                    snapshot.activeVersion?.content,
+                  ),
+                  baseVersionId: snapshot.activeVersion?.id ?? null,
+                }
+              : legacyWorkingInput,
+            sources,
+            currentRun: currentRun
+              ? {
+                  runId: currentRun.id,
+                  state: currentRun.executionState,
+                  attempt: currentRun.runAttempt,
+                  retryOfRunId: currentRun.retryOfRunId,
+                  acceptedAt: currentRun.acceptedAt,
+                  errorCode: currentRun.errorCode,
+                  inputRevision: currentRun.inputRevision,
+                  baseVersionId: currentRun.baseVersionId,
+                }
+              : null,
             processing,
             activeVersion: snapshot.activeVersion,
             evidence: snapshot.evidence,
@@ -192,7 +264,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               await repositories.importResults.listHistoricalForListing(id),
           };
         });
-      return jsonResponse(200, result);
+      const response = jsonResponse(200, result);
+      response.headers.set("Cache-Control", "no-store");
+      return response;
     });
   };
 }

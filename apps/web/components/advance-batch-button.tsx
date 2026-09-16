@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useLocale } from "../lib/locale-context";
 import {
@@ -46,12 +46,19 @@ const ADVANCE_FAILED: BilingualMessage = [
 export async function submitAdvanceBatch(
   batchId: string,
   deps: AdvanceBatchDeps = { fetcher: fetch },
+  command?: { expectedControlRevision: number; idempotencyKey: string },
 ): Promise<AdvanceBatchOutcome> {
   const { fetcher } = deps;
   let response: Response;
   try {
     response = await fetcher(`/api/enrichment-batches/${batchId}/advance`, {
       method: "POST",
+      ...(command
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(command),
+          }
+        : {}),
     });
   } catch {
     return { kind: "network_error", message: sharedMessages.unreachable };
@@ -93,18 +100,35 @@ export async function submitAdvanceBatch(
 export function AdvanceBatchButton({
   batchId,
   onAdvanced,
+  controlRevision,
 }: {
   batchId: string;
+  controlRevision?: number;
   onAdvanced?: (outcome: AdvanceBatchOutcome) => void;
 }) {
   const locale = useLocale();
   const [busy, setBusy] = useState(false);
+  const command = useRef<
+    { expectedControlRevision: number; idempotencyKey: string } | undefined
+  >(undefined);
   const [message, setMessage] = useState<BilingualMessage | null>(null);
 
   async function handleClick() {
     setBusy(true);
     setMessage(null);
-    const result = await submitAdvanceBatch(batchId);
+    command.current ??=
+      controlRevision === undefined
+        ? undefined
+        : {
+            expectedControlRevision: controlRevision,
+            idempotencyKey: crypto.randomUUID(),
+          };
+    const result = await submitAdvanceBatch(
+      batchId,
+      { fetcher: fetch },
+      command.current,
+    );
+    if (result.kind !== "network_error") command.current = undefined;
     if (result.kind !== "success") {
       setMessage(result.message);
     }

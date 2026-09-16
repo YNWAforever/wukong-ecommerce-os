@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createListingHandler } from "./route.js";
 
 const assetId = "00000000-0000-4000-8000-000000000001";
-const listingId = "listing_1";
+const listingId = "00000000-0000-4000-8000-000000000101";
 
 type Enqueue = (input: {
   workspaceId: string;
@@ -30,6 +30,7 @@ function requestForListing() {
 }
 
 function harness(enqueue: Enqueue) {
+  vi.stubEnv("AI_PROVIDER", "fake");
   const mutations: string[] = [];
   let transactionCommitted = false;
   const repositories = {
@@ -44,8 +45,68 @@ function harness(enqueue: Enqueue) {
     listings: {
       async create() {
         mutations.push("create");
-        return { id: listingId, status: "received", target: "shopline" };
+        return {
+          id: listingId,
+          status: "received",
+          target: "shopline",
+          activeVersionId: null,
+          activeVersionSequence: 0,
+        };
       },
+      async lockReviewState() {},
+      async getById() {
+        return {
+          id: listingId,
+          status: "received",
+          activeVersionId: null,
+          activeVersionSequence: 0,
+        };
+      },
+      async requireById() {
+        return { activeVersionSequence: 0 };
+      },
+    },
+    listingInputs: {
+      async initialize() {
+        return { revision: 1, baseVersionId: null };
+      },
+      async getCurrent() {
+        return { revision: 1, baseVersionId: null, workingContent: {} };
+      },
+    },
+    pipelineRuns: {
+      async findOperationRequest() {
+        return null;
+      },
+      async acceptOperation(input: {
+        requestKey: string;
+        requestDigest: string;
+      }) {
+        return {
+          id: "00000000-0000-4000-8000-000000000201",
+          idempotencyKey: input.requestKey,
+          inputRevision: 1,
+          baseVersionId: null,
+          runAttempt: 1,
+          executionState: "queued",
+          activeVersionSequence: 0,
+          requestDigest: input.requestDigest,
+        };
+      },
+    },
+    dispatchOutbox: {
+      async record(
+        rows: Array<{ dedupeKey: string; payload: Record<string, unknown> }>,
+      ) {
+        return rows.map((row) => ({
+          ...row,
+          id: "outbox_1",
+          listingId,
+          attempts: 0,
+        }));
+      },
+      async markDispatched() {},
+      async markAttempted() {},
     },
     audit: {
       async write() {
@@ -134,16 +195,23 @@ describe("POST /api/listings creation handoff", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
       listing: { id: listingId, status: "received", target: "shopline" },
-      processing: { state: "queued", jobId: "job_1", errorCode: null },
+      processing: {
+        state: "queued",
+        jobId: `create:${listingId}`,
+        runId: "00000000-0000-4000-8000-000000000201",
+      },
     });
     expect(test.enqueue).toHaveBeenCalledWith({
+      schemaVersion: 2,
       workspaceId: "ws_opak",
       draftId: listingId,
+      runId: "00000000-0000-4000-8000-000000000201",
+      inputRevision: 1,
       activeVersionSequence: 0,
     });
   });
 
-  it("returns the committed listing with a safe retry outcome when enqueue fails", async () => {
+  it("returns the committed queued operation when immediate enqueue fails", async () => {
     const errorLog = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
@@ -162,19 +230,12 @@ describe("POST /api/listings creation handoff", () => {
     expect(await response.json()).toMatchObject({
       listing: { id: listingId, status: "received" },
       processing: {
-        state: "retry_required",
-        jobId: null,
-        errorCode: "queue_unavailable",
+        state: "queued",
+        jobId: `create:${listingId}`,
+        runId: "00000000-0000-4000-8000-000000000201",
       },
     });
-    expect(test.mutations).toEqual(["create", "attach", "audit"]);
-    expect(errorLog).toHaveBeenCalledOnce();
-    const logged = errorLog.mock.calls.flat().join(" ");
-    expect(logged).toContain("queue_unavailable");
-    // The request deliberately succeeds, so this log is the only record of why
-    // the queue refused it. Without the reason an unset variable and an
-    // unreachable Worker are the same line.
-    expect(logged).toContain('"queueReason":"not_configured"');
-    expect(logged).not.toContain("connect timeout");
+    expect(test.mutations).toEqual(["create", "attach", "audit", "audit"]);
+    expect(errorLog).not.toHaveBeenCalled();
   });
 });

@@ -17,7 +17,7 @@ type IntakeDependencies = {
 
 export type CreateListingDraftResult = {
   listingId: string;
-  processing: "queued" | "retry_required";
+  processing: "queued" | "retry_required" | "saved";
 };
 
 async function responseError(response: Response): Promise<Error> {
@@ -47,6 +47,8 @@ export async function createListingDraft(
   report?: ListingIntakeProgress,
 ): Promise<CreateListingDraftResult> {
   const fetcher = dependencies.fetcher ?? fetch;
+  const processingMode = payload.processingMode ?? "ai";
+  const idempotencyKey = payload.idempotencyKey ?? crypto.randomUUID();
   const sourceAssetIds: string[] = [];
 
   for (const entry of payload.files) {
@@ -73,8 +75,15 @@ export async function createListingDraft(
   try {
     listingResponse = await fetcher("/api/listings", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sourceAssetIds, note: payload.note }),
+      headers: {
+        "content-type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify({
+        sourceAssetIds,
+        note: payload.note,
+        processingMode,
+      }),
     });
   } catch (cause) {
     throw new Error(
@@ -85,11 +94,11 @@ export async function createListingDraft(
   if (!listingResponse.ok) throw await responseError(listingResponse);
   const result = (await listingResponse.json()) as {
     listing: { id: string };
-    processing: { state: "queued" | "retry_required" };
+    processing: { state: "queued" | "retry_required" } | null;
   };
   return {
     listingId: result.listing.id,
-    processing: result.processing.state,
+    processing: result.processing?.state ?? "saved",
   };
 }
 

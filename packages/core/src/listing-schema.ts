@@ -1,3 +1,4 @@
+import { sourcePreferencesSchema } from "./workspace-policy.js";
 import { z } from "zod";
 
 export const localizedTextSchema = z.object({
@@ -51,6 +52,21 @@ export const canonicalListingSchema = listingFactsSchema.extend({
 });
 
 export const workspaceProfileSchema = z.object({
+  sourcePreferences: sourcePreferencesSchema.optional(),
+  listingAi: z
+    .object({
+      provider: z.enum(["openai", "openrouter"]),
+      model: z.string().min(1).max(200),
+      pricingVersion: z.string().min(1).max(128),
+      runCeilingUsd: z.string().regex(/^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/),
+      budgetCapUsd: z.string().regex(/^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/),
+      maxInputTokens: z.number().int().positive().max(10000000),
+      inputUsdPerMillion: z.number().positive().max(10000),
+      outputUsdPerMillion: z.number().positive().max(10000),
+      maxOutputTokens: z.number().int().positive().max(16384),
+    })
+    .strict()
+    .optional(),
   name: z.string().min(1),
   currency: z.literal("HKD"),
   locales: z.tuple([z.literal("en"), z.literal("zh-Hant")]),

@@ -30,6 +30,7 @@ export type JobsLedgerSources = {
 };
 
 const BATCH_STATUS: Record<EnrichmentBatch["status"], NormalizedStatus> = {
+  paused: "pending",
   open: "pending",
   running: "running",
   completed: "succeeded",

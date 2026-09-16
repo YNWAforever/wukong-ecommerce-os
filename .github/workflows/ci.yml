@@ -149,7 +149,7 @@ jobs:
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: pnpm build
       - name: Verify sharp's native library is bundled
-        run: node --test tests/sharp-native-bundling.test.mjs
+        run: node --test tests/sharp-native-bundling.test.mjs tests/pdf-worker-bundling.test.mjs
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: Playwright product-shot acceptance (synthetic images)

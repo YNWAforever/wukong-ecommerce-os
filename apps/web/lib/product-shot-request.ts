@@ -11,7 +11,8 @@ export type ProductShotRequestInput = {
   listingId: string;
   actorId: string;
   sourceAssetId?: string;
-  expectedVersionId?: string;
+  expectedVersionId?: string | null;
+  expectedInputRevision?: number;
   explicitFreshAttempt?: boolean;
 };
 export type ProductShotRequestResult = { state: string; attemptId?: string };
@@ -170,12 +171,27 @@ export async function requestProductShot(
   const assertObservedVersion = async (
     r: Parameters<Parameters<Database["forWorkspace"]>[1]>[0],
   ) => {
-    if (!input.expectedVersionId) return;
+    if (
+      input.expectedVersionId === undefined &&
+      input.expectedInputRevision === undefined
+    )
+      return;
     await r.listings.lockReviewState(input.listingId);
     const snapshot = await r.listings.getReviewSnapshot(input.listingId);
-    if (!snapshot?.activeVersion)
+    if (!snapshot)
       throw new ApiError(404, "listing_not_found", "Listing not found.");
-    assertMutableObservedVersion(snapshot, input.expectedVersionId);
+    if (input.expectedVersionId === null) {
+      if (
+        snapshot.listing.activeVersionId !== null ||
+        snapshot.listing.inputRevision !== input.expectedInputRevision
+      )
+        throw new ApiError(
+          409,
+          "input_revision_conflict",
+          "Reload the saved inputs before changing the image.",
+        );
+    } else if (input.expectedVersionId)
+      assertMutableObservedVersion(snapshot, input.expectedVersionId);
   };
   const existing = await deps.forWorkspace(input.workspaceId, async (r) => {
     await assertObservedVersion(r);

@@ -73,6 +73,15 @@ export type {
   ProductTypeClassifier,
 } from "./product-type-eval.js";
 
+export {
+  providerFailureDiagnostic,
+  type PhysicalInvocationObserver,
+  type PhysicalInvocationRecord,
+  type PhysicalInvocationUsage,
+  type ProviderDiagnostic,
+  type ProviderFailureCategory,
+} from "./listing-provider-errors.js";
+
 export { OpenRouterListingProvider } from "./openrouter-listing-provider.js";
 export type { OpenRouterListingProviderConfig } from "./openrouter-listing-provider.js";
 
@@ -82,3 +91,5 @@ export {
   factsSufficientForGeneration,
 } from "./fact-grounding-rules.js";
 export type { GroundingMode } from "./fact-grounding-rules.js";
+
+export { calculateConservativeRunCeiling } from "./provider-cost-bound.js";

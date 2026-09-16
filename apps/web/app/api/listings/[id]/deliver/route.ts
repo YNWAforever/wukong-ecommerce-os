@@ -230,7 +230,16 @@ export function defaultDelivery(
           async (repositories) => {
             return deliverListing(input, {
               bulkUpdate: createBulkExportDeps(repositories),
-              listings: repositories.listings,
+              listings: {
+                ...repositories.listings,
+                async approvalState(draftId) {
+                  const states =
+                    await repositories.listings.approvalStatesByIds?.([
+                      draftId,
+                    ]);
+                  return states?.[draftId] ?? null;
+                },
+              },
               imageUrls: async (
                 workspaceId,
                 draftId,
@@ -286,7 +295,14 @@ export function defaultDelivery(
         input.workspaceId,
         async (repositories) => {
           return prepareShoplineDelivery(input, {
-            listings: repositories.listings,
+            listings: {
+              ...repositories.listings,
+              async approvalState(draftId) {
+                const states =
+                  await repositories.listings.approvalStatesByIds?.([draftId]);
+                return states?.[draftId] ?? null;
+              },
+            },
             imageUrls: async (workspaceId, draftId, imageAssetIds, versionId) =>
               resolveListingImageUrls({
                 workspaceId,

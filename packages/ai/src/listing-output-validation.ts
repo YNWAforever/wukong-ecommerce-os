@@ -58,6 +58,10 @@ export const generationOutputSchema = z.object({
 });
 
 export const generationInputRuntimeSchema = z.object({
+  operatorProvidedFields: z
+    .array(listingFactsSchema.keyof())
+    .max(FACT_KEY_NAMES.length)
+    .optional(),
   facts: listingFactsSchema,
   evidence: z.array(fieldEvidenceSchema),
   profile: workspaceProfileSchema,
@@ -178,7 +182,11 @@ function assertComplexFactEvidence(
 export function assertFactsGrounded(
   facts: ListingFacts,
   evidence: FieldEvidence[],
-  options: { allowedSources?: Set<string>; note?: string | null } = {},
+  options: {
+    allowedSources?: Set<string>;
+    note?: string | null;
+    operatorProvidedFields?: Array<keyof ListingFacts>;
+  } = {},
 ): void {
   for (const item of evidence) {
     if (item.excerpt.length > MAX_EVIDENCE_EXCERPT_LENGTH) {
@@ -211,6 +219,9 @@ export function assertFactsGrounded(
   }
 
   for (const key of FACT_KEYS) {
+    // Human-supplied facts are trusted input, not fabricated model evidence.
+    // Output equality is still enforced by assertGenerationGrounding.
+    if (options.operatorProvidedFields?.includes(key)) continue;
     const value = facts[key];
     if (!isMeaningfulFact(value)) continue;
     const evidenceForField = evidence.filter((item) => item.field === key);

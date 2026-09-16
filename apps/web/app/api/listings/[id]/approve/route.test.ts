@@ -383,7 +383,7 @@ describe("POST /api/listings/[id]/approve", () => {
               },
               workspaces: {
                 async requireProfile() {
-                  return { brandBackgroundColor: null };
+                  return { brandBackgroundColor: null, requiredFields: [] };
                 },
               },
               reviewConfirmations: {
@@ -599,7 +599,7 @@ describe("POST /api/listings/[id]/approve", () => {
               },
               workspaces: {
                 async requireProfile() {
-                  return { brandBackgroundColor: null };
+                  return { brandBackgroundColor: null, requiredFields: [] };
                 },
               },
               reviewConfirmations: {

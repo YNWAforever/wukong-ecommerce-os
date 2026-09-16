@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createProductShotHandler } from "./route";
+import * as shotService from "../../../../../lib/product-shot-service";
 const id = (n: number) =>
   `10000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const body = { sourceAssetId: id(3), expectedVersionId: id(2) };
@@ -185,4 +186,72 @@ it("does not advertise mutation actions to a viewer", async () => {
   expect((await response.json()).allowedActions).toEqual([]);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(f.requestShot).not.toHaveBeenCalled();
+});
+
+describe("legacy revision-zero product image observations", () => {
+  it.each(["request", "prepare", "approve"] as const)(
+    "accepts revision zero for versioned %s",
+    async (action) => {
+      const f = fixture("admin");
+      const prepare = vi
+        .spyOn(shotService, "prepareProductShot")
+        .mockResolvedValue({ state: "candidate_ready" } as any);
+      const approve = vi
+        .spyOn(shotService, "approveProductShot")
+        .mockResolvedValue(undefined);
+      try {
+        const data =
+          action === "request"
+            ? { ...body, expectedInputRevision: 0 }
+            : {
+                attemptId: id(3),
+                expectedVersionId: id(2),
+                expectedInputRevision: 0,
+                ...(action === "approve"
+                  ? { candidateDigest: "a".repeat(64) }
+                  : {}),
+              };
+        const response = await createProductShotHandler(f.deps, action)(
+          request(data),
+          context,
+        );
+        expect(response.status, await response.text()).toBe(200);
+        const service =
+          action === "request"
+            ? f.requestShot
+            : action === "prepare"
+              ? prepare
+              : approve;
+        expect(service.mock.calls[0]?.[0]).toMatchObject({
+          expectedVersionId: id(2),
+          expectedInputRevision: 0,
+          workspaceId: "ws",
+          actorId: "actor",
+        });
+      } finally {
+        prepare.mockRestore();
+        approve.mockRestore();
+      }
+    },
+  );
+  it.each(["request", "prepare"] as const)(
+    "still requires a positive saved revision for unversioned %s",
+    async (action) => {
+      for (const expectedInputRevision of [undefined, 0, -1, 1.5]) {
+        const f = fixture();
+        const response = await createProductShotHandler(f.deps, action)(
+          request({
+            ...(action === "request"
+              ? { sourceAssetId: id(3) }
+              : { attemptId: id(3) }),
+            expectedVersionId: null,
+            expectedInputRevision,
+          }),
+          context,
+        );
+        expect(response.status).toBe(400);
+        expect(f.requestShot).not.toHaveBeenCalled();
+      }
+    },
+  );
 });

@@ -35,6 +35,9 @@ export const listingJobSchema = z
      * the message away. Deploy the Worker first.
      */
     runAttempt: z.number().int().min(0).max(999).optional(),
+    schemaVersion: z.literal(2).optional(),
+    runId: z.string().uuid().optional(),
+    inputRevision: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -51,7 +54,9 @@ export function listingRunKey(input: {
   draftId: string;
   activeVersionSequence: number;
   runAttempt?: number;
+  runId?: string;
 }): string {
+  if (input.runId) return `listing-run:${input.runId}`;
   const base = `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
   return input.runAttempt ? `${base}#${input.runAttempt}` : base;
 }

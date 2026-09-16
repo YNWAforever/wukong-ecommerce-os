@@ -1,3 +1,8 @@
+import { requireListingRecovery } from "../../../../../lib/listing-recovery-readiness";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { acceptListingOperation } from "../../../../../lib/listing-operation-service";
+import { dispatchListingOperation } from "../../../../../lib/dispatch-listing-operation";
 import { validateProductShotSource } from "@wukong/assets/product-shot-render";
 import {
   requestProductShotFromProcess,
@@ -60,132 +65,90 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       }
 
-      const input = await deps
+      const raw = await _request.text();
+      const body = z
+        .object({
+          expectedInputRevision: z.number().int().nonnegative().optional(),
+          baseVersionId: z.string().uuid().nullable().optional(),
+          retryOfRunId: z.string().uuid().optional(),
+        })
+        .strict()
+        .parse(raw ? JSON.parse(raw) : {});
+      const operationKey = z
+        .string()
+        .uuid()
+        .parse(_request.headers.get("Idempotency-Key") ?? randomUUID());
+      await requireListingRecovery(deps.getDatabase());
+      const accepted = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
+          await repositories.listings.lockReviewState(id);
           const listing = await repositories.listings.getById(id);
-          if (!listing) {
+          if (!listing)
             throw new ApiError(404, "listing_not_found", "Listing not found.");
-          }
-          // The workflow state machine allows processing to start from exactly
-          // these: received/needs_info via start_processing, failed via retry.
-          // Without `failed` an operator had no way to re-drive a listing the
-          // pipeline gave up on, so it sat unreachable until an engineer
-          // replayed the dead-letter queue by hand.
-          const retryableStatuses = new Set([
-            "received",
-            "needs_info",
-            "failed",
-          ]);
-          if (!retryableStatuses.has(listing.status)) {
-            throw new ApiError(
-              409,
-              "listing_not_retryable",
-              "This listing cannot start processing in its current state.",
-            );
-          }
-
-          const revision = await repositories.listings.requireById(id);
-          const assets = await repositories.sourceAssets.listForListing(id);
-          if (assets.length === 0) {
-            throw new ApiError(
-              409,
-              "listing_has_no_assets",
-              "The listing has no finalized source assets.",
-            );
-          }
-
-          const input = {
-            workspaceId: session.workspaceId,
-            draftId: id,
-            activeVersionSequence: revision.activeVersionSequence,
-          } satisfies ListingJob;
-          // Runs for this revision are numbered from 0, so N recorded runs
-          // means the newest is N-1. Only that newest one decides what may
-          // happen next; the earlier ones are settled history.
-          const recordedRuns = await repositories.pipelineRuns.countRuns({
-            listingId: id,
-            activeVersionSequence: revision.activeVersionSequence,
-          });
-          const latestAttempt = recordedRuns === 0 ? 0 : recordedRuns - 1;
-          // Attempt 0 must not carry the field at all: a Worker deployed before
-          // `runAttempt` existed parses strictly and would ack the message away.
-          const latestInput = {
-            ...input,
-            ...(latestAttempt > 0 ? { runAttempt: latestAttempt } : {}),
-          } satisfies ListingJob;
-          const latestKey = listingApplicationJobId(latestInput);
-          const runState = await repositories.pipelineRuns.getState(latestKey);
-
-          // Nothing recorded yet: either this listing has never been processed,
-          // or a message is already queued and no delivery has claimed it. Both
-          // want the same key -- re-enqueueing it is a no-op the pipeline
-          // deduplicates, rather than a second billed run.
-          if (!runState) return latestInput;
-
-          if (runState.status === "started") {
-            throw new ApiError(
-              409,
-              "processing_already_started",
-              "Processing has already started.",
-            );
-          }
-
-          if (runState.status === "failed") {
-            await repositories.pipelineRuns.reopenFailed(latestKey);
-            return latestInput;
-          }
-
-          // A run that asked for more information is finished, but the LISTING
-          // is not: the operator still has work to do, and doing it has to be
-          // able to produce a new result. That run appended no version, so its
-          // activeVersionSequence never moved and its key keeps resolving to
-          // it -- which is why supplying the missing details used to change
-          // nothing at all. Number the next run instead of reusing the key.
-          if (runState.resultStatus === "needs_info") {
-            return {
-              ...input,
-              runAttempt: latestAttempt + 1,
-            } satisfies ListingJob;
-          }
-
-          throw new ApiError(
-            409,
-            "processing_already_started",
-            "Processing has already started.",
+          const replay = await repositories.pipelineRuns.findOperationRequest(
+            id,
+            operationKey,
           );
+          if (replay)
+            return acceptListingOperation(repositories, {
+              ...session,
+              listingId: id,
+              expectedInputRevision:
+                body.expectedInputRevision ?? replay.inputRevision,
+              observedInputRevision: body.expectedInputRevision,
+              baseVersionId:
+                body.baseVersionId === undefined
+                  ? replay.baseVersionId
+                  : body.baseVersionId,
+              operationKey,
+              retryOfRunId: body.retryOfRunId,
+            });
+          // Legacy input is initialized only after the caller's revision check.
+          if (
+            body.expectedInputRevision !== undefined &&
+            body.expectedInputRevision !== listing.inputRevision
+          )
+            throw new ApiError(
+              409,
+              "input_revision_conflict",
+              "Reload the current inputs.",
+            );
+          const snapshot = await repositories.listingInputs.initialize(
+            { listingId: id, actorId: session.actorId },
+            {
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: id,
+            },
+            repositories.audit,
+          );
+          return acceptListingOperation(repositories, {
+            workspaceId: session.workspaceId,
+            listingId: id,
+            expectedInputRevision: snapshot.revision,
+            observedInputRevision: body.expectedInputRevision,
+            baseVersionId:
+              body.baseVersionId === undefined
+                ? listing.activeVersionId
+                : body.baseVersionId,
+            operationKey,
+            retryOfRunId: body.retryOfRunId,
+            actorId: session.actorId,
+          });
         });
-
-      // Deliberately uncaught. withRouteErrors already answers a queue failure
-      // with 503 queue_unavailable and logs which failure it was. Catching it
-      // here to rethrow a generic ApiError discarded that reason, and labelled
-      // any unrelated fault a queue problem as well.
-      const [textResult, shotResult] = await Promise.allSettled([
-        deps.publisher.enqueue(input),
-        deps.requestProductShot?.({
-          workspaceId: session.workspaceId,
-          listingId: id,
-          actorId: session.actorId,
-        }) ?? Promise.resolve(undefined),
-      ]);
-      if (textResult.status === "rejected") throw textResult.reason;
-      const job = textResult.value;
-      const productShot =
-        shotResult.status === "fulfilled"
-          ? shotResult.value
-          : { state: "request_failed" };
-      return jsonResponse(202, {
-        processing: { state: "queued", jobId: job.id },
-        ...(productShot ? { productShot } : {}),
-      });
+      await dispatchListingOperation(
+        deps.getDatabase(),
+        session.workspaceId,
+        accepted,
+        deps.publisher,
+      );
+      return jsonResponse(202, { processing: accepted.processing });
     });
   };
 }
-
 export const POST = createProcessListingHandler({
   sessionContext: authSessionContext,
   getDatabase,
   publisher: listingPublisher,
-  requestProductShot: (input) =>
-    requestProductShotFromProcess(input, validateProductShotSource),
 });

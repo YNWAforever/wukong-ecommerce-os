@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-09-15T21:15:46.8957038Z",
+  "harness": "synthetic local real stack",
+  "browser": "Chromium",
+  "viewports": [
+    "desktop working-card element",
+    "390x844 mobile working-card element"
+  ],
+  "database": "local Postgres 127.0.0.1:54329/wukong",
+  "aiProvider": "fake",
+  "productionWrites": false,
+  "scenario": "compiled finalizer accepts valid one-page PDF; run 1 needs_info; corrected note and producer saved as revision 2; distinct attempt 2 reaches in_review; run 1 retained",
+  "test": "tests/e2e/native-intake-selection.spec.ts",
+  "result": "passed"
+}

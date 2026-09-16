@@ -363,3 +363,31 @@ describe("outbox recovery", () => {
     consoleInfo.mockRestore();
   });
 });
+
+it("terminalizes abandoned accepted operations without queue or provider calls", async () => {
+  const failed = vi.fn(async () => ({
+    failed: true,
+    reason: "dispatch_exhausted",
+  }));
+  const database = {
+    ...makeDatabase([]),
+    findAbandonedListingOperations: vi.fn(async () => [
+      {
+        workspaceId: job.workspaceId,
+        runId: "00000000-0000-4000-8000-000000000901",
+      },
+    ]),
+    forWorkspace: vi.fn(async (_workspace: string, work: any) =>
+      work({
+        pipelineRuns: { failAbandonedOperation: failed },
+        audit: { write: vi.fn() },
+      }),
+    ),
+  };
+  const send = vi.fn(async () => undefined);
+  await handleScheduled(undefined as never, env(send), undefined as never, {
+    createDatabase: () => database as never,
+  });
+  expect(failed).toHaveBeenCalledOnce();
+  expect(send).not.toHaveBeenCalled();
+});

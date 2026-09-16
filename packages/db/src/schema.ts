@@ -293,6 +293,7 @@ export const listingDrafts = pgTable(
     target: text("target").default("shopline").notNull(),
     note: text("note"),
     activeVersionId: uuid("active_version_id"),
+    inputRevision: integer("input_revision").default(0).notNull(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -513,7 +514,15 @@ export const aiRuns = pgTable(
     estimatedCostUsd: numeric("estimated_cost_usd", {
       precision: 14,
       scale: 6,
-    }).notNull(),
+    }),
+    pipelineRunId: uuid("pipeline_run_id"),
+    stage: text("stage"),
+    callOrdinal: integer("call_ordinal"),
+    usageCertainty: text("usage_certainty"),
+    failureCategory: text("failure_category"),
+    httpStatus: integer("http_status"),
+    providerCode: text("provider_code"),
+    providerRequestId: text("provider_request_id"),
     createdAt: timestamps.createdAt,
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
@@ -588,6 +597,34 @@ export const listingPipelineRuns = pgTable(
       name: "listing_pipeline_runs_workspace_version_fkey",
       columns: [table.workspaceId, table.versionId],
       foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const aiBudgetReservations = pgTable(
+  "ai_budget_reservations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    pipelineRunId: uuid("pipeline_run_id").notNull(),
+    pricingVersion: text("pricing_version").notNull(),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }).notNull(),
+    settledUsd: numeric("settled_usd", { precision: 14, scale: 6 }),
+    state: text("state").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("ai_budget_reservations_workspace_run_uq").on(
+      table.workspaceId,
+      table.pipelineRunId,
+    ),
+    foreignKey({
+      name: "ai_budget_reservations_workspace_run_fkey",
+      columns: [table.workspaceId, table.pipelineRunId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
     }).onDelete("restrict"),
   ],
 );
@@ -786,10 +823,12 @@ export const sourceImports = pgTable(
  * Each is sha256 hex of a JSON encoding:
  *
  * - `afterDigest` pins the value in the confirmed version.
- * - `before` pins the merchant's cell in the imported row. `null` when the
+ * - `before` pins the merchant's cell in the imported row.
+ull` when the
  *   listing has no imported row or the cell was blank -- a recorded fact that
  *   nothing was supplied, not a missing value.
- * - `evidenceDigest` pins the grounding the AI offered for the field, or `null`
+ * - `evidenceDigest` pins the grounding the AI offered for the field, or
+ull`
  *   when it offered none. Content, not ids: evidence rows are replaced wholesale
  *   and copied forward under fresh ids, so an id identifies a row rather than
  *   the grounding it carries.
@@ -1034,6 +1073,7 @@ export const importResults = pgTable(
 );
 
 export const enrichmentBatchStatus = pgEnum("enrichment_batch_status", [
+  "paused",
   "open",
   "running",
   "completed",
@@ -1064,6 +1104,7 @@ export const enrichmentBatches = pgTable(
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
     status: enrichmentBatchStatus("status").default("open").notNull(),
+    controlRevision: integer("control_revision").default(0).notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
@@ -1140,6 +1181,12 @@ export const enrichmentBatchItems = pgTable(
     listingId: uuid("listing_id").notNull(),
     status: enrichmentBatchItemStatus("status").default("pending").notNull(),
     idempotencyKey: text("idempotency_key"),
+    retryOfItemId: uuid("retry_of_item_id"),
+    isCurrent: boolean("is_current").default(true).notNull(),
+    pipelineRunId: uuid("pipeline_run_id"),
+    inputRevision: integer("input_revision"),
+    outcome: text("outcome"),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -1148,15 +1195,17 @@ export const enrichmentBatchItems = pgTable(
       table.workspaceId,
       table.id,
     ),
-    uniqueIndex("enrichment_batch_items_batch_listing_uq").on(
-      table.workspaceId,
-      table.batchId,
-      table.listingId,
-    ),
+    uniqueIndex("enrichment_batch_items_batch_listing_uq")
+      .on(table.workspaceId, table.batchId, table.listingId)
+      .where(sql`${table.isCurrent}`),
     index("enrichment_batch_items_workspace_batch_status_idx").on(
       table.workspaceId,
       table.batchId,
       table.status,
+    ),
+    uniqueIndex("enrichment_batch_items_workspace_run_uq").on(
+      table.workspaceId,
+      table.pipelineRunId,
     ),
     index("enrichment_batch_items_workspace_listing_idx").on(
       table.workspaceId,
@@ -1860,5 +1909,294 @@ export const productShotApprovalUrls = pgTable(
         productShotPublications.id,
       ],
     }).onDelete("restrict"),
+  ],
+);
+
+export const listingInputRevisions = pgTable(
+  "listing_input_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    revision: integer("revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    note: text("note"),
+    sources: jsonb("sources")
+      .$type<import("@wukong/core").ResolvedSourceSelection[]>()
+      .notNull(),
+    workingContent: jsonb("working_content")
+      .$type<import("@wukong/core").WorkingListing>()
+      .notNull(),
+    fieldStates: jsonb("field_states")
+      .$type<import("@wukong/core").WorkingFieldStates>()
+      .notNull(),
+    inputDigest: text("input_digest").notNull(),
+    operationKey: text("operation_key"),
+    requestDigest: text("request_digest"),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("listing_input_revisions_revision_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.revision,
+    ),
+    uniqueIndex("listing_input_revisions_operation_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.operationKey,
+    ),
+    foreignKey({
+      name: "listing_input_revisions_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    foreignKey({
+      name: "listing_input_revisions_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingCreateRequests = pgTable(
+  "listing_create_requests",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestKey] }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+  ],
+);
+
+export const listingEnrichmentSuggestions = pgTable(
+  "listing_enrichment_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_enrichment_suggestions_identity_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    uniqueIndex("listing_enrichment_suggestions_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingEnrichmentDecisions = pgTable(
+  "listing_enrichment_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    suggestionId: uuid("suggestion_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    actorId: text("actor_id").notNull(),
+    selectedFields: jsonb("selected_fields").notNull(),
+    decision: text("decision").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_enrichment_decisions_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.suggestionId],
+      foreignColumns: [
+        listingEnrichmentSuggestions.workspaceId,
+        listingEnrichmentSuggestions.listingId,
+        listingEnrichmentSuggestions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingClaimSupports = pgTable(
+  "listing_claim_supports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    suggestionId: uuid("suggestion_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    actorId: text("actor_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_claim_supports_identity_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    uniqueIndex("listing_claim_supports_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.suggestionId],
+      foreignColumns: [
+        listingEnrichmentSuggestions.workspaceId,
+        listingEnrichmentSuggestions.listingId,
+        listingEnrichmentSuggestions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingVersionClaimSupports = pgTable(
+  "listing_version_claim_supports",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    supportId: uuid("support_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.versionId,
+        table.supportId,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.supportId],
+      foreignColumns: [
+        listingClaimSupports.workspaceId,
+        listingClaimSupports.listingId,
+        listingClaimSupports.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
   ],
 );

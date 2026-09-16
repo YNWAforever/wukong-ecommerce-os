@@ -3,7 +3,7 @@ import { complianceLabel } from "../lib/review-ui-copy";
 import { useLocale } from "../lib/locale-context";
 import { localized, commonCopy, formatNumber } from "../lib/ui-copy";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { allConfirmed } from "./confirmation-checklist";
 import type { ListingField, ListingReviewModel } from "./listing-view-models";
@@ -18,6 +18,7 @@ type ListingFieldsFormProps = {
   canApprove?: boolean;
   fieldConfirmations?: Record<string, boolean>;
   negativeConfirmations?: Record<string, boolean>;
+  onDirtyChange?: (dirty: boolean) => void;
   onApprove?: () => void;
   onSave?: (fields: ListingField[], baseVersionId: string) => void;
 };
@@ -97,6 +98,7 @@ export function ListingFieldsForm({
   canApprove = true,
   fieldConfirmations = {},
   negativeConfirmations = {},
+  onDirtyChange,
   onApprove,
   onSave,
 }: ListingFieldsFormProps) {
@@ -127,6 +129,9 @@ export function ListingFieldsForm({
     return fields.some((field) => saved.get(field.key) !== field.value);
   }, [fields, model.fields]);
 
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
   const approvalDisabled =
     !canApprove ||
     hasOpenBlockingFlag ||

@@ -13,6 +13,9 @@ export type ListingStatus =
   | "failed";
 
 export type ListingAction =
+  | "abandon_processing"
+  | "save_inputs"
+  | "submit_manual"
   | "start_processing"
   | "request_info"
   | "submit_review"
@@ -32,7 +35,7 @@ const transitions: Record<
   processing: {
     request_info: "needs_info",
     submit_review: "in_review",
-    fail: "failed"
+    fail: "failed",
   },
   needs_info: { start_processing: "processing" },
   in_review: { approve: "approved" },
@@ -40,18 +43,34 @@ const transitions: Record<
   reopened: { submit_review: "in_review" },
   publishing: {
     publish_succeeded: "published",
-    publish_failed: "publish_failed"
+    publish_failed: "publish_failed",
   },
   published: { reopen: "reopened" },
   publish_failed: { retry: "publishing", reopen: "reopened" },
-  failed: { retry: "processing" }
+  failed: { retry: "processing" },
 };
 
 function getNextListingStatus(
   status: ListingStatus,
-  action: ListingAction
+  action: ListingAction,
 ): ListingStatus {
-  const next = transitions[status][action];
+  if (
+    action === "abandon_processing" &&
+    ["received", "processing", "needs_info", "failed"].includes(status)
+  )
+    return "failed";
+
+  const next =
+    action === "save_inputs" && status !== "publishing"
+      ? ["approved", "published", "publish_failed"].includes(status)
+        ? "reopened"
+        : status === "processing"
+          ? "needs_info"
+          : status
+      : action === "submit_manual" &&
+          ["received", "processing", "needs_info", "failed"].includes(status)
+        ? "in_review"
+        : transitions[status][action];
   if (!next) throw new Error(`Illegal transition: ${status} -> ${action}`);
   return next;
 }
@@ -60,13 +79,13 @@ export async function transitionListing(
   status: ListingStatus,
   action: ListingAction,
   auditContext: AuditContext,
-  auditWriter: AuditWriter
+  auditWriter: AuditWriter,
 ): Promise<ListingStatus> {
   const next = getNextListingStatus(status, action);
   await auditWriter.write({
     ...auditContext,
     action: "listing.transition",
-    metadata: { fromStatus: status, action, toStatus: next }
+    metadata: { fromStatus: status, action, toStatus: next },
   });
   return next;
 }

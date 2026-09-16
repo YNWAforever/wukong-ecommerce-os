@@ -6,7 +6,7 @@ const monorepoRoot = path.resolve(appRoot, "../..");
 
 /**
  * libvips, as pnpm actually lays it out. Shared by every route that imports
- * sharp so the six entries below cannot drift apart from one another.
+ * sharp so the route entries below cannot drift apart from one another.
  */
 const SHARP_NATIVE_LIBRARY = [
   "../../node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/*/lib/*.so*",
@@ -16,6 +16,7 @@ const SHARP_NATIVE_LIBRARY = [
 /** @type {import('next').NextConfig} */
 const config = {
   outputFileTracingRoot: monorepoRoot,
+  serverExternalPackages: ["pdf-lib"],
   // Node File Trace's static analysis doesn't follow the dlopen() call
   // sharp's platform binding uses to load libvips's shared library, so that
   // file is silently dropped from a route's deployed function bundle without
@@ -35,6 +36,7 @@ const config = {
   // glob failed to build on Vercel entirely (ENOENT), most likely from
   // matching the virtual store's symlinked entries.
   outputFileTracingIncludes: {
+    "/api/assets/finalize": SHARP_NATIVE_LIBRARY,
     "/api/listings/*/approve": SHARP_NATIVE_LIBRARY,
     "/api/listings/*/process": SHARP_NATIVE_LIBRARY,
     "/api/listings/*/product-shot": SHARP_NATIVE_LIBRARY,
