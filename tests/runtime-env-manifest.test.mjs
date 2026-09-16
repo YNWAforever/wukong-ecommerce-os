@@ -139,6 +139,7 @@ test("a denied name in .env.example is there for the Worker, not for Vercel", ()
       "DATABASE_ADMIN_URL",
       "OPENAI_API_KEY",
       "OPENROUTER_API_KEY",
+      "OPENCODE_GO_API_KEY",
       "PHOTOROOM_API_KEY",
     ],
   );

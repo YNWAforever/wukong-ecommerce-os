@@ -2,6 +2,7 @@ import {
   FakeListingProvider,
   OpenAIListingProvider,
   OpenRouterListingProvider,
+  OpenCodeGoListingProvider,
   ProviderApiError,
   EXTRACTION_PROMPT,
   GENERATION_PROMPT,
@@ -139,6 +140,12 @@ export function operationAI(
       maxOutputTokens: policy.maxOutputTokens,
       invocationObserver,
     };
+    if (policy.provider === "opencode-go")
+      return new OpenCodeGoListingProvider({
+        ...config,
+        apiKey: env.OPENCODE_GO_API_KEY ?? "",
+        sessionId: run.id,
+      });
     return policy.provider === "openrouter"
       ? new OpenRouterListingProvider({
           ...config,

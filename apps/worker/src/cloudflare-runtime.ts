@@ -79,6 +79,10 @@ function createAssetStore(env: WorkerEnv): AssetStore {
 function createProvider(env: WorkerEnv): ListingAIProvider {
   const provider = env.AI_PROVIDER ?? "openai";
   if (provider === "fake") return new FakeListingProvider();
+  if (provider === "opencode-go")
+    throw new Error(
+      "OpenCode Go requires an immutable listing operation; start a new retry",
+    );
   if (provider === "openrouter") {
     return new OpenRouterListingProvider({
       apiKey: required(env.OPENROUTER_API_KEY, "OPENROUTER_API_KEY"),
@@ -266,7 +270,7 @@ export function createCloudflareRuntime(
 
 export function workerHealth(env: WorkerEnv) {
   return {
-    aiProvider: ["fake", "openai", "openrouter"].includes(
+    aiProvider: ["fake", "openai", "openrouter", "opencode-go"].includes(
       env.AI_PROVIDER ?? "openai",
     )
       ? (env.AI_PROVIDER ?? "openai")

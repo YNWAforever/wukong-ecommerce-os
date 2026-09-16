@@ -93,3 +93,8 @@ export {
 export type { GroundingMode } from "./fact-grounding-rules.js";
 
 export { calculateConservativeRunCeiling } from "./provider-cost-bound.js";
+
+export {
+  OpenCodeGoListingProvider,
+  type OpenCodeGoListingProviderConfig,
+} from "./opencode-go-listing-provider.js";

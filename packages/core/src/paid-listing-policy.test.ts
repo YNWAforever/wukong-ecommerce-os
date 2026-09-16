@@ -35,3 +35,17 @@ describe("reviewed paid listing bounds", () => {
       paidListingReservation({ ...policy, inputUsdPerMillion: 0.1 }),
     ).toThrow());
 });
+it("reserves Go at full 1M context and peak rates, never at zero subscription cost", () => {
+  const go = {
+    ...policy,
+    provider: "opencode-go" as const,
+    model: "deepseek-v4.1-flash",
+    maxInputTokens: 1048576,
+    inputUsdPerMillion: 0.3,
+    outputUsdPerMillion: 1.2,
+  };
+  expect(paidListingReservation(go)).toBe("1.277952");
+  expect(() =>
+    paidListingReservation({ ...go, inputUsdPerMillion: 0.15 }),
+  ).toThrow("unverified_model_budget_bound");
+});

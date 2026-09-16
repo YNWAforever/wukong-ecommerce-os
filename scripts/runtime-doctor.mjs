@@ -458,7 +458,7 @@ export function doctorRequiredSecrets(
     : health?.productShotProvider;
   if (
     !preDeployOnly &&
-    (!["fake", "openai", "openrouter"].includes(listing) ||
+    (!["fake", "openai", "openrouter", "opencode-go"].includes(listing) ||
       !["disabled", "fake", "photoroom"].includes(shot))
   )
     return null;
@@ -552,7 +552,7 @@ export function checkWebEnvInventory(manifest, envExampleSource) {
   };
 }
 
-const LISTING_PROVIDERS = ["fake", "openai", "openrouter"];
+const LISTING_PROVIDERS = ["fake", "openai", "openrouter", "opencode-go"];
 
 /**
  * Which providers the deployed Worker is actually running.
@@ -584,7 +584,7 @@ export function checkListingProvider(health, environment) {
       id: "listing-provider",
       status: "failed",
       detail: `AI_PROVIDER is a value this build does not recognise (${provider})`,
-      fix: "set AI_PROVIDER to openai or openrouter and redeploy the Worker",
+      fix: "set AI_PROVIDER to openai, openrouter or opencode-go and redeploy the Worker",
       dependsOn: "health-get",
     };
   }
@@ -594,7 +594,7 @@ export function checkListingProvider(health, environment) {
       status: "failed",
       detail:
         "production Worker is running the fake listing provider — every fact and every sentence it returns is invented",
-      fix: "set AI_PROVIDER to openai or openrouter and redeploy the Worker",
+      fix: "set AI_PROVIDER to openai, openrouter or opencode-go and redeploy the Worker",
       dependsOn: "health-get",
     };
   }

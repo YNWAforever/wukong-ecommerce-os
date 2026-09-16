@@ -22,7 +22,9 @@ export type WorkerEnv = {
   SHOPLINE_PUBLISH_ENABLED?: "true" | "false";
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
   LISTING_PAID_OPERATIONS_ENABLED?: "true" | "false";
-  AI_PROVIDER?: "openai" | "fake" | "openrouter";
+  AI_PROVIDER?: "openai" | "fake" | "openrouter" | "opencode-go";
+  OPENCODE_GO_API_KEY?: string;
+  OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_LISTING_MODEL?: string;

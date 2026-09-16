@@ -161,3 +161,53 @@ describe("physical invocation runtime", () => {
     expect(calls.fetch).not.toHaveBeenCalled();
   });
 });
+it("uses immutable Go policy and session while recording the physical request", async () => {
+  const { run, db, repos, env } = fixture();
+  run.execution.provider = "opencode-go";
+  Object.assign(run.execution.aiPolicy, {
+    provider: "opencode-go",
+    model: "deepseek-v4.1-flash",
+    maxInputTokens: 1048576,
+    inputUsdPerMillion: 0.3,
+    outputUsdPerMillion: 1.2,
+  });
+  const requests: Request[] = [];
+  vi.stubGlobal(
+    "fetch",
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(new Request(input, init));
+      return Response.json(
+        { error: { code: "invalid_api_key", message: "denied" } },
+        { status: 401 },
+      );
+    },
+  );
+  try {
+    await expect(
+      operationAI(
+        db as never,
+        {
+          ...env,
+          AI_PROVIDER: "opencode-go",
+          OPENCODE_GO_API_KEY: "go-test",
+        } as never,
+        "workspace",
+        run as never,
+      ).extract({ assets: [], note: null }),
+    ).rejects.toThrow("request failed");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.headers.get("x-opencode-session")).toBe(run.id);
+    expect(requests[0]!.headers.get("authorization")).toBe("Bearer go-test");
+    expect(repos.aiRuns.beginInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "opencode-go",
+        model: "deepseek-v4.1-flash",
+      }),
+    );
+    expect(repos.aiRuns.finalizeInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({ httpStatus: 401, usageCertainty: "unknown" }),
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
