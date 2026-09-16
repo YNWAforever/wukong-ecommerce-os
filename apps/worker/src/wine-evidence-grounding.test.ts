@@ -443,3 +443,134 @@ it("does not promote another category from a physical label without a Kind prefi
     ),
   ).toBe(false);
 });
+it("retains valid contrary OCR ABV despite an invalid optional cuvee observation", () => {
+  const x = input();
+  const source = x.records[0]!.source;
+  source.excerpt =
+    "Fixture Estate\nReserve Red\n2020\n750 ml\n1 bottle\nHK\n14 %";
+  const identity = wineIdentity({
+    vintage: { state: "known", year: 2020 },
+    volumeMl: 750,
+    packQuantity: 1,
+    marketVariant: "HK",
+    abvPercent: 14,
+    cuvee: "Invented Cuvee",
+  });
+  for (const obs of Object.values(identity.observations))
+    if (obs) obs.evidenceIds = [photoId];
+  source.identity = identity;
+  const { result, claim } = decide(x);
+  const photo = result.context.sources.find((s) => s.id === photoId)!;
+  expect(
+    result.context.supports.some(
+      (s) =>
+        s.sourceId === photoId && s.field === "abvPercent" && s.value === 14,
+    ),
+  ).toBe(true);
+  expect(photo.identity!.cuvee).toBeNull();
+  expect(photo.identity!.observations.cuvee).toBeUndefined();
+  expect(
+    result.issues.some(
+      (i) =>
+        i.code === "observation_binding_invalid" &&
+        i.path.includes(photoId) &&
+        i.path.endsWith("cuvee"),
+    ),
+  ).toBe(true);
+  expect(claim.state).toBe("conflict");
+});
+function reliableInput(): WineGroundingInput {
+  const x = input();
+  const first = x.records[1]!;
+  x.authorities = [
+    {
+      ...authority,
+      subject: { kind: "reliable_source", name: "example.test" },
+    },
+    {
+      ...authority,
+      domain: "independent.test",
+      subject: { kind: "reliable_source", name: "independent.test" },
+      proofUrl: "https://independent.test/review",
+    },
+  ];
+  x.records.push({
+    ...first,
+    documentDigest: "independent-document",
+    source: {
+      ...first.source,
+      id: "00000000-0000-4000-8000-000000000006",
+      url: "https://independent.test/product",
+      domain: "independent.test",
+      independenceKey: "independent.test",
+      documentDigest: "independent-document",
+      excerpt: first.source.excerpt + "\nIndependent review",
+    },
+  });
+  return x;
+}
+function reliableDecision(x: WineGroundingInput) {
+  const r = groundWineEvidence(x),
+    c = r.context;
+  return {
+    result: r,
+    claim: decideWineClaim({
+      identity: c.identity,
+      claim: {
+        ...claim(),
+        evidenceIds: c.sources.filter((s) => s.kind === "web").map((s) => s.id),
+      },
+      sources: c.sources,
+      lockedFields: new Set(c.lockedFields),
+      context: {
+        ...c,
+        trustedObservationSourceIds: new Set(c.trustedObservationSourceIds),
+        reliableSourceIds: new Set(c.reliableSourceIds),
+      },
+    }),
+  };
+}
+it("adopts two independently reviewed reliable sources without producer authority", () => {
+  const { result, claim } = reliableDecision(reliableInput());
+  expect(claim.state).toBe("accepted");
+  expect(claim.reason).toBe("independent_reliable_support");
+  expect(result.context.reliableSourceIds).toHaveLength(2);
+  expect(
+    result.context.sources.filter((s) => s.kind === "web").map((s) => s.trust),
+  ).toEqual(["reliable", "reliable"]);
+});
+it("does not adopt a single reviewed reliable source", () => {
+  const x = reliableInput();
+  x.records.pop();
+  expect(reliableDecision(x).claim.state).toBe("unknown");
+});
+it.each(["excerpt", "documentDigest", "independenceKey"] as const)(
+  "does not call two sources independent with duplicate %s",
+  (field) => {
+    const x = reliableInput();
+    x.records[2]!.source[field] = x.records[1]!.source[field];
+    if (field === "documentDigest")
+      x.records[2]!.documentDigest = x.records[1]!.documentDigest;
+    expect(reliableDecision(x).claim.state).toBe("unknown");
+  },
+);
+it.each(["revoked", "expired", "future", "fake"])(
+  "withholds unavailable reliable designation %s",
+  (state) => {
+    const x = reliableInput();
+    if (state === "fake") {
+      x.authorities = [];
+      x.records.forEach((r) => (r.source.trust = "reliable"));
+    } else if (state === "revoked")
+      x.authorities.push({
+        ...x.authorities[0]!,
+        revokedAt: "2026-09-01T00:00:00Z",
+      });
+    else if (state === "expired")
+      x.authorities[0]!.expiresAt = "2026-09-15T00:00:00Z";
+    else x.authorities[0]!.verifiedAt = "2026-09-17T00:00:00Z";
+    const r = reliableDecision(x);
+    expect(r.claim.state).not.toBe("accepted");
+    expect(r.result.context.reliableSourceIds).not.toContain(id);
+  },
+);

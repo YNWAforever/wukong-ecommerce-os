@@ -619,3 +619,104 @@ describe("additional permissive policy drift", () => {
     expect((await db.inspectWineEnrichmentCompatibility()).ready).toBe(true);
   });
 });
+
+describe("reviewed source reliability persistence", () => {
+  it("round trips reviewer-only canonical reliability and append-only revocation", async () => {
+    const { resolveWineSourceReliability, resolveWineSourceAuthority } =
+      await import("@wukong/core");
+    const admin = postgres(process.env.TEST_DATABASE_ADMIN_URL!, {
+      onnotice: () => {},
+    });
+    const reliabilityWs = `wine-reliability-${randomUUID()}`,
+      otherWs = `wine-reliability-other-${randomUUID()}`;
+    const reviewer = randomUUID(),
+      operator = randomUUID();
+    try {
+      await db.forWorkspace(reliabilityWs, async (r) => {
+        await run(r);
+      });
+      await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"}),(${operator},${operator + "@example.test"})`;
+      await admin`insert into memberships(workspace_id,user_id,role) values(${reliabilityWs},${reviewer},'reviewer'),(${reliabilityWs},${operator},'operator')`;
+      const designation = {
+        schemaVersion: 1 as const,
+        domain: "example.test",
+        subject: { kind: "reliable_source" as const, name: "example.test" },
+        proofUrl: "https://example.test/reliability-review",
+        proofDigest: "b".repeat(64),
+        verifiedAt: "2026-09-01T00:00:00Z",
+        expiresAt: "2027-01-01T00:00:00Z",
+        revokedAt: null,
+        verifierId: reviewer,
+      };
+      await db.forWorkspace(reliabilityWs, async (r) => {
+        await r.wineEnrichment.recordReviewedAuthority(reviewer, designation);
+        const records = await r.wineEnrichment.readAuthorities();
+        expect(records).toEqual([designation]);
+        expect(
+          resolveWineSourceReliability(
+            webEvidence(),
+            records,
+            "2026-09-16T00:00:00Z",
+          ),
+        ).toEqual(designation);
+        expect(
+          resolveWineSourceAuthority(
+            webEvidence(),
+            { kind: "producer", name: "example.test" },
+            records,
+            "2026-09-16T00:00:00Z",
+          ),
+        ).toBeNull();
+      });
+      await db.forWorkspace(reliabilityWs, async (r) => {
+        await expect(
+          r.wineEnrichment.recordReviewedAuthority(operator, {
+            ...designation,
+            verifierId: operator,
+          }),
+        ).rejects.toThrow("reviewer");
+        await expect(
+          r.wineEnrichment.recordReviewedAuthority(reviewer, {
+            ...designation,
+            verifierId: operator,
+          }),
+        ).rejects.toThrow("reviewer");
+        await expect(
+          r.wineEnrichment.recordReviewedAuthority(reviewer, {
+            ...designation,
+            subject: { ...designation.subject, name: "Store Name" },
+          }),
+        ).rejects.toThrow();
+        await expect(
+          r.wineEnrichment.recordReviewedAuthority(reviewer, {
+            ...designation,
+            proofDigest: "bad",
+          }),
+        ).rejects.toThrow();
+      });
+      await db.forWorkspace(otherWs, async (r) => {
+        await expect(
+          r.wineEnrichment.recordReviewedAuthority(reviewer, designation),
+        ).rejects.toThrow("reviewer");
+        expect(await r.wineEnrichment.readAuthorities()).toEqual([]);
+      });
+      const revocation = { ...designation, revokedAt: "2026-09-15T00:00:00Z" };
+      await db.forWorkspace(reliabilityWs, async (r) => {
+        await r.wineEnrichment.recordReviewedAuthority(reviewer, revocation);
+      });
+      await db.forWorkspace(reliabilityWs, async (r) => {
+        const records = await r.wineEnrichment.readAuthorities();
+        expect(records).toEqual([designation, revocation]);
+        expect(
+          resolveWineSourceReliability(
+            webEvidence(),
+            records,
+            "2026-09-16T00:00:00Z",
+          ),
+        ).toBeNull();
+      });
+    } finally {
+      await admin.end();
+    }
+  });
+});

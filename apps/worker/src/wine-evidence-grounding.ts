@@ -10,6 +10,7 @@ import {
   matchWineIdentity,
   productIdentitySchema,
   resolveWineSourceAuthority,
+  resolveWineSourceReliability,
   sameWineValue,
   wineSourceAuthoritySchema,
   type EvidenceSource,
@@ -292,6 +293,14 @@ function sourceIdentity(
   const parsed = productIdentitySchema.safeParse(out);
   return parsed.success ? parsed.data : null;
 }
+function clearObservation(identity: ProductIdentity, field: string) {
+  delete (identity.observations as Record<string, FieldObservation>)[field];
+  delete (identity.category as Record<string, FieldObservation>)[field];
+  if (field === "vintage") identity.vintage = { state: "unknown", year: null };
+  else if (field === "aliases") identity.aliases = [];
+  else if (scalarFields.includes(field as (typeof scalarFields)[number]))
+    Object.assign(identity, { [field]: null });
+}
 /** Pure boundary: no provider calls and no source authority inferred from ranking/model tags. */
 export function groundWineEvidence(
   raw: WineGroundingInput,
@@ -394,13 +403,7 @@ export function groundWineEvidence(
     }
     if (!valid || obs.state === "conflict") {
       invalidObservation = true;
-      delete (identity.observations as Record<string, FieldObservation>)[field];
-      delete (identity.category as Record<string, FieldObservation>)[field];
-      if (field === "vintage")
-        identity.vintage = { state: "unknown", year: null };
-      else if (field === "aliases") identity.aliases = [];
-      else if (scalarFields.includes(field as (typeof scalarFields)[number]))
-        Object.assign(identity, { [field]: null });
+      clearObservation(identity, field);
       issues.push({
         path: `identity.${field}`,
         code: "observation_binding_invalid",
@@ -440,51 +443,54 @@ export function groundWineEvidence(
       supports.push(...p.supports);
     } else {
       source.identity = structuredClone(identity);
-      // Independently bind every source-specific OCR observation, including facts
-      // omitted from the aggregate identity. This is still OCR, not OCR truth proof.
+      // Validate fields independently: an invalid optional observation cannot hide
+      // another valid contrary fact or fall back to the aggregate identity.
       const proposed = input.records.find((r) => r.source.id === source.id)!
         .source.identity;
-      const observed = Object.entries({
-        ...proposed?.observations,
-        ...proposed?.category,
-      }).filter(
-        (entry): entry is [string, FieldObservation] =>
-          !!entry[1] && entry[1].value !== null,
-      );
-      if (
-        proposed &&
-        !source.truncated &&
-        observed.length &&
-        observed.every(
-          ([field, obs]) =>
-            obs.evidenceIds.length > 0 &&
-            obs.evidenceIds.every((id) => id === source.id) &&
-            mechanical(
-              {
-                sourceId: source.id,
-                field: field as WineSupportProposal["field"],
-                value: obs.value!,
-                span: source.excerpt,
-              },
-              source,
-            ),
-        )
-      ) {
-        source.identity = structuredClone(proposed);
-        source.identity.status = "candidate";
-        trustedObservationIds.add(source.id);
-        for (const [field, obs] of observed)
-          supports.push({
+      if (proposed) {
+        const sanitized = structuredClone(proposed);
+        const bound: WineSupportProposal[] = [];
+        let conflict = false;
+        for (const [field, obs] of Object.entries({
+          ...proposed.observations,
+          ...proposed.category,
+        })) {
+          if (!obs || obs.value === null) continue;
+          const support = {
             sourceId: source.id,
             field: field as WineSupportProposal["field"],
-            value: obs.value!,
+            value: obs.value,
             span: source.excerpt,
-          });
+          };
+          if (
+            !source.truncated &&
+            obs.evidenceIds.length > 0 &&
+            obs.evidenceIds.every((id) => id === source.id) &&
+            mechanical(support, source)
+          ) {
+            bound.push(support);
+            if (obs.state === "conflict") conflict = true;
+          } else {
+            clearObservation(sanitized, field);
+            issues.push({
+              path: `sources.${source.id}.identity.${field}`,
+              code: "observation_binding_invalid",
+              blocking: true,
+              evidenceIds: [source.id],
+            });
+          }
+        }
+        source.identity = sanitized;
+        source.identity.status = "candidate";
+        if (bound.length) {
+          supports.push(...bound);
+          trustedObservationIds.add(source.id);
+        }
         if (
-          matchWineIdentity(identity, proposed, {
+          matchWineIdentity(identity, sanitized, {
             verifiedAliases: accepted.verifiedAliases,
           }).state === "mismatch" ||
-          observed.some(([, obs]) => obs.state === "conflict")
+          conflict
         ) {
           identity.status = "needs_confirmation";
           issues.push({
@@ -494,7 +500,8 @@ export function groundWineEvidence(
             evidenceIds: [source.id],
           });
         }
-      } // Labelled conflicting observations are retained even when not proposed by the model.
+      }
+      // Labelled conflicting observations are retained even when not proposed by the model.
       supports.push(...p.supports);
       if (p.kind) {
         const independent = sourceIdentity(source, p.kind, p.supports);
@@ -515,6 +522,7 @@ export function groundWineEvidence(
       }
     }
   }
+  const reliableSourceIds: string[] = [];
   for (const source of sources)
     if (
       source.kind === "web" &&
@@ -527,6 +535,10 @@ export function groundWineEvidence(
       )
     )
       source.trust = "verified_official";
+    else if (resolveWineSourceReliability(source, authorities, input.now)) {
+      source.trust = "reliable";
+      reliableSourceIds.push(source.id);
+    }
   for (const proposal of input.proposals ?? []) {
     const p = wineSupportProposalSchema.safeParse(proposal);
     if (
@@ -559,7 +571,7 @@ export function groundWineEvidence(
     sources,
     supports,
     authorities,
-    reliableSourceIds: [],
+    reliableSourceIds,
     trustedObservationSourceIds: [...trustedObservationIds],
     acceptedPremises: [],
     verifiedAliases: accepted.verifiedAliases,
