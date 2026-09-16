@@ -59,6 +59,27 @@ export const fieldObservationSchema = z
     }
   });
 
+const polishingPercentObservationSchema = fieldObservationSchema.superRefine(
+  (observation, context) => {
+    const isKnown = ["observed", "normalized", "conflict"].includes(
+      observation.state,
+    );
+    if (
+      isKnown &&
+      (typeof observation.value !== "number" ||
+        !Number.isFinite(observation.value) ||
+        observation.value < 0 ||
+        observation.value > 100)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "Known polishing percentage must be a number from 0 to 100",
+      });
+    }
+  },
+);
+
 const vintageSchema = z.discriminatedUnion("state", [
   z
     .object({
@@ -109,7 +130,7 @@ const categorySchemas = {
       brewery: fieldObservationSchema.optional(),
       grade: fieldObservationSchema.optional(),
       riceVariety: fieldObservationSchema.optional(),
-      polishingPercent: fieldObservationSchema.optional(),
+      polishingPercent: polishingPercentObservationSchema.optional(),
       brewingYear: fieldObservationSchema.optional(),
     })
     .strict(),
@@ -294,7 +315,31 @@ export const supportedClaimSchema = z
     state: z.enum(["accepted", "unknown", "conflict", "rejected"]),
     reason: z.string(),
   })
-  .strict();
+  .strict()
+  .superRefine((claim, context) => {
+    if (
+      claim.state === "accepted" &&
+      claim.kind === "fact" &&
+      claim.evidenceIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidenceIds"],
+        message: "Accepted facts require evidence",
+      });
+    }
+    if (
+      claim.state === "accepted" &&
+      claim.kind === "recommendation" &&
+      claim.premiseClaimIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["premiseClaimIds"],
+        message: "Accepted recommendations require premise claims",
+      });
+    }
+  });
 export type SupportedClaim = z.infer<typeof supportedClaimSchema>;
 
 export const sectionKeySchema = z.enum([

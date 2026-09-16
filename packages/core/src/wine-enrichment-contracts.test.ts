@@ -88,6 +88,71 @@ describe("wine enrichment contracts", () => {
     ).toBe(false);
   });
 
+  it("requires evidence for accepted facts and premises for accepted recommendations", () => {
+    const claim = {
+      id: "00000000-0000-4000-8000-000000000002",
+      field: "appellation",
+      value: "Fixture Valley",
+      scope: "product",
+      evidenceIds: [],
+      premiseClaimIds: [],
+      state: "accepted",
+      reason: "Fixture",
+    } as const;
+
+    expect(
+      supportedClaimSchema.safeParse({ ...claim, kind: "fact" }).success,
+    ).toBe(false);
+    expect(
+      supportedClaimSchema.safeParse({ ...claim, kind: "recommendation" })
+        .success,
+    ).toBe(false);
+    expect(
+      supportedClaimSchema.safeParse({
+        ...claim,
+        kind: "recommendation",
+        premiseClaimIds: ["00000000-0000-4000-8000-000000000003"],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects non-numeric known polishing percentages", () => {
+    const evidenceIds = ["00000000-0000-4000-8000-000000000001"];
+    for (const value of ["150", "unknown"]) {
+      expect(
+        productIdentitySchema.safeParse(
+          wineIdentity({
+            kind: "sake",
+            category: {
+              polishingPercent: {
+                value,
+                state: "observed",
+                evidenceIds,
+              },
+            },
+          }),
+        ).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects a known polishing percentage outside zero to one hundred", () => {
+    expect(
+      productIdentitySchema.safeParse(
+        wineIdentity({
+          kind: "sake",
+          category: {
+            polishingPercent: {
+              value: 150,
+              state: "observed",
+              evidenceIds: ["00000000-0000-4000-8000-000000000001"],
+            },
+          },
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects unknown claim fields", () => {
     expect(
       supportedClaimSchema.safeParse({
