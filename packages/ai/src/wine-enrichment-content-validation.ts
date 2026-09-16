@@ -122,6 +122,11 @@ export function wineCandidateIssues(
     )
       issue(path, "protected_content_changed");
   }
+  // A lock also protects absence: introducing any leaf below it changes the snapshot.
+  for (const path of paths.keys()) {
+    if (locked(path, r) && !old.has(path))
+      issue(path, "protected_content_introduced");
+  }
   if (r.current) {
     if (
       locked("sections", r) &&
@@ -220,18 +225,14 @@ export function wineCandidateIssues(
       )
     )
       issue(a.path, "unsupported_numeric_format");
-    const nums = [
-      ...a.span
-        .normalize("NFKC")
-        .matchAll(
-          /[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:\s*[/⁄]\s*\d+(?:[.,]\d+)?)?\s*(?:[A-Za-z%]+|毫升|厘升|公升|升|年|度)?/g,
-        ),
-    ].map((m) => m[0]);
+    const nums = outputNumericTokens(a.span);
     for (const token of nums) {
       const ok =
         typeof cl.value === "number"
           ? numericOutputSupported(cl.field, token, cl.value)
-          : JSON.stringify(cl.value).normalize("NFKC").includes(token.trim());
+          : (Array.isArray(cl.value) ? cl.value : [cl.value])
+              .flatMap(outputNumericTokens)
+              .includes(token);
       if (!ok) issue(a.path, "unsupported_number_or_unit");
     }
     if (
@@ -270,12 +271,39 @@ function numericOutputSupported(
   value: number,
 ): boolean {
   if (!wineNumericValueSupported(field, token, value)) return false;
-  if (field === "volumeMl") return true;
+
   const unit = token
     .replace(/^[+\-\d.,\s/⁄]+/, "")
     .trim()
     .toLowerCase();
   const allowed: Record<string, string[]> = {
+    volumeMl: [
+      "",
+      "ml",
+      "cl",
+      "dl",
+      "l",
+      "millilitre",
+      "millilitres",
+      "milliliter",
+      "milliliters",
+      "centilitre",
+      "centilitres",
+      "centiliter",
+      "centiliters",
+      "decilitre",
+      "decilitres",
+      "deciliter",
+      "deciliters",
+      "litre",
+      "litres",
+      "liter",
+      "liters",
+      "毫升",
+      "厘升",
+      "公升",
+      "升",
+    ],
     abvPercent: ["%", "percent", "度"],
     polishingPercent: ["%", "percent"],
     ageYears: ["years", "year", "年"],
@@ -284,4 +312,16 @@ function numericOutputSupported(
     packQuantity: ["", "bottles", "bottle", "瓶"],
   };
   return (allowed[field] ?? []).includes(unit);
+}
+
+/** Retain the entire adjacent letter/unit run, including unknown Chinese units.
+ * String claims compare complete normalized tokens, never substrings of serialized JSON. */
+function outputNumericTokens(text: string): string[] {
+  return [
+    ...text
+      .normalize("NFKC")
+      .matchAll(
+        /[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:\s*[/⁄]\s*\d+(?:[.,]\d+)?)?\s*[\p{L}%°]*/gu,
+      ),
+  ].map((m) => m[0].trim().replace(/\s+/g, " ").toLowerCase());
 }

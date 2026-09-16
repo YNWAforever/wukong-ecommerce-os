@@ -359,3 +359,73 @@ it.each(["Twelve years old.", "陳年十二年。"])(
     await expect(setup([c]).provider.generate(r)).rejects.toThrow();
   },
 );
+
+describe("independent review regressions", () => {
+  it.each(["Vintage 2018", ["Vintage 2018", "Batch 45"]])(
+    "rejects partial accepted numeric string tokens %#",
+    async (value) => {
+      const r = request();
+      r.claims[0].field = "introduction";
+      r.claims[0].value = value;
+      const c = candidate();
+      for (const a of c.annotations) {
+        a.value = value;
+        a.span = "201";
+      }
+      c.content.sections[0].en = "201";
+      c.content.sections[0]["zh-Hant"] = "201";
+      const s = setup([c]);
+      await expect(s.provider.generate(r)).rejects.toThrow();
+      expect(s.sent).toHaveLength(1);
+    },
+  );
+  it.each(["750 ml, 750公斤", "750 ml, 750 毫升公斤", "750 ml, 750盎司"])(
+    "rejects retained unknown adjacent Chinese units %s",
+    async (span) => {
+      const c = candidate();
+      c.content.sections[0].en = c.annotations[0].span = span;
+      const s = setup([c]);
+      await expect(s.provider.generate(request())).rejects.toThrow();
+      expect(s.sent).toHaveLength(1);
+    },
+  );
+  it.each([
+    "sections.tasting",
+    "sections.tasting.en",
+    "sections.tasting.zh-Hant",
+  ])("rejects introduction beneath absent lock %s", async (path) => {
+    const r = request();
+    r.current = candidate().content;
+    r.current.sections = [];
+    r.lockedPaths = [path];
+    const c = candidate();
+    c.content.sections[0].key = "tasting";
+    c.annotations.forEach((a: any) => {
+      a.path = a.path.replace("introduction", "tasting");
+    });
+    await expect(setup([c]).provider.generate(r)).rejects.toThrow();
+  });
+  it.each(["Vintage 2018", ["Vintage 2018"]])(
+    "retains exact accepted numeric string token %#",
+    async (value) => {
+      const r = request();
+      r.claims[0].field = "introduction";
+      r.claims[0].value = value;
+      const c = candidate();
+      for (const a of c.annotations) {
+        a.value = value;
+        a.span = "2018";
+      }
+      c.content.sections[0].en = "2018";
+      c.content.sections[0]["zh-Hant"] = "2018";
+      expect((await setup([c]).provider.generate(r)).status).toBe("candidate");
+    },
+  );
+  it("keeps valid metric conversions alongside Chinese volume tokens", async () => {
+    const c = candidate();
+    c.content.sections[0].en = c.annotations[0].span = "75 cl";
+    expect((await setup([c]).provider.generate(request())).status).toBe(
+      "candidate",
+    );
+  });
+});
