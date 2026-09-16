@@ -1,3 +1,4 @@
+import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
 import { createHash } from "node:crypto";
 import {
   listingInputDigest,
@@ -33,18 +34,6 @@ function uuid(value: string) {
 }
 function requireProof(value: unknown): asserts value {
   if (!value) throw Error("cache_incomplete");
-}
-function digest(run: ListingOperation, dependencies: StageRecord[]) {
-  return listingInputDigest({
-    runId: run.id,
-    inputDigest: run.execution.wineInputDigest,
-    sourceDigest: run.execution.wineSourceDigest,
-    mode: run.execution.wineMode,
-    budget: run.execution.wineBudget,
-    go: run.execution.wineGo,
-    policy: run.execution.wineEnrichment,
-    dependencies,
-  });
 }
 function same(a: unknown, b: unknown) {
   return listingInputDigest(a) === listingInputDigest(b);
@@ -114,7 +103,7 @@ function context(
       stage: "generation",
     },
     run,
-    dependencyDigest: digest(run, dependencies),
+    dependencyDigest: wineStageDependencyDigest(run, dependencies),
     dependencies,
   };
 }
@@ -137,7 +126,7 @@ async function inspect(
       record &&
         record.runId === runId &&
         record.inputDigest === run.execution.wineInputDigest &&
-        record.dependencyDigest === digest(run, stages),
+        record.dependencyDigest === wineStageDependencyDigest(run, stages),
     );
     if (record.state === "skipped") {
       const verification = result(stages[2]!);
@@ -411,7 +400,8 @@ export function createWineCompleteEvidenceCache(config: {
             stage?.state === "started" &&
               extractionStage &&
               same(c.dependencies, [extractionStage]) &&
-              stage.dependencyDigest === digest(run, [extractionStage]) &&
+              stage.dependencyDigest ===
+                wineStageDependencyDigest(run, [extractionStage]) &&
               stage.dependencyDigest === c.dependencyDigest,
           );
           for (const slot of [

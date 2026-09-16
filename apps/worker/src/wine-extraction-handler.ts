@@ -1,3 +1,4 @@
+import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
 import { createHash } from "node:crypto";
 import {
   listingInputDigest,
@@ -338,16 +339,7 @@ export async function readWineExtractionContext(
         stage.inputDigest === run.execution.wineInputDigest,
       "extraction_checkpoint_invalid",
     );
-    const expected = listingInputDigest({
-      runId: run.id,
-      inputDigest: run.execution.wineInputDigest,
-      sourceDigest: run.execution.wineSourceDigest,
-      mode: run.execution.wineMode,
-      budget: run.execution.wineBudget,
-      go: run.execution.wineGo,
-      policy: run.execution.wineEnrichment,
-      dependencies: [],
-    });
+    const expected = wineStageDependencyDigest(run, []);
     requireValid(
       stage.dependencyDigest === expected,
       "extraction_checkpoint_invalid",

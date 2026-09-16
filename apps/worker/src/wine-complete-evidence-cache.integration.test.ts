@@ -1,3 +1,4 @@
+import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { afterAll, expect, it, vi } from "vitest";
@@ -215,6 +216,7 @@ async function research(
   count = 1,
   large = false,
   useExtract = false,
+  reuseBeforeSearch?: boolean,
 ) {
   const acquire = createWineEvidenceAcquisition({
     database: db,
@@ -293,6 +295,10 @@ async function research(
       {
         store: f.store,
         execute: async (c) => {
+          const reused =
+            reuseBeforeSearch === undefined ? null : await cache.reuse(c);
+          if (reuseBeforeSearch !== undefined)
+            expect(reused?.status).toBe("hit");
           const extraction = await readWineExtractionContext(db, c);
           const p = c.run.execution.wineAcquisition as {
             policyVersion: string;
@@ -339,6 +345,9 @@ async function research(
             state: "succeeded",
             evidence,
             partial: false,
+            ...(reused?.status === "hit" && reuseBeforeSearch
+              ? { cacheOrigin: reused.cacheOrigin }
+              : {}),
             issues: [],
           };
         },
@@ -716,3 +725,113 @@ it("includes successful admitted Extract documents in the complete original pool
     ),
   ).toHaveLength(2);
 });
+
+it("canonical dependency helper reproduces committed coordinator hashes", async () => {
+  const f = await extracted();
+  const claim = await f.store.claim({ ...f.job, stage: "search_basic" });
+  if (claim.status !== "claimed") throw Error("claim");
+  expect(wineStageDependencyDigest(claim.context.run, [])).toBe(
+    claim.context.dependencies[0]!.dependencyDigest,
+  );
+  expect(
+    wineStageDependencyDigest(claim.context.run, claim.context.dependencies),
+  ).toBe(claim.context.dependencyDigest);
+});
+
+it.each([true, false])(
+  "refuses republication of directly reused evidence with cacheOrigin retained=%s",
+  async (retain) => {
+    const origin = await extracted();
+    await research(origin);
+    await verification(origin, false);
+    const publication = await cache.publish({
+      workspaceId: origin.workspaceId,
+      runId: origin.run.id,
+    });
+    expect(publication.status).toBe("published");
+    const current = await extracted({ workspaceId: origin.workspaceId });
+    const claim = await current.store.claim({
+      ...current.job,
+      stage: "search_basic",
+    });
+    if (claim.status !== "claimed") throw Error("claim");
+    const hit = await cache.reuse(claim.context);
+    if (hit.status !== "hit") throw Error("hit");
+    const evidence = await db.forWorkspace(current.workspaceId, (r) =>
+      r.wineEnrichment.readEvidence(current.run.id),
+    );
+    expect(
+      await current.store.finish(claim.context, {
+        schemaVersion: 1,
+        stage: "search_basic",
+        state: "succeeded",
+        evidence,
+        partial: false,
+        issues: [],
+        ...(retain ? { cacheOrigin: hit.cacheOrigin } : {}),
+      }),
+    ).toMatchObject({ status: "advanced" });
+    await verification(current, false);
+    expect(
+      await cache.publish({
+        workspaceId: current.workspaceId,
+        runId: current.run.id,
+      }),
+    ).toEqual({ status: "skipped", code: "cache_incomplete" });
+    expect(
+      await db.forWorkspace(current.workspaceId, (r) =>
+        r.wineEnrichment.readEvidence(current.run.id),
+      ),
+    ).toEqual(evidence);
+    expect(
+      await cache.publish({
+        workspaceId: origin.workspaceId,
+        runId: origin.run.id,
+      }),
+    ).toEqual(publication);
+  },
+);
+it.each([true, false])(
+  "refuses mixed original and newly acquired source republication with cacheOrigin retained=%s",
+  async (retain) => {
+    const origin = await extracted();
+    await research(origin);
+    await verification(origin, false);
+    const publication = await cache.publish({
+      workspaceId: origin.workspaceId,
+      runId: origin.run.id,
+    });
+    expect(publication.status).toBe("published");
+    const current = await extracted({ workspaceId: origin.workspaceId });
+    await research(current, false, 1, false, false, retain);
+    await verification(current, false);
+    const evidence = await db.forWorkspace(current.workspaceId, (r) =>
+      r.wineEnrichment.readEvidence(current.run.id),
+    );
+    expect(evidence.filter((s) => s.kind === "web")).toHaveLength(8);
+    for (const slot of ["basic_1", "basic_2"] as const)
+      expect(
+        await db.forWorkspace(current.workspaceId, (r) =>
+          r.wineEnrichment.readSearchCall(current.run.id, slot),
+        ),
+      ).toMatchObject({ status: "succeeded" });
+    // No missing physical call can explain refusal when the flag is omitted: old source IDs still bind the original run.
+    expect(
+      await cache.publish({
+        workspaceId: current.workspaceId,
+        runId: current.run.id,
+      }),
+    ).toEqual({ status: "skipped", code: "cache_incomplete" });
+    expect(
+      await db.forWorkspace(current.workspaceId, (r) =>
+        r.wineEnrichment.readEvidence(current.run.id),
+      ),
+    ).toEqual(evidence);
+    expect(
+      await cache.publish({
+        workspaceId: origin.workspaceId,
+        runId: origin.run.id,
+      }),
+    ).toEqual(publication);
+  },
+);

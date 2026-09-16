@@ -1,3 +1,4 @@
+import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
 import {
   wineBudgetSnapshotSchema,
   wineEnrichmentPolicySchema,
@@ -62,7 +63,7 @@ function validDependencies(
       if (
         record.runId !== run.id ||
         record.inputDigest !== run.execution.wineInputDigest ||
-        record.dependencyDigest !== dependencyDigest(run, prefix)
+        record.dependencyDigest !== wineStageDependencyDigest(run, prefix)
       )
         return false;
       if (record.state === "skipped") {
@@ -89,18 +90,6 @@ function validDependencies(
   } catch {
     return false;
   }
-}
-function dependencyDigest(run: ListingOperation, dependencies: StageRecord[]) {
-  return listingInputDigest({
-    runId: run.id,
-    inputDigest: run.execution.wineInputDigest,
-    sourceDigest: run.execution.wineSourceDigest,
-    mode: run.execution.wineMode,
-    budget: run.execution.wineBudget,
-    go: run.execution.wineGo,
-    policy: run.execution.wineEnrichment,
-    dependencies,
-  });
 }
 async function records(r: WorkspaceRepositories, runId: string) {
   const result: StageRecord[] = [];
@@ -223,7 +212,7 @@ export function createWineStageStore(
       (x) =>
         WINE_STAGE_ORDER.indexOf(x.stage) < WINE_STAGE_ORDER.indexOf(job.stage),
     );
-    const digest = dependencyDigest(run, dependencies);
+    const digest = wineStageDependencyDigest(run, dependencies);
     if (
       stage.inputDigest !== run.execution.wineInputDigest ||
       stage.dependencyDigest !== digest ||
@@ -326,7 +315,7 @@ export function createWineStageStore(
           runId: run.id,
           stage: skipped,
           inputDigest: String(run.execution.wineInputDigest),
-          dependencyDigest: dependencyDigest(run, accumulated),
+          dependencyDigest: wineStageDependencyDigest(run, accumulated),
           state: "skipped",
           output: { schemaVersion: 1, reason: "deep_search_not_required" },
           updatedAt: (await now(r)).toISOString(),
@@ -403,7 +392,7 @@ export function createWineStageStore(
         }
         const lastFence = await fence(r, run);
         if (lastFence) return stop(r, run, lastFence);
-        const digest = dependencyDigest(run, dependencies);
+        const digest = wineStageDependencyDigest(run, dependencies);
         if (
           !(await r.wineEnrichment.claimStage({
             runId: run.id,
@@ -451,7 +440,7 @@ export function createWineStageStore(
         if (!claimed) return blocked("stage_not_claimed");
         if (claimed.state !== "started") return { status: "duplicate" };
         const dependencies = all.filter((x) => x.stage !== "commit_candidate"),
-          digest = dependencyDigest(run, dependencies);
+          digest = wineStageDependencyDigest(run, dependencies);
         if (
           context.dependencyDigest !== digest ||
           claimed.dependencyDigest !== digest ||
