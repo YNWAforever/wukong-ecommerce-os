@@ -44,6 +44,8 @@ export const TENANT_TABLES = [
   "wine_source_authorities",
   "wine_trusted_contexts",
   "wine_search_calls",
+  "wine_document_requests",
+  "wine_evidence_cache",
   "search_budget_reservations",
   "listing_enrichment_suggestions",
   "listing_enrichment_decisions",

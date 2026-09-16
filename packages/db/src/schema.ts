@@ -2352,6 +2352,8 @@ export const wineSearchCalls = pgTable(
     requestDigest: text("request_digest").notNull(),
     maximumCredits: integer("maximum_credits").notNull(),
     credits: integer("credits"),
+    output: jsonb("output"),
+    diagnostic: jsonb("diagnostic"),
     status: text("status").notNull().default("started"),
     updatedAt: timestamps.updatedAt,
   },
@@ -2365,5 +2367,66 @@ export const wineSearchCalls = pgTable(
         searchBudgetReservations.pipelineRunId,
       ],
     }),
+  ],
+);
+export const wineDocumentRequests = pgTable(
+  "wine_document_requests",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    kind: text("kind").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    state: text("state").notNull().default("started"),
+    result: jsonb("result"),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.sourceId, t.kind] }),
+    foreignKey({
+      name: "wine_document_source_fk",
+      columns: [t.workspaceId, t.runId, t.sourceId],
+      foreignColumns: [
+        wineEvidence.workspaceId,
+        wineEvidence.runId,
+        wineEvidence.sourceId,
+      ],
+    }),
+  ],
+);
+export const wineEvidenceCache = pgTable(
+  "wine_evidence_cache",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    snapshotId: uuid("snapshot_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    identityKey: text("identity_key").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    rulesVersion: text("rules_version").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    payload: jsonb("payload").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.snapshotId] }),
+    foreignKey({
+      name: "wine_cache_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+    index("wine_cache_lookup_idx").on(
+      t.workspaceId,
+      t.identityKey,
+      t.policyVersion,
+      t.rulesVersion,
+      t.capturedAt.desc(),
+    ),
+    index("wine_cache_run_idx").on(t.workspaceId, t.runId),
   ],
 );

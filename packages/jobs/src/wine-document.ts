@@ -34,6 +34,14 @@ export const wineDocumentResultSchema = wineDocumentRequestSchema
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (
+      (value.state !== "ready" || value.kind === "robots") &&
+      (value.text !== "" || value.spans.length !== 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Only ready product results may retain document content",
+      });
     for (const span of value.spans)
       if (span.end <= span.start || span.end > value.text.length)
         ctx.addIssue({

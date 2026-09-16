@@ -1,4 +1,8 @@
 import {
+  createWineAcquisitionRepository,
+  type WineAcquisitionRepository,
+} from "./repositories/wine-acquisition.js";
+import {
   createWineEnrichmentRepository,
   type WineEnrichmentRepository,
 } from "./repositories/wine-enrichment.js";
@@ -141,6 +145,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  wineAcquisition: WineAcquisitionRepository;
   wineEnrichment: WineEnrichmentRepository;
   searchBudgetReservations: SearchBudgetReservationRepository;
   productShots: ProductShotRepository;
@@ -390,6 +395,11 @@ export function createDatabase(
           scope,
         ),
         pipelineRuns: createPipelineRunRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineAcquisition: createWineAcquisitionRepository(
           transaction,
           workspaceId,
           scope,

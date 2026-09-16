@@ -174,8 +174,11 @@ export type {
   WineEnrichmentRepository,
   StageRecord,
   SearchCall,
+  SearchCallRecord,
   WineTrustedContext,
 } from "./repositories/wine-enrichment.js";
 export { wineTrustedContextSchema } from "./repositories/wine-enrichment.js";
 export type { SearchBudgetReservationRepository } from "./repositories/search-budget-reservations.js";
 export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
+
+export * from "./repositories/wine-acquisition.js";

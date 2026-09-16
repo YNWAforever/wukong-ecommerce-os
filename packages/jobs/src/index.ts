@@ -14,3 +14,4 @@ export * from "./website-queue.js";
 
 export * from "./product-shot-queue.js";
 export * from "./wine-document.js";
+export * from "./wine-acquisition.js";

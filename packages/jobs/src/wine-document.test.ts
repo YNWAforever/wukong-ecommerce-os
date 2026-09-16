@@ -21,3 +21,37 @@ describe("wine document request", () => {
     ).toBe(false),
   );
 });
+import { wineDocumentResultSchema } from "./wine-document.js";
+const result = {
+  ...request,
+  schemaVersion: 1,
+  state: "ready",
+  url: "https://example.test/wine",
+  capturedAt: new Date().toISOString(),
+  title: "wine",
+  text: "abc",
+  documentDigest: "sha256:" + "a".repeat(64),
+  truncated: false,
+  spans: [{ start: 0, end: 3, location: "body:text" }],
+  warnings: [],
+  extractEligible: false,
+};
+describe("wine document result content boundary", () => {
+  it.each([{ state: "denied" }, { state: "unavailable" }, { kind: "robots" }])(
+    "rejects retained text or spans %j",
+    (change) => {
+      expect(
+        wineDocumentResultSchema.safeParse({ ...result, ...change }).success,
+      ).toBe(false);
+    },
+  );
+  it("accepts an empty denied terminal result", () =>
+    expect(
+      wineDocumentResultSchema.safeParse({
+        ...result,
+        state: "denied",
+        text: "",
+        spans: [],
+      }).success,
+    ).toBe(true));
+});

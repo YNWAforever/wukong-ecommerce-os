@@ -1,3 +1,9 @@
+import {
+  wineSearchOutputSchema,
+  wineSearchDiagnosticSchema,
+  type WineSearchOutput,
+  type WineSearchDiagnostic,
+} from "@wukong/jobs";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -76,7 +82,18 @@ export const wineTrustedContextSchema = z
   })
   .strict();
 export type WineTrustedContext = z.infer<typeof wineTrustedContextSchema>;
+export type SearchCallRecord = SearchCall & {
+  status: "started" | "succeeded" | "failed" | "unknown";
+  credits: number | null;
+  output: WineSearchOutput | null;
+  diagnostic: WineSearchDiagnostic | null;
+  updatedAt: string;
+};
 export type WineEnrichmentRepository = {
+  readSearchCall(
+    runId: string,
+    slot: SearchCall["slot"],
+  ): Promise<SearchCallRecord | null>;
   claimStage(
     input: Omit<StageRecord, "output" | "updatedAt" | "state">,
   ): Promise<boolean>;
@@ -84,7 +101,12 @@ export type WineEnrichmentRepository = {
   finishStage(input: StageRecord): Promise<boolean>;
   beginSearchCall(input: SearchCall): Promise<boolean>;
   finishSearchCall(
-    input: SearchCall & { credits: number | null; status: string },
+    input: SearchCall & {
+      credits: number | null;
+      status: string;
+      output?: WineSearchOutput;
+      diagnostic?: WineSearchDiagnostic;
+    },
   ): Promise<boolean>;
   saveEvidence(runId: string, sources: EvidenceSource[]): Promise<void>;
   readEvidence(runId: string): Promise<EvidenceSource[]>;
@@ -191,6 +213,30 @@ export function createWineEnrichmentRepository(
     on conflict do nothing returning run_id`);
       return !!rows[0];
     },
+    async readSearchCall(runId, slot) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select * from wine_search_calls where workspace_id=${workspaceId} and run_id=${runId} and slot=${slot}`,
+      );
+      const r = rows[0];
+      return r
+        ? {
+            runId: String(r.run_id),
+            slot: r.slot as SearchCall["slot"],
+            maximumCredits: Number(r.maximum_credits),
+            requestDigest: String(r.request_digest),
+            credits: r.credits === null ? null : Number(r.credits),
+            status: r.status as SearchCallRecord["status"],
+            output:
+              r.output === null ? null : wineSearchOutputSchema.parse(r.output),
+            diagnostic:
+              r.diagnostic === null
+                ? null
+                : wineSearchDiagnosticSchema.parse(r.diagnostic),
+            updatedAt: new Date(r.updated_at as string).toISOString(),
+          }
+        : null;
+    },
     async finishSearchCall(input) {
       scope.assertOpen();
       if (!["succeeded", "failed", "unknown"].includes(input.status))
@@ -206,8 +252,24 @@ export function createWineEnrichmentRepository(
         throw new Error(
           "valid measured credits required for terminal search status",
         );
+      const output =
+        input.output === undefined
+          ? null
+          : wineSearchOutputSchema.parse(input.output);
+      const diagnostic =
+        input.diagnostic === undefined
+          ? null
+          : wineSearchDiagnosticSchema.parse(input.diagnostic);
+      if (
+        (output && input.status !== "succeeded") ||
+        (diagnostic &&
+          (input.status === "succeeded" ||
+            diagnostic.reservedCredits !== input.maximumCredits)) ||
+        (diagnostic?.code === "cost_discrepancy" && input.status !== "unknown")
+      )
+        throw new Error("invalid terminal search payload");
       const rows = await tx.execute(
-        sql`update wine_search_calls set credits=${input.credits},status=${input.status},updated_at=now() where workspace_id=${workspaceId} and run_id=${input.runId} and slot=${input.slot} and request_digest=${input.requestDigest} and maximum_credits=${input.maximumCredits} and status='started' returning run_id`,
+        sql`update wine_search_calls set output=${output === null ? null : json(output)}::jsonb,diagnostic=${diagnostic === null ? null : json(diagnostic)}::jsonb,credits=${input.credits},status=${input.status},updated_at=now() where workspace_id=${workspaceId} and run_id=${input.runId} and slot=${input.slot} and request_digest=${input.requestDigest} and maximum_credits=${input.maximumCredits} and status='started' returning run_id`,
       );
       return !!rows[0];
     },
