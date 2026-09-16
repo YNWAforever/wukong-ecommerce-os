@@ -40,6 +40,12 @@ const allTrue = (keys: readonly string[]) =>
 const copy = {
   en: {
     heading: "White-background image review",
+    working: "Edit sources, notes and working draft",
+    sku: "Merchant SKU",
+    price: "Selling price (HK$)",
+    stock: "Stock",
+    promote: "Save as a review version",
+    save: "Save draft",
     compare: "Compare the original photo with the final white-background image",
     original: "Original photo",
     final: "Final white-background image",
@@ -57,6 +63,12 @@ const copy = {
   },
   "zh-Hant": {
     heading: "白底商品照審閱",
+    working: "修改來源、備註及工作草稿",
+    sku: "商戶貨號",
+    price: "售價 (HK$)",
+    stock: "庫存",
+    promote: "儲存為待審核版本",
+    save: "只保存草稿",
     compare: "請比較原相片與最終白底商品照",
     original: "原相片",
     final: "最終白底商品照",
@@ -135,6 +147,37 @@ for (const locale of ["en", "zh-Hant"] as const) {
     await expect(page.getByRole("heading", { name: t.heading })).toBeVisible();
     await expect(page.getByText(t.compare)).toBeVisible({ timeout: 60_000 });
     await expect(page.getByAltText(t.original)).toBeVisible();
+    await expect(page.getByAltText(t.final)).toBeVisible();
+
+    // Commercial fields are operator-owned; source-note text is not permission
+    // for AI to populate SKU, price or stock. Save them through the real editor.
+    await page.getByText(t.working, { exact: true }).click();
+    const editor = page.locator(".working-input-details");
+    await page
+      .getByLabel(t.sku, { exact: true })
+      .fill(`SHOT-${locale === "en" ? "EN" : "ZH"}-001`);
+    await editor.getByLabel(t.price, { exact: true }).fill("288");
+    await editor.getByLabel(t.stock, { exact: true }).fill("12");
+    const saving = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/listings/${listingId}/inputs`) &&
+        response.request().method() === "PATCH",
+    );
+    await editor.getByRole("button", { name: t.save, exact: true }).click();
+    const saved = await saving;
+    expect(saved.status(), await saved.text()).toBe(200);
+    await expect(
+      editor.getByRole("button", { name: t.promote, exact: true }),
+    ).toBeEnabled();
+    const promotion = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/listings/${listingId}/review`) &&
+        response.request().method() === "PUT",
+    );
+    await editor.getByRole("button", { name: t.promote, exact: true }).click();
+    const promoted = await promotion;
+    expect(promoted.status(), await promoted.text()).toBe(200);
+    await page.reload();
     await expect(page.getByAltText(t.final)).toBeVisible();
 
     const beforeListing = await page.request
@@ -301,7 +344,7 @@ for (const locale of ["en", "zh-Hant"] as const) {
         },
       },
     );
-    expect(approved.status()).toBe(200);
+    expect(approved.status(), await approved.text()).toBe(200);
     const approvedVersionId = (await approved.json()).versionId;
     const beforeConfirmationWithdrawal = await page.request
       .get(`/api/listings/${one.listingId}`)
@@ -344,7 +387,8 @@ for (const locale of ["en", "zh-Hant"] as const) {
       { data: { method: "csv" } },
     );
     expect(blockedExport.status()).toBe(409);
-    expect((await blockedExport.json()).code).toBe("image_approval_required");
+    // Withdrawal reopens the listing; the listing approval gate runs first.
+    expect((await blockedExport.json()).code).toBe("approval_required");
 
     const published = await productShotDatabaseView(one.listingId);
     expect(published.publicUrl).toMatch(

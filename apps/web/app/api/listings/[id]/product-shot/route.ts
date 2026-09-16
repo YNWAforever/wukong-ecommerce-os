@@ -36,11 +36,13 @@ export type ProductShotRouteDeps = {
     input: ProductShotAttachInput,
   ) => Promise<ProductShotRequestResult>;
 };
+// Legacy versioned listings have revision zero; no-version actions still
+// require a positive saved revision below and retain their exact CAS fence.
 const sourceBody = z
   .object({
     sourceAssetId: z.uuid().optional(),
     expectedVersionId: z.uuid().nullable(),
-    expectedInputRevision: z.number().int().positive().optional(),
+    expectedInputRevision: z.number().int().nonnegative().optional(),
     explicitFreshAttempt: z.boolean().default(false),
   })
   .strict();
@@ -54,7 +56,7 @@ const prepareBody = z
   .object({
     attemptId: z.uuid(),
     expectedVersionId: z.uuid().nullable(),
-    expectedInputRevision: z.number().int().positive().optional(),
+    expectedInputRevision: z.number().int().nonnegative().optional(),
   })
   .strict();
 const approvalBody = prepareBody
@@ -104,7 +106,7 @@ export function createProductShotHandler(
           const body = sourceBody.parse(await request.json());
           if (
             body.expectedVersionId === null &&
-            body.expectedInputRevision === undefined
+            (body.expectedInputRevision ?? 0) < 1
           )
             throw new ApiError(
               400,
@@ -175,7 +177,7 @@ export function createProductShotHandler(
         );
         if (
           body.expectedVersionId === null &&
-          body.expectedInputRevision === undefined
+          (body.expectedInputRevision ?? 0) < 1
         )
           throw new ApiError(
             400,
