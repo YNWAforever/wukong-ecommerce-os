@@ -423,6 +423,7 @@ export class TypedJsonCompletionClient {
         ordinal: attempt + 1,
         phase: attempt === 0 ? "request" : "repair",
         outcome: parsed.success ? "response" : "invalid_output",
+        schemaRepairEligible: attempt === 0 && !parsed.success,
         diagnostic: {
           category: parsed.success ? "internal" : "invalid_output",
           retryable: false,

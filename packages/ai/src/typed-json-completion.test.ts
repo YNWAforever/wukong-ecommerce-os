@@ -102,6 +102,7 @@ describe("reusable typed JSON completion", () => {
   it("records each bounded repair separately with accumulated usage", async () => {
     const { complete, requests, events } = setup([envelope("{"), envelope()]);
     expect((await complete()).usage.inputTokens).toBe(200);
+    expect(events[1]).toHaveProperty("schemaRepairEligible", true);
     expect(events.map((e) => [e.ordinal, e.phase, e.outcome])).toEqual([
       [1, "request", "started"],
       [1, "request", "invalid_output"],
@@ -114,13 +115,15 @@ describe("reusable typed JSON completion", () => {
     ]);
   });
   it("stops after one unsuccessful schema repair", async () => {
-    const { complete, requests } = setup([
+    const { complete, requests, events } = setup([
       envelope("{}"),
       envelope("{}"),
       envelope(),
     ]);
     await expect(complete()).rejects.toThrow(/bounded repair/);
     expect(requests).toHaveLength(2);
+    expect(events[1]).toHaveProperty("schemaRepairEligible", true);
+    expect(events[3]?.schemaRepairEligible).not.toBe(true);
   });
   it.each([
     [envelope(undefined, { model: "other-model" }), /model identity/],
@@ -148,9 +151,10 @@ describe("reusable typed JSON completion", () => {
       /refused/,
     ],
   ])("never repairs terminal integrity failures", async (response, error) => {
-    const { complete, requests } = setup([response, envelope()]);
+    const { complete, requests, events } = setup([response, envelope()]);
     await expect(complete()).rejects.toThrow(error as RegExp);
     expect(requests).toHaveLength(1);
+    expect(events.at(-1)?.schemaRepairEligible).not.toBe(true);
   });
   it("does not perform I/O when durable admission fails", async () => {
     const { complete, requests } = setup([envelope()], "opencode-go", true);
@@ -165,6 +169,7 @@ describe("reusable typed JSON completion", () => {
       }),
     ).rejects.toThrow("unknown evidence ID");
     expect(requests).toHaveLength(1);
+    expect(events.at(-1)?.schemaRepairEligible).not.toBe(true);
     expect(events.at(-1)?.outcome).toBe("invalid_output");
   });
 });
