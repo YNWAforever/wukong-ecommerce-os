@@ -223,3 +223,68 @@ it("refuses browser module evaluation", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+describe("mode-bound search-free capability", () => {
+  it.each(["copy", "section"] as const)(
+    "accepts %s without Tavily and binds exact mode",
+    async (mode) => {
+      const fetch = vi.fn(async () =>
+        reply({ ...capability(), tavilyConfigured: false }),
+      );
+      const receipt = await client.preflightWineCapability({
+        env,
+        fetch,
+        now: () => 1000000,
+        mode,
+      });
+      expect(
+        client.requireWineCapabilityReceipt(receipt, {
+          env,
+          now: () => 1000001,
+          mode,
+        }),
+      ).toMatchObject({ mode, capability: { tavilyConfigured: false } });
+      for (const other of ["full", "research", "copy", "section"] as const) {
+        if (other === mode) continue;
+        expect(() =>
+          client.requireWineCapabilityReceipt(receipt, {
+            env,
+            now: () => 1000001,
+            mode: other,
+          }),
+        ).toThrow("wine_capability_required");
+      }
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(["full", "research"] as const)(
+    "rejects %s with the same no-Tavily health",
+    async (mode) => {
+      await expect(
+        client.preflightWineCapability({
+          env,
+          now: () => 1000000,
+          mode,
+          fetch: async () =>
+            reply({ ...capability(), tavilyConfigured: false }),
+        }),
+      ).rejects.toThrow("wine_capability_unavailable");
+    },
+  );
+  it.each([
+    "consumerSupported",
+    "goConfigured",
+    "queueReady",
+    "databaseReady",
+  ] as const)("still requires %s for copy", async (key) => {
+    await expect(
+      client.preflightWineCapability({
+        env,
+        now: () => 1000000,
+        mode: "copy",
+        fetch: async () =>
+          reply({ ...capability(), tavilyConfigured: false, [key]: false }),
+      }),
+    ).rejects.toThrow("wine_capability_unavailable");
+  });
+});

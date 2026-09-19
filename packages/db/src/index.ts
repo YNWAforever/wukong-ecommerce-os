@@ -205,3 +205,4 @@ export {
   authorizeWineVerifiedEvidence,
   WineEvidenceAuthorizationError,
 } from "./wine-verified-evidence.js";
+export * from "./wine-copy-snapshot.js";

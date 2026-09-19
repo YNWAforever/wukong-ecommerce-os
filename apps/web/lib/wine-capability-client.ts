@@ -4,6 +4,7 @@ import {
   type WineCapability,
 } from "@wukong/jobs";
 import { z } from "zod";
+import type { WineMode } from "@wukong/core";
 
 if (typeof window !== "undefined")
   throw new Error("Wine capability client is server-only");
@@ -15,7 +16,7 @@ type Config = Readonly<{
   QUEUE_INGRESS_URL?: string;
   QUEUE_INGRESS_SECRET?: string;
 }>;
-type ClockOptions = { env?: Config; now?: () => number };
+type ClockOptions = { env?: Config; now?: () => number; mode?: WineMode };
 export type WineCapabilityClientOptions = ClockOptions & {
   fetch?: typeof globalThis.fetch;
 };
@@ -23,6 +24,7 @@ declare const receiptBrand: unique symbol;
 export type WineCapabilityReceipt = { readonly [receiptBrand]: true };
 export type WineCapabilitySnapshot = Readonly<{
   schemaVersion: 1;
+  mode: WineMode;
   origin: string;
   checkedAt: number;
   expiresAt: number;
@@ -55,11 +57,11 @@ function freeze<T>(value: T): T {
   }
   return value;
 }
-function ready(capability: WineCapability) {
+function ready(capability: WineCapability, mode: WineMode) {
   return (
     capability.consumerSupported &&
     capability.goConfigured &&
-    capability.tavilyConfigured &&
+    (mode === "copy" || mode === "section" || capability.tavilyConfigured) &&
     capability.queueReady &&
     capability.databaseReady &&
     capability.buildSha !== "unknown"
@@ -75,6 +77,9 @@ export async function preflightWineCapability(
       QUEUE_INGRESS_SECRET: process.env.QUEUE_INGRESS_SECRET,
     },
   );
+  const mode = z
+    .enum(["full", "research", "copy", "section"])
+    .parse(options.mode ?? "full");
   const now = options.now ?? Date.now;
   const body = "{}";
   const timestamp = Math.floor(now() / 1000);
@@ -143,7 +148,7 @@ export async function preflightWineCapability(
         .parse(
           JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
         );
-      if (!ready(result.wine)) throw new Error();
+      if (!ready(result.wine, mode)) throw new Error();
       return result.wine;
     };
     const capability = await Promise.race([read(), deadline]);
@@ -154,6 +159,7 @@ export async function preflightWineCapability(
       receipt,
       freeze({
         schemaVersion: 1,
+        mode,
         origin,
         checkedAt,
         expiresAt: checkedAt + RECEIPT_TTL_MS,
@@ -176,7 +182,8 @@ export function requireWineCapabilityReceipt(
   options: ClockOptions = {},
 ): WineCapabilitySnapshot {
   const snapshot = receipts.get(receipt);
-  if (!snapshot) throw new Error("wine_capability_required");
+  if (!snapshot || snapshot.mode !== (options.mode ?? "full"))
+    throw new Error("wine_capability_required");
   const { origin } = config(
     options.env ?? {
       QUEUE_INGRESS_URL: process.env.QUEUE_INGRESS_URL,

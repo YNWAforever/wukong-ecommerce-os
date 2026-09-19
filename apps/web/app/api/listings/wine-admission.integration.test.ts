@@ -42,8 +42,9 @@ beforeEach(() => {
   vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
 });
 afterEach(() => vi.unstubAllEnvs());
-async function receipt(now = Date.now()) {
+async function receipt(now = Date.now(), mode: "full" | "research" = "full") {
   return preflightWineCapability({
+    mode,
     now: () => now,
     fetch: async () =>
       Response.json({
@@ -209,10 +210,15 @@ function routeDeps(workspaceId: string) {
       );
     },
   };
-  const preflight = vi.fn(async () => {
-    expect(transactionContext.getStore()).not.toBe(true);
-    return receipt();
-  });
+  const preflight = vi.fn(
+    async (options?: { mode?: "full" | "research" | "copy" | "section" }) => {
+      expect(transactionContext.getStore()).not.toBe(true);
+      return receipt(
+        Date.now(),
+        options?.mode === "research" ? "research" : "full",
+      );
+    },
+  );
   return {
     sessionContext: {
       resolve: async () => ({
@@ -1108,5 +1114,24 @@ it("transaction-boundary harness allows independent request preflight but reject
   }
   await deps.getDatabase().forWorkspace(input.workspaceId, async () => {
     await expect(deps.preflightWineCapability()).rejects.toThrow();
+  });
+});
+
+it("rejects a full receipt for research before reservation and persists exact research receipt", async () => {
+  const input = await fixture();
+  await expect(
+    accept(input, await receipt(), "research"),
+  ).rejects.toMatchObject({ code: "wine_capability_required" });
+  const result = await accept(
+    input,
+    await receipt(Date.now(), "research"),
+    "research",
+  );
+  const persisted = await db.forWorkspace(input.workspaceId, (r) =>
+    r.pipelineRuns.getOperation(result.run.id),
+  );
+  expect(persisted?.execution).toMatchObject({
+    wineMode: "research",
+    wineCapability: { mode: "research" },
   });
 });

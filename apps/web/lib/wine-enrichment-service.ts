@@ -58,15 +58,15 @@ export async function prepareWineAdmission(
   if (!profile.wineEnrichment?.enabled || mode === "copy" || mode === "section")
     return {};
   try {
-    return { wineCapability: await preflight() };
+    return { wineCapability: await preflight({ mode }) };
   } catch (error) {
     return { winePreflightError: capabilityError(error) };
   }
 }
-function checked(context: WineAdmissionContext) {
+function checked(context: WineAdmissionContext, mode: WineMode) {
   if (context.winePreflightError) throw context.winePreflightError;
   try {
-    return requireWineCapabilityReceipt(context.wineCapability!);
+    return requireWineCapabilityReceipt(context.wineCapability!, { mode });
   } catch (error) {
     throw capabilityError(error);
   }
@@ -108,7 +108,7 @@ export async function acceptWineOperation(
     );
   const listing = await repos.listings.requireById(input.listingId);
   const acceptedAt = await repos.pipelineRuns.acceptanceTimestamp();
-  const capability = checked(admission);
+  const capability = checked(admission, mode);
   const acquisition = wineAcquisitionPolicySchema.parse({
     schemaVersion: 1,
     policyVersion: policy.policyVersion,
@@ -183,7 +183,7 @@ export async function acceptWineOperation(
       "wine_search_budget_blocked",
       "The workspace Tavily credit budget is exhausted. You can save without AI.",
     );
-  checked(admission);
+  checked(admission, mode);
   const payload = wineListingJobSchema.parse({
     schemaVersion: 2,
     flowVersion: "wine-enrichment-v1",
