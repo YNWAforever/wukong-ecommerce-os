@@ -154,3 +154,8 @@ export {
   type WineCheckRequest,
   type WineCheckResult,
 } from "./wine-enrichment-schemas.js";
+
+export {
+  validateWineGenerationRequest,
+  wineCandidateIssues,
+} from "./wine-enrichment-content-validation.js";
