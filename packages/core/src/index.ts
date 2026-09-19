@@ -116,3 +116,7 @@ export * from "./wine-claim-policy.js";
 export * from "./wine-enrichment-budget.js";
 
 export * from "./wine-content.js";
+
+export * from "./wine-artifact-schemas.js";
+export * from "./wine-artifact-validation.js";
+export * from "./wine-artifact-validation-helpers.js";
