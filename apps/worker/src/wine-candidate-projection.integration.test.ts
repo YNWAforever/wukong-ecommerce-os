@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { groundWineEvidence, decideWineClaim } from "@wukong/core";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { afterAll, expect, it } from "vitest";
 import { createDatabase, listingInputDigest } from "@wukong/db";
@@ -66,7 +67,7 @@ async function fixture(
         listingId: d.id,
         actorId: "test",
         workingContent: baseContent ? undefined : workingContent,
-        note: "Fixture Estate",
+        note: "Producer: Fixture Estate\nProduct: Reserve Red\nVolume: 750 ml\nPack quantity: 1 bottles\nMarket: HK",
       },
       { workspaceId, actorId: "test", entityId: d.id },
       r.audit,
@@ -167,127 +168,190 @@ async function ready(
   sourceAgeDays = 0,
   lockedUnknownPack = false,
   existing?: { workspaceId: string; listingId: string },
+  reliable = false,
 ) {
   const f = await fixture(working, base, lockedUnknownPack, existing);
   const store = createWineStageStore(db, {
     projectCandidate: projectWineCandidate,
   });
-  const identity = wineIdentity({
-    status: "matched",
-    volumeMl: 750,
-    packQuantity: 1,
-  });
-  if (sourceAgeDays) {
-    identity.marketVariant = "HK";
-    identity.observations.marketVariant = {
-      value: "HK",
-      state: "observed",
-      evidenceIds: ["00000000-0000-4000-8000-000000000001"],
-    };
-  }
-  const source = webEvidence({
-    kind: "merchant",
-    url: null,
-    domain: null,
-    contentScope: "note",
-    identity,
-    excerpt: "Fixture Estate",
-    capturedAt: f.run.acceptedAt,
-    trust: "unverified",
-    ...(sourceAgeDays
-      ? {
-          kind: "web" as const,
-          url: "https://wine.test/wine",
-          domain: "wine.test",
-          contentScope: "document" as const,
-          capturedAt: new Date(
-            Date.parse(f.run.acceptedAt) - sourceAgeDays * 86400000,
-          ).toISOString(),
-        }
-      : {}),
-  });
-  await db.forWorkspace(f.job.workspaceId, (r) =>
-    r.wineEnrichment.saveEvidence(f.run.id, [source]),
-  );
-  if (sourceAgeDays) {
-    const reviewer = randomUUID();
-    await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"})`;
-    await admin`insert into memberships(workspace_id,user_id,role) values(${f.job.workspaceId},${reviewer},'reviewer')`;
-    await db.forWorkspace(f.job.workspaceId, (r) =>
-      r.wineEnrichment.recordReviewedAuthority(reviewer, {
-        schemaVersion: 1,
-        domain: "wine.test",
-        subject: { kind: "producer", name: "Fixture Estate" },
-        proofUrl: "https://wine.test/about",
-        proofDigest: "a".repeat(64),
-        verifiedAt: f.run.acceptedAt,
-        expiresAt: new Date(
-          Date.parse(f.run.acceptedAt) + 30 * 86400000,
-        ).toISOString(),
-        revokedAt: null,
-        verifierId: reviewer,
-      }),
-    );
-  }
-  const claim = {
-    id: randomUUID(),
-    field: "producer" as const,
-    value: "Fixture Estate",
-    kind: "fact" as const,
-    scope: "product" as const,
-    evidenceIds: [source.id],
-    premiseClaimIds: [],
-    state: "accepted" as const,
-    reason: "authoritative_support",
-  };
   const binding = {
     workspaceId: f.job.workspaceId,
     operationId: f.run.id,
     inputRevision: f.run.inputRevision,
   };
-  const frozenVerification = {
-    schemaVersion: 1 as const,
-    binding,
+  const input = f.run.execution
+    .input as import("@wukong/db").ListingInputSnapshot;
+  const sourceId = adoptedDb.wineExtractionSourceId(f.run.id, 0);
+  const identity = wineIdentity({
+    status: "matched",
+    volumeMl: 750,
+    packQuantity: 1,
+  });
+  identity.marketVariant = "HK";
+  identity.observations.marketVariant = {
+    value: "HK",
+    state: "observed",
+    evidenceIds: [sourceId],
+  };
+  for (const obs of Object.values(identity.observations))
+    if (obs) obs.evidenceIds = [sourceId];
+  const note = input.note!;
+  const merchant = webEvidence({
+    id: sourceId,
+    kind: "merchant",
+    url: null,
+    domain: null,
+    contentScope: "note",
     identity,
-    sources: [source],
-    supports: [
+    excerpt: note,
+    capturedAt: f.run.acceptedAt,
+    trust: "unverified",
+    documentDigest: "sha256:" + createHash("sha256").update(note).digest("hex"),
+    location: `wine:extraction:${f.run.id}:transcript:0`,
+    independenceKey: `merchant:${f.run.id}`,
+  });
+  const accepted = {
+    binding,
+    assets: [],
+    note,
+    lockedFields: Object.entries(input.fieldStates)
+      .filter(([, v]) => v?.owner === "operator" || v?.locked)
+      .map(([key]) => key),
+    verifiedAliases: [],
+  };
+  const extractionGrounded = groundWineEvidence({
+    accepted,
+    extraction: { binding, identity },
+    records: [
       {
-        sourceId: source.id,
-        field: "producer" as const,
-        value: "Fixture Estate",
-        span: "Fixture Estate",
+        binding,
+        assetDigest: null,
+        documentDigest: merchant.documentDigest,
+        source: merchant,
       },
     ],
-    authorities: await db.forWorkspace(f.job.workspaceId, (r) =>
-      r.wineEnrichment.readAuthorities(),
-    ),
-    reliableSourceIds: [],
-    trustedObservationSourceIds: [source.id],
-    acceptedPremises: [claim],
-    verifiedAliases: [],
-    lockedFields: Object.entries(
-      (
-        f.run.execution.input as {
-          fieldStates: Record<string, { owner: string; locked: boolean }>;
-        }
-      ).fieldStates,
-    )
-      .filter(([, v]) => v.owner === "operator" || v.locked)
-      .map(([key]) => key),
+    authorities: [],
     now: f.run.acceptedAt,
+  }).context;
+  const retained = [...extractionGrounded.sources];
+  if (sourceAgeDays) {
+    const reviewer = randomUUID();
+    await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"})`;
+    await admin`insert into memberships(workspace_id,user_id,role) values(${f.job.workspaceId},${reviewer},'reviewer')`;
+    for (const domain of reliable
+      ? ["wine.test", "reliable.test"]
+      : ["wine.test"]) {
+      const excerpt = `Kind: wine\n${note}\nABV: 13%\nPage: ${domain}`;
+      retained.push(
+        webEvidence({
+          id: randomUUID(),
+          domain,
+          url: `https://${domain}/wine`,
+          excerpt,
+          capturedAt: new Date(
+            Date.parse(f.run.acceptedAt) - sourceAgeDays * 86400000,
+          ).toISOString(),
+          identity: null,
+          documentDigest:
+            "sha256:" + createHash("sha256").update(excerpt).digest("hex"),
+          independenceKey: domain,
+        }),
+      );
+      await db.forWorkspace(f.job.workspaceId, (r) =>
+        r.wineEnrichment.recordReviewedAuthority(reviewer, {
+          schemaVersion: 1,
+          domain,
+          subject: reliable
+            ? { kind: "reliable_source", name: domain }
+            : { kind: "producer", name: "Fixture Estate" },
+          proofUrl: `https://${domain}/about`,
+          proofDigest: "a".repeat(64),
+          verifiedAt: f.run.acceptedAt,
+          expiresAt: new Date(
+            Date.parse(f.run.acceptedAt) + (reliable ? 3600000 : 30 * 86400000),
+          ).toISOString(),
+          revokedAt: null,
+          verifierId: reviewer,
+        }),
+      );
+    }
+  }
+  const authorities = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.wineEnrichment.readAuthorities(),
+  );
+  const derived = groundWineEvidence({
+    accepted,
+    extraction: { binding, identity: extractionGrounded.identity },
+    records: retained.map((source) => ({
+      binding,
+      assetDigest: null,
+      documentDigest: source.documentDigest,
+      source,
+    })),
+    authorities,
+    now: f.run.acceptedAt,
+  }).context;
+  const claim = decideWineClaim({
+    identity: derived.identity,
+    claim: {
+      id: randomUUID(),
+      field: sourceAgeDays ? "abvPercent" : "producer",
+      value: sourceAgeDays ? 13 : "Fixture Estate",
+      kind: "fact",
+      scope: "product",
+      evidenceIds: retained
+        .filter((s) => (sourceAgeDays ? s.kind === "web" : s.kind !== "web"))
+        .map((s) => s.id),
+      premiseClaimIds: [],
+      state: "unknown",
+      reason: "fixture",
+    },
+    sources: derived.sources,
+    lockedFields: new Set(derived.lockedFields),
+    context: {
+      ...derived,
+      reliableSourceIds: new Set(derived.reliableSourceIds),
+      trustedObservationSourceIds: new Set(derived.trustedObservationSourceIds),
+    },
+  });
+  const frozenVerification = {
+    ...structuredClone(derived),
+    acceptedPremises: [claim],
   };
+  await db.forWorkspace(f.job.workspaceId, async (r) => {
+    await r.wineEnrichment.saveEvidence(f.run.id, retained);
+    await r.wineEnrichment.saveTrustedContext({
+      runId: f.run.id,
+      contextKey: adoptedDb.WINE_EXTRACTION_CONTEXT_KEY,
+      inputDigest: input.inputDigest,
+      context: {
+        schemaVersion: 1,
+        identity: extractionGrounded.identity,
+        policyVersion: "wine-enrichment@1",
+        authorities: extractionGrounded.authorities,
+        supports: extractionGrounded.supports,
+        reliableSourceIds: extractionGrounded.reliableSourceIds,
+        trustedObservationSourceIds:
+          extractionGrounded.trustedObservationSourceIds,
+        acceptedPremises: extractionGrounded.acceptedPremises,
+        verifiedAliases: extractionGrounded.verifiedAliases,
+      },
+    });
+  });
+  const source = sourceAgeDays ? retained[1]! : retained[0]!;
+  const copy = sourceAgeDays ? "13% ABV" : "Fixture Estate";
   const content: WineContent = {
-    title: { en: "Fixture Estate", "zh-Hant": "Fixture Estate" },
+    title: { en: copy, "zh-Hant": copy },
     seo: {
-      title: { en: "Fixture Estate", "zh-Hant": "Fixture Estate" },
-      description: { en: "Fixture Estate", "zh-Hant": "Fixture Estate" },
+      title: { en: copy, "zh-Hant": copy },
+      description: { en: copy, "zh-Hant": copy },
     },
     tags: [],
     sections: [
       {
         key: "introduction",
-        en: "Fixture Estate",
-        "zh-Hant": "Fixture Estate",
+        en: copy,
+        "zh-Hant": copy,
         claimIds: [claim.id],
         locked: false,
         owner: "automatic",
@@ -305,21 +369,21 @@ async function ready(
         ...common,
         stage: "extraction",
         observedAt: f.run.acceptedAt,
-        identity,
-        evidence: sourceAgeDays ? [] : [source],
+        identity: extractionGrounded.identity,
+        evidence: extractionGrounded.sources,
       };
     if (c.job.stage === "search_basic")
       return {
         ...common,
         stage: "search_basic",
-        evidence: sourceAgeDays ? [source] : [],
+        evidence: retained.filter((s) => s.kind === "web"),
         partial: false,
       };
     if (c.job.stage === "verification")
       return {
         ...common,
         stage: "verification",
-        identity,
+        identity: derived.identity,
         claims: [claim],
         frozenVerification,
         needsDeepSearch: false,
@@ -362,7 +426,7 @@ async function ready(
         .filter((path) => !existing || !path.startsWith("sections."))
         .map((path) => ({
           path,
-          span: "Fixture Estate",
+          span: copy,
           claimId: claim.id,
           value: claim.value,
           evidenceIds: claim.evidenceIds,
@@ -986,8 +1050,17 @@ it("reads actual adopted support from its terminal origin, not the running-only 
 async function adoptedFixture(
   working = emptyWorkingListing(),
   sourceAgeDays = 0,
+  reliable = false,
 ) {
-  const f = await ready(working, (r) => r, undefined, sourceAgeDays);
+  const f = await ready(
+    working,
+    (r) => r,
+    undefined,
+    sourceAgeDays,
+    false,
+    undefined,
+    reliable,
+  );
   const done = await f.store.commitCandidate(f.context);
   if (done.status !== "completed" || !done.versionId)
     throw Error("version missing");
@@ -1368,4 +1441,150 @@ it("adopted rejects a version whose original pipeline idempotency key differs", 
     },
   }));
   expect(result.status).toBe("unavailable");
+});
+it("adopted re-evaluates reliable-source review expiry with unchanged registry rows", async () => {
+  const f = await adoptedFixture(emptyWorkingListing(), 1, true);
+  expect((await f.read()).status).toBe("available");
+  const result = await f.read((r) => ({
+    ...r,
+    pipelineRuns: {
+      ...r.pipelineRuns,
+      acceptanceTimestamp: async () =>
+        new Date(Date.parse(f.run.acceptedAt) + 2 * 3600000).toISOString(),
+    },
+  }));
+  expect(result.status).toBe("unavailable");
+});
+for (const tampering of [
+  "omitted_supports",
+  "forged_trust",
+  "forged_identity",
+  "forged_aliases",
+] as const)
+  it(`adopted independently rejects ${tampering} with recomputed stage hashes`, async () => {
+    const f = await adoptedFixture();
+    const result = await db.forWorkspace(
+      f.coordinates.workspaceId,
+      async (r) => {
+        const run = (await r.pipelineRuns.getOperation(f.run.id))!,
+          rows = [] as import("@wukong/db").StageRecord[];
+        for (const stage of adoptedDb.WINE_STAGE_ORDER) {
+          const row = structuredClone(
+            (await r.wineEnrichment.readStage(run.id, stage))!,
+          );
+          const artifact = (row.output as any)?.result;
+          if (stage === "verification") {
+            const frozen = artifact.frozenVerification;
+            if (tampering === "omitted_supports")
+              frozen.supports = frozen.supports.filter(
+                (s: any) => s.field === "producer",
+              );
+            if (tampering === "forged_trust")
+              frozen.sources[0].trust = "reliable";
+            if (tampering === "forged_identity")
+              frozen.sources[0].identity.status = "matched";
+            if (tampering === "forged_aliases")
+              frozen.verifiedAliases = [
+                {
+                  producer: "Fixture Estate",
+                  canonicalName: "Reserve Red",
+                  alias: "forged alias",
+                },
+              ];
+          }
+          row.dependencyDigest = adoptedDb.wineStageDependencyDigest(run, rows);
+          rows.push(row);
+        }
+        return adoptedDb.readAdoptedWineDependencies(
+          {
+            ...r,
+            wineEnrichment: {
+              ...r.wineEnrichment,
+              readStage: async (_id, stage) =>
+                rows.find((x) => x.stage === stage) ?? null,
+            },
+          },
+          f.coordinates,
+        );
+      },
+    );
+    expect(result.status).toBe("unavailable");
+  });
+it("adopted rejects omitted contrary-field supports while retaining the complete contrary source pool", async () => {
+  const f = await adoptedFixture();
+  const result = await db.forWorkspace(f.coordinates.workspaceId, async (r) => {
+    const run = (await r.pipelineRuns.getOperation(f.run.id))!,
+      input = (await r.listingInputs.getRevision(
+        run.listingId,
+        run.inputRevision,
+      ))!;
+    const originalSources = await r.wineEnrichment.readEvidence(run.id);
+    const contrary = webEvidence({
+      id: randomUUID(),
+      excerpt:
+        "Kind: wine\nProducer: Fixture Estate\nProduct: Reserve Red\nVolume: 1500 ml\nPack quantity: 1 bottles\nMarket: HK",
+      capturedAt: f.run.acceptedAt,
+    });
+    const sources = [...originalSources, contrary];
+    const rows = [] as import("@wukong/db").StageRecord[];
+    for (const stage of adoptedDb.WINE_STAGE_ORDER) {
+      const row = structuredClone(
+        (await r.wineEnrichment.readStage(run.id, stage))!,
+      );
+      const artifact = (row.output as any)?.result;
+      if (stage === "verification") {
+        const frozen = artifact.frozenVerification,
+          binding = frozen.binding;
+        const derived = groundWineEvidence({
+          accepted: {
+            binding,
+            assets: [],
+            note: input.note,
+            lockedFields: frozen.lockedFields,
+            verifiedAliases: [],
+          },
+          extraction: { binding, identity: frozen.identity },
+          records: sources.map((source) => ({
+            binding,
+            assetDigest: null,
+            documentDigest: source.documentDigest,
+            source,
+          })),
+          authorities: frozen.authorities,
+          now: frozen.now,
+        }).context;
+        expect(
+          derived.supports.some(
+            (s) =>
+              s.sourceId === contrary.id &&
+              s.field === "volumeMl" &&
+              s.value === 1500,
+          ),
+        ).toBe(true);
+        artifact.frozenVerification = {
+          ...derived,
+          acceptedPremises: frozen.acceptedPremises,
+          supports: derived.supports.filter((s) => s.sourceId !== contrary.id),
+        };
+      }
+      row.dependencyDigest = adoptedDb.wineStageDependencyDigest(run, rows);
+      rows.push(row);
+    }
+    return adoptedDb.readAdoptedWineDependencies(
+      {
+        ...r,
+        wineEnrichment: {
+          ...r.wineEnrichment,
+          readEvidence: async () => sources,
+          readStage: async (_id, stage) =>
+            rows.find((s) => s.stage === stage) ?? null,
+        },
+      },
+      f.coordinates,
+    );
+  });
+  expect(result).toEqual({
+    status: "unavailable",
+    code: "adopted_grounding_invalid",
+  });
 });

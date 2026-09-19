@@ -122,3 +122,6 @@ export * from "./wine-artifact-validation.js";
 export * from "./wine-artifact-validation-helpers.js";
 
 export * from "./wine-execution-snapshot.js";
+
+export * from "./wine-support-validation.js";
+export * from "./wine-evidence-grounding.js";

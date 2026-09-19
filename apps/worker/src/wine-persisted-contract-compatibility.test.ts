@@ -60,3 +60,7 @@ it("shares the exact accepted model snapshot and pure historical ownership resol
   ).toEqual(wineExecutionSnapshotSchema.parse(WINE_EXECUTION_SNAPSHOT));
   expect(db).toHaveProperty("resolveWineGenerationOwnership");
 });
+it("shares original grounding and extraction provenance without provider dependencies", () => {
+  expect(core).toHaveProperty("groundWineEvidence");
+  expect(db).toHaveProperty("readWineOriginalExtraction");
+});

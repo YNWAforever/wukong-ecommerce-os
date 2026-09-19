@@ -198,3 +198,5 @@ export * from "./wine-stage-dependencies.js";
 
 export * from "./wine-generation-ownership.js";
 export * from "./wine-adopted-dependencies.js";
+
+export * from "./wine-original-extraction.js";

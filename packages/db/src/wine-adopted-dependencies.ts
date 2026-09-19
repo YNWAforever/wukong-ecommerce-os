@@ -1,3 +1,5 @@
+import { groundWineEvidence } from "@wukong/core";
+import { readWineOriginalExtraction } from "./wine-original-extraction.js";
 import {
   decideWineClaim,
   wineBudgetSnapshotSchema,
@@ -409,19 +411,77 @@ async function validateOrigin(
     ),
     "adopted_claim_invalid",
   );
-  const context = {
-    ...frozen,
-    now,
+  const extraction = stages.get("extraction"),
+    extractionRow = await r.wineEnrichment.readStage(run.id, "extraction");
+  requireAdopted(
+    extraction?.stage === "extraction" && extractionRow,
+    "adopted_extraction_unavailable",
+  );
+  const original = await readWineOriginalExtraction(
+    r,
+    c.workspaceId,
+    run,
+    extractionRow,
+    extraction,
+  );
+  const assets = input.sources
+    .filter((s) => s.use === "analyse" && s.role !== "supplier_document")
+    .map((s) => ({ id: s.assetId, digest: s.digest }));
+  const grounding = {
+    accepted: {
+      binding,
+      assets,
+      note: input.note,
+      lockedFields: original.context.lockedFields,
+      verifiedAliases: original.context.verifiedAliases,
+    },
+    extraction: { binding, identity: original.context.identity },
+    records: sources.map((source) => ({
+      binding,
+      assetDigest:
+        source.kind === "photo"
+          ? (assets.find((a) => a.id === source.assetId)?.digest ?? null)
+          : null,
+      documentDigest: source.documentDigest,
+      source,
+    })),
     authorities: registry,
-    reliableSourceIds: new Set(frozen.reliableSourceIds),
-    trustedObservationSourceIds: new Set(frozen.trustedObservationSourceIds),
+  };
+  const derived = groundWineEvidence({ ...grounding, now: frozen.now }).context;
+  const setDigest = (values: unknown[]) =>
+    listingInputDigest(values.map((value) => listingInputDigest(value)).sort());
+  for (const key of [
+    "sources",
+    "supports",
+    "reliableSourceIds",
+    "trustedObservationSourceIds",
+    "verifiedAliases",
+    "lockedFields",
+  ] as const)
+    requireAdopted(
+      setDigest(derived[key]) === setDigest(frozen[key]),
+      "adopted_grounding_invalid",
+    );
+  requireAdopted(
+    same(derived.identity, frozen.identity) &&
+      same(derived.binding, frozen.binding),
+    "adopted_grounding_invalid",
+  );
+  // Historical authorization is immutable. Current trust is derived again at DB time,
+  // including review expiry even when no registry row has changed.
+  const current = groundWineEvidence({ ...grounding, now }).context;
+  const context = {
+    ...current,
+    acceptedPremises: frozen.acceptedPremises,
+    reliableSourceIds: new Set(current.reliableSourceIds),
+    trustedObservationSourceIds: new Set(current.trustedObservationSourceIds),
   };
   for (const claim of claims) {
     const decision = decideWineClaim({
       identity: frozen.identity,
       claim,
-      sources: frozen.sources,
-      lockedFields: new Set(frozen.lockedFields),
+      sources: current.sources,
+      lockedFields: new Set(current.lockedFields),
       context,
     });
     requireAdopted(

@@ -1,3 +1,8 @@
+import {
+  readWineOriginalExtraction,
+  wineExtractionSourceId,
+  WINE_EXTRACTION_CONTEXT_KEY,
+} from "@wukong/db";
 import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
 import { createHash } from "node:crypto";
 import {
@@ -18,7 +23,7 @@ import {
   type WineStageExecutor,
 } from "./wine-enrichment-pipeline.js";
 
-export const WINE_EXTRACTION_CONTEXT_KEY = "wine-extraction@1";
+export { WINE_EXTRACTION_CONTEXT_KEY } from "@wukong/db";
 export type WineExtractionConfig = {
   database: Pick<Database, "forWorkspace">;
   env: { OPENCODE_GO_API_KEY?: string };
@@ -34,10 +39,6 @@ function requireValid(value: unknown, code: string): asserts value {
 }
 function sha(value: string | Uint8Array) {
   return createHash("sha256").update(value).digest("hex");
-}
-function sourceId(runId: string, index: number) {
-  const h = sha(`wine-extraction@1:${runId}:${index}`);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 function remap(
   identity: ProductIdentity,
@@ -208,7 +209,10 @@ export function createWineExtractionHandler(
               inputRevision: c.run.inputRevision,
             };
           const ids = new Map(
-            extracted.evidence.map((s, i) => [s.id, sourceId(c.run.id, i)]),
+            extracted.evidence.map((s, i) => [
+              s.id,
+              wineExtractionSourceId(c.run.id, i),
+            ]),
           );
           const identity = remap(extracted.identity, ids);
           const records = extracted.evidence.map((source, index) => {
@@ -358,112 +362,6 @@ export async function readWineExtractionContext(
       result.state === "succeeded" && result.stage === "extraction",
       "extraction_checkpoint_invalid",
     );
-    const input = await r.listingInputs.getRevision(
-      run.listingId,
-      run.inputRevision,
-    );
-    requireValid(
-      input &&
-        input.workspaceId === c.job.workspaceId &&
-        input.inputDigest === stage.inputDigest &&
-        listingInputDigest(input.sources) === run.execution.wineSourceDigest,
-      "extraction_input_invalid",
-    );
-    const saved = await r.wineEnrichment.readTrustedContext(
-      run.id,
-      WINE_EXTRACTION_CONTEXT_KEY,
-      stage.inputDigest,
-    );
-    requireValid(
-      saved &&
-        saved.policyVersion ===
-          (run.execution.wineAcquisition as { policyVersion: string })
-            .policyVersion &&
-        listingInputDigest(saved.identity) ===
-          listingInputDigest(result.identity),
-      "extraction_trusted_context_invalid",
-    );
-    const rows = await r.wineEnrichment.readEvidence(run.id),
-      binding = {
-        workspaceId: c.job.workspaceId,
-        operationId: run.id,
-        inputRevision: run.inputRevision,
-      };
-    const assets = input.sources
-      .filter((s) => s.use === "analyse" && s.role !== "supplier_document")
-      .map((s) => ({ id: s.assetId, digest: s.digest }));
-    const records = result.evidence.map((source, index) => {
-      const row = rows.find((s) => s.id === source.id);
-      requireValid(
-        row &&
-          listingInputDigest(row) === listingInputDigest(source) &&
-          row.id === sourceId(run.id, index) &&
-          row.kind !== "web" &&
-          row.url === null &&
-          row.domain === null &&
-          row.capturedAt === result.observedAt &&
-          row.documentDigest === "sha256:" + sha(row.excerpt) &&
-          row.location === `wine:extraction:${run.id}:transcript:${index}`,
-        "extraction_source_checkpoint_invalid",
-      );
-      const asset =
-        row.kind === "photo" ? assets.find((a) => a.id === row.assetId) : null;
-      requireValid(row.kind !== "photo" || asset, "extraction_asset_invalid");
-      requireValid(
-        row.independenceKey ===
-          (row.kind === "photo"
-            ? `asset:${asset!.digest}`
-            : `merchant:${run.id}`),
-        "extraction_source_checkpoint_invalid",
-      );
-      return {
-        binding,
-        assetDigest: asset?.digest ?? null,
-        documentDigest: row.documentDigest,
-        source: row,
-      };
-    });
-    requireValid(
-      Date.parse(result.observedAt) >= Date.parse(run.acceptedAt) &&
-        Date.parse(result.observedAt) <
-          Date.parse(
-            (run.execution.wineAcquisition as { deadlineAt: string })
-              .deadlineAt,
-          ),
-      "extraction_observation_time_invalid",
-    );
-    const lockedFields = Object.entries(input.fieldStates)
-      .filter(([, v]) => v?.locked || v?.owner === "operator")
-      .map(([key]) => key);
-    const rebuilt = groundWineEvidence({
-      accepted: {
-        binding,
-        assets,
-        note: input.note,
-        lockedFields,
-        verifiedAliases: saved.verifiedAliases,
-      },
-      extraction: { binding, identity: result.identity },
-      records,
-      authorities: saved.authorities,
-      now: result.observedAt,
-    });
-    for (const key of [
-      "supports",
-      "reliableSourceIds",
-      "trustedObservationSourceIds",
-      "acceptedPremises",
-    ] as const)
-      requireValid(
-        listingInputDigest(
-          saved[key].map((v) => listingInputDigest(v)).sort(),
-        ) ===
-          listingInputDigest(
-            rebuilt.context[key].map((v) => listingInputDigest(v)).sort(),
-          ),
-        "extraction_trusted_context_invalid",
-      );
-    // Re-grounding sanitized observations cannot regenerate invalid raw hints: preserve committed diagnostics exactly.
-    return { context: rebuilt.context, issues: structuredClone(result.issues) };
+    return readWineOriginalExtraction(r, c.job.workspaceId, run, stage, result);
   });
 }
