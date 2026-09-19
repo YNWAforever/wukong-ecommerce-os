@@ -1,12 +1,16 @@
+import {
+  readWineGenerationRequestFromRepositories,
+  authorizeWineFrozenQuality,
+  committedGeneration,
+} from "./wine-generation-context.js";
+import {
+  savedResult,
+  validDependencies,
+  accepted,
+} from "./wine-stage-authority.js";
 import { wineStageDependencyDigest } from "./wine-stage-dependencies.js";
+import type { WineStage } from "@wukong/core";
 import {
-  wineBudgetSnapshotSchema,
-  wineEnrichmentPolicySchema,
-  type WineStage,
-} from "@wukong/core";
-import { wineExecutionSnapshotSchema } from "@wukong/ai";
-import {
-  wineAcquisitionPolicySchema,
   wineListingJobSchema,
   wineStageMessageKey,
   type WineListingJob,
@@ -39,58 +43,6 @@ const blocked = (code: string): WineDeliveryResult => ({
   status: "blocked",
   code,
 });
-function savedResult(record: StageRecord): WineStageResult {
-  const value = record.output as {
-    schemaVersion?: number;
-    fresh?: boolean;
-    result?: unknown;
-  };
-  if (
-    value?.schemaVersion !== 1 ||
-    value.fresh !== true ||
-    record.state !== "succeeded"
-  )
-    throw Error("stage dependency unavailable");
-  return parseWineStageResult(value.result, record.stage);
-}
-function validDependencies(
-  run: ListingOperation,
-  dependencies: StageRecord[],
-): boolean {
-  const prefix: StageRecord[] = [];
-  try {
-    for (const record of dependencies) {
-      if (
-        record.runId !== run.id ||
-        record.inputDigest !== run.execution.wineInputDigest ||
-        record.dependencyDigest !== wineStageDependencyDigest(run, prefix)
-      )
-        return false;
-      if (record.state === "skipped") {
-        const verification = prefix.find((x) => x.stage === "verification");
-        const result = verification ? savedResult(verification) : null;
-        const output = record.output as {
-          schemaVersion?: number;
-          reason?: string;
-        };
-        if (
-          !["search_deep", "verification_deep"].includes(record.stage) ||
-          output?.schemaVersion !== 1 ||
-          output.reason !== "deep_search_not_required" ||
-          !result ||
-          result.state !== "succeeded" ||
-          result.stage !== "verification" ||
-          result.needsDeepSearch
-        )
-          return false;
-      } else if (savedResult(record).state !== "succeeded") return false;
-      prefix.push(record);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
 async function records(r: WorkspaceRepositories, runId: string) {
   const result: StageRecord[] = [];
   for (const stage of WINE_STAGE_ORDER) {
@@ -98,49 +50,6 @@ async function records(r: WorkspaceRepositories, runId: string) {
     if (value) result.push(value);
   }
   return result;
-}
-/** Only full/research acceptance exists. copy/section fail closed until adopted dependency wiring. */
-async function accepted(
-  r: WorkspaceRepositories,
-  run: ListingOperation,
-): Promise<boolean> {
-  try {
-    const e = run.execution,
-      b = wineBudgetSnapshotSchema.parse(e.wineBudget),
-      g = wineExecutionSnapshotSchema.parse(e.wineGo),
-      p = wineEnrichmentPolicySchema.parse(e.wineEnrichment),
-      a = wineAcquisitionPolicySchema.parse(e.wineAcquisition);
-    const input = await r.listingInputs.getRevision(
-      run.listingId,
-      run.inputRevision,
-    );
-    const snapshot = e.input as Record<string, unknown>;
-    return Boolean(
-      e.schemaVersion === 1 &&
-      e.flowVersion === "wine-enrichment-v1" &&
-      input &&
-      snapshot &&
-      snapshot.listingId === run.listingId &&
-      snapshot.workspaceId === input.workspaceId &&
-      snapshot.revision === run.inputRevision &&
-      snapshot.inputDigest === input.inputDigest &&
-      e.wineInputDigest === input.inputDigest &&
-      e.wineSourceDigest === listingInputDigest(input.sources) &&
-      listingInputDigest(snapshot.sources) === e.wineSourceDigest &&
-      e.wineMode === b.mode &&
-      p.enabled &&
-      g.rulesVersion === p.rulesVersion &&
-      a.rulesVersion === p.rulesVersion &&
-      a.policyVersion === p.policyVersion &&
-      a.allowedDomains.length > 0 &&
-      listingInputDigest([...a.allowedDomains].sort()) ===
-        listingInputDigest([...p.allowedDomains].sort()) &&
-      Date.parse(a.deadlineAt) > Date.parse(run.acceptedAt) &&
-      Date.parse(a.deadlineAt) - Date.parse(run.acceptedAt) <= 900000,
-    );
-  } catch {
-    return false;
-  }
 }
 /** Each method resolves only AFTER its transaction commits. No automatic lease replay exists. */
 export function createWineStageStore(
@@ -315,7 +224,51 @@ export function createWineStageStore(
           code: "verification_binding_mismatch",
         };
     }
+    let rejectedResult: WineStageResult | undefined;
     const stale = projected ? null : await fence(r, run);
+    // Genuine frozen artifacts opt into mandatory shared authorization, including after executor return.
+    // Legacy lifecycle-only checkpoints remain inspectable but cannot pass actual handlers/projection.
+    if (
+      !stale &&
+      result.state === "succeeded" &&
+      (result.stage === "generation" || result.stage === "quality_check") &&
+      (dependencies.some((d) => {
+        const out = d.output as {
+          result?: { frozenVerification?: unknown; frozenQuality?: unknown };
+        };
+        return !!(
+          out?.result?.frozenVerification || out?.result?.frozenQuality
+        );
+      }) ||
+        (result.stage === "generation" && result.frozenQuality))
+    ) {
+      try {
+        const authoritative = { ...context, run, dependencies };
+        const { request } = await readWineGenerationRequestFromRepositories(
+          r,
+          authoritative,
+        );
+        const generation =
+          result.stage === "generation"
+            ? result
+            : committedGeneration(authoritative);
+        const frozen = authorizeWineFrozenQuality(generation, request);
+        if (
+          result.stage === "quality_check" &&
+          result.contentDigest !== listingInputDigest(frozen.candidate.content)
+        )
+          throw Error("quality content mismatch");
+      } catch {
+        rejectedResult = result;
+        result = {
+          schemaVersion: 1,
+          stage: result.stage,
+          state: "blocked",
+          code: "generation_authorization_changed",
+        };
+      }
+    }
+
     // Results survive a revision change, but cannot enqueue or adopt into the current listing.
     const terminal = {
       ...stage,
@@ -328,7 +281,8 @@ export function createWineStageStore(
       output: {
         schemaVersion: 1,
         result,
-        fresh: !stale,
+        fresh: !stale && !rejectedResult,
+        ...(rejectedResult ? { rejectedResult } : {}),
         ...(result.state === "succeeded" &&
         result.stage === "verification" &&
         result.needsDeepSearch

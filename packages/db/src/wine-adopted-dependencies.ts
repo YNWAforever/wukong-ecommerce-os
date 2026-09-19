@@ -1,7 +1,8 @@
-import { groundWineEvidence } from "@wukong/core";
-import { readWineOriginalExtraction } from "./wine-original-extraction.js";
 import {
-  decideWineClaim,
+  authorizeWineVerifiedEvidence,
+  WineEvidenceAuthorizationError,
+} from "./wine-verified-evidence.js";
+import {
   wineBudgetSnapshotSchema,
   wineEnrichmentPolicySchema,
   wineExecutionSnapshotSchema,
@@ -106,10 +107,6 @@ function requireAdopted(value: unknown, code: string): asserts value {
 }
 const same = (a: unknown, b: unknown) =>
   listingInputDigest(a) === listingInputDigest(b);
-const provenance = (sources: EvidenceSource[]) =>
-  sources
-    .map(({ identity: _i, trust: _t, ...s }) => s)
-    .sort((a, b) => a.id.localeCompare(b.id));
 type Succeeded = Extract<WineStageResult, { state: "succeeded" }>;
 function saved(row: StageRecord): Succeeded {
   const output = row.output as {
@@ -380,116 +377,14 @@ async function validateOrigin(
         same(row.content.description, own.prior.description)),
     "adopted_content_invalid",
   );
-  const registry = await r.wineEnrichment.readAuthorities(),
-    sources = await r.wineEnrichment.readEvidence(run.id);
-  requireAdopted(
-    same(registry, frozen.authorities) &&
-      same(provenance(sources), provenance(frozen.sources)),
-    "adopted_authority_changed",
-  );
-  requireAdopted(
-    Date.parse(frozen.now) >= accepted &&
-      Date.parse(frozen.now) < deadline &&
-      Date.parse(frozen.now) <= time,
-    "adopted_frozen_time_invalid",
-  );
-  requireAdopted(
-    frozen.sources.every(
-      (s) =>
-        Date.parse(s.capturedAt) <= time &&
-        (s.kind !== "web" || time - Date.parse(s.capturedAt) < 7 * 86400000),
-    ),
-    "evidence_refresh_required",
-  );
-  requireAdopted(
-    frozen.acceptedPremises.every(
-      (p) =>
-        p.state === "accepted" &&
-        p.kind === "fact" &&
-        p.scope === "product" &&
-        claims.some((x) => same(x, p)),
-    ),
-    "adopted_claim_invalid",
-  );
-  const extraction = stages.get("extraction"),
-    extractionRow = await r.wineEnrichment.readStage(run.id, "extraction");
-  requireAdopted(
-    extraction?.stage === "extraction" && extractionRow,
-    "adopted_extraction_unavailable",
-  );
-  const original = await readWineOriginalExtraction(
-    r,
-    c.workspaceId,
+  await authorizeWineVerifiedEvidence(r, {
+    workspaceId: c.workspaceId,
     run,
-    extractionRow,
-    extraction,
-  );
-  const assets = input.sources
-    .filter((s) => s.use === "analyse" && s.role !== "supplier_document")
-    .map((s) => ({ id: s.assetId, digest: s.digest }));
-  const grounding = {
-    accepted: {
-      binding,
-      assets,
-      note: input.note,
-      lockedFields: original.context.lockedFields,
-      verifiedAliases: original.context.verifiedAliases,
-    },
-    extraction: { binding, identity: original.context.identity },
-    records: sources.map((source) => ({
-      binding,
-      assetDigest:
-        source.kind === "photo"
-          ? (assets.find((a) => a.id === source.assetId)?.digest ?? null)
-          : null,
-      documentDigest: source.documentDigest,
-      source,
-    })),
-    authorities: registry,
-  };
-  const derived = groundWineEvidence({ ...grounding, now: frozen.now }).context;
-  const setDigest = (values: unknown[]) =>
-    listingInputDigest(values.map((value) => listingInputDigest(value)).sort());
-  for (const key of [
-    "sources",
-    "supports",
-    "reliableSourceIds",
-    "trustedObservationSourceIds",
-    "verifiedAliases",
-    "lockedFields",
-  ] as const)
-    requireAdopted(
-      setDigest(derived[key]) === setDigest(frozen[key]),
-      "adopted_grounding_invalid",
-    );
-  requireAdopted(
-    same(derived.identity, frozen.identity) &&
-      same(derived.binding, frozen.binding),
-    "adopted_grounding_invalid",
-  );
-  // Historical authorization is immutable. Current trust is derived again at DB time,
-  // including review expiry even when no registry row has changed.
-  const current = groundWineEvidence({ ...grounding, now }).context;
-  const context = {
-    ...current,
-    acceptedPremises: frozen.acceptedPremises,
-    reliableSourceIds: new Set(current.reliableSourceIds),
-    trustedObservationSourceIds: new Set(current.trustedObservationSourceIds),
-  };
-  for (const claim of claims) {
-    const decision = decideWineClaim({
-      identity: frozen.identity,
-      claim,
-      sources: current.sources,
-      lockedFields: new Set(current.lockedFields),
-      context,
-    });
-    requireAdopted(
-      decision.state === "accepted" &&
-        same([...decision.evidenceIds].sort(), [...claim.evidenceIds].sort()),
-      "adopted_claim_invalid",
-    );
-  }
+    input,
+    frozen,
+    claims,
+    now,
+  });
   return {
     row,
     run,
@@ -692,7 +587,8 @@ export async function readAdoptedWineDependencies(
           cursor = prior;
         } catch (error) {
           reason =
-            error instanceof AdoptedError
+            error instanceof AdoptedError ||
+            error instanceof WineEvidenceAuthorizationError
               ? error.message
               : "ancestry_unavailable";
           break;
@@ -754,7 +650,8 @@ export async function readAdoptedWineDependencies(
     return {
       status: "unavailable",
       code:
-        error instanceof AdoptedError
+        error instanceof AdoptedError ||
+        error instanceof WineEvidenceAuthorizationError
           ? error.message
           : "adopted_evidence_unavailable",
     };

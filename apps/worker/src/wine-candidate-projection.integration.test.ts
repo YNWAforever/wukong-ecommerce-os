@@ -169,6 +169,7 @@ async function ready(
   lockedUnknownPack = false,
   existing?: { workspaceId: string; listingId: string },
   reliable = false,
+  reviewDuration = 3600000,
 ) {
   const f = await fixture(working, base, lockedUnknownPack, existing);
   const store = createWineStageStore(db, {
@@ -268,7 +269,8 @@ async function ready(
           proofDigest: "a".repeat(64),
           verifiedAt: f.run.acceptedAt,
           expiresAt: new Date(
-            Date.parse(f.run.acceptedAt) + (reliable ? 3600000 : 30 * 86400000),
+            Date.parse(f.run.acceptedAt) +
+              (reliable ? reviewDuration : 30 * 86400000),
           ).toISOString(),
           revokedAt: null,
           verifierId: reviewer,
@@ -456,13 +458,27 @@ async function ready(
     "verification",
     "generation",
     "quality_check",
-  ] as const)
-    expect(
-      await runWineStage(
-        { ...f.job, stage },
-        { store, execute: async (c) => mutate(await execute(c)) },
-      ),
-    ).toMatchObject({ status: "advanced" });
+  ] as const) {
+    const delivery = await runWineStage(
+      { ...f.job, stage },
+      { store, execute: async (c) => mutate(await execute(c)) },
+    );
+    if (delivery.status === "blocked") {
+      expect(delivery.code).toBe("generation_authorization_changed");
+      expect(
+        await db.forWorkspace(f.job.workspaceId, (r) =>
+          r.wineEnrichment.readStage(f.run.id, "commit_candidate"),
+        ),
+      ).toBeNull();
+      expect(
+        (
+          await admin`select count(*)::int n from listing_versions where workspace_id=${f.job.workspaceId}`
+        )[0].n,
+      ).toBe(base ? 1 : 0);
+      throw Error(delivery.code);
+    }
+    expect(delivery).toMatchObject({ status: "advanced" });
+  }
   const claimed = await store.claim({ ...f.job, stage: "commit_candidate" });
   if (claimed.status !== "claimed") throw Error(JSON.stringify(claimed));
   return { ...f, store, context: claimed.context, content, claim, source };
@@ -578,26 +594,20 @@ it("rolls back actual projection version, section snapshot and listing changes w
 });
 
 it.each(["verification", "generation"])(
-  "projection rejects absent frozen %s artifact",
+  "runtime rejects absent frozen %s artifact before projection",
   async (stage) => {
-    const f = await ready(emptyWorkingListing(), (result) => {
-      if (result.state === "succeeded" && result.stage === stage) {
-        const copy = { ...result } as Record<string, unknown>;
-        delete copy[
-          stage === "verification" ? "frozenVerification" : "frozenQuality"
-        ];
-        return copy as WineStageResult;
-      }
-      return result;
-    });
-    await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-      stage === "verification"
-        ? "projection_verification_required"
-        : "projection_generation_required",
-    );
-    expect(
-      await f.store.claim({ ...f.job, stage: "commit_candidate" }),
-    ).toMatchObject({ status: "blocked", code: "stage_outcome_unknown" });
+    await expect(
+      ready(emptyWorkingListing(), (result) => {
+        if (result.state === "succeeded" && result.stage === stage) {
+          const copy = { ...result } as Record<string, unknown>;
+          delete copy[
+            stage === "verification" ? "frozenVerification" : "frozenQuality"
+          ];
+          return copy as WineStageResult;
+        }
+        return result;
+      }),
+    ).rejects.toThrow("generation_authorization_changed");
   },
 );
 it("projection retains mandatory needs_info quality outcome", async () => {
@@ -637,18 +647,19 @@ it("projection preserves all merchant commercial values", async () => {
   });
 });
 it("projection refuses stale ownership digest even when quality reports ready", async () => {
-  const f = await ready(emptyWorkingListing(), (result) => {
-    if (
-      result.stage === "generation" &&
-      result.state === "succeeded" &&
-      result.frozenQuality
-    )
-      result.frozenQuality.request.ownership!.provenanceDigest = "0".repeat(64);
-    return result;
-  });
-  await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_ownership_changed",
-  );
+  await expect(
+    ready(emptyWorkingListing(), (result) => {
+      if (
+        result.stage === "generation" &&
+        result.state === "succeeded" &&
+        result.frozenQuality
+      )
+        result.frozenQuality.request.ownership!.provenanceDigest = "0".repeat(
+          64,
+        );
+      return result;
+    }),
+  ).rejects.toThrow("generation_authorization_changed");
 });
 it("projection refuses a changed complete source pool", async () => {
   const f = await ready();
@@ -658,7 +669,7 @@ it("projection refuses a changed complete source pool", async () => {
     ]),
   );
   await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_evidence_changed",
+    "adopted_authority_changed",
   );
 });
 
@@ -818,18 +829,17 @@ it("projection rolls back if DB deadline elapses after the real version write", 
 });
 
 it("projection rejects frozen verification locks that differ from accepted input", async () => {
-  const f = await ready(emptyWorkingListing(), (result) => {
-    if (
-      result.state === "succeeded" &&
-      result.stage === "verification" &&
-      result.frozenVerification
-    )
-      result.frozenVerification.lockedFields = [];
-    return result;
-  });
-  await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_verification_locks_mismatch",
-  );
+  await expect(
+    ready(emptyWorkingListing(), (result) => {
+      if (
+        result.state === "succeeded" &&
+        result.stage === "verification" &&
+        result.frozenVerification
+      )
+        result.frozenVerification.lockedFields = [];
+      return result;
+    }),
+  ).rejects.toThrow("generation_authorization_changed");
 });
 
 function reviewBase() {
@@ -910,11 +920,10 @@ it("projection moves a ready reopened base to review with a new version", async 
   if (done.status === "completed")
     expect(done.versionId).not.toBe(f.run.baseVersionId);
 });
-it("projection rejects expired web evidence instead of refreshing its capture age", async () => {
-  const f = await ready(emptyWorkingListing(), (r) => r, undefined, 8);
-  await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_evidence_expired",
-  );
+it("runtime rejects expired web evidence before generation without renewing capture age", async () => {
+  await expect(
+    ready(emptyWorkingListing(), (r) => r, undefined, 8),
+  ).rejects.toThrow("generation_authorization_changed");
 });
 it("projection rejects a newly changed reviewed registry before writing any version", async () => {
   const f = await ready(),
@@ -937,7 +946,7 @@ it("projection rejects a newly changed reviewed registry before writing any vers
     }),
   );
   await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_evidence_changed",
+    "adopted_authority_changed",
   );
   expect(
     (
@@ -976,14 +985,13 @@ it("projection fences a newly saved revision before any candidate mutation", asy
     )[0].n,
   ).toBe(0);
 });
-it("projection cannot replace operator title with an unprotected candidate even after ready quality", async () => {
-  const f = await ready({
-    ...emptyWorkingListing(),
-    title: { en: "Operator title", "zh-Hant": "" },
-  });
-  await expect(f.store.commitCandidate(f.context)).rejects.toThrow(
-    "projection_candidate_invalid",
-  );
+it("runtime rejects an unprotected candidate for operator title before projection", async () => {
+  await expect(
+    ready({
+      ...emptyWorkingListing(),
+      title: { en: "Operator title", "zh-Hant": "" },
+    }),
+  ).rejects.toThrow("generation_authorization_changed");
 });
 
 it("projection preserves an explicitly locked unknown pack quantity without substituting observed identity", async () => {
@@ -1587,4 +1595,122 @@ it("adopted rejects omitted contrary-field supports while retaining the complete
     status: "unavailable",
     code: "adopted_grounding_invalid",
   });
+});
+
+it("projection independently reauthorizes expired reliability within the active deadline", async () => {
+  const f = await ready(
+    emptyWorkingListing(),
+    (r) => r,
+    undefined,
+    1,
+    false,
+    undefined,
+    true,
+    120000,
+  );
+  const invoke = (advance: number) =>
+    db.forWorkspace(f.job.workspaceId, (r) =>
+      projectWineCandidate(
+        {
+          ...r,
+          pipelineRuns: {
+            ...r.pipelineRuns,
+            acceptanceTimestamp: async () =>
+              new Date(Date.parse(f.run.acceptedAt) + advance).toISOString(),
+          },
+        },
+        { ...f.context, requiredOutcome: "ready" },
+      ),
+    );
+  await expect(invoke(180000)).rejects.toThrow("adopted_claim_invalid");
+  expect(
+    (
+      await admin`select count(*)::int n from listing_versions where workspace_id=${f.job.workspaceId}`
+    )[0].n,
+  ).toBe(0);
+  expect(await invoke(60000)).toMatchObject({
+    state: "succeeded",
+    outcome: "complete",
+  });
+});
+
+it("projection independently rejects omitted contrary supports from the complete pool", async () => {
+  const f = await ready();
+  const result = db.forWorkspace(f.job.workspaceId, async (r) => {
+    const run = (await r.pipelineRuns.getOperation(f.run.id))!,
+      input = (await r.listingInputs.getRevision(
+        run.listingId,
+        run.inputRevision,
+      ))!;
+    const originalSources = await r.wineEnrichment.readEvidence(run.id);
+    const contrary = webEvidence({
+      id: randomUUID(),
+      excerpt:
+        "Kind: wine\nProducer: Fixture Estate\nProduct: Reserve Red\nVolume: 1500 ml\nPack quantity: 1 bottles\nMarket: HK",
+      capturedAt: f.run.acceptedAt,
+    });
+    const sources = [...originalSources, contrary];
+    const rows = [] as import("@wukong/db").StageRecord[];
+    for (const stage of adoptedDb.WINE_STAGE_ORDER) {
+      const row = structuredClone(
+        (await r.wineEnrichment.readStage(run.id, stage))!,
+      );
+      const artifact = (row.output as any)?.result;
+      if (stage === "verification") {
+        const frozen = artifact.frozenVerification,
+          binding = frozen.binding;
+        const derived = groundWineEvidence({
+          accepted: {
+            binding,
+            assets: [],
+            note: input.note,
+            lockedFields: frozen.lockedFields,
+            verifiedAliases: [],
+          },
+          extraction: { binding, identity: frozen.identity },
+          records: sources.map((source) => ({
+            binding,
+            assetDigest: null,
+            documentDigest: source.documentDigest,
+            source,
+          })),
+          authorities: frozen.authorities,
+          now: frozen.now,
+        }).context;
+        expect(
+          derived.supports.some(
+            (s) =>
+              s.sourceId === contrary.id &&
+              s.field === "volumeMl" &&
+              s.value === 1500,
+          ),
+        ).toBe(true);
+        artifact.frozenVerification = {
+          ...derived,
+          acceptedPremises: frozen.acceptedPremises,
+          supports: derived.supports.filter((s) => s.sourceId !== contrary.id),
+        };
+      }
+      row.dependencyDigest = adoptedDb.wineStageDependencyDigest(run, rows);
+      rows.push(row);
+    }
+    return projectWineCandidate(
+      {
+        ...r,
+        wineEnrichment: {
+          ...r.wineEnrichment,
+          readEvidence: async () => sources,
+          readStage: async (_id, stage) =>
+            rows.find((s) => s.stage === stage) ?? null,
+        },
+      },
+      {
+        ...f.context,
+        dependencies: rows.slice(0, -1),
+        dependencyDigest: rows.at(-1)!.dependencyDigest,
+        requiredOutcome: "ready",
+      },
+    );
+  });
+  await expect(result).rejects.toThrow("adopted_grounding_invalid");
 });

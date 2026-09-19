@@ -1,3 +1,4 @@
+import { createWineGenerationHandler } from "./wine-generation-handler.js";
 import { createHash } from "node:crypto";
 import { listingInputDigest } from "@wukong/db";
 import {
@@ -388,13 +389,14 @@ export function createWineVerificationCacheHook(
       };
   };
 }
-/** Evidence-stage composition only. Runtime activation and ownership-dependent generation/check remain separate. */
+/** Actual full/research stage composition. Runtime activation and copy/section admission remain separate. */
 export function createWineEvidenceStageHandlers(
   config: WineExtractionConfig & Omit<WineResearchConfig, "database">,
 ) {
   const extraction = createWineExtractionHandler(config),
     research = createWineResearchHandler(config),
-    verification = createWineVerificationHandler(config);
+    verification = createWineVerificationHandler(config),
+    generation = createWineGenerationHandler(config);
   const execute: WineStageExecutor = async (c) => {
     switch (c.job.stage) {
       case "extraction":
@@ -405,17 +407,15 @@ export function createWineEvidenceStageHandlers(
       case "verification":
       case "verification_deep":
         return verification(c);
+      case "generation":
+      case "quality_check":
+        return generation(c);
       default:
         return {
           schemaVersion: 1,
           stage: c.job.stage,
           state: "blocked",
-          code:
-            c.job.stage === "generation"
-              ? "generation_ownership_unavailable"
-              : c.job.stage === "quality_check"
-                ? "quality_handler_unavailable"
-                : "candidate_projection_unavailable",
+          code: "candidate_projection_unavailable",
         };
     }
   };

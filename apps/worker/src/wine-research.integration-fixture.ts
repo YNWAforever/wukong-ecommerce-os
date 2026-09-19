@@ -82,12 +82,35 @@ export async function fixture(
     workspaceId?: string;
     mode?: "full" | "research";
     domains?: string[];
+    profile?: { tone: string; claimPolicy: string[] };
+    workingContent?: ReturnType<typeof emptyWorkingListing>;
+    baseContent?: import("@wukong/core").ReviewableListing;
   } = {},
 ) {
   const workspaceId =
     options.workspaceId ?? `wine-complete-cache-${randomUUID()}`;
   const result = await db.forWorkspace(workspaceId, async (r) => {
     const listing = await r.listings.create({ target: "shopline" });
+    if (options.baseContent) {
+      const audit = { workspaceId, actorId: "test", entityId: listing.id };
+      await r.listings.startProcessing(listing.id, audit, r.audit);
+      const version = await r.listings.appendVersion(
+        listing.id,
+        options.baseContent,
+        audit,
+        r.audit,
+      );
+      await r.listings.complete(
+        listing.id,
+        {
+          status: "in_review",
+          versionId: version.id,
+          idempotencyKey: randomUUID(),
+        },
+        audit,
+        r.audit,
+      );
+    }
     const asset = await r.sourceAssets.create({
       storageKey: `workspaces/${workspaceId}/${listing.id}/image.png`,
       kind: "image/png",
@@ -103,9 +126,11 @@ export async function fixture(
         listingId: listing.id,
         actorId: "test",
         note: options.note ?? "Merchant note retained",
-        workingContent: options.operator
-          ? { ...emptyWorkingListing(), producer: "Operator Estate" }
-          : undefined,
+        workingContent:
+          options.workingContent ??
+          (options.operator
+            ? { ...emptyWorkingListing(), producer: "Operator Estate" }
+            : undefined),
         sources: [
           {
             assetId: asset.id,
@@ -128,8 +153,9 @@ export async function fixture(
     const run = await r.pipelineRuns.acceptOperation({
       listingId: listing.id,
       inputRevision: input.revision,
-      baseVersionId: null,
-      activeVersionSequence: 0,
+      baseVersionId: (await r.listings.requireById(listing.id)).activeVersionId,
+      activeVersionSequence: (await r.listings.requireById(listing.id))
+        .activeVersionSequence,
       requestKey: randomUUID(),
       requestDigest: randomUUID(),
       acceptedAt,
@@ -137,6 +163,7 @@ export async function fixture(
         schemaVersion: 1,
         flowVersion: "wine-enrichment-v1",
         input,
+        ...(options.profile ? { profile: options.profile } : {}),
         wineInputDigest: input.inputDigest,
         wineSourceDigest: listingInputDigest(input.sources),
         wineMode: options.mode ?? "full",
@@ -179,7 +206,7 @@ export async function fixture(
     draftId: result.run.listingId,
     runId: result.run.id,
     inputRevision: result.run.inputRevision,
-    activeVersionSequence: 0,
+    activeVersionSequence: result.run.activeVersionSequence,
     stage: "extraction",
   };
   return { ...result, workspaceId, job, store: createWineStageStore(db) };

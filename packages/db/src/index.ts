@@ -200,3 +200,8 @@ export * from "./wine-generation-ownership.js";
 export * from "./wine-adopted-dependencies.js";
 
 export * from "./wine-original-extraction.js";
+
+export {
+  authorizeWineVerifiedEvidence,
+  WineEvidenceAuthorizationError,
+} from "./wine-verified-evidence.js";

@@ -1081,7 +1081,7 @@ function generationFor(job: WineListingJob) {
     },
   };
 }
-it("frozen quality artifact survives committed generation and quality claim with exact binding and annotations", async () => {
+it("frozen quality without authoritative verification cannot commit or start quality", async () => {
   const f = await beforeGeneration();
   const value = generationFor(f.job);
   expect(
@@ -1089,13 +1089,12 @@ it("frozen quality artifact survives committed generation and quality claim with
       { ...f.job, stage: "generation" },
       { store: f.store, execute: async () => value },
     ),
-  ).toMatchObject({ status: "advanced", nextStage: "quality_check" });
-  const claim = await f.store.claim({ ...f.job, stage: "quality_check" });
-  expect(claim.status).toBe("claimed");
-  if (claim.status !== "claimed") throw Error("claim");
+  ).toEqual({ status: "blocked", code: "generation_authorization_changed" });
   expect(
-    claim.context.dependencies.find((x) => x.stage === "generation")?.output,
-  ).toMatchObject({ result: value });
+    await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.wineEnrichment.readStage(f.job.runId, "quality_check"),
+    ),
+  ).toBeNull();
 });
 it("frozen quality rejects foreign run, workspace and revision bindings at the committed boundary", async () => {
   for (const key of ["workspaceId", "operationId", "inputRevision"] as const) {

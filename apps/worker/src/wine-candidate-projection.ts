@@ -1,6 +1,5 @@
 import { listingInputDigest } from "@wukong/db";
 import {
-  decideWineClaim,
   renderWineDescription,
   workingListingSchema,
   workingBaselineForReview,
@@ -10,200 +9,43 @@ import {
   localizedCopyFields,
   listingFactsSchema,
 } from "@wukong/core";
-import {
-  validateWineGenerationRequest,
-  wineCandidateIssues,
-  wineGenerationRequestSchema,
-  wineGenerationCandidateSchema,
-} from "@wukong/ai";
 import type { WineCandidateProjection } from "./wine-enrichment-runtime.js";
-import { parseWineStageResult } from "./wine-enrichment-pipeline.js";
-import { readWineGenerationOwnershipFromRepositories } from "./wine-generation-ownership.js";
-const same = (a: unknown, b: unknown) =>
-  listingInputDigest(a) === listingInputDigest(b);
+import {
+  readWineGenerationRequestFromRepositories,
+  authorizeWineFrozenQuality,
+  committedGeneration,
+} from "./wine-generation-context.js";
+import { savedResult } from "./wine-stage-authority.js";
 function requireProjection(value: unknown, code: string): asserts value {
   if (!value) throw Error(code);
 }
 /** DB-only. The stage store owns the transaction, listing/run locks, and terminal commit. */
 export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
-  const ownership = await readWineGenerationOwnershipFromRepositories(r, c);
+  const {
+    request,
+    ownership,
+    verified: v,
+    input,
+  } = await readWineGenerationRequestFromRepositories(r, c);
+  const g = committedGeneration(c);
+  const frozen = authorizeWineFrozenQuality(g, request);
   requireProjection(
-    ownership.status === "available",
-    "projection_ownership_unavailable",
-  );
-  const result = (stage: string) => {
-    const row = c.dependencies.find((d) => d.stage === stage);
-    requireProjection(
-      row?.state === "succeeded",
-      "projection_dependency_missing",
-    );
-    const wrapper = row.output as {
-      schemaVersion?: number;
-      fresh?: boolean;
-      result?: unknown;
-    };
-    requireProjection(
-      wrapper.schemaVersion === 1 && wrapper.fresh === true,
-      "projection_dependency_stale",
-    );
-    return parseWineStageResult(wrapper.result, row.stage);
-  };
-  const v = result(
-    c.dependencies.some(
-      (d) => d.stage === "verification_deep" && d.state === "succeeded",
-    )
-      ? "verification_deep"
-      : "verification",
-  );
-  const g = result("generation"),
-    q = result("quality_check");
-  requireProjection(
-    v.state === "succeeded" &&
-      (v.stage === "verification" || v.stage === "verification_deep") &&
-      v.frozenVerification,
-    "projection_verification_required",
-  );
-  requireProjection(
-    g.state === "succeeded" && g.stage === "generation" && g.frozenQuality,
+    g.state === "succeeded" && g.stage === "generation",
     "projection_generation_required",
   );
+  const qrow = c.dependencies.find((d) => d.stage === "quality_check");
+  requireProjection(qrow, "projection_quality_required");
+  const q = savedResult(qrow);
   requireProjection(
     q.state === "succeeded" &&
       q.stage === "quality_check" &&
-      q.contentDigest === listingInputDigest(g.content),
+      q.contentDigest === listingInputDigest(frozen.candidate.content),
     "projection_quality_required",
   );
-  const input = await r.listingInputs.getRevision(
-    c.run.listingId,
-    c.run.inputRevision,
-  );
-  requireProjection(input, "projection_input_missing");
-  const frozen = v.frozenVerification,
-    request = wineGenerationRequestSchema.parse(g.frozenQuality.request),
-    candidate = wineGenerationCandidateSchema.parse(g.frozenQuality.candidate);
-  const binding = {
-    workspaceId: c.job.workspaceId,
-    operationId: c.run.id,
-    inputRevision: c.run.inputRevision,
-  };
-  requireProjection(
-    same(frozen.binding, binding) && same(request.binding, binding),
-    "projection_binding_mismatch",
-  );
-  requireProjection(
-    same(v.identity, frozen.identity) && same(candidate.content, g.content),
-    "projection_artifact_mismatch",
-  );
-  const acceptedLocks = Object.entries(input.fieldStates)
-    .filter(([, state]) => state?.owner === "operator" || state?.locked)
-    .map(([key]) => key)
-    .sort();
-  requireProjection(
-    same([...frozen.lockedFields].sort(), acceptedLocks),
-    "projection_verification_locks_mismatch",
-  );
-  const expectedOwnership = {
-    schemaVersion: 1,
-    priorKind: ownership.prior.kind,
-    metadata: ownership.prior.metadata,
-    legacyDescription:
-      ownership.prior.kind === "legacy" ? ownership.prior.description : null,
-    lockedPaths: ownership.lockedPaths,
-    provenanceDigest: ownership.provenanceDigest,
-  };
-  requireProjection(
-    same(request.ownership, expectedOwnership) &&
-      same(request.current, ownership.prior.current) &&
-      same(request.lockedPaths, ownership.lockedPaths),
-    "projection_ownership_changed",
-  );
-  const profile = c.run.execution.profile as
-    { tone?: unknown; claimPolicy?: unknown } | undefined;
-  requireProjection(
-    profile &&
-      request.tone === profile.tone &&
-      same(request.claimPolicy, profile.claimPolicy) &&
-      request.section === null &&
-      ["full", "research"].includes(String(c.run.execution.wineMode)),
-    "projection_policy_mismatch",
-  );
-  const claims = v.claims.filter((x) => x.state === "accepted");
-  requireProjection(same(request.claims, claims), "projection_claims_mismatch");
-  validateWineGenerationRequest(request);
-  requireProjection(
-    wineCandidateIssues(request, candidate).length === 0,
-    "projection_candidate_invalid",
-  );
-  // Serialize the authority decision with reviewer writes through this transaction's COMMIT.
-  await r.wineEnrichment.lockAuthorities();
-  const authorities = await r.wineEnrichment.readAuthorities();
-  const sources = await r.wineEnrichment.readEvidence(c.run.id);
-  const provenance = (pool: typeof sources) =>
-    pool
-      .map(({ identity: _i, trust: _t, ...s }) => s)
-      .sort((a, b) => a.id.localeCompare(b.id));
-  const now = await r.pipelineRuns.acceptanceTimestamp(),
-    time = Date.parse(now);
+  const claims = request.claims;
   const deadline = Date.parse(
     (c.run.execution.wineAcquisition as { deadlineAt: string }).deadlineAt,
   );
-  requireProjection(
-    time >= Date.parse(c.run.acceptedAt) && time < deadline,
-    "projection_deadline",
-  );
-  requireProjection(
-    Date.parse(frozen.now) >= Date.parse(c.run.acceptedAt) &&
-      Date.parse(frozen.now) <= time &&
-      Date.parse(frozen.now) < deadline,
-    "projection_verification_time",
-  );
-  requireProjection(
-    same(authorities, frozen.authorities) &&
-      same(provenance(sources), provenance(frozen.sources)),
-    "projection_evidence_changed",
-  );
-  requireProjection(
-    frozen.sources.every(
-      (s) =>
-        Date.parse(s.capturedAt) <= time &&
-        (s.kind !== "web" || time - Date.parse(s.capturedAt) < 7 * 86400000),
-    ),
-    "projection_evidence_expired",
-  );
-  requireProjection(
-    frozen.acceptedPremises.every(
-      (p) =>
-        p.state === "accepted" &&
-        p.kind === "fact" &&
-        p.scope === "product" &&
-        claims.some((x) => same(x, p)),
-    ),
-    "projection_premise_mismatch",
-  );
-  const context = {
-    ...frozen,
-    now,
-    authorities,
-    reliableSourceIds: new Set(frozen.reliableSourceIds),
-    trustedObservationSourceIds: new Set(frozen.trustedObservationSourceIds),
-  };
-  for (const claim of [
-    ...claims.filter((x) => x.kind === "fact"),
-    ...claims.filter((x) => x.kind === "recommendation"),
-  ]) {
-    const decision = decideWineClaim({
-      identity: frozen.identity,
-      claim,
-      sources: frozen.sources,
-      lockedFields: new Set(frozen.lockedFields),
-      context,
-    });
-    requireProjection(
-      decision.state === "accepted" &&
-        same([...decision.evidenceIds].sort(), [...claim.evidenceIds].sort()),
-      "projection_claim_no_longer_supported",
-    );
-  }
   const review = c.run.baseVersionId
     ? await r.listings.getReviewSnapshot(c.run.listingId)
     : null;

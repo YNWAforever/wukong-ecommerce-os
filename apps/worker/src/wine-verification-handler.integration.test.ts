@@ -673,7 +673,7 @@ it("cache hook refuses a precommit artifact and publishes after required deep co
     await admin`select snapshot_id from wine_evidence_cache where workspace_id=${f.workspaceId}`;
   expect(rows.length).toBeGreaterThan(0);
 });
-it("composition explicitly blocks ownership-dependent generation and quality", async () => {
+it("composition rejects missing accepted generation profile and invalid quality context", async () => {
   const f = await setup();
   await researched(f, { empty: true });
   const s = verifier(f);
@@ -681,8 +681,15 @@ it("composition explicitly blocks ownership-dependent generation and quality", a
     { ...f.job, stage: "verification" },
     { store: f.store, execute: s.execute },
   );
+  let calls = 0;
   const handlers = createWineEvidenceStageHandlers({
     database: db,
+    transport: {
+      fetch: async () => {
+        calls++;
+        throw Error("unexpected synthetic Go call");
+      },
+    },
     env: { OPENCODE_GO_API_KEY: "synthetic" },
     resolveImage: async () => {
       throw Error("unexpected");
@@ -698,7 +705,7 @@ it("composition explicitly blocks ownership-dependent generation and quality", a
     ),
   ).toMatchObject({
     status: "blocked",
-    code: "generation_ownership_unavailable",
+    code: "generation_profile_required",
   });
   const context = {
     schemaVersion: 1 as const,
@@ -709,8 +716,9 @@ it("composition explicitly blocks ownership-dependent generation and quality", a
   };
   expect(await handlers.execute(context)).toMatchObject({
     state: "blocked",
-    code: "quality_handler_unavailable",
+    code: "generation_ownership_unavailable",
   });
+  expect(calls).toBe(0);
 });
 it("cache publication failure diagnostics cannot block committed next stage", async () => {
   const f = await setup();
