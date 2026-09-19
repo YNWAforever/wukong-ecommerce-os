@@ -18,7 +18,10 @@ import {
   parseWineStageResult,
 } from "./wine-stage-artifacts.js";
 import type { StageRecord } from "./repositories/wine-enrichment.js";
-import { authorizeWineVerifiedEvidence } from "./wine-verified-evidence.js";
+import {
+  authorizeWineVerifiedEvidence,
+  reconstructWineVerifiedEvidence,
+} from "./wine-verified-evidence.js";
 function requireSelection(ok: unknown): asserts ok {
   if (!ok) throw Error("wine_identity_selection_invalid");
 }
@@ -82,11 +85,33 @@ export function wineSelectionContextDigest(
     identity,
   });
 }
+/** Internal traversal state: every descent consumes one of sixteen origin links. */
+export type WineSelectionAncestry = {
+  readonly sourceRunIds: readonly string[];
+};
 /** Authority comes from persisted semantic checkpoints, never the sanitized progress DTO. */
 export async function readWineIdentityCandidate(
   r: WorkspaceRepositories,
   args: WineIdentityReference & { workspaceId: string; listingId: string },
   now: string,
+) {
+  return readWineIdentityCandidateProof(r, args, now, async (proof) => {
+    // Prospective selection adds this candidate run as one more origin link.
+    // This same eligibility boundary serves confirmation and the progress DTO.
+    await r.wineEnrichment.lockAuthorities();
+    await authorizeWineVerifiedEvidence(r, proof, {
+      sourceRunIds: [proof.run.id],
+    });
+  });
+}
+/** Private: callers cannot opt a current candidate into historical authorization. */
+async function readWineIdentityCandidateProof(
+  r: WorkspaceRepositories,
+  args: WineIdentityReference & { workspaceId: string; listingId: string },
+  now: string,
+  verify: (
+    proof: Parameters<typeof authorizeWineVerifiedEvidence>[1],
+  ) => Promise<void>,
 ) {
   const run = await r.pipelineRuns.getOperation(args.sourceRunId);
   requireSelection(
@@ -174,8 +199,7 @@ export async function readWineIdentityCandidate(
       inputRevision: run.inputRevision,
     }) && same(frozen.identity, chosen.identity),
   );
-  await r.wineEnrichment.lockAuthorities();
-  await authorizeWineVerifiedEvidence(r, {
+  await verify({
     workspaceId: args.workspaceId,
     run,
     input,
@@ -248,6 +272,7 @@ export async function readWineIdentitySelection(
   r: WorkspaceRepositories,
   input: ListingInputSnapshot,
   runId: string,
+  ancestry: WineSelectionAncestry = { sourceRunIds: [] },
 ) {
   const raw = input.workingContent.wineIdentitySelection;
   if (raw === undefined) return undefined;
@@ -269,10 +294,27 @@ export async function readWineIdentitySelection(
       selectedInput.actorId === s.selectedBy &&
       same(selectedInput.workingContent.wineIdentitySelection, s),
   );
-  const origin = await readWineIdentityCandidate(
+  requireSelection(
+    ancestry.sourceRunIds.length < 16 &&
+      !ancestry.sourceRunIds.includes(s.sourceRunId) &&
+      s.sourceRunId !== runId,
+  );
+  const originRun = await r.pipelineRuns.getOperation(s.sourceRunId);
+  // Bind the ACTUAL origin revision before any recursive extraction proof.
+  requireSelection(
+    originRun &&
+      originRun.listingId === input.listingId &&
+      originRun.inputRevision === s.sourceInputRevision &&
+      originRun.inputRevision < s.selectedInputRevision,
+  );
+  const nextAncestry = {
+    sourceRunIds: [...ancestry.sourceRunIds, s.sourceRunId],
+  };
+  const origin = await readWineIdentityCandidateProof(
     r,
     { ...s, workspaceId: input.workspaceId, listingId: input.listingId },
     s.selectedAt,
+    (proof) => reconstructWineVerifiedEvidence(r, proof, nextAncestry),
   );
   requireSelection(
     origin.run.inputRevision === s.sourceInputRevision &&

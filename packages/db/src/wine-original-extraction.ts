@@ -1,4 +1,7 @@
-import { readWineIdentitySelection } from "./wine-identity-selection.js";
+import {
+  readWineIdentitySelection,
+  type WineSelectionAncestry,
+} from "./wine-identity-selection.js";
 import { createHash } from "node:crypto";
 import { groundWineEvidence } from "@wukong/core";
 import type { WorkspaceRepositories } from "./client.js";
@@ -24,6 +27,7 @@ export async function readWineOriginalExtraction(
   run: ListingOperation,
   stage: StageRecord,
   result: Extract<WineStageResult, { stage: "extraction"; state: "succeeded" }>,
+  ancestry: WineSelectionAncestry = { sourceRunIds: [] },
 ) {
   const input = await r.listingInputs.getRevision(
     run.listingId,
@@ -36,7 +40,12 @@ export async function readWineOriginalExtraction(
       listingInputDigest(input.sources) === run.execution.wineSourceDigest,
     "extraction_input_invalid",
   );
-  const identitySelection = await readWineIdentitySelection(r, input, run.id);
+  const identitySelection = await readWineIdentitySelection(
+    r,
+    input,
+    run.id,
+    ancestry,
+  );
   requireValid(
     Boolean(identitySelection) === Boolean(result.originalIdentity),
     "extraction_selection_binding_invalid",

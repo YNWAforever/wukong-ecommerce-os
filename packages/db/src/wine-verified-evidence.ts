@@ -1,4 +1,7 @@
-import { createWineIdentityAssertion } from "./wine-identity-selection.js";
+import {
+  createWineIdentityAssertion,
+  type WineSelectionAncestry,
+} from "./wine-identity-selection.js";
 import {
   groundWineEvidence,
   decideWineClaim,
@@ -24,19 +27,33 @@ const provenance = (sources: EvidenceSource[]) =>
   sources
     .map(({ identity: _i, trust: _t, ...s }) => s)
     .sort((a, b) => a.id.localeCompare(b.id));
-/** Transaction-scoped proof only. Caller authorizes run/input/dependencies and holds registry serialization.
- * Historical reads may occur after the original deadline; active callers separately enforce it.
- * Neither frozen time nor original capture ages are renewed by current reauthorization. */
+type VerifiedEvidenceArguments = {
+  workspaceId: string;
+  run: ListingOperation;
+  input: ListingInputSnapshot;
+  frozen: WineFrozenContext;
+  claims: SupportedClaim[];
+  now: string;
+};
+/** Current factual authorization retains the live registry equality gate. */
 export async function authorizeWineVerifiedEvidence(
   r: WorkspaceRepositories,
-  args: {
-    workspaceId: string;
-    run: ListingOperation;
-    input: ListingInputSnapshot;
-    frozen: WineFrozenContext;
-    claims: SupportedClaim[];
-    now: string;
-  },
+  args: VerifiedEvidenceArguments,
+  ancestry: WineSelectionAncestry = { sourceRunIds: [] },
+): Promise<void> {
+  const registry = await r.wineEnrichment.readAuthorities();
+  requireEvidence(
+    same(registry, args.frozen.authorities),
+    "adopted_authority_changed",
+  );
+  await reconstructWineVerifiedEvidence(r, args, ancestry);
+}
+/** Internal immutable proof reconstruction. Historical selection callers load and
+ * bind the persisted stage first; this is not a current factual authorization. */
+export async function reconstructWineVerifiedEvidence(
+  r: WorkspaceRepositories,
+  args: VerifiedEvidenceArguments,
+  ancestry: WineSelectionAncestry,
 ): Promise<void> {
   const { workspaceId, run, input, frozen, claims, now } = args;
   const accepted = Date.parse(run.acceptedAt),
@@ -49,11 +66,10 @@ export async function authorizeWineVerifiedEvidence(
     operationId: run.id,
     inputRevision: run.inputRevision,
   };
-  const registry = await r.wineEnrichment.readAuthorities(),
-    sources = await r.wineEnrichment.readEvidence(run.id);
+  const registry = frozen.authorities;
+  const sources = await r.wineEnrichment.readEvidence(run.id);
   requireEvidence(
-    same(registry, frozen.authorities) &&
-      same(provenance(sources), provenance(frozen.sources)),
+    same(provenance(sources), provenance(frozen.sources)),
     "adopted_authority_changed",
   );
   requireEvidence(
@@ -100,6 +116,7 @@ export async function authorizeWineVerifiedEvidence(
     run,
     extractionRow,
     extraction,
+    ancestry,
   );
   const assets = input.sources
     .filter((s) => s.use === "analyse" && s.role !== "supplier_document")

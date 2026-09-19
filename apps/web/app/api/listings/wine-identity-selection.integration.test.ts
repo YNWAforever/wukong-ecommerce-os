@@ -35,6 +35,29 @@ import { preflightWineCapability } from "../../../lib/wine-capability-client";
 import { wineEnrichmentPolicySchema } from "@wukong/core";
 import { vi, afterEach } from "vitest";
 afterEach(() => vi.unstubAllEnvs());
+async function selectionAdmission(f: Awaited<ReturnType<typeof ready>>) {
+  return prepareWineAdmission(db, f.job.workspaceId, "research", (options) =>
+    preflightWineCapability({
+      ...options,
+      fetch: async () =>
+        Response.json({
+          authenticated: true,
+          fullResearchConfigured: true,
+          wine: {
+            schemaVersion: 1,
+            execution: f.run.execution.wineGo,
+            databaseSchemaVersion: "wine-enrichment-0042-v1",
+            buildSha: "abcdef0",
+            consumerSupported: true,
+            goConfigured: true,
+            tavilyConfigured: true,
+            queueReady: true,
+            databaseReady: true,
+          },
+        }),
+    }),
+  );
+}
 async function selectionFixture(
   working?: import("@wukong/core").WorkingListing,
 ) {
@@ -59,31 +82,7 @@ async function selectionFixture(
       }),
     }),
   );
-  const admission = await prepareWineAdmission(
-    db,
-    f.job.workspaceId,
-    "research",
-    (options) =>
-      preflightWineCapability({
-        ...options,
-        fetch: async () =>
-          Response.json({
-            authenticated: true,
-            fullResearchConfigured: true,
-            wine: {
-              schemaVersion: 1,
-              execution: f.run.execution.wineGo,
-              databaseSchemaVersion: "wine-enrichment-0042-v1",
-              buildSha: "abcdef0",
-              consumerSupported: true,
-              goConfigured: true,
-              tavilyConfigured: true,
-              queueReady: true,
-              databaseReady: true,
-            },
-          }),
-      }),
-  );
+  const admission = await selectionAdmission(f);
   const listing = await db.forWorkspace(f.job.workspaceId, (r) =>
     r.listings.requireById(f.run.listingId),
   );
@@ -135,14 +134,43 @@ import { createWineStageStore } from "../../../../worker/src/wine-enrichment-run
 import { runWineStage } from "../../../../worker/src/wine-enrichment-pipeline";
 import { wineIdentity, webEvidence } from "@wukong/core";
 import { readWineOriginalExtraction } from "@wukong/db";
-it("actual selected-run extraction and immutable reconstruction consume selection", async () => {
-  const { f, request, admission } = await selectionFixture();
+async function executeSelectedRun(
+  registryChanged = false,
+  seed?: Awaited<ReturnType<typeof selectionFixture>>,
+) {
+  const { f, request, admission } = seed ?? (await selectionFixture());
   const accepted = await db.forWorkspace(request.workspaceId, (r) =>
     confirmWineIdentity(r, request, admission),
   );
   const run = await db.forWorkspace(request.workspaceId, (r) =>
     r.pipelineRuns.getOperation(accepted.processing.runId),
   );
+  if (registryChanged) {
+    await db.forWorkspace(request.workspaceId, async (r) => {
+      for (const authority of await r.wineEnrichment.readAuthorities())
+        await r.wineEnrichment.recordReviewedAuthority(authority.verifierId, {
+          ...authority,
+          revokedAt: new Date().toISOString(),
+        });
+    });
+    await expect(
+      db.forWorkspace(request.workspaceId, async (r) => {
+        const origin = await r.wineEnrichment.readStage(
+          f.run.id,
+          "verification",
+        );
+        const frozen = (origin!.output as any).result.frozenVerification;
+        await authorizeWineVerifiedEvidence(r, {
+          workspaceId: request.workspaceId,
+          run: f.run,
+          input: f.run.execution.input as any,
+          frozen,
+          claims: [f.claim],
+          now: await r.pipelineRuns.acceptanceTimestamp(),
+        });
+      }),
+    ).rejects.toThrow("adopted_authority_changed");
+  }
   const note = (run!.execution.input as any).note;
   const identity = wineIdentity({
     volumeMl: 750,
@@ -273,9 +301,22 @@ it("actual selected-run extraction and immutable reconstruction consume selectio
     const stage = await r.wineEnrichment.readStage(run!.id, "verification");
     const v = (stage!.output as any).result;
     expect(v.identity.status).toBe("matched");
+    if (registryChanged) {
+      await expect(
+        authorizeWineVerifiedEvidence(r, {
+          workspaceId: request.workspaceId,
+          run: run!,
+          input: run!.execution.input as any,
+          frozen: v.frozenVerification,
+          claims: [{ ...f.claim, evidenceIds: [researchSource.id] }],
+          now: await r.pipelineRuns.acceptanceTimestamp(),
+        }),
+      ).rejects.toThrow("adopted_claim_invalid");
+    }
+
     expect(
       v.issues.some((i: any) => i.code === "verification_identity_unresolved"),
-    ).toBe(false);
+    ).toBe(registryChanged);
     await authorizeWineVerifiedEvidence(r, {
       workspaceId: request.workspaceId,
       run: run!,
@@ -285,7 +326,175 @@ it("actual selected-run extraction and immutable reconstruction consume selectio
       now: await r.pipelineRuns.acceptanceTimestamp(),
     });
   });
-});
+  return {
+    f: { ...f, run: run!, source: researchSource },
+    request: {
+      ...request,
+      expectedInputRevision: run!.inputRevision,
+      operationKey: randomUUID(),
+      sourceRunId: run!.id,
+      sourceId: researchSource.id,
+    },
+    admission,
+  };
+}
+it.each([false, true])(
+  "actual selected-run extraction and immutable reconstruction consume selection after registry change=%s",
+  async (registryChanged) => {
+    await executeSelectedRun(registryChanged);
+  },
+);
+
+it.each(["revision", "self_cycle"])(
+  "rejects malformed actual origin %s before recursive proof reads",
+  async (kind) => {
+    const { f, request, admission } = await selectionFixture();
+    const accepted = await db.forWorkspace(request.workspaceId, (r) =>
+      confirmWineIdentity(r, request, admission),
+    );
+    const { readWineIdentitySelection } = await import("@wukong/db");
+    await db.forWorkspace(request.workspaceId, async (r) => {
+      const input = (await r.listingInputs.getCurrent(request.listingId))!;
+      const readStage = vi.fn(r.wineEnrichment.readStage);
+      const repositories = {
+        ...r,
+        pipelineRuns: {
+          ...r.pipelineRuns,
+          getOperation: async (id: string) => {
+            const operation = await r.pipelineRuns.getOperation(id);
+            return operation && id === f.run.id
+              ? { ...operation, inputRevision: input.revision }
+              : operation;
+          },
+        },
+        wineEnrichment: { ...r.wineEnrichment, readStage },
+      };
+      await expect(
+        readWineIdentitySelection(
+          repositories,
+          input,
+          kind === "self_cycle" ? f.run.id : accepted.processing.runId,
+        ),
+      ).rejects.toThrow("wine_identity_selection_invalid");
+      expect(readStage).not.toHaveBeenCalled();
+    });
+  },
+);
+
+it("bounds actual persisted repeated-selection traversal at sixteen ancestors", async () => {
+  let seed = await selectionFixture();
+  // Finish only fixture operation bookkeeping between real extraction/verification
+  // rounds; the complete ambiguity-to-terminal acceptance path is tested separately.
+  for (let count = 1; count <= 16; count++) {
+    seed.admission = await selectionAdmission(seed.f);
+    seed = await executeSelectedRun(false, seed);
+    await db.forWorkspace(seed.request.workspaceId, async (r) => {
+      await r.pipelineRuns.setOperationState(seed.f.run.id, "succeeded");
+      await r.wineEnrichment.settleTerminalBudgets(seed.f.run.id);
+    });
+  }
+  const { readWineIdentitySelection } = await import("@wukong/db");
+  await db.forWorkspace(seed.request.workspaceId, async (r) => {
+    const current = (await r.listingInputs.getCurrent(seed.request.listingId))!;
+    let reads = 0;
+    const counted = {
+      ...r,
+      wineEnrichment: {
+        ...r.wineEnrichment,
+        readStage: async (
+          ...args: Parameters<typeof r.wineEnrichment.readStage>
+        ) => {
+          reads++;
+          return r.wineEnrichment.readStage(...args);
+        },
+      },
+    };
+    expect(
+      await readWineIdentitySelection(counted, current, seed.f.run.id),
+    ).toBeDefined();
+    expect(reads).toBe(80); // three prefix stages, deep-stage exclusion, and original extraction for each origin
+  });
+  seed.admission = await selectionAdmission(seed.f);
+  const before = await counts(seed.request.workspaceId);
+  await expect(
+    db.forWorkspace(seed.request.workspaceId, (r) =>
+      confirmWineIdentity(r, seed.request, seed.admission),
+    ),
+  ).rejects.toMatchObject({ code: "wine_identity_candidate_unavailable" });
+  expect(await counts(seed.request.workspaceId)).toEqual(before);
+  await db.forWorkspace(seed.request.workspaceId, async (r) => {
+    const progress = await readWineProgress(
+      r,
+      (await r.pipelineRuns.getOperation(seed.f.run.id))!,
+    );
+    expect(
+      progress!.candidates.every(
+        (candidate) => !candidate.confirmationAvailable,
+      ),
+    ).toBe(true);
+  });
+  // Deliberately construct an over-depth persisted input through the internal port
+  // to verify the historical reader independently of admission protection.
+  await db.forWorkspace(seed.request.workspaceId, async (r) => {
+    const { listingInputDigest, wineSelectionContextDigest } =
+      await import("@wukong/db");
+    const current = (await r.listingInputs.getCurrent(seed.request.listingId))!;
+    const stage = (await r.wineEnrichment.readStage(
+      seed.f.run.id,
+      "verification",
+    ))!;
+    const source = (stage.output as any).result.frozenVerification.sources.find(
+      (source: any) => source.id === seed.f.source.id,
+    );
+    const selection = {
+      ...current.workingContent.wineIdentitySelection!,
+      sourceRunId: seed.f.run.id,
+      sourceId: source.id,
+      sourceInputRevision: current.revision,
+      sourceInputDigest: current.inputDigest,
+      sourceBaseVersionId: seed.f.run.baseVersionId,
+      sourceStageDigest: listingInputDigest(stage),
+      identityDigest: listingInputDigest(source.identity),
+      selectedInputRevision: current.revision + 1,
+      selectedAt: await r.pipelineRuns.acceptanceTimestamp(),
+      contextDigest: wineSelectionContextDigest(current),
+    };
+    await r.listingInputs.saveIdentitySelection(
+      {
+        ...seed.request,
+        changes: [],
+        requestDigest: listingInputDigest(selection),
+      },
+      selection,
+      {
+        workspaceId: seed.request.workspaceId,
+        actorId: "operator",
+        entityId: seed.request.listingId,
+      },
+      r.audit,
+    );
+  });
+  await db.forWorkspace(seed.request.workspaceId, async (r) => {
+    const current = (await r.listingInputs.getCurrent(seed.request.listingId))!;
+    let reads = 0;
+    const counted = {
+      ...r,
+      wineEnrichment: {
+        ...r.wineEnrichment,
+        readStage: async (
+          ...args: Parameters<typeof r.wineEnrichment.readStage>
+        ) => {
+          reads++;
+          return r.wineEnrichment.readStage(...args);
+        },
+      },
+    };
+    await expect(
+      readWineIdentitySelection(counted, current, randomUUID()),
+    ).rejects.toThrow("wine_identity_selection_invalid");
+    expect(reads).toBe(80);
+  });
+}, 180_000);
 
 import { readWineProgress } from "../../../lib/wine-progress";
 it("offers only currently authorized persisted verification candidate references", async () => {
