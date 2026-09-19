@@ -262,3 +262,80 @@ it("photo evidence has no public link even with an allowlisted publisher", async
     contentScope: "label",
   });
 });
+it.each([
+  [
+    "Authorization: Bearer synthetic-credential-123456",
+    "synthetic-credential-123456",
+  ],
+  ["Bearer bare-credential-123456", "bare-credential-123456"],
+  ["authorization = bEaReR mixed-credential-123456", "mixed-credential-123456"],
+  [
+    "Proxy-Authorization: Basic c3ludGhldGljOnNlY3JldA==",
+    "c3ludGhldGljOnNlY3JldA==",
+  ],
+  ["Authorization: Token token-credential-123456", "token-credential-123456"],
+  [
+    "Authorization: Negotiate bmVnb3RpYXRlLWNyZWRlbnRpYWw=",
+    "bmVnb3RpYXRlLWNyZWRlbnRpYWw=",
+  ],
+  [
+    'Authorization: Digest username="fixture", response="digest-credential-123456", nonce="nonce-credential-123456"',
+    "digest-credential-123456",
+  ],
+])(
+  "redacts complete authentication spans throughout actual progress DTO: %s",
+  async (text, credential) => {
+    const f = fixture("running");
+    const identity = wineIdentity({ producer: text });
+    f.append("extraction", {
+      observedAt: "2026-09-20T00:00:00.000Z",
+      identity,
+      evidence: [webEvidence({ title: text, excerpt: text, identity })],
+      issues: [],
+    });
+    const content = {
+      title: { en: text, "zh-Hant": text },
+      seo: {
+        title: { en: text, "zh-Hant": text },
+        description: { en: text, "zh-Hant": text },
+      },
+      tags: [],
+      sections: [],
+    };
+    f.append("generation", { content, issues: [] }, false);
+    const p = await readWineProgress(f.repos, f.run);
+    expect(p?.identity?.producer).toBe("[redacted]");
+    expect(p?.candidates[0]?.identity.producer).toBe("[redacted]");
+    expect(p?.evidence[0]?.title).toBe("[redacted]");
+    expect(p?.evidence[0]?.excerpt).toBe("[redacted]");
+    expect(p?.inspection[0]?.content.title.en).toBe("[redacted]");
+    expect(p?.inspection[0]?.content.seo.description["zh-Hant"]).toBe(
+      "[redacted]",
+    );
+    expect(JSON.stringify(p)).not.toContain(credential);
+    expect(JSON.stringify(p)).not.toContain("nonce-credential-123456");
+  },
+);
+it("redacts truncated authentication at retained excerpt boundary without removing surrounding ordinary prose", async () => {
+  const f = fixture("running");
+  const prose =
+    "A bearer of fine traditions. Basic winemaking gives the wine structure. ";
+  const prefix = prose + "x".repeat(15930 - prose.length) + "\n";
+  const excerpt = (
+    prefix +
+    "Authorization: Bearer " +
+    "synthetic-truncated-credential".repeat(20)
+  ).slice(0, 16000);
+  f.append("extraction", {
+    observedAt: "2026-09-20T00:00:00.000Z",
+    identity: wineIdentity(),
+    evidence: [webEvidence({ title: prose, excerpt, truncated: true })],
+    issues: [],
+  });
+  const p = await readWineProgress(f.repos, f.run);
+  expect(p?.evidence[0]?.title).toBe(prose);
+  expect(p?.evidence[0]?.excerpt).toBe(prefix + "[redacted]");
+  expect(p?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(16000);
+  expect(p?.evidence[0]?.truncated).toBe(true);
+  expect(JSON.stringify(p)).not.toContain("synthetic-truncated");
+});
