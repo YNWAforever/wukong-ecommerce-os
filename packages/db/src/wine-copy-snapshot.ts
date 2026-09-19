@@ -124,6 +124,7 @@ function build(raw: WineCopySnapshotInput) {
   );
   requireCopy(!d.unavailableSections.some((s) => targetPaths.includes(s.path)));
   const origins = new Map<string, ValidatedWineOrigin>();
+  const originalClaimIds = new Set<string>();
   for (const origin of d.origins) {
     requireCopy(
       !origins.has(origin.runId) &&
@@ -147,6 +148,12 @@ function build(raw: WineCopySnapshotInput) {
         new Set(origin.claims.map((c) => c.id)).size === origin.claims.length &&
         new Set(frozen.sources.map((s) => s.id)).size === frozen.sources.length,
     );
+    // Check complete namespaces before selecting targets: protected inherited IDs must never
+    // collide with selected generation claims, even when their original text is identical.
+    for (const claim of origin.claims) {
+      requireCopy(!originalClaimIds.has(claim.id));
+      originalClaimIds.add(claim.id);
+    }
     origins.set(origin.runId, origin);
   }
   type Selected = {

@@ -400,3 +400,47 @@ describe("copy snapshot complete closure and strict shape", () => {
     expect(core.wineCopySnapshotSchema.safeParse(snapshot).success).toBe(false);
   });
 });
+
+describe("complete original namespace review regression", () => {
+  it.each(["identical", "conflicting"])(
+    "rejects selected versus protected claim ID collision with %s content",
+    (variant) => {
+      const f = fixture(),
+        other = structuredClone(f.adopted.origins[0]!);
+      other.runId = id(30);
+      other.versionId = id(31);
+      other.frozenVerification.binding.operationId = other.runId;
+      if (variant === "conflicting") other.claims[0]!.value = "Another Estate";
+      f.adopted.origins.push(other);
+      const protectedSection: core.ContentSection = {
+        key: "tasting",
+        en: "Protected tasting",
+        "zh-Hant": "Protected tasting",
+        claimIds: [other.claims[0]!.id],
+        locked: true,
+        owner: "operator",
+      };
+      f.adopted.current!.sections.push(protectedSection);
+      f.ownership.lockedPaths = ["sections.tasting"];
+      f.adopted.supports.push(
+        ...["en", "zh-Hant"].map((lang) => ({
+          ...structuredClone(f.adopted.supports[0]!),
+          path: `sections.tasting.${lang}`,
+          text: "Protected tasting",
+          span: "Protected tasting",
+          claim: other.claims[0]!,
+          originRunId: other.runId,
+          originVersionId: other.versionId,
+        })),
+      );
+      const before = structuredClone(f.adopted.current);
+      expect(() => api.buildWineCopySnapshot(f)).toThrow(
+        "evidence_refresh_required",
+      );
+      expect(f.adopted.current).toEqual(before);
+      expect(
+        f.adopted.current!.sections.find((s) => s.key === "tasting")?.claimIds,
+      ).toEqual([id(2)]);
+    },
+  );
+});
