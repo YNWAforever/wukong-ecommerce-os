@@ -1,3 +1,4 @@
+import { createWineIdentityAssertion } from "./wine-identity-selection.js";
 import {
   groundWineEvidence,
   decideWineClaim,
@@ -110,6 +111,12 @@ export async function authorizeWineVerifiedEvidence(
       note: input.note,
       lockedFields: original.context.lockedFields,
       verifiedAliases: original.context.verifiedAliases,
+      identitySelection: input.workingContent.wineIdentitySelection
+        ? createWineIdentityAssertion(
+            input.workingContent.wineIdentitySelection,
+            run.id,
+          )
+        : undefined,
     },
     extraction: { binding, identity: original.context.identity },
     records: sources.map((source) => ({

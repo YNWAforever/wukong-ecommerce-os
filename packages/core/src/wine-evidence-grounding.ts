@@ -1,3 +1,8 @@
+import {
+  wineIdentityAssertionText,
+  WINE_IDENTITY_ASSERTION_TITLE,
+  type WineIdentityAssertion,
+} from "./wine-identity-selection.js";
 import { validateWineSupportProposal } from "./wine-support-validation.js";
 import {
   wineFrozenContextSchema,
@@ -37,6 +42,7 @@ export type WineGroundingInput = {
     note: string | null;
     lockedFields: string[];
     verifiedAliases: WineFrozenContext["verifiedAliases"];
+    identitySelection?: WineIdentityAssertion;
   };
   extraction: { binding: Binding; identity: ProductIdentity };
   records: WineRetainedSource[];
@@ -317,6 +323,21 @@ export function groundWineEvidence(
     "duplicate_asset",
   );
   const identity = productIdentitySchema.parse(input.extraction.identity);
+  const selection = accepted.identitySelection;
+  const assertionId = selection?.source.id;
+  if (selection)
+    assert(
+      selection.source.kind === "merchant" &&
+        selection.source.identity === null &&
+        selection.source.trust === "unverified" &&
+        !selection.source.truncated &&
+        selection.source.title === WINE_IDENTITY_ASSERTION_TITLE &&
+        selection.source.location ===
+          `wine:identity-selection:${binding.operationId}` &&
+        selection.source.excerpt ===
+          wineIdentityAssertionText(selection.identity),
+      "identity_selection_assertion_invalid",
+    );
   const authorities = input.authorities.map((a) =>
     wineSourceAuthoritySchema.parse(a),
   );
@@ -324,6 +345,17 @@ export function groundWineEvidence(
   const sources: EvidenceSource[] = input.records.map((record) => {
     assert(sameBinding(binding, record.binding), "source_binding_invalid");
     const source = evidenceSourceSchema.parse(record.source);
+    const assertion = source.id === assertionId;
+    if (
+      source.location.startsWith("wine:identity-selection:") ||
+      source.title === WINE_IDENTITY_ASSERTION_TITLE
+    )
+      assert(
+        assertion &&
+          JSON.stringify(source) ===
+            JSON.stringify(evidenceSourceSchema.parse(selection!.source)),
+        "identity_selection_assertion_invalid",
+      );
     assert(
       record.documentDigest === source.documentDigest,
       "source_digest_invalid",
@@ -347,7 +379,7 @@ export function groundWineEvidence(
       assert(
         record.assetDigest === null &&
           source.contentScope === "note" &&
-          accepted.note?.includes(source.excerpt),
+          (assertion || accepted.note?.includes(source.excerpt)),
         "merchant_excerpt_binding_invalid",
       );
     else assert(record.assetDigest === null, "web_asset_binding_invalid");
@@ -361,18 +393,26 @@ export function groundWineEvidence(
     new Set(sources.map((s) => s.id)).size === sources.length,
     "duplicate_source",
   );
+  if (selection)
+    assert(
+      sources.some((s) => s.id === assertionId),
+      "identity_selection_assertion_missing",
+    );
   const supports: WineSupportProposal[] = [];
   const parsed = new Map(
     sources.map((source) => [
       source.id,
-      parseSource(
-        source,
-        issues,
-        source.kind === "web" ? undefined : identity.kind,
-      ),
+      source.id === assertionId
+        ? { supports: [], kind: null }
+        : parseSource(
+            source,
+            issues,
+            source.kind === "web" ? undefined : identity.kind,
+          ),
     ]),
   );
-  let invalidObservation = identity.status === "needs_confirmation";
+  let invalidObservation =
+    !selection && identity.status === "needs_confirmation";
   const trustedObservationIds = new Set<string>();
   // OCR observations are bound to the accepted image, not independently certified facts.
   // Printed field prefixes are not required on a physical label.
@@ -381,6 +421,22 @@ export function groundWineEvidence(
     ...identity.category,
   })) {
     if (!obs || obs.value === null) continue;
+    // A reconstructed human assertion never becomes mechanical evidence support.
+    if (
+      selection &&
+      obs.evidenceIds.length === 1 &&
+      obs.evidenceIds[0] === assertionId
+    ) {
+      const value =
+        field === "vintage"
+          ? selection.identity.vintage.year
+          : (selection.identity as Record<string, unknown>)[field];
+      assert(
+        sameWineValue(value, obs.value),
+        "identity_selection_observation_invalid",
+      );
+      continue;
+    }
     const bound: WineSupportProposal[] = [];
     const valid =
       obs.evidenceIds.length > 0 &&
@@ -414,6 +470,34 @@ export function groundWineEvidence(
       });
     }
   }
+  const observedIdentity = structuredClone(identity);
+  if (selection) {
+    // Category observations stay on their original source identity. A different
+    // selected kind cannot carry those category keys in its aggregate identity.
+    if (selection.identity.kind !== identity.kind) identity.category = {};
+    for (const [field, value] of Object.entries(selection.identity)) {
+      // A missing candidate coordinate is not a human denial of an observed value.
+      if (
+        value === null ||
+        (field === "vintage" && selection.identity.vintage.state === "unknown")
+      )
+        continue;
+      Object.assign(identity, { [field]: value });
+      if (field === "kind") continue;
+      const scalar =
+        field === "vintage" ? selection.identity.vintage.year : value;
+      if (scalar === null)
+        delete (identity.observations as Record<string, FieldObservation>)[
+          field
+        ];
+      else
+        (identity.observations as Record<string, FieldObservation>)[field] = {
+          value: scalar as string | number,
+          state: "normalized",
+          evidenceIds: [assertionId!],
+        };
+    }
+  }
   const complete =
     !!identity.producer &&
     !!identity.productName &&
@@ -422,6 +506,7 @@ export function groundWineEvidence(
   identity.status =
     invalidObservation || !complete ? "needs_confirmation" : "matched";
   for (const source of sources) {
+    if (source.id === assertionId) continue;
     const p = parsed.get(source.id)!;
     if (source.kind === "web") {
       source.identity = sourceIdentity(source, p.kind, p.supports);
@@ -442,7 +527,9 @@ export function groundWineEvidence(
         });
       supports.push(...p.supports);
     } else {
-      source.identity = structuredClone(identity);
+      source.identity = structuredClone(
+        selection ? observedIdentity : identity,
+      );
       // Validate fields independently: an invalid optional observation cannot hide
       // another valid contrary fact or fall back to the aggregate identity.
       const proposed = input.records.find((r) => r.source.id === source.id)!
@@ -486,11 +573,11 @@ export function groundWineEvidence(
             ? "needs_confirmation"
             : "candidate";
         if (proposed.status === "needs_confirmation") {
-          identity.status = "needs_confirmation";
+          if (!selection) identity.status = "needs_confirmation";
           issues.push({
             path: `sources.${source.id}.identity`,
             code: "observation_identity_ambiguous",
-            blocking: true,
+            blocking: !selection,
             evidenceIds: [source.id],
           });
         }
@@ -534,6 +621,28 @@ export function groundWineEvidence(
       }
     }
   }
+  if (selection)
+    for (const support of supports) {
+      const source = sources.find((s) => s.id === support.sourceId)!;
+      if (source.kind === "web") continue;
+      const value =
+        support.field === "vintage"
+          ? selection.identity.vintage.year
+          : (selection.identity as Record<string, unknown>)[support.field];
+      if (
+        value !== undefined &&
+        value !== null &&
+        !sameWineValue(value, support.value)
+      ) {
+        identity.status = "needs_confirmation";
+        issues.push({
+          path: `identity.${support.field}`,
+          code: "selected_identity_conflict",
+          blocking: true,
+          evidenceIds: [support.sourceId, assertionId!],
+        });
+      }
+    }
   const reliableSourceIds: string[] = [];
   for (const source of sources)
     if (

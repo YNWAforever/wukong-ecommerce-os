@@ -1,3 +1,4 @@
+import { readWineIdentitySelection } from "./wine-identity-selection.js";
 import { createHash } from "node:crypto";
 import { groundWineEvidence } from "@wukong/core";
 import type { WorkspaceRepositories } from "./client.js";
@@ -35,6 +36,11 @@ export async function readWineOriginalExtraction(
       listingInputDigest(input.sources) === run.execution.wineSourceDigest,
     "extraction_input_invalid",
   );
+  const identitySelection = await readWineIdentitySelection(r, input, run.id);
+  requireValid(
+    Boolean(identitySelection) === Boolean(result.originalIdentity),
+    "extraction_selection_binding_invalid",
+  );
   const saved = await r.wineEnrichment.readTrustedContext(
     run.id,
     WINE_EXTRACTION_CONTEXT_KEY,
@@ -60,6 +66,22 @@ export async function readWineOriginalExtraction(
     .map((s) => ({ id: s.assetId, digest: s.digest }));
   const records = result.evidence.map((source, index) => {
     const row = rows.find((s) => s.id === source.id);
+    if (identitySelection && source.id === identitySelection.source.id) {
+      requireValid(
+        index === result.evidence.length - 1 &&
+          row &&
+          listingInputDigest(row) ===
+            listingInputDigest(identitySelection.source) &&
+          listingInputDigest(source) === listingInputDigest(row),
+        "extraction_selection_binding_invalid",
+      );
+      return {
+        binding,
+        assetDigest: null,
+        documentDigest: row.documentDigest,
+        source: row,
+      };
+    }
     requireValid(
       row &&
         listingInputDigest(row) === listingInputDigest(source) &&
@@ -107,8 +129,12 @@ export async function readWineOriginalExtraction(
       note: input.note,
       lockedFields,
       verifiedAliases: saved.verifiedAliases,
+      identitySelection,
     },
-    extraction: { binding, identity: result.identity },
+    extraction: {
+      binding,
+      identity: result.originalIdentity ?? result.identity,
+    },
     records,
     authorities: saved.authorities,
     now: result.observedAt,
@@ -128,6 +154,11 @@ export async function readWineOriginalExtraction(
         ),
       "extraction_trusted_context_invalid",
     );
+  requireValid(
+    listingInputDigest(rebuilt.context.identity) ===
+      listingInputDigest(result.identity),
+    "extraction_trusted_context_invalid",
+  );
   // Re-grounding sanitized observations cannot regenerate invalid raw hints: preserve committed diagnostics exactly.
   return { context: rebuilt.context, issues: structuredClone(result.issues) };
 }

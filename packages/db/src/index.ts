@@ -208,3 +208,5 @@ export {
 export * from "./wine-copy-snapshot.js";
 export * from "./wine-generation-request.js";
 export * from "./wine-copy-dependencies.js";
+
+export * from "./wine-identity-selection.js";

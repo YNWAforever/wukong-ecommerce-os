@@ -1,3 +1,4 @@
+import { readWineIdentitySelection } from "@wukong/db";
 import {
   readWineGenerationRequestFromRepositories,
   authorizeWineFrozenQuality,
@@ -133,6 +134,13 @@ export function createWineStageStore(
     )
       return blocked("stage_dependency_mismatch");
     if (result.state === "succeeded" && result.stage === "extraction") {
+      const selectionInput = await r.listingInputs.getRevision(
+        run.listingId,
+        run.inputRevision,
+      );
+      const assertion = selectionInput
+        ? await readWineIdentitySelection(r, selectionInput, run.id)
+        : undefined;
       const observedAt = result.observedAt;
       const time = Date.parse(observedAt);
       const serverTime = (await now(r)).getTime();
@@ -144,7 +152,14 @@ export function createWineStageStore(
             (run.execution.wineAcquisition as { deadlineAt: string })
               .deadlineAt,
           ) ||
-        result.evidence.some((s) => s.capturedAt !== observedAt)
+        result.evidence.some(
+          (s) =>
+            s.capturedAt !== observedAt &&
+            !(
+              assertion &&
+              listingInputDigest(s) === listingInputDigest(assertion.source)
+            ),
+        )
       )
         result = {
           schemaVersion: 1,

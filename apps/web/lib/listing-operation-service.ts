@@ -21,6 +21,7 @@ export type AcceptListingOperationInput = {
   wineOnly?: boolean;
   wineMode?: WineMode;
   wineSection?: SectionKey;
+  wineIdentityReference?: import("@wukong/db").WineIdentityReference;
 };
 export type AcceptedListingOperation = {
   flowVersion?: "wine-enrichment-v1";
@@ -63,6 +64,9 @@ export async function acceptListingOperation(
         baseVersionId: input.baseVersionId,
         retryOfRunId: input.retryOfRunId ?? null,
         ...(input.wineMode ? { wineMode: input.wineMode } : {}),
+        ...(input.wineIdentityReference
+          ? { wineIdentityReference: input.wineIdentityReference }
+          : {}),
         ...(input.wineSection !== undefined
           ? { wineSection: input.wineSection }
           : {}),

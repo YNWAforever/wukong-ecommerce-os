@@ -1,3 +1,4 @@
+import { readConfirmableWineIdentityCandidates } from "./wine-identity-service";
 import { normalizeWebsiteUrl } from "@wukong/core";
 import type {
   EvidenceSource,
@@ -33,7 +34,7 @@ export type WineProgress = {
     runId: string;
     stage: WineStage;
     identity: ProductIdentity;
-    confirmationAvailable: false;
+    confirmationAvailable: boolean;
   }[];
   identity: ProductIdentity | null;
   issues: QualityIssue[];
@@ -283,5 +284,18 @@ export async function readWineProgress(
       : progress.completedStages.length
         ? "partial"
         : "unavailable";
+  const workspaceId = (run.execution.input as { workspaceId?: string })
+    ?.workspaceId;
+  if (workspaceId)
+    for (const candidate of await readConfirmableWineIdentityCandidates(
+      repos,
+      workspaceId,
+      run,
+    )) {
+      progress.candidates = progress.candidates.filter(
+        (c) => c.id !== candidate.id,
+      );
+      progress.candidates.push(display(candidate));
+    }
   return progress;
 }

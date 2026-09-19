@@ -1,3 +1,4 @@
+import { wineIdentitySelectionSchema } from "./wine-identity-selection.js";
 import {
   wineOwnershipSchema,
   hasWineSectionMapping,
@@ -16,6 +17,7 @@ const copy = z.object({
 });
 export const workingListingSchema = listingFactsSchema.extend({
   wineOwnership: wineOwnershipSchema.optional(),
+  wineIdentitySelection: wineIdentitySelectionSchema.optional(),
   packQuantity: z.number().int().positive().nullable(),
   title: copy,
   description: copy,

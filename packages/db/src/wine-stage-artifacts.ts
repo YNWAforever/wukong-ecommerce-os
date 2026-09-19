@@ -53,6 +53,7 @@ export type WineStageResult =
       "extraction",
       {
         observedAt: string;
+        originalIdentity?: ProductIdentity;
         identity: ProductIdentity;
         evidence: EvidenceSource[];
         issues: QualityIssue[];
@@ -189,6 +190,10 @@ export function parseWineStageResult(
     if (listingInputDigest(candidate.content) !== listingInputDigest(r.content))
       throw Error("generation content mismatch");
     keys.generation.push("frozenQuality");
+  }
+  if (stage === "extraction" && "originalIdentity" in r) {
+    productIdentitySchema.parse(r.originalIdentity);
+    keys.extraction.push("originalIdentity");
   }
   strictKeys(r, [...base, ...keys[stage]]);
   if (

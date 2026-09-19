@@ -1,3 +1,5 @@
+import { WINE_IDENTITY_ASSERTION_TITLE } from "@wukong/core";
+import { readWineIdentitySelection } from "@wukong/db";
 import {
   readWineOriginalExtraction,
   wineExtractionSourceId,
@@ -132,7 +134,8 @@ async function fence(r: WorkspaceRepositories, c: WineStageContext) {
       Date.parse(now) < Date.parse(deadline),
     "extraction_deadline",
   );
-  return { run, input, now };
+  const identitySelection = await readWineIdentitySelection(r, input, run.id);
+  return { run, input, now, identitySelection };
 }
 /** Invoke only through runWineStage; this handler independently reloads its started server checkpoint. */
 export function createWineExtractionHandler(
@@ -201,6 +204,15 @@ export function createWineExtractionHandler(
         assets,
         note: initial.input.note,
       });
+      requireValid(
+        extracted.evidence.every(
+          (source) =>
+            source.title !== WINE_IDENTITY_ASSERTION_TITLE &&
+            !source.location.startsWith("wine:identity-selection:") &&
+            source.id !== initial.identitySelection?.source.id,
+        ),
+        "extraction_selection_forged",
+      );
       return await config.database.forWorkspace(
         c.job.workspaceId,
         async (r) => {
@@ -217,35 +229,45 @@ export function createWineExtractionHandler(
             ]),
           );
           const identity = remap(extracted.identity, ids);
-          const records = extracted.evidence.map((source, index) => {
-            const asset =
-              source.kind === "photo"
-                ? initial.selected.find((s) => s.asset.id === source.assetId)
-                : null;
-            requireValid(
-              source.kind !== "photo" || asset,
-              "extraction_asset_invalid",
-            );
-            const documentDigest = "sha256:" + sha(source.excerpt);
-            return {
-              binding,
-              assetDigest: asset?.digest ?? null,
-              documentDigest,
-              source: {
-                ...source,
-                id: ids.get(source.id)!,
-                capturedAt: f.now,
+          const records: import("@wukong/core").WineRetainedSource[] =
+            extracted.evidence.map((source, index) => {
+              const asset =
+                source.kind === "photo"
+                  ? initial.selected.find((s) => s.asset.id === source.assetId)
+                  : null;
+              requireValid(
+                source.kind !== "photo" || asset,
+                "extraction_asset_invalid",
+              );
+              const documentDigest = "sha256:" + sha(source.excerpt);
+              return {
+                binding,
+                assetDigest: asset?.digest ?? null,
                 documentDigest,
-                location: `wine:extraction:${c.run.id}:transcript:${index}`,
-                trust: "unverified" as const,
-                independenceKey:
-                  source.kind === "photo"
-                    ? `asset:${asset!.digest}`
-                    : `merchant:${c.run.id}`,
-                identity: source.identity ? remap(source.identity, ids) : null,
-              },
-            };
-          });
+                source: {
+                  ...source,
+                  id: ids.get(source.id)!,
+                  capturedAt: f.now,
+                  documentDigest,
+                  location: `wine:extraction:${c.run.id}:transcript:${index}`,
+                  trust: "unverified" as const,
+                  independenceKey:
+                    source.kind === "photo"
+                      ? `asset:${asset!.digest}`
+                      : `merchant:${c.run.id}`,
+                  identity: source.identity
+                    ? remap(source.identity, ids)
+                    : null,
+                },
+              };
+            });
+          if (f.identitySelection)
+            records.push({
+              binding,
+              assetDigest: null,
+              documentDigest: f.identitySelection.source.documentDigest,
+              source: f.identitySelection.source,
+            });
           const lockedFields = Object.entries(f.input.fieldStates)
             .filter(([, v]) => v?.locked || v?.owner === "operator")
             .map(([key]) => key);
@@ -259,6 +281,7 @@ export function createWineExtractionHandler(
               note: f.input.note,
               lockedFields,
               verifiedAliases: [],
+              identitySelection: f.identitySelection,
             },
             extraction: { binding, identity },
             records,
@@ -293,6 +316,7 @@ export function createWineExtractionHandler(
             state: "succeeded" as const,
             observedAt: f.now,
             identity: context.identity,
+            ...(f.identitySelection ? { originalIdentity: identity } : {}),
             evidence: context.sources,
             issues: grounded.issues,
           };

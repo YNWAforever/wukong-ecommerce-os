@@ -1,3 +1,4 @@
+import { createWineIdentityAssertion } from "@wukong/db";
 import { createWineGenerationHandler } from "./wine-generation-handler.js";
 import { createHash } from "node:crypto";
 import { listingInputDigest } from "@wukong/db";
@@ -73,6 +74,12 @@ function groundingInput(
       note: read.input.note,
       lockedFields: read.extraction.context.lockedFields,
       verifiedAliases: read.extraction.context.verifiedAliases,
+      identitySelection: read.input.workingContent.wineIdentitySelection
+        ? createWineIdentityAssertion(
+            read.input.workingContent.wineIdentitySelection,
+            read.run.id,
+          )
+        : undefined,
     },
     extraction: { binding, identity: read.extraction.context.identity },
     records: read.evidence.map((source) => ({

@@ -126,3 +126,5 @@ export * from "./wine-execution-snapshot.js";
 export * from "./wine-support-validation.js";
 export * from "./wine-evidence-grounding.js";
 export * from "./wine-copy-snapshot.js";
+
+export * from "./wine-identity-selection.js";

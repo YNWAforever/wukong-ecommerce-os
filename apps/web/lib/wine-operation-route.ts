@@ -1,3 +1,4 @@
+import { confirmWineIdentity } from "./wine-identity-service";
 import { z } from "zod";
 import { sectionKeySchema } from "@wukong/core";
 import type { Database } from "@wukong/db";
@@ -19,6 +20,14 @@ const guard = {
   expectedInputRevision: z.number().int().positive(),
   baseVersionId: uuid.nullable(),
 };
+const identity = z
+  .object({
+    ...guard,
+    sourceRunId: uuid,
+    sourceStage: z.enum(["verification", "verification_deep"]),
+    sourceId: uuid,
+  })
+  .strict();
 const operation = z
   .object({ ...guard, mode: z.enum(["full", "research"]) })
   .strict();
@@ -40,8 +49,9 @@ export function createWineOperationHandler(
     publisher?: ListingPublisher;
     preflightWineCapability?: typeof preflightWineCapability;
     acceptProcessing?: typeof acceptListingOperation;
+    confirmIdentity?: typeof confirmWineIdentity;
   },
-  action: "operation" | "regenerate",
+  action: "operation" | "regenerate" | "identity",
 ) {
   return async (
     request: Request,
@@ -59,35 +69,45 @@ export function createWineOperationHandler(
       if (!uuid.safeParse(rawId).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       const id = rawId.toLowerCase();
-      const body = (action === "operation" ? operation : regenerate).parse(
-        await request.json(),
-      );
+      const body = (
+        action === "identity"
+          ? identity
+          : action === "operation"
+            ? operation
+            : regenerate
+      ).parse(await request.json());
       const operationKey = uuid.parse(request.headers.get("Idempotency-Key"));
       const database = deps.getDatabase();
       await requireListingRecovery(database);
       const admission = await prepareWineAdmission(
         database,
         session.workspaceId,
-        body.mode,
+        "mode" in body ? body.mode : "research",
         deps.preflightWineCapability,
       );
       const accepted = await database.forWorkspace(
         session.workspaceId,
         (repos) =>
-          (deps.acceptProcessing ?? acceptListingOperation)(
-            repos,
-            {
-              ...session,
-              listingId: id,
-              expectedInputRevision: body.expectedInputRevision,
-              baseVersionId: body.baseVersionId,
-              operationKey,
-              wineMode: body.mode,
-              wineOnly: true,
-              ...("section" in body ? { wineSection: body.section } : {}),
-            },
-            admission,
-          ),
+          "sourceRunId" in body
+            ? (deps.confirmIdentity ?? confirmWineIdentity)(
+                repos,
+                { ...session, ...body, listingId: id, operationKey },
+                admission,
+              )
+            : (deps.acceptProcessing ?? acceptListingOperation)(
+                repos,
+                {
+                  ...session,
+                  listingId: id,
+                  expectedInputRevision: body.expectedInputRevision,
+                  baseVersionId: body.baseVersionId,
+                  operationKey,
+                  wineMode: body.mode,
+                  wineOnly: true,
+                  ...("section" in body ? { wineSection: body.section } : {}),
+                },
+                admission,
+              ),
       );
       if (deps.publisher)
         await dispatchListingOperation(
