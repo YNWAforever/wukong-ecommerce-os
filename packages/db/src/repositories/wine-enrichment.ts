@@ -12,6 +12,8 @@ import {
   evidenceSourceSchema,
   wineSourceAuthoritySchema,
   wineContentSchema,
+  reviewableListingSchema,
+  type ReviewableListing,
   productIdentitySchema,
   supportedClaimSchema,
   type EvidenceSource,
@@ -91,7 +93,21 @@ export type SearchCallRecord = SearchCall & {
   diagnostic: WineSearchDiagnostic | null;
   updatedAt: string;
 };
+export type WineVersionOrigin = {
+  versionId: string;
+  workspaceId: string;
+  listingId: string;
+  sequence: number;
+  pipelineIdempotencyKey: string | null;
+  content: ReviewableListing;
+  runId: string | null;
+  sections: WineContent | null;
+};
 export type WineEnrichmentRepository = {
+  readVersionOrigin(
+    listingId: string,
+    versionId: string,
+  ): Promise<WineVersionOrigin | null>;
   settleTerminalBudgets(runId: string): Promise<void>;
   readSearchCall(
     runId: string,
@@ -395,6 +411,38 @@ export function createWineEnrichmentRepository(
         },
         { schemaVersion: 1, content: wineContentSchema.parse(input.content) },
       );
+    },
+    async readVersionOrigin(listingId, versionId) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select v.id,v.sequence,v.pipeline_idempotency_key,v.content,s.run_id,s.payload from listing_versions v left join wine_section_snapshots s on s.workspace_id=v.workspace_id and s.listing_id=v.listing_id and s.version_id=v.id where v.workspace_id=${workspaceId} and v.listing_id=${listingId}::uuid and v.id=${versionId}::uuid`,
+      );
+      if (!rows.length) return null;
+      if (rows.length !== 1) throw Error("ambiguous_wine_origin");
+      const row = rows[0]!;
+      const payload =
+        row.payload === null
+          ? null
+          : z
+              .object({
+                schemaVersion: z.literal(1),
+                content: wineContentSchema,
+              })
+              .strict()
+              .parse(row.payload);
+      return {
+        workspaceId,
+        listingId,
+        versionId: String(row.id),
+        sequence: Number(row.sequence),
+        pipelineIdempotencyKey:
+          row.pipeline_idempotency_key === null
+            ? null
+            : String(row.pipeline_idempotency_key),
+        content: reviewableListingSchema.parse(row.content),
+        runId: row.run_id === null ? null : String(row.run_id),
+        sections: payload?.content ?? null,
+      };
     },
     async readSections(runId, versionId) {
       scope.assertOpen();

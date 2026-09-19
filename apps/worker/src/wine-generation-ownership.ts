@@ -1,4 +1,9 @@
 import {
+  resolveWineGenerationOwnership,
+  type WineGenerationOwnership,
+} from "@wukong/db";
+export type { WineGenerationOwnership } from "@wukong/db";
+import {
   listingInputDigest,
   type Database,
   type WorkspaceRepositories,
@@ -7,41 +12,9 @@ import {
   workingListingSchema,
   workingFieldStateSchema,
   workingFields,
-  workingBaselineForReview,
   hasWineSectionMapping,
-  type WineContent,
 } from "@wukong/core";
 import type { WineStageContext } from "./wine-enrichment-pipeline.js";
-type Metadata = Pick<WineContent, "title" | "seo" | "tags">;
-export type WineGenerationOwnership =
-  | { status: "unavailable"; code: string }
-  | {
-      status: "available";
-      schemaVersion: 1;
-      binding: {
-        workspaceId: string;
-        operationId: string;
-        listingId: string;
-        inputRevision: number;
-        baseVersionId: string | null;
-      };
-      prior: (
-        | { kind: "structured"; current: WineContent }
-        | {
-            kind: "legacy";
-            current: null;
-            description: { en: string; "zh-Hant": string };
-          }
-        | { kind: "empty"; current: null }
-      ) & { metadata: Metadata };
-      lockedPaths: string[];
-      provenance: {
-        inputDigest: string;
-        baseVersionId: string | null;
-        contentDigest: string;
-      };
-      provenanceDigest: string;
-    };
 class OwnershipError extends Error {}
 function requireOwnership(value: unknown, code: string): asserts value {
   if (!value) throw new OwnershipError(code);
@@ -158,50 +131,6 @@ export async function readWineGenerationOwnershipFromRepositories(
         hasWineSectionMapping(base),
         "ownership_mapping_invalid",
       );
-    const resolved = workingBaselineForReview(parsed, input.fieldStates, base),
-      content = resolved.workingContent;
-    const metadata = {
-      title: content.title,
-      seo: content.seo,
-      tags: content.tags,
-    };
-    const lockedPaths = Object.entries(resolved.fieldStates)
-      .filter(
-        ([key, state]) =>
-          /^(title\.|seo\.|tags$)/.test(key) &&
-          (state?.locked || state?.owner === "operator"),
-      )
-      .map(([key]) => key);
-    const prior: Extract<
-      WineGenerationOwnership,
-      { status: "available" }
-    >["prior"] = content.wineOwnership
-      ? {
-          kind: "structured",
-          current: { ...metadata, sections: content.wineOwnership.sections },
-          metadata,
-        }
-      : content.description.en !== "" || content.description["zh-Hant"] !== ""
-        ? {
-            kind: "legacy",
-            current: null,
-            metadata,
-            description: content.description,
-          }
-        : { kind: "empty", current: null, metadata };
-    if (
-      prior.kind === "structured" &&
-      (["description.en", "description.zh-Hant"] as const).some(
-        (key) =>
-          resolved.fieldStates[key]?.locked ||
-          resolved.fieldStates[key]?.owner === "operator",
-      )
-    )
-      lockedPaths.push("sections");
-    if (prior.kind === "structured")
-      for (const s of prior.current.sections)
-        if (s.locked || s.owner === "operator")
-          lockedPaths.push(`sections.${s.key}`);
     const now = Date.parse(await r.pipelineRuns.acceptanceTimestamp()),
       deadline = Date.parse(
         (run.execution.wineAcquisition as { deadlineAt: string }).deadlineAt,
@@ -220,23 +149,7 @@ export async function readWineGenerationOwnershipFromRepositories(
       inputRevision: run.inputRevision,
       baseVersionId: run.baseVersionId,
     };
-    const provenance = {
-      inputDigest: input.inputDigest,
-      baseVersionId: run.baseVersionId,
-      contentDigest: listingInputDigest({
-        content,
-        fieldStates: resolved.fieldStates,
-      }),
-    };
-    const value = {
-      status: "available" as const,
-      schemaVersion: 1 as const,
-      binding,
-      prior,
-      lockedPaths: lockedPaths.sort(),
-      provenance,
-    };
-    return { ...value, provenanceDigest: listingInputDigest(value) };
+    return resolveWineGenerationOwnership(input, parsed, base, binding);
   } catch (error) {
     if (error instanceof OwnershipError)
       return { status: "unavailable", code: error.message };

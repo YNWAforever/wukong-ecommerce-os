@@ -172,6 +172,7 @@ export type {
 } from "./repositories/listing-enrichment.js";
 export type {
   WineEnrichmentRepository,
+  WineVersionOrigin,
   StageRecord,
   SearchCall,
   SearchCallRecord,
@@ -191,3 +192,9 @@ export {
   type WineGoCompletion,
   type WineGoStage,
 } from "./repositories/wine-go-invocations.js";
+
+export * from "./wine-stage-artifacts.js";
+export * from "./wine-stage-dependencies.js";
+
+export * from "./wine-generation-ownership.js";
+export * from "./wine-adopted-dependencies.js";

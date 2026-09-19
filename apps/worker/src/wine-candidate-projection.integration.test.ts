@@ -36,11 +36,14 @@ async function fixture(
   workingContent?: import("@wukong/core").WorkingListing,
   baseContent?: import("@wukong/core").ReviewableListing,
   lockedUnknownPack = false,
+  existing?: { workspaceId: string; listingId: string },
 ) {
-  const workspaceId = `wine-stage-${randomUUID()}`;
+  const workspaceId = existing?.workspaceId ?? `wine-stage-${randomUUID()}`;
   const run = await db.forWorkspace(workspaceId, async (r) => {
-    const d = await r.listings.create({ target: "shopline" });
-    let baseVersionId: string | null = null;
+    const d = existing
+      ? await r.listings.requireById(existing.listingId)
+      : await r.listings.create({ target: "shopline" });
+    let baseVersionId: string | null = d.activeVersionId;
     if (baseContent) {
       const audit = { workspaceId, actorId: "test", entityId: d.id };
       await r.listings.startProcessing(d.id, audit, r.audit);
@@ -96,7 +99,8 @@ async function fixture(
       listingId: d.id,
       inputRevision: input.revision,
       baseVersionId,
-      activeVersionSequence: 0,
+      activeVersionSequence: (await r.listings.requireById(d.id))
+        .activeVersionSequence,
       requestKey: randomUUID(),
       requestDigest: randomUUID(),
       acceptedAt,
@@ -145,7 +149,7 @@ async function fixture(
     draftId: run.listingId,
     runId: run.id,
     inputRevision: run.inputRevision,
-    activeVersionSequence: 0,
+    activeVersionSequence: run.activeVersionSequence,
     stage: "extraction",
   };
   return { run, job, store: createWineStageStore(db) };
@@ -162,8 +166,9 @@ async function ready(
   base?: import("@wukong/core").ReviewableListing,
   sourceAgeDays = 0,
   lockedUnknownPack = false,
+  existing?: { workspaceId: string; listingId: string },
 ) {
-  const f = await fixture(working, base, lockedUnknownPack);
+  const f = await fixture(working, base, lockedUnknownPack, existing);
   const store = createWineStageStore(db, {
     projectCandidate: projectWineCandidate,
   });
@@ -172,6 +177,14 @@ async function ready(
     volumeMl: 750,
     packQuantity: 1,
   });
+  if (sourceAgeDays) {
+    identity.marketVariant = "HK";
+    identity.observations.marketVariant = {
+      value: "HK",
+      state: "observed",
+      evidenceIds: ["00000000-0000-4000-8000-000000000001"],
+    };
+  }
   const source = webEvidence({
     kind: "merchant",
     url: null,
@@ -196,6 +209,26 @@ async function ready(
   await db.forWorkspace(f.job.workspaceId, (r) =>
     r.wineEnrichment.saveEvidence(f.run.id, [source]),
   );
+  if (sourceAgeDays) {
+    const reviewer = randomUUID();
+    await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"})`;
+    await admin`insert into memberships(workspace_id,user_id,role) values(${f.job.workspaceId},${reviewer},'reviewer')`;
+    await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.wineEnrichment.recordReviewedAuthority(reviewer, {
+        schemaVersion: 1,
+        domain: "wine.test",
+        subject: { kind: "producer", name: "Fixture Estate" },
+        proofUrl: "https://wine.test/about",
+        proofDigest: "a".repeat(64),
+        verifiedAt: f.run.acceptedAt,
+        expiresAt: new Date(
+          Date.parse(f.run.acceptedAt) + 30 * 86400000,
+        ).toISOString(),
+        revokedAt: null,
+        verifierId: reviewer,
+      }),
+    );
+  }
   const claim = {
     id: randomUUID(),
     field: "producer" as const,
@@ -225,7 +258,9 @@ async function ready(
         span: "Fixture Estate",
       },
     ],
-    authorities: [],
+    authorities: await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.wineEnrichment.readAuthorities(),
+    ),
     reliableSourceIds: [],
     trustedObservationSourceIds: [source.id],
     acceptedPremises: [claim],
@@ -293,6 +328,8 @@ async function ready(
     if (c.job.stage === "generation") {
       const own = await readWineGenerationOwnership(db, c);
       if (own.status !== "available") throw Error(own.code);
+      if (existing && own.prior.current)
+        content.sections = structuredClone(own.prior.current.sections);
       const request = {
         schemaVersion: 1 as const,
         binding,
@@ -321,14 +358,16 @@ async function ready(
         "seo.description.zh-Hant",
         "sections.introduction.en",
         "sections.introduction.zh-Hant",
-      ].map((path) => ({
-        path,
-        span: "Fixture Estate",
-        claimId: claim.id,
-        value: claim.value,
-        evidenceIds: claim.evidenceIds,
-        premiseClaimIds: [],
-      }));
+      ]
+        .filter((path) => !existing || !path.startsWith("sections."))
+        .map((path) => ({
+          path,
+          span: "Fixture Estate",
+          claimId: claim.id,
+          value: claim.value,
+          evidenceIds: claim.evidenceIds,
+          premiseClaimIds: [],
+        }));
       return {
         ...common,
         stage: "generation",
@@ -605,7 +644,7 @@ it.each(["operator", "locked"])(
       key: "introduction" as const,
       en: "Original paragraph",
       "zh-Hant": "Original bilingual paragraph",
-      claimIds: [],
+      claimIds: [randomUUID()],
       owner:
         protection === "operator"
           ? ("operator" as const)
@@ -654,6 +693,23 @@ it.each(["operator", "locked"])(
       base.wineOwnership,
     );
     expect(review!.activeVersion!.content.title).toEqual(base.title);
+    const adopted = await db.forWorkspace(f.job.workspaceId, (r) =>
+      adoptedDb.readAdoptedWineDependencies(r, {
+        workspaceId: f.job.workspaceId,
+        listingId: f.run.listingId,
+        versionId: review!.activeVersion!.id,
+        inputRevision: f.run.inputRevision,
+      }),
+    );
+    expect(adopted.status).toBe("available");
+    if (adopted.status !== "available") throw Error(adopted.code);
+    expect(adopted.adopted.sections).toEqual([section]);
+    expect(adopted.unavailableSections).toContainEqual(
+      expect.objectContaining({
+        path: "sections.introduction.en",
+        claimIds: section.claimIds,
+      }),
+    );
   },
 );
 it("projection rolls back if DB deadline elapses after the real version write", async () => {
@@ -889,4 +945,427 @@ it("ownership outer reader sanitizes transaction-open errors after repository ex
   await expect(
     readWineGenerationOwnership(unavailable, f.context),
   ).resolves.toEqual({ status: "unavailable", code: "ownership_unavailable" });
+});
+import * as adoptedDb from "@wukong/db";
+it("reads actual adopted support from its terminal origin, not the running-only ownership reader", async () => {
+  const f = await ready();
+  const committed = await f.store.commitCandidate(f.context);
+  if (committed.status !== "completed" || !committed.versionId)
+    throw Error("missing version");
+  expect(adoptedDb).toHaveProperty("readAdoptedWineDependencies");
+  const result = await db.forWorkspace(f.job.workspaceId, (r) =>
+    adoptedDb.readAdoptedWineDependencies(r, {
+      workspaceId: f.job.workspaceId,
+      listingId: f.run.listingId,
+      versionId: committed.versionId!,
+      inputRevision: f.run.inputRevision,
+    }),
+  );
+  expect(result).toMatchObject({
+    status: "available",
+    originRunId: f.run.id,
+    versionId: committed.versionId!,
+    origins: [
+      expect.objectContaining({
+        runId: f.run.id,
+        inputDigest: f.run.execution.wineInputDigest,
+        sourceDigest: f.run.execution.wineSourceDigest,
+      }),
+    ],
+  });
+  if (result.status !== "available") throw Error(result.code);
+  expect(result.supports).toContainEqual(
+    expect.objectContaining({
+      path: "sections.introduction.en",
+      claimId: f.claim.id,
+      valid: true,
+      originVersionId: committed.versionId,
+    }),
+  );
+});
+async function adoptedFixture(
+  working = emptyWorkingListing(),
+  sourceAgeDays = 0,
+) {
+  const f = await ready(working, (r) => r, undefined, sourceAgeDays);
+  const done = await f.store.commitCandidate(f.context);
+  if (done.status !== "completed" || !done.versionId)
+    throw Error("version missing");
+  const coordinates = {
+    workspaceId: f.job.workspaceId,
+    listingId: f.run.listingId,
+    versionId: done.versionId,
+    inputRevision: f.run.inputRevision,
+  };
+  const read = (
+    overrides?: (
+      r: import("@wukong/db").WorkspaceRepositories,
+    ) => import("@wukong/db").WorkspaceRepositories,
+  ) =>
+    db.forWorkspace(coordinates.workspaceId, (r) =>
+      adoptedDb.readAdoptedWineDependencies(
+        overrides ? overrides(r) : r,
+        coordinates,
+      ),
+    );
+  const save = async (
+    patch: Partial<import("@wukong/db").SaveListingInput>,
+  ) => {
+    const input = await db.forWorkspace(coordinates.workspaceId, (r) =>
+      r.listingInputs.save(
+        {
+          listingId: coordinates.listingId,
+          actorId: "test",
+          expectedInputRevision: coordinates.inputRevision,
+          baseVersionId: coordinates.versionId,
+          operationKey: randomUUID(),
+          requestDigest: randomUUID(),
+          changes: [],
+          ...patch,
+        },
+        {
+          workspaceId: coordinates.workspaceId,
+          actorId: "test",
+          entityId: coordinates.listingId,
+        },
+        r.audit,
+      ),
+    );
+    coordinates.inputRevision = input.revision;
+  };
+  return { ...f, coordinates, read, save };
+}
+it("adopted merchant-note changes invalidate their dependent copy", async () => {
+  const f = await adoptedFixture();
+  await f.save({ note: "Changed merchant note" });
+  const result = await f.read();
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(
+    result.supports.every(
+      (s) => !s.valid && s.invalidReason === "source_changed",
+    ),
+  ).toBe(true);
+});
+it("adopted identity edits invalidate product evidence across sections", async () => {
+  const f = await adoptedFixture();
+  await f.save({
+    changes: [{ field: "volumeMl", value: 1500, state: "manual" }],
+  });
+  const result = await f.read();
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(
+    result.supports.every(
+      (s) => !s.valid && s.invalidReason === "identity_changed",
+    ),
+  ).toBe(true);
+});
+it("adopted commercial edits retain support and operator price ownership", async () => {
+  const f = await adoptedFixture();
+  await f.save({
+    changes: [{ field: "priceHkd", value: 400, state: "manual" }],
+  });
+  const result = await f.read();
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(result.supports.every((s) => s.valid)).toBe(true);
+});
+it("legacy adopted descriptions exclude all proposed generation paragraphs", async () => {
+  const f = await adoptedFixture({
+    ...emptyWorkingListing(),
+    description: { en: "Manual description", "zh-Hant": "Manual description" },
+  });
+  const result = await f.read();
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(result.adopted.sections).toEqual([]);
+  expect(result.supports.some((s) => s.path.startsWith("sections."))).toBe(
+    false,
+  );
+});
+
+it("adopted inherited sections retain their original version, claims and capture age across later runs", async () => {
+  const first = await adoptedFixture();
+
+  const next = await ready(
+    emptyWorkingListing(),
+    (r) => r,
+    undefined,
+    0,
+    false,
+    {
+      workspaceId: first.coordinates.workspaceId,
+      listingId: first.coordinates.listingId,
+    },
+  );
+  const done = await next.store.commitCandidate(next.context);
+  if (done.status !== "completed" || !done.versionId)
+    throw Error("no second version");
+  const result = await db.forWorkspace(first.coordinates.workspaceId, (r) =>
+    adoptedDb.readAdoptedWineDependencies(r, {
+      ...first.coordinates,
+      versionId: done.versionId!,
+    }),
+  );
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(result.supports).toContainEqual(
+    expect.objectContaining({
+      path: "sections.introduction.en",
+      claimId: first.claim.id,
+      originVersionId: first.coordinates.versionId,
+      valid: true,
+    }),
+  );
+  expect(
+    result.supports.find((s) => s.claimId === first.claim.id)?.sources[0]
+      ?.capturedAt,
+  ).toBe(first.source.capturedAt);
+});
+it("adopted web claims survive unrelated merchant note edits but expire at their original seven-day boundary", async () => {
+  const f = await adoptedFixture(emptyWorkingListing(), 1);
+  await f.save({ note: "A changed note that did not support the web claim" });
+  const valid = await f.read();
+  expect(valid.status).toBe("available");
+  if (valid.status !== "available") throw Error(valid.code);
+  expect(valid.supports.every((s) => s.valid)).toBe(true);
+  const expired = await f.read((r) => ({
+    ...r,
+    pipelineRuns: {
+      ...r.pipelineRuns,
+      acceptanceTimestamp: async () =>
+        new Date(Date.parse(f.source.capturedAt) + 7 * 86400000).toISOString(),
+    },
+  }));
+  expect(expired).toEqual({
+    status: "unavailable",
+    code: "evidence_refresh_required",
+  });
+});
+it("adopted evidence rejects a future capture without hidden refresh", async () => {
+  const f = await adoptedFixture();
+  const result = await f.read((r) => ({
+    ...r,
+    pipelineRuns: {
+      ...r.pipelineRuns,
+      acceptanceTimestamp: async () =>
+        new Date(Date.parse(f.run.acceptedAt) - 1).toISOString(),
+    },
+  }));
+  expect(result.status).toBe("unavailable");
+});
+for (const kind of [
+  "foreign",
+  "version",
+  "revision",
+  "missing-origin",
+  "forged-ownership",
+  "source-pool",
+  "registry",
+] as const)
+  it(`adopted rejects ${kind} binding`, async () => {
+    const f = await adoptedFixture();
+    if (kind === "foreign") f.coordinates.workspaceId = "other-workspace";
+    if (kind === "version") f.coordinates.versionId = randomUUID();
+    if (kind === "revision") f.coordinates.inputRevision++;
+    const result = await f.read((r) => ({
+      ...r,
+      wineEnrichment: {
+        ...r.wineEnrichment,
+        ...(kind === "missing-origin"
+          ? { readVersionOrigin: async () => null }
+          : {}),
+        ...(kind === "forged-ownership"
+          ? {
+              readVersionOrigin: async (
+                listingId: string,
+                versionId: string,
+              ) => {
+                const v = await r.wineEnrichment.readVersionOrigin(
+                  listingId,
+                  versionId,
+                );
+                return v
+                  ? { ...v, sections: { ...v.sections!, sections: [] } }
+                  : null;
+              },
+            }
+          : {}),
+        ...(kind === "source-pool" ? { readEvidence: async () => [] } : {}),
+        ...(kind === "registry"
+          ? {
+              readAuthorities: async () =>
+                [{ schemaVersion: 1, domain: "forged.test" }] as any,
+            }
+          : {}),
+      },
+    }));
+    expect(result.status).toBe("unavailable");
+  });
+for (const kind of [
+  "quality",
+  "claims",
+  "frozen",
+  "ownership",
+  "model",
+  "blocking",
+] as const)
+  it(`adopted rejects rehashed ${kind} artifact tampering`, async () => {
+    const f = await adoptedFixture();
+    const result = await db.forWorkspace(
+      f.coordinates.workspaceId,
+      async (r) => {
+        const run = structuredClone(
+          (await r.pipelineRuns.getOperation(f.run.id))!,
+        );
+        if (kind === "model")
+          (run.execution.wineGo as any).model = "unreviewed";
+        const rows = [] as import("@wukong/db").StageRecord[];
+        for (const stage of adoptedDb.WINE_STAGE_ORDER) {
+          const row = structuredClone(
+            (await r.wineEnrichment.readStage(run.id, stage))!,
+          );
+          const artifact = (row.output as any)?.result;
+          if (stage === "quality_check" && kind === "quality")
+            artifact.contentDigest = "a".repeat(64);
+          if (stage === "quality_check" && kind === "blocking")
+            artifact.issues = [
+              {
+                path: "title.en",
+                code: "unsupported",
+                blocking: true,
+                evidenceIds: [],
+              },
+            ];
+          if (stage === "verification" && kind === "claims")
+            artifact.claims[0].value = "A different producer";
+          if (stage === "verification" && kind === "frozen")
+            delete artifact.frozenVerification;
+          if (stage === "generation" && kind === "ownership")
+            artifact.frozenQuality.request.ownership.provenanceDigest =
+              "a".repeat(64);
+          row.dependencyDigest = adoptedDb.wineStageDependencyDigest(run, rows);
+          rows.push(row);
+        }
+        return adoptedDb.readAdoptedWineDependencies(
+          {
+            ...r,
+            pipelineRuns: { ...r.pipelineRuns, getOperation: async () => run },
+            wineEnrichment: {
+              ...r.wineEnrichment,
+              readStage: async (_id, stage) =>
+                rows.find((x) => x.stage === stage) ?? null,
+            },
+          },
+          f.coordinates,
+        );
+      },
+    );
+    expect(result.status).toBe("unavailable");
+  });
+it("adopted reports unavailable inherited support while retaining protected text", async () => {
+  const first = await adoptedFixture();
+  const next = await ready(
+    emptyWorkingListing(),
+    (r) => r,
+    undefined,
+    0,
+    false,
+    {
+      workspaceId: first.coordinates.workspaceId,
+      listingId: first.coordinates.listingId,
+    },
+  );
+  const done = await next.store.commitCandidate(next.context);
+  if (done.status !== "completed" || !done.versionId) throw Error("no version");
+  const result = await db.forWorkspace(first.coordinates.workspaceId, (r) =>
+    adoptedDb.readAdoptedWineDependencies(
+      {
+        ...r,
+        wineEnrichment: {
+          ...r.wineEnrichment,
+          readStage: async (id, stage) =>
+            id === first.run.id ? null : r.wineEnrichment.readStage(id, stage),
+        },
+      },
+      { ...first.coordinates, versionId: done.versionId! },
+    ),
+  );
+  expect(result.status).toBe("available");
+  if (result.status !== "available") throw Error(result.code);
+  expect(result.adopted.sections[0]?.claimIds).toEqual([first.claim.id]);
+  expect(result.unavailableSections).toContainEqual(
+    expect.objectContaining({
+      path: "sections.introduction.en",
+      claimIds: [first.claim.id],
+    }),
+  );
+  expect(result.refreshRequired).toBe(true);
+});
+it("adopted registry read holds workspace serialization until the admission transaction commits", async () => {
+  const f = await adoptedFixture();
+  const reviewer = randomUUID();
+  await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"})`;
+  await admin`insert into memberships(workspace_id,user_id,role) values(${f.coordinates.workspaceId},${reviewer},'reviewer')`;
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve)),
+    readyRead = new Promise<void>((resolve) => (entered = resolve));
+  const reader = db.forWorkspace(f.coordinates.workspaceId, async (r) => {
+    const result = await adoptedDb.readAdoptedWineDependencies(
+      r,
+      f.coordinates,
+    );
+    expect(result.status).toBe("available");
+    entered();
+    await held;
+    return result;
+  });
+  await readyRead;
+  let written = false;
+  const writer = db.forWorkspace(f.coordinates.workspaceId, async (r) => {
+    await r.wineEnrichment.recordReviewedAuthority(reviewer, {
+      schemaVersion: 1,
+      domain: "wine.test",
+      subject: { kind: "producer", name: "Fixture Estate" },
+      proofUrl: "https://wine.test/about",
+      proofDigest: "a".repeat(64),
+      verifiedAt: f.run.acceptedAt,
+      expiresAt: new Date(
+        Date.parse(f.run.acceptedAt) + 86400000,
+      ).toISOString(),
+      revokedAt: f.run.acceptedAt,
+      verifierId: reviewer,
+    });
+    written = true;
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(written).toBe(false);
+  } finally {
+    release();
+  }
+  await reader;
+  await writer;
+  expect(await f.read()).toEqual({
+    status: "unavailable",
+    code: "adopted_authority_changed",
+  });
+});
+it("adopted rejects a version whose original pipeline idempotency key differs", async () => {
+  const f = await adoptedFixture();
+  const result = await f.read((r) => ({
+    ...r,
+    wineEnrichment: {
+      ...r.wineEnrichment,
+      readVersionOrigin: async (listingId, versionId) => {
+        const row = await r.wineEnrichment.readVersionOrigin(
+          listingId,
+          versionId,
+        );
+        return row ? { ...row, pipelineIdempotencyKey: "forged" } : null;
+      },
+    },
+  }));
+  expect(result.status).toBe("unavailable");
 });
