@@ -31,6 +31,17 @@ export const WINE_STAGE_ORDER: readonly WineStage[] = [
   "quality_check",
   "commit_candidate",
 ];
+const COPY_STAGE_ORDER: readonly WineStage[] = [
+  "generation",
+  "quality_check",
+  "commit_candidate",
+];
+/** Mode comes exclusively from the accepted execution. */
+export function wineStageOrder(mode: unknown): readonly WineStage[] {
+  if (mode === "copy" || mode === "section") return COPY_STAGE_ORDER;
+  if (mode === "full" || mode === "research") return WINE_STAGE_ORDER;
+  throw Error("invalid wine mode");
+}
 type Success<S extends WineStage, T> = {
   schemaVersion: 1;
   state: "succeeded";

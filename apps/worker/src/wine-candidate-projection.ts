@@ -15,18 +15,14 @@ import {
   authorizeWineFrozenQuality,
   committedGeneration,
 } from "./wine-generation-context.js";
-import { savedResult } from "./wine-stage-authority.js";
+import { savedResult, wineRequiredOutcome } from "./wine-stage-authority.js";
 function requireProjection(value: unknown, code: string): asserts value {
   if (!value) throw Error(code);
 }
 /** DB-only. The stage store owns the transaction, listing/run locks, and terminal commit. */
 export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
-  const {
-    request,
-    ownership,
-    verified: v,
-    input,
-  } = await readWineGenerationRequestFromRepositories(r, c);
+  const { request, ownership, identity, input } =
+    await readWineGenerationRequestFromRepositories(r, c);
   const g = committedGeneration(c);
   const frozen = authorizeWineFrozenQuality(g, request);
   requireProjection(
@@ -41,6 +37,10 @@ export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
       q.stage === "quality_check" &&
       q.contentDigest === listingInputDigest(frozen.candidate.content),
     "projection_quality_required",
+  );
+  requireProjection(
+    q.outcome !== "ready" || !q.issues.some((i) => i.blocking),
+    "projection_quality_inconsistent",
   );
   const claims = request.claims;
   const deadline = Date.parse(
@@ -63,7 +63,11 @@ export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
     },
     wineOwnership: { schemaVersion: 1 as const, sections: g.content.sections },
   };
-  for (const claim of claims) {
+  for (const claim of ["full", "research"].includes(
+    String(c.run.execution.wineMode),
+  )
+    ? claims
+    : []) {
     if (
       claim.kind !== "fact" ||
       claim.scope !== "product" ||
@@ -94,14 +98,17 @@ export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
     ...merged,
     packQuantity: protectedPack
       ? merged.packQuantity
-      : (merged.packQuantity ?? v.identity.packQuantity),
+      : (merged.packQuantity ?? identity.packQuantity),
   });
   const audit = {
     workspaceId: c.job.workspaceId,
     actorId: "wine-worker",
     entityId: c.run.listingId,
   };
-  const needsInfo = c.requiredOutcome === "needs_info" || !parsed.success;
+  const needsInfo =
+    c.requiredOutcome === "needs_info" ||
+    wineRequiredOutcome(c.run, c.dependencies) === "needs_info" ||
+    !parsed.success;
   const listing = await r.listings.requireById(c.run.listingId);
   const existingReview = ["in_review", "reopened"].includes(listing.status);
   if (existingReview && needsInfo) {

@@ -3,7 +3,9 @@ import {
   authorizeWineVerifiedEvidence,
   type Database,
   type WorkspaceRepositories,
-  WINE_STAGE_ORDER,
+  wineStageOrder,
+  readWineCopyDependencies,
+  buildWineGenerationRequest,
   wineStageDependencyDigest,
 } from "@wukong/db";
 import {
@@ -44,15 +46,9 @@ export async function readWineGenerationRequestFromRepositories(
     "generation_ownership_unavailable",
   );
   requireGeneration(await accepted(r, c.run), "generation_execution_invalid");
-  requireGeneration(
-    ["full", "research"].includes(String(c.run.execution.wineMode)),
-    "evidence_refresh_required",
-  );
+  const order = wineStageOrder(c.run.execution.wineMode);
   const prefix = [];
-  for (const name of WINE_STAGE_ORDER.slice(
-    0,
-    WINE_STAGE_ORDER.indexOf(c.job.stage),
-  )) {
+  for (const name of order.slice(0, order.indexOf(c.job.stage))) {
     const row = await r.wineEnrichment.readStage(c.run.id, name);
     requireGeneration(row, "generation_dependency_missing");
     prefix.push(row);
@@ -70,6 +66,32 @@ export async function readWineGenerationRequestFromRepositories(
       stage.dependencyDigest === c.dependencyDigest,
     "generation_checkpoint_invalid",
   );
+  if (
+    c.run.execution.wineMode === "copy" ||
+    c.run.execution.wineMode === "section"
+  ) {
+    const copy = await readWineCopyDependencies(r, c.run, own);
+    const request = buildWineGenerationRequest(
+      c.run,
+      own,
+      copy.claims,
+      copy.snapshot.section,
+    );
+    requireGeneration(
+      Date.parse(await r.pipelineRuns.acceptanceTimestamp()) <
+        Date.parse(
+          (c.run.execution.wineAcquisition as { deadlineAt: string })
+            .deadlineAt,
+        ),
+      "generation_deadline",
+    );
+    return {
+      request,
+      ownership: own,
+      identity: copy.identity,
+      input: copy.input,
+    };
+  }
   const row =
     prefix.find(
       (x) => x.stage === "verification_deep" && x.state === "succeeded",
@@ -144,7 +166,7 @@ export async function readWineGenerationRequestFromRepositories(
       ),
     "generation_deadline",
   );
-  return { request, ownership: own, verified, input };
+  return { request, ownership: own, identity: verified.identity, input };
 }
 export async function readWineGenerationRequest(
   database: Pick<Database, "forWorkspace">,

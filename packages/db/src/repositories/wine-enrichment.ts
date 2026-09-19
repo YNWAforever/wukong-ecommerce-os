@@ -9,6 +9,7 @@ import {
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  wineBudgetSnapshotSchema,
   evidenceSourceSchema,
   wineSourceAuthoritySchema,
   wineContentSchema,
@@ -200,7 +201,7 @@ export function createWineEnrichmentRepository(
       scope.assertOpen();
       // Caller holds listing/run locks and fenced the operation before settlement.
       const runs = await tx.execute(
-        sql`select execution_state from listing_pipeline_runs where workspace_id=${workspaceId} and id=${runId} for update`,
+        sql`select execution_state, execution from listing_pipeline_runs where workspace_id=${workspaceId} and id=${runId} for update`,
       );
       if (
         !runs[0] ||
@@ -224,11 +225,20 @@ export function createWineEnrichmentRepository(
           settledUsd: "0",
         });
       else await go.settleFromInvocations(runId);
-      await createSearchBudgetReservationRepository(
-        tx,
-        workspaceId,
-        scope,
-      ).settleFromCalls(runId);
+      const execution = runs[0].execution as Record<string, unknown>;
+      const budget = wineBudgetSnapshotSchema.parse(execution.wineBudget);
+      if (budget.mode !== execution.wineMode)
+        throw Error("invalid wine settlement mode");
+      if (budget.mode === "copy" || budget.mode === "section") {
+        if (budget.tavilyCredits !== 0)
+          throw Error("invalid search-free budget");
+      } else {
+        await createSearchBudgetReservationRepository(
+          tx,
+          workspaceId,
+          scope,
+        ).settleFromCalls(runId);
+      }
     },
     async claimStage(input) {
       scope.assertOpen();

@@ -5,6 +5,7 @@ import {
 } from "./wine-generation-context.js";
 import {
   savedResult,
+  wineRequiredOutcome,
   validDependencies,
   accepted,
 } from "./wine-stage-authority.js";
@@ -16,6 +17,7 @@ import {
   type WineListingJob,
 } from "@wukong/jobs";
 import {
+  wineStageOrder,
   listingInputDigest,
   type Database,
   type ListingOperation,
@@ -59,6 +61,7 @@ export function createWineStageStore(
   const now = async (r: WorkspaceRepositories) =>
     options.now?.() ?? new Date(await r.pipelineRuns.acceptanceTimestamp());
   async function locked(r: WorkspaceRepositories, job: WineListingJob) {
+    await r.listings.lockReviewState(job.draftId);
     await r.pipelineRuns.lockOperation(job.runId);
     const run = await r.pipelineRuns.getOperation(job.runId);
     if (
@@ -119,7 +122,8 @@ export function createWineStageStore(
     if (stage.state !== "started") return { status: "duplicate" };
     const dependencies = all.filter(
       (x) =>
-        WINE_STAGE_ORDER.indexOf(x.stage) < WINE_STAGE_ORDER.indexOf(job.stage),
+        wineStageOrder(run.execution.wineMode).indexOf(x.stage) <
+        wineStageOrder(run.execution.wineMode).indexOf(job.stage),
     );
     const digest = wineStageDependencyDigest(run, dependencies);
     if (
@@ -232,14 +236,15 @@ export function createWineStageStore(
       !stale &&
       result.state === "succeeded" &&
       (result.stage === "generation" || result.stage === "quality_check") &&
-      (dependencies.some((d) => {
-        const out = d.output as {
-          result?: { frozenVerification?: unknown; frozenQuality?: unknown };
-        };
-        return !!(
-          out?.result?.frozenVerification || out?.result?.frozenQuality
-        );
-      }) ||
+      (["copy", "section"].includes(String(run.execution.wineMode)) ||
+        dependencies.some((d) => {
+          const out = d.output as {
+            result?: { frozenVerification?: unknown; frozenQuality?: unknown };
+          };
+          return !!(
+            out?.result?.frozenVerification || out?.result?.frozenQuality
+          );
+        }) ||
         (result.stage === "generation" && result.frozenQuality))
     ) {
       try {
@@ -333,7 +338,9 @@ export function createWineStageStore(
         outcome: result.outcome,
       };
     }
-    let next = WINE_STAGE_ORDER[WINE_STAGE_ORDER.indexOf(job.stage) + 1]!;
+    let next = wineStageOrder(run.execution.wineMode)[
+      wineStageOrder(run.execution.wineMode).indexOf(job.stage) + 1
+    ]!;
     if (result.stage === "verification" && !result.needsDeepSearch) {
       const accumulated = [
         ...dependencies,
@@ -375,8 +382,9 @@ export function createWineStageStore(
         if (!run) return blocked("operation_envelope_mismatch");
         if (!(await accepted(r, run)))
           return blocked("invalid_accepted_execution");
-        if (!["full", "research"].includes(String(run.execution.wineMode)))
-          return blocked("evidence_refresh_required");
+        const order = wineStageOrder(run.execution.wineMode);
+        if (!order.includes(job.stage))
+          return blocked("stage_dependency_mismatch");
         const stale = await fence(r, run);
         if (stale) return stop(r, run, stale);
         const all = await records(r, run.id),
@@ -386,8 +394,8 @@ export function createWineStageStore(
             return blocked("stage_outcome_unknown");
           const dependencies = all.filter(
             (x) =>
-              WINE_STAGE_ORDER.indexOf(x.stage) <
-              WINE_STAGE_ORDER.indexOf(job.stage),
+              wineStageOrder(run.execution.wineMode).indexOf(x.stage) <
+              wineStageOrder(run.execution.wineMode).indexOf(job.stage),
           );
           if (existing.state !== "succeeded") return { status: "duplicate" };
           if (!validDependencies(run, [...dependencies, existing]))
@@ -410,7 +418,9 @@ export function createWineStageStore(
             },
           };
         }
-        const expected = WINE_STAGE_ORDER.find(
+        if (all.some((x) => !order.includes(x.stage)))
+          return blocked("stage_dependency_mismatch");
+        const expected = order.find(
           (stage) =>
             !all.some(
               (x) =>
@@ -423,8 +433,8 @@ export function createWineStageStore(
           return blocked("candidate_projection_unavailable");
         const dependencies = all.filter(
           (x) =>
-            WINE_STAGE_ORDER.indexOf(x.stage) <
-            WINE_STAGE_ORDER.indexOf(job.stage),
+            wineStageOrder(run.execution.wineMode).indexOf(x.stage) <
+            wineStageOrder(run.execution.wineMode).indexOf(job.stage),
         );
         // Validate persisted dependencies before permitting subsequent execution.
         if (!validDependencies(run, dependencies))
@@ -512,23 +522,8 @@ export function createWineStageStore(
           q.contentDigest !== listingInputDigest(g.content)
         )
           return blocked("quality_content_mismatch");
-        const results = all
-          .filter((x) => x.state === "succeeded")
-          .map(savedResult);
-        const latestIdentity = [...results]
-          .reverse()
-          .find((x) => x.state === "succeeded" && "identity" in x);
         const needsInfo =
-          q.outcome === "needs_info" ||
-          !latestIdentity ||
-          !("identity" in latestIdentity) ||
-          latestIdentity.identity.status !== "matched" ||
-          results.some(
-            (x) =>
-              x.state === "succeeded" &&
-              "issues" in x &&
-              x.issues.some((i) => i.blocking),
-          );
+          wineRequiredOutcome(run, dependencies) === "needs_info";
         const freshContext = {
           ...context,
           run,

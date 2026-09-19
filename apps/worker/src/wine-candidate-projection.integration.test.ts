@@ -1714,3 +1714,175 @@ it("projection independently rejects omitted contrary supports from the complete
   });
   await expect(result).rejects.toThrow("adopted_grounding_invalid");
 });
+import { createWineGenerationHandler } from "./wine-generation-handler.js";
+import { wineTextPaths, workingListingSchema } from "@wukong/core";
+it.each([false, true])(
+  "copied web evidence retains original capture and rechecks current age/reliability (reliable=%s)",
+  async (reliable) => {
+    const f = await adoptedFixture(emptyWorkingListing(), 1, reliable);
+    const original = await f.read();
+    if (original.status !== "available") throw Error(original.code);
+    for (let round = 0; round < 2; round++) {
+      const run = await db.forWorkspace(
+        f.coordinates.workspaceId,
+        async (r) => {
+          await r.listings.lockReviewState(f.coordinates.listingId);
+          const l = await r.listings.requireById(f.coordinates.listingId),
+            input = (await r.listingInputs.getCurrent(l.id))!,
+            review = await r.listings.getReviewSnapshot(l.id);
+          const own = adoptedDb.resolveWineGenerationOwnership(
+            input,
+            workingListingSchema.parse(input.workingContent),
+            review!.activeVersion!.content,
+            {
+              workspaceId: f.coordinates.workspaceId,
+              listingId: l.id,
+              operationId: randomUUID(),
+              inputRevision: input.revision,
+              baseVersionId: l.activeVersionId,
+            },
+          );
+          const adopted = await adoptedDb.readAdoptedWineDependencies(r, {
+            ...f.coordinates,
+            versionId: l.activeVersionId!,
+          });
+          const policy = wineEnrichmentPolicySchema.parse({
+            ...(f.run.execution.wineEnrichment as object),
+            allowedDomains: reliable
+              ? ["wine.test", "reliable.test"]
+              : ["wine.test"],
+          });
+          const { snapshot } = adoptedDb.buildWineCopySnapshot({
+            adopted,
+            input,
+            ownership: own,
+            policy,
+            model: WINE_EXECUTION_SNAPSHOT,
+            mode: "copy",
+            section: null,
+          });
+          const acceptedAt = await r.pipelineRuns.acceptanceTimestamp();
+          const result = await r.pipelineRuns.acceptOperation({
+            listingId: l.id,
+            inputRevision: input.revision,
+            baseVersionId: l.activeVersionId,
+            activeVersionSequence: l.activeVersionSequence,
+            requestKey: randomUUID(),
+            requestDigest: randomUUID(),
+            acceptedAt,
+            execution: {
+              ...f.run.execution,
+              input,
+              wineInputDigest: input.inputDigest,
+              wineSourceDigest: listingInputDigest(input.sources),
+              wineMode: "copy",
+              wineCopy: snapshot,
+              wineBudget: createWineBudgetSnapshot("copy"),
+              wineEnrichment: policy,
+              wineAcquisition: {
+                ...(f.run.execution.wineAcquisition as object),
+                allowedDomains: policy.allowedDomains,
+                deadlineAt: new Date(
+                  Date.parse(acceptedAt) + 900000,
+                ).toISOString(),
+              },
+            },
+          });
+          await r.aiBudgetReservations.reserve({
+            pipelineRunId: result.id,
+            reservedUsd: "1.277952",
+            workspaceCapUsd: "10",
+            pricingVersion: "wine-enrichment@1",
+          });
+          return result;
+        },
+      );
+      let calls = 0;
+      const execute = createWineGenerationHandler({
+        database: db,
+        env: { OPENCODE_GO_API_KEY: "synthetic" },
+        transport: {
+          fetch: async (_url, init) => {
+            calls++;
+            const request = JSON.parse(
+              JSON.parse(String(init!.body)).messages[1].content,
+            );
+            const claim = request.claims?.[0];
+            const output = request.candidate
+              ? { schemaVersion: 1, issues: [] }
+              : {
+                  schemaVersion: 1,
+                  content: request.current,
+                  annotations: [...wineTextPaths(request.current)]
+                    .filter(([, text]) => text.trim())
+                    .map(([path, span]) => ({
+                      path,
+                      span,
+                      claimId: claim.id,
+                      value: claim.value,
+                      evidenceIds: claim.evidenceIds,
+                      premiseClaimIds: claim.premiseClaimIds,
+                    })),
+                };
+            return Response.json({
+              model: "deepseek-v4.1-flash",
+              usage: { prompt_tokens: 100, completion_tokens: 50 },
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify(output),
+                  },
+                },
+              ],
+            });
+          },
+        },
+      });
+      const store = createWineStageStore(db, {
+        projectCandidate: projectWineCandidate,
+      });
+      for (const stage of [
+        "generation",
+        "quality_check",
+        "commit_candidate",
+      ] as const) {
+        const done = await runWineStage(
+          {
+            ...f.job,
+            runId: run.id,
+            inputRevision: run.inputRevision,
+            activeVersionSequence: run.activeVersionSequence,
+            stage,
+          },
+          { store, execute },
+        );
+        expect(done.status).toBe(
+          stage === "commit_candidate" ? "completed" : "advanced",
+        );
+        if (done.status === "completed" && done.versionId)
+          f.coordinates.versionId = done.versionId;
+      }
+      expect(calls).toBe(2);
+      const current = await f.read();
+      expect(current.status).toBe("available");
+      if (current.status === "available")
+        expect(current.origins).toEqual(original.origins);
+      expect(
+        await admin`select run_id from wine_search_calls where run_id=${run.id}`,
+      ).toHaveLength(0);
+    }
+    const time = reliable
+      ? Date.parse(f.run.acceptedAt) + 7200000
+      : Date.parse(f.source.capturedAt) + 7 * 86400000;
+    const expired = await f.read((r) => ({
+      ...r,
+      pipelineRuns: {
+        ...r.pipelineRuns,
+        acceptanceTimestamp: async () => new Date(time).toISOString(),
+      },
+    }));
+    expect(expired.status).toBe("unavailable");
+  },
+);

@@ -1,4 +1,8 @@
-import { listingInputDigest, WineEvidenceAuthorizationError } from "@wukong/db";
+import {
+  listingInputDigest,
+  WineEvidenceAuthorizationError,
+  WineCopyDependencyError,
+} from "@wukong/db";
 import {
   wineGenerationCandidateSchema,
   WineArtifactValidationError,
@@ -78,6 +82,7 @@ export function createWineGenerationHandler(
       const known =
         error instanceof WineGenerationFenceError ||
         error instanceof WineEvidenceAuthorizationError ||
+        error instanceof WineCopyDependencyError ||
         error instanceof WineArtifactValidationError ||
         (error instanceof Error && error.name === "ZodError");
       return {
@@ -86,7 +91,8 @@ export function createWineGenerationHandler(
         state: known ? "blocked" : "unknown",
         code:
           error instanceof WineGenerationFenceError ||
-          error instanceof WineEvidenceAuthorizationError
+          error instanceof WineEvidenceAuthorizationError ||
+          error instanceof WineCopyDependencyError
             ? error.message
             : known
               ? "generation_artifact_invalid"

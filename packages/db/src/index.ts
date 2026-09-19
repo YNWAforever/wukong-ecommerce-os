@@ -206,3 +206,5 @@ export {
   WineEvidenceAuthorizationError,
 } from "./wine-verified-evidence.js";
 export * from "./wine-copy-snapshot.js";
+export * from "./wine-generation-request.js";
+export * from "./wine-copy-dependencies.js";

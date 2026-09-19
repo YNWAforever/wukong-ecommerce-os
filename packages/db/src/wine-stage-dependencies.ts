@@ -15,5 +15,13 @@ export function wineStageDependencyDigest(
     go: run.execution.wineGo,
     policy: run.execution.wineEnrichment,
     dependencies,
+    ...(run.execution.wineMode === "copy" ||
+    run.execution.wineMode === "section"
+      ? {
+          copyDependencyDigest: (
+            run.execution.wineCopy as { dependencyDigest?: unknown }
+          )?.dependencyDigest,
+        }
+      : {}),
   });
 }

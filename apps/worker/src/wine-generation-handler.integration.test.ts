@@ -1,14 +1,26 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import {
+  wineCopyDependencyDigest,
+  buildWineCopySnapshot,
+  readAdoptedWineDependencies,
+  resolveWineGenerationOwnership,
   listingInputDigest,
   WINE_STAGE_ORDER,
+  wineStageOrder,
   wineStageDependencyDigest,
   type WorkspaceRepositories,
   type Database,
   type StageRecord,
 } from "@wukong/db";
-import { emptyWorkingListing } from "@wukong/core";
+import {
+  createWineBudgetSnapshot,
+  wineEnrichmentPolicySchema,
+  wineExecutionSnapshotSchema,
+  workingListingSchema,
+  emptyWorkingListing,
+} from "@wukong/core";
 import { createWineGenerationHandler } from "./wine-generation-handler.js";
 import type {
   WineGenerationRequest,
@@ -153,7 +165,7 @@ async function setup(
         )
           return response({ invalid: true });
         const rows =
-          await admin`select status,stage from ai_runs where pipeline_run_id=${f.job.runId}`;
+          await admin`select status,stage from ai_runs where pipeline_run_id=${value.binding?.operationId ?? value.request?.binding?.operationId ?? f.job.runId}`;
         expect(
           rows.some(
             (r: { status: string; stage: string }) =>
@@ -366,10 +378,8 @@ async function corrupted(
   if (claim.status !== "claimed") throw Error(JSON.stringify(claim));
   const context = structuredClone(claim.context),
     rows: StageRecord[] = [];
-  for (const name of WINE_STAGE_ORDER.slice(
-    0,
-    WINE_STAGE_ORDER.indexOf(stage) + 1,
-  )) {
+  const order = wineStageOrder(context.run.execution.wineMode);
+  for (const name of order.slice(0, order.indexOf(stage) + 1)) {
     const row = structuredClone(
       (await db.forWorkspace(f.workspaceId, (r) =>
         r.wineEnrichment.readStage(f.job.runId, name),
@@ -386,7 +396,9 @@ async function corrupted(
     wineEnrichment: {
       ...r.wineEnrichment,
       readStage: async (_id, name) =>
-        rows.find((row) => row.stage === name) ?? null,
+        _id === context.run.id
+          ? (rows.find((row) => row.stage === name) ?? null)
+          : r.wineEnrichment.readStage(_id, name),
     },
   });
   const database: Pick<Database, "forWorkspace"> = {
@@ -690,4 +702,803 @@ it("mechanically invalid actual generation has known usage and never triggers a 
       r.wineEnrichment.readStage(f.job.runId, "quality_check"),
     ),
   ).toBeNull();
+});
+
+// Test-only acceptance fixture: real immutable input/base, live reader and pure builder
+// inside the owned local transaction. Web admission remains disabled until Task C.
+async function copyRun(
+  f: Awaited<ReturnType<typeof setup>>,
+  mode: "copy" | "section",
+  mutate?: (snapshot: import("@wukong/core").WineCopySnapshot) => void,
+) {
+  const run = await db.forWorkspace(f.workspaceId, async (r) => {
+    await r.listings.lockReviewState(f.job.draftId);
+    const listing = await r.listings.requireById(f.job.draftId);
+    const input = (await r.listingInputs.getCurrent(listing.id))!;
+    const review = await r.listings.getReviewSnapshot(listing.id);
+    const ownership = resolveWineGenerationOwnership(
+      input,
+      workingListingSchema.parse(input.workingContent),
+      review!.activeVersion!.content,
+      {
+        workspaceId: f.workspaceId,
+        listingId: listing.id,
+        operationId: randomUUID(),
+        inputRevision: input.revision,
+        baseVersionId: listing.activeVersionId,
+      },
+    );
+    const policy = wineEnrichmentPolicySchema.parse({
+      enabled: true,
+      allowedDomains: [],
+      tavilyCreditCap: 0,
+    });
+    const original = (await r.pipelineRuns.getOperation(f.job.runId))!;
+    const adopted = await readAdoptedWineDependencies(r, {
+      workspaceId: f.workspaceId,
+      listingId: listing.id,
+      versionId: listing.activeVersionId!,
+      inputRevision: input.revision,
+    });
+    expect(adopted.status).toBe("available");
+    const { snapshot } = buildWineCopySnapshot({
+      adopted,
+      input,
+      ownership,
+      policy,
+      model: wineExecutionSnapshotSchema.parse(original.execution.wineGo),
+      mode,
+      section: mode === "section" ? "introduction" : null,
+    });
+    mutate?.(snapshot);
+    snapshot.dependencyDigest = wineCopyDependencyDigest(snapshot);
+    const acceptedAt = await r.pipelineRuns.acceptanceTimestamp();
+    const run = await r.pipelineRuns.acceptOperation({
+      listingId: listing.id,
+      inputRevision: input.revision,
+      baseVersionId: listing.activeVersionId,
+      activeVersionSequence: listing.activeVersionSequence,
+      requestKey: randomUUID(),
+      requestDigest: randomUUID(),
+      acceptedAt,
+      execution: {
+        ...original.execution,
+        input,
+        wineInputDigest: input.inputDigest,
+        wineSourceDigest: listingInputDigest(input.sources),
+        wineMode: mode,
+        wineCopy: snapshot,
+        wineBudget: createWineBudgetSnapshot(mode),
+        wineEnrichment: policy,
+        wineAcquisition: {
+          schemaVersion: 1,
+          policyVersion: policy.policyVersion,
+          rulesVersion: policy.rulesVersion,
+          allowedDomains: [],
+          deadlineAt: new Date(Date.parse(acceptedAt) + 900000).toISOString(),
+        },
+      },
+    });
+    await r.aiBudgetReservations.reserve({
+      pipelineRunId: run.id,
+      reservedUsd: "1.277952",
+      workspaceCapUsd: "20",
+      pricingVersion: "wine-enrichment@1",
+    });
+    return run;
+  });
+  const job = {
+    ...f.job,
+    runId: run.id,
+    inputRevision: run.inputRevision,
+    activeVersionSequence: run.activeVersionSequence,
+    stage: "generation" as const,
+  };
+  return {
+    run,
+    job,
+    execute: (stage: WineStage) =>
+      runWineStage({ ...job, stage }, { store: f.store, ...f.handlers }),
+  };
+}
+it.each(["copy", "section"] as const)(
+  "runs actual search-free %s and repeated origins with original claims and zero search",
+  async (mode) => {
+    const f = await setup();
+    for (const stage of [
+      "generation",
+      "quality_check",
+      "commit_candidate",
+    ] as const)
+      await f.run(stage);
+    const original = f.requests[0]!;
+    const beforeCalls = f.calls.length;
+    for (let round = 0; round < 2; round++) {
+      const c = await copyRun(f, mode);
+      expect(await c.execute("generation")).toMatchObject({
+        status: "advanced",
+        nextStage: "quality_check",
+      });
+      const request = f.requests.at(-1)!;
+      expect(request.binding.operationId).toBe(c.run.id);
+      expect(
+        request.claims.every((x) =>
+          original.claims.some(
+            (y) => listingInputDigest(x) === listingInputDigest(y),
+          ),
+        ),
+      ).toBe(true);
+      expect(await c.execute("quality_check")).toMatchObject({
+        status: "advanced",
+        nextStage: "commit_candidate",
+      });
+      expect(await c.execute("commit_candidate")).toMatchObject({
+        status: "completed",
+        outcome: "complete",
+      });
+      const result = await db.forWorkspace(f.workspaceId, async (r) => ({
+        adopted: await readAdoptedWineDependencies(r, {
+          workspaceId: f.workspaceId,
+          listingId: c.run.listingId,
+          versionId: (await r.listings.requireById(c.run.listingId))
+            .activeVersionId!,
+          inputRevision: c.run.inputRevision,
+        }),
+        stages: await Promise.all(
+          WINE_STAGE_ORDER.map((s) => r.wineEnrichment.readStage(c.run.id, s)),
+        ),
+      }));
+      expect(result.stages.filter(Boolean).map((x) => x!.stage)).toEqual([
+        "generation",
+        "quality_check",
+        "commit_candidate",
+      ]);
+      expect(result.adopted).toMatchObject({
+        status: "available",
+        refreshRequired: false,
+      });
+      if (result.adopted.status === "available")
+        expect(
+          result.adopted.origins.every((x) => x.runId === f.job.runId),
+        ).toBe(true);
+    }
+    expect(f.calls.slice(beforeCalls)).toEqual([
+      "generation",
+      "quality_check",
+      "generation",
+      "quality_check",
+    ]);
+  },
+);
+async function completedCopyBase() {
+  const f = await setup();
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    expect((await f.run(stage)).status).not.toBe("blocked");
+  return f;
+}
+it.each(["cancel", "revision", "deadline"] as const)(
+  "copy %s preserves stale candidate and zero search accounting",
+  async (kind) => {
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy"),
+      before = f.calls.length;
+    f.control.beforeResponse = async (stage) => {
+      if (stage !== "generation") return;
+      if (kind === "cancel")
+        await db.forWorkspace(f.workspaceId, (r) =>
+          r.pipelineRuns.setOperationState(c.run.id, "cancelled"),
+        );
+      if (kind === "revision")
+        await admin`update listing_drafts set input_revision=input_revision+1 where id=${c.run.listingId}`;
+      if (kind === "deadline")
+        f.control.clock = new Date(Date.parse(c.run.acceptedAt) + 900001);
+    };
+    expect(await c.execute("generation")).toMatchObject({ status: "stopped" });
+    const row = await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readStage(c.run.id, "generation"),
+    );
+    expect(row!.output).toMatchObject({
+      fresh: false,
+      result: {
+        state: "succeeded",
+        frozenQuality: { request: { binding: { operationId: c.run.id } } },
+      },
+    });
+    await c.execute("quality_check");
+    expect(f.calls.slice(before)).toEqual(["generation"]);
+    expect(
+      await admin`select pipeline_run_id from search_budget_reservations where pipeline_run_id=${c.run.id}`,
+    ).toHaveLength(0);
+    expect(
+      (
+        await admin`select state from ai_budget_reservations where pipeline_run_id=${c.run.id}`
+      )[0].state,
+    ).toBe("settled");
+  },
+);
+it.each(["generation", "quality_check"] as const)(
+  "copy unknown %s holds Go and never starts another call",
+  async (stage) => {
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy");
+    if (stage === "quality_check") await c.execute("generation");
+    const before = f.calls.length;
+    f.control.unknownStage = stage;
+    expect((await c.execute(stage)).status).toBe("blocked");
+    await c.execute(stage);
+    expect(f.calls.slice(before)).toEqual([stage]);
+    expect(
+      (
+        await admin`select state from ai_budget_reservations where pipeline_run_id=${c.run.id}`
+      )[0].state,
+    ).toBe("unknown");
+    expect(
+      await admin`select pipeline_run_id from search_budget_reservations where pipeline_run_id=${c.run.id}`,
+    ).toHaveLength(0);
+  },
+);
+it.each(["generation", "quality_check"] as const)(
+  "copy started %s cannot replay",
+  async (stage) => {
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy");
+    if (stage === "quality_check") await c.execute("generation");
+    const before = f.calls.length;
+    expect((await f.store.claim({ ...c.job, stage })).status).toBe("claimed");
+    expect(await c.execute(stage)).toMatchObject({
+      status: "blocked",
+      code: "stage_outcome_unknown",
+    });
+    expect(f.calls.length).toBe(before);
+  },
+);
+it("copy must reject a lifecycle-only generation without its actual frozen request", async () => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  const claim = await f.store.claim(c.job);
+  if (claim.status !== "claimed") throw Error("claim");
+  const result = {
+    schemaVersion: 1 as const,
+    state: "succeeded" as const,
+    stage: "generation" as const,
+    content: candidate(f.requests[0]!).content,
+    issues: [],
+  };
+  expect(await f.store.finish(claim.context, result)).toMatchObject({
+    status: "blocked",
+    code: "generation_authorization_changed",
+  });
+  const row = await db.forWorkspace(f.workspaceId, (r) =>
+    r.wineEnrichment.readStage(c.run.id, "generation"),
+  );
+  expect(row!.output).toMatchObject({ fresh: false, rejectedResult: result });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readStage(c.run.id, "quality_check"),
+    ),
+  ).toBeNull();
+});
+it.each(["input", "ownership", "claim", "origin", "target", "tenant"] as const)(
+  "copy rejects rehashed accepted %s mismatch before any Go",
+  async (kind) => {
+    const f = await completedCopyBase(),
+      before = f.calls.length;
+    const c = await copyRun(f, "copy", (s) => {
+      if (kind === "input") s.inputDigest = "f".repeat(64);
+      if (kind === "ownership") s.ownershipDigest = "f".repeat(64);
+      if (kind === "claim") s.claims[0]!.claimDigest = "f".repeat(64);
+      if (kind === "origin") s.origins[0]!.identityDigest = "f".repeat(64);
+      if (kind === "target") s.targetPaths = s.targetPaths.slice(1);
+      if (kind === "tenant") s.workspaceId = "foreign-workspace";
+    });
+    expect((await c.execute("generation")).status).toBe("blocked");
+    expect(f.calls.length).toBe(before);
+    expect(
+      await db.forWorkspace(f.workspaceId, (r) =>
+        r.wineEnrichment.readStage(c.run.id, "quality_check"),
+      ),
+    ).toBeNull();
+  },
+);
+it.each(["generation", "quality_check"] as const)(
+  "copy reauthorizes registry after actual %s response",
+  async (stage) => {
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy");
+    if (stage === "quality_check") await c.execute("generation");
+    const claim = await f.store.claim({ ...c.job, stage });
+    if (claim.status !== "claimed") throw Error("claim");
+    const output = await f.handlers.execute(claim.context);
+    expect(output.state).toBe("succeeded");
+    const reviewer = randomUUID();
+    await admin`insert into users(id,email) values(${reviewer},${reviewer + "@example.test"})`;
+    await admin`insert into memberships(workspace_id,user_id,role) values(${f.workspaceId},${reviewer},'reviewer')`;
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.recordReviewedAuthority(reviewer, {
+        schemaVersion: 1,
+        domain: "wine.test",
+        subject: { kind: "producer", name: "Fixture Estate" },
+        proofUrl: "https://wine.test/about",
+        proofDigest: "a".repeat(64),
+        verifiedAt: new Date(Date.now() - 60000).toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        revokedAt: null,
+        verifierId: reviewer,
+      }),
+    );
+    expect(await f.store.finish(claim.context, output)).toMatchObject({
+      status: "blocked",
+      code: "generation_authorization_changed",
+    });
+    const row = await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readStage(c.run.id, stage),
+    );
+    expect(row!.output).toMatchObject({ fresh: false, rejectedResult: output });
+  },
+);
+it.each(["copy", "section"] as const)(
+  "changes bilingual %s repeatedly while retaining unavailable protected content and original captures",
+  async (mode) => {
+    const protectedSection = {
+      key: "tasting" as const,
+      en: "Operator tasting paragraph",
+      "zh-Hant": "操作員品酒段落",
+      claimIds: ["00000000-0000-4000-8000-000000000099"],
+      owner: "operator" as const,
+      locked: true,
+    };
+    const metadata = { en: "Baseline title", "zh-Hant": "原有標題" };
+    const base = {
+      ...emptyWorkingListing(),
+      title: metadata,
+      seo: { title: metadata, description: metadata },
+      description: {
+        en: protectedSection.en,
+        "zh-Hant": protectedSection["zh-Hant"],
+      },
+      packQuantity: 1,
+      wineOwnership: {
+        schemaVersion: 1 as const,
+        sections: [protectedSection],
+      },
+    };
+    const f = await setup("full", false, emptyWorkingListing(), base);
+    f.control.mutateCandidate = (v, r) => {
+      v.content.sections.push(...structuredClone(r.current!.sections));
+    };
+    for (const stage of [
+      "generation",
+      "quality_check",
+      "commit_candidate",
+    ] as const)
+      expect(await f.run(stage)).toMatchObject({
+        status: stage === "commit_candidate" ? "completed" : "advanced",
+      });
+    const read = () =>
+      db.forWorkspace(f.workspaceId, async (r) => {
+        const l = await r.listings.requireById(f.job.draftId);
+        return readAdoptedWineDependencies(r, {
+          workspaceId: f.workspaceId,
+          listingId: l.id,
+          versionId: l.activeVersionId!,
+          inputRevision: l.inputRevision,
+        });
+      });
+    const first = await read();
+    expect(first).toMatchObject({ status: "available", refreshRequired: true });
+    if (first.status !== "available") throw Error("origin");
+    const original = first.origins;
+    for (let round = 0; round < 3; round++) {
+      const c = await copyRun(f, mode);
+      f.control.mutateCandidate = (v, r) => {
+        v.content = structuredClone(r.current!);
+        const text = {
+          en: `This wine is presented in a 750 ml bottle${".".repeat(round + 1)}`,
+          "zh-Hant": `此酒採用 750 毫升瓶裝${"。".repeat(round + 1)}`,
+        };
+        const section = v.content.sections.find(
+          (s) => s.key === "introduction",
+        )!;
+        section.en = text.en;
+        section["zh-Hant"] = text["zh-Hant"];
+        const cl = r.claims.find((x) => x.field === "volumeMl")!;
+        v.annotations = (["en", "zh-Hant"] as const).map((lang) => ({
+          path: `sections.introduction.${lang}`,
+          span: text[lang],
+          claimId: cl.id,
+          value: cl.value,
+          evidenceIds: cl.evidenceIds,
+          premiseClaimIds: cl.premiseClaimIds,
+        }));
+      };
+      for (const stage of [
+        "generation",
+        "quality_check",
+        "commit_candidate",
+      ] as const)
+        expect((await c.execute(stage)).status).not.toBe("blocked");
+      const adopted = await read();
+      expect(adopted.status).toBe("available");
+      if (adopted.status !== "available") throw Error("copy reader");
+      expect(adopted.origins).toEqual(original);
+      expect(adopted.adopted.sections.find((s) => s.key === "tasting")).toEqual(
+        protectedSection,
+      );
+      expect(adopted.adopted.title).toEqual(first.adopted.title);
+      expect(adopted.adopted.seo).toEqual(first.adopted.seo);
+      expect(adopted.unavailableSections.map((s) => s.path)).toContain(
+        "sections.tasting.en",
+      );
+      expect(
+        adopted.supports
+          .filter((s) => s.path.startsWith("sections.introduction"))
+          .every((s) => s.valid && s.originRunId === f.job.runId),
+      ).toBe(true);
+      expect(
+        adopted.adopted.sections.find((s) => s.key === "introduction")!.en,
+      ).not.toBe(
+        first.adopted.sections.find((s) => s.key === "introduction")!.en,
+      );
+    }
+  },
+);
+it("copy admits at most four physical Go calls including generation and quality repairs, with no search ledger", async () => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  const calls: string[] = [];
+  const execute = createWineGenerationHandler({
+    ...f.config,
+    transport: {
+      fetch: async (_url, init) => {
+        const value = JSON.parse(
+          JSON.parse(String(init!.body)).messages[1].content,
+        );
+        const stage = value.candidate ? "quality_check" : "generation";
+        calls.push(stage);
+        if (calls.filter((s) => s === stage).length === 1)
+          return response({ invalid: true });
+        return response(
+          stage === "generation"
+            ? candidate(value)
+            : { schemaVersion: 1, issues: [] },
+        );
+      },
+    },
+  });
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    expect(
+      await runWineStage({ ...c.job, stage }, { store: f.store, execute }),
+    ).toMatchObject({
+      status: stage === "commit_candidate" ? "completed" : "advanced",
+    });
+  expect(calls).toEqual([
+    "generation",
+    "generation",
+    "quality_check",
+    "quality_check",
+  ]);
+  for (const stage of [
+    "extraction",
+    "search_basic",
+    "generation",
+    "quality_check",
+  ] as const)
+    await runWineStage({ ...c.job, stage }, { store: f.store, execute });
+  expect(calls).toHaveLength(4);
+  expect(
+    await admin`select stage from ai_runs where pipeline_run_id=${c.run.id}`,
+  ).toHaveLength(4);
+  expect(
+    await admin`select run_id from wine_search_calls where run_id=${c.run.id}`,
+  ).toHaveLength(0);
+  expect(
+    await admin`select pipeline_run_id from search_budget_reservations where pipeline_run_id=${c.run.id}`,
+  ).toHaveLength(0);
+  expect(
+    (
+      await admin`select reserved_usd,state from ai_budget_reservations where pipeline_run_id=${c.run.id}`
+    )[0],
+  ).toMatchObject({ reserved_usd: "1.277952", state: "settled" });
+});
+async function readCopyResult(
+  f: Awaited<ReturnType<typeof setup>>,
+  wrap: (r: WorkspaceRepositories) => WorkspaceRepositories = (r) => r,
+) {
+  return db.forWorkspace(f.workspaceId, async (r) => {
+    const l = await r.listings.requireById(f.job.draftId);
+    return readAdoptedWineDependencies(wrap(r), {
+      workspaceId: f.workspaceId,
+      listingId: l.id,
+      versionId: l.activeVersionId!,
+      inputRevision: l.inputRevision,
+    });
+  });
+}
+it.each([
+  "base",
+  "namespace",
+  "claim",
+  "quality",
+  "missing-stage",
+  "sequence",
+  "cycle",
+] as const)("copy origin rejects forged historical %s", async (kind) => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    await c.execute(stage);
+  const result = await readCopyResult(f, (r) => ({
+    ...r,
+    pipelineRuns: {
+      ...r.pipelineRuns,
+      getOperation: async (id) => {
+        const run = await r.pipelineRuns.getOperation(id);
+        if (!run || id !== c.run.id) return run;
+        const x = structuredClone(run),
+          s = x.execution.wineCopy as import("@wukong/core").WineCopySnapshot;
+        if (kind === "base") s.baseVersionId = randomUUID();
+        if (kind === "namespace") s.claims[0]!.originRunId = randomUUID();
+        if (kind === "claim") s.claims[0]!.claimDigest = "f".repeat(64);
+        if (kind === "sequence") x.activeVersionSequence++;
+        if (kind === "cycle") {
+          x.baseVersionId = (
+            await r.listings.requireById(x.listingId)
+          ).activeVersionId;
+          s.baseVersionId = x.baseVersionId!;
+        }
+        s.dependencyDigest = wineCopyDependencyDigest(s);
+        return x;
+      },
+    },
+    wineEnrichment: {
+      ...r.wineEnrichment,
+      readStage: async (id, stage) => {
+        const row = await r.wineEnrichment.readStage(id, stage);
+        if (id !== c.run.id || !row) return row;
+        if (kind === "missing-stage" && stage === "quality_check") return null;
+        if (kind === "quality" && stage === "quality_check") {
+          const x = structuredClone(row);
+          (x.output as any).result.contentDigest = "f".repeat(64);
+          return x;
+        }
+        return row;
+      },
+    },
+  }));
+  expect(result.status).toBe("unavailable");
+});
+it.each([
+  "request-claims",
+  "annotation",
+  "quality-digest",
+  "quality-blocking",
+] as const)(
+  "copy projection independently rejects rehashed %s",
+  async (kind) => {
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy");
+    await c.execute("generation");
+    await c.execute("quality_check");
+    const x = await corrupted(
+      { ...f, job: c.job },
+      "commit_candidate",
+      (stage, result) => {
+        if (stage === "generation" && kind === "request-claims")
+          result.frozenQuality.request.claims[0].value = "forged";
+        if (stage === "generation" && kind === "annotation")
+          result.frozenQuality.candidate.annotations[0].claimId = randomUUID();
+        if (stage === "quality_check" && kind === "quality-digest")
+          result.contentDigest = "f".repeat(64);
+        if (stage === "quality_check" && kind === "quality-blocking")
+          result.issues = [
+            {
+              path: "sections.introduction.en",
+              code: "semantic_entailment",
+              blocking: true,
+              evidenceIds: [],
+            },
+          ];
+      },
+    );
+    await expect(
+      db.forWorkspace(f.workspaceId, (r) =>
+        projectWineCandidate(x.wrap(r), {
+          ...x.context,
+          requiredOutcome: "ready",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(
+      (
+        await admin`select count(*)::int n from listing_versions where workspace_id=${f.workspaceId}`
+      )[0].n,
+    ).toBe(1);
+  },
+);
+it("copy ancestry remains bounded after sixteen historical hops without renewing original evidence", async () => {
+  const f = await completedCopyBase();
+  for (let round = 0; round < 17; round++) {
+    const c = await copyRun(f, "copy");
+    for (const stage of [
+      "generation",
+      "quality_check",
+      "commit_candidate",
+    ] as const)
+      expect((await c.execute(stage)).status).toBe(
+        stage === "commit_candidate" ? "completed" : "advanced",
+      );
+    const result = await readCopyResult(f);
+    expect(result.status).toBe(round < 16 ? "available" : "unavailable");
+    if (round === 16) expect(result).toMatchObject({ code: "ancestry_depth" });
+  }
+}, 120000);
+it.each(["verification", "quality_check"] as const)(
+  "direct full projection derives persisted %s blockers despite caller ready",
+  async (stage) => {
+    const f = await setup();
+    await f.run("generation");
+    await f.run("quality_check");
+    const x = await corrupted(f, "commit_candidate", (name, result) => {
+      if (name === stage) {
+        result.issues = [
+          {
+            path: "sections.introduction.en",
+            code: "semantic_entailment",
+            blocking: true,
+            evidenceIds: [],
+          },
+        ];
+        if (stage === "quality_check") result.outcome = "needs_info";
+      }
+    });
+    const result = await db.forWorkspace(f.workspaceId, (r) =>
+      projectWineCandidate(x.wrap(r), {
+        ...x.context,
+        requiredOutcome: "ready",
+      }),
+    );
+    expect(result.outcome).toBe("needs_info");
+  },
+);
+it("actual copy mandatory quality needs_info preserves the review base without rewriting", async () => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy"),
+    calls: string[] = [];
+  const execute = createWineGenerationHandler({
+    ...f.config,
+    transport: {
+      fetch: async (_url, init) => {
+        const value = JSON.parse(
+            JSON.parse(String(init!.body)).messages[1].content,
+          ),
+          check = !!value.candidate;
+        calls.push(check ? "quality_check" : "generation");
+        return response(
+          check
+            ? {
+                schemaVersion: 1,
+                issues: [
+                  {
+                    path: "sections.introduction.en",
+                    code: "semantic_entailment",
+                    blocking: true,
+                    evidenceIds: [],
+                  },
+                ],
+              }
+            : candidate(value),
+        );
+      },
+    },
+  });
+  expect(await runWineStage(c.job, { store: f.store, execute })).toMatchObject({
+    status: "advanced",
+  });
+  expect(
+    await runWineStage(
+      { ...c.job, stage: "quality_check" },
+      { store: f.store, execute },
+    ),
+  ).toMatchObject({ status: "advanced" });
+  expect(
+    await runWineStage(
+      { ...c.job, stage: "commit_candidate" },
+      { store: f.store, execute },
+    ),
+  ).toMatchObject({
+    status: "completed",
+    outcome: "needs_info",
+    versionId: null,
+  });
+  const listing = await db.forWorkspace(f.workspaceId, (r) =>
+    r.listings.requireById(c.run.listingId),
+  );
+  expect(listing).toMatchObject({
+    status: "in_review",
+    activeVersionId: c.run.baseVersionId,
+  });
+  expect(calls).toEqual(["generation", "quality_check"]);
+});
+it("accepted copy title paraphrases keep original product support reusable", async () => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  f.control.mutateCandidate = (v, r) => {
+    const text = { en: "A 750 ml bottle", "zh-Hant": "750 毫升瓶裝。" };
+    v.content.title = text;
+    for (const a of v.annotations.filter((a) => a.path.startsWith("title.")))
+      a.span = text[a.path.endsWith("zh-Hant") ? "zh-Hant" : "en"];
+  };
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const) {
+    const result = await c.execute(stage);
+    if (result.status === "blocked") throw Error(JSON.stringify(result));
+    expect(result.status).toBe(
+      stage === "commit_candidate" ? "completed" : "advanced",
+    );
+  }
+  expect(await readCopyResult(f)).toMatchObject({
+    status: "available",
+    refreshRequired: false,
+  });
+  const next = await copyRun(f, "copy");
+  expect((await next.execute("generation")).status).toBe("advanced");
+});
+it("manual title edit after a generated copy title invalidates original product support", async () => {
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  f.control.mutateCandidate = (v) => {
+    const text = { en: "A 750 ml bottle", "zh-Hant": "750 毫升瓶裝。" };
+    v.content.title = text;
+    for (const a of v.annotations.filter((a) => a.path.startsWith("title.")))
+      a.span = text[a.path.endsWith("zh-Hant") ? "zh-Hant" : "en"];
+  };
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    expect((await c.execute(stage)).status).toBe(
+      stage === "commit_candidate" ? "completed" : "advanced",
+    );
+  await db.forWorkspace(f.workspaceId, async (r) => {
+    const l = await r.listings.requireById(c.run.listingId);
+    await r.listingInputs.save(
+      {
+        listingId: l.id,
+        actorId: "test",
+        expectedInputRevision: l.inputRevision,
+        baseVersionId: l.activeVersionId,
+        operationKey: randomUUID(),
+        requestDigest: randomUUID(),
+        changes: [
+          { field: "title.en", value: "Different product", state: "manual" },
+        ],
+      },
+      { workspaceId: f.workspaceId, actorId: "test", entityId: l.id },
+      r.audit,
+    );
+  });
+  const result = await readCopyResult(f);
+  expect(result).toMatchObject({ status: "available", refreshRequired: true });
+  if (result.status === "available")
+    expect(
+      result.supports.every(
+        (s) => !s.valid && s.invalidReason === "identity_changed",
+      ),
+    ).toBe(true);
 });
