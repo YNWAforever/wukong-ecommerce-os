@@ -31,7 +31,7 @@ const capability = () => ({
   databaseReady: true,
 });
 const reply = (wine = capability()) =>
-  Response.json({ authenticated: true, wine });
+  Response.json({ authenticated: true, wine, fullResearchConfigured: true });
 afterEach(() => vi.useRealTimers());
 describe("signed server wine capability receipt", () => {
   it("pins and signs exact health request and yields only a server-owned receipt", async () => {
@@ -288,3 +288,18 @@ describe("mode-bound search-free capability", () => {
     ).rejects.toThrow("wine_capability_unavailable");
   });
 });
+
+it.each(["full", "research"] as const)(
+  "requires fresh runtime storage/acquisition readiness for %s",
+  async (mode) => {
+    await expect(
+      client.preflightWineCapability({
+        env,
+        mode,
+        fetch: async () =>
+          Response.json({ authenticated: true, wine: capability() }),
+        now: () => 1000000,
+      }),
+    ).rejects.toThrow("wine_capability_unavailable");
+  },
+);

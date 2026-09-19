@@ -30,6 +30,7 @@ export type WineExtractionConfig = {
   /** Server storage adapter; receives only a tenant-checked accepted analyse image. No I/O inside DB callbacks. */
   resolveImage: (
     asset: SourceAsset,
+    binding: { runId: string; digest: string },
   ) => Promise<{ bytes: Uint8Array; readUrl: string }>;
   transport?: WineOperationTransport;
 };
@@ -175,6 +176,7 @@ export function createWineExtractionHandler(
       for (const selected of initial.selected) {
         const resolved = await config.resolveImage(
           structuredClone(selected.asset),
+          { runId: c.run.id, digest: selected.digest },
         );
         requireValid(
           sha(resolved.bytes) === selected.digest,

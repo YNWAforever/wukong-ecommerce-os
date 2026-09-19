@@ -229,3 +229,55 @@ it("signs a strict independent product-shot envelope", async () => {
     } as never),
   ).rejects.toMatchObject({ reason: "invalid_payload" });
 });
+
+it("signs the complete strict wine envelope without dropping its immutable flow", async () => {
+  const wine = {
+    ...payload,
+    schemaVersion: 2 as const,
+    flowVersion: "wine-enrichment-v1" as const,
+    runId: "00000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation" as const,
+  };
+  const send = vi.fn(
+    async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(null, { status: 202 }),
+  );
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.test",
+      QUEUE_INGRESS_SECRET: "synthetic",
+    },
+    fetch: send,
+  });
+  await client.enqueue(LISTING_INGRESS_PATH, wine);
+  expect(JSON.parse(String(send.mock.calls[0]![1]!.body))).toEqual(wine);
+});
+
+it("delivers signed wine Web publisher bytes through actual Worker ingress validation", async () => {
+  const workerModule = "../../worker/src/ingress";
+  const { handleIngress } = await import(workerModule);
+  const send = vi.fn(async () => undefined);
+  const secret = "synthetic-8c";
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.test",
+      QUEUE_INGRESS_SECRET: secret,
+    },
+    fetch: async (url, init) =>
+      handleIngress(new Request(url, init), {
+        QUEUE_INGRESS_SECRET: secret,
+        LISTING_QUEUE: { send },
+      } as never),
+  });
+  const wine = {
+    ...payload,
+    schemaVersion: 2 as const,
+    flowVersion: "wine-enrichment-v1" as const,
+    runId: "00000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "extraction" as const,
+  };
+  await client.enqueue(LISTING_INGRESS_PATH, wine);
+  expect(send).toHaveBeenCalledExactlyOnceWith(wine);
+});

@@ -31,7 +31,7 @@ describe("signed wine document client", () => {
       now: () => now,
       fetch: async (url, init) => {
         expect(String(url)).toBe("https://callback.test" + WINE_DOCUMENT_PATH);
-        expect(init?.redirect).toBe("error");
+        expect(init?.redirect).toBe("manual");
         const headers = new Headers(init?.headers);
         expect(
           await verifyQueueRequest({

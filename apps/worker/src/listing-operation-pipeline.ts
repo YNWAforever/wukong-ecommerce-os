@@ -44,6 +44,7 @@ export async function runPersistedListingOperation(
   );
   if (
     !run ||
+    run.execution.flowVersion !== undefined ||
     run.listingId !== input.draftId ||
     run.inputRevision !== input.inputRevision ||
     run.activeVersionSequence !== input.activeVersionSequence

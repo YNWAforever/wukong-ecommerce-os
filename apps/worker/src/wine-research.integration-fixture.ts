@@ -30,11 +30,11 @@ afterAll(async () => {
   await db.close();
   await admin.end();
 });
-const bytes = new TextEncoder().encode("public synthetic bottle image");
+export const bytes = new TextEncoder().encode("public synthetic bottle image");
 const digest = createHash("sha256").update(bytes).digest("hex");
 const modelId = "00000000-0000-4000-8000-000000000001";
 const transcript = "Fixture Estate\nReserve Red\n2020\n750 ml\n1 bottle\n13 %";
-function output(assetId: string) {
+export function output(assetId: string) {
   const identity = wineIdentity({
     vintage: { state: "known", year: 2020 },
     volumeMl: 750,
@@ -112,7 +112,7 @@ export async function fixture(
       );
     }
     const asset = await r.sourceAssets.create({
-      storageKey: `workspaces/${workspaceId}/${listing.id}/image.png`,
+      storageKey: `ws/${workspaceId}/sources/${randomUUID()}/image.png`,
       kind: "image/png",
       metadata: { sha256: digest, size: bytes.length },
     });

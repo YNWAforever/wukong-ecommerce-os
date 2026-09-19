@@ -1,3 +1,10 @@
+import { MAX_ASSET_SIZE } from "./media-policy.js";
+import {
+  wineImageSnapshotKey,
+  verifyWineSnapshotBytes,
+  type WineImageSnapshotInput,
+  type WineImageSnapshot,
+} from "./wine-image-snapshot.js";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -90,6 +97,41 @@ export class S3AssetStore implements AssetStore {
         ...config,
       }) as S3Transport,
     });
+  }
+
+  /** Server-only write-once namespace. Never issue an upload credential for this key. */
+  async createWineImageSnapshot(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot> {
+    const key = wineImageSnapshotKey(input);
+    try {
+      await this.#transport.send(
+        new PutObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+          Body: new Uint8Array(input.bytes),
+          ContentType: input.mimeType,
+          ContentLength: input.bytes.byteLength,
+          IfNoneMatch: "*",
+        }) as S3Command,
+      );
+    } catch (error) {
+      if (httpStatus(error) !== 412) throw error;
+    }
+    const response = (await this.#transport.send(
+      new GetObjectCommand({ Bucket: this.#bucket, Key: key }) as S3Command,
+    )) as { Body?: S3Body };
+    if (!response.Body) throw new AssetObjectMissingError();
+    const bytes = await readBody(response.Body, MAX_ASSET_SIZE);
+    verifyWineSnapshotBytes(bytes, input.expectedDigest);
+    const readUrl = await this.#presign(
+      this.#transport,
+      new GetObjectCommand({ Bucket: this.#bucket, Key: key }) as S3Command,
+      { expiresIn: TEN_MINUTES_SECONDS },
+    );
+    if (new URL(readUrl).protocol !== "https:")
+      throw Error("wine_snapshot_https_required");
+    return { bytes, readUrl };
   }
 
   async createUpload(input: CreateUploadInput) {
@@ -209,7 +251,11 @@ export class S3AssetStore implements AssetStore {
     }
   }
 
-  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+  async readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array> {
     assertAnyAssetKey(workspaceId, key);
     try {
       const response = (await this.#transport.send(
@@ -217,9 +263,9 @@ export class S3AssetStore implements AssetStore {
           Bucket: this.#bucket,
           Key: key,
         }) as unknown as S3Command,
-      )) as { Body?: { transformToByteArray(): Promise<Uint8Array> } };
+      )) as { Body?: S3Body };
       if (!response.Body) throw new AssetObjectMissingError();
-      return await response.Body.transformToByteArray();
+      return await readBody(response.Body, options?.maxBytes);
     } catch (error) {
       if (httpStatus(error) === 404) throw new AssetObjectMissingError();
       throw error;
@@ -232,4 +278,42 @@ function httpStatus(error: unknown): number | undefined {
     return undefined;
   return (error as { $metadata?: { httpStatusCode?: number } }).$metadata
     ?.httpStatusCode;
+}
+
+type S3Body = {
+  transformToByteArray(): Promise<Uint8Array>;
+  transformToWebStream?(): ReadableStream<Uint8Array>;
+};
+async function readBody(body: S3Body, maxBytes?: number): Promise<Uint8Array> {
+  if (maxBytes === undefined) return body.transformToByteArray();
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 1 ||
+    !body.transformToWebStream
+  )
+    throw Error("bounded_asset_stream_required");
+  const reader = body.transformToWebStream().getReader(),
+    chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw Error("asset_body_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }

@@ -1,3 +1,4 @@
+import { consumeWineMessage as defaultConsumeWineMessage } from "./wine-consumer.js";
 import {
   consumeProductShotMessage as defaultConsumeProductShotMessage,
   PRODUCT_SHOT_MAX_ATTEMPTS,
@@ -39,6 +40,10 @@ type ListingAttempt = {
 };
 
 type QueueDependencies = {
+  consumeWineMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<ListingConsumerOutcome>;
   consumeProductShotMessage?: (
     payload: unknown,
     env: WorkerEnv,
@@ -90,6 +95,18 @@ export async function handleQueue(
   const consume =
     dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
   for (const message of batch.messages) {
+    if (
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "flowVersion" in message.body
+    ) {
+      const outcome = await (
+        dependencies.consumeWineMessage ?? defaultConsumeWineMessage
+      )(message.body, env);
+      if (outcome === "ack") message.ack();
+      else message.retry({ delaySeconds: outcome.retryAfterSeconds });
+      continue;
+    }
     if (
       typeof message.body === "object" &&
       message.body !== null &&

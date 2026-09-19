@@ -1502,3 +1502,615 @@ it("manual title edit after a generated copy title invalidates original product 
       ),
     ).toBe(true);
 });
+
+it.each(["copy", "section"] as const)(
+  "actual Queue factory executes %s without Tavily and recovers ACK loss without replay",
+  async (mode) => {
+    const { createWineQueueRuntime } = await import("./wine-queue-runtime.js");
+    const { handleQueue } = await import("./queue-consumer.js");
+    const { consumeWineMessage } = await import("./wine-consumer.js");
+    const f = await completedCopyBase(),
+      c = await copyRun(f, mode);
+    const sent: import("@wukong/jobs").WineListingJob[] = [];
+    let failSend = true;
+    const env = {
+      OPENCODE_GO_API_KEY: "synthetic",
+      LISTING_PAID_OPERATIONS_ENABLED: "false",
+      LISTING_QUEUE: {
+        send: async (job: import("@wukong/jobs").WineListingJob) => {
+          if (failSend) {
+            failSend = false;
+            throw Error("synthetic send failure");
+          }
+          sent.push(job);
+        },
+      },
+    } as never;
+    const config = {
+      databaseFactory: () => ({ ...db, close: async () => {} }),
+      transport: f.config.transport,
+      assetStoreFactory: () => {
+        throw Error("copy must not open image storage");
+      },
+      acquisitionFetch: async () => {
+        throw Error("copy must not search");
+      },
+    };
+    const runtime = createWineQueueRuntime(env, config);
+    const before = f.calls.length;
+    await expect(runtime.deliver(c.job)).rejects.toThrow(
+      "wine_outbox_send_failed",
+    );
+    expect(f.calls.slice(before)).toEqual(["generation"]);
+    expect(await runtime.deliver(c.job)).toMatchObject({ status: "duplicate" });
+    expect(sent.map((j) => j.stage)).toEqual(["quality_check"]);
+    expect(f.calls.slice(before)).toEqual(["generation"]);
+    let acknowledgements = 0;
+    const deliver = async (body: import("@wukong/jobs").WineListingJob) =>
+      handleQueue(
+        {
+          queue: "wukong-listing-preview",
+          messages: [
+            {
+              body,
+              attempts: 1,
+              ack: () => {
+                acknowledgements++;
+              },
+              retry: () => {
+                throw Error("unexpected retry");
+              },
+            },
+          ],
+        } as never,
+        env,
+        undefined,
+        {
+          consumeWineMessage: (payload, bindings) =>
+            consumeWineMessage(payload, bindings, config),
+        },
+      );
+    await deliver(sent[0]!);
+    expect(sent.map((j) => j.stage)).toEqual([
+      "quality_check",
+      "commit_candidate",
+    ]);
+    await deliver(sent[0]!); // Queue ACK lost after quality commit.
+    expect(f.calls.slice(before)).toEqual(["generation", "quality_check"]);
+    await deliver(sent[1]!);
+    expect(acknowledgements).toBe(3);
+    expect(
+      (await db.forWorkspace(f.workspaceId, (r) =>
+        r.pipelineRuns.getOperation(c.run.id),
+      ))!.executionState,
+    ).toBe("succeeded");
+    expect(
+      await admin`select run_id from wine_search_calls where run_id=${c.run.id}`,
+    ).toHaveLength(0);
+    expect(
+      await admin`select pipeline_run_id from search_budget_reservations where pipeline_run_id=${c.run.id}`,
+    ).toHaveLength(0);
+  },
+);
+
+it("wine recovery ignores completed old outbox and started in-flight stages", async () => {
+  const { recoverWineOperation } = await import("./wine-recovery.js");
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  const { wineStageMessageKey } = await import("@wukong/jobs");
+  const record = async () =>
+    db.forWorkspace(f.workspaceId, async (r) => {
+      const rows = await r.dispatchOutbox.record([
+        {
+          listingId: c.job.draftId,
+          dedupeKey: wineStageMessageKey(c.run.id, "generation"),
+          payload: c.job,
+        },
+      ]);
+      for (let i = 0; i < 5; i++)
+        await r.dispatchOutbox.markAttempted([rows[0]!.id]);
+    });
+  await record();
+  const claim = await f.store.claim(c.job);
+  expect(claim.status).toBe("claimed");
+  expect(await recoverWineOperation(db, f.workspaceId, c.run.id)).toEqual({
+    failed: false,
+  });
+  if (claim.status !== "claimed") throw Error("fixture claim");
+  const result = await f.handlers.execute(claim.context);
+  expect(await f.store.finish(claim.context, result)).toMatchObject({
+    status: "advanced",
+  });
+  expect(await recoverWineOperation(db, f.workspaceId, c.run.id)).toEqual({
+    failed: false,
+  });
+});
+it("wine recovery terminalizes only the exact exhausted pending stage and releases unused holds", async () => {
+  const { recoverWineOperation } = await import("./wine-recovery.js");
+  const { wineStageMessageKey } = await import("@wukong/jobs");
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  await db.forWorkspace(f.workspaceId, async (r) => {
+    const [row] = await r.dispatchOutbox.record([
+      {
+        listingId: c.job.draftId,
+        dedupeKey: wineStageMessageKey(c.run.id, "generation"),
+        payload: c.job,
+      },
+    ]);
+    for (let i = 0; i < 5; i++) await r.dispatchOutbox.markAttempted([row!.id]);
+  });
+  expect(await recoverWineOperation(db, f.workspaceId, c.run.id)).toEqual({
+    failed: true,
+    reason: "dispatch_exhausted",
+  });
+  expect(
+    (
+      await admin`select state,settled_usd from ai_budget_reservations where pipeline_run_id=${c.run.id}`
+    )[0],
+  ).toMatchObject({ state: "settled", settled_usd: "0.000000" });
+});
+
+it.skipIf(process.env.WINE_RUNTIME_HTTP_URL !== "http://127.0.0.1:8789")(
+  "actual local Wrangler HTTP ingress delivers three Queue stages without Tavily",
+  async () => {
+    const { createServer } = await import("node:http");
+    const { signQueueRequest, LISTING_INGRESS_PATH } =
+      await import("@wukong/jobs");
+    const calls: string[] = [];
+    const server = createServer(async (req, res) => {
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        const value = JSON.parse(body.messages[1].content);
+        calls.push(value.candidate ? "quality_check" : "generation");
+        const reply = response(
+          value.candidate ? { schemaVersion: 1, issues: [] } : candidate(value),
+        );
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await reply.text());
+      } catch {
+        res.writeHead(500);
+        res.end();
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(49221, "127.0.0.1", resolve),
+    );
+    try {
+      const f = await completedCopyBase(),
+        c = await copyRun(f, "copy");
+      const webClientModule = "../../web/lib/cloudflare-queue-runtime.ts";
+      const { createCloudflareIngressClient } = await import(webClientModule);
+      const client = createCloudflareIngressClient({
+        env: {
+          QUEUE_INGRESS_URL: process.env.WINE_RUNTIME_HTTP_URL,
+          QUEUE_INGRESS_SECRET: "wine-runtime-local-synthetic-ingress",
+        },
+      });
+      const send = () => client.enqueue(LISTING_INGRESS_PATH, c.job);
+      expect(await send()).toEqual({ accepted: true });
+      let state = "";
+      for (let i = 0; i < 60; i++) {
+        state = (await db.forWorkspace(f.workspaceId, (r) =>
+          r.pipelineRuns.getOperation(c.run.id),
+        ))!.executionState;
+        if (state === "succeeded" || state === "failed") break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      expect(state).toBe("succeeded");
+      expect(calls).toEqual(["generation", "quality_check"]);
+      expect(await send()).toEqual({ accepted: true });
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      expect(calls).toEqual(["generation", "quality_check"]);
+      expect(
+        await admin`select stage from wine_stages where run_id=${c.run.id} order by stage`,
+      ).toHaveLength(3);
+      expect(
+        await admin`select run_id from wine_search_calls where run_id=${c.run.id}`,
+      ).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
+
+it.each(["full", "research"] as const)(
+  "actual Queue runtime executes all required %s stages using reviewed handlers",
+  async (mode) => {
+    const { fixture, bytes, output } =
+      await import("./wine-research.integration-fixture.js");
+    const { createWineQueueRuntime } = await import("./wine-queue-runtime.js");
+    const { MemoryAssetStore } = await import("@wukong/assets");
+    const f = await fixture({ mode, profile });
+    const memory = new MemoryAssetStore();
+    const pending: import("@wukong/jobs").WineListingJob[] = [f.job];
+    let stage: WineStage = "extraction";
+    const calls: WineStage[] = [];
+    let searches = 0;
+    const runtime = createWineQueueRuntime(
+      {
+        OPENCODE_GO_API_KEY: "synthetic",
+        TAVILY_API_KEY: "synthetic",
+        WEBSITE_FETCH_BASE_URL: "https://callback.test",
+        QUEUE_INGRESS_SECRET: "synthetic",
+        LISTING_QUEUE: {
+          send: async (job: import("@wukong/jobs").WineListingJob) => {
+            pending.push(job);
+          },
+        },
+      } as never,
+      {
+        databaseFactory: () => ({ ...db, close: async () => {} }),
+        assetStoreFactory: () =>
+          ({
+            readObject: async () => bytes,
+            createWineImageSnapshot:
+              memory.createWineImageSnapshot.bind(memory),
+          }) as never,
+        acquisitionFetch: async () => {
+          searches++;
+          return Response.json({
+            request_id: "synthetic",
+            usage: { credits: 1 },
+            results: [],
+            failed_results: [],
+          });
+        },
+        transport: {
+          fetch: async (_url, init) => {
+            calls.push(stage);
+            if (stage === "extraction") return response(output(f.asset.id));
+            if (stage === "generation")
+              return response(
+                candidate(
+                  JSON.parse(
+                    JSON.parse(String(init!.body)).messages[1].content,
+                  ),
+                ),
+              );
+            if (stage === "quality_check")
+              return response({ schemaVersion: 1, issues: [] });
+            return response({
+              schemaVersion: 1,
+              candidates: [],
+              claims: [],
+              supportProposals: [],
+              needsDeepSearch: false,
+              issues: [],
+            });
+          },
+        },
+      },
+    );
+    let last: unknown;
+    for (let i = 0; pending.length && i < 8; i++) {
+      const job = pending.shift()!;
+      stage = job.stage;
+      last = await runtime.deliver(job);
+    }
+    expect(last).toMatchObject({ status: "completed" });
+    expect(pending).toHaveLength(0);
+    expect(calls).toEqual([
+      "extraction",
+      "verification",
+      "generation",
+      "quality_check",
+    ]);
+    expect(searches).toBe(2);
+  },
+);
+it.each(["cancel", "revision", "deadline", "unknown"] as const)(
+  "actual Queue runtime preserves %s no-replay and inspectable stale results",
+  async (kind) => {
+    const { createWineQueueRuntime } = await import("./wine-queue-runtime.js");
+    const f = await completedCopyBase(),
+      c = await copyRun(f, "copy"),
+      before = f.calls.length;
+    const sent: unknown[] = [];
+    if (kind === "unknown") f.control.unknownStage = "generation";
+    else
+      f.control.beforeResponse = async () => {
+        if (kind === "cancel")
+          await db.forWorkspace(f.workspaceId, (r) =>
+            r.pipelineRuns.setOperationState(c.run.id, "cancelled"),
+          );
+        if (kind === "revision")
+          await admin`update listing_drafts set input_revision=input_revision+1 where id=${c.run.listingId}`;
+        if (kind === "deadline")
+          f.control.clock = new Date(Date.parse(c.run.acceptedAt) + 900001);
+      };
+    const runtime = createWineQueueRuntime(
+      {
+        OPENCODE_GO_API_KEY: "synthetic",
+        LISTING_QUEUE: {
+          send: async (j: unknown) => {
+            sent.push(j);
+          },
+        },
+      } as never,
+      {
+        databaseFactory: () => ({ ...db, close: async () => {} }),
+        transport: f.config.transport,
+        now: () => f.control.clock ?? new Date(),
+      },
+    );
+    expect(await runtime.deliver(c.job)).toMatchObject({
+      status: kind === "unknown" ? "blocked" : "stopped",
+    });
+    await runtime.deliver(c.job);
+    expect(f.calls.slice(before)).toEqual(["generation"]);
+    expect(sent).toEqual([]);
+    const row = await db.forWorkspace(f.workspaceId, (r) =>
+      r.wineEnrichment.readStage(c.run.id, "generation"),
+    );
+    if (kind !== "unknown")
+      expect(row!.output).toMatchObject({
+        fresh: false,
+        result: { state: "succeeded" },
+      });
+    expect(
+      (
+        await admin`select state from ai_budget_reservations where pipeline_run_id=${c.run.id}`
+      )[0].state,
+    ).toBe(kind === "unknown" ? "unknown" : "settled");
+  },
+);
+
+it.skipIf(process.env.WINE_RUNTIME_HTTP_URL !== "http://127.0.0.1:8789")(
+  "actual local Wrangler full mode uses immutable S3 bytes and bounded staged research",
+  async () => {
+    const { fixture, bytes, output } =
+      await import("./wine-research.integration-fixture.js");
+    const { S3AssetStore } = await import("@wukong/assets");
+    const { createServer } = await import("node:http");
+    const { signQueueRequest, LISTING_INGRESS_PATH } =
+      await import("@wukong/jobs");
+    const f = await fixture({ mode: "full", profile });
+    const storage = S3AssetStore.fromConfig("wukong-local", {
+      endpoint: "https://localhost:9012",
+      region: "us-east-1",
+      forcePathStyle: true,
+      credentials: { accessKeyId: "wukong", secretAccessKey: "wukong-secret" },
+    });
+    await storage.writeObject(
+      f.workspaceId,
+      f.asset.storageKey,
+      bytes,
+      "image/png",
+    );
+    const calls: string[] = [];
+    let snapshotVerified = false;
+    let providerError: unknown;
+    const server = createServer(async (req, res) => {
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(Buffer.from(chunk));
+        const body = JSON.parse(Buffer.concat(chunks).toString());
+        let reply: Response;
+        if (!body.messages) {
+          calls.push("search");
+          reply = Response.json({
+            request_id: "synthetic-http",
+            usage: { credits: 1 },
+            results: [],
+            failed_results: [],
+          });
+        } else if (Array.isArray(body.messages[1].content)) {
+          calls.push("extraction");
+          const url = body.messages[1].content.find(
+            (v: { type: string }) => v.type === "image_url",
+          ).image_url.url;
+          expect(new URL(url).pathname).toContain(
+            `/wine-snapshots/${f.job.runId}/${f.asset.id}/`,
+          );
+          await storage.writeObject(
+            f.workspaceId,
+            f.asset.storageKey,
+            new Uint8Array(bytes.length).fill(9),
+            "image/png",
+          );
+          expect(
+            new Uint8Array(await (await fetch(url)).arrayBuffer()),
+          ).toEqual(bytes);
+          snapshotVerified = true;
+          reply = response(output(f.asset.id));
+        } else {
+          const value = JSON.parse(body.messages[1].content);
+          const stage = value.candidate
+            ? "quality_check"
+            : value.claims
+              ? "generation"
+              : "verification";
+          calls.push(stage);
+          reply = response(
+            stage === "generation"
+              ? candidate(value)
+              : stage === "quality_check"
+                ? { schemaVersion: 1, issues: [] }
+                : {
+                    schemaVersion: 1,
+                    candidates: [],
+                    claims: [],
+                    supportProposals: [],
+                    needsDeepSearch: false,
+                    issues: [],
+                  },
+          );
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(await reply.text());
+      } catch (error) {
+        providerError = error;
+        res.writeHead(500);
+        res.end();
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(49221, "127.0.0.1", resolve),
+    );
+    try {
+      const body = JSON.stringify(f.job),
+        timestamp = Math.floor(Date.now() / 1000);
+      const signature = await signQueueRequest({
+        secret: "wine-runtime-local-synthetic-ingress",
+        timestamp,
+        path: LISTING_INGRESS_PATH,
+        body,
+      });
+      expect(
+        (
+          await fetch(
+            `${process.env.WINE_RUNTIME_HTTP_URL}${LISTING_INGRESS_PATH}`,
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-wukong-timestamp": String(timestamp),
+                "x-wukong-signature": signature,
+              },
+              body,
+            },
+          )
+        ).status,
+      ).toBe(202);
+      let state = "";
+      for (let i = 0; i < 80; i++) {
+        state = (await db.forWorkspace(f.workspaceId, (r) =>
+          r.pipelineRuns.getOperation(f.run.id),
+        ))!.executionState;
+        if (state === "succeeded" || state === "failed") break;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      expect(providerError).toBeUndefined();
+      expect({ state, calls }).toMatchObject({ state: "succeeded" });
+      expect(snapshotVerified).toBe(true);
+      expect(calls).toEqual([
+        "extraction",
+        "search",
+        "search",
+        "verification",
+        "generation",
+        "quality_check",
+      ]);
+      expect(
+        await admin`select stage,state from wine_stages where run_id=${f.run.id} and stage in ('search_deep','verification_deep') order by stage`,
+      ).toEqual([
+        { stage: "search_deep", state: "skipped" },
+        { stage: "verification_deep", state: "skipped" },
+      ]);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  },
+);
+
+it("local0043 compatibility verifies finder bodies, grants and legacy exclusion", async () => {
+  expect(await db.inspectWineRuntimeCompatibility!()).toEqual({
+    version: "wine-runtime-0043-v1",
+    ready: true,
+    missing: [],
+  });
+  const { recoverWineOperation } = await import("./wine-recovery.js");
+  const f = await completedCopyBase();
+  const old = await db.forWorkspace(f.workspaceId, async (r) => {
+    const listing = await r.listings.create({ target: "shopline" });
+    const acceptedAt = "2001-01-01T00:00:00.000Z";
+    const run = await r.pipelineRuns.acceptOperation({
+      listingId: listing.id,
+      inputRevision: 1,
+      baseVersionId: null,
+      activeVersionSequence: 0,
+      requestKey: randomUUID(),
+      requestDigest: randomUUID(),
+      acceptedAt,
+      execution: {
+        schemaVersion: 1,
+        flowVersion: "wine-enrichment-v1",
+        wineMode: "copy",
+        wineBudget: createWineBudgetSnapshot("copy"),
+        wineAcquisition: { deadlineAt: "2001-01-01T00:15:00.000Z" },
+      },
+    });
+    await r.aiBudgetReservations.reserve({
+      pipelineRunId: run.id,
+      reservedUsd: "1.277952",
+      workspaceCapUsd: "20",
+      pricingVersion: "wine-enrichment@1",
+    });
+    return run;
+  });
+  expect(
+    await db.findAbandonedWineOperations!({ maxRows: 20, maxAttempts: 5 }),
+  ).toContainEqual({ workspaceId: f.workspaceId, runId: old.id });
+  expect(
+    await db.findAbandonedListingOperations({
+      olderThanSeconds: 900,
+      maxRows: 20,
+      maxAttempts: 5,
+    }),
+  ).not.toContainEqual({ workspaceId: f.workspaceId, runId: old.id });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.pipelineRuns.failAbandonedOperation(
+        { runId: old.id, olderThanSeconds: 900, maxAttempts: 5 },
+        { workspaceId: f.workspaceId, actorId: "test", entityId: old.id },
+        r.audit,
+      ),
+    ),
+  ).toEqual({ failed: false });
+  expect(await recoverWineOperation(db, f.workspaceId, old.id)).toEqual({
+    failed: true,
+    reason: "operation_deadline",
+  });
+});
+
+it("local0043 outbox scan skips old terminal/completed/started rows and finds the next pending stage", async () => {
+  const { wineStageMessageKey } = await import("@wukong/jobs");
+  const f = await completedCopyBase(),
+    c = await copyRun(f, "copy");
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.dispatchOutbox.record([
+      {
+        listingId: c.job.draftId,
+        dedupeKey: wineStageMessageKey(c.run.id, "generation"),
+        payload: c.job,
+      },
+    ]),
+  );
+  await admin`update listing_dispatch_outbox set created_at='2000-01-01' where workspace_id=${f.workspaceId}`;
+  let rows = await db.findUndispatchedListingJobs({
+    olderThanSeconds: 0,
+    maxRows: 1,
+    maxAttempts: 5,
+  });
+  expect(rows[0]!.payload).toMatchObject({
+    runId: c.run.id,
+    stage: "generation",
+  });
+  await c.execute("generation");
+  await admin`update listing_dispatch_outbox set created_at='2000-01-01' where workspace_id=${f.workspaceId}`;
+  rows = await db.findUndispatchedListingJobs({
+    olderThanSeconds: 0,
+    maxRows: 1,
+    maxAttempts: 5,
+  });
+  expect(rows[0]!.payload).toMatchObject({
+    runId: c.run.id,
+    stage: "quality_check",
+  });
+  expect(
+    (await f.store.claim({ ...c.job, stage: "quality_check" })).status,
+  ).toBe("claimed");
+  rows = await db.findUndispatchedListingJobs({
+    olderThanSeconds: 0,
+    maxRows: 1,
+    maxAttempts: 5,
+  });
+  expect(rows.some((r) => r.payload.runId === c.run.id)).toBe(false);
+});

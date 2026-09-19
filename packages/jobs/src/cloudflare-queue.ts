@@ -102,7 +102,11 @@ export const shoplinePublishJobSchema = z
 export type ListingJob = z.infer<typeof listingJobSchema>;
 export type ShoplinePublishJob = z.infer<typeof shoplinePublishJobSchema>;
 export type QueueMessage =
-  ListingJob | ShoplinePublishJob | WebsiteJob | ProductShotJob;
+  | ListingJob
+  | WineListingJob
+  | ShoplinePublishJob
+  | WebsiteJob
+  | ProductShotJob;
 
 type SignInput = {
   secret: string;

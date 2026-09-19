@@ -331,3 +331,23 @@ it("accepts signed strict product shots on the existing listing binding and deni
   }
   expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(shot);
 });
+
+it("accepts an authenticated generation-first wine envelope with admission flags off", async () => {
+  const bindings = env();
+  const job = {
+    ...listing,
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    runId: "10000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation",
+  };
+  const result = await handleIngress(
+    await signedRequest(LISTING_INGRESS_PATH, job),
+    bindings,
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(result.status).toBe(202);
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledWith(job);
+});

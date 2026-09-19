@@ -65,3 +65,28 @@ it("dispatches exact product_shot kind without website or listing AI routing", a
   expect(website).not.toHaveBeenCalled();
   expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 121 });
 });
+
+it("routes wine independently from legacy even when live admission is off", async () => {
+  const body = {
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    workspaceId: "ws",
+    draftId: "10000000-0000-4000-8000-000000000001",
+    runId: "10000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    activeVersionSequence: 0,
+    stage: "generation",
+  };
+  const message = { body, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+  const wine = vi.fn(async () => "ack" as const),
+    legacy = vi.fn(async () => "ack" as const);
+  await handleQueue(
+    { queue: "wukong-listing-preview", messages: [message] } as never,
+    { LISTING_PAID_OPERATIONS_ENABLED: "false" } as never,
+    undefined,
+    { consumeWineMessage: wine, consumeListingMessage: legacy },
+  );
+  expect(wine).toHaveBeenCalledWith(body, expect.anything());
+  expect(legacy).not.toHaveBeenCalled();
+  expect(message.ack).toHaveBeenCalledOnce();
+});

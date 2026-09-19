@@ -216,14 +216,14 @@ export class TavilyProvider {
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.timeout(TAVILY_REQUEST_TIMEOUT_MS),
       });
     } catch {
       throw new TavilyProviderError("outcome_unknown");
     }
     const requestId = safeRequestId(response.headers.get("x-request-id"));
-    if (!response.ok) {
+    if (!response.ok || (response.status >= 300 && response.status < 400)) {
       await response.body?.cancel().catch(() => undefined);
       if (response.status === 429)
         throw new TavilyProviderError("rate_limited", {

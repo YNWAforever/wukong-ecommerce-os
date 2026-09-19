@@ -144,11 +144,20 @@ export async function preflightWineCapability(
         offset += chunk.byteLength;
       }
       const result = z
-        .object({ authenticated: z.literal(true), wine: wineCapabilitySchema })
+        .object({
+          authenticated: z.literal(true),
+          wine: wineCapabilitySchema,
+          fullResearchConfigured: z.boolean().optional(),
+        })
         .parse(
           JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
         );
-      if (!ready(result.wine, mode)) throw new Error();
+      if (
+        !ready(result.wine, mode) ||
+        ((mode === "full" || mode === "research") &&
+          result.fullResearchConfigured !== true)
+      )
+        throw new Error();
       return result.wine;
     };
     const capability = await Promise.race([read(), deadline]);

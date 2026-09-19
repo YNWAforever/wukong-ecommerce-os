@@ -1,5 +1,10 @@
+import { recoverWineOperation } from "./wine-recovery.js";
 import type { Database } from "@wukong/db";
-import { listingJobSchema, websiteJobSchema } from "@wukong/jobs";
+import {
+  listingJobSchema,
+  wineListingJobSchema,
+  websiteJobSchema,
+} from "@wukong/jobs";
 
 import { createWorkerDatabase } from "./cloudflare-runtime.js";
 import type { WorkerEnv } from "./worker-env.js";
@@ -32,7 +37,14 @@ type SweeperDatabase = Pick<
   Database,
   "findStuckWebsiteScans" | "forWorkspace"
 > &
-  Partial<Pick<Database, "findAbandonedListingOperations">> & {
+  Partial<
+    Pick<
+      Database,
+      | "findAbandonedListingOperations"
+      | "findAbandonedWineOperations"
+      | "inspectWineRuntimeCompatibility"
+    >
+  > & {
     findStuckListingJobs(input: {
       olderThanSeconds: number;
       maxRows: number;
@@ -96,7 +108,9 @@ async function recoverOutbox(
   const attempted = new Map<string, string[]>();
 
   for (const row of owed) {
-    const parsed = listingJobSchema.safeParse(row.payload);
+    const parsed = listingJobSchema
+      .or(wineListingJobSchema)
+      .safeParse(row.payload);
     // Workspace scoping is the security boundary, so the row's workspace and
     // the payload's must agree: a row naming another tenant must never reach
     // the queue, whatever wrote it.
@@ -130,6 +144,20 @@ async function recoverOutbox(
           !["queued", "running"].includes(operation.executionState)
         )
           continue;
+        if ("flowVersion" in parsed.data) {
+          const job = parsed.data;
+          if (
+            operation.execution.flowVersion !== job.flowVersion ||
+            operation.listingId !== job.draftId ||
+            operation.inputRevision !== job.inputRevision ||
+            operation.activeVersionSequence !== job.activeVersionSequence
+          )
+            continue;
+          const stage = await database.forWorkspace(row.workspaceId, (r) =>
+            r.wineEnrichment.readStage(runId, job.stage),
+          );
+          if (stage) continue; // No recovery replay of started, unknown or completed stages.
+        } else if (operation.execution?.flowVersion !== undefined) continue;
       }
       await env.LISTING_QUEUE.send(parsed.data);
       addTo(dispatched, row.workspaceId, row.outboxId);
@@ -152,7 +180,7 @@ async function recoverOutbox(
           event: "outbox_sweeper.send_failed",
           workspaceId: row.workspaceId,
           outboxId: row.outboxId,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: "queue_send_failed",
         }),
       );
     }
@@ -186,6 +214,17 @@ export async function handleScheduled(
 ): Promise<void> {
   const database = (dependencies.createDatabase ?? createWorkerDatabase)(env);
   try {
+    if (
+      database.findAbandonedWineOperations &&
+      (await database.inspectWineRuntimeCompatibility?.())?.ready
+    ) {
+      const abandoned = await database.findAbandonedWineOperations({
+        maxRows: 20,
+        maxAttempts: OUTBOX_MAX_ATTEMPTS,
+      });
+      for (const row of abandoned)
+        await recoverWineOperation(database, row.workspaceId, row.runId);
+    }
     if (database.findAbandonedListingOperations) {
       const abandoned = await database.findAbandonedListingOperations({
         olderThanSeconds: 900,
@@ -247,7 +286,7 @@ export async function handleScheduled(
             workspaceId: parsed.data.workspaceId,
             listingId: parsed.data.draftId,
             activeVersionSequence: parsed.data.activeVersionSequence,
-            reason: error instanceof Error ? error.message : String(error),
+            reason: "queue_send_failed",
           }),
         );
       }

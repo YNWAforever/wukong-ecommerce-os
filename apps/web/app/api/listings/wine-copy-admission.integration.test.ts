@@ -242,6 +242,7 @@ async function receipt(mode: "copy" | "section", now = Date.now()) {
     fetch: async () =>
       Response.json({
         authenticated: true,
+        fullResearchConfigured: true,
         wine: {
           schemaVersion: 1,
           execution: WINE_EXECUTION_SNAPSHOT,

@@ -36,7 +36,12 @@ export function createListingOperationRecoveryRepository(
         sql`select * from listing_pipeline_runs where workspace_id=${workspaceId} and id=${input.runId}::uuid for update`,
       );
       const run = runs[0];
-      if (!run || !["queued", "running"].includes(String(run.execution_state)))
+      if (
+        !run ||
+        (run.execution as Record<string, unknown>)?.flowVersion ===
+          "wine-enrichment-v1" ||
+        !["queued", "running"].includes(String(run.execution_state))
+      )
         return { failed: false };
       await tx.execute(
         sql`select id from listing_pipeline_steps where workspace_id=${workspaceId} and pipeline_run_id=${input.runId}::uuid for update`,

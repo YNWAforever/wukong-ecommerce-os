@@ -391,3 +391,37 @@ it("terminalizes abandoned accepted operations without queue or provider calls",
   expect(failed).toHaveBeenCalledOnce();
   expect(send).not.toHaveBeenCalled();
 });
+
+it("requeues a wine stage from the durable outbox without converting it to legacy", async () => {
+  const payload = {
+    ...job,
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    runId: "10000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation",
+  };
+  const { database, markDispatched } = makeOutboxDatabase([
+    { workspaceId: job.workspaceId, outboxId: "outbox", payload },
+  ]);
+  database.forWorkspace = async (_ws, work) =>
+    work({
+      pipelineRuns: {
+        getOperation: async () => ({
+          executionState: "running",
+          listingId: job.draftId,
+          inputRevision: 1,
+          activeVersionSequence: 0,
+          execution: { flowVersion: "wine-enrichment-v1" },
+        }),
+      },
+      wineEnrichment: { readStage: async () => null },
+      dispatchOutbox: { markDispatched, markAttempted: vi.fn() },
+    });
+  const send = vi.fn(async () => undefined);
+  await handleScheduled(undefined as never, env(send), undefined as never, {
+    createDatabase: () => database as never,
+  });
+  expect(send).toHaveBeenCalledWith(payload);
+  expect(markDispatched).toHaveBeenCalledWith(["outbox"]);
+});

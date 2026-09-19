@@ -52,6 +52,7 @@ async function receipt(
     fetch: async () =>
       Response.json({
         authenticated: true,
+        fullResearchConfigured: true,
         wine: {
           schemaVersion: 1,
           execution: WINE_EXECUTION_SNAPSHOT,
@@ -254,7 +255,7 @@ function request(body: object, method = "POST", key: string = randomUUID()) {
   });
 }
 it.each(["create", "inputs", "process"])(
-  "%s route obtains capability outside transactions and retains pending wine intent",
+  "%s route obtains capability and dispatches committed wine intent outside transactions",
   async (kind) => {
     const input = await fixture();
     const deps = routeDeps(input.workspaceId);
@@ -289,7 +290,7 @@ it.each(["create", "inputs", "process"])(
     const body = await response.json();
     expect(body.processing.runId).toBeTruthy();
     expect(deps.preflightWineCapability).toHaveBeenCalledTimes(1);
-    expect(deps.publisher.enqueue).not.toHaveBeenCalled();
+    expect(deps.publisher.enqueue).toHaveBeenCalledTimes(1);
     const run = await db.forWorkspace(input.workspaceId, (r) =>
       r.pipelineRuns.getOperation(body.processing.runId),
     );
@@ -1147,4 +1148,34 @@ it("rejects a full receipt for research before reservation and persists exact re
     wineMode: "research",
     wineCapability: { mode: "research" },
   });
+});
+
+it("failed postcommit wine send retains durable initial outbox for recovery", async () => {
+  const input = await fixture(),
+    deps = routeDeps(input.workspaceId);
+  deps.publisher.enqueue.mockRejectedValue(
+    new Error("synthetic delivery loss"),
+  );
+  const response = await createProcessListingHandler(deps as never)(
+    request({ expectedInputRevision: 1, wineMode: "research" }),
+    { params: Promise.resolve({ id: input.listingId }) },
+  );
+  expect(response.status).toBe(202);
+  const body = await response.json();
+  const rows =
+    await admin`select dispatched_at,attempts,payload,dedupe_key from listing_dispatch_outbox where workspace_id=${input.workspaceId}`;
+  expect(rows).toHaveLength(1);
+  expect(rows[0].dispatched_at).toBeNull();
+  expect(rows[0].attempts).toBe(1);
+  expect(rows[0].payload.runId).toBe(body.processing.runId);
+  expect(rows[0].dedupe_key).toBe(
+    `wine-run:${body.processing.runId}:extraction`,
+  );
+  expect(
+    (
+      await db.forWorkspace(input.workspaceId, (r) =>
+        r.pipelineRuns.getOperation(body.processing.runId),
+      )
+    )?.executionState,
+  ).toBe("queued");
 });

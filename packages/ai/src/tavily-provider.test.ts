@@ -48,7 +48,7 @@ describe("TavilyProvider", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.tavily.com/search");
-    expect(init).toMatchObject({ method: "POST", redirect: "error" });
+    expect(init).toMatchObject({ method: "POST", redirect: "manual" });
     expect(new Headers(init.headers)).toMatchObject(
       expect.objectContaining({}),
     );
@@ -403,4 +403,22 @@ describe("TavilyProvider", () => {
       provider.search({ query: "Fixture", depth: "basic", allowedDomains: [] }),
     ).rejects.toMatchObject({ code: "invalid_output" });
   });
+});
+
+it("rejects redirects before parsing and never follows their location", async () => {
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
+    expect(init?.redirect).toBe("manual");
+    return new Response("untrusted", {
+      status: 302,
+      headers: { location: "https://private.invalid/" },
+    });
+  });
+  await expect(
+    new TavilyProvider({ apiKey: "synthetic", fetch }).search({
+      query: "Fixture",
+      depth: "basic",
+      allowedDomains: [],
+    }),
+  ).rejects.toMatchObject({ code: "outcome_unknown", status: 302 });
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

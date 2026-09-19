@@ -451,11 +451,15 @@ it("includes recovery schema readiness only in authenticated health", async () =
   expect(health.checks.listingRecoveryReady).toBe(true);
   expect(workerHealth(env())).not.toHaveProperty("checks");
 });
-it("exposes authenticated wine readiness but never advertises the unwired consumer", async () => {
+it("advertises verified consumer support independently from admission flags", async () => {
   const database = {
     ping: async () => undefined,
     close: vi.fn(async () => undefined),
     inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+    inspectWineRuntimeCompatibility: async () => ({
+      ready: true,
+      version: "wine-runtime-0043-v1",
+    }),
     inspectWineEnrichmentCompatibility: async () => ({
       ready: true,
       version: "wine-enrichment-0042-v1",
@@ -473,7 +477,7 @@ it("exposes authenticated wine readiness but never advertises the unwired consum
   expect(health).toHaveProperty("wine");
   expect((health as any).wine).toMatchObject({
     schemaVersion: 1,
-    consumerSupported: false,
+    consumerSupported: true,
     goConfigured: true,
     tavilyConfigured: true,
     queueReady: true,
@@ -501,7 +505,7 @@ it("fails closed on absent schema inspection and sanitizes build metadata", asyn
   );
   expect(health).toHaveProperty("wine");
   expect((health as any).wine).toMatchObject({
-    consumerSupported: false,
+    consumerSupported: true,
     goConfigured: false,
     tavilyConfigured: false,
     databaseReady: false,
@@ -548,5 +552,5 @@ it("does not infer wine queue readiness from configuration strings", async () =>
     },
   );
   expect(health.wine.queueReady).toBe(false);
-  expect(health.wine.consumerSupported).toBe(false);
+  expect(health.wine.consumerSupported).toBe(true);
 });

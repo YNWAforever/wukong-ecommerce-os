@@ -6,6 +6,7 @@ import type {
 import type {
   ProductShotJob,
   ListingJob,
+  WineListingJob,
   WebsiteJob,
   QueueMessage,
   ShoplinePublishJob,
@@ -13,7 +14,9 @@ import type {
 
 export type WorkerEnv = {
   HYPERDRIVE: Hyperdrive;
-  LISTING_QUEUE: Queue<ListingJob | WebsiteJob | ProductShotJob>;
+  LISTING_QUEUE: Queue<
+    ListingJob | WineListingJob | WebsiteJob | ProductShotJob
+  >;
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;

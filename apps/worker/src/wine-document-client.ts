@@ -37,7 +37,7 @@ export function createWineDocumentClient(deps: {
     try {
       const response = await (deps.fetch ?? fetch)(url, {
         method: "POST",
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.timeout(30_000),
         headers: {
           "content-type": "application/json",
