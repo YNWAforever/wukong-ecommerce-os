@@ -18,6 +18,7 @@ export type AcceptListingOperationInput = {
   actorId: string;
   retryOfRunId?: string;
   observedInputRevision?: number;
+  wineOnly?: boolean;
   wineMode?: WineMode;
   wineSection?: SectionKey;
 };
@@ -73,7 +74,10 @@ export async function acceptListingOperation(
     input.operationKey,
   );
   if (replay) {
-    if (replay.requestDigest !== requestDigest)
+    if (
+      replay.requestDigest !== requestDigest ||
+      (input.wineOnly && replay.execution.flowVersion !== "wine-enrichment-v1")
+    )
       throw new ApiError(
         409,
         "idempotency_conflict",
@@ -124,6 +128,12 @@ export async function acceptListingOperation(
       ),
     );
   }
+  if (input.wineOnly)
+    throw new ApiError(
+      503,
+      "wine_admission_disabled",
+      "Wine processing is not enabled for this workspace.",
+    );
   const policy = provider === "fake" ? null : profile?.listingAi;
   if (
     provider !== "fake" &&

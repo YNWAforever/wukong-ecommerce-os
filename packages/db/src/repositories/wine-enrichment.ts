@@ -105,6 +105,9 @@ export type WineVersionOrigin = {
   sections: WineContent | null;
 };
 export type WineEnrichmentRepository = {
+  readUsage(
+    runId: string,
+  ): Promise<{ goEstimatedUsd: string | null; tavilyCredits: number | null }>;
   readVersionOrigin(
     listingId: string,
     versionId: string,
@@ -421,6 +424,19 @@ export function createWineEnrichmentRepository(
         },
         { schemaVersion: 1, content: wineContentSchema.parse(input.content) },
       );
+    },
+    async readUsage(runId) {
+      scope.assertOpen();
+      const rows = await tx.execute(sql`select
+        (select case when coalesce(bool_or(status='started' or estimated_cost_usd is null),false) then null else coalesce(sum(estimated_cost_usd),0)::numeric(18,6)::text end from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${runId}::uuid) as go_cost,
+        (select case when coalesce(bool_or(status in ('started','unknown') or credits is null),false) then null else coalesce(sum(credits),0)::integer end from wine_search_calls where workspace_id=${workspaceId} and run_id=${runId}::uuid) as credits
+        from listing_pipeline_runs where workspace_id=${workspaceId} and id=${runId}::uuid`);
+      return {
+        goEstimatedUsd:
+          rows[0]?.go_cost == null ? null : String(rows[0].go_cost),
+        tavilyCredits:
+          rows[0]?.credits == null ? null : Number(rows[0].credits),
+      };
     },
     async readVersionOrigin(listingId, versionId) {
       scope.assertOpen();
