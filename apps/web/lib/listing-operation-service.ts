@@ -3,7 +3,7 @@ import {
   wineAdmissionEnabled,
   type WineAdmissionContext,
 } from "./wine-enrichment-service";
-import type { WineMode } from "@wukong/core";
+import type { WineMode, SectionKey } from "@wukong/core";
 import { paidListingReservation, LISTING_PROMPT_VERSIONS } from "@wukong/core";
 import { createHash } from "node:crypto";
 import type { WorkspaceRepositories } from "@wukong/db";
@@ -19,6 +19,7 @@ export type AcceptListingOperationInput = {
   retryOfRunId?: string;
   observedInputRevision?: number;
   wineMode?: WineMode;
+  wineSection?: SectionKey;
 };
 export type AcceptedListingOperation = {
   flowVersion?: "wine-enrichment-v1";
@@ -61,6 +62,9 @@ export async function acceptListingOperation(
         baseVersionId: input.baseVersionId,
         retryOfRunId: input.retryOfRunId ?? null,
         ...(input.wineMode ? { wineMode: input.wineMode } : {}),
+        ...(input.wineSection !== undefined
+          ? { wineSection: input.wineSection }
+          : {}),
       }),
     )
     .digest("hex");

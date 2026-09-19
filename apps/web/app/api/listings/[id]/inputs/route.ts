@@ -1,3 +1,4 @@
+import { sectionKeySchema } from "@wukong/core";
 import {
   prepareWineAdmission,
   recoverableWineAdmission,
@@ -47,6 +48,7 @@ const bodySchema = z
     changes: z.array(workingChangeSchema).max(100).default([]),
     action: z.enum(["save", "save_and_process"]).default("save"),
     wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+    wineSection: sectionKeySchema.optional(),
   })
   .strict();
 export function mapListingInputError(error: unknown): never {
@@ -151,6 +153,7 @@ export function createListingInputsHandler(deps: {
                     operationKey,
                     actorId: session.actorId,
                     wineMode: body.wineMode,
+                    wineSection: body.wineSection,
                   },
                   wineAdmission,
                 );

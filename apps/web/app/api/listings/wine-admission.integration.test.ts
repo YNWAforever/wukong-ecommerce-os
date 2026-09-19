@@ -42,7 +42,10 @@ beforeEach(() => {
   vi.stubEnv("QUEUE_INGRESS_SECRET", "synthetic");
 });
 afterEach(() => vi.unstubAllEnvs());
-async function receipt(now = Date.now(), mode: "full" | "research" = "full") {
+async function receipt(
+  now = Date.now(),
+  mode: "full" | "research" | "copy" | "section" = "full",
+) {
   return preflightWineCapability({
     mode,
     now: () => now,
@@ -112,7 +115,11 @@ async function accept(
   return db.forWorkspace(input.workspaceId, (r) =>
     acceptListingOperation(
       r,
-      { ...input, ...(wineMode ? { wineMode } : {}) } as never,
+      {
+        ...input,
+        ...(wineMode ? { wineMode } : {}),
+        ...(wineMode === "section" ? { wineSection: "introduction" } : {}),
+      } as never,
       { wineCapability: capability } as never,
     ),
   );
@@ -188,8 +195,14 @@ it.each(["copy", "section"])(
   "rejects %s until adopted version dependencies exist",
   async (mode) => {
     const input = await fixture();
-    await expect(accept(input, await receipt(), mode)).rejects.toMatchObject({
-      code: "wine_dependencies_required",
+    await expect(
+      accept(
+        input,
+        await receipt(Date.now(), mode as "copy" | "section"),
+        mode,
+      ),
+    ).rejects.toMatchObject({
+      code: "evidence_refresh_required",
     });
   },
 );

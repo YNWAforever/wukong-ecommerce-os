@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import {
   createWineBudgetSnapshot,
+  workingListingSchema,
+  sectionKeySchema,
   wineEnrichmentPolicySchema,
   type WorkspaceProfile,
   type WineMode,
@@ -11,6 +14,9 @@ import {
 } from "@wukong/jobs";
 import {
   listingInputDigest,
+  readAdoptedWineDependencies,
+  resolveWineGenerationOwnership,
+  buildWineCopySnapshot,
   type Database,
   type WorkspaceRepositories,
 } from "@wukong/db";
@@ -55,8 +61,7 @@ export async function prepareWineAdmission(
   const profile = await database.forWorkspace(workspaceId, (r) =>
     r.workspaces.requireProfile(),
   );
-  if (!profile.wineEnrichment?.enabled || mode === "copy" || mode === "section")
-    return {};
+  if (!profile.wineEnrichment?.enabled) return {};
   try {
     return { wineCapability: await preflight({ mode }) };
   } catch (error) {
@@ -83,14 +88,9 @@ export async function acceptWineOperation(
   admission: WineAdmissionContext,
 ): Promise<AcceptedListingOperation> {
   const mode = input.wineMode ?? "full";
-  if (mode === "copy" || mode === "section")
-    throw new ApiError(
-      409,
-      "wine_dependencies_required",
-      "Copy and section processing require adopted wine evidence support before they can be accepted.",
-    );
+  const copy = mode === "copy" || mode === "section";
   const policy = wineEnrichmentPolicySchema.parse(profile.wineEnrichment);
-  if (!policy.enabled || !policy.allowedDomains.length)
+  if (!policy.enabled || (!copy && !policy.allowedDomains.length))
     throw new ApiError(
       503,
       "wine_policy_required",
@@ -100,7 +100,7 @@ export async function acceptWineOperation(
   const assets = await repos.sourceAssets.getByIds(
     snapshot.sources.filter((s) => s.use === "analyse").map((s) => s.assetId),
   );
-  if (assets.some((a) => a.kind === "application/pdf"))
+  if (!copy && assets.some((a) => a.kind === "application/pdf"))
     throw new ApiError(
       422,
       "wine_provider_capability",
@@ -109,6 +109,59 @@ export async function acceptWineOperation(
   const listing = await repos.listings.requireById(input.listingId);
   const acceptedAt = await repos.pipelineRuns.acceptanceTimestamp();
   const capability = checked(admission, mode);
+  if (
+    (mode === "section") !== (input.wineSection !== undefined) ||
+    (input.wineSection !== undefined &&
+      !sectionKeySchema.safeParse(input.wineSection).success)
+  )
+    throw new ApiError(
+      422,
+      "wine_section_invalid",
+      "Select exactly one section for section processing.",
+    );
+  let wineCopy;
+  if (copy) {
+    try {
+      if (!input.baseVersionId) throw Error("missing base");
+      const adopted = await readAdoptedWineDependencies(repos, {
+        workspaceId: input.workspaceId,
+        listingId: input.listingId,
+        versionId: input.baseVersionId,
+        inputRevision: snapshot.revision,
+      });
+      const review = await repos.listings.getReviewSnapshot(input.listingId);
+      if (review?.activeVersion?.id !== input.baseVersionId)
+        throw Error("changed base");
+      const ownership = resolveWineGenerationOwnership(
+        snapshot,
+        workingListingSchema.parse(snapshot.workingContent),
+        review.activeVersion.content,
+        {
+          workspaceId: input.workspaceId,
+          listingId: input.listingId,
+          // Admission precedes allocation; the stable dependency digest omits this provisional ID.
+          operationId: randomUUID(),
+          inputRevision: snapshot.revision,
+          baseVersionId: input.baseVersionId,
+        },
+      );
+      wineCopy = buildWineCopySnapshot({
+        adopted,
+        input: snapshot,
+        ownership,
+        policy,
+        model: capability.capability.execution,
+        mode,
+        section: input.wineSection ?? null,
+      }).snapshot;
+    } catch {
+      throw new ApiError(
+        409,
+        "evidence_refresh_required",
+        "Current adopted evidence is required. Refresh evidence before regenerating.",
+      );
+    }
+  }
   const acquisition = wineAcquisitionPolicySchema.parse({
     schemaVersion: 1,
     policyVersion: policy.policyVersion,
@@ -135,6 +188,7 @@ export async function acceptWineOperation(
         wineInputDigest: snapshot.inputDigest,
         wineSourceDigest: listingInputDigest(snapshot.sources),
         wineMode: mode,
+        ...(wineCopy ? { wineCopy } : {}),
         wineBudget: budget,
         wineGo: capability.capability.execution,
         wineEnrichment: policy,
@@ -171,19 +225,22 @@ export async function acceptWineOperation(
       "wine_go_budget_blocked",
       "The workspace Go budget is exhausted. You can save without AI.",
     );
-  const search = await repos.searchBudgetReservations.reserve({
-    pipelineRunId: run.id,
-    reservedCredits: budget.tavilyCredits,
-    workspaceCapCredits: policy.tavilyCreditCap,
-    policyVersion: policy.policyVersion,
-  });
-  if (!search.accepted)
-    throw new ApiError(
-      409,
-      "wine_search_budget_blocked",
-      "The workspace Tavily credit budget is exhausted. You can save without AI.",
-    );
+  if (!copy) {
+    const search = await repos.searchBudgetReservations.reserve({
+      pipelineRunId: run.id,
+      reservedCredits: budget.tavilyCredits,
+      workspaceCapCredits: policy.tavilyCreditCap,
+      policyVersion: policy.policyVersion,
+    });
+    if (!search.accepted)
+      throw new ApiError(
+        409,
+        "wine_search_budget_blocked",
+        "The workspace Tavily credit budget is exhausted. You can save without AI.",
+      );
+  }
   checked(admission, mode);
+  const firstStage = copy ? "generation" : "extraction";
   const payload = wineListingJobSchema.parse({
     schemaVersion: 2,
     flowVersion: "wine-enrichment-v1",
@@ -192,12 +249,12 @@ export async function acceptWineOperation(
     runId: run.id,
     inputRevision: run.inputRevision,
     activeVersionSequence: run.activeVersionSequence,
-    stage: "extraction",
+    stage: firstStage,
   });
   const outbox = await repos.dispatchOutbox.record([
     {
       listingId: input.listingId,
-      dedupeKey: wineStageMessageKey(run.id, "extraction"),
+      dedupeKey: wineStageMessageKey(run.id, firstStage),
       payload,
     },
   ]);
@@ -234,6 +291,8 @@ export function recoverableWineAdmission(error: unknown): error is ApiError {
       "wine_capability_required",
       "wine_capability_stale",
       "wine_dependencies_required",
+      "evidence_refresh_required",
+      "wine_section_invalid",
       "wine_policy_required",
       "wine_provider_capability",
       "wine_go_budget_blocked",

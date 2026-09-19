@@ -1,3 +1,4 @@
+import { sectionKeySchema } from "@wukong/core";
 import { prepareWineAdmission } from "../../../../../lib/wine-enrichment-service";
 import { preflightWineCapability } from "../../../../../lib/wine-capability-client";
 import { requireListingRecovery } from "../../../../../lib/listing-recovery-readiness";
@@ -85,6 +86,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             .transform((value) => value.toLowerCase())
             .optional(),
           wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+          wineSection: sectionKeySchema.optional(),
         })
         .strict()
         .parse(raw ? JSON.parse(raw) : {});
@@ -127,6 +129,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
                 operationKey,
                 retryOfRunId: body.retryOfRunId,
                 wineMode: body.wineMode,
+                wineSection: body.wineSection,
               },
               wineAdmission,
             );
@@ -164,6 +167,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
               retryOfRunId: body.retryOfRunId,
               actorId: session.actorId,
               wineMode: body.wineMode,
+              wineSection: body.wineSection,
             },
             wineAdmission,
           );

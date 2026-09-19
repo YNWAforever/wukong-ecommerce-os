@@ -1,3 +1,4 @@
+import { sectionKeySchema } from "@wukong/core";
 import {
   prepareWineAdmission,
   recoverableWineAdmission,
@@ -58,6 +59,7 @@ const listingSchema = z
     note: z.string().max(5_000).optional().default(""),
     processingMode: z.enum(["ai", "manual"]).default("ai"),
     wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+    wineSection: sectionKeySchema.optional(),
   })
   .strict()
   .refine(
@@ -237,6 +239,7 @@ export function createListingHandler(deps: CreateListingDeps) {
                       baseVersionId: snapshot.baseVersionId,
                       operationKey: `create:${existing.id}`,
                       wineMode: body.wineMode,
+                      wineSection: body.wineSection,
                     },
                     wineAdmission,
                   );
@@ -296,6 +299,7 @@ export function createListingHandler(deps: CreateListingDeps) {
                     baseVersionId: null,
                     operationKey: `create:${created.id}`,
                     wineMode: body.wineMode,
+                    wineSection: body.wineSection,
                   },
                   wineAdmission,
                 );
