@@ -3,7 +3,8 @@ const mocks = vi.hoisted(() => ({
   deliver: vi.fn(),
   close: vi.fn(async () => {}),
 }));
-vi.mock("./wine-queue-runtime.js", () => ({
+vi.mock("./wine-queue-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./wine-queue-runtime.js")>()),
   createWineQueueRuntime: () => mocks,
 }));
 import { consumeWineMessage } from "./wine-consumer.js";
@@ -44,4 +45,29 @@ it("does not log raw provider/runtime exceptions or turn cleanup failure into re
     retryAfterSeconds: 30,
   });
   expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE");
+});
+
+import { WineStageDispatchError } from "./wine-queue-runtime.js";
+it.each([
+  "post_commit_skipped",
+  "post_commit_oversized",
+  "post_commit_failed",
+  "PRIVATE_INVALID",
+])("retry event allowlists dispatch diagnostic %s", async (code) => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  mocks.deliver.mockRejectedValueOnce(
+    new WineStageDispatchError({ code } as never),
+  );
+  expect(await consumeWineMessage(job, {} as never)).toEqual({
+    retryAfterSeconds: 30,
+  });
+  expect(JSON.parse(String(log.mock.calls[0]![0]))).toEqual({
+    event: "wine.delivery_retry",
+    stage: "verification",
+    code: "runtime_or_dispatch_failed",
+    ...(code === "PRIVATE_INVALID" ? {} : { diagnostic: code }),
+  });
+  expect(log).toHaveBeenCalledTimes(1);
+  expect(info).not.toHaveBeenCalled();
 });

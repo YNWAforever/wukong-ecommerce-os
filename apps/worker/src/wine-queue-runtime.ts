@@ -10,7 +10,10 @@ import { createWineEvidenceStageHandlers } from "./wine-verification-handler.js"
 import { createWineGenerationHandler } from "./wine-generation-handler.js";
 import { createWineStageStore } from "./wine-enrichment-runtime.js";
 import { projectWineCandidate } from "./wine-candidate-projection.js";
-import { runWineStage } from "./wine-enrichment-pipeline.js";
+import {
+  type WinePostCommitDiagnostic,
+  runWineStage,
+} from "./wine-enrichment-pipeline.js";
 import type { WineExtractionConfig } from "./wine-extraction-handler.js";
 import type { WineOperationTransport } from "./wine-operation-ai.js";
 import type { WorkerEnv } from "./worker-env.js";
@@ -21,6 +24,13 @@ export type WineQueueRuntimeConfig = {
   acquisitionFetch?: typeof fetch;
   now?: () => Date;
 };
+/** Only the pipeline's bounded diagnostic crosses an outbox failure; raw errors do not. */
+export class WineStageDispatchError extends Error {
+  constructor(readonly postCommitDiagnostic?: WinePostCommitDiagnostic) {
+    super("wine_stage_dispatch_failed");
+    this.name = "WineStageDispatchError";
+  }
+}
 function required(value: string | undefined) {
   if (!value?.trim()) throw Error("wine_runtime_configuration_missing");
   return value;
@@ -104,31 +114,42 @@ export function createWineQueueRuntime(
             ? Promise.resolve()
             : researchHandlers().afterCommit(c),
       });
-      // Durable outbox remains owed if send/mark fails. Redelivery runs only duplicate handling.
-      if (outcome.status === "advanced" || outcome.status === "duplicate") {
-        const rows = await database.forWorkspace(job.workspaceId, (r) =>
-          r.dispatchOutbox.pending({
-            olderThanSeconds: 0,
-            maxRows: 10,
-            wineRunId: job.runId,
-          }),
-        );
-        for (const row of rows) {
-          const next = wineListingJobSchema.parse(row.payload);
-          if (next.workspaceId !== job.workspaceId || next.runId !== job.runId)
-            throw Error("wine_outbox_binding_invalid");
-          try {
-            await env.LISTING_QUEUE.send(next);
-          } catch {
-            await database.forWorkspace(job.workspaceId, (r) =>
-              r.dispatchOutbox.markAttempted([row.id]),
-            );
-            throw Error("wine_outbox_send_failed");
-          }
-          await database.forWorkspace(job.workspaceId, (r) =>
-            r.dispatchOutbox.markDispatched([row.id]),
+      try {
+        // Durable outbox remains owed if send/mark fails. Redelivery runs only duplicate handling.
+        if (outcome.status === "advanced" || outcome.status === "duplicate") {
+          const rows = await database.forWorkspace(job.workspaceId, (r) =>
+            r.dispatchOutbox.pending({
+              olderThanSeconds: 0,
+              maxRows: 10,
+              wineRunId: job.runId,
+            }),
           );
+          for (const row of rows) {
+            const next = wineListingJobSchema.parse(row.payload);
+            if (
+              next.workspaceId !== job.workspaceId ||
+              next.runId !== job.runId
+            )
+              throw Error("wine_outbox_binding_invalid");
+            try {
+              await env.LISTING_QUEUE.send(next);
+            } catch {
+              await database.forWorkspace(job.workspaceId, (r) =>
+                r.dispatchOutbox.markAttempted([row.id]),
+              );
+              throw Error("wine_outbox_send_failed");
+            }
+            await database.forWorkspace(job.workspaceId, (r) =>
+              r.dispatchOutbox.markDispatched([row.id]),
+            );
+          }
         }
+      } catch {
+        throw new WineStageDispatchError(
+          "postCommitDiagnostic" in outcome
+            ? outcome.postCommitDiagnostic
+            : undefined,
+        );
       }
       return outcome;
     },

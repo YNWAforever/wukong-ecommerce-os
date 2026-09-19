@@ -1,5 +1,8 @@
 import { wineListingJobSchema } from "@wukong/jobs";
-import { createWineQueueRuntime } from "./wine-queue-runtime.js";
+import {
+  createWineQueueRuntime,
+  WineStageDispatchError,
+} from "./wine-queue-runtime.js";
 import type { WineQueueRuntimeConfig } from "./wine-queue-runtime.js";
 import type { WorkerEnv } from "./worker-env.js";
 /** Unknown/started calls are terminal to automatic execution; DB/transports may safely redeliver. */
@@ -25,12 +28,24 @@ export async function consumeWineMessage(
       }),
     );
     return "ack";
-  } catch {
+  } catch (error) {
+    const diagnostic =
+      error instanceof WineStageDispatchError
+        ? error.postCommitDiagnostic?.code
+        : undefined;
     console.error(
       JSON.stringify({
         event: "wine.delivery_retry",
         stage: parsed.data.stage,
         code: "runtime_or_dispatch_failed",
+        ...(diagnostic &&
+        [
+          "post_commit_skipped",
+          "post_commit_oversized",
+          "post_commit_failed",
+        ].includes(diagnostic)
+          ? { diagnostic }
+          : {}),
       }),
     );
     return { retryAfterSeconds: 30 };

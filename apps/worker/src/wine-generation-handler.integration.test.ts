@@ -1539,7 +1539,7 @@ it.each(["copy", "section"] as const)(
     const runtime = createWineQueueRuntime(env, config);
     const before = f.calls.length;
     await expect(runtime.deliver(c.job)).rejects.toThrow(
-      "wine_outbox_send_failed",
+      "wine_stage_dispatch_failed",
     );
     expect(f.calls.slice(before)).toEqual(["generation"]);
     expect(await runtime.deliver(c.job)).toMatchObject({ status: "duplicate" });
