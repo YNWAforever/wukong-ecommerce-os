@@ -1,4 +1,4 @@
-import { sectionKeySchema } from "@wukong/core";
+import { sectionKeySchema, wineSectionChangeSchema } from "@wukong/core";
 import {
   prepareWineAdmission,
   recoverableWineAdmission,
@@ -46,6 +46,15 @@ const bodySchema = z
       .max(11)
       .optional(),
     changes: z.array(workingChangeSchema).max(100).default([]),
+    sectionChanges: z
+      .array(wineSectionChangeSchema)
+      .max(6)
+      .refine(
+        (changes) =>
+          new Set(changes.map((change) => change.key)).size === changes.length,
+        "Duplicate section keys",
+      )
+      .optional(),
     action: z.enum(["save", "save_and_process"]).default("save"),
     wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
     wineSection: sectionKeySchema.optional(),

@@ -68,3 +68,60 @@ describe("working input route", () => {
     ).toBe(400);
   });
 });
+
+describe("wine paragraph input", () => {
+  it("passes only typed bilingual section edits through the guarded save", async () => {
+    const h = handler();
+    const sectionChanges = [
+      { key: "introduction", en: "Edited", "zh-Hant": "已修改", locked: true },
+    ];
+    const response = await h.run(
+      request({
+        expectedInputRevision: 1,
+        baseVersionId: null,
+        sectionChanges,
+      }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(response.status).toBe(200);
+    expect(h.save.mock.calls[0]![0].sectionChanges).toEqual(sectionChanges);
+  });
+  it.each([{ owner: "automatic" }, { claimIds: ["claim"] }, { proof: {} }])(
+    "rejects section authority injection %j",
+    async (extra) => {
+      const h = handler();
+      const response = await h.run(
+        request({
+          expectedInputRevision: 1,
+          baseVersionId: null,
+          sectionChanges: [
+            {
+              key: "introduction",
+              en: "Edited",
+              "zh-Hant": "已修改",
+              ...extra,
+            },
+          ],
+        }),
+        { params: Promise.resolve({ id }) },
+      );
+      expect(response.status).toBe(400);
+      expect(h.save).not.toHaveBeenCalled();
+    },
+  );
+});
+
+it("rejects duplicate section keys", async () => {
+  const h = handler(),
+    section = { key: "tasting", en: "a", "zh-Hant": "b" };
+  const res = await h.run(
+    request({
+      expectedInputRevision: 1,
+      baseVersionId: null,
+      sectionChanges: [section, section],
+    }),
+    { params: Promise.resolve({ id }) },
+  );
+  expect(res.status).toBe(400);
+  expect(h.save).not.toHaveBeenCalled();
+});

@@ -18,6 +18,8 @@ import {
   type ListingIntakePayload,
 } from "./listing-intake-form.js";
 
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
 function png(name: string, bytes = 1024): File {
   return new File([new Uint8Array(bytes)], name, { type: "image/png" });
 }
@@ -303,4 +305,10 @@ it("creates a manual note-only draft with a stable operation key", async () => {
     processingMode: "manual",
     idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/i),
   });
+});
+
+it("guides front, back and package photos while keeping one primary submit", async () => {
+  const { container } = await mount();
+  expect(container.textContent).toContain("正面標籤、背面標籤及包裝");
+  expect(container.querySelectorAll('button[type="submit"]')).toHaveLength(1);
 });

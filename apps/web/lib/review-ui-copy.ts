@@ -79,3 +79,33 @@ export function evidenceFieldLabel(field: string, locale: Locale) {
     ? localized(locale, ...label)
     : localized(locale, "其他來源欄位", "Other source field");
 }
+
+export const wineSectionLabels = {
+  selling_points: ["賣點", "Selling points"],
+  introduction: ["介紹", "Introduction"],
+  tasting: ["品飲筆記", "Tasting"],
+  pairing: ["餐酒配搭", "Pairing"],
+  serving: ["飲用建議", "Serving"],
+  brand_background: ["品牌背景", "Brand background"],
+} as const;
+export const wineStageLabels = {
+  extraction: ["識別標籤", "Identify label"],
+  search_basic: ["搜尋資料", "Research sources"],
+  verification: ["核實資料", "Verify evidence"],
+  search_deep: ["深入搜尋", "Additional research"],
+  verification_deep: ["核實補充資料", "Verify additional evidence"],
+  generation: ["建立雙語文案", "Draft bilingual copy"],
+  quality_check: ["品質檢查", "Quality check"],
+  commit_candidate: ["儲存建議", "Save proposal"],
+} as const;
+export const wineStateLabels = {
+  queued: ["已排隊", "Queued"],
+  running: ["處理中", "Running"],
+  needs_info: ["需要資料", "More information needed"],
+  in_review: ["可供審核", "Ready for review"],
+  awaiting_adoption: ["等待採納", "Awaiting adoption"],
+  adopted: ["已採納", "Adopted"],
+  failed: ["未完成", "Failed"],
+  superseded: ["已有較新處理", "Superseded"],
+  cancelled: ["已取消", "Cancelled"],
+} as const;

@@ -1,3 +1,5 @@
+import { createListingInputsHandler } from "./[id]/inputs/route";
+import { createListingViewHandler } from "./[id]/route";
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
@@ -980,6 +982,69 @@ it.each(["copy", "section"] as const)(
             : ["sections.introduction"],
       });
     });
+    // Task11: use the real authenticated HTTP save/read surfaces, then regenerate
+    // another paragraph through the real persisted pipeline below.
+    const sessionContext = {
+      resolve: async () => ({
+        workspaceId: f.workspaceId,
+        actorId: "tester",
+        role: "operator" as const,
+      }),
+    };
+    const saveParagraph = createListingInputsHandler({
+      sessionContext,
+      getDatabase: () => db,
+    });
+    const readListing = createListingViewHandler({
+      sessionContext,
+      getDatabase: () => db,
+      getAssetStore: () => ({
+        createReadUrl: async () => ({
+          url: "https://fixture.test/image",
+          expiresAt: new Date(Date.now() + 60000),
+        }),
+      }),
+      connectionStatus: async () => "disconnected",
+    });
+    const editContext = { params: Promise.resolve({ id: f.job.draftId }) };
+    const initialView = await (
+      await readListing(new Request("http://localhost/listing"), editContext)
+    ).json();
+    const currentInput = initialView.workingInput;
+    const editedText = {
+      en: "My saved tasting paragraph",
+      "zh-Hant": "我已儲存的品酒段落",
+    };
+    const savedParagraph = await saveParagraph(
+      new Request("http://localhost/inputs", {
+        method: "PATCH",
+        headers: {
+          "Idempotency-Key": randomUUID(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          expectedInputRevision: currentInput!.revision,
+          baseVersionId: currentInput!.baseVersionId,
+          sectionChanges: [{ key: "tasting", ...editedText, locked: true }],
+          action: "save",
+        }),
+      }),
+      editContext,
+    );
+    expect(savedParagraph.status).toBe(200);
+    Object.assign(protectedSection, editedText, { claimIds: [] });
+    const reloaded = await readListing(
+      new Request("http://localhost/listing"),
+      editContext,
+    );
+    expect(reloaded.status).toBe(200);
+    const reloadedView = await reloaded.json();
+    expect(
+      reloadedView.workingInput.workingContent.wineOwnership.sections.find(
+        (section: { key: string }) => section.key === "tasting",
+      ),
+    ).toEqual(protectedSection);
+    expect(reloadedView.workingInput.revision).toBe(currentInput!.revision + 1);
     await db.forWorkspace(f.workspaceId, async (r) => {
       await r.workspaces.updateProfile({
         name: "Synthetic",
