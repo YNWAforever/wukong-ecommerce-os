@@ -69,8 +69,8 @@ test("manual note-only draft survives reload without an active version", async (
   const note =
     "Synthetic recovery note: merchant facts will be entered manually.";
 
-  await page.getByLabel("補充備註").fill(note);
-  await page.getByLabel("只儲存草稿，稍後手動處理").check();
+  await page.getByLabel("Operator notes").fill(note);
+  await page.getByLabel("Save draft for manual processing later").check();
   await page.getByRole("button", { name: /建立上架草稿/ }).click();
   await expect(page).toHaveURL(/\/listings\/[0-9a-f-]{36}\?processing=saved$/i);
   const listingId = page.url().match(/\/listings\/([0-9a-f-]{36})/i)?.[1];
@@ -137,7 +137,9 @@ test("needs-info run preserves correction and starts an immutable retry", async 
     mimeType: "application/pdf",
     buffer: Buffer.from(await document.save()),
   });
-  await page.getByLabel("補充備註").fill("Unclear synthetic merchant item.");
+  await page
+    .getByLabel("Operator notes")
+    .fill("Unclear synthetic merchant item.");
   await page.getByRole("button", { name: /建立上架草稿/ }).click();
   await expect(page).toHaveURL(
     /\/listings\/[0-9a-f-]{36}\?processing=queued$/i,
