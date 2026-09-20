@@ -308,7 +308,9 @@ export function WineContentReview({
         <button
           className="secondary-button"
           type="button"
+          disabled={!storageReady || busy || saving}
           onClick={() => {
+            if (!storageReady || busy || saving) return;
             if (
               window.confirm(
                 t("放棄未儲存的段落修改？", "Discard unsaved paragraph edits?"),

@@ -417,7 +417,8 @@ export async function acquireWineEvidence(
             assetId: null,
             url: result.url,
             domain: new URL(result.url).hostname,
-            title: origin.title,
+            title:
+              origin.title || old.find((s) => s.id === origin.sourceId)!.title,
             capturedAt: response.capturedAt,
             excerpt: result.content,
             location: `tavily:extract_1;source:${origin.sourceId}`,

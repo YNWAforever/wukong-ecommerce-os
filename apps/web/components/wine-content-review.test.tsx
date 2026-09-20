@@ -272,3 +272,90 @@ it("clears local recovery only after successful save and reports unavailable sto
   await act(async () => unavailableRoot.unmount());
   vi.unstubAllGlobals();
 });
+
+it.each(["success", "failure"])(
+  "blocks discard during deferred save and refresh: %s",
+  async (outcome) => {
+    preference.locale = "en";
+    sessionStorage.clear();
+    const el = document.createElement("div"),
+      root = createRoot(el);
+    let resolve!: () => void, reject!: (error: Error) => void;
+    const pending = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    const save = vi.fn((_body: unknown) => pending),
+      confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const props = {
+      sections,
+      revision: 2,
+      baseVersionId: "00000000-0000-4000-8000-000000000111",
+      canEdit: true,
+      busy: false,
+      onSave: save,
+      onRegenerate: vi.fn(),
+      draftKey: "deferred-save",
+    };
+    const text = () =>
+      el.querySelector('textarea[lang="en"]') as HTMLTextAreaElement;
+    const discard = () =>
+      [...el.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Discard edits"),
+      )!;
+    await act(async () => root.render(<WineContentReview {...props} />));
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!.set!.call(text(), "Draft B");
+      text().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      (
+        el.querySelector('[data-action="save-sections"]') as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () => discard().click());
+    expect(text().value).toBe("Draft B");
+    expect(confirm).not.toHaveBeenCalled();
+    await act(async () => root.render(<WineContentReview {...props} busy />));
+    expect(discard().disabled).toBe(true);
+    if (outcome === "success") {
+      await act(async () =>
+        root.render(
+          <WineContentReview
+            {...props}
+            busy
+            revision={3}
+            sections={sections.map((s, i) =>
+              i === 0 ? { ...s, en: "Draft B" } : s,
+            )}
+          />,
+        ),
+      );
+      await act(async () => resolve());
+      expect(text().value).toBe("Draft B");
+      expect(sessionStorage.length).toBe(0);
+      expect(el.textContent).not.toContain("Unsaved edits.");
+    } else {
+      await act(async () => reject(Error("save failed")));
+      expect(text().value).toBe("Draft B");
+      expect(discard().disabled).toBe(true);
+      expect(sessionStorage.getItem(sessionStorage.key(0)!)).toContain(
+        "Draft B",
+      );
+      await act(async () => root.render(<WineContentReview {...props} />));
+      expect(discard().disabled).toBe(false);
+      expect(el.querySelector('[role="alert"]')).not.toBeNull();
+    }
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      expectedInputRevision: 2,
+      baseVersionId: "00000000-0000-4000-8000-000000000111",
+    });
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  },
+);

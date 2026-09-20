@@ -255,3 +255,50 @@ it("preserves visible block and line boundaries for deterministic wine identity 
   });
   expect(out.result.text).not.toContain("Forged");
 });
+
+it.each([200, 401, 403, 429, 404, 500])(
+  "separates accessible empty HTML from access failures: %s",
+  async (status) => {
+    const f = fixture({}, async ({ url, kind }) => ({
+      url,
+      status: kind === "robots" ? 200 : status,
+      text:
+        kind === "robots"
+          ? "User-agent: *\nAllow: /"
+          : '<html><body><div id="app"></div><script>render()</script></body></html>',
+      contentType: kind === "robots" ? "text/plain" : "text/html",
+      capturedAt: now.toISOString(),
+      retryAfterSeconds: null,
+    }));
+    const out = await f.service(input);
+    expect(out).toMatchObject({
+      status: "completed",
+      result: {
+        state:
+          status === 200
+            ? "ready"
+            : [401, 403, 429].includes(status)
+              ? "denied"
+              : "unavailable",
+        text: "",
+        spans: [],
+        extractEligible: status === 200,
+      },
+    });
+  },
+);
+it("keeps old immutable unavailable results ineligible without network retry", async () => {
+  const f = fixture();
+  const first = await f.service(input);
+  if (first.status !== "completed") throw Error("fixture failed");
+  const old = {
+    ...first.result,
+    state: "unavailable" as const,
+    text: "",
+    spans: [],
+    extractEligible: false,
+  };
+  f.store.claim = async () => ({ state: "completed", result: old });
+  expect(await f.service(input)).toEqual({ status: "completed", result: old });
+  expect(f.publicFetch).toHaveBeenCalledTimes(2);
+});

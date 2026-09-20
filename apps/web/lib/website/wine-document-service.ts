@@ -301,7 +301,9 @@ export function createWineDocumentService(deps: {
             ...result,
             url: document.url,
             capturedAt: document.capturedAt,
-            state: fullText ? "ready" : "unavailable",
+            // Ready records successful policy-checked access, even when local parsing
+            // finds no text (for example, a client-rendered page).
+            state: "ready",
             title: (parsed.product?.title ?? generic.title).slice(0, 500),
             text: retained + (truncated ? WINE_DOCUMENT_TRUNCATION_MARKER : ""),
             documentDigest: digest(fullText),
@@ -318,7 +320,7 @@ export function createWineDocumentService(deps: {
                 ]
               : [],
             warnings: parsed.warnings,
-            extractEligible: !!fullText,
+            extractEligible: true,
           };
         }
       }
