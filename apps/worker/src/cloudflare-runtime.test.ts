@@ -554,3 +554,17 @@ it("does not infer wine queue readiness from configuration strings", async () =>
   expect(health.wine.queueReady).toBe(false);
   expect(health.wine.consumerSupported).toBe(true);
 });
+
+it("reports a safe default-false wine flag without changing accepted capability", async () => {
+  const { workerHealth } = await import("./cloudflare-runtime.js");
+  expect(workerHealth(env())).toHaveProperty("wineEnrichmentEnabled", false);
+  expect(
+    workerHealth({ ...env(), WINE_ENRICHMENT_ENABLED: "true" } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", true);
+  expect(
+    workerHealth({
+      ...env(),
+      WINE_ENRICHMENT_ENABLED: "secret-marker",
+    } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", false);
+});

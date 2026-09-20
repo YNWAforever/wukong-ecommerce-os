@@ -648,3 +648,29 @@ test("checkWebEnvInventory does not demand a name the app must never hold", () =
 
   assert.equal(checkWebEnvInventory(manifest, "").status, "ok");
 });
+
+test("doctor uses deployed wine flag rather than local intent for Tavily names", async () => {
+  const { doctorRequiredSecrets } =
+    await import("../scripts/runtime-doctor.mjs");
+  const config = {
+    requiredSecrets: ["OPENAI_API_KEY"],
+    productShot: { provider: "disabled" },
+  };
+  const env = { AI_PROVIDER: "opencode-go", WINE_ENRICHMENT_ENABLED: "true" };
+  assert.ok(
+    doctorRequiredSecrets(config, { preDeployOnly: true, env }).includes(
+      "TAVILY_API_KEY",
+    ),
+  );
+  for (const wineEnrichmentEnabled of [false, true]) {
+    const names = doctorRequiredSecrets(config, {
+      env,
+      health: {
+        aiProvider: "opencode-go",
+        productShotProvider: "disabled",
+        wineEnrichmentEnabled,
+      },
+    });
+    assert.equal(names.includes("TAVILY_API_KEY"), wineEnrichmentEnabled);
+  }
+});

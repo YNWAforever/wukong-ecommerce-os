@@ -344,19 +344,17 @@ it("ignores out-of-order A responses and clears loading for a non-proposal conte
     finishA = resolve;
   });
   const runB = "00000000-0000-4000-8000-000000000197";
-  const fetcher = vi
-    .fn()
-    .mockImplementation((url: string) =>
-      url.includes(runB)
-        ? Promise.resolve(
-            Response.json({
-              ...proposal,
-              runId: runB,
-              differences: [{ ...proposal.differences[0], after: "Newest B" }],
-            }),
-          )
-        : pendingA,
-    );
+  const fetcher = vi.fn().mockImplementation((url: string) =>
+    url.includes(runB)
+      ? Promise.resolve(
+          Response.json({
+            ...proposal,
+            runId: runB,
+            differences: [{ ...proposal.differences[0], after: "Newest B" }],
+          }),
+        )
+      : pendingA,
+  );
   await render(fetcher);
   expect(el.textContent).toContain("Loading proposal");
   await act(async () =>
@@ -410,17 +408,15 @@ it("ignores out-of-order A responses and clears loading for a non-proposal conte
 });
 it("never enables adoption from a response with mismatched current guards", async () => {
   await render(
-    vi
-      .fn()
-      .mockResolvedValue(
-        Response.json({
-          ...proposal,
-          current: {
-            inputRevision: 3,
-            activeVersionId: proposal.baseVersionId,
-          },
-        }),
-      ),
+    vi.fn().mockResolvedValue(
+      Response.json({
+        ...proposal,
+        current: {
+          inputRevision: 3,
+          activeVersionId: proposal.baseVersionId,
+        },
+      }),
+    ),
   );
   expect(
     (el.querySelector('[data-action="adopt-wine"]') as HTMLButtonElement)

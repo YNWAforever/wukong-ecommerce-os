@@ -22,7 +22,10 @@ describe("listing queue website routing", () => {
       web = vi.fn(async () => "ack" as const);
     await handleQueue(
       { queue: "wukong-listing-preview", messages } as any,
-      {} as any,
+      {
+        LISTING_PAID_OPERATIONS_ENABLED: "false",
+        WINE_ENRICHMENT_ENABLED: "false",
+      } as any,
       undefined,
       { consumeListingMessage: listing, consumeWebsiteMessage: web },
     );
@@ -82,7 +85,10 @@ it("routes wine independently from legacy even when live admission is off", asyn
     legacy = vi.fn(async () => "ack" as const);
   await handleQueue(
     { queue: "wukong-listing-preview", messages: [message] } as never,
-    { LISTING_PAID_OPERATIONS_ENABLED: "false" } as never,
+    {
+      LISTING_PAID_OPERATIONS_ENABLED: "false",
+      WINE_ENRICHMENT_ENABLED: "false",
+    } as never,
     undefined,
     { consumeWineMessage: wine, consumeListingMessage: legacy },
   );

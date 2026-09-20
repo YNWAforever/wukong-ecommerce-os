@@ -28,6 +28,7 @@ export type WorkerEnv = {
   AI_PROVIDER?: "openai" | "fake" | "openrouter" | "opencode-go";
   OPENCODE_GO_API_KEY?: string;
   TAVILY_API_KEY?: string;
+  WINE_ENRICHMENT_ENABLED?: "true" | "false";
   OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;

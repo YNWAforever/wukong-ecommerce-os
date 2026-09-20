@@ -1,6 +1,7 @@
 import {
   listingProviderSecretNames,
   productShotSecretNames,
+  wineEnrichmentSecretNames,
 } from "./listing-provider-config.mjs";
 import { undocumentedNames, WEB_RUNTIME_ENV } from "./runtime-env-manifest.mjs";
 
@@ -462,9 +463,14 @@ export function doctorRequiredSecrets(
       !["disabled", "fake", "photoroom"].includes(shot))
   )
     return null;
-  return productShotSecretNames(
-    listingProviderSecretNames(config.requiredSecrets ?? [], listing),
-    shot,
+  return wineEnrichmentSecretNames(
+    productShotSecretNames(
+      listingProviderSecretNames(config.requiredSecrets ?? [], listing),
+      shot,
+    ),
+    preDeployOnly
+      ? env.WINE_ENRICHMENT_ENABLED === "true"
+      : health?.wineEnrichmentEnabled === true,
   );
 }
 

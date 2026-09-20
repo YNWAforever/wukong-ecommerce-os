@@ -472,48 +472,96 @@ it("keeps merchant source provenance tied to accepted note and preserves operato
     )?.workingContent.producer,
   ).toBe("Operator Estate");
 });
-it("starts no Go request after deadline crosses during storage resolution", async () => {
-  const f = await fixture({ duration: 500 }),
-    fetcher = vi.fn(async () => response(output(f.asset.id)));
-  await runFixture(f, {
-    fetch: fetcher,
-    resolveImage: async () => {
-      await new Promise((r) => setTimeout(r, 550));
-      return { bytes, readUrl: "https://assets.test/accepted.png" };
-    },
-  });
-  expect(fetcher).not.toHaveBeenCalled();
-  expect(
-    await admin`select * from ai_runs where pipeline_run_id=${f.run.id}`,
-  ).toHaveLength(0);
-});
-it("publishes no evidence if deadline crosses during the registry read", async () => {
-  const f = await fixture({ duration: 700 });
-  const delayed = {
+// Advance the repository clock only at the targeted I/O boundary; no scheduler race.
+function boundaryDatabase(
+  f: Awaited<ReturnType<typeof fixture>>,
+  expired: () => boolean,
+  readAuthorities?: () => void,
+) {
+  return {
     forWorkspace: ((workspaceId: string, callback: any) =>
       db.forWorkspace(workspaceId, (r) =>
         callback({
           ...r,
+          pipelineRuns: {
+            ...r.pipelineRuns,
+            acceptanceTimestamp: () =>
+              expired()
+                ? Promise.resolve(
+                    (f.run.execution.wineAcquisition as { deadlineAt: string })
+                      .deadlineAt,
+                  )
+                : r.pipelineRuns.acceptanceTimestamp(),
+          },
           wineEnrichment: {
             ...r.wineEnrichment,
             readAuthorities: async () => {
-              await new Promise((resolve) => setTimeout(resolve, 750));
+              readAuthorities?.();
               return r.wineEnrichment.readAuthorities();
             },
           },
         }),
       )) as typeof db.forWorkspace,
   };
+}
+it("starts no Go request after deadline crosses during storage resolution", async () => {
+  const f = await fixture();
+  let storageEntered = false;
+  const fetcher = vi.fn(async () => response(output(f.asset.id)));
   const execute = createWineExtractionHandler({
-    database: delayed,
+    database: boundaryDatabase(f, () => storageEntered),
+    env: { OPENCODE_GO_API_KEY: "synthetic" },
+    transport: { fetch: fetcher },
+    resolveImage: async () => {
+      storageEntered = true;
+      return { bytes, readUrl: "https://assets.test/accepted.png" };
+    },
+  });
+  expect(await runWineStage(f.job, { store: f.store, execute })).toMatchObject({
+    status: "blocked",
+    code: "extraction_deadline",
+  });
+  expect(storageEntered).toBe(true);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(
+    await admin`select * from ai_runs where pipeline_run_id=${f.run.id}`,
+  ).toHaveLength(0);
+});
+it("publishes no evidence if deadline crosses during the registry read", async () => {
+  const f = await fixture();
+  let registryEntered = false;
+  let httpCompleted = false;
+  const execute = createWineExtractionHandler({
+    database: boundaryDatabase(
+      f,
+      () => registryEntered,
+      () => {
+        expect(httpCompleted).toBe(true);
+        registryEntered = true;
+      },
+    ),
     env: { OPENCODE_GO_API_KEY: "synthetic" },
     resolveImage: async () => ({
       bytes,
       readUrl: "https://assets.test/accepted.png",
     }),
-    transport: { fetch: async () => response(output(f.asset.id)) },
+    transport: {
+      fetch: async () => {
+        const result = response(output(f.asset.id));
+        httpCompleted = true;
+        return result;
+      },
+    },
   });
-  await runWineStage(f.job, { store: f.store, execute });
+  expect(await runWineStage(f.job, { store: f.store, execute })).toMatchObject({
+    status: "blocked",
+    code: "extraction_deadline",
+  });
+  expect(registryEntered).toBe(true);
+  expect(httpCompleted).toBe(true);
+  expect(
+    await admin`select status from ai_runs where pipeline_run_id=${f.run.id}`,
+  ).toEqual([{ status: "succeeded" }]);
   expect(
     await db.forWorkspace(f.workspaceId, (r) =>
       r.wineEnrichment.readEvidence(f.run.id),

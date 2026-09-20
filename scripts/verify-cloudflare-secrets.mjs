@@ -2,6 +2,7 @@ export { productShotSecretNames } from "./listing-provider-config.mjs";
 import {
   listingProviderSecretNames,
   productShotSecretNames,
+  wineEnrichmentSecretNames,
 } from "./listing-provider-config.mjs";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -67,6 +68,28 @@ export function verifyExactSecretNames(requiredNames, configuredNames) {
   }
 }
 
+export function verifyRuntimeSecretNames(source, env, configuredNames) {
+  const enabled = env.WINE_ENRICHMENT_ENABLED === "true";
+  const requiredNames = wineEnrichmentSecretNames(
+    productShotSecretNames(
+      listingProviderSecretNames(
+        source.requiredSecrets,
+        env.AI_PROVIDER?.trim() || "openai",
+      ),
+      env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider,
+    ),
+    enabled,
+  );
+  // A rollback stops admission, not accepted full/research execution. Retain its key.
+  verifyExactSecretNames(
+    requiredNames,
+    enabled
+      ? configuredNames
+      : configuredNames.filter((name) => name !== "TAVILY_API_KEY"),
+  );
+  return requiredNames;
+}
+
 function main() {
   const environment = process.argv[2]?.trim();
   if (!environment)
@@ -117,14 +140,11 @@ function main() {
     process.stderr.write(`${decision.warning}\n`);
     return;
   }
-  const requiredNames = productShotSecretNames(
-    listingProviderSecretNames(
-      source.requiredSecrets,
-      process.env.AI_PROVIDER?.trim() || "openai",
-    ),
-    process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider,
+  const requiredNames = verifyRuntimeSecretNames(
+    source,
+    process.env,
+    parseSecretNames(result.stdout),
   );
-  verifyExactSecretNames(requiredNames, parseSecretNames(result.stdout));
   process.stdout.write(
     `Worker secret preflight passed for ${selected.worker}: ${requiredNames.length} exact names\n`,
   );

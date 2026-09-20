@@ -1,11 +1,13 @@
 # Task 5c report — Worker acquisition and committed DB adapters
 
 ## Outcome and scope
+
 DONE for the controller-approved narrowed Task5c scope, starting at a3e2337 on codex/tavily-wine-enrichment-design. Task5 overall remains PENDING Task5d real Node POST route wiring and route/localDB integration, then independent integration review. The controller explicitly moved apps/web/app/api/internal/wine-evidence-document/route.ts and its new tests to5d; no fake route is exported here.
 
 No paid provider calls, production mutation, migrations, credentials/env-file reads, feature activation or queue dispatch changes. Tests use only synthetic injected HTTP and the dedicated localhost wukong_wine_sdd database with runtime wukong_app. Existing pinned Wrangler/runtime versions remain unchanged. Read the requested TDD/implementer/Workers skills and the retrieved worker-reference.md notes; graph indexing remained untouched per approval block.
 
 ## Implemented
+
 - Worker-only createWineEvidenceAcquisition wires actual TavilyProvider, signed document client and createWineEvidenceStore. No Node DNS/TLS/public-fetch imports in Worker acquisition/client.
 - Exact HMAC body/path/timestamp; callback is derived only from configured HTTPS origin WEBSITE_FETCH_BASE_URL. Credentials, path/query/hash in the configured base are rejected. HTTP redirects are rejected; response is limited to128KiB and30seconds with streamed byte counting. Strict result schema plus exact workspace/run/source/revision/kind binding; malformed/foreign/oversized/non200 responses fail closed.
 - Query generation reads only strict ProductIdentity producer/productName/known vintage/volume and fixed public wording. URLs/control punctuation in identity search terms fail closed; aliases/category/observations/notes/commercial fields never enter search queries. Full normalized identity remains in the cache key so identity distinctions are preserved.
@@ -19,7 +21,9 @@ No paid provider calls, production mutation, migrations, credentials/env-file re
 - Fresh-run forceRefresh bypasses old cache and obtains fresh IDs/snapshot. Same-run forceRefresh is NOT permission for another paid call. Cache publication uses deterministic source-set snapshot IDs and does not republish overlapping cached sources to renew age.
 
 ## Exported Task8 API
+
 Worker apps/worker/src/wine-evidence-acquisition.ts:
+
 - EvidenceRequest = WineAcquisitionCoordinates & {identity:ProductIdentity;now:string;forceRefresh:boolean}. input.now is retained for the planned interface; authorization/cache freshness use DB clock, not caller time.
 - EvidenceAcquisition = {sources:EvidenceSource[];status:'complete'|'partial'|'unavailable';warnings:string[]}.
 - WineAcquisitionStage = {stage:'basic';slots:('basic_1'|'basic_2')[]} | {stage:'deep'} | {stage:'extract';sourceIds:string[]}.
@@ -30,6 +34,7 @@ Worker apps/worker/src/wine-evidence-acquisition.ts:
 - createWineDocumentClient({baseUrl,secret,fetch?,now?}) in wine-document-client.ts returns (WineDocumentRequest)=>Promise<WineDocumentResult>.
 
 @wukong/db exports:
+
 - WineAcquisitionCoordinates = {workspaceId,runId,inputRevision,policyDigest,rulesVersion,allowedDomains}. policyDigest must equal accepted execution.wineAcquisition.policyVersion; domains and rules must exactly match the frozen snapshot. Mutable policy is never substituted.
 - WinePhysicalCall = Omit<SearchCall,'runId'>; WineCallCompletion = existing finishSearchCall input without runId.
 - WineCallAdmission = claimed | completed(record:SearchCallRecord) | blocked | unknown.
@@ -38,9 +43,11 @@ Worker apps/worker/src/wine-evidence-acquisition.ts:
 - wineDeepSearchDecisionSchema is exported for the server-owned stage wrapper below.
 
 ## Accepted mode and deep decision contract (controller confirmed)
+
 Accepted parent execution must contain wineMode:'full'|'research'|'copy'|'section'. The search guard allows only full/research; missing/copy/section fail closed. Existing strict execution.wineAcquisition snapshot from5b is unchanged. Task7 must persist wineMode during acceptance.
 
 Advanced admission reads the SAME run's immutable succeeded verification stage. Required output wrapper:
+
 ```ts
 {
   schemaVersion: 1,
@@ -52,11 +59,13 @@ Advanced admission reads the SAME run's immutable succeeded verification stage. 
   // Other versioned verification results remain Task6/8-owned.
 }
 ```
+
 Task8 must derive this decision from deterministic important identity/core-fact/trusted-conflict issues, not raw model needsDeepSearch or optional prose/section absence. No caller reason override is accepted by admission. Optional-only/empty/unknown reasons fail schema validation. Other verification output fields are intentionally not prescribed by5c.
 
 Task8 basic stage may call both distinct basic slots together; deep is separate. Extract sourceIds are the persisted snippet IDs obtainable from store.readEvidence(input), not newly acquired document IDs. Each stage returns its evidence set; Task8 persists/assembles the stage pool and applies identity/claim verification. complete describes successful acquisition of that requested stage, not overall listing readiness. Cache records preserve the original run/source provenance; Task8 must retain returned capture times if copying reused sources into its run evidence pool.
 
 ## TDD and verification evidence
+
 RED1 client: pnpm.cmd --filter @wukong/worker exec vitest run src/wine-document-client.test.ts failed missing module. GREEN11/11 after bounded signed implementation.
 RED2 DB guard: pnpm.cmd exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/wine-acquisition-calls.integration.test.ts failed5/5: createWineEvidenceStore not a function. GREEN5/5. One initial fixture attempted to mutate immutable execution; corrected by creating the expired snapshot at acceptance, not relaxing the guard.
 RED3 acquisition: pnpm.cmd --filter @wukong/worker exec vitest run src/wine-evidence-acquisition.test.ts failed missing module. GREEN10/10. A shared-array test harness exposed duplicate local accumulation; acquisition now snapshots the returned array before adding new sources.
@@ -66,6 +75,7 @@ RED6 runtime factory: integration1failed/1passed, factory missing. GREEN with ac
 RED7 reservation-lock deadline: DB suite1failed/7passed, slot claimed after waiting beyond deadline on reservation lock. GREEN after acquiring that lock before the final DB clock check, plus Worker pre-I/O time check.
 
 Final checks:
+
 - pnpm.cmd --filter @wukong/worker exec vitest run src/wine-evidence-acquisition.test.ts src/wine-document-client.test.ts:2files29/29 PASS.
 - pnpm.cmd exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/wine-acquisition.integration.test.ts packages/db/src/repositories/wine-acquisition-calls.integration.test.ts apps/worker/src/wine-evidence-acquisition.integration.test.ts:3files34/34 PASS. This includes5b24 + newguard8 + actualWorkerfactory2.
 - Final added mode/credit ceiling/optional-decision coverage: focused wine-acquisition-calls.integration.test.ts10/10 PASS. Final affected integration count is36 across the same3files; the full3file command was not repeated after only these2 additional tests.
@@ -77,6 +87,7 @@ Final checks:
 - git diff --check:PASS, only normal Windows LF/CRLF notices.
 
 ## Requirement coverage / remaining gates
+
 - Exact expiry/full-key/tenant/policy/vintage/future/force-refresh: Worker named tests plus existing5b24 integration tests. Source freshness never renewed.
 - Cloned content, URL de-dup, domain filtering, unverified official source, snippet truncation, private URL query refusal: new Worker unit tests.
 - Robots denial and no Extract fallback, source-ID injection, successful one-Extract replay, wrong result URL provenance, unknown usage and measured discrepancy stop: new Worker unit tests.
@@ -86,10 +97,12 @@ Final checks:
 - Production Tavily credentials/allowance, production migration rehearsal/activation, Task8Queue runtime, Task13env manifests/browser harness, real merchant acceptance: untouched release/integration gates.
 
 ## Files and self-review
+
 New Worker wine-document-client.ts/.test.ts, wine-evidence-acquisition.ts/.test.ts/.integration.test.ts. New DB repositories/wine-acquisition-calls.ts/.integration.test.ts; only two-line composition/export addition to existing wine-acquisition.ts/index.ts. This report.
 Self-review fixed missing-output admission, directly malformed callback, replay array aliasing, and deadline after reservation-lock wait. All physical failures conservatively retain unknown cost holds; no automatic provider retry/reclaim exists. No known failing checks. Cache publication still respects the existing200KB aggregate repository bound; exceptionally large aggregate evidence is rejected by that existing bound rather than relaxing storage constraints. Acquisition/ledger code remains a focused boundary; full queue recovery is intentionally deferred. Task5 overall is not yet complete.
 
 ## Independent review follow-up — callback deadline (2026-09-16)
+
 Addressed Important finding: document() previously checked no deadline immediately before ports.document, so sequential product callbacks (including Extract preflight) could start after expiry. Added an invocation-local sticky expiry check immediately before callback I/O, after callback completion, and at subsequent source/slot loops and physical admission. Once expiry is observed, later callbacks/provider calls stop; a completed callback does not lead to new document persistence after expiry. Warnings include deadline_expired. Existing DB admission/usage semantics are unchanged.
 
 RED:

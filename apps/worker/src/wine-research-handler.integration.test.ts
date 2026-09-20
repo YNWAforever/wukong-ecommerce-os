@@ -495,6 +495,21 @@ it("unknown Extract stops and retains every prior source and the whole cost hold
       r.wineEnrichment.readSearchCall(f.run.id, "extract_1"),
     ),
   ).toMatchObject({ status: "unknown", credits: null });
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.searchBudgetReservations.settleFromCalls(f.run.id),
+    ),
+  ).toBe("unknown");
+  expect(
+    await db.forWorkspace(f.workspaceId, (r) =>
+      r.searchBudgetReservations.reserve({
+        pipelineRunId: f.run.id,
+        reservedCredits: 5,
+        workspaceCapCredits: 100,
+        policyVersion: "wine-enrichment@1",
+      }),
+    ),
+  ).toMatchObject({ accepted: true, state: "unknown" });
 });
 it("cancellation during Search retains measured usage and starts no later callback or search", async () => {
   const f = await extracted(),

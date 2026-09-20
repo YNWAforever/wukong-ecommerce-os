@@ -290,6 +290,7 @@ export function workerHealth(env: WorkerEnv) {
     )
       ? (env.PRODUCT_SHOT_PROVIDER ?? "disabled")
       : "unknown",
+    wineEnrichmentEnabled: env.WINE_ENRICHMENT_ENABLED === "true",
     buildSha: safeBuildSha(env.BUILD_SHA),
     adapterMode:
       env.SHOPLINE_ADAPTER === "mock" || env.SHOPLINE_ADAPTER === "real"
