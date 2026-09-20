@@ -7,6 +7,10 @@ import type {
 } from "@wukong/core";
 import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
+import {
+  readWineSectionDraft,
+  writeWineSectionDraft,
+} from "../lib/wine-section-draft";
 import { wineSectionLabels } from "../lib/review-ui-copy";
 export type WineSectionSave = {
   expectedInputRevision: number;
@@ -15,6 +19,7 @@ export type WineSectionSave = {
 };
 type Props = {
   sections: ContentSection[];
+  draftKey?: string;
   revision: number;
   baseVersionId: string | null;
   canEdit: boolean;
@@ -25,6 +30,7 @@ type Props = {
 };
 export function WineContentReview({
   sections,
+  draftKey,
   revision,
   baseVersionId,
   canEdit,
@@ -38,7 +44,39 @@ export function WineContentReview({
   const [base, setBase] = useState({ sections, revision, baseVersionId }),
     [draft, setDraft] = useState(sections),
     [saving, setSaving] = useState(false),
-    [error, setError] = useState(false);
+    [error, setError] = useState(false),
+    [loadedKey, setLoadedKey] = useState<string | null>(null),
+    [recovered, setRecovered] = useState(false),
+    [storageError, setStorageError] = useState(false);
+  const storageReady = !draftKey || loadedKey === draftKey;
+  useEffect(() => {
+    if (!draftKey) return;
+    const stored = readWineSectionDraft(draftKey);
+    if (stored.state === "recovered") {
+      const restore = (values: WineSectionChange[]): ContentSection[] =>
+        values.map((value) => ({
+          ...(sections.find((section) => section.key === value.key) ?? {
+            key: value.key,
+            en: "",
+            "zh-Hant": "",
+            locked: false,
+            owner: "operator" as const,
+            claimIds: [],
+          }),
+          ...value,
+        }));
+      setBase({
+        sections: restore(stored.draft.baseline),
+        revision: stored.draft.expectedInputRevision,
+        baseVersionId: stored.draft.baseVersionId,
+      });
+      setDraft(restore(stored.draft.sections));
+      setRecovered(true);
+    }
+    setStorageError(stored.state === "unavailable");
+    setLoadedKey(draftKey);
+    // A draft belongs to one authorized listing; server refreshes must not reload it.
+  }, [draftKey]);
   const changes = draft
     .filter((s) => {
       const old = base.sections.find((x) => x.key === s.key);
@@ -57,14 +95,37 @@ export function WineContentReview({
     }));
   const dirty = changes.length > 0;
   useEffect(() => {
+    if (!draftKey || !storageReady) return;
+    const text = (values: ContentSection[]) =>
+      values.map(({ key, en, locked, ...section }) => ({
+        key,
+        en,
+        "zh-Hant": section["zh-Hant"],
+        locked,
+      }));
+    const saved = writeWineSectionDraft(
+      draftKey,
+      dirty
+        ? {
+            schemaVersion: 1,
+            expectedInputRevision: base.revision,
+            baseVersionId: base.baseVersionId,
+            baseline: text(base.sections),
+            sections: text(draft),
+          }
+        : null,
+    );
+    if (!saved) setStorageError(true);
+  }, [draftKey, storageReady, dirty, base, draft]);
+  useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useEffect(() => {
-    if (!dirty && !saving) {
+    if (storageReady && !dirty && !saving) {
       setBase({ sections, revision, baseVersionId });
       setDraft(sections);
     }
-  }, [sections, revision, baseVersionId, dirty, saving]);
+  }, [sections, revision, baseVersionId, dirty, saving, storageReady]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -77,7 +138,10 @@ export function WineContentReview({
         link &&
         link.getAttribute("target") !== "_blank" &&
         !window.confirm(
-          t("放棄未儲存的段落修改？", "Discard unsaved paragraph edits?"),
+          t(
+            "離開此頁？未儲存的段落會保留在此分頁（若瀏覽器儲存可用）。",
+            "Leave this page? Unsaved paragraphs stay in this tab when browser storage is available.",
+          ),
         )
       ) {
         event.preventDefault();
@@ -100,6 +164,9 @@ export function WineContentReview({
         baseVersionId: base.baseVersionId,
         sectionChanges: changes,
       });
+      if (draftKey && !writeWineSectionDraft(draftKey, null))
+        setStorageError(true);
+      setRecovered(false);
       setBase({ sections: draft, revision, baseVersionId });
       onDirtyChange?.(false);
     } catch {
@@ -111,6 +178,22 @@ export function WineContentReview({
   return (
     <section className="panel" aria-busy={busy || saving}>
       <h2>{t("雙語段落", "Bilingual sections")}</h2>
+      {recovered && (
+        <p role="status">
+          {t(
+            "已還原此分頁未儲存的段落。儲存時仍會核對原有版本；你亦可明確放棄修改。",
+            "Recovered unsaved paragraphs from this tab. Saving still checks the original revision; you can explicitly discard the edits.",
+          )}
+        </p>
+      )}
+      {storageError && (
+        <p role="alert">
+          {t(
+            "本機草稿復原不可用。離開前請儲存或複製修改，以免遺失。",
+            "Local draft recovery is unavailable. Save or copy your edits before leaving to avoid losing them.",
+          )}
+        </p>
+      )}
       <p>
         {t(
           "儲存修改後，此段落由你管理。重新生成其他段落不會更改已儲存的修改。",
@@ -126,7 +209,10 @@ export function WineContentReview({
         </p>
       )}
       {draft.map((section) => (
-        <fieldset key={section.key} disabled={!canEdit || busy || saving}>
+        <fieldset
+          key={section.key}
+          disabled={!storageReady || !canEdit || busy || saving}
+        >
           <legend>
             {t(
               wineSectionLabels[section.key][0],
@@ -208,7 +294,7 @@ export function WineContentReview({
       <button
         type="button"
         data-action="save-sections"
-        disabled={!dirty || !canEdit || busy || saving}
+        disabled={!storageReady || !dirty || !canEdit || busy || saving}
         onClick={save}
       >
         {t("儲存段落", "Save sections")}
@@ -222,6 +308,9 @@ export function WineContentReview({
                 t("放棄未儲存的段落修改？", "Discard unsaved paragraph edits?"),
               )
             ) {
+              if (draftKey && !writeWineSectionDraft(draftKey, null))
+                setStorageError(true);
+              setRecovered(false);
               setBase({ sections, revision, baseVersionId });
               setDraft(sections);
               setError(false);

@@ -603,6 +603,8 @@ export function ListingReviewClient({
   const [reviewDirty, setReviewDirty] = useState(false);
   const [workingDirty, setWorkingDirty] = useState(false);
   const [wineDirty, setWineDirty] = useState(false);
+  const [wineBusy, setWineBusy] = useState(false);
+  const mutationBusy = busy || wineBusy;
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
   // A code the screen recognises says what to do about it. Anything else falls
@@ -771,7 +773,7 @@ export function ListingReviewClient({
     );
   if (viewState.kind === "processing" && snapshot)
     return (
-      <div className="page-wrap review-page" aria-busy={busy}>
+      <div className="page-wrap review-page" aria-busy={mutationBusy}>
         {error ? (
           <p className="inline-warning" role="alert" id="listing-action-error">
             {actionErrorText}
@@ -794,7 +796,8 @@ export function ListingReviewClient({
             onRefresh={load}
             externalDirty={workingDirty}
             onDirtyChange={setWineDirty}
-            disabled={busy}
+            onBusyChange={setWineBusy}
+            disabled={mutationBusy}
           />
         ) : (
           <ListingProcessingPanel
@@ -805,7 +808,7 @@ export function ListingReviewClient({
             enqueueState={processingState}
             canProcess={snapshot.permissions.canProcess}
             onProcess={startProcessing}
-            busy={busy}
+            busy={mutationBusy}
           />
         )}
         {snapshot.currentRun ? (
@@ -831,7 +834,7 @@ export function ListingReviewClient({
             listingId={listingId}
             input={snapshot.workingInput}
             sources={snapshot.sources ?? []}
-            canEdit={snapshot.permissions.canEdit && !wineDirty}
+            canEdit={snapshot.permissions.canEdit && !wineDirty && !wineBusy}
             onDirtyChange={setWorkingDirty}
             onSaved={load}
             onProcessingAccepted={(run) => {
@@ -844,8 +847,8 @@ export function ListingReviewClient({
         {snapshot.productShotWorkflow || snapshot.workingInput ? (
           <ProductShotReview
             listingId={listingId}
-            canOperate={snapshot.permissions.canProcess}
-            canApprove={snapshot.permissions.canApprove}
+            canOperate={snapshot.permissions.canProcess && !mutationBusy}
+            canApprove={snapshot.permissions.canApprove && !mutationBusy}
           />
         ) : null}
       </div>
@@ -976,7 +979,7 @@ export function ListingReviewClient({
   }
 
   return (
-    <div className="page-wrap review-page" aria-busy={busy}>
+    <div className="page-wrap review-page" aria-busy={mutationBusy}>
       <div className="breadcrumb">
         <Link href="/dashboard">{t("工作台", "Dashboard")}</Link>
         <span aria-hidden="true">/</span>
@@ -1020,7 +1023,8 @@ export function ListingReviewClient({
           onRefresh={load}
           externalDirty={reviewDirty || workingDirty}
           onDirtyChange={setWineDirty}
-          disabled={busy}
+          onBusyChange={setWineBusy}
+          disabled={mutationBusy}
         />
       )}
       <div className="review-layout">
@@ -1030,8 +1034,8 @@ export function ListingReviewClient({
             <ProductShotReview
               key={`${listingId}:${model.versionId}`}
               listingId={listingId}
-              canOperate={permissions.canProcess}
-              canApprove={permissions.canApprove}
+              canOperate={permissions.canProcess && !mutationBusy}
+              canApprove={permissions.canApprove && !mutationBusy}
             />
           ) : snapshot.productShot ? (
             <ProductShotPanel
@@ -1061,8 +1065,10 @@ export function ListingReviewClient({
                   baseVersionId: model.versionId,
                 }}
                 sources={snapshot.sources ?? []}
-                canEdit={permissions.canEdit && !reviewDirty && !wineDirty}
-                busy={busy}
+                canEdit={
+                  permissions.canEdit && !reviewDirty && !wineDirty && !wineBusy
+                }
+                busy={mutationBusy}
                 currentRunId={snapshot.currentRun?.runId}
                 onSaved={load}
                 onDirtyChange={setWorkingDirty}
@@ -1077,10 +1083,16 @@ export function ListingReviewClient({
             key={model.versionId}
             model={model}
             canApprove={
-              permissions.canApprove && !busy && !workingDirty && !wineDirty
+              permissions.canApprove &&
+              !mutationBusy &&
+              !workingDirty &&
+              !wineDirty
             }
             canEdit={
-              permissions.canEdit && !busy && !workingDirty && !wineDirty
+              permissions.canEdit &&
+              !mutationBusy &&
+              !workingDirty &&
+              !wineDirty
             }
             fieldConfirmations={snapshot.reviewConfirmation?.fieldConfirmations}
             negativeConfirmations={
@@ -1088,7 +1100,7 @@ export function ListingReviewClient({
             }
             onApprove={approve}
             actionErrorId={error ? "listing-action-error" : undefined}
-            busy={busy}
+            busy={mutationBusy}
             onSave={save}
             onDirtyChange={setReviewDirty}
           />
@@ -1101,7 +1113,7 @@ export function ListingReviewClient({
             }
             canConfirm={
               permissions.canEdit &&
-              !busy &&
+              !mutationBusy &&
               !reviewDirty &&
               !workingDirty &&
               !wineDirty
@@ -1110,11 +1122,14 @@ export function ListingReviewClient({
           />
           <ComplianceFlags
             flags={model.blockingFlags}
-            canResolve={permissions.canResolveFlags && !busy}
+            canResolve={permissions.canResolveFlags && !mutationBusy}
             onResolve={resolveFlag}
           />
           <DeliveryPanel
-            model={{ ...delivery, canReview: delivery.canReview && !busy }}
+            model={{
+              ...delivery,
+              canReview: delivery.canReview && !mutationBusy,
+            }}
             sku={content?.sku ?? null}
             onCsv={exportCsv}
             onPublish={publish}

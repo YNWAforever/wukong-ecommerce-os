@@ -17,6 +17,7 @@ type Props = {
   onRefresh: () => Promise<void>;
   externalDirty: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onBusyChange?: (busy: boolean) => void;
   disabled?: boolean;
 };
 export function WineEnrichmentWorkspace({
@@ -24,12 +25,17 @@ export function WineEnrichmentWorkspace({
   onRefresh,
   externalDirty,
   onDirtyChange,
+  onBusyChange,
   disabled = false,
 }: Props) {
   const locale = useLocale(),
     t = (zh: string, en: string) => localized(locale, zh, en);
   const progress = snapshot.wineProgress;
-  const [proposal, setProposal] = useState<WineProposalDiff | null>(null),
+  const [proposalRecord, setProposalRecord] = useState<{
+      context: string;
+      value: WineProposalDiff;
+    } | null>(null),
+    [readEpoch, setReadEpoch] = useState(0),
     [loading, setLoading] = useState(false),
     [readError, setReadError] = useState(false),
     [busy, setBusy] = useState(false),
@@ -47,11 +53,40 @@ export function WineEnrichmentWorkspace({
     !!progress &&
     (!!progress.proposal ||
       ["awaiting_adoption", "adopted"].includes(progress.state));
+  const input = snapshot.workingInput;
+  const expectedRevision = input?.revision ?? snapshot.inputRevision ?? 0;
+  const expectedBase =
+    input?.baseVersionId ?? snapshot.activeVersion?.id ?? null;
+  const context = JSON.stringify([
+    listingId,
+    runId,
+    expectedRevision,
+    expectedBase,
+    snapshot.activeVersion?.id,
+    canReadProposal,
+  ]);
+  const currentContext = useRef(context);
+  currentContext.current = context;
+  const refreshCurrent = useRef(onRefresh);
+  refreshCurrent.current = onRefresh;
+  const activeMutation = useRef(false);
+  const proposal =
+    proposalRecord?.context === context ? proposalRecord.value : null;
+  const proposalMatches =
+    !!proposal &&
+    proposal.runId === runId &&
+    proposal.inputRevision === expectedRevision &&
+    proposal.baseVersionId === expectedBase &&
+    proposal.current.inputRevision === expectedRevision &&
+    proposal.current.activeVersionId === expectedBase;
   const read = useCallback(async () => {
+    if (currentContext.current !== context) return;
     const sequence = ++request.current;
+    setProposalRecord(null);
+    setSelected([]);
+    setReadError(false);
     if (!canReadProposal || !proposalUrl) {
-      setProposal(null);
-      setSelected([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -60,31 +95,32 @@ export function WineEnrichmentWorkspace({
       const response = await fetch(proposalUrl, { cache: "no-store" });
       if (!response.ok) throw Error("read_failed");
       const next = (await response.json()) as WineProposalDiff;
-      if (sequence === request.current) {
-        setProposal(next);
+      if (sequence === request.current && currentContext.current === context) {
+        if (next.runId !== runId) throw Error("proposal_context_changed");
+        setProposalRecord({ context, value: next });
         setSelected([]);
       }
     } catch {
-      if (sequence === request.current) {
+      if (sequence === request.current && currentContext.current === context) {
         setReadError(true);
-        setProposal(null);
+        setProposalRecord(null);
       }
     } finally {
-      if (sequence === request.current) setLoading(false);
+      if (sequence === request.current && currentContext.current === context)
+        setLoading(false);
     }
-  }, [proposalUrl, canReadProposal]);
+  }, [proposalUrl, canReadProposal, context, runId]);
   useEffect(() => {
     void read();
     return () => {
       request.current++;
     };
-  }, [read, snapshot.inputRevision, snapshot.activeVersion?.id]);
+  }, [read, readEpoch]);
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   const blocked = busy || disabled || externalDirty;
   const inFlight = !!progress && ["queued", "running"].includes(progress.state);
-  const input = snapshot.workingInput;
   const baseline = input
     ? workingBaselineForReview(
         input.workingContent,
@@ -95,11 +131,20 @@ export function WineEnrichmentWorkspace({
   const sections =
     baseline?.workingContent.wineOwnership?.sections ?? noSections;
   async function mutate(url: string, body: unknown, method = "POST") {
+    if (
+      currentContext.current !== context ||
+      activeMutation.current ||
+      disabled ||
+      externalDirty
+    )
+      throw Error("operation_context_changed");
+    activeMutation.current = true;
     const serialized = JSON.stringify(body),
       signature = method + url + serialized;
     if (attempt.current?.signature !== signature)
       attempt.current = { signature, key: crypto.randomUUID() };
     setBusy(true);
+    onBusyChange?.(true);
     setError(null);
     try {
       const response = await fetch(url, {
@@ -111,22 +156,30 @@ export function WineEnrichmentWorkspace({
         body: serialized,
       });
       if (!response.ok) {
-        setError(response.status === 409 ? "conflict" : "request");
-        if (response.status === 409) {
-          await onRefresh();
-          await read();
+        if (currentContext.current === context)
+          setError(response.status === 409 ? "conflict" : "request");
+        if (response.status === 409 && currentContext.current === context) {
+          await refreshCurrent.current();
+          setReadEpoch((value) => value + 1);
         }
         throw Error("request_failed");
       }
       // Response versionId can be historical. Only refreshed listing state determines the current version.
-      await onRefresh();
-      await read();
+      if (currentContext.current === context) {
+        await refreshCurrent.current();
+        // The effect reads the current context after React commits refreshed props.
+        // Never call a reader captured before the mutation/refresh.
+        setReadEpoch((value) => value + 1);
+      }
       attempt.current = null;
     } catch (cause) {
-      setError((previous) => previous ?? "request");
+      if (currentContext.current === context)
+        setError((previous) => previous ?? "request");
       throw cause;
     } finally {
+      activeMutation.current = false;
       setBusy(false);
+      onBusyChange?.(false);
     }
   }
   function guard() {
@@ -248,21 +301,27 @@ export function WineEnrichmentWorkspace({
           proposal={proposal}
           selected={selected}
           onSelect={setSelected}
-          disabled={blocked || dirty}
+          disabled={blocked || dirty || loading || !proposalMatches}
           canEdit={snapshot.permissions.canEdit}
-          onAdopt={() =>
+          onAdopt={() => {
+            if (!proposalMatches || loading || blocked || dirty) return;
             act(() =>
-              mutate(`${proposalUrl}/adopt`, {
-                expectedInputRevision: proposal.inputRevision,
-                baseVersionId: proposal.baseVersionId,
-                selectedPaths: selected,
-              }),
-            )
-          }
+              mutate(
+                `/api/listings/${listingId}/wine-enrichment/proposals/${proposal.runId}/adopt`,
+                {
+                  expectedInputRevision: proposal.inputRevision,
+                  baseVersionId: proposal.baseVersionId,
+                  selectedPaths: selected,
+                },
+              ),
+            );
+          }}
         />
       )}
       {input && (
         <WineContentReview
+          key={listingId}
+          draftKey={`wine-section-draft:v1:${listingId}`}
           sections={sections}
           revision={input.revision}
           baseVersionId={input.baseVersionId}

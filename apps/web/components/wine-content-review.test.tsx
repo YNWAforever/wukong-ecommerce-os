@@ -132,3 +132,143 @@ it("retains unsaved paragraph and original revision across locale changes and se
   await act(async () => root.unmount());
   preference.locale = "en";
 });
+
+it("recovers a paragraph after accepted navigation and history remount with original guards until explicit discard", async () => {
+  preference.locale = "en";
+  sessionStorage.clear();
+  const el = document.createElement("div");
+  document.body.append(el);
+  let root = createRoot(el);
+  const save = vi.fn().mockRejectedValue(Error("stale")),
+    key = "wine-listing-history-test",
+    originalBase = "00000000-0000-4000-8000-000000000111";
+  const props = {
+    sections,
+    revision: 2,
+    baseVersionId: originalBase,
+    onSave: save,
+    onRegenerate: vi.fn(),
+    canEdit: true,
+    busy: false,
+    draftKey: key,
+  };
+  await act(async () => root.render(<WineContentReview {...props} />));
+  await act(async () => {
+    const textarea = el.querySelector('textarea[lang="en"]')!;
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(textarea, "History-safe edit");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const link = document.createElement("a");
+  link.href = "/dashboard";
+  el.append(link);
+  const confirm = vi.fn().mockReturnValue(false);
+  vi.stubGlobal("confirm", confirm);
+  const cancelled = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => link.dispatchEvent(cancelled));
+  expect(cancelled.defaultPrevented).toBe(true);
+  confirm.mockReturnValue(true);
+  const accepted = new MouseEvent("click", { bubbles: true, cancelable: true });
+  await act(async () => link.dispatchEvent(accepted));
+  expect(accepted.defaultPrevented).toBe(false);
+  await act(async () => root.unmount());
+  root = createRoot(el);
+  await act(async () =>
+    root.render(
+      <WineContentReview
+        {...props}
+        revision={3}
+        baseVersionId="00000000-0000-4000-8000-000000000112"
+        sections={sections.map((s) => ({ ...s, en: "New server content" }))}
+      />,
+    ),
+  );
+  expect(
+    (el.querySelector('textarea[lang="en"]') as HTMLTextAreaElement).value,
+  ).toBe("History-safe edit");
+  expect(el.textContent).toContain("Recovered unsaved");
+  await act(async () =>
+    (
+      el.querySelector('[data-action="save-sections"]') as HTMLButtonElement
+    ).click(),
+  );
+  expect(save.mock.calls[0]![0]).toMatchObject({
+    expectedInputRevision: 2,
+    baseVersionId: originalBase,
+  });
+  const discard = () =>
+    [...el.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Discard edits"),
+    )!;
+  confirm.mockReturnValue(false);
+  await act(async () => discard().click());
+  expect(sessionStorage.length).toBe(1);
+  confirm.mockReturnValue(true);
+  await act(async () => discard().click());
+  expect(sessionStorage.length).toBe(0);
+  expect(
+    (el.querySelector('textarea[lang="en"]') as HTMLTextAreaElement).value,
+  ).toBe("New server content");
+  await act(async () => root.unmount());
+  el.remove();
+  vi.unstubAllGlobals();
+});
+it("clears local recovery only after successful save and reports unavailable storage", async () => {
+  sessionStorage.clear();
+  const el = document.createElement("div"),
+    root = createRoot(el);
+  const save = vi.fn().mockResolvedValue(undefined),
+    props = {
+      sections,
+      revision: 2,
+      baseVersionId: null,
+      onSave: save,
+      onRegenerate: vi.fn(),
+      canEdit: true,
+      busy: false,
+      draftKey: "wine-listing-save-test",
+    };
+  await act(async () => root.render(<WineContentReview {...props} />));
+  async function edit() {
+    await act(async () => {
+      const textarea = el.querySelector('textarea[lang="en"]')!;
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )!.set!.call(textarea, "Saved edit");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  await edit();
+  expect(sessionStorage.length).toBe(1);
+  await act(async () =>
+    (
+      el.querySelector('[data-action="save-sections"]') as HTMLButtonElement
+    ).click(),
+  );
+  expect(sessionStorage.length).toBe(0);
+  await act(async () => root.unmount());
+  const unavailableRoot = createRoot(el);
+  vi.stubGlobal("sessionStorage", {
+    getItem() {
+      throw Error("blocked");
+    },
+    setItem() {
+      throw Error("blocked");
+    },
+    removeItem() {
+      throw Error("blocked");
+    },
+  });
+  await act(async () =>
+    unavailableRoot.render(<WineContentReview {...props} />),
+  );
+  expect(el.textContent).toContain("Local draft recovery is unavailable");
+  await act(async () => unavailableRoot.unmount());
+  vi.unstubAllGlobals();
+});
