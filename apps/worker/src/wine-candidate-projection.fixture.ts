@@ -38,7 +38,11 @@ async function fixture(
   workingContent?: import("@wukong/core").WorkingListing,
   baseContent?: import("@wukong/core").ReviewableListing,
   lockedUnknownPack = false,
-  existing?: { workspaceId: string; listingId: string },
+  existing?: {
+    workspaceId: string;
+    listingId: string;
+    mode?: "full" | "research";
+  },
 ) {
   const workspaceId = existing?.workspaceId ?? `wine-stage-${randomUUID()}`;
   const run = await db.forWorkspace(workspaceId, async (r) => {
@@ -112,9 +116,9 @@ async function fixture(
         input,
         wineInputDigest: input.inputDigest,
         wineSourceDigest: listingInputDigest(input.sources),
-        wineMode: "full",
+        wineMode: existing?.mode ?? "full",
         profile: { tone: "Clear", claimPolicy: [] },
-        wineBudget: createWineBudgetSnapshot("full"),
+        wineBudget: createWineBudgetSnapshot(existing?.mode ?? "full"),
         wineGo: WINE_EXECUTION_SNAPSHOT,
         wineEnrichment: wineEnrichmentPolicySchema.parse({
           enabled: true,
@@ -168,7 +172,11 @@ export async function ready(
   base?: import("@wukong/core").ReviewableListing,
   sourceAgeDays = 0,
   lockedUnknownPack = false,
-  existing?: { workspaceId: string; listingId: string },
+  existing?: {
+    workspaceId: string;
+    listingId: string;
+    mode?: "full" | "research";
+  },
   reliable = false,
   reviewDuration = 3600000,
 ) {

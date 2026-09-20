@@ -533,12 +533,12 @@ async function assembleDependencies(
           (k) =>
             !same(
               resolved[k],
-              // Only a recursively validated copy version may anchor its own generated title.
+              // The validated supplying copy anchors its title even through later research.
               // Current manual edits still differ from this immutable adopted value.
-              k === "title" && (origin.claimOrigins || original.identityAnchor)
-                ? (origin.claimOrigins
-                    ? origin.row.content
-                    : original.row.content)[k]
+              k === "title" && (from.claimOrigins || original.identityAnchor)
+                ? (from.claimOrigins ? from.row.content : original.row.content)[
+                    k
+                  ]
                 : (original.identityAnchor ?? original.row.content)[k],
             ),
         );

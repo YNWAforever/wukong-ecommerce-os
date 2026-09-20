@@ -87,9 +87,10 @@ async function setup(
   baseContent?: import("@wukong/core").ReviewableListing,
   deep = false,
   workspaceId?: string,
+  note?: string,
 ) {
   const f = await extracted(
-    { mode, profile, workingContent, baseContent, workspaceId },
+    { mode, profile, workingContent, baseContent, workspaceId, note },
     (value) => {
       if (deep) {
         value.identity.abvPercent = null;
@@ -1141,4 +1142,173 @@ it("accepted copy unknown Go response keeps hold and cannot replay or start qual
   expect(
     await admin`select * from search_budget_reservations where pipeline_run_id=${a.run.id}`,
   ).toHaveLength(0);
+});
+
+it("retained validated copy title survives partial research adoption but later manual title invalidates", async () => {
+  const f = await setup(
+    "research",
+    false,
+    undefined,
+    undefined,
+    false,
+    undefined,
+    "Producer: Fixture Estate\nProduct: Reserve Red\nVolume: 750 ml\nPack quantity: 1 bottles\nMarket: HK",
+  );
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    await f.run(stage);
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.workspaces.updateProfile({
+      name: "Synthetic",
+      currency: "HKD",
+      locales: ["en", "zh-Hant"],
+      requiredFields: [],
+      brandBackgroundColor: null,
+      ...profile,
+      wineEnrichment: wineEnrichmentPolicySchema.parse({
+        enabled: true,
+        allowedDomains: [],
+        tavilyCreditCap: 0,
+      }),
+    }),
+  );
+  const input = await requestFor(f),
+    copy = await accept(input, await receipt("copy"));
+  const title = { en: "A bottle with 750 ml", "zh-Hant": "750 ml bottle B" };
+  f.control.mutateCandidate = (v) => {
+    v.content.title = title;
+    v.content.sections[0]!.en = "The bottle contains 750 ml.";
+    v.content.sections[0]!["zh-Hant"] = "750 ml bottle paragraph B";
+    for (const annotation of v.annotations) {
+      const lang = annotation.path.endsWith(".en") ? "en" : "zh-Hant";
+      if (annotation.path.startsWith("title.")) annotation.span = title[lang];
+      if (annotation.path.startsWith("sections.introduction."))
+        annotation.span = v.content.sections[0]![lang];
+    }
+  };
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    expect(
+      await runWineStage(
+        {
+          ...f.job,
+          runId: copy.run.id,
+          inputRevision: copy.run.inputRevision,
+          activeVersionSequence: copy.run.activeVersionSequence,
+          stage,
+        },
+        { store: f.store, ...f.handlers },
+      ),
+    ).toMatchObject({
+      status: stage === "commit_candidate" ? "completed" : "advanced",
+    });
+  await db.forWorkspace(f.workspaceId, (r) =>
+    adoptWineProposal(r, {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      runId: copy.run.id,
+      actorId: "tester",
+      expectedInputRevision: copy.run.inputRevision,
+      baseVersionId: copy.run.baseVersionId!,
+      operationKey: randomUUID(),
+      selectedPaths: [
+        "title.en",
+        "title.zh-Hant",
+        "seo.title.en",
+        "seo.title.zh-Hant",
+        "seo.description.en",
+        "seo.description.zh-Hant",
+        "sections.introduction",
+      ],
+    }),
+  );
+  const research = await webEvidenceReady(
+    emptyWorkingListing(),
+    undefined,
+    undefined,
+    0,
+    false,
+    {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      mode: "research",
+    },
+  );
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.searchBudgetReservations.reserve({
+      pipelineRunId: research.run.id,
+      reservedCredits: 5,
+      workspaceCapCredits: 100,
+      policyVersion: "wine-enrichment@1",
+    }),
+  );
+  expect(await research.store.commitCandidate(research.context)).toMatchObject({
+    outcome: "proposed",
+  });
+  const saved = await db.forWorkspace(f.workspaceId, (r) =>
+    adoptWineProposal(r, {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      runId: research.run.id,
+      actorId: "tester",
+      expectedInputRevision: research.run.inputRevision,
+      baseVersionId: research.run.baseVersionId!,
+      operationKey: randomUUID(),
+      selectedPaths: ["country"],
+    }),
+  );
+  const adopted = await db.forWorkspace(f.workspaceId, (r) =>
+    readAdoptedWineDependencies(r, {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      versionId: saved.versionId,
+      inputRevision: research.run.inputRevision,
+    }),
+  );
+  expect(adopted).toMatchObject({
+    status: "available",
+    refreshRequired: false,
+  });
+  if (adopted.status !== "available") throw Error(adopted.code);
+  expect(adopted.adopted.title).toEqual(title);
+  expect(
+    adopted.supports.every((s) => s.valid && s.originRunId === f.job.runId),
+  ).toBe(true);
+  const nextCopy = await accept(await requestFor(f), await receipt("copy"));
+  const copyRun = await db.forWorkspace(f.workspaceId, (r) =>
+    r.pipelineRuns.getOperation(nextCopy.run.id),
+  );
+  expect(copyRun!.execution.wineCopy).toMatchObject({
+    baseVersionId: saved.versionId,
+  });
+  await db.forWorkspace(f.workspaceId, (r) =>
+    r.listingInputs.save(
+      {
+        listingId: input.listingId,
+        actorId: "tester",
+        expectedInputRevision: research.run.inputRevision,
+        baseVersionId: saved.versionId,
+        operationKey: randomUUID(),
+        requestDigest: randomUUID(),
+        changes: [
+          { field: "title.en", value: "Another product", state: "manual" },
+        ],
+      },
+      {
+        workspaceId: f.workspaceId,
+        actorId: "tester",
+        entityId: input.listingId,
+      },
+      r.audit,
+    ),
+  );
+  await expect(
+    accept(await requestFor(f), await receipt("copy")),
+  ).rejects.toMatchObject({ code: "evidence_refresh_required" });
 });
