@@ -1312,3 +1312,85 @@ it("retained validated copy title survives partial research adoption but later m
     accept(await requestFor(f), await receipt("copy")),
   ).rejects.toMatchObject({ code: "evidence_refresh_required" });
 });
+
+it("title-only validated copy adoption retains supported automatic prose", async () => {
+  const f = await completedBase();
+  const input = await requestFor(f),
+    copy = await accept(input, await receipt("copy"));
+  const before = await db.forWorkspace(f.workspaceId, (r) =>
+    r.listings.getReviewSnapshot(input.listingId),
+  );
+  const title = { en: "A bottle with 750 ml", "zh-Hant": "750 ml bottle B" };
+  f.control.mutateCandidate = (v, request) => {
+    v.content = structuredClone(request.current!);
+    v.content.title = title;
+    const claim = request.claims.find((c) => c.field === "volumeMl")!;
+    v.annotations = (["en", "zh-Hant"] as const).map((lang) => ({
+      path: `title.${lang}`,
+      span: title[lang],
+      claimId: claim.id,
+      value: claim.value,
+      evidenceIds: claim.evidenceIds,
+      premiseClaimIds: claim.premiseClaimIds,
+    }));
+  };
+  for (const stage of [
+    "generation",
+    "quality_check",
+    "commit_candidate",
+  ] as const)
+    expect(
+      await runWineStage(
+        {
+          ...f.job,
+          runId: copy.run.id,
+          inputRevision: copy.run.inputRevision,
+          activeVersionSequence: copy.run.activeVersionSequence,
+          stage,
+        },
+        { store: f.store, ...f.handlers },
+      ),
+    ).toMatchObject({
+      status: stage === "commit_candidate" ? "completed" : "advanced",
+    });
+  const saved = await db.forWorkspace(f.workspaceId, (r) =>
+    adoptWineProposal(r, {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      runId: copy.run.id,
+      actorId: "tester",
+      expectedInputRevision: copy.run.inputRevision,
+      baseVersionId: copy.run.baseVersionId!,
+      operationKey: randomUUID(),
+      selectedPaths: ["title.en", "title.zh-Hant"],
+    }),
+  );
+  const adopted = await db.forWorkspace(f.workspaceId, (r) =>
+    readAdoptedWineDependencies(r, {
+      workspaceId: f.workspaceId,
+      listingId: input.listingId,
+      versionId: saved.versionId,
+      inputRevision: copy.run.inputRevision,
+    }),
+  );
+  expect(adopted).toMatchObject({
+    status: "available",
+    refreshRequired: false,
+  });
+  if (adopted.status !== "available") throw Error(adopted.code);
+  expect(adopted.adopted.title).toEqual(title);
+  expect(adopted.adopted.sections).toEqual(
+    before!.activeVersion!.content.wineOwnership!.sections,
+  );
+  expect(
+    adopted.supports.some(
+      (s) =>
+        s.path === "sections.introduction.en" &&
+        s.valid &&
+        s.originRunId === f.job.runId,
+    ),
+  ).toBe(true);
+  await expect(
+    accept(await requestFor(f), await receipt("copy")),
+  ).resolves.toHaveProperty("run.id");
+});

@@ -527,18 +527,21 @@ async function assembleDependencies(
       origins.set(original.row.versionId, original);
       participating.add(original.row.versionId);
       const sources = dependencySources(original, claim);
+      // Current validated copy can retitle retained prose; later research can inherit
+      // a supplying validated copy's title. Neither grants factual-coordinate authority.
+      const titleAnchor = origin.claimOrigins
+        ? origin.row.content.title
+        : from.claimOrigins
+          ? from.row.content.title
+          : original.row.content.title;
       const identityChanged =
         claim.scope === "product" &&
         identityFields.some(
           (k) =>
             !same(
               resolved[k],
-              // The validated supplying copy anchors its title even through later research.
-              // Current manual edits still differ from this immutable adopted value.
-              k === "title" && (from.claimOrigins || original.identityAnchor)
-                ? (from.claimOrigins ? from.row.content : original.row.content)[
-                    k
-                  ]
+              k === "title"
+                ? titleAnchor
                 : (original.identityAnchor ?? original.row.content)[k],
             ),
         );
