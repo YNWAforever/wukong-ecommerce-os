@@ -1,3 +1,7 @@
+import {
+  wineAdoptionProofSchema,
+  type WineAdoptionProof,
+} from "../wine-proposal.js";
 import { createAiBudgetReservationRepository } from "./ai-budget-reservations.js";
 import { createSearchBudgetReservationRepository } from "./search-budget-reservations.js";
 import {
@@ -95,6 +99,8 @@ export type SearchCallRecord = SearchCall & {
   updatedAt: string;
 };
 export type WineVersionOrigin = {
+  adoption?: WineAdoptionProof;
+  createdBy: string;
   versionId: string;
   workspaceId: string;
   listingId: string;
@@ -108,6 +114,10 @@ export type WineEnrichmentRepository = {
   readUsage(
     runId: string,
   ): Promise<{ goEstimatedUsd: string | null; tavilyCredits: number | null }>;
+  readAdoptionByOperationKey(
+    listingId: string,
+    operationKey: string,
+  ): Promise<WineVersionOrigin | null>;
   readVersionOrigin(
     listingId: string,
     versionId: string,
@@ -156,6 +166,7 @@ export type WineEnrichmentRepository = {
     listingId: string;
     versionId: string;
     content: WineContent;
+    adoption?: WineAdoptionProof;
   }): Promise<void>;
   readSections(runId: string, versionId: string): Promise<WineContent | null>;
 };
@@ -422,7 +433,13 @@ export function createWineEnrichmentRepository(
           listing_id: input.listingId,
           version_id: input.versionId,
         },
-        { schemaVersion: 1, content: wineContentSchema.parse(input.content) },
+        {
+          schemaVersion: 1,
+          content: wineContentSchema.parse(input.content),
+          ...(input.adoption
+            ? { adoption: wineAdoptionProofSchema.parse(input.adoption) }
+            : {}),
+        },
       );
     },
     async readUsage(runId) {
@@ -438,10 +455,19 @@ export function createWineEnrichmentRepository(
           rows[0]?.credits == null ? null : Number(rows[0].credits),
       };
     },
+    async readAdoptionByOperationKey(listingId, operationKey) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select distinct v.id from listing_versions v left join wine_section_snapshots s on s.workspace_id=v.workspace_id and s.listing_id=v.listing_id and s.version_id=v.id where v.workspace_id=${workspaceId} and v.listing_id=${listingId}::uuid and (v.pipeline_idempotency_key=${operationKey} or s.payload->'adoption'->>'operationKey'=${operationKey})`,
+      );
+      if (rows.length > 1) throw Error("idempotency_conflict");
+      if (!rows[0]) return null;
+      return this.readVersionOrigin(listingId, String(rows[0].id));
+    },
     async readVersionOrigin(listingId, versionId) {
       scope.assertOpen();
       const rows = await tx.execute(
-        sql`select v.id,v.sequence,v.pipeline_idempotency_key,v.content,s.run_id,s.payload from listing_versions v left join wine_section_snapshots s on s.workspace_id=v.workspace_id and s.listing_id=v.listing_id and s.version_id=v.id where v.workspace_id=${workspaceId} and v.listing_id=${listingId}::uuid and v.id=${versionId}::uuid`,
+        sql`select v.id,v.sequence,v.pipeline_idempotency_key,v.content,v.created_by,s.run_id,s.payload from listing_versions v left join wine_section_snapshots s on s.workspace_id=v.workspace_id and s.listing_id=v.listing_id and s.version_id=v.id where v.workspace_id=${workspaceId} and v.listing_id=${listingId}::uuid and v.id=${versionId}::uuid`,
       );
       if (!rows.length) return null;
       if (rows.length !== 1) throw Error("ambiguous_wine_origin");
@@ -453,6 +479,7 @@ export function createWineEnrichmentRepository(
               .object({
                 schemaVersion: z.literal(1),
                 content: wineContentSchema,
+                adoption: wineAdoptionProofSchema.optional(),
               })
               .strict()
               .parse(row.payload);
@@ -460,6 +487,8 @@ export function createWineEnrichmentRepository(
         workspaceId,
         listingId,
         versionId: String(row.id),
+        createdBy: String(row.created_by),
+        ...(payload?.adoption ? { adoption: payload.adoption } : {}),
         sequence: Number(row.sequence),
         pipelineIdempotencyKey:
           row.pipeline_idempotency_key === null

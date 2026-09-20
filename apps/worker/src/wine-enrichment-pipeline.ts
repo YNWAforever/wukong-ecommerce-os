@@ -39,7 +39,7 @@ export type WineDeliveryResult =
   | {
       status: "completed";
       versionId: string | null;
-      outcome: "complete" | "needs_info";
+      outcome: "complete" | "needs_info" | "proposed";
     }
   | { status: "blocked" | "stopped"; code: string };
 export type WineClaim =

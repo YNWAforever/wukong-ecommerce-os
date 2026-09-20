@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createRequire } from "node:module";
-import { readAdoptedWineDependencies, listingInputDigest } from "@wukong/db";
+import {
+  adoptWineProposal,
+  readAdoptedWineDependencies,
+  listingInputDigest,
+} from "@wukong/db";
 import { wineEnrichmentPolicySchema, emptyWorkingListing } from "@wukong/core";
 import type {
   WineGenerationRequest,
@@ -919,6 +923,10 @@ it.each(["copy", "section"] as const)(
     const base = {
       ...emptyWorkingListing(),
       packQuantity: 1,
+      volumeMl: 750,
+      producer: "Fixture Estate",
+      vintage: 2020,
+      abvPercent: 13,
       priceHkd: 400,
       stockQuantity: 12,
       sku: "MERCHANT-SKU",
@@ -947,6 +955,30 @@ it.each(["copy", "section"] as const)(
       expect(await f.run(stage)).toMatchObject({
         status: stage === "commit_candidate" ? "completed" : "advanced",
       });
+    await db.forWorkspace(f.workspaceId, async (r) => {
+      const run = (await r.pipelineRuns.getOperation(f.job.runId))!;
+      await adoptWineProposal(r, {
+        workspaceId: f.workspaceId,
+        listingId: run.listingId,
+        runId: run.id,
+        actorId: "tester",
+        expectedInputRevision: run.inputRevision,
+        baseVersionId: run.baseVersionId!,
+        operationKey: randomUUID(),
+        selectedPaths:
+          mode === "copy"
+            ? [
+                "sections.introduction",
+                "title.en",
+                "title.zh-Hant",
+                "seo.title.en",
+                "seo.title.zh-Hant",
+                "seo.description.en",
+                "seo.description.zh-Hant",
+              ]
+            : ["sections.introduction"],
+      });
+    });
     await db.forWorkspace(f.workspaceId, async (r) => {
       await r.workspaces.updateProfile({
         name: "Synthetic",
@@ -1001,6 +1033,18 @@ it.each(["copy", "section"] as const)(
       ).toMatchObject({
         status: stage === "commit_candidate" ? "completed" : "advanced",
       });
+    await db.forWorkspace(f.workspaceId, (r) =>
+      adoptWineProposal(r, {
+        workspaceId: f.workspaceId,
+        listingId: input.listingId,
+        runId: a.run.id,
+        actorId: "tester",
+        expectedInputRevision: a.run.inputRevision,
+        baseVersionId: a.run.baseVersionId!,
+        operationKey: randomUUID(),
+        selectedPaths: ["sections.introduction"],
+      }),
+    );
     const after = await db.forWorkspace(f.workspaceId, (r) =>
       r.listings.getReviewSnapshot(input.listingId),
     );

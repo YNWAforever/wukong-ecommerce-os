@@ -25,9 +25,17 @@ export type WineProgress = {
     | "running"
     | "needs_info"
     | "in_review"
+    | "awaiting_adoption"
     | "failed"
     | "superseded"
     | "cancelled";
+  /** Persisted inspection reference only; never adoption authorization. */
+  proposal: {
+    runId: string;
+    inputRevision: number;
+    baseVersionId: string;
+    contentDigest: string;
+  } | null;
   completedStages: WineStage[];
   candidates: {
     id: string;
@@ -162,6 +170,7 @@ export async function readWineProgress(
     stage: null,
     state:
       run.executionState === "succeeded" ? "needs_info" : run.executionState,
+    proposal: null,
     completedStages: [],
     candidates: [],
     identity: null,
@@ -201,7 +210,13 @@ export async function readWineProgress(
       row.state === "succeeded" &&
       wrapper?.schemaVersion === 1 &&
       wrapper.fresh === true &&
-      result?.state === "succeeded";
+      result?.state === "succeeded" &&
+      !(
+        result.stage === "commit_candidate" &&
+        result.outcome === "proposed" &&
+        (result.proposal.inputRevision !== run.inputRevision ||
+          result.proposal.baseVersionId !== run.baseVersionId)
+      );
     const previous = prefix.find((x) => x.stage === "verification");
     const verification = previous
       ? parsed((previous.output as { result: unknown }).result, "verification")
@@ -273,11 +288,23 @@ export async function readWineProgress(
             confirmationAvailable: false,
           });
       }
-    if (result.stage === "commit_candidate")
-      complete = result.outcome === "complete";
+    if (result.stage === "commit_candidate") {
+      complete = result.outcome === "complete" || result.outcome === "proposed";
+      if (result.outcome === "proposed")
+        progress.proposal = {
+          runId: run.id,
+          inputRevision: result.proposal.inputRevision,
+          baseVersionId: result.proposal.baseVersionId,
+          contentDigest: result.proposal.contentDigest,
+        };
+    }
   }
   if (run.executionState === "succeeded")
-    progress.state = complete ? "in_review" : "needs_info";
+    progress.state = progress.proposal
+      ? "awaiting_adoption"
+      : complete
+        ? "in_review"
+        : "needs_info";
   progress.enrichment =
     complete && !partial
       ? "complete"

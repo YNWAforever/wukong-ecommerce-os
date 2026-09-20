@@ -210,3 +210,10 @@ export * from "./wine-generation-request.js";
 export * from "./wine-copy-dependencies.js";
 
 export * from "./wine-identity-selection.js";
+
+export { projectWineContent } from "./wine-proposal.js";
+
+export {
+  adoptWineProposal,
+  type AdoptWineProposalInput,
+} from "./wine-proposal-adoption.js";

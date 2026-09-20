@@ -1,4 +1,4 @@
-import { listingInputDigest } from "@wukong/db";
+import { listingInputDigest, projectWineContent } from "@wukong/db";
 import {
   renderWineDescription,
   workingListingSchema,
@@ -49,57 +49,15 @@ export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
   const review = c.run.baseVersionId
     ? await r.listings.getReviewSnapshot(c.run.listingId)
     : null;
-  const baseline = workingBaselineForReview(
-    workingListingSchema.parse(input.workingContent),
-    input.fieldStates,
+  const parsed = projectWineContent(
+    input,
     review?.activeVersion?.content,
+    c.run,
+    g,
+    claims,
+    identity,
+    ownership,
   );
-  const proposed = {
-    ...baseline.workingContent,
-    ...g.content,
-    description: {
-      en: renderWineDescription(g.content, "en"),
-      "zh-Hant": renderWineDescription(g.content, "zh-Hant"),
-    },
-    wineOwnership: { schemaVersion: 1 as const, sections: g.content.sections },
-  };
-  for (const claim of ["full", "research"].includes(
-    String(c.run.execution.wineMode),
-  )
-    ? claims
-    : []) {
-    if (
-      claim.kind !== "fact" ||
-      claim.scope !== "product" ||
-      ["sku", "priceHkd", "stockQuantity"].includes(claim.field)
-    )
-      continue;
-    const schema =
-      listingFactsSchema.shape[
-        claim.field as keyof typeof listingFactsSchema.shape
-      ];
-    const value = schema?.safeParse(claim.value);
-    if (value?.success) Object.assign(proposed, { [claim.field]: value.data });
-  }
-  // No commercial facts can originate in the generation contract. Merge also preserves every operator field.
-  const merged = mergeWorkingCandidate(
-    baseline.workingContent,
-    baseline.fieldStates,
-    proposed,
-  );
-  if (ownership.prior.kind === "legacy") {
-    merged.description = structuredClone(ownership.prior.description);
-    delete merged.wineOwnership;
-  }
-  const protectedPack =
-    baseline.fieldStates.packQuantity?.owner === "operator" ||
-    baseline.fieldStates.packQuantity?.locked;
-  const parsed = reviewableListingSchema.safeParse({
-    ...merged,
-    packQuantity: protectedPack
-      ? merged.packQuantity
-      : (merged.packQuantity ?? identity.packQuantity),
-  });
   const audit = {
     workspaceId: c.job.workspaceId,
     actorId: "wine-worker",
@@ -123,6 +81,26 @@ export const projectWineCandidate: WineCandidateProjection = async (r, c) => {
       state: "succeeded",
       versionId: null,
       outcome: "needs_info",
+    };
+  }
+  if (c.run.baseVersionId && !needsInfo && parsed.success) {
+    requireProjection(
+      Date.parse(await r.pipelineRuns.acceptanceTimestamp()) < deadline,
+      "projection_deadline",
+    );
+    return {
+      schemaVersion: 1,
+      stage: "commit_candidate",
+      state: "succeeded",
+      versionId: null,
+      outcome: "proposed",
+      proposal: {
+        schemaVersion: 1,
+        inputRevision: c.run.inputRevision,
+        baseVersionId: c.run.baseVersionId,
+        content: parsed.data,
+        contentDigest: listingInputDigest(parsed.data),
+      },
     };
   }
   if (!existingReview)

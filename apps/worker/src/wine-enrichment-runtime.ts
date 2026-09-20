@@ -557,6 +557,12 @@ export function createWineStageStore(
           (needsInfo && result.outcome !== "needs_info")
         )
           throw Error("projection violates required review outcome");
+        if (
+          result.outcome === "proposed" &&
+          (result.proposal.inputRevision !== run.inputRevision ||
+            result.proposal.baseVersionId !== run.baseVersionId)
+        )
+          throw Error("projection proposal binding mismatch");
         return complete(r, context, result, true);
       });
     },

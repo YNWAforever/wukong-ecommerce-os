@@ -1,5 +1,6 @@
+import { listingInputDigest } from "@wukong/db";
 import { expect, it } from "vitest";
-import { wineIdentity } from "@wukong/core";
+import { wineIdentity, emptyWorkingListing } from "@wukong/core";
 import { parseWineStageResult } from "./wine-enrichment-pipeline.js";
 const extraction = {
   schemaVersion: 1,
@@ -274,4 +275,54 @@ it("frozen verification parsing copies exact context and rejects added trusted f
       "verification",
     ),
   ).toThrow();
+});
+
+function proposedResult() {
+  const content = {
+    ...emptyWorkingListing(),
+    packQuantity: 1,
+    title: { en: "Title", "zh-Hant": "標題" },
+    description: { en: "Description", "zh-Hant": "描述" },
+    seo: {
+      title: { en: "SEO", "zh-Hant": "搜尋" },
+      description: { en: "SEO description", "zh-Hant": "搜尋描述" },
+    },
+  };
+  return {
+    schemaVersion: 1,
+    stage: "commit_candidate",
+    state: "succeeded",
+    versionId: null,
+    outcome: "proposed",
+    proposal: {
+      schemaVersion: 1,
+      inputRevision: 2,
+      baseVersionId: "11111111-1111-4111-8111-111111111111",
+      content,
+      contentDigest: listingInputDigest(content),
+    },
+  };
+}
+it("accepts an immutable proposed artifact with a canonical content digest", () => {
+  const value = proposedResult();
+  expect(parseWineStageResult(value, "commit_candidate")).toEqual(value);
+});
+it.each([
+  "digest",
+  "base",
+  "revision",
+  "unknown",
+  "version",
+  "content",
+  "wrong-outcome",
+])("rejects invalid proposed artifact %s", (kind) => {
+  const value: any = proposedResult();
+  if (kind === "digest") value.proposal.contentDigest = "0".repeat(64);
+  if (kind === "base") value.proposal.baseVersionId = null;
+  if (kind === "revision") value.proposal.inputRevision = 0;
+  if (kind === "unknown") value.proposal.claims = [];
+  if (kind === "version") value.versionId = value.proposal.baseVersionId;
+  if (kind === "content") value.proposal.content.title.en = "changed";
+  if (kind === "wrong-outcome") value.outcome = "needs_info";
+  expect(() => parseWineStageResult(value, "commit_candidate")).toThrow();
 });

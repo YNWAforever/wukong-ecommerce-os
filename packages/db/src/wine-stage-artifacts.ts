@@ -1,4 +1,6 @@
 import {
+  reviewableListingSchema,
+  type ReviewableListing,
   productIdentitySchema,
   evidenceSourceSchema,
   supportedClaimSchema,
@@ -104,6 +106,20 @@ export type WineStageResult =
       "commit_candidate",
       { versionId: string | null; outcome: "complete" | "needs_info" }
     >
+  | Success<
+      "commit_candidate",
+      {
+        versionId: null;
+        outcome: "proposed";
+        proposal: {
+          schemaVersion: 1;
+          inputRevision: number;
+          baseVersionId: string;
+          content: ReviewableListing;
+          contentDigest: string;
+        };
+      }
+    >
   | {
       schemaVersion: 1;
       state: "blocked" | "unknown";
@@ -195,6 +211,31 @@ export function parseWineStageResult(
     productIdentitySchema.parse(r.originalIdentity);
     keys.extraction.push("originalIdentity");
   }
+  if (stage === "commit_candidate" && r.outcome === "proposed") {
+    const proposal = r.proposal;
+    if (!proposal || typeof proposal !== "object" || Array.isArray(proposal))
+      throw Error("invalid proposal");
+    const p = proposal as Record<string, unknown>;
+    strictKeys(p, [
+      "schemaVersion",
+      "inputRevision",
+      "baseVersionId",
+      "content",
+      "contentDigest",
+    ]);
+    const content = reviewableListingSchema.parse(p.content);
+    if (
+      p.schemaVersion !== 1 ||
+      !Number.isSafeInteger(p.inputRevision) ||
+      Number(p.inputRevision) < 1 ||
+      !wineListingJobSchema.shape.runId.safeParse(p.baseVersionId).success ||
+      r.versionId !== null ||
+      p.contentDigest !== listingInputDigest(content) ||
+      listingInputDigest(p.content) !== listingInputDigest(content)
+    )
+      throw Error("invalid proposal binding");
+    keys.commit_candidate.push("proposal");
+  }
   strictKeys(r, [...base, ...keys[stage]]);
   if (
     stage === "extraction" &&
@@ -235,7 +276,7 @@ export function parseWineStageResult(
     throw Error("invalid quality result");
   if (
     stage === "commit_candidate" &&
-    (!["complete", "needs_info"].includes(String(r.outcome)) ||
+    (!["complete", "needs_info", "proposed"].includes(String(r.outcome)) ||
       (r.versionId !== null &&
         (typeof r.versionId !== "string" ||
           !wineListingJobSchema.shape.runId.safeParse(r.versionId).success)) ||

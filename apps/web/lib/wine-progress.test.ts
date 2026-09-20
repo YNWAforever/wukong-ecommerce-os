@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { wineIdentity, webEvidence } from "@wukong/core";
-import { wineStageDependencyDigest } from "@wukong/db";
+import { wineIdentity, webEvidence, emptyWorkingListing } from "@wukong/core";
+import { wineStageDependencyDigest, listingInputDigest } from "@wukong/db";
 import { readWineProgress } from "./wine-progress";
 function fixture(state = "succeeded") {
   const run: any = {
@@ -338,4 +338,58 @@ it("redacts truncated authentication at retained excerpt boundary without removi
   expect(p?.evidence[0]?.excerpt.length).toBeLessThanOrEqual(16000);
   expect(p?.evidence[0]?.truncated).toBe(true);
   expect(JSON.stringify(p)).not.toContain("synthetic-truncated");
+});
+
+it("reports complete computation awaiting adoption only for a bound fresh proposal", async () => {
+  const f = fixture();
+  f.run.execution.wineMode = "copy";
+  f.run.baseVersionId = "11111111-1111-4111-8111-111111111111";
+  const content = {
+    ...emptyWorkingListing(),
+    packQuantity: 1,
+    title: { en: "Title", "zh-Hant": "標題" },
+    description: { en: "Description", "zh-Hant": "描述" },
+    seo: {
+      title: { en: "SEO", "zh-Hant": "搜尋" },
+      description: { en: "SEO description", "zh-Hant": "搜尋描述" },
+    },
+  };
+  const generated = {
+    title: content.title,
+    seo: content.seo,
+    tags: content.tags,
+    sections: [],
+  };
+  f.append("generation", { content: generated, issues: [] });
+  f.append("quality_check", {
+    contentDigest: listingInputDigest(generated),
+    outcome: "ready",
+    issues: [],
+  });
+  const row = f.append("commit_candidate", {
+    versionId: null,
+    outcome: "proposed",
+    proposal: {
+      schemaVersion: 1,
+      inputRevision: 2,
+      baseVersionId: f.run.baseVersionId,
+      content,
+      contentDigest: listingInputDigest(content),
+    },
+  });
+  expect(await readWineProgress(f.repos, f.run)).toMatchObject({
+    state: "awaiting_adoption",
+    enrichment: "complete",
+    proposal: {
+      runId: f.run.id,
+      inputRevision: 2,
+      baseVersionId: f.run.baseVersionId,
+      contentDigest: listingInputDigest(content),
+    },
+  });
+  row.output.result.proposal.inputRevision = 3;
+  expect((await readWineProgress(f.repos, f.run))?.state).toBe("needs_info");
+  row.output.result.proposal.inputRevision = 2;
+  row.output.fresh = false;
+  expect((await readWineProgress(f.repos, f.run))?.state).toBe("needs_info");
 });

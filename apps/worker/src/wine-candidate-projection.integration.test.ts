@@ -23,6 +23,24 @@ import type { WineStageContext } from "./wine-enrichment-pipeline.js";
 import type { WineContent } from "@wukong/core";
 
 import { db, admin, ready } from "./wine-candidate-projection.fixture.js";
+async function explicitlyAdopt(
+  f: Awaited<ReturnType<typeof ready>>,
+  selectedPaths = ["country"],
+) {
+  return db.forWorkspace(f.job.workspaceId, (r) =>
+    adoptedDb.adoptWineProposal(r, {
+      workspaceId: f.job.workspaceId,
+      listingId: f.run.listingId,
+      runId: f.run.id,
+      actorId: "test",
+      expectedInputRevision: f.run.inputRevision,
+      baseVersionId: f.run.baseVersionId!,
+      operationKey: randomUUID(),
+      selectedPaths,
+    }),
+  );
+}
+
 it("projects a frozen candidate into the actual version and immutable section snapshot", async () => {
   const f = await ready();
   const result = await f.store.commitCandidate(f.context);
@@ -298,6 +316,7 @@ it.each(["operator", "locked"])(
     expect(await f.store.commitCandidate(f.context)).toMatchObject({
       status: "completed",
     });
+    await explicitlyAdopt(f);
     const review = await db.forWorkspace(f.job.workspaceId, (r) =>
       r.listings.getReviewSnapshot(f.run.listingId),
     );
@@ -447,19 +466,63 @@ it.each(["in_review", "reopened"])(
     ).toBe(1);
   },
 );
-it("projection moves a ready reopened base to review with a new version", async () => {
-  const f = await ready(emptyWorkingListing(), retainBase, reviewBase());
-  await admin`update listing_drafts set status='reopened' where workspace_id=${f.job.workspaceId} and id=${f.run.listingId}`;
-  const done = await f.store.commitCandidate(f.context);
-  expect(done).toMatchObject({ status: "completed", outcome: "complete" });
-  expect(
-    await db.forWorkspace(f.job.workspaceId, (r) =>
-      r.listings.getById(f.run.listingId),
-    ),
-  ).toMatchObject({ status: "in_review" });
-  if (done.status === "completed")
-    expect(done.versionId).not.toBe(f.run.baseVersionId);
-});
+it.each(["in_review", "reopened"])(
+  "ready %s base remains unchanged while immutable proposal computation completes",
+  async (status) => {
+    const f = await ready(emptyWorkingListing(), retainBase, reviewBase());
+    if (status === "reopened")
+      await admin`update listing_drafts set status='reopened' where workspace_id=${f.job.workspaceId} and id=${f.run.listingId}`;
+    const before = await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.listingInputs.getCurrent(f.run.listingId),
+    );
+    const done = await f.store.commitCandidate(f.context);
+    expect(done).toEqual({
+      status: "completed",
+      outcome: "proposed",
+      versionId: null,
+    });
+    await db.forWorkspace(f.job.workspaceId, async (r) => {
+      expect(await r.listings.getById(f.run.listingId)).toMatchObject({
+        status,
+        activeVersionId: f.run.baseVersionId,
+      });
+      expect(await r.listingInputs.getCurrent(f.run.listingId)).toEqual(before);
+      const stage = await r.wineEnrichment.readStage(
+        f.run.id,
+        "commit_candidate",
+      );
+      const result = (stage!.output as any).result;
+      expect(result).toMatchObject({
+        outcome: "proposed",
+        versionId: null,
+        proposal: {
+          inputRevision: f.run.inputRevision,
+          baseVersionId: f.run.baseVersionId,
+        },
+      });
+      expect(result.proposal.contentDigest).toBe(
+        listingInputDigest(result.proposal.content),
+      );
+      expect(
+        (await r.pipelineRuns.getOperation(f.run.id))?.executionState,
+      ).toBe("succeeded");
+    });
+    expect(
+      (
+        await admin`select count(*)::int n from listing_versions where workspace_id=${f.job.workspaceId}`
+      )[0].n,
+    ).toBe(1);
+    expect(
+      (
+        await admin`select count(*)::int n from wine_section_snapshots where workspace_id=${f.job.workspaceId}`
+      )[0].n,
+    ).toBe(0);
+    expect(await f.store.commitCandidate(f.context)).toEqual({
+      status: "stopped",
+      code: "operation_terminal",
+    });
+  },
+);
 it("runtime rejects expired web evidence before generation without renewing capture age", async () => {
   await expect(
     ready(emptyWorkingListing(), (r) => r, undefined, 8),
@@ -720,9 +783,11 @@ it("adopted inherited sections retain their original version, claims and capture
       listingId: first.coordinates.listingId,
     },
   );
-  const done = await next.store.commitCandidate(next.context);
-  if (done.status !== "completed" || !done.versionId)
-    throw Error("no second version");
+  expect(await next.store.commitCandidate(next.context)).toMatchObject({
+    outcome: "proposed",
+    versionId: null,
+  });
+  const done = await explicitlyAdopt(next);
   const result = await db.forWorkspace(first.coordinates.workspaceId, (r) =>
     adoptedDb.readAdoptedWineDependencies(r, {
       ...first.coordinates,
@@ -898,8 +963,11 @@ it("adopted reports unavailable inherited support while retaining protected text
       listingId: first.coordinates.listingId,
     },
   );
-  const done = await next.store.commitCandidate(next.context);
-  if (done.status !== "completed" || !done.versionId) throw Error("no version");
+  expect(await next.store.commitCandidate(next.context)).toMatchObject({
+    outcome: "proposed",
+    versionId: null,
+  });
+  const done = await explicitlyAdopt(next);
   const result = await db.forWorkspace(first.coordinates.workspaceId, (r) =>
     adoptedDb.readAdoptedWineDependencies(
       {
@@ -1426,3 +1494,45 @@ it.each([false, true])(
     expect(expired.status).toBe("unavailable");
   },
 );
+
+it("explicit selected adoption appends a version with immutable proposal proof and exact replay", async () => {
+  const f = await ready(emptyWorkingListing(), retainBase, reviewBase());
+  expect(await f.store.commitCandidate(f.context)).toMatchObject({
+    outcome: "proposed",
+    versionId: null,
+  });
+  const before = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.wineEnrichment.readStage(f.run.id, "commit_candidate"),
+  );
+  const request = {
+    workspaceId: f.job.workspaceId,
+    listingId: f.run.listingId,
+    runId: f.run.id,
+    actorId: "test",
+    expectedInputRevision: f.run.inputRevision,
+    baseVersionId: f.run.baseVersionId!,
+    operationKey: randomUUID(),
+    selectedPaths: ["country"],
+  };
+  const result = await db.forWorkspace(f.job.workspaceId, (r) =>
+    adoptedDb.adoptWineProposal(r, request),
+  );
+  expect(result.versionId).not.toBe(f.run.baseVersionId);
+  expect(
+    await db.forWorkspace(f.job.workspaceId, (r) =>
+      r.wineEnrichment.readStage(f.run.id, "commit_candidate"),
+    ),
+  ).toEqual(before);
+  expect(
+    await db.forWorkspace(f.job.workspaceId, (r) =>
+      adoptedDb.adoptWineProposal(r, request),
+    ),
+  ).toEqual(result);
+  const row = await db.forWorkspace(f.job.workspaceId, (r) =>
+    r.wineEnrichment.readVersionOrigin(f.run.listingId, result.versionId),
+  );
+  expect(row).toMatchObject({
+    pipelineIdempotencyKey: null,
+    adoption: { selectedPaths: ["country"], proposalRunId: f.run.id },
+  });
+});

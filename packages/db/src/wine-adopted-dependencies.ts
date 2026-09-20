@@ -1,8 +1,16 @@
 import {
+  projectWineContent,
+  selectWineProposal,
+  selectedWinePath,
+  wineSectionContent,
+  wineAdoptionRequestDigest,
+} from "./wine-proposal.js";
+import {
   authorizeWineVerifiedEvidence,
   WineEvidenceAuthorizationError,
 } from "./wine-verified-evidence.js";
 import {
+  type ReviewableListing,
   wineCopySnapshotSchema,
   renderWineDescription,
   wineBudgetSnapshotSchema,
@@ -212,6 +220,7 @@ function inputMatches(
   }
 }
 type ValidOrigin = {
+  identityAnchor?: ReviewableListing;
   row: WineVersionOrigin;
   run: ListingOperation;
   input: ListingInputSnapshot;
@@ -223,12 +232,10 @@ type ValidOrigin = {
   outcome: "complete" | "needs_info";
 };
 async function validateOrigin(
-  r: WorkspaceRepositories,
-  c: AdoptedWineCoordinates,
+  graph: WineOriginGraph,
   versionId: string,
-  now: string,
-  visit: (id: string) => Promise<ValidOrigin>,
 ): Promise<ValidOrigin> {
+  const { r, scope: c } = graph;
   const row = await r.wineEnrichment.readVersionOrigin(c.listingId, versionId);
   requireAdopted(
     row?.runId && row.sections && row.workspaceId === c.workspaceId,
@@ -236,150 +243,112 @@ async function validateOrigin(
   );
   const run = await r.pipelineRuns.getOperation(row.runId);
   requireAdopted(
-    run &&
-      run.listingId === c.listingId &&
-      run.executionState === "succeeded" &&
-      row.pipelineIdempotencyKey === run.idempotencyKey,
+    run && run.listingId === c.listingId && run.executionState === "succeeded",
     "adopted_origin_invalid",
   );
-  const input = await r.listingInputs.getRevision(
-    c.listingId,
-    run.inputRevision,
-  );
-  requireAdopted(input, "adopted_input_invalid");
-  inputMatches(input, run, c.workspaceId);
-  const e = run.execution,
-    b = wineBudgetSnapshotSchema.parse(e.wineBudget),
-    p = wineEnrichmentPolicySchema.parse(e.wineEnrichment),
-    g = wineExecutionSnapshotSchema.parse(e.wineGo),
-    a = wineAcquisitionPolicySchema.parse(e.wineAcquisition);
-  const accepted = Date.parse(run.acceptedAt),
-    deadline = Date.parse(a.deadlineAt),
-    time = Date.parse(now);
+  if (row.adoption) return validateProposalOrigin(graph, row, run);
   requireAdopted(
-    e.schemaVersion === 1 &&
-      e.flowVersion === "wine-enrichment-v1" &&
-      ["full", "research", "copy", "section"].includes(String(e.wineMode)) &&
-      e.wineMode === b.mode &&
-      p.enabled &&
-      g.rulesVersion === p.rulesVersion &&
-      a.rulesVersion === p.rulesVersion &&
-      a.policyVersion === p.policyVersion &&
-      (!["full", "research"].includes(String(e.wineMode)) ||
-        a.allowedDomains.length > 0) &&
-      same([...a.allowedDomains].sort(), [...p.allowedDomains].sort()) &&
-      deadline > accepted &&
-      deadline - accepted <= 900000 &&
-      time >= accepted,
-    "adopted_policy_invalid",
+    row.pipelineIdempotencyKey === run.idempotencyKey,
+    "adopted_origin_invalid",
   );
-  if (e.wineMode === "copy" || e.wineMode === "section")
-    return validateCopyOrigin(r, c, row, run, input, now, visit);
-  const stages = await chain(r, run),
-    v = stages.get("verification_deep") ?? stages.get("verification"),
-    gen = stages.get("generation"),
-    q = stages.get("quality_check"),
-    commit = stages.get("commit_candidate");
+  const source = await authorizeTerminalSource(graph, run);
+  const {
+    input,
+    commit,
+    candidate,
+    claims,
+    frozen,
+    ownership: own,
+    base,
+  } = source;
+  // This old complete lineage NEVER authorizes a proposed result or adoption proof.
   requireAdopted(
-    v &&
-      (v.stage === "verification" || v.stage === "verification_deep") &&
-      v.frozenVerification &&
-      gen?.stage === "generation" &&
-      gen.frozenQuality &&
-      q?.stage === "quality_check" &&
-      commit?.stage === "commit_candidate" &&
-      commit.versionId === versionId,
+    commit.outcome !== "proposed" && commit.versionId === versionId,
     "adopted_artifact_missing",
   );
-  requireAdopted(
-    q.contentDigest === listingInputDigest(gen.content) &&
-      (q.outcome !== "needs_info" || commit.outcome === "needs_info") &&
-      (commit.outcome !== "complete" || q.outcome === "ready"),
-    "adopted_quality_invalid",
-  );
-  requireAdopted(
-    commit.outcome === "needs_info" ||
-      (v.identity.status === "matched" &&
-        ![...stages.values()].some(
-          (x) => "issues" in x && x.issues.some((i) => i.blocking),
-        )),
-    "adopted_quality_invalid",
-  );
-  const frozen = v.frozenVerification,
-    request = wineGenerationRequestSchema.parse(gen.frozenQuality.request),
-    candidate = wineGenerationCandidateSchema.parse(
-      gen.frozenQuality.candidate,
-    ),
-    binding = {
-      workspaceId: c.workspaceId,
-      operationId: run.id,
-      inputRevision: run.inputRevision,
-    };
-  requireAdopted(
-    same(frozen.binding, binding) &&
-      same(request.binding, binding) &&
-      same(v.identity, frozen.identity) &&
-      same(candidate.content, gen.content),
-    "adopted_artifact_binding_invalid",
-  );
-  const base = run.baseVersionId
-    ? await r.wineEnrichment.readVersionOrigin(c.listingId, run.baseVersionId)
-    : null;
   requireAdopted(
     (!run.baseVersionId || (base && base.sequence < row.sequence)) &&
       run.activeVersionSequence === (base?.sequence ?? 0),
     "adopted_base_invalid",
   );
-  const working = workingListingSchema.parse(input.workingContent);
-  requireAdopted(
-    (!working.wineOwnership || hasWineSectionMapping(working)) &&
-      (!base?.content.wineOwnership || hasWineSectionMapping(base.content)),
-    "adopted_ownership_invalid",
-  );
-  const own = resolveWineGenerationOwnership(input, working, base?.content, {
-    ...binding,
-    listingId: c.listingId,
-    baseVersionId: run.baseVersionId,
-  });
-  requireAdopted(
-    same(request.ownership, {
-      schemaVersion: 1,
-      priorKind: own.prior.kind,
-      metadata: own.prior.metadata,
-      legacyDescription:
-        own.prior.kind === "legacy" ? own.prior.description : null,
-      lockedPaths: own.lockedPaths,
-      provenanceDigest: own.provenanceDigest,
-    }) &&
-      same(request.current, own.prior.current) &&
-      same(request.lockedPaths, own.lockedPaths),
-    "adopted_ownership_invalid",
-  );
-  const profile = e.profile as { tone?: unknown; claimPolicy?: unknown };
-  requireAdopted(
-    profile &&
-      request.tone === profile.tone &&
-      same(request.claimPolicy, profile.claimPolicy) &&
-      request.section === null,
-    "adopted_policy_invalid",
-  );
-  const claims = v.claims.filter((x) => x.state === "accepted");
-  requireAdopted(
-    same(request.claims, claims) &&
-      same(
-        [...frozen.lockedFields].sort(),
-        Object.entries(input.fieldStates)
-          .filter(([, s]) => s?.owner === "operator" || s?.locked)
-          .map(([k]) => k)
-          .sort(),
-      ),
-    "adopted_claim_invalid",
-  );
-  validateWineGenerationRequest(request);
-  requireAdopted(
-    wineCandidateIssues(request, candidate).length === 0,
-    "adopted_candidate_invalid",
-  );
+  if (source.copy) {
+    requireAdopted(
+      same(row.sections, candidate.content) &&
+        same(
+          {
+            title: row.content.title,
+            seo: row.content.seo,
+            tags: row.content.tags,
+            sections: row.content.wineOwnership?.sections ?? [],
+          },
+          row.sections,
+        ) &&
+        hasWineSectionMapping(row.content),
+      "adopted_content_invalid",
+    );
+    requireAdopted(base, "adopted_base_invalid");
+    const baseline = workingBaselineForReview(
+      workingListingSchema.parse(input.workingContent),
+      input.fieldStates,
+      base.content,
+    ).workingContent;
+    requireAdopted(
+      same(row.content, {
+        ...baseline,
+        title: candidate.content.title,
+        seo: candidate.content.seo,
+        tags: candidate.content.tags,
+        description: {
+          en: renderWineDescription(candidate.content, "en"),
+          "zh-Hant": renderWineDescription(candidate.content, "zh-Hant"),
+        },
+        wineOwnership: {
+          schemaVersion: 1,
+          sections: candidate.content.sections,
+        },
+      }),
+      "adopted_content_invalid",
+    );
+    requireAdopted(source.prior, "adopted_original_required");
+    const originalContexts: ValidOrigin[] = [];
+    for (const context of source.prior.origins) {
+      const original = await graph.visit(context.versionId);
+      requireAdopted(
+        original.frozen && original.run.id === context.runId,
+        "adopted_original_required",
+      );
+      originalContexts.push(original);
+    }
+    const claimOrigins = new Map<string, ValidOrigin>();
+    for (const pointer of source.copy.claims) {
+      const original = originalContexts.find(
+        (o) =>
+          o.run.id === pointer.originRunId &&
+          o.row.versionId === pointer.originVersionId,
+      );
+      requireAdopted(
+        original &&
+          original.claims.some(
+            (cl) =>
+              cl.id === pointer.claimId &&
+              listingInputDigest(cl) === pointer.claimDigest,
+          ),
+        "adopted_claim_invalid",
+      );
+      claimOrigins.set(pointer.claimId, original);
+    }
+    return {
+      row,
+      run,
+      input,
+      frozen: null,
+      claims,
+      candidate,
+      outcome: commit.outcome,
+      claimOrigins,
+      originalContexts,
+    };
+  }
   const adopted = {
     title: row.content.title,
     seo: row.content.seo,
@@ -389,22 +358,14 @@ async function validateOrigin(
   requireAdopted(
     same(adopted, row.sections) &&
       same(row.sections, {
-        ...gen.content,
-        sections: own.prior.kind === "legacy" ? [] : gen.content.sections,
+        ...candidate.content,
+        sections: own.prior.kind === "legacy" ? [] : candidate.content.sections,
       }) &&
       (!row.content.wineOwnership || hasWineSectionMapping(row.content)) &&
       (own.prior.kind !== "legacy" ||
         same(row.content.description, own.prior.description)),
     "adopted_content_invalid",
   );
-  await authorizeWineVerifiedEvidence(r, {
-    workspaceId: c.workspaceId,
-    run,
-    input,
-    frozen,
-    claims,
-    now,
-  });
   return {
     row,
     run,
@@ -415,6 +376,43 @@ async function validateOrigin(
     outcome: commit.outcome,
   };
 }
+/** Private nominal graph. No exported function accepts a dependency callback or graph. */
+class WineOriginGraph {
+  private readonly cache = new Map<string, ValidOrigin>();
+  private readonly active = new Set<string>();
+  constructor(
+    readonly r: WorkspaceRepositories,
+    readonly scope: Pick<AdoptedWineCoordinates, "workspaceId" | "listingId">,
+    readonly now: string,
+  ) {}
+  async visit(id: string): Promise<ValidOrigin> {
+    requireAdopted(!this.active.has(id), "ancestry_cycle");
+    requireAdopted(this.active.size < 17, "ancestry_depth");
+    if (this.cache.has(id)) return this.cache.get(id)!;
+    requireAdopted(this.cache.size + this.active.size < 17, "ancestry_depth");
+    this.active.add(id);
+    try {
+      const value = await validateOrigin(this, id);
+      this.cache.set(id, value);
+      return value;
+    } finally {
+      this.active.delete(id);
+    }
+  }
+  dependencies(
+    versionId: string,
+    input: ListingInputSnapshot,
+  ): Promise<Extract<AdoptedWineDependencies, { status: "available" }>> {
+    return assembleDependencies(
+      this.r,
+      { ...this.scope, versionId, inputRevision: input.revision },
+      input,
+      this.now,
+      (id) => this.visit(id),
+    );
+  }
+}
+
 const identityFields = [
   "producer",
   "productType",
@@ -506,6 +504,7 @@ async function assembleDependencies(
   ]);
   for (const original of origin.originalContexts ?? [])
     origins.set(original.row.versionId, original);
+  const participating = new Set<string>();
   const adoptedPaths = wineTextPaths(origin.row.sections!);
   const add = (from: ValidOrigin, path: string, text: string) => {
     const sectionKey = path.startsWith("sections.") ? path.split(".")[1] : null;
@@ -526,6 +525,7 @@ async function assembleDependencies(
       const original = from.claimOrigins?.get(claim.id) ?? from;
       requireAdopted(original.frozen, "adopted_original_required");
       origins.set(original.row.versionId, original);
+      participating.add(original.row.versionId);
       const sources = dependencySources(original, claim);
       const identityChanged =
         claim.scope === "product" &&
@@ -535,9 +535,11 @@ async function assembleDependencies(
               resolved[k],
               // Only a recursively validated copy version may anchor its own generated title.
               // Current manual edits still differ from this immutable adopted value.
-              k === "title" && origin.claimOrigins
-                ? origin.row.content[k]
-                : original.row.content[k],
+              k === "title" && (origin.claimOrigins || original.identityAnchor)
+                ? (origin.claimOrigins
+                    ? origin.row.content
+                    : original.row.content)[k]
+                : (original.identityAnchor ?? original.row.content)[k],
             ),
         );
       const invalidReason = identityChanged
@@ -621,7 +623,11 @@ async function assembleDependencies(
       });
   }
   const verifiedOrigins: ValidatedWineOrigin[] = [...origins.values()]
-    .filter((o) => o.frozen !== null)
+    .filter(
+      (o) =>
+        o.frozen !== null &&
+        (!origin.row.adoption || participating.has(o.row.versionId)),
+    )
     .map((o) => ({
       workspaceId: c.workspaceId,
       listingId: c.listingId,
@@ -638,6 +644,18 @@ async function assembleDependencies(
       frozenVerification: o.frozen!,
       claims: o.claims,
     }));
+  if (origin.row.adoption) {
+    const ids = new Map<string, string>();
+    for (const original of verifiedOrigins)
+      for (const claim of original.claims) {
+        const previous = ids.get(claim.id);
+        requireAdopted(
+          !previous || previous === original.runId,
+          "proposal_claim_origin_collision",
+        );
+        ids.set(claim.id, original.runId);
+      }
+  }
   return {
     status: "available",
     schemaVersion: 1,
@@ -683,23 +701,8 @@ export async function readAdoptedWineDependencies(
     );
     await r.wineEnrichment.lockAuthorities();
     const now = await r.pipelineRuns.acceptanceTimestamp();
-    const cache = new Map<string, ValidOrigin>(),
-      active = new Set<string>();
-    const visit = async (id: string): Promise<ValidOrigin> => {
-      requireAdopted(!active.has(id), "ancestry_cycle");
-      requireAdopted(active.size < 17, "ancestry_depth");
-      if (cache.has(id)) return cache.get(id)!;
-      requireAdopted(cache.size + active.size < 17, "ancestry_depth");
-      active.add(id);
-      try {
-        const value = await validateOrigin(r, c, id, now, visit);
-        cache.set(id, value);
-        return value;
-      } finally {
-        active.delete(id);
-      }
-    };
-    return await assembleDependencies(r, c, currentInput, now, visit);
+    const graph = new WineOriginGraph(r, c, now);
+    return await graph.dependencies(c.versionId, currentInput);
   } catch (error) {
     return {
       status: "unavailable",
@@ -712,16 +715,197 @@ export async function readAdoptedWineDependencies(
   }
 }
 
-/** A copy version has a real three-stage chain and original-claim pointers, never verification of its own. */
-async function validateCopyOrigin(
-  r: WorkspaceRepositories,
-  c: AdoptedWineCoordinates,
-  row: WineVersionOrigin,
+async function authorizeTerminalSource(
+  graph: WineOriginGraph,
+  run: ListingOperation,
+) {
+  const { r, scope: c, now } = graph;
+  requireAdopted(
+    run && run.listingId === c.listingId && run.executionState === "succeeded",
+    "adopted_origin_invalid",
+  );
+  const input = await r.listingInputs.getRevision(
+    c.listingId,
+    run.inputRevision,
+  );
+  requireAdopted(input, "adopted_input_invalid");
+  inputMatches(input, run, c.workspaceId);
+  const e = run.execution,
+    b = wineBudgetSnapshotSchema.parse(e.wineBudget),
+    p = wineEnrichmentPolicySchema.parse(e.wineEnrichment),
+    g = wineExecutionSnapshotSchema.parse(e.wineGo),
+    a = wineAcquisitionPolicySchema.parse(e.wineAcquisition);
+  const accepted = Date.parse(run.acceptedAt),
+    deadline = Date.parse(a.deadlineAt),
+    time = Date.parse(now);
+  requireAdopted(
+    e.schemaVersion === 1 &&
+      e.flowVersion === "wine-enrichment-v1" &&
+      ["full", "research", "copy", "section"].includes(String(e.wineMode)) &&
+      e.wineMode === b.mode &&
+      p.enabled &&
+      g.rulesVersion === p.rulesVersion &&
+      a.rulesVersion === p.rulesVersion &&
+      a.policyVersion === p.policyVersion &&
+      (!["full", "research"].includes(String(e.wineMode)) ||
+        a.allowedDomains.length > 0) &&
+      same([...a.allowedDomains].sort(), [...p.allowedDomains].sort()) &&
+      deadline > accepted &&
+      deadline - accepted <= 900000 &&
+      time >= accepted,
+    "adopted_policy_invalid",
+  );
+  if (e.wineMode === "copy" || e.wineMode === "section")
+    return authorizeCopySource(graph, run, input);
+  const stages = await chain(r, run),
+    v = stages.get("verification_deep") ?? stages.get("verification"),
+    gen = stages.get("generation"),
+    q = stages.get("quality_check"),
+    commit = stages.get("commit_candidate");
+  requireAdopted(
+    v &&
+      (v.stage === "verification" || v.stage === "verification_deep") &&
+      v.frozenVerification &&
+      gen?.stage === "generation" &&
+      gen.frozenQuality &&
+      q?.stage === "quality_check" &&
+      commit?.stage === "commit_candidate" &&
+      (commit.outcome !== "proposed" ||
+        (commit.proposal.inputRevision === run.inputRevision &&
+          commit.proposal.baseVersionId === run.baseVersionId)),
+    "adopted_artifact_missing",
+  );
+  requireAdopted(
+    q.contentDigest === listingInputDigest(gen.content) &&
+      (q.outcome !== "needs_info" || commit.outcome === "needs_info") &&
+      (commit.outcome === "needs_info" || q.outcome === "ready"),
+    "adopted_quality_invalid",
+  );
+  requireAdopted(
+    commit.outcome === "needs_info" ||
+      (v.identity.status === "matched" &&
+        ![...stages.values()].some(
+          (x) => "issues" in x && x.issues.some((i) => i.blocking),
+        )),
+    "adopted_quality_invalid",
+  );
+  const frozen = v.frozenVerification,
+    request = wineGenerationRequestSchema.parse(gen.frozenQuality.request),
+    candidate = wineGenerationCandidateSchema.parse(
+      gen.frozenQuality.candidate,
+    ),
+    binding = {
+      workspaceId: c.workspaceId,
+      operationId: run.id,
+      inputRevision: run.inputRevision,
+    };
+  requireAdopted(
+    same(frozen.binding, binding) &&
+      same(request.binding, binding) &&
+      same(v.identity, frozen.identity) &&
+      same(candidate.content, gen.content),
+    "adopted_artifact_binding_invalid",
+  );
+  const base = run.baseVersionId
+    ? await r.wineEnrichment.readVersionOrigin(c.listingId, run.baseVersionId)
+    : null;
+  requireAdopted(
+    (!run.baseVersionId || base) &&
+      run.activeVersionSequence === (base?.sequence ?? 0),
+    "adopted_base_invalid",
+  );
+  const working = workingListingSchema.parse(input.workingContent);
+  requireAdopted(
+    (!working.wineOwnership || hasWineSectionMapping(working)) &&
+      (!base?.content.wineOwnership || hasWineSectionMapping(base.content)),
+    "adopted_ownership_invalid",
+  );
+  const own = resolveWineGenerationOwnership(input, working, base?.content, {
+    ...binding,
+    listingId: c.listingId,
+    baseVersionId: run.baseVersionId,
+  });
+  requireAdopted(
+    same(request.ownership, {
+      schemaVersion: 1,
+      priorKind: own.prior.kind,
+      metadata: own.prior.metadata,
+      legacyDescription:
+        own.prior.kind === "legacy" ? own.prior.description : null,
+      lockedPaths: own.lockedPaths,
+      provenanceDigest: own.provenanceDigest,
+    }) &&
+      same(request.current, own.prior.current) &&
+      same(request.lockedPaths, own.lockedPaths),
+    "adopted_ownership_invalid",
+  );
+  const profile = e.profile as { tone?: unknown; claimPolicy?: unknown };
+  requireAdopted(
+    profile &&
+      request.tone === profile.tone &&
+      same(request.claimPolicy, profile.claimPolicy) &&
+      request.section === null,
+    "adopted_policy_invalid",
+  );
+  const claims = v.claims.filter((x) => x.state === "accepted");
+  requireAdopted(
+    same(request.claims, claims) &&
+      same(
+        [...frozen.lockedFields].sort(),
+        Object.entries(input.fieldStates)
+          .filter(([, s]) => s?.owner === "operator" || s?.locked)
+          .map(([k]) => k)
+          .sort(),
+      ),
+    "adopted_claim_invalid",
+  );
+  validateWineGenerationRequest(request);
+  requireAdopted(
+    wineCandidateIssues(request, candidate).length === 0,
+    "adopted_candidate_invalid",
+  );
+  await authorizeWineVerifiedEvidence(r, {
+    workspaceId: c.workspaceId,
+    run,
+    input,
+    frozen,
+    claims,
+    now,
+  });
+  const projected = projectWineContent(
+    input,
+    base?.content,
+    run,
+    gen,
+    claims,
+    v.identity,
+    own,
+  );
+  if (commit.outcome === "proposed")
+    requireAdopted(
+      projected.success && same(projected.data, commit.proposal.content),
+      "proposal_content_invalid",
+    );
+  return {
+    run,
+    input,
+    commit,
+    candidate,
+    claims,
+    frozen,
+    ownership: own,
+    base,
+    projected,
+    copy: null,
+    prior: null,
+  };
+}
+async function authorizeCopySource(
+  graph: WineOriginGraph,
   run: ListingOperation,
   input: ListingInputSnapshot,
-  now: string,
-  visit: (id: string) => Promise<ValidOrigin>,
-): Promise<ValidOrigin> {
+) {
+  const { r, scope: c, now } = graph;
   const accepted = wineCopySnapshotSchema.parse(run.execution.wineCopy);
   requireAdopted(
     accepted.mode === run.execution.wineMode &&
@@ -732,20 +916,22 @@ async function validateCopyOrigin(
       accepted.dependencyDigest === wineCopyDependencyDigest(accepted),
     "adopted_copy_binding_invalid",
   );
-  const base = await visit(accepted.baseVersionId);
+  const base = await r.wineEnrichment.readVersionOrigin(
+    c.listingId,
+    accepted.baseVersionId,
+  );
+  requireAdopted(base, "adopted_base_invalid");
   requireAdopted(
-    base.row.sequence < row.sequence &&
-      run.activeVersionSequence === base.row.sequence,
+    run.activeVersionSequence === base.sequence,
     "adopted_base_invalid",
   );
   const working = workingListingSchema.parse(input.workingContent);
   requireAdopted(
     (!working.wineOwnership || hasWineSectionMapping(working)) &&
-      (!base.row.content.wineOwnership ||
-        hasWineSectionMapping(base.row.content)),
+      (!base.content.wineOwnership || hasWineSectionMapping(base.content)),
     "adopted_ownership_invalid",
   );
-  const own = resolveWineGenerationOwnership(input, working, base.row.content, {
+  const own = resolveWineGenerationOwnership(input, working, base.content, {
     workspaceId: c.workspaceId,
     listingId: c.listingId,
     operationId: run.id,
@@ -753,13 +939,7 @@ async function validateCopyOrigin(
     baseVersionId: run.baseVersionId,
   });
   // The base need not remain active. Reconstruct using THIS historical copy's exact accepted input.
-  const prior = await assembleDependencies(
-    r,
-    { ...c, versionId: accepted.baseVersionId, inputRevision: input.revision },
-    input,
-    now,
-    visit,
-  );
+  const prior = await graph.dependencies(accepted.baseVersionId, input);
   const rebuilt = buildWineCopySnapshot({
     adopted: prior,
     input,
@@ -782,7 +962,9 @@ async function validateCopyOrigin(
       gen.frozenQuality &&
       q?.stage === "quality_check" &&
       commit?.stage === "commit_candidate" &&
-      commit.versionId === row.versionId,
+      (commit.outcome !== "proposed" ||
+        (commit.proposal.inputRevision === run.inputRevision &&
+          commit.proposal.baseVersionId === run.baseVersionId)),
     "adopted_artifact_missing",
   );
   const request = wineGenerationRequestSchema.parse(gen.frozenQuality.request),
@@ -803,82 +985,200 @@ async function validateCopyOrigin(
   requireAdopted(
     q.contentDigest === listingInputDigest(gen.content) &&
       (q.outcome !== "needs_info" || commit.outcome === "needs_info") &&
-      (commit.outcome !== "complete" ||
+      (commit.outcome === "needs_info" ||
         (q.outcome === "ready" &&
           ![...stages.values()].some(
             (x) => "issues" in x && x.issues.some((i) => i.blocking),
           ))),
     "adopted_quality_invalid",
   );
+  const identity = prior.origins[0]?.frozenVerification.identity;
+  requireAdopted(identity, "adopted_original_required");
+  const projected = projectWineContent(
+    input,
+    base.content,
+    run,
+    gen,
+    rebuilt.claims,
+    identity,
+    own,
+  );
+  if (commit.outcome === "proposed")
+    requireAdopted(
+      projected.success && same(projected.data, commit.proposal.content),
+      "proposal_content_invalid",
+    );
+  return {
+    run,
+    input,
+    commit,
+    candidate,
+    claims: rebuilt.claims,
+    frozen: null,
+    ownership: own,
+    base,
+    projected,
+    copy: accepted,
+    prior,
+  };
+}
+type WineTerminalSource = Awaited<ReturnType<typeof authorizeTerminalSource>>;
+
+/** Terminal proposal inspection authority only. No version creation/adoption, no provider call.
+ * Internal module export: deliberately not re-exported from the package index in this patch.
+ * Caller must own the workspace transaction. Locks survive until its commit.
+ */
+export async function readWineTerminalProposal(
+  r: WorkspaceRepositories,
+  c: { workspaceId: string; listingId: string; runId: string },
+) {
+  await r.listings.lockReviewState(c.listingId);
+  const listing = await r.listings.getById(c.listingId);
+  const current = await r.listingInputs.getCurrent(c.listingId);
+  const run = await r.pipelineRuns.getOperation(c.runId);
+  const latest = await r.pipelineRuns.getCurrentOperation(c.listingId);
   requireAdopted(
-    same(row.sections, gen.content) &&
-      same(
-        {
-          title: row.content.title,
-          seo: row.content.seo,
-          tags: row.content.tags,
-          sections: row.content.wineOwnership?.sections ?? [],
-        },
-        row.sections,
-      ) &&
-      hasWineSectionMapping(row.content),
+    listing &&
+      listing.workspaceId === c.workspaceId &&
+      current &&
+      run &&
+      run.listingId === c.listingId &&
+      run.executionState === "succeeded" &&
+      latest?.id === run.id &&
+      listing.inputRevision === run.inputRevision &&
+      current.revision === run.inputRevision &&
+      run.baseVersionId !== null &&
+      listing.activeVersionId === run.baseVersionId,
+    "proposal_current_changed",
+  );
+  await r.wineEnrichment.lockAuthorities();
+  const now = await r.pipelineRuns.acceptanceTimestamp();
+  const graph = new WineOriginGraph(r, c, now);
+  const source = await authorizeTerminalSource(graph, run);
+  requireAdopted(
+    source.commit.outcome === "proposed" &&
+      source.commit.proposal.inputRevision === current.revision &&
+      source.commit.proposal.baseVersionId === listing.activeVersionId &&
+      source.input.inputDigest === current.inputDigest,
+    "proposal_binding_invalid",
+  );
+  const stage = await r.wineEnrichment.readStage(run.id, "commit_candidate");
+  requireAdopted(stage, "adopted_stage_unavailable");
+  return {
+    source,
+    proposal: source.commit.proposal,
+    proposalStageDigest: listingInputDigest(stage.output),
+    now,
+  };
+}
+
+/** Explicit alternate lineage. Old complete artifacts and their key/content checks remain independent. */
+async function validateProposalOrigin(
+  graph: WineOriginGraph,
+  row: WineVersionOrigin,
+  run: ListingOperation,
+): Promise<ValidOrigin> {
+  const { r, scope: c, now } = graph,
+    proof = row.adoption!;
+  const source = await authorizeTerminalSource(graph, run);
+  const { commit, input, base } = source;
+  requireAdopted(
+    commit.outcome === "proposed" && base,
+    "adopted_artifact_missing",
+  );
+  const stage = await r.wineEnrichment.readStage(run.id, "commit_candidate");
+  requireAdopted(
+    stage &&
+      proof.proposalRunId === run.id &&
+      proof.proposalStageDigest === listingInputDigest(stage.output) &&
+      proof.proposalContentDigest === commit.proposal.contentDigest &&
+      proof.sourceInputRevision === run.inputRevision &&
+      proof.sourceInputDigest === input.inputDigest &&
+      proof.baseVersionId === run.baseVersionId &&
+      proof.baseVersionId === base.versionId &&
+      base.sequence < row.sequence &&
+      run.activeVersionSequence === base.sequence &&
+      row.pipelineIdempotencyKey === null &&
+      row.createdBy === proof.actorId &&
+      Date.parse(proof.adoptedAt) >= Date.parse(run.acceptedAt) &&
+      Date.parse(proof.adoptedAt) <= Date.parse(now),
+    "adopted_proposal_binding_invalid",
+  );
+  requireAdopted(
+    proof.requestDigest ===
+      wineAdoptionRequestDigest({
+        workspaceId: c.workspaceId,
+        listingId: c.listingId,
+        runId: run.id,
+        actorId: proof.actorId,
+        expectedInputRevision: input.revision,
+        baseVersionId: base.versionId,
+        selectedPaths: proof.selectedPaths,
+      }),
+    "adopted_proposal_request_invalid",
+  );
+  const content = selectWineProposal(
+    {
+      input,
+      base: base.content,
+      proposal: commit.proposal.content,
+      ownership: source.ownership,
+    },
+    proof.selectedPaths,
+  );
+  requireAdopted(
+    proof.adoptedContentDigest === listingInputDigest(content) &&
+      same(content, row.content) &&
+      same(wineSectionContent(content), row.sections),
     "adopted_content_invalid",
   );
-  const baseline = workingBaselineForReview(
-    working,
-    input.fieldStates,
-    base.row.content,
-  ).workingContent;
-  requireAdopted(
-    same(row.content, {
-      ...baseline,
-      title: gen.content.title,
-      seo: gen.content.seo,
-      tags: gen.content.tags,
-      description: {
-        en: renderWineDescription(gen.content, "en"),
-        "zh-Hant": renderWineDescription(gen.content, "zh-Hant"),
-      },
-      wineOwnership: { schemaVersion: 1, sections: gen.content.sections },
-    }),
-    "adopted_content_invalid",
-  );
-  const originalContexts: ValidOrigin[] = [];
-  for (const context of prior.origins) {
-    const original = await visit(context.versionId);
-    requireAdopted(
-      original.frozen && original.run.id === context.runId,
-      "adopted_original_required",
-    );
-    originalContexts.push(original);
-  }
-  const claimOrigins = new Map<string, ValidOrigin>();
-  for (const pointer of accepted.claims) {
-    const original = originalContexts.find(
-      (o) =>
-        o.run.id === pointer.originRunId &&
-        o.row.versionId === pointer.originVersionId,
-    );
-    requireAdopted(
-      original &&
-        original.claims.some(
-          (cl) =>
-            cl.id === pointer.claimId &&
-            listingInputDigest(cl) === pointer.claimDigest,
-        ),
-      "adopted_claim_invalid",
-    );
-    claimOrigins.set(pointer.claimId, original);
+  const candidate = {
+    ...source.candidate,
+    annotations: source.candidate.annotations.filter((a) =>
+      selectedWinePath(proof.selectedPaths, a.path),
+    ),
+  };
+  let claimOrigins: Map<string, ValidOrigin> | undefined,
+    originalContexts: ValidOrigin[] | undefined;
+  if (source.copy) {
+    requireAdopted(source.prior, "adopted_original_required");
+    originalContexts = [];
+    claimOrigins = new Map();
+    for (const context of source.prior.origins) {
+      const original = await graph.visit(context.versionId);
+      requireAdopted(
+        original.frozen && original.run.id === context.runId,
+        "adopted_original_required",
+      );
+      originalContexts.push(original);
+    }
+    for (const pointer of source.copy.claims) {
+      const original = originalContexts.find(
+        (o) =>
+          o.run.id === pointer.originRunId &&
+          o.row.versionId === pointer.originVersionId,
+      );
+      requireAdopted(
+        original &&
+          original.claims.some(
+            (cl) =>
+              cl.id === pointer.claimId &&
+              listingInputDigest(cl) === pointer.claimDigest,
+          ),
+        "adopted_claim_invalid",
+      );
+      claimOrigins.set(pointer.claimId, original);
+    }
   }
   return {
     row,
     run,
     input,
-    frozen: null,
-    claims: rebuilt.claims,
+    frozen: source.frozen,
+    claims: source.claims,
     candidate,
-    outcome: commit.outcome,
-    claimOrigins,
-    originalContexts,
+    outcome: "complete",
+    identityAnchor: commit.proposal.content,
+    ...(claimOrigins ? { claimOrigins, originalContexts } : {}),
   };
 }
