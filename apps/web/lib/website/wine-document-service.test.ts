@@ -230,3 +230,28 @@ it("does not shorten oversized robots crawl delays into an early product request
   expect(f.publicFetch).toHaveBeenCalledTimes(1);
   expect(f.wait).not.toHaveBeenCalled();
 });
+it("preserves visible block and line boundaries for deterministic wine identity labels", async () => {
+  const f = fixture({}, async ({ url, kind }) => ({
+    url,
+    status: 200,
+    contentType: kind === "robots" ? "text/plain" : "text/html",
+    capturedAt: now.toISOString(),
+    retryAfterSeconds: null,
+    text:
+      kind === "robots"
+        ? "User-agent: *\nAllow: /"
+        : `<html><title> Synthetic   identity </title><article><p>Kind: wine</p><p>Producer: <strong>Fixture</strong> Estate</p><ul><li>Product: Reserve Red</li><li>Vintage: 2020</li></ul><div>Volume: 750 ml<br>Pack quantity: 1 bottles<br>ABV: 13%</div><script>Producer: Forged</script><style>Product: Forged</style><template>Vintage: 1900</template><nav>Volume: 1 ml</nav></article></html>`,
+  }));
+  const out = await f.service(input);
+  expect(out.status).toBe("completed");
+  if (out.status !== "completed") throw Error("expected document");
+  expect(out.result.text).toBe(
+    "Kind: wine\nProducer: Fixture Estate\nProduct: Reserve Red\nVintage: 2020\nVolume: 750 ml\nPack quantity: 1 bottles\nABV: 13%",
+  );
+  expect(out.result.title).toBe("Synthetic identity");
+  expect(out.result.spans[0]).toMatchObject({
+    start: 0,
+    end: out.result.text.length,
+  });
+  expect(out.result.text).not.toContain("Forged");
+});

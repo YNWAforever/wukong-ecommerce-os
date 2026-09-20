@@ -341,6 +341,7 @@ export function WineEnrichmentWorkspace({
           )}
         </p>
         <button
+          className="secondary-button"
           type="button"
           disabled={
             blocked || dirty || inFlight || !snapshot.permissions.canProcess
@@ -350,6 +351,7 @@ export function WineEnrichmentWorkspace({
           {t("重新搜尋資料", "Re-research")}
         </button>{" "}
         <button
+          className="secondary-button"
           type="button"
           disabled={
             blocked || dirty || inFlight || !snapshot.permissions.canProcess

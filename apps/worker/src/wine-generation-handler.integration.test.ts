@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { afterAll, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import {
+  adoptWineProposal,
+  readWineProposalDiff,
   wineCopyDependencyDigest,
   buildWineCopySnapshot,
   readAdoptedWineDependencies,
@@ -706,6 +708,46 @@ it("mechanically invalid actual generation has known usage and never triggers a 
 
 // Test-only acceptance fixture: real immutable input/base, live reader and pure builder
 // inside the owned local transaction. Web admission remains disabled until Task C.
+async function adoptGenerated(
+  f: Awaited<ReturnType<typeof setup>>,
+  runId: string,
+  textOnly = false,
+) {
+  return db.forWorkspace(f.workspaceId, async (r) => {
+    const run = (await r.pipelineRuns.getOperation(runId))!;
+    const before = await r.listings.requireById(run.listingId);
+    expect(before.activeVersionId).toBe(run.baseVersionId);
+    const diff = await readWineProposalDiff(r, {
+      workspaceId: f.workspaceId,
+      listingId: run.listingId,
+      runId,
+    });
+    expect(diff.state).toBe("available");
+    const selectedPaths = diff.differences
+      .filter(
+        (item) =>
+          item.selectable &&
+          (!textOnly || /^(sections\.|title\.|seo\.)/.test(item.path)),
+      )
+      .map((item) => item.path);
+    expect(selectedPaths).not.toContain("sections.tasting");
+    const adopted = await adoptWineProposal(r, {
+      workspaceId: f.workspaceId,
+      listingId: run.listingId,
+      runId,
+      actorId: "test",
+      expectedInputRevision: run.inputRevision,
+      baseVersionId: run.baseVersionId!,
+      operationKey: randomUUID(),
+      selectedPaths,
+    });
+    expect(adopted.versionId).not.toBe(before.activeVersionId);
+    expect((await r.listings.requireById(run.listingId)).activeVersionId).toBe(
+      adopted.versionId,
+    );
+    return adopted;
+  });
+}
 async function copyRun(
   f: Awaited<ReturnType<typeof setup>>,
   mode: "copy" | "section",
@@ -834,8 +876,9 @@ it.each(["copy", "section"] as const)(
       });
       expect(await c.execute("commit_candidate")).toMatchObject({
         status: "completed",
-        outcome: "complete",
+        outcome: "proposed",
       });
+      await adoptGenerated(f, c.run.id);
       const result = await db.forWorkspace(f.workspaceId, async (r) => ({
         adopted: await readAdoptedWineDependencies(r, {
           workspaceId: f.workspaceId,
@@ -1061,6 +1104,10 @@ it.each(["copy", "section"] as const)(
         "zh-Hant": protectedSection["zh-Hant"],
       },
       packQuantity: 1,
+      volumeMl: 750,
+      producer: "Fixture Estate",
+      vintage: 2020,
+      abvPercent: 13,
       wineOwnership: {
         schemaVersion: 1 as const,
         sections: [protectedSection],
@@ -1088,6 +1135,7 @@ it.each(["copy", "section"] as const)(
           inputRevision: l.inputRevision,
         });
       });
+    await adoptGenerated(f, f.job.runId, true);
     const first = await read();
     expect(first).toMatchObject({ status: "available", refreshRequired: true });
     if (first.status !== "available") throw Error("origin");
@@ -1121,6 +1169,7 @@ it.each(["copy", "section"] as const)(
         "commit_candidate",
       ] as const)
         expect((await c.execute(stage)).status).not.toBe("blocked");
+      await adoptGenerated(f, c.run.id);
       const adopted = await read();
       expect(adopted.status).toBe("available");
       if (adopted.status !== "available") throw Error("copy reader");
@@ -1239,6 +1288,8 @@ it.each([
     "commit_candidate",
   ] as const)
     await c.execute(stage);
+  await adoptGenerated(f, c.run.id);
+  let mutationReached = false;
   const result = await readCopyResult(f, (r) => ({
     ...r,
     pipelineRuns: {
@@ -1246,6 +1297,8 @@ it.each([
       getOperation: async (id) => {
         const run = await r.pipelineRuns.getOperation(id);
         if (!run || id !== c.run.id) return run;
+        if (!["quality", "missing-stage"].includes(kind))
+          mutationReached = true;
         const x = structuredClone(run),
           s = x.execution.wineCopy as import("@wukong/core").WineCopySnapshot;
         if (kind === "base") s.baseVersionId = randomUUID();
@@ -1267,8 +1320,12 @@ it.each([
       readStage: async (id, stage) => {
         const row = await r.wineEnrichment.readStage(id, stage);
         if (id !== c.run.id || !row) return row;
-        if (kind === "missing-stage" && stage === "quality_check") return null;
+        if (kind === "missing-stage" && stage === "quality_check") {
+          mutationReached = true;
+          return null;
+        }
         if (kind === "quality" && stage === "quality_check") {
+          mutationReached = true;
           const x = structuredClone(row);
           (x.output as any).result.contentDigest = "f".repeat(64);
           return x;
@@ -1277,6 +1334,7 @@ it.each([
       },
     },
   }));
+  expect(mutationReached).toBe(true);
   expect(result.status).toBe("unavailable");
 });
 it.each([
@@ -1339,9 +1397,22 @@ it("copy ancestry remains bounded after sixteen historical hops without renewing
       expect((await c.execute(stage)).status).toBe(
         stage === "commit_candidate" ? "completed" : "advanced",
       );
-    const result = await readCopyResult(f);
-    expect(result.status).toBe(round < 16 ? "available" : "unavailable");
-    if (round === 16) expect(result).toMatchObject({ code: "ancestry_depth" });
+    if (round < 16) {
+      await adoptGenerated(f, c.run.id);
+      expect((await readCopyResult(f)).status).toBe("available");
+    } else {
+      const before = await db.forWorkspace(f.workspaceId, (r) =>
+        r.listings.requireById(f.job.draftId),
+      );
+      await expect(adoptGenerated(f, c.run.id)).rejects.toThrow(
+        "ancestry_depth",
+      );
+      const after = await db.forWorkspace(f.workspaceId, (r) =>
+        r.listings.requireById(f.job.draftId),
+      );
+      expect(after.activeVersionId).toBe(before.activeVersionId);
+      expect((await readCopyResult(f)).status).toBe("available");
+    }
   }
 }, 120000);
 it.each(["verification", "quality_check"] as const)(
@@ -1451,6 +1522,7 @@ it("accepted copy title paraphrases keep original product support reusable", asy
       stage === "commit_candidate" ? "completed" : "advanced",
     );
   }
+  await adoptGenerated(f, c.run.id);
   expect(await readCopyResult(f)).toMatchObject({
     status: "available",
     refreshRequired: false,
@@ -1475,6 +1547,7 @@ it("manual title edit after a generated copy title invalidates original product 
     expect((await c.execute(stage)).status).toBe(
       stage === "commit_candidate" ? "completed" : "advanced",
     );
+  await adoptGenerated(f, c.run.id);
   await db.forWorkspace(f.workspaceId, async (r) => {
     const l = await r.listings.requireById(c.run.listingId);
     await r.listingInputs.save(

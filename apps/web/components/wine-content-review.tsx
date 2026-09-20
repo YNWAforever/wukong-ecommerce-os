@@ -210,6 +210,7 @@ export function WineContentReview({
       )}
       {draft.map((section) => (
         <fieldset
+          className="field-group"
           key={section.key}
           disabled={!storageReady || !canEdit || busy || saving}
         >
@@ -219,29 +220,31 @@ export function WineContentReview({
               wineSectionLabels[section.key][1],
             )}
           </legend>
-          {(["en", "zh-Hant"] as const).map((lang) => (
-            <label key={lang} style={{ display: "block" }}>
-              {t(
-                wineSectionLabels[section.key][0],
-                wineSectionLabels[section.key][1],
-              )}{" "}
-              · {lang === "en" ? "English" : "繁體中文"}
-              <textarea
-                lang={lang}
-                rows={4}
-                maxLength={20000}
-                value={section[lang]}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setDraft((items) =>
-                    items.map((s) =>
-                      s.key === section.key ? { ...s, [lang]: value } : s,
-                    ),
-                  );
-                }}
-              />
-            </label>
-          ))}
+          <div className="field-grid">
+            {(["en", "zh-Hant"] as const).map((lang) => (
+              <label key={lang} className="field-control">
+                {t(
+                  wineSectionLabels[section.key][0],
+                  wineSectionLabels[section.key][1],
+                )}{" "}
+                · {lang === "en" ? "English" : "繁體中文"}
+                <textarea
+                  lang={lang}
+                  rows={4}
+                  maxLength={20000}
+                  value={section[lang]}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDraft((items) =>
+                      items.map((s) =>
+                        s.key === section.key ? { ...s, [lang]: value } : s,
+                      ),
+                    );
+                  }}
+                />
+              </label>
+            ))}
+          </div>
           <label>
             <input
               type="checkbox"
@@ -263,6 +266,7 @@ export function WineContentReview({
               : t("自動建立", "Automatically generated")}
           </p>
           <button
+            className="secondary-button"
             type="button"
             data-regenerate={section.key}
             disabled={dirty || section.locked || section.owner === "operator"}
@@ -292,6 +296,7 @@ export function WineContentReview({
         </p>
       )}
       <button
+        className="secondary-button"
         type="button"
         data-action="save-sections"
         disabled={!storageReady || !dirty || !canEdit || busy || saving}
@@ -301,6 +306,7 @@ export function WineContentReview({
       </button>
       {dirty && (
         <button
+          className="secondary-button"
           type="button"
           onClick={() => {
             if (

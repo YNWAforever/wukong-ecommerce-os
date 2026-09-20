@@ -50,11 +50,15 @@ export type WineDocumentOutcome =
 type Node = DefaultTreeAdapterMap["node"];
 const digest = (text: string) =>
   "sha256:" + createHash("sha256").update(text).digest("hex");
-function textOf(root: Node): string {
+function textOf(root: Node, preserveLines = false): string {
   const parts: string[] = [],
-    pending = [root];
+    pending: Array<Node | string> = [root];
   while (pending.length) {
     const node = pending.pop()!;
+    if (typeof node === "string") {
+      parts.push(node);
+      continue;
+    }
     if (
       "tagName" in node &&
       [
@@ -69,12 +73,44 @@ function textOf(root: Node): string {
       ].includes(node.tagName)
     )
       continue;
+    if (
+      preserveLines &&
+      "tagName" in node &&
+      [
+        "p",
+        "div",
+        "li",
+        "tr",
+        "article",
+        "main",
+        "section",
+        "blockquote",
+        "pre",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "br",
+      ].includes(node.tagName)
+    ) {
+      parts.push("\n");
+      pending.push("\n");
+    }
     if ("value" in node) parts.push(node.value);
     if ("childNodes" in node)
       for (let i = node.childNodes.length - 1; i >= 0; i--)
         pending.push(node.childNodes[i]!);
   }
-  return parts.join(" ").replace(/\s+/g, " ").trim();
+  const text = parts.join(" ");
+  return preserveLines
+    ? text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .join("\n")
+    : text.replace(/\s+/g, " ").trim();
 }
 function article(html: string): {
   text: string;
@@ -98,7 +134,7 @@ function article(html: string): {
         pending.push(node.childNodes[i]!);
   }
   return {
-    text: scope || body ? textOf((scope ?? body)!) : "",
+    text: scope || body ? textOf((scope ?? body)!, true) : "",
     title,
     location: scope ? "article:text" : "body:text",
   };

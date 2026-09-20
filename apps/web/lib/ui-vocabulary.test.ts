@@ -116,7 +116,6 @@ const UNLOCALISED_SURFACES = [
   "app/(app)/admin/page.tsx",
   "components/admin-members-panel.tsx",
   "components/admin-settings-panel.tsx",
-  "components/listing-intake-form.tsx",
   "components/listing-view-models.ts",
   "lib/listing-approval.ts",
 ];

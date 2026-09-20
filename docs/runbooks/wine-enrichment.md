@@ -22,7 +22,9 @@ Accepted copy/section modes construct generation and quality handling without Ta
 
 ## Schema and fresh health
 
-The existing `loadSqlMigrations` registry discovers numbered SQL files in filename order, including reviewed `0041_wine_enrichment.sql`, `0042_wine_acquisition.sql` and `0043_wine_runtime_recovery.sql`. There is no additional journal entry to invent. Do not run the all-migrations command merely to test discovery. Production migration requires explicit approval and the controlled admin release connection; runtime remains `wukong_app`.
+The existing `loadSqlMigrations` registry discovers numbered SQL files in filename order, including reviewed `0041_wine_enrichment.sql`, `0042_wine_acquisition.sql`, `0043_wine_runtime_recovery.sql`, and additive `0044_wine_section_run_index.sql`. There is no additional journal entry to invent. Do not run the all-migrations command merely to test discovery. Production migration requires explicit approval and the controlled admin release connection; runtime remains `wukong_app`.
+
+Migration 0044 adds the child foreign-key lookup index `wine_sections_run_idx (workspace_id, listing_id, run_id)` without changing the accepted capability schema. Production application remains an explicit migration gate.
 
 Authenticated health must confirm listing recovery compatibility, `wine-enrichment-0042-v1`, and separate `wine-runtime-0043-v1` readiness. The latter checks exact recovery functions, nonruntime owner, SECURITY DEFINER, fixed public search path, runtime EXECUTE and no PUBLIC EXECUTE. Do not weaken compatibility for equivalent-looking SQL. Health provides safe build SHA and booleans, never credentials.
 
@@ -30,7 +32,7 @@ Distinguish current health from immutable acceptance: `fullResearchConfigured` a
 
 ## Local verification
 
-Use the existing dedicated `wukong_wine_sdd` database on loopback port 54329 and runtime/admin roles through process-local `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL`. Verify the database target before running any tests. `vitest.integration.config.ts` does not apply migrations. No envfile, cloud endpoint, paid provider call or DDL is required by the checks below.
+Use process-local runtime/admin database URLs and verify both targets before tests. The Vitest integration config has no global migration hook, but individual fixtures call the actual migration loader. Broad integration also temporarily renames the cluster-global runtime role: run it only in a task-owned disposable PostgreSQL cluster (Task 13b used loopback54339), never the shared browser cluster on54329. Wine fixtures require database name `wukong_wine_sdd`. Provision and migrate that isolated database with reviewed files through0044 before broad validation. Set `DATABASE_URL`, `DATABASE_ADMIN_URL`, `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` to that same isolated target. The browser fixture uses unique additive tenants in the separately prepared54329 database and does not migrate or reset it. No cloud endpoint or paid provider call is needed.
 
 ```powershell
 node --test tests/cloudflare-config.test.mjs tests/runtime-env-manifest.test.mjs tests/runtime-doctor.test.mjs
@@ -43,7 +45,7 @@ pnpm.cmd runtime:forbidden:check
 
 For actual local HTTP/Queue proof, `node tests/e2e/wine-runtime-harness.mjs copy` starts the checked-in harness on 8789. Set process-local `WINE_RUNTIME_HTTP_URL=http://127.0.0.1:8789` and run the generation integration test filtered by `actual local Wrangler HTTP`. Stop the owned copy harness before starting `full`; use filter `actual local Wrangler full`. Full mode also requires the existing local Minio/Caddy HTTPS endpoint on localhost:9012 and the local CA through `NODE_EXTRA_CA_CERTS`. The test owns synthetic provider HTTP port 49221. `WINE_LOCAL_S3_E2E=1` opts into `packages/assets/src/wine-image-snapshot.integration.test.ts`. Stop only owned harness processes afterward.
 
-Task 8c established actual local HTTP/Queue and immutable S3 evidence using synthetic providers. It did not establish production cloud R2 IAM/retention, live provider accuracy, nonempty web-document acceptance or merchant acceptance. Task 13b must implement actual fullstack browser scenarios and screenshots before adding the wine Playwright command/artifact upload to CI. Do not create a placeholder browser spec or claim that existing local probes are screenshots.
+Task 8c established actual local HTTP/Queue and immutable S3 evidence using synthetic providers. It did not establish production cloud R2 IAM/retention, live provider accuracy, nonempty web-document acceptance or merchant acceptance. Task 13b adds the actual fullstack browser suite and scoped CI screenshot/trace/runtime-evidence upload described below. Its remaining gaps and independent review findings remain release gates.
 
 ## Recovery and immutable evidence
 
@@ -62,3 +64,21 @@ Task 8c established actual local HTTP/Queue and immutable S3 evidence using synt
 4. Obtain separate approval for production Tavily credentials and credit allowance, Go budget and activation. Keep SHOPLINE disabled and publishing false. Turning flags off stops new admission but does not cancel accepted work; preserve required old credentials and readers while draining.
 5. Complete human labels for Task 12 before interpreting evaluation accuracy. Paid baseline/candidate evaluation must demonstrate at least 20% error improvement and p95 <= 180 seconds; six real merchant products, two per category, remain unverified acceptance gates. Synthetic fixtures or local harness results cannot satisfy them.
 6. Activate only after these gates, provider configuration and independent review pass, under explicit release authorization. Retain rollback readers and unknown-cost holds; never use rollback to erase accepted evidence or budgets.
+
+## Synthetic browser acceptance (Task 13b)
+
+Run only against a disposable/local PostgreSQL database named `wukong_wine_sdd`, with reviewed migrations through 0044 already applied. Set `TEST_DATABASE_URL` and `TEST_DATABASE_ADMIN_URL` to the same loopback database. Existing MinIO HTTP 9010 / TLS 9012 and Mailpit 1026 / 8026 must be ready. The fixture creates unique tenants and never resets shared auth tables or empties the bucket.
+
+```powershell
+$env:WUKONG_WINE_E2E = "1"
+$env:PLAYWRIGHT_E2E = "1"
+pnpm.cmd exec playwright test tests/e2e/wine-enrichment.spec.ts --project=chromium --workers=1 --retries=0
+```
+
+The established Playwright webServer starts Web 49217, native Wrangler Queue 8789, signed TLS ingress proxy 49218, actual document callback 49219, and synthetic Go/Tavily/document HTTP 49221. These ports must be free. The explicit test Worker routes only known original provider endpoints to loopback; the callback injects a bounded known-fixture PublicFetch while retaining actual signature verification, robots handling, parser and durable claim/finish. Production URL/DNS/redirect checks are unchanged. Go reads actual immutable S3 snapshots. No paid credentials or external provider calls are used.
+
+`wine-local-tls.mjs` requires OpenSSL (Git for Windows path on Windows), creates a seven-day localhost CA/leaf under ignored `.wrangler/wine-sdd/certs`, and trusts the public CA plus the existing public Caddy CA only in helper children. Never upload that certificate directory or its private keys. CI uploads only `task13b-artifacts` and selected Playwright screenshots/trace/evidence files, even on failure.
+
+Runtime evidence records real listing/run/version IDs, stage states, physical synthetic request events and usage. Screenshots are synthetic acceptance artifacts, not merchant acceptance or content-quality evaluation. Expired-cache rejection has database integration coverage; full HTTP cache-expiry replay is not claimed. Definitively failed Tavily fallback remains handler integration coverage; browser HTTP covers successful-empty partial evidence and transport-unknown holds separately.
+
+The document extractor now preserves visible block boundaries for new captures. Existing immutable cached text is unchanged and may retain old formatting for up to seven days. Explicit Re-research uses research mode with forceRefresh and recaptures; ordinary cache reads do not reinterpret stored snapshots.

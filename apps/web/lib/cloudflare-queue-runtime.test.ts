@@ -255,8 +255,8 @@ it("signs the complete strict wine envelope without dropping its immutable flow"
 });
 
 it("delivers signed wine Web publisher bytes through actual Worker ingress validation", async () => {
-  const workerModule = "../../worker/src/ingress";
-  const { handleIngress } = await import(workerModule);
+  const ingressUrl = new URL("../../worker/src/ingress.ts", import.meta.url);
+  const { handleIngress } = await import(/* @vite-ignore */ ingressUrl.href);
   const send = vi.fn(async () => undefined);
   const secret = "synthetic-8c";
   const client = createCloudflareIngressClient({

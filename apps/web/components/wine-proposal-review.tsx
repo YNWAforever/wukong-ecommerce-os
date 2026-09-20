@@ -128,6 +128,7 @@ export function WineProposalReview({
             )}
           </p>
           <button
+            className="secondary-button"
             type="button"
             data-action="adopt-wine"
             disabled={disabled || !selected.length || !canEdit}

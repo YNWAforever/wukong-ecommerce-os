@@ -191,6 +191,7 @@ describe("Cloudflare Worker ingress", () => {
     expect(await response.json()).toEqual({
       aiProvider: "openai",
       productShotProvider: "disabled",
+      wineEnrichmentEnabled: false,
       buildSha: "abc1234",
       adapterMode: "disabled",
       bindings: {
@@ -270,6 +271,7 @@ describe("Cloudflare Worker ingress", () => {
       "bindings",
       "buildSha",
       "productShotProvider",
+      "wineEnrichmentEnabled",
     ]);
   });
 });

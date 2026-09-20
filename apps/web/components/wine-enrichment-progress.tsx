@@ -1,4 +1,5 @@
 "use client";
+import { wineIssueCopy } from "../lib/wine-issue-copy";
 import type { WineProgress } from "../lib/wine-progress";
 import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
@@ -54,7 +55,7 @@ export function WineEnrichmentProgress({
         <ul>
           {progress.issues.map((issue, i) => (
             <li key={i}>
-              {issue.path}: {issue.code}{" "}
+              {wineIssueCopy(issue.code, locale)}{" "}
               {issue.blocking
                 ? t("（需處理）", "(needs attention)")
                 : t("（提示）", "(notice)")}

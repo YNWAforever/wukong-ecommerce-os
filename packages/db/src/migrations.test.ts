@@ -78,11 +78,12 @@ it("discovers all reviewed additive wine migrations in release order without a p
   );
   expect(
     migrations
-      .filter(({ name }) => /^004[123]_/.test(name))
+      .filter(({ name }) => /^004[1234]_/.test(name))
       .map(({ name }) => name),
   ).toEqual([
     "0041_wine_enrichment.sql",
     "0042_wine_acquisition.sql",
     "0043_wine_runtime_recovery.sql",
+    "0044_wine_section_run_index.sql",
   ]);
 });

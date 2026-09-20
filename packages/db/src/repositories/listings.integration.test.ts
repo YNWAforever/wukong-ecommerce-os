@@ -724,6 +724,43 @@ describe("workspace isolation", () => {
       ],
       ["website_products", ["workspace_id", "source_scan_id"], "website_scans"],
       ["website_scan_steps", ["workspace_id", "scan_id"], "website_scans"],
+      [
+        "search_budget_reservations",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_document_requests",
+        ["workspace_id", "run_id", "source_id"],
+        "wine_evidence",
+      ],
+      ["wine_evidence", ["workspace_id", "run_id"], "listing_pipeline_runs"],
+      [
+        "wine_evidence_cache",
+        ["workspace_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_search_calls",
+        ["workspace_id", "run_id"],
+        "search_budget_reservations",
+      ],
+      [
+        "wine_section_snapshots",
+        ["workspace_id", "listing_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_section_snapshots",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      ["wine_stages", ["workspace_id", "run_id"], "listing_pipeline_runs"],
+      [
+        "wine_trusted_contexts",
+        ["workspace_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
       ["workbook_products", ["workspace_id", "import_id"], "workbook_imports"],
     ];
     const rows = await admin`
