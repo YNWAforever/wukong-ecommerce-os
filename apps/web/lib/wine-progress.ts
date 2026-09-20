@@ -1,3 +1,8 @@
+import {
+  safeWineText as safeText,
+  sanitizeWineDisplay as display,
+  readWineProposalAdoption,
+} from "@wukong/db";
 import { readConfirmableWineIdentityCandidates } from "./wine-identity-service";
 import { normalizeWebsiteUrl } from "@wukong/core";
 import type {
@@ -26,9 +31,11 @@ export type WineProgress = {
     | "needs_info"
     | "in_review"
     | "awaiting_adoption"
+    | "adopted"
     | "failed"
     | "superseded"
     | "cancelled";
+  adoptedVersionId: string | null;
   /** Persisted inspection reference only; never adoption authorization. */
   proposal: {
     runId: string;
@@ -66,37 +73,6 @@ export type WineProgress = {
   goEstimatedUsd: string | null;
   tavilyCredits: number | null;
 };
-// URLs embedded in model prose are not approved hyperlinks; secrets must not survive in display text.
-function safeText(text: string): string {
-  return (
-    text
-      // Match scheme AND credential before the single-value fallback can consume the scheme alone.
-      .replace(
-        /\b(?:proxy-)?authorization[ \t]*[:=][ \t]*["']?(?:(?:bearer|basic|token|apikey|negotiate)[ \t]+[a-z0-9._~+/-]+=*["']?|(?:digest|aws4-hmac-sha256)[ \t]+[^\r\n]+)/gi,
-        "[redacted]",
-      )
-      // Bare Bearer token68 credentials occur in copied snippets. Preserve ordinary "bearer of" prose.
-      .replace(
-        /(?<![\w-])bearer[ \t]+(?!of\b)["']?[a-z0-9._~+/-]+=*["']?/gi,
-        "[redacted]",
-      )
-      .replace(/(?:https?|s3|file):\/\/[^\s<>"']+/gi, "[link removed]")
-      .replace(/\b(?:sk|tvly|key)-[a-z0-9_-]{8,}\b/gi, "[redacted]")
-      .replace(
-        /\b(?:api[_ -]?key|authorization|bearer|secret|token)\s*[:=]\s*[^\s,;]+/gi,
-        "[redacted]",
-      )
-  );
-}
-function display<T>(value: T): T {
-  if (typeof value === "string") return safeText(value) as T;
-  if (Array.isArray(value)) return value.map(display) as T;
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, display(v)]),
-    ) as T;
-  return value;
-}
 function publicLink(source: EvidenceSource, allowed: unknown): string | null {
   if (source.kind !== "web" || !source.url || !Array.isArray(allowed))
     return null;
@@ -171,6 +147,7 @@ export async function readWineProgress(
     state:
       run.executionState === "succeeded" ? "needs_info" : run.executionState,
     proposal: null,
+    adoptedVersionId: null,
     completedStages: [],
     candidates: [],
     identity: null,
@@ -313,6 +290,21 @@ export async function readWineProgress(
         : "unavailable";
   const workspaceId = (run.execution.input as { workspaceId?: string })
     ?.workspaceId;
+  if (workspaceId && progress.proposal) {
+    try {
+      const adopted = await readWineProposalAdoption(repos, {
+        workspaceId,
+        listingId: run.listingId,
+        runId: run.id,
+      });
+      if (adopted) {
+        progress.state = "adopted";
+        progress.adoptedVersionId = adopted.versionId;
+      }
+    } catch {
+      progress.state = "needs_info";
+    }
+  }
   if (workspaceId)
     for (const candidate of await readConfirmableWineIdentityCandidates(
       repos,

@@ -197,7 +197,13 @@ export * from "./wine-stage-artifacts.js";
 export * from "./wine-stage-dependencies.js";
 
 export * from "./wine-generation-ownership.js";
-export * from "./wine-adopted-dependencies.js";
+export {
+  readAdoptedWineDependencies,
+  type AdoptedWineCoordinates,
+  type WineCopySupport,
+  type ValidatedWineOrigin,
+  type AdoptedWineDependencies,
+} from "./wine-adopted-dependencies.js";
 
 export * from "./wine-original-extraction.js";
 
@@ -217,3 +223,6 @@ export {
   adoptWineProposal,
   type AdoptWineProposalInput,
 } from "./wine-proposal-adoption.js";
+
+export * from "./wine-display.js";
+export * from "./wine-proposal-diff.js";

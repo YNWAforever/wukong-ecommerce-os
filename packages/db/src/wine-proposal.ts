@@ -147,6 +147,50 @@ const factualIdentityFields = [
   "packQuantity",
   "abvPercent",
 ] as const;
+type ProposalSource = {
+  input: ListingInputSnapshot;
+  base: ReviewableListing;
+  proposal: ReviewableListing;
+  ownership: Extract<WineGenerationOwnership, { status: "available" }>;
+};
+/** Shared path policy for display and actual selection; composition is checked by selectWineProposal. */
+export function assertWineProposalPath(source: ProposalSource, path: string) {
+  if (
+    source.ownership.lockedPaths.some(
+      (p) => path === p || path.startsWith(p + "."),
+    )
+  )
+    throw Error("proposal_path_protected");
+  const baseline = workingBaselineForReview(
+    workingListingSchema.parse(source.input.workingContent),
+    source.input.fieldStates,
+    source.base,
+  );
+  if (path.startsWith("sections.")) {
+    const key = path.slice(9);
+    if (
+      key.includes(".") ||
+      !source.proposal.wineOwnership?.sections.some((s) => s.key === key) ||
+      source.ownership.prior.kind === "legacy"
+    )
+      throw Error("proposal_selection_invalid");
+    const old = baseline.workingContent.wineOwnership?.sections.find(
+      (s) => s.key === key,
+    );
+    if (old?.locked || old?.owner === "operator")
+      throw Error("proposal_path_protected");
+  } else {
+    if (
+      !workingFields.includes(path as WorkingField) ||
+      ["sku", "priceHkd", "stockQuantity"].includes(path) ||
+      path.startsWith("description.")
+    )
+      throw Error("proposal_selection_invalid");
+    const state = baseline.fieldStates[path as WorkingField];
+    if (state?.locked || state?.owner === "operator")
+      throw Error("proposal_path_protected");
+  }
+}
 /** Server-only deterministic selection. Unknown/operator/merchant paths are never overridden. */
 export function selectWineProposal(
   source: {
@@ -172,37 +216,17 @@ export function selectWineProposal(
   // Proof and request digest use sorted paths; newly added sections use that same canonical order.
   const paths = [...selectedPaths].sort();
   for (const path of paths) {
-    if (
-      source.ownership.lockedPaths.some(
-        (p) => path === p || path.startsWith(p + "."),
-      )
-    )
-      throw Error("proposal_path_protected");
+    assertWineProposalPath(source, path);
     if (path.startsWith("sections.")) {
       const key = path.slice(9);
-      if (key.includes(".")) throw Error("proposal_selection_invalid");
-      const value = source.proposal.wineOwnership?.sections.find(
+      const value = source.proposal.wineOwnership!.sections.find(
         (s) => s.key === key,
-      );
-      const old = next.wineOwnership?.sections.find((s) => s.key === key);
-      if (!value || source.ownership.prior.kind === "legacy")
-        throw Error("proposal_selection_invalid");
-      if (old?.locked || old?.owner === "operator")
-        throw Error("proposal_path_protected");
+      )!;
       next.wineOwnership ??= { schemaVersion: 1, sections: [] };
       const i = next.wineOwnership.sections.findIndex((s) => s.key === key);
       if (i < 0) next.wineOwnership.sections.push(structuredClone(value));
       else next.wineOwnership.sections[i] = structuredClone(value);
     } else {
-      if (
-        !workingFields.includes(path as WorkingField) ||
-        ["sku", "priceHkd", "stockQuantity"].includes(path) ||
-        path.startsWith("description.")
-      )
-        throw Error("proposal_selection_invalid");
-      const state = baseline.fieldStates[path as WorkingField];
-      if (state?.locked || state?.owner === "operator")
-        throw Error("proposal_path_protected");
       const keys = path.split(".");
       let target = next as unknown as Record<string, unknown>;
       for (const key of keys.slice(0, -1))

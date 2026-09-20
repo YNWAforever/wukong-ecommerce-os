@@ -114,6 +114,10 @@ export type WineEnrichmentRepository = {
   readUsage(
     runId: string,
   ): Promise<{ goEstimatedUsd: string | null; tavilyCredits: number | null }>;
+  readAdoptionByProposalRun(
+    listingId: string,
+    runId: string,
+  ): Promise<WineVersionOrigin | null>;
   readAdoptionByOperationKey(
     listingId: string,
     operationKey: string,
@@ -454,6 +458,16 @@ export function createWineEnrichmentRepository(
         tavilyCredits:
           rows[0]?.credits == null ? null : Number(rows[0].credits),
       };
+    },
+    async readAdoptionByProposalRun(listingId, runId) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`select distinct v.id from listing_versions v join wine_section_snapshots s on s.workspace_id=v.workspace_id and s.listing_id=v.listing_id and s.version_id=v.id where v.workspace_id=${workspaceId} and v.listing_id=${listingId}::uuid and s.run_id=${runId}::uuid and s.payload ? 'adoption'`,
+      );
+      if (rows.length > 1) throw Error("proposal_adoption_invalid");
+      return rows[0]
+        ? this.readVersionOrigin(listingId, String(rows[0].id))
+        : null;
     },
     async readAdoptionByOperationKey(listingId, operationKey) {
       scope.assertOpen();
