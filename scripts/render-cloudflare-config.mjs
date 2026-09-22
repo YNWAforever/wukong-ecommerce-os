@@ -1,6 +1,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  readTypeSafeRuntimeConfig,
+  typeSafeSecretPolicy,
+} from "./typesafe-runtime-config.mjs";
+
 const root = new URL("../", import.meta.url);
 const source = JSON.parse(
   readFileSync(new URL("cloudflare-runtime.config.json", root), "utf8"),
@@ -56,6 +61,11 @@ if (s3ForcePathStyle !== "false") {
   throw new Error("S3_FORCE_PATH_STYLE must be false");
 }
 
+const typeSafe = readTypeSafeRuntimeConfig(process.env);
+const secretPolicy = typeSafeSecretPolicy(
+  source.requiredSecrets,
+  typeSafe.mode,
+);
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({
   queue,
@@ -74,7 +84,7 @@ const wrangler = {
   compatibility_flags: ["nodejs_compat"],
   limits: { cpu_ms: 240000 },
   observability: { enabled: true },
-  secrets: { required: source.requiredSecrets },
+  secrets: { required: secretPolicy.required },
   vars: {
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,
@@ -85,6 +95,7 @@ const wrangler = {
     S3_ENDPOINT: s3Endpoint,
     S3_REGION: s3Region,
     S3_FORCE_PATH_STYLE: s3ForcePathStyle,
+    ...typeSafe.vars,
   },
   hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdriveId }],
   queues: {

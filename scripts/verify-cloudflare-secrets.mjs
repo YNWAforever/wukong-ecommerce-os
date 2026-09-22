@@ -4,15 +4,24 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
+import {
+  readTypeSafeRuntimeConfig,
+  typeSafeSecretPolicy,
+} from "./typesafe-runtime-config.mjs";
 
 const root = new URL("../", import.meta.url);
 
-export function compareSecretNames(requiredNames, configuredNames) {
+export function compareSecretNames(
+  requiredNames,
+  configuredNames,
+  optionalNames = [],
+) {
   const required = [...new Set(requiredNames)].sort();
   const configured = [...new Set(configuredNames)].sort();
+  const allowed = [...new Set([...required, ...optionalNames])].sort();
   return {
     missing: required.filter((name) => !configured.includes(name)),
-    unexpected: configured.filter((name) => !required.includes(name)),
+    unexpected: configured.filter((name) => !allowed.includes(name)),
   };
 }
 
@@ -49,8 +58,16 @@ export function classifyPreflight(result) {
   return { allow: false };
 }
 
-export function verifyExactSecretNames(requiredNames, configuredNames) {
-  const result = compareSecretNames(requiredNames, configuredNames);
+export function verifyExactSecretNames(
+  requiredNames,
+  configuredNames,
+  optionalNames = [],
+) {
+  const result = compareSecretNames(
+    requiredNames,
+    configuredNames,
+    optionalNames,
+  );
   if (result.missing.length || result.unexpected.length) {
     const missing = result.missing.length ? result.missing.join(", ") : "none";
     const unexpected = result.unexpected.length
@@ -70,6 +87,11 @@ function main() {
     readFileSync(new URL("cloudflare-runtime.config.json", root), "utf8"),
   );
   const selected = source.environments[environment];
+  const typeSafe = readTypeSafeRuntimeConfig(process.env);
+  const secretPolicy = typeSafeSecretPolicy(
+    source.requiredSecrets,
+    typeSafe.mode,
+  );
   if (!selected) throw new Error("unsupported CLOUDFLARE_ENV");
 
   // corepack is not installed everywhere pnpm is. Hardcoding it made this
@@ -113,11 +135,12 @@ function main() {
     return;
   }
   verifyExactSecretNames(
-    source.requiredSecrets,
+    secretPolicy.required,
     parseSecretNames(result.stdout),
+    secretPolicy.optional,
   );
   process.stdout.write(
-    `Worker secret preflight passed for ${selected.worker}: ${source.requiredSecrets.length} exact names\n`,
+    `Worker secret preflight passed for ${selected.worker}: ${secretPolicy.required.length} required names\n`,
   );
 }
 
