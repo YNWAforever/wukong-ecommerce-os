@@ -44,3 +44,20 @@ export type {
   NumericFactField,
   ProtectedFactField,
 } from "./eval.js";
+
+export {
+  CHECK_IDS,
+  QUESTION_SET_VERSION,
+  prepareVerification,
+  verificationRecordSchema,
+  verificationResultSchema,
+} from "./listing-verification.js";
+export type {
+  CheckId,
+  ListingVerifier,
+  PreparedVerification,
+  VerificationCheck,
+  VerificationInput,
+  VerificationRecord,
+  VerificationResult,
+} from "./listing-verification.js";
