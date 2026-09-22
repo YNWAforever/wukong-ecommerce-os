@@ -2,6 +2,7 @@
 import { createServer } from "node:http";
 import { createDatabase } from "../../packages/db/src/client.js";
 import { createWebsiteDocumentHandler } from "../../apps/web/app/api/internal/website-document/route.js";
+import { createWineEvidenceDocumentPost } from "../../apps/web/app/api/internal/wine-evidence-document/route.js";
 import type { PublicFetch } from "../../apps/web/lib/website/public-fetch.js";
 if (
   process.env.WUKONG_REAL_STACK_SERVER !== "1" ||
@@ -36,6 +37,35 @@ const handler = createWebsiteDocumentHandler({
   getDatabase: () => database,
   publicFetch,
 });
+const wineHandler = createWineEvidenceDocumentPost({
+  secret: () => process.env.QUEUE_INGRESS_SECRET,
+  getDatabase: () => database,
+  publicFetch: async ({ url, signal }) => {
+    const target = new URL(url);
+    if (
+      target.origin !== "https://wine.synthetic.example" ||
+      ![
+        "/robots.txt",
+        "/reserve-red",
+        "/reserve-red-2020",
+        "/reserve-red-2021",
+      ].includes(target.pathname)
+    )
+      throw new Error("Unknown synthetic wine document");
+    const response = await fetch(
+      `http://127.0.0.1:49221/document${target.pathname}`,
+      { signal, redirect: "manual" },
+    );
+    return {
+      url,
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "text/html",
+      text: await response.text(),
+      capturedAt: new Date().toISOString(),
+      retryAfterSeconds: null,
+    };
+  },
+});
 const server = createServer(async (incoming, outgoing) => {
   try {
     if (incoming.url === "/health") {
@@ -56,7 +86,12 @@ const server = createServer(async (incoming, outgoing) => {
     for (const [key, value] of Object.entries(incoming.headers))
       if (value)
         headers.set(key, Array.isArray(value) ? value.join(",") : value);
-    const response = await handler(
+    const selectedHandler =
+      process.env.WUKONG_WINE_E2E === "1" &&
+      incoming.url === "/api/internal/wine-evidence-document"
+        ? wineHandler
+        : handler;
+    const response = await selectedHandler(
       new Request(`http://127.0.0.1:49219${incoming.url}`, {
         method: incoming.method,
         headers,

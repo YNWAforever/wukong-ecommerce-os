@@ -1,6 +1,10 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
+import {
+  canonicalListingSchema,
+  reviewableListingSchema,
+  inheritWineOwnership,
+} from "@wukong/core";
 import type {
   ApprovalInvalidationCause,
   AuditContext,
@@ -851,7 +855,10 @@ export function createListingRepository(
       const listing = await this.requireById(id);
       if (listing.activeVersionId !== null)
         throw new Error("stale review version");
-      const parsed = reviewableListingSchema.parse(content);
+      const parsed = inheritWineOwnership(
+        null,
+        reviewableListingSchema.parse(content),
+      );
       const next = await transitionListing(
         listing.status,
         "submit_manual",
@@ -904,7 +911,14 @@ export function createListingRepository(
       const nextStatus: ListingStatus | undefined =
         nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
       if (!nextStatus) throw new Error(`listing is ${listing.status}`);
-      const version = await this.appendVersion(id, content, context, audit);
+      const base = await this.getReviewSnapshot(id);
+      if (base?.activeVersion?.id !== baseVersionId)
+        throw new Error("stale review version");
+      const inherited = inheritWineOwnership(
+        base.activeVersion.content,
+        reviewableListingSchema.parse(content),
+      );
+      const version = await this.appendVersion(id, inherited, context, audit);
       // A compliance flag belongs to the version it was raised against, and an
       // edit appends a new one. Carrying them is not housekeeping: flags are
       // read by active version id, `approveListing` refuses only on an OPEN

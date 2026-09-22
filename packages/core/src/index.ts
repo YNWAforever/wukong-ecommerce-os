@@ -106,3 +106,25 @@ export * from "./workspace-policy.js";
 export * from "./external-claim-support.js";
 
 export * from "./copy-claim-support.js";
+
+export * from "./wine-enrichment-contracts.js";
+export * from "./wine-enrichment-fixtures.js";
+export * from "./fact-normalization.js";
+export * from "./wine-identity-match.js";
+export * from "./wine-source-authority.js";
+export * from "./wine-claim-policy.js";
+export * from "./wine-enrichment-budget.js";
+
+export * from "./wine-content.js";
+
+export * from "./wine-artifact-schemas.js";
+export * from "./wine-artifact-validation.js";
+export * from "./wine-artifact-validation-helpers.js";
+
+export * from "./wine-execution-snapshot.js";
+
+export * from "./wine-support-validation.js";
+export * from "./wine-evidence-grounding.js";
+export * from "./wine-copy-snapshot.js";
+
+export * from "./wine-identity-selection.js";

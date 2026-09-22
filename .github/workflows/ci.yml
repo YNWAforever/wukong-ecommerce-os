@@ -131,7 +131,16 @@ jobs:
           await client.send(new HeadBucketCommand({ Bucket: process.env.S3_BUCKET }));
           client.destroy();
           NODE
+      - name: Prepare isolated wine acceptance database
+        run: |
+          psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE wukong_wine_sdd'
+          DATABASE_ADMIN_URL=postgres://wukong:wukong@localhost:54329/wukong_wine_sdd DATABASE_URL=postgres://wukong_app:wukong-app-local@localhost:54329/wukong_wine_sdd pnpm --filter @wukong/db db:migrate
       - name: Integration tests
+        env:
+          DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong_wine_sdd
+          DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/wukong_wine_sdd
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong_wine_sdd
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/wukong_wine_sdd
         run: pnpm test:integration
       - name: Production build
         # Scoped to this step, not the job-level env block: two unit tests
@@ -198,6 +207,35 @@ jobs:
           test -n "$DRAFT_ID"
           test -n "$WORKSPACE_ID"
           pnpm --filter @wukong/db audit:verify --workspace "$WORKSPACE_ID" --draft "$DRAFT_ID"
+      - name: Playwright wine acceptance (synthetic HTTP, real Queue and S3)
+        env:
+          PLAYWRIGHT_E2E: "1"
+          WUKONG_WINE_E2E: "1"
+          WUKONG_PRODUCT_SHOT_E2E: "0"
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/wukong_wine_sdd
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/wukong_wine_sdd
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://localhost:3000
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          DATABASE_ADMIN_URL="$TEST_DATABASE_ADMIN_URL" DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @wukong/db db:migrate
+          node --test tests/e2e/wine-topology.test.mjs
+          pnpm exec playwright test tests/e2e/wine-enrichment.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+      - name: Upload wine acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wine-acceptance-artifacts
+          include-hidden-files: true
+          path: |
+            .wrangler/wine-sdd/task13b-artifacts/
+            test-results/**/wine-*.png
+            test-results/**/runtime-evidence.json
+            test-results/**/provider-evidence.json
+            test-results/**/trace.zip
+          if-no-files-found: ignore
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4

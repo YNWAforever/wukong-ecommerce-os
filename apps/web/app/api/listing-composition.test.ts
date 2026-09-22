@@ -31,6 +31,7 @@ function harness(kinds: string[]) {
   const mutations: string[] = [];
   const ids = kinds.map((_kind, index) => uuid(index + 1));
   const repositories = {
+    pipelineRuns: { async lockCreateRequests() {} },
     listingInputs: {
       async initialize() {
         mutations.push("input_revision");

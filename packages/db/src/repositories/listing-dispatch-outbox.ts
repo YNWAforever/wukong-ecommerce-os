@@ -37,6 +37,7 @@ export type ListingDispatchOutboxRepository = {
   pending(input: {
     olderThanSeconds: number;
     maxRows: number;
+    wineRunId?: string;
   }): Promise<OutboxEntry[]>;
   /** Confirms the queue accepted these. Safe to call twice. */
   markDispatched(ids: readonly string[]): Promise<void>;
@@ -84,7 +85,7 @@ export function createListingDispatchOutboxRepository(
         .returning(columns);
     },
 
-    async pending({ olderThanSeconds, maxRows }) {
+    async pending({ olderThanSeconds, maxRows, wineRunId }) {
       scope.assertOpen();
       if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > 100) {
         throw new Error("outbox maxRows must be 1..100");
@@ -100,6 +101,9 @@ export function createListingDispatchOutboxRepository(
             and(
               eq(listingDispatchOutbox.workspaceId, workspaceId),
               isNull(listingDispatchOutbox.dispatchedAt),
+              wineRunId
+                ? sql`${listingDispatchOutbox.payload}->>'runId'=${wineRunId} and ${listingDispatchOutbox.payload}->>'flowVersion'='wine-enrichment-v1' and exists(select 1 from listing_pipeline_runs wr where wr.workspace_id=${workspaceId} and wr.id::text=${wineRunId} and wr.execution_state in ('queued','running')) and not exists(select 1 from wine_stages ws where ws.workspace_id=${workspaceId} and ws.run_id::text=${wineRunId} and ws.stage=${listingDispatchOutbox.payload}->>'stage')`
+                : undefined,
               sql`not exists(select 1 from listing_pipeline_runs r where r.workspace_id=${listingDispatchOutbox.workspaceId} and r.idempotency_key=${listingDispatchOutbox.dedupeKey} and r.execution_state in ('cancelled','superseded','failed','succeeded'))`,
               sql`not exists(select 1 from enrichment_batch_items i join enrichment_batches b on b.workspace_id=i.workspace_id and b.id=i.batch_id join listing_pipeline_runs r on r.workspace_id=i.workspace_id and r.id=i.pipeline_run_id where r.workspace_id=${listingDispatchOutbox.workspaceId} and r.idempotency_key=${listingDispatchOutbox.dedupeKey} and b.status in ('paused','cancelled'))`,
               lt(

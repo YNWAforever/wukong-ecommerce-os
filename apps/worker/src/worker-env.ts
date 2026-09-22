@@ -6,6 +6,7 @@ import type {
 import type {
   ProductShotJob,
   ListingJob,
+  WineListingJob,
   WebsiteJob,
   QueueMessage,
   ShoplinePublishJob,
@@ -13,7 +14,9 @@ import type {
 
 export type WorkerEnv = {
   HYPERDRIVE: Hyperdrive;
-  LISTING_QUEUE: Queue<ListingJob | WebsiteJob | ProductShotJob>;
+  LISTING_QUEUE: Queue<
+    ListingJob | WineListingJob | WebsiteJob | ProductShotJob
+  >;
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
@@ -24,6 +27,8 @@ export type WorkerEnv = {
   LISTING_PAID_OPERATIONS_ENABLED?: "true" | "false";
   AI_PROVIDER?: "openai" | "fake" | "openrouter" | "opencode-go";
   OPENCODE_GO_API_KEY?: string;
+  TAVILY_API_KEY?: string;
+  WINE_ENRICHMENT_ENABLED?: "true" | "false";
   OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;

@@ -75,6 +75,7 @@ function harness(enqueue: Enqueue) {
       },
     },
     pipelineRuns: {
+      async lockCreateRequests() {},
       async findOperationRequest() {
         return null;
       },

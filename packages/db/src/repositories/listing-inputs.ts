@@ -1,7 +1,15 @@
+import { wineSelectionContextDigest } from "../wine-identity-selection.js";
+import {
+  wineIdentitySelectionSchema,
+  type WineIdentitySelection,
+} from "@wukong/core";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   applyWorkingChanges,
+  editWineSections,
+  inheritWineOwnership,
+  type WineSectionChange,
   workingBaselineForReview,
   emptyWorkingListing,
   sourceSelectionSchema,
@@ -51,6 +59,7 @@ export type SaveListingInput = {
   sources?: SourceSelection[];
   changes: WorkingChange[];
   reviewContent?: WorkingListing;
+  sectionChanges?: WineSectionChange[];
   websiteEvidenceRefsByField?: Partial<Record<WorkingField, string[]>>;
   candidateLineage?: {
     runId: string;
@@ -59,6 +68,13 @@ export type SaveListingInput = {
   };
 };
 export type ListingInputRepository = {
+  /** Internal selection service only; public save cannot supply this metadata. */
+  saveIdentitySelection(
+    input: SaveListingInput,
+    selection: WineIdentitySelection,
+    context: AuditContext,
+    audit: AuditWriter,
+  ): Promise<ListingInputSnapshot & { replayed: boolean }>;
   getByOperationKey(
     listingId: string,
     operationKey: string,
@@ -235,6 +251,195 @@ export function createListingInputRepository(
     });
     return created;
   }
+  async function save(
+    input: SaveListingInput,
+    context: AuditContext,
+    audit: AuditWriter,
+    selection?: WineIdentitySelection,
+  ) {
+    if (input.reviewContent && "wineIdentitySelection" in input.reviewContent)
+      throw new ListingInputError("wine_selection_server_only");
+    const draft = await lock(input.listingId);
+    const [replay] = await tx
+      .select()
+      .from(listingInputRevisions)
+      .where(
+        and(
+          inputWhere(input.listingId),
+          eq(listingInputRevisions.operationKey, input.operationKey),
+        ),
+      );
+    if (replay) {
+      if (replay.requestDigest !== input.requestDigest)
+        throw new ListingInputError("idempotency_conflict");
+      return { ...replay, replayed: true };
+    }
+    if (draft.inputRevision !== input.expectedInputRevision)
+      throw new ListingInputError("input_revision_conflict");
+    if (draft.activeVersionId !== input.baseVersionId)
+      throw new ListingInputError("base_version_conflict");
+    if (draft.status === "publishing")
+      throw new ListingInputError("listing_busy");
+    let current = await repository.getCurrent(input.listingId);
+    if (!current)
+      current = await repository.initialize(
+        { listingId: input.listingId, actorId: input.actorId },
+        context,
+        audit,
+      );
+    const sources =
+      input.sources === undefined
+        ? current.sources
+        : await resolveSources(input.listingId, input.sources);
+    const [activeVersion] = draft.activeVersionId
+      ? await tx
+          .select({ content: listingVersions.content })
+          .from(listingVersions)
+          .where(
+            and(
+              eq(listingVersions.workspaceId, workspaceId),
+              eq(listingVersions.listingId, input.listingId),
+              eq(listingVersions.id, draft.activeVersionId),
+            ),
+          )
+          .limit(1)
+      : [];
+    const baseline = selection
+      ? {
+          workingContent: current.workingContent,
+          fieldStates: current.fieldStates,
+        }
+      : workingBaselineForReview(
+          current.workingContent,
+          current.fieldStates,
+          activeVersion?.content,
+        );
+    if (
+      input.sectionChanges?.length &&
+      input.changes.some((c) => c.field.startsWith("description."))
+    )
+      throw new ListingInputError("wine_description_edit_conflict");
+    const changed = applyWorkingChanges(
+      input.reviewContent
+        ? inheritWineOwnership(
+            baseline.workingContent,
+            workingListingSchema.parse(input.reviewContent),
+          )
+        : baseline.workingContent,
+      baseline.fieldStates,
+      input.changes,
+    );
+    if (input.sectionChanges?.length)
+      changed.content = editWineSections(changed.content, input.sectionChanges);
+    if (input.websiteEvidenceRefsByField)
+      for (const change of input.changes)
+        changed.fieldStates[change.field] = {
+          ...changed.fieldStates[change.field]!,
+          evidenceRefs: input.websiteEvidenceRefsByField[change.field] ?? [],
+        };
+    if (input.candidateLineage)
+      for (const change of input.changes)
+        changed.fieldStates[change.field] = {
+          ...changed.fieldStates[change.field]!,
+          candidateRunId: input.candidateLineage.runId,
+          candidateInputRevision: input.candidateLineage.inputRevision,
+          evidenceRefs:
+            input.candidateLineage.evidenceRefsByField[change.field] ?? [],
+        };
+    if (!input.reviewContent)
+      changed.content.imageAssetIds = sources
+        .filter((x) => x.role !== "supplier_document")
+        .map((x) => x.assetId);
+    const superseded = await tx.execute(
+      sql`update listing_pipeline_runs set execution_state='superseded',status='succeeded',error_code='input_superseded',updated_at=now() where workspace_id=${workspaceId} and listing_id=${input.listingId}::uuid and execution_state in ('queued','running') returning id`,
+    );
+    for (const run of superseded)
+      await audit.write({
+        ...context,
+        action: "listing.processing_superseded",
+        metadata: {
+          runId: String(run.id),
+          inputRevision: current.revision + 1,
+        },
+      });
+    const next = await transitionListing(
+      draft.status as ListingStatus,
+      "save_inputs",
+      context,
+      audit,
+    );
+    await tx
+      .update(listingDrafts)
+      .set({ status: next })
+      .where(draftWhere(input.listingId));
+    if (["approved", "published", "publish_failed"].includes(draft.status))
+      await audit.write({
+        ...context,
+        action: "listing.approval_invalidated",
+        metadata: {
+          cause: "inputs_changed",
+          fromStatus: draft.status,
+          versionId: draft.activeVersionId,
+        },
+      });
+    const sourceContextChanged =
+      listingInputDigest({ note: current.note, sources: current.sources }) !==
+      listingInputDigest({
+        note: input.note === undefined ? current.note : input.note,
+        sources,
+      });
+    if (draft.activeVersionId && sourceContextChanged) {
+      const invalidated = await tx.execute(
+        sql`update review_confirmations set field_confirmations='{}'::jsonb,negative_confirmations='{}'::jsonb,field_records=null,revision=revision+1,updated_at=now() where workspace_id=${workspaceId} and listing_id=${input.listingId}::uuid and version_id=${draft.activeVersionId}::uuid returning id`,
+      );
+      if (invalidated.length)
+        await audit.write({
+          ...context,
+          action: "review_confirmation.invalidated",
+          metadata: {
+            cause: "working_sources_changed",
+            versionId: draft.activeVersionId,
+            inputRevision: current.revision + 1,
+          },
+        });
+    }
+    const nextContext = {
+      note: input.note === undefined ? current.note : input.note,
+      sources,
+      workingContent: changed.content,
+      fieldStates: changed.fieldStates,
+      baseVersionId: input.baseVersionId,
+    };
+    delete changed.content.wineIdentitySelection;
+    const retainedSelection =
+      selection ?? current.workingContent.wineIdentitySelection;
+    if (
+      retainedSelection &&
+      retainedSelection.contextDigest ===
+        wineSelectionContextDigest(nextContext)
+    )
+      changed.content.wineIdentitySelection =
+        wineIdentitySelectionSchema.parse(retainedSelection);
+    else if (selection)
+      throw new ListingInputError("wine_identity_selection_invalid");
+    const created = await persist(
+      {
+        listingId: input.listingId,
+        revision: current.revision + 1,
+        baseVersionId: input.baseVersionId,
+        note: input.note === undefined ? current.note : input.note,
+        sources,
+        workingContent: changed.content,
+        fieldStates: changed.fieldStates,
+        actorId: input.actorId,
+        operationKey: input.operationKey,
+        requestDigest: input.requestDigest,
+      },
+      context,
+      audit,
+    );
+    return { ...created, replayed: false };
+  }
   const repository: ListingInputRepository = {
     async getByOperationKey(id, key) {
       scope.assertOpen();
@@ -265,6 +470,13 @@ export function createListingInputRepository(
       return draft ? repository.getRevision(id, draft.revision) : null;
     },
     async initialize(input, context, audit) {
+      if (
+        input.workingContent &&
+        "wineIdentitySelection" in input.workingContent
+      )
+        throw new ListingInputError("wine_selection_server_only");
+      if (input.workingContent?.wineOwnership !== undefined)
+        throw new ListingInputError("wine_ownership_server_only");
       const draft = await lock(input.listingId);
       const current = await repository.getCurrent(input.listingId);
       if (current) return current;
@@ -376,153 +588,19 @@ export function createListingInputRepository(
         audit,
       );
     },
-    async save(input, context, audit) {
-      const draft = await lock(input.listingId);
-      const [replay] = await tx
-        .select()
-        .from(listingInputRevisions)
-        .where(
-          and(
-            inputWhere(input.listingId),
-            eq(listingInputRevisions.operationKey, input.operationKey),
-          ),
-        );
-      if (replay) {
-        if (replay.requestDigest !== input.requestDigest)
-          throw new ListingInputError("idempotency_conflict");
-        return { ...replay, replayed: true };
-      }
-      if (draft.inputRevision !== input.expectedInputRevision)
-        throw new ListingInputError("input_revision_conflict");
-      if (draft.activeVersionId !== input.baseVersionId)
-        throw new ListingInputError("base_version_conflict");
-      if (draft.status === "publishing")
-        throw new ListingInputError("listing_busy");
-      let current = await repository.getCurrent(input.listingId);
-      if (!current)
-        current = await repository.initialize(
-          { listingId: input.listingId, actorId: input.actorId },
-          context,
-          audit,
-        );
-      const sources =
-        input.sources === undefined
-          ? current.sources
-          : await resolveSources(input.listingId, input.sources);
-      const [activeVersion] = draft.activeVersionId
-        ? await tx
-            .select({ content: listingVersions.content })
-            .from(listingVersions)
-            .where(
-              and(
-                eq(listingVersions.workspaceId, workspaceId),
-                eq(listingVersions.listingId, input.listingId),
-                eq(listingVersions.id, draft.activeVersionId),
-              ),
-            )
-            .limit(1)
-        : [];
-      const baseline = workingBaselineForReview(
-        current.workingContent,
-        current.fieldStates,
-        activeVersion?.content,
-      );
-      const changed = applyWorkingChanges(
-        input.reviewContent
-          ? workingListingSchema.parse(input.reviewContent)
-          : baseline.workingContent,
-        baseline.fieldStates,
-        input.changes,
-      );
-      if (input.websiteEvidenceRefsByField)
-        for (const change of input.changes)
-          changed.fieldStates[change.field] = {
-            ...changed.fieldStates[change.field]!,
-            evidenceRefs: input.websiteEvidenceRefsByField[change.field] ?? [],
-          };
-      if (input.candidateLineage)
-        for (const change of input.changes)
-          changed.fieldStates[change.field] = {
-            ...changed.fieldStates[change.field]!,
-            candidateRunId: input.candidateLineage.runId,
-            candidateInputRevision: input.candidateLineage.inputRevision,
-            evidenceRefs:
-              input.candidateLineage.evidenceRefsByField[change.field] ?? [],
-          };
-      if (!input.reviewContent)
-        changed.content.imageAssetIds = sources
-          .filter((x) => x.role !== "supplier_document")
-          .map((x) => x.assetId);
-      const superseded = await tx.execute(
-        sql`update listing_pipeline_runs set execution_state='superseded',status='succeeded',error_code='input_superseded',updated_at=now() where workspace_id=${workspaceId} and listing_id=${input.listingId}::uuid and execution_state in ('queued','running') returning id`,
-      );
-      for (const run of superseded)
-        await audit.write({
-          ...context,
-          action: "listing.processing_superseded",
-          metadata: {
-            runId: String(run.id),
-            inputRevision: current.revision + 1,
-          },
-        });
-      const next = await transitionListing(
-        draft.status as ListingStatus,
-        "save_inputs",
-        context,
-        audit,
-      );
-      await tx
-        .update(listingDrafts)
-        .set({ status: next })
-        .where(draftWhere(input.listingId));
-      if (["approved", "published", "publish_failed"].includes(draft.status))
-        await audit.write({
-          ...context,
-          action: "listing.approval_invalidated",
-          metadata: {
-            cause: "inputs_changed",
-            fromStatus: draft.status,
-            versionId: draft.activeVersionId,
-          },
-        });
-      const sourceContextChanged =
-        listingInputDigest({ note: current.note, sources: current.sources }) !==
-        listingInputDigest({
-          note: input.note === undefined ? current.note : input.note,
-          sources,
-        });
-      if (draft.activeVersionId && sourceContextChanged) {
-        const invalidated = await tx.execute(
-          sql`update review_confirmations set field_confirmations='{}'::jsonb,negative_confirmations='{}'::jsonb,field_records=null,revision=revision+1,updated_at=now() where workspace_id=${workspaceId} and listing_id=${input.listingId}::uuid and version_id=${draft.activeVersionId}::uuid returning id`,
-        );
-        if (invalidated.length)
-          await audit.write({
-            ...context,
-            action: "review_confirmation.invalidated",
-            metadata: {
-              cause: "working_sources_changed",
-              versionId: draft.activeVersionId,
-              inputRevision: current.revision + 1,
-            },
-          });
-      }
-      const created = await persist(
-        {
-          listingId: input.listingId,
-          revision: current.revision + 1,
-          baseVersionId: input.baseVersionId,
-          note: input.note === undefined ? current.note : input.note,
-          sources,
-          workingContent: changed.content,
-          fieldStates: changed.fieldStates,
-          actorId: input.actorId,
-          operationKey: input.operationKey,
-          requestDigest: input.requestDigest,
-        },
-        context,
-        audit,
-      );
-      return { ...created, replayed: false };
+    save(input, context, audit) {
+      return save(input, context, audit);
+    },
+    saveIdentitySelection(input, selection, context, audit) {
+      const checked = wineIdentitySelectionSchema.parse(selection);
+      if (
+        checked.workspaceId !== workspaceId ||
+        checked.listingId !== input.listingId ||
+        checked.selectedBy !== input.actorId ||
+        checked.selectedInputRevision !== input.expectedInputRevision + 1
+      )
+        throw new ListingInputError("wine_identity_selection_invalid");
+      return save(input, context, audit, checked);
     },
   };
   return repository;

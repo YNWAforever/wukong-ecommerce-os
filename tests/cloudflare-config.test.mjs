@@ -102,6 +102,7 @@ test("renders deterministic non-secret Wrangler config", () => {
       BUILD_SHA: safeRendererInputs.BUILD_SHA,
       AI_PROVIDER: "fake",
       LISTING_PAID_OPERATIONS_ENABLED: "false",
+      WINE_ENRICHMENT_ENABLED: "false",
       OPENAI_LISTING_MODEL: "gpt-5-mini",
       SHOPLINE_ADAPTER: "mock",
       SHOPLINE_PUBLISH_ENABLED: "false",
@@ -158,6 +159,7 @@ test("renders deterministic non-secret Wrangler config", () => {
     "S3_REGION",
     "SHOPLINE_ADAPTER",
     "SHOPLINE_PUBLISH_ENABLED",
+    "WINE_ENRICHMENT_ENABLED",
   ]);
 });
 
@@ -443,4 +445,64 @@ test("renders pinned Go model and its dedicated secret without leaking values", 
         .status,
       0,
     );
+});
+
+test("wine full research requires only Worker Tavily secret names when enabled", () => {
+  for (const enabled of [undefined, "false", "true"]) {
+    const result = render({
+      AI_PROVIDER: "opencode-go",
+      OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+      ...(enabled ? { WINE_ENRICHMENT_ENABLED: enabled } : {}),
+      TAVILY_API_KEY: "tavily-secret-marker",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const config = readJson(".wrangler/wrangler.generated.jsonc");
+    assert.equal(config.vars.WINE_ENRICHMENT_ENABLED, enabled ?? "false");
+    assert.equal(
+      config.secrets.required.includes("TAVILY_API_KEY"),
+      enabled === "true",
+    );
+    assert.doesNotMatch(JSON.stringify(config), /tavily-secret-marker/);
+  }
+});
+
+test("enabled wine configuration rejects a different provider", () => {
+  const result = render({ WINE_ENRICHMENT_ENABLED: "true" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /opencode-go/);
+});
+
+test("deployment preflight requires enabled Tavily and permits retained drain credentials when disabled", async () => {
+  const { verifyRuntimeSecretNames } =
+    await import("../scripts/verify-cloudflare-secrets.mjs");
+  const source = readJson("cloudflare-runtime.config.json");
+  const env = { AI_PROVIDER: "opencode-go", WINE_ENRICHMENT_ENABLED: "true" };
+  const base = [
+    ...requiredSecrets.filter((n) => n !== "OPENAI_API_KEY"),
+    "OPENCODE_GO_API_KEY",
+  ];
+  assert.doesNotThrow(() =>
+    verifyRuntimeSecretNames(source, env, [...base, "TAVILY_API_KEY"]),
+  );
+  assert.throws(
+    () => verifyRuntimeSecretNames(source, env, base),
+    /missing: TAVILY_API_KEY/,
+  );
+  for (const configured of [base, [...base, "TAVILY_API_KEY"]])
+    assert.doesNotThrow(() =>
+      verifyRuntimeSecretNames(
+        source,
+        { ...env, WINE_ENRICHMENT_ENABLED: "false" },
+        configured,
+      ),
+    );
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(
+        source,
+        { ...env, WINE_ENRICHMENT_ENABLED: "false" },
+        [...base, "UNEXPECTED_SECRET"],
+      ),
+    /unexpected: UNEXPECTED_SECRET/,
+  );
 });

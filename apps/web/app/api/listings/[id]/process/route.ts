@@ -1,3 +1,6 @@
+import { sectionKeySchema } from "@wukong/core";
+import { prepareWineAdmission } from "../../../../../lib/wine-enrichment-service";
+import { preflightWineCapability } from "../../../../../lib/wine-capability-client";
 import { requireListingRecovery } from "../../../../../lib/listing-recovery-readiness";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -32,6 +35,7 @@ import type { SessionContextPort } from "../../../../../lib/session-context-port
 type RouteContext = { params: Promise<{ id: string }> };
 
 type ProcessListingRouteDeps = {
+  preflightWineCapability?: typeof preflightWineCapability;
   sessionContext: SessionContextPort;
   getDatabase: () => {
     forWorkspace<T>(
@@ -60,7 +64,8 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
         );
       }
 
-      const { id } = await context.params;
+      const { id: requestedId } = await context.params;
+      const id = requestedId.toLowerCase();
       if (!/^[0-9a-f-]{36}$/i.test(id)) {
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       }
@@ -69,16 +74,34 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
       const body = z
         .object({
           expectedInputRevision: z.number().int().nonnegative().optional(),
-          baseVersionId: z.string().uuid().nullable().optional(),
-          retryOfRunId: z.string().uuid().optional(),
+          baseVersionId: z
+            .string()
+            .uuid()
+            .transform((value) => value.toLowerCase())
+            .nullable()
+            .optional(),
+          retryOfRunId: z
+            .string()
+            .uuid()
+            .transform((value) => value.toLowerCase())
+            .optional(),
+          wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+          wineSection: sectionKeySchema.optional(),
         })
         .strict()
         .parse(raw ? JSON.parse(raw) : {});
       const operationKey = z
         .string()
         .uuid()
+        .transform((value) => value.toLowerCase())
         .parse(_request.headers.get("Idempotency-Key") ?? randomUUID());
       await requireListingRecovery(deps.getDatabase());
+      const wineAdmission = await prepareWineAdmission(
+        deps.getDatabase(),
+        session.workspaceId,
+        body.wineMode,
+        deps.preflightWineCapability,
+      );
       const accepted = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
@@ -91,19 +114,25 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             operationKey,
           );
           if (replay)
-            return acceptListingOperation(repositories, {
-              ...session,
-              listingId: id,
-              expectedInputRevision:
-                body.expectedInputRevision ?? replay.inputRevision,
-              observedInputRevision: body.expectedInputRevision,
-              baseVersionId:
-                body.baseVersionId === undefined
-                  ? replay.baseVersionId
-                  : body.baseVersionId,
-              operationKey,
-              retryOfRunId: body.retryOfRunId,
-            });
+            return acceptListingOperation(
+              repositories,
+              {
+                ...session,
+                listingId: id,
+                expectedInputRevision:
+                  body.expectedInputRevision ?? replay.inputRevision,
+                observedInputRevision: body.expectedInputRevision,
+                baseVersionId:
+                  body.baseVersionId === undefined
+                    ? replay.baseVersionId
+                    : body.baseVersionId,
+                operationKey,
+                retryOfRunId: body.retryOfRunId,
+                wineMode: body.wineMode,
+                wineSection: body.wineSection,
+              },
+              wineAdmission,
+            );
           // Legacy input is initialized only after the caller's revision check.
           if (
             body.expectedInputRevision !== undefined &&
@@ -123,19 +152,25 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
             },
             repositories.audit,
           );
-          return acceptListingOperation(repositories, {
-            workspaceId: session.workspaceId,
-            listingId: id,
-            expectedInputRevision: snapshot.revision,
-            observedInputRevision: body.expectedInputRevision,
-            baseVersionId:
-              body.baseVersionId === undefined
-                ? listing.activeVersionId
-                : body.baseVersionId,
-            operationKey,
-            retryOfRunId: body.retryOfRunId,
-            actorId: session.actorId,
-          });
+          return acceptListingOperation(
+            repositories,
+            {
+              workspaceId: session.workspaceId,
+              listingId: id,
+              expectedInputRevision: snapshot.revision,
+              observedInputRevision: body.expectedInputRevision,
+              baseVersionId:
+                body.baseVersionId === undefined
+                  ? listing.activeVersionId
+                  : body.baseVersionId,
+              operationKey,
+              retryOfRunId: body.retryOfRunId,
+              actorId: session.actorId,
+              wineMode: body.wineMode,
+              wineSection: body.wineSection,
+            },
+            wineAdmission,
+          );
         });
       await dispatchListingOperation(
         deps.getDatabase(),

@@ -720,6 +720,7 @@ button:disabled {
   background: var(--line-strong);
 }
 .intake-form,
+.wine-workspace > .panel,
 .listing-fields-form,
 .evidence-panel,
 .flags,
@@ -2333,5 +2334,48 @@ button:disabled {
   }
   .settings-panel dd {
     margin-bottom: 12px;
+  }
+}
+
+/* Wine review shares the existing review cards, field controls and action styles. */
+.wine-workspace {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.wine-workspace > .panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wine-workspace h2 {
+  margin-top: 0;
+  color: var(--navy);
+}
+.wine-workspace fieldset {
+  min-width: 0;
+}
+.wine-workspace .field-control {
+  display: grid;
+  gap: 8px;
+}
+.wine-workspace .field-control textarea {
+  width: 100%;
+  resize: vertical;
+}
+.wine-workspace .secondary-button {
+  margin-top: 12px;
+}
+.wine-workspace summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.wine-workspace blockquote {
+  margin-inline: 0;
+  padding: 16px;
+  background: var(--stone);
+}
+@media (max-width: 640px) {
+  .wine-workspace > .panel {
+    padding: 18px;
   }
 }

@@ -1,4 +1,9 @@
 import {
+  wineOperationAI,
+  type WineOperationAI,
+  type WineOperationTransport,
+} from "./wine-operation-ai.js";
+import {
   FakeListingProvider,
   OpenAIListingProvider,
   OpenRouterListingProvider,
@@ -24,6 +29,8 @@ export function operationAI(
   workspaceId: string,
   run: ListingOperation,
 ): ListingAIProvider {
+  if (run.execution.flowVersion !== undefined)
+    throw new Error("Marked wine flow requires stored-flow dispatch");
   if (run.execution.provider === "fake" && env.AI_PROVIDER === "fake")
     return new FakeListingProvider();
   const policy = workspaceProfileSchema.shape.listingAi.parse(
@@ -163,5 +170,28 @@ export function operationAI(
   return {
     extract: (request) => provider("extract").extract(request),
     generate: (request) => provider("generate").generate(request),
+  };
+}
+
+/** Stored flow must be selected before legacy policy and prompt guards. Task 8 consumes this port. */
+export function operationAIForFlow(
+  database: Database,
+  env: WorkerEnv,
+  workspaceId: string,
+  run: ListingOperation,
+  transport: WineOperationTransport = {},
+):
+  | { flowVersion: "legacy"; provider: ListingAIProvider }
+  | { flowVersion: "wine-enrichment-v1"; provider: WineOperationAI } {
+  if (run.execution.flowVersion === "wine-enrichment-v1")
+    return {
+      flowVersion: "wine-enrichment-v1",
+      provider: wineOperationAI(database, env, workspaceId, run, transport),
+    };
+  if (run.execution.flowVersion !== undefined)
+    throw new Error("Unsupported stored operation flow");
+  return {
+    flowVersion: "legacy",
+    provider: operationAI(database, env, workspaceId, run),
   };
 }

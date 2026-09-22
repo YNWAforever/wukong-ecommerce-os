@@ -6,6 +6,7 @@ import {
   websiteJobSchema,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  wineListingJobSchema,
   shoplinePublishJobSchema,
   verifyQueueRequest,
 } from "@wukong/jobs";
@@ -153,7 +154,7 @@ export async function handleIngress(
       return response(503);
     await env.LISTING_QUEUE.send(parsed.data);
   } else if (path === LISTING_INGRESS_PATH) {
-    const parsed = listingJobSchema.safeParse(input);
+    const parsed = listingJobSchema.or(wineListingJobSchema).safeParse(input);
     if (!parsed.success) return response(400);
     if (typeof env.LISTING_QUEUE?.send !== "function") return response(503);
     await env.LISTING_QUEUE.send(parsed.data);

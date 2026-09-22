@@ -1,3 +1,18 @@
+import { inspectWineRuntimeCompatibility } from "./wine-runtime-compatibility.js";
+import { createWineGoInvocationRepository } from "./repositories/wine-go-invocations.js";
+import {
+  createWineAcquisitionRepository,
+  type WineAcquisitionRepository,
+} from "./repositories/wine-acquisition.js";
+import {
+  createWineEnrichmentRepository,
+  type WineEnrichmentRepository,
+} from "./repositories/wine-enrichment.js";
+import {
+  createSearchBudgetReservationRepository,
+  type SearchBudgetReservationRepository,
+} from "./repositories/search-budget-reservations.js";
+import { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
 import {
   createListingEnrichmentRepository,
   type ListingEnrichmentRepository,
@@ -132,6 +147,9 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  wineAcquisition: WineAcquisitionRepository;
+  wineEnrichment: WineEnrichmentRepository;
+  searchBudgetReservations: SearchBudgetReservationRepository;
   productShots: ProductShotRepository;
   workbench: WorkbenchReadRepository;
   workbookCatalog: WorkbookCatalogRepository;
@@ -156,6 +174,7 @@ export type WorkspaceRepositories = {
   /** Work recorded before it is sent, so a crash mid-send stays recoverable. */
   dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
+  wineGoInvocations: ReturnType<typeof createWineGoInvocationRepository>;
   aiRuns: AiRunRepository;
   aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
@@ -172,6 +191,20 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  inspectWineRuntimeCompatibility?(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
+  findAbandonedWineOperations?(input: {
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<Array<{ workspaceId: string; runId: string }>>;
+  inspectWineEnrichmentCompatibility(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
   inspectListingRecoveryCompatibility(): Promise<{
     version: string;
     ready: boolean;
@@ -378,6 +411,26 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        wineAcquisition: createWineAcquisitionRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineEnrichment: createWineEnrichmentRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        searchBudgetReservations: createSearchBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineGoInvocations: createWineGoInvocationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         aiBudgetReservations: createAiBudgetReservationRepository(
           transaction,
@@ -401,10 +454,35 @@ export function createDatabase(
   };
 
   return {
+    inspectWineEnrichmentCompatibility: () =>
+      inspectWineEnrichmentCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
     inspectListingRecoveryCompatibility: () =>
       inspectListingRecoveryCompatibility(async (statement) => [
         ...(await client.unsafe(statement)),
       ]),
+    inspectWineRuntimeCompatibility: () =>
+      inspectWineRuntimeCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
+    async findAbandonedWineOperations(input) {
+      if (
+        !Number.isSafeInteger(input.maxRows) ||
+        input.maxRows < 1 ||
+        input.maxRows > 20 ||
+        !Number.isSafeInteger(input.maxAttempts) ||
+        input.maxAttempts < 5 ||
+        input.maxAttempts > 100
+      )
+        throw Error("invalid wine recovery bounds");
+      const rows =
+        await client`select * from public.sweeper_find_abandoned_wine_operations(${input.maxRows},${input.maxAttempts})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        runId: String(row.run_id),
+      }));
+    },
     async findAbandonedListingOperations(input) {
       if (
         !Number.isSafeInteger(input.olderThanSeconds) ||

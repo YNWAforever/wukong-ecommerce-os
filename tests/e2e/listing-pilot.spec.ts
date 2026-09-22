@@ -94,7 +94,7 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   });
 
   await page
-    .getByLabel("補充備註")
+    .getByLabel("Operator notes")
     .fill(
       "Opak Cellar Riesling wine 2024, Germany, Mosel, Riesling, 750ml, 12.5% ABV, SKU OPAK-DEMO-001, HK$288, stock 12",
     );

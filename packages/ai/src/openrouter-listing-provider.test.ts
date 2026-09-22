@@ -364,6 +364,20 @@ describe("OpenRouter listing provider", () => {
       "listing_generation",
     );
   });
+  it("does not admit model-supplied server ownership into a generated listing", async () => {
+    const { provider } = setup(
+      envelope({
+        listing: {
+          ...buildSafeListing(generation),
+          wineOwnership: { schemaVersion: 1, sections: [] },
+        },
+      }),
+    );
+
+    expect((await provider.generate(generation)).listing).not.toHaveProperty(
+      "wineOwnership",
+    );
+  });
   it.each([{ country: "Italy" }, { imageAssetIds: ["forged"] }])(
     "rejects altered protected output %#",
     async (change) => {

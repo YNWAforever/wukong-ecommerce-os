@@ -170,3 +170,59 @@ export type {
   ListingEnrichmentSuggestion,
   ListingEnrichmentPayload,
 } from "./repositories/listing-enrichment.js";
+export type {
+  WineEnrichmentRepository,
+  WineVersionOrigin,
+  StageRecord,
+  SearchCall,
+  SearchCallRecord,
+  WineTrustedContext,
+} from "./repositories/wine-enrichment.js";
+export { wineTrustedContextSchema } from "./repositories/wine-enrichment.js";
+export type { SearchBudgetReservationRepository } from "./repositories/search-budget-reservations.js";
+export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
+
+export * from "./repositories/wine-acquisition.js";
+export * from "./repositories/wine-acquisition-calls.js";
+export {
+  createWineGoStore,
+  type WineGoStore,
+  type WineGoCoordinates,
+  type WineGoCall,
+  type WineGoCompletion,
+  type WineGoStage,
+} from "./repositories/wine-go-invocations.js";
+
+export * from "./wine-stage-artifacts.js";
+export * from "./wine-stage-dependencies.js";
+
+export * from "./wine-generation-ownership.js";
+export {
+  readAdoptedWineDependencies,
+  type AdoptedWineCoordinates,
+  type WineCopySupport,
+  type ValidatedWineOrigin,
+  type AdoptedWineDependencies,
+} from "./wine-adopted-dependencies.js";
+
+export * from "./wine-original-extraction.js";
+
+export {
+  authorizeWineVerifiedEvidence,
+  WineEvidenceAuthorizationError,
+} from "./wine-verified-evidence.js";
+export * from "./wine-copy-snapshot.js";
+export * from "./wine-generation-request.js";
+export * from "./wine-copy-dependencies.js";
+
+export * from "./wine-identity-selection.js";
+
+export { projectWineContent } from "./wine-proposal.js";
+
+export {
+  adoptWineProposal,
+  type AdoptWineProposalInput,
+} from "./wine-proposal-adoption.js";
+
+export * from "./wine-display.js";
+export * from "./wine-proposal-diff.js";

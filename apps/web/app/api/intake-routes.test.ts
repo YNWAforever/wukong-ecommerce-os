@@ -34,7 +34,13 @@ function fakeDatabase(repositories: Record<string, unknown>) {
       _workspaceId: string,
       work: (repos: Record<string, unknown>) => Promise<T>,
     ): Promise<T> {
-      return work(repositories);
+      return work({
+        ...repositories,
+        pipelineRuns: {
+          async lockCreateRequests() {},
+          ...(repositories.pipelineRuns as object),
+        },
+      });
     },
   };
 }

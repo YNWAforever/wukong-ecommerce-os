@@ -757,6 +757,26 @@ describe("OpenAIListingProvider", () => {
     expect(result.usage.inputTokens).toBe(0);
     expect(result.usage.estimatedCostUsd).toBe(0);
   });
+  it("does not admit model-supplied server ownership into a generated listing", async () => {
+    const { client } = fakeClient({
+      output_parsed: {
+        listing: {
+          ...listingFixture,
+          wineOwnership: { schemaVersion: 1, sections: [] },
+        },
+      },
+      output: [],
+    });
+
+    const result = await new OpenAIListingProvider(client).generate({
+      facts,
+      evidence,
+      profile,
+      imageAssetIds: ["asset_image"],
+    });
+
+    expect(result.listing).not.toHaveProperty("wineOwnership");
+  });
   it("rejects generated protected-fact mutations", async () => {
     const changed = fakeClient({
       output_parsed: { listing: { ...listingFixture, priceHkd: 999 } },

@@ -207,6 +207,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@wukong/jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@wukong/core':
         specifier: workspace:*
         version: link:../core

@@ -38,6 +38,15 @@ export const REQUIRED_AUDIT_SEQUENCE = [
  * literals from this module, never user input, so interpolating them is safe.
  */
 export const TENANT_TABLES = [
+  "wine_stages",
+  "wine_evidence",
+  "wine_section_snapshots",
+  "wine_source_authorities",
+  "wine_trusted_contexts",
+  "wine_search_calls",
+  "wine_document_requests",
+  "wine_evidence_cache",
+  "search_budget_reservations",
   "listing_enrichment_suggestions",
   "listing_enrichment_decisions",
   "listing_claim_supports",

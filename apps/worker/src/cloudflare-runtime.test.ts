@@ -451,3 +451,120 @@ it("includes recovery schema readiness only in authenticated health", async () =
   expect(health.checks.listingRecoveryReady).toBe(true);
   expect(workerHealth(env())).not.toHaveProperty("checks");
 });
+it("advertises verified consumer support independently from admission flags", async () => {
+  const database = {
+    ping: async () => undefined,
+    close: vi.fn(async () => undefined),
+    inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+    inspectWineRuntimeCompatibility: async () => ({
+      ready: true,
+      version: "wine-runtime-0043-v1",
+    }),
+    inspectWineEnrichmentCompatibility: async () => ({
+      ready: true,
+      version: "wine-enrichment-0042-v1",
+    }),
+  };
+  const bindings = {
+    ...env(),
+    BUILD_SHA: "a".repeat(40),
+    OPENCODE_GO_API_KEY: "go-secret",
+    TAVILY_API_KEY: "tavily-secret",
+  };
+  const health = await authenticatedWorkerHealth(bindings, {
+    createDatabase: () => database as never,
+  });
+  expect(health).toHaveProperty("wine");
+  expect((health as any).wine).toMatchObject({
+    schemaVersion: 1,
+    consumerSupported: true,
+    goConfigured: true,
+    tavilyConfigured: true,
+    queueReady: true,
+    databaseReady: true,
+    buildSha: "a".repeat(40),
+    execution: {
+      flowVersion: "wine-enrichment-v1",
+      model: "deepseek-v4.1-flash",
+    },
+  });
+  expect(JSON.stringify(health)).not.toMatch(/go-secret|tavily-secret/);
+  expect(workerHealth(bindings)).not.toHaveProperty("wine");
+  expect(database.close).toHaveBeenCalledTimes(1);
+});
+it("fails closed on absent schema inspection and sanitizes build metadata", async () => {
+  const health = await authenticatedWorkerHealth(
+    { ...env(), BUILD_SHA: "secret-marker" },
+    {
+      createDatabase: () =>
+        ({
+          ping: async () => undefined,
+          close: async () => undefined,
+        }) as never,
+    },
+  );
+  expect(health).toHaveProperty("wine");
+  expect((health as any).wine).toMatchObject({
+    consumerSupported: true,
+    goConfigured: false,
+    tavilyConfigured: false,
+    databaseReady: false,
+    buildSha: "unknown",
+  });
+  expect(JSON.stringify(health)).not.toContain("secret-marker");
+});
+it.each([
+  { ready: false, version: "wine-enrichment-0042-v1" },
+  { ready: true, version: "old" },
+  null,
+])(
+  "rejects missing or mismatched wine database compatibility %j",
+  async (wine) => {
+    const health = await authenticatedWorkerHealth(
+      { ...env(), BUILD_SHA: "a".repeat(40) },
+      {
+        createDatabase: () =>
+          ({
+            ping: async () => undefined,
+            close: async () => undefined,
+            inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+            inspectWineEnrichmentCompatibility: async () => wine,
+          }) as never,
+      },
+    );
+    expect(health.wine.databaseReady).toBe(false);
+  },
+);
+it("does not infer wine queue readiness from configuration strings", async () => {
+  const health = await authenticatedWorkerHealth(
+    { ...env(), LISTING_QUEUE: undefined } as never,
+    {
+      createDatabase: () =>
+        ({
+          ping: async () => undefined,
+          close: async () => undefined,
+          inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+          inspectWineEnrichmentCompatibility: async () => ({
+            ready: true,
+            version: "wine-enrichment-0042-v1",
+          }),
+        }) as never,
+    },
+  );
+  expect(health.wine.queueReady).toBe(false);
+  expect(health.wine.consumerSupported).toBe(true);
+});
+
+it("reports a safe default-false wine flag without changing accepted capability", async () => {
+  const { workerHealth } = await import("./cloudflare-runtime.js");
+  expect(workerHealth(env())).toHaveProperty("wineEnrichmentEnabled", false);
+  expect(
+    workerHealth({ ...env(), WINE_ENRICHMENT_ENABLED: "true" } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", true);
+  expect(
+    workerHealth({
+      ...env(),
+      WINE_ENRICHMENT_ENABLED: "secret-marker",
+    } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", false);
+});

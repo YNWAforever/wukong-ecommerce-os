@@ -1,3 +1,9 @@
+import {
+  wineImageSnapshotKey,
+  verifyWineSnapshotBytes,
+  type WineImageSnapshotInput,
+  type WineImageSnapshot,
+} from "./wine-image-snapshot.js";
 import { randomUUID } from "node:crypto";
 
 export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -53,6 +59,9 @@ export class AssetObjectMissingError extends Error {
 }
 
 export interface AssetStore {
+  createWineImageSnapshot?(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot>;
   createUpload(input: CreateUploadInput): Promise<{
     key: string;
     uploadUrl: string;
@@ -71,7 +80,11 @@ export interface AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata>;
-  readObject(workspaceId: string, key: string): Promise<Uint8Array>;
+  readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array>;
   /** Atomically create; false means another writer already created the object. */
   writeObjectIfAbsent(
     workspaceId: string,
@@ -248,6 +261,23 @@ export class MemoryAssetStore implements AssetStore {
     { metadata: AssetObjectMetadata; body?: Uint8Array }
   >();
 
+  async createWineImageSnapshot(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot> {
+    const key = wineImageSnapshotKey(input);
+    if (!this.#objects.has(key))
+      this.#objects.set(key, {
+        metadata: { size: input.bytes.byteLength, mimeType: input.mimeType },
+        body: new Uint8Array(input.bytes),
+      });
+    const bytes = new Uint8Array(this.#objects.get(key)!.body!);
+    verifyWineSnapshotBytes(bytes, input.expectedDigest);
+    return {
+      bytes,
+      readUrl: `https://memory.invalid/${encodeURIComponent(key)}`,
+    };
+  }
+
   async createUpload(input: CreateUploadInput) {
     const key = createAssetKey(input);
     return {
@@ -291,7 +321,11 @@ export class MemoryAssetStore implements AssetStore {
     return metadata;
   }
 
-  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+  async readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array> {
     assertAnyAssetKey(workspaceId, key);
     const entry = this.#objects.get(key);
     if (!entry?.body) {
@@ -300,6 +334,8 @@ export class MemoryAssetStore implements AssetStore {
       // read failure -- keep the two in sync if this text changes.
       throw new AssetObjectMissingError();
     }
+    if (options && entry.body.byteLength > options.maxBytes)
+      throw Error("asset_body_too_large");
     return new Uint8Array(entry.body);
   }
 

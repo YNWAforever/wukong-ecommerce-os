@@ -3,6 +3,7 @@ import {
   validateOpenRouterListingModel,
   validateOpenCodeGoListingModel,
   productShotSecretNames,
+  wineEnrichmentSecretNames,
 } from "./listing-provider-config.mjs";
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -94,9 +95,15 @@ if (websiteFetchBaseUrl) {
 }
 const productShotProvider =
   process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider;
-const secretNames = productShotSecretNames(
-  listingProviderSecretNames(source.requiredSecrets, aiProvider),
-  productShotProvider,
+const wineEnabled = process.env.WINE_ENRICHMENT_ENABLED === "true";
+if (wineEnabled && aiProvider !== "opencode-go")
+  throw new Error("WINE_ENRICHMENT_ENABLED requires AI_PROVIDER=opencode-go");
+const secretNames = wineEnrichmentSecretNames(
+  productShotSecretNames(
+    listingProviderSecretNames(source.requiredSecrets, aiProvider),
+    productShotProvider,
+  ),
+  wineEnabled,
 );
 const shotBudget =
   process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
@@ -140,6 +147,7 @@ const wrangler = {
     AI_PROVIDER: aiProvider,
     LISTING_PAID_OPERATIONS_ENABLED:
       process.env.LISTING_PAID_OPERATIONS_ENABLED === "true" ? "true" : "false",
+    WINE_ENRICHMENT_ENABLED: wineEnabled ? "true" : "false",
     ...listingModel,
     SHOPLINE_ADAPTER: environment === "preview" ? "mock" : "disabled",
     SHOPLINE_PUBLISH_ENABLED: "false",

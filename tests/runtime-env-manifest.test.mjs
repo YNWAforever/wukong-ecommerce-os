@@ -46,6 +46,14 @@ function sourceFiles(dir, found = []) {
     if (!SOURCE_EXTENSIONS.has(path.extname(entry))) continue;
     // Tests stub whatever they like; only shipped code constrains the manifest.
     if (/\.(test|spec)\.[^.]+$/.test(entry)) continue;
+    // Shared integration fixtures, imported only by .integration.test.ts files.
+    if (
+      [
+        "apps/worker/src/wine-candidate-projection.fixture.ts",
+        "apps/worker/src/wine-research.integration-fixture.ts",
+      ].includes(path.relative(repoRoot, full).replaceAll("\\", "/"))
+    )
+      continue;
     found.push(full);
   }
   return found;
@@ -141,6 +149,7 @@ test("a denied name in .env.example is there for the Worker, not for Vercel", ()
       "OPENROUTER_API_KEY",
       "OPENCODE_GO_API_KEY",
       "PHOTOROOM_API_KEY",
+      "TAVILY_API_KEY",
     ],
   );
 });
@@ -166,4 +175,12 @@ test("the manifest is sorted, so a diff shows what actually changed", () => {
       assert.deepEqual(list, [...list].sort());
     }
   }
+});
+
+test("wine flag is optional on both surfaces and Tavily is forbidden on Vercel", () => {
+  assert.ok(WEB_RUNTIME_ENV.optional.includes("WINE_ENRICHMENT_ENABLED"));
+  assert.ok(WORKER_RUNTIME_ENV.optional.includes("WINE_ENRICHMENT_ENABLED"));
+  assert.ok(FORBIDDEN_ON_VERCEL.includes("TAVILY_API_KEY"));
+  assert.ok(!knownNames(WEB_RUNTIME_ENV).has("TAVILY_API_KEY"));
+  assert.match(envExample, /^WINE_ENRICHMENT_ENABLED=false$/m);
 });

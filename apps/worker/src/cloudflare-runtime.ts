@@ -1,3 +1,5 @@
+import { wineRuntimeConfiguration } from "./wine-runtime-configuration.js";
+import { wineCapabilitySchema } from "@wukong/jobs";
 import { operationAI } from "./operation-ai.js";
 import { productImagePublicationForDelivery } from "./shopline-runtime.js";
 import { createHash } from "node:crypto";
@@ -8,6 +10,7 @@ import {
   type AssetStore,
 } from "@wukong/assets";
 import {
+  WINE_EXECUTION_SNAPSHOT,
   FakeListingProvider,
   PhotoroomProductShotProvider,
   PHOTOROOM_ESTIMATED_COST_USD,
@@ -64,7 +67,7 @@ export function createWorkerDatabase(env: WorkerEnv): Database {
   return createDatabase(connectionString, { maxConnections: 5 });
 }
 
-function createAssetStore(env: WorkerEnv): AssetStore {
+export function createAssetStore(env: WorkerEnv): AssetStore {
   const storage = readS3RuntimeConfig({
     S3_BUCKET: env.S3_BUCKET,
     S3_ENDPOINT: env.S3_ENDPOINT,
@@ -268,6 +271,13 @@ export function createCloudflareRuntime(
   };
 }
 
+function safeBuildSha(value: string | undefined) {
+  return /^[a-f0-9]{7,40}$/.test(value?.trim() ?? "")
+    ? value!.trim()
+    : "unknown";
+}
+// Task8c: real local Queue/HTTP copy and full-mode dispatch are verified; admission flags remain separate.
+export const WINE_CONSUMER_SUPPORTED = true;
 export function workerHealth(env: WorkerEnv) {
   return {
     aiProvider: ["fake", "openai", "openrouter", "opencode-go"].includes(
@@ -280,7 +290,8 @@ export function workerHealth(env: WorkerEnv) {
     )
       ? (env.PRODUCT_SHOT_PROVIDER ?? "disabled")
       : "unknown",
-    buildSha: env.BUILD_SHA?.trim() || "unknown",
+    wineEnrichmentEnabled: env.WINE_ENRICHMENT_ENABLED === "true",
+    buildSha: safeBuildSha(env.BUILD_SHA),
     adapterMode:
       env.SHOPLINE_ADAPTER === "mock" || env.SHOPLINE_ADAPTER === "real"
         ? env.SHOPLINE_ADAPTER
@@ -305,6 +316,8 @@ export async function authenticatedWorkerHealth(
   const create = deps.createDatabase ?? createWorkerDatabase;
   let hyperdriveConnects = false;
   let listingRecoveryReady = false;
+  let wineDatabaseReady = false;
+  let wineRuntimeDatabaseReady = false;
   let database: Database | undefined;
   try {
     database = create(env);
@@ -312,6 +325,12 @@ export async function authenticatedWorkerHealth(
     hyperdriveConnects = true;
     listingRecoveryReady =
       (await database.inspectListingRecoveryCompatibility?.())?.ready === true;
+    const wine = await database.inspectWineEnrichmentCompatibility?.();
+    const runtime = await database.inspectWineRuntimeCompatibility?.();
+    wineRuntimeDatabaseReady =
+      runtime?.ready === true && runtime.version === "wine-runtime-0043-v1";
+    wineDatabaseReady =
+      wine?.ready === true && wine.version === "wine-enrichment-0042-v1";
   } catch {
     // A health probe reports the failure; it must never propagate it, or the
     // caller learns "the worker is down" instead of "the database is down".
@@ -322,7 +341,28 @@ export async function authenticatedWorkerHealth(
   return {
     ...workerHealth(env),
     authenticated: true,
+    fullResearchConfigured:
+      wineRuntimeConfiguration(env).fullResearchConfigured,
+    wineRuntime: {
+      ...wineRuntimeConfiguration(env),
+      databaseReady: wineRuntimeDatabaseReady,
+    },
     checks: { hyperdriveConnects, listingRecoveryReady },
+    wine: wineCapabilitySchema.parse({
+      schemaVersion: 1,
+      execution: WINE_EXECUTION_SNAPSHOT,
+      databaseSchemaVersion: "wine-enrichment-0042-v1",
+      buildSha: safeBuildSha(env.BUILD_SHA),
+      consumerSupported: WINE_CONSUMER_SUPPORTED,
+      goConfigured: Boolean(env.OPENCODE_GO_API_KEY?.trim()),
+      tavilyConfigured: Boolean(env.TAVILY_API_KEY?.trim()),
+      queueReady: typeof env.LISTING_QUEUE?.send === "function",
+      databaseReady:
+        hyperdriveConnects &&
+        listingRecoveryReady &&
+        wineDatabaseReady &&
+        wineRuntimeDatabaseReady,
+    }),
   } as const;
 }
 

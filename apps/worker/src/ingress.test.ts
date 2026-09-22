@@ -29,7 +29,7 @@ function env(): WorkerEnv {
     LISTING_QUEUE: { send: vi.fn(async () => undefined) } as never,
     SHOPLINE_QUEUE: { send: vi.fn(async () => undefined) } as never,
     QUEUE_INGRESS_SECRET: secret,
-    BUILD_SHA: "abc123",
+    BUILD_SHA: "abc1234",
     SHOPLINE_ADAPTER: "disabled",
   };
 }
@@ -191,7 +191,8 @@ describe("Cloudflare Worker ingress", () => {
     expect(await response.json()).toEqual({
       aiProvider: "openai",
       productShotProvider: "disabled",
-      buildSha: "abc123",
+      wineEnrichmentEnabled: false,
+      buildSha: "abc1234",
       adapterMode: "disabled",
       bindings: {
         hyperdrive: true,
@@ -270,6 +271,7 @@ describe("Cloudflare Worker ingress", () => {
       "bindings",
       "buildSha",
       "productShotProvider",
+      "wineEnrichmentEnabled",
     ]);
   });
 });
@@ -330,4 +332,24 @@ it("accepts signed strict product shots on the existing listing binding and deni
     expect(res.status).toBe(status);
   }
   expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(shot);
+});
+
+it("accepts an authenticated generation-first wine envelope with admission flags off", async () => {
+  const bindings = env();
+  const job = {
+    ...listing,
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    runId: "10000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation",
+  };
+  const result = await handleIngress(
+    await signedRequest(LISTING_INGRESS_PATH, job),
+    bindings,
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(result.status).toBe(202);
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledWith(job);
 });

@@ -1,3 +1,9 @@
+import {
+  acceptWineOperation,
+  wineAdmissionEnabled,
+  type WineAdmissionContext,
+} from "./wine-enrichment-service";
+import type { WineMode, SectionKey } from "@wukong/core";
 import { paidListingReservation, LISTING_PROMPT_VERSIONS } from "@wukong/core";
 import { createHash } from "node:crypto";
 import type { WorkspaceRepositories } from "@wukong/db";
@@ -12,8 +18,13 @@ export type AcceptListingOperationInput = {
   actorId: string;
   retryOfRunId?: string;
   observedInputRevision?: number;
+  wineOnly?: boolean;
+  wineMode?: WineMode;
+  wineSection?: SectionKey;
+  wineIdentityReference?: import("@wukong/db").WineIdentityReference;
 };
 export type AcceptedListingOperation = {
+  flowVersion?: "wine-enrichment-v1";
   processing: {
     runId: string;
     jobId: string;
@@ -40,6 +51,7 @@ export type AcceptedListingOperation = {
 export async function acceptListingOperation(
   repos: WorkspaceRepositories,
   input: AcceptListingOperationInput,
+  admission: WineAdmissionContext = {},
 ): Promise<AcceptedListingOperation> {
   await repos.listings.lockReviewState(input.listingId);
   const listing = await repos.listings.getById(input.listingId);
@@ -51,6 +63,13 @@ export async function acceptListingOperation(
         revision: input.observedInputRevision ?? input.expectedInputRevision,
         baseVersionId: input.baseVersionId,
         retryOfRunId: input.retryOfRunId ?? null,
+        ...(input.wineMode ? { wineMode: input.wineMode } : {}),
+        ...(input.wineIdentityReference
+          ? { wineIdentityReference: input.wineIdentityReference }
+          : {}),
+        ...(input.wineSection !== undefined
+          ? { wineSection: input.wineSection }
+          : {}),
       }),
     )
     .digest("hex");
@@ -59,7 +78,10 @@ export async function acceptListingOperation(
     input.operationKey,
   );
   if (replay) {
-    if (replay.requestDigest !== requestDigest)
+    if (
+      replay.requestDigest !== requestDigest ||
+      (input.wineOnly && replay.execution.flowVersion !== "wine-enrichment-v1")
+    )
       throw new ApiError(
         409,
         "idempotency_conflict",
@@ -95,8 +117,27 @@ export async function acceptListingOperation(
       "listing_not_retryable",
       "Publishing is in progress.",
     );
+  if (wineAdmissionEnabled()) await repos.pipelineRuns.lockAdmissionBudget();
   const provider = process.env.AI_PROVIDER ?? "openai";
   const profile = await repos.workspaces?.requireProfile?.();
+  if (wineAdmissionEnabled() && profile?.wineEnrichment?.enabled) {
+    return repos.pipelineRuns.withAcceptanceSavepoint(() =>
+      acceptWineOperation(
+        repos,
+        input,
+        snapshot,
+        profile,
+        requestDigest,
+        admission,
+      ),
+    );
+  }
+  if (input.wineOnly)
+    throw new ApiError(
+      503,
+      "wine_admission_disabled",
+      "Wine processing is not enabled for this workspace.",
+    );
   const policy = provider === "fake" ? null : profile?.listingAi;
   if (
     provider !== "fake" &&

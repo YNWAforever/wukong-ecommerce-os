@@ -39,3 +39,8 @@ export function validateOpenCodeGoListingModel(value) {
     throw new Error("OPENCODE_GO_LISTING_MODEL is invalid");
   return value;
 }
+
+// Admission configuration only: accepted copy/section runs never require Tavily.
+export function wineEnrichmentSecretNames(base, enabled) {
+  return enabled ? [...new Set([...base, "TAVILY_API_KEY"])] : base;
+}

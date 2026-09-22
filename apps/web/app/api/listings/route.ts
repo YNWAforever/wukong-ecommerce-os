@@ -1,3 +1,10 @@
+import { sectionKeySchema } from "@wukong/core";
+import {
+  prepareWineAdmission,
+  recoverableWineAdmission,
+  type WineAdmissionContext,
+} from "../../../lib/wine-enrichment-service";
+import { preflightWineCapability } from "../../../lib/wine-capability-client";
 import { requireListingRecovery } from "../../../lib/listing-recovery-readiness";
 import { createHash } from "node:crypto";
 import { acceptListingOperation } from "../../../lib/listing-operation-service";
@@ -38,7 +45,12 @@ import {
 const listingSchema = z
   .object({
     sourceAssetIds: z
-      .array(z.string().uuid())
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((value) => value.toLowerCase()),
+      )
       .max(11)
       .refine(
         (ids) => new Set(ids).size === ids.length,
@@ -46,6 +58,8 @@ const listingSchema = z
       ),
     note: z.string().max(5_000).optional().default(""),
     processingMode: z.enum(["ai", "manual"]).default("ai"),
+    wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+    wineSection: sectionKeySchema.optional(),
   })
   .strict()
   .refine(
@@ -54,6 +68,7 @@ const listingSchema = z
   );
 
 type CreateListingDeps = IntakeRouteDeps<true> & {
+  preflightWineCapability?: typeof preflightWineCapability;
   /**
    * Optional so tests can leave image work out. Production wires the same
    * requester the process route uses -- see the dispatch below for why creating
@@ -72,14 +87,18 @@ const recoverableAdmission = new Set([
 async function acceptOrSave(
   repositories: WorkspaceRepositories,
   input: Parameters<typeof acceptListingOperation>[1],
+  admission: WineAdmissionContext,
 ) {
   try {
     return {
-      accepted: await acceptListingOperation(repositories, input),
+      accepted: await acceptListingOperation(repositories, input, admission),
       blocked: null,
     };
   } catch (error) {
-    if (error instanceof ApiError && recoverableAdmission.has(error.code))
+    if (
+      recoverableWineAdmission(error) ||
+      (error instanceof ApiError && recoverableAdmission.has(error.code))
+    )
       return {
         accepted: null,
         blocked: { code: error.code, message: error.message },
@@ -101,7 +120,8 @@ export function createListingHandler(deps: CreateListingDeps) {
 
       const body = listingSchema.parse(await request.json());
 
-      const requestKey = request.headers.get("Idempotency-Key");
+      const requestKey =
+        request.headers.get("Idempotency-Key")?.toLowerCase() ?? null;
       if (requestKey) z.string().uuid().parse(requestKey);
       if (body.sourceAssetIds.length === 0 && !requestKey)
         throw new ApiError(
@@ -110,14 +130,26 @@ export function createListingHandler(deps: CreateListingDeps) {
           "A request key is required for a note-only draft.",
         );
       await requireListingRecovery(deps.getDatabase());
+      const wineAdmission =
+        body.processingMode === "ai"
+          ? await prepareWineAdmission(
+              deps.getDatabase(),
+              context.workspaceId,
+              body.wineMode,
+              deps.preflightWineCapability,
+            )
+          : {};
       const createDigest = createHash("sha256")
         .update(JSON.stringify(body))
         .digest("hex");
       const acceptedCreate = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
+          await repositories.pipelineRuns.lockCreateRequests(
+            requestKey,
+            body.sourceAssetIds,
+          );
           if (requestKey) {
-            await repositories.pipelineRuns.lockCreateRequests();
             const prior =
               await repositories.pipelineRuns.findCreateRequest(requestKey);
             if (prior) {
@@ -198,13 +230,19 @@ export function createListingHandler(deps: CreateListingDeps) {
             const admission =
               body.processingMode === "manual"
                 ? { accepted: null, blocked: null }
-                : await acceptOrSave(repositories, {
-                    ...context,
-                    listingId: existing.id,
-                    expectedInputRevision: snapshot.revision,
-                    baseVersionId: snapshot.baseVersionId,
-                    operationKey: `create:${existing.id}`,
-                  });
+                : await acceptOrSave(
+                    repositories,
+                    {
+                      ...context,
+                      listingId: existing.id,
+                      expectedInputRevision: snapshot.revision,
+                      baseVersionId: snapshot.baseVersionId,
+                      operationKey: `create:${existing.id}`,
+                      wineMode: body.wineMode,
+                      wineSection: body.wineSection,
+                    },
+                    wineAdmission,
+                  );
             return finish({ listing: existing, ...admission, snapshot });
           }
 
@@ -252,13 +290,19 @@ export function createListingHandler(deps: CreateListingDeps) {
           const admission =
             body.processingMode === "manual"
               ? { accepted: null, blocked: null }
-              : await acceptOrSave(repositories, {
-                  ...context,
-                  listingId: created.id,
-                  expectedInputRevision: snapshot.revision,
-                  baseVersionId: null,
-                  operationKey: `create:${created.id}`,
-                });
+              : await acceptOrSave(
+                  repositories,
+                  {
+                    ...context,
+                    listingId: created.id,
+                    expectedInputRevision: snapshot.revision,
+                    baseVersionId: null,
+                    operationKey: `create:${created.id}`,
+                    wineMode: body.wineMode,
+                    wineSection: body.wineSection,
+                  },
+                  wineAdmission,
+                );
           return finish({ listing: created, ...admission, snapshot });
         });
 
@@ -274,6 +318,7 @@ export function createListingHandler(deps: CreateListingDeps) {
       let productShot: ProductShotRequestResult | undefined;
       if (
         accepted &&
+        accepted.flowVersion !== "wine-enrichment-v1" &&
         !acceptedCreate.replayed &&
         body.processingMode === "ai" &&
         deps.requestProductShot

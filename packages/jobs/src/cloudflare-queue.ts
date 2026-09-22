@@ -41,6 +41,35 @@ export const listingJobSchema = z
   })
   .strict();
 
+/** Wine messages stay separate until the Worker installs flow-aware dispatch. */
+export const wineStageSchema = z.enum([
+  "extraction",
+  "search_basic",
+  "verification",
+  "search_deep",
+  "verification_deep",
+  "generation",
+  "quality_check",
+  "commit_candidate",
+]);
+export const wineListingJobSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  flowVersion: z.literal("wine-enrichment-v1"),
+  workspaceId: safeId,
+  draftId: z.uuid(),
+  runId: z.uuid(),
+  inputRevision: z.number().int().positive(),
+  activeVersionSequence: z.number().int().nonnegative(),
+  stage: wineStageSchema,
+});
+export type WineListingJob = z.infer<typeof wineListingJobSchema>;
+export function wineStageMessageKey(
+  runId: string,
+  stage: WineListingJob["stage"],
+): string {
+  return `wine-run:${z.uuid().parse(runId)}:${wineStageSchema.parse(stage)}`;
+}
+
 /**
  * The idempotency key for one listing pipeline run.
  *
@@ -73,7 +102,11 @@ export const shoplinePublishJobSchema = z
 export type ListingJob = z.infer<typeof listingJobSchema>;
 export type ShoplinePublishJob = z.infer<typeof shoplinePublishJobSchema>;
 export type QueueMessage =
-  ListingJob | ShoplinePublishJob | WebsiteJob | ProductShotJob;
+  | ListingJob
+  | WineListingJob
+  | ShoplinePublishJob
+  | WebsiteJob
+  | ProductShotJob;
 
 type SignInput = {
   secret: string;

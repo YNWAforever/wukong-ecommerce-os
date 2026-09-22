@@ -53,8 +53,11 @@ export const extractionOutputSchema = z.object({
  * here rejected exactly the output the pipeline was asked to produce.
  * Completeness is enforced at `requireForPublish`, on the way out.
  */
+const providerGeneratedListingSchema = reviewableListingSchema.omit({
+  wineOwnership: true,
+});
 export const generationOutputSchema = z.object({
-  listing: reviewableListingSchema,
+  listing: providerGeneratedListingSchema,
 });
 
 export const generationInputRuntimeSchema = z.object({

@@ -1,4 +1,6 @@
 "use client";
+import { WineEnrichmentWorkspace } from "./wine-enrichment-workspace";
+import type { WineProgress } from "../lib/wine-progress";
 import { ListingWorkingCopy } from "./listing-working-copy";
 import type {
   WorkingListing,
@@ -80,6 +82,7 @@ type WireListingActivityEntry =
     };
 
 export type ListingViewResponse = {
+  wineProgress?: WineProgress | null;
   inputRevision?: number;
   workingInput?: {
     revision: number;
@@ -599,6 +602,9 @@ export function ListingReviewClient({
   const processKey = useRef<string | null>(null);
   const [reviewDirty, setReviewDirty] = useState(false);
   const [workingDirty, setWorkingDirty] = useState(false);
+  const [wineDirty, setWineDirty] = useState(false);
+  const [wineBusy, setWineBusy] = useState(false);
+  const mutationBusy = busy || wineBusy;
   const [productShotChoice, setProductShotChoice] =
     useState<BackgroundChoice>("white");
   // A code the screen recognises says what to do about it. Anything else falls
@@ -668,6 +674,7 @@ export function ListingReviewClient({
 
   useEffect(() => {
     if (
+      !["queued", "running"].includes(snapshot?.wineProgress?.state ?? "") &&
       processingState !== "queued" &&
       snapshot?.status !== "received" &&
       snapshot?.status !== "processing"
@@ -677,7 +684,7 @@ export function ListingReviewClient({
       void load().catch(() => {});
     }, 3_000);
     return () => window.clearInterval(timer);
-  }, [load, snapshot?.status, processingState]);
+  }, [load, snapshot?.status, snapshot?.wineProgress?.state, processingState]);
 
   let mapped: MappedListingView | null = null;
   let mappingError: string | null = null;
@@ -766,7 +773,7 @@ export function ListingReviewClient({
     );
   if (viewState.kind === "processing" && snapshot)
     return (
-      <div className="page-wrap review-page" aria-busy={busy}>
+      <div className="page-wrap review-page" aria-busy={mutationBusy}>
         {error ? (
           <p className="inline-warning" role="alert" id="listing-action-error">
             {actionErrorText}
@@ -783,16 +790,27 @@ export function ListingReviewClient({
         {snapshot.sourceImportId ? (
           <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
         ) : null}
-        <ListingProcessingPanel
-          status={viewState.status}
-          errorCode={
-            snapshot.currentRun?.errorCode ?? snapshot.processing?.errorCode
-          }
-          enqueueState={processingState}
-          canProcess={snapshot.permissions.canProcess}
-          onProcess={startProcessing}
-          busy={busy}
-        />
+        {snapshot.wineProgress ? (
+          <WineEnrichmentWorkspace
+            snapshot={snapshot}
+            onRefresh={load}
+            externalDirty={workingDirty}
+            onDirtyChange={setWineDirty}
+            onBusyChange={setWineBusy}
+            disabled={mutationBusy}
+          />
+        ) : (
+          <ListingProcessingPanel
+            status={viewState.status}
+            errorCode={
+              snapshot.currentRun?.errorCode ?? snapshot.processing?.errorCode
+            }
+            enqueueState={processingState}
+            canProcess={snapshot.permissions.canProcess}
+            onProcess={startProcessing}
+            busy={mutationBusy}
+          />
+        )}
         {snapshot.currentRun ? (
           <details>
             <summary>{t("處理詳情", "Processing details")}</summary>
@@ -816,7 +834,8 @@ export function ListingReviewClient({
             listingId={listingId}
             input={snapshot.workingInput}
             sources={snapshot.sources ?? []}
-            canEdit={snapshot.permissions.canEdit}
+            canEdit={snapshot.permissions.canEdit && !wineDirty && !wineBusy}
+            onDirtyChange={setWorkingDirty}
             onSaved={load}
             onProcessingAccepted={(run) => {
               trackedRunId.current = run.runId;
@@ -828,8 +847,8 @@ export function ListingReviewClient({
         {snapshot.productShotWorkflow || snapshot.workingInput ? (
           <ProductShotReview
             listingId={listingId}
-            canOperate={snapshot.permissions.canProcess}
-            canApprove={snapshot.permissions.canApprove}
+            canOperate={snapshot.permissions.canProcess && !mutationBusy}
+            canApprove={snapshot.permissions.canApprove && !mutationBusy}
           />
         ) : null}
       </div>
@@ -960,7 +979,7 @@ export function ListingReviewClient({
   }
 
   return (
-    <div className="page-wrap review-page" aria-busy={busy}>
+    <div className="page-wrap review-page" aria-busy={mutationBusy}>
       <div className="breadcrumb">
         <Link href="/dashboard">{t("工作台", "Dashboard")}</Link>
         <span aria-hidden="true">/</span>
@@ -998,6 +1017,16 @@ export function ListingReviewClient({
           {localized(locale, ...message)}
         </p>
       ) : null}
+      {snapshot.wineProgress && (
+        <WineEnrichmentWorkspace
+          snapshot={snapshot}
+          onRefresh={load}
+          externalDirty={reviewDirty || workingDirty}
+          onDirtyChange={setWineDirty}
+          onBusyChange={setWineBusy}
+          disabled={mutationBusy}
+        />
+      )}
       <div className="review-layout">
         <EvidencePanel evidence={evidence} />
         <div className="review-content">
@@ -1005,8 +1034,8 @@ export function ListingReviewClient({
             <ProductShotReview
               key={`${listingId}:${model.versionId}`}
               listingId={listingId}
-              canOperate={permissions.canProcess}
-              canApprove={permissions.canApprove}
+              canOperate={permissions.canProcess && !mutationBusy}
+              canApprove={permissions.canApprove && !mutationBusy}
             />
           ) : snapshot.productShot ? (
             <ProductShotPanel
@@ -1036,8 +1065,10 @@ export function ListingReviewClient({
                   baseVersionId: model.versionId,
                 }}
                 sources={snapshot.sources ?? []}
-                canEdit={permissions.canEdit && !reviewDirty}
-                busy={busy}
+                canEdit={
+                  permissions.canEdit && !reviewDirty && !wineDirty && !wineBusy
+                }
+                busy={mutationBusy}
                 currentRunId={snapshot.currentRun?.runId}
                 onSaved={load}
                 onDirtyChange={setWorkingDirty}
@@ -1051,15 +1082,25 @@ export function ListingReviewClient({
           <ListingFieldsForm
             key={model.versionId}
             model={model}
-            canApprove={permissions.canApprove && !busy && !workingDirty}
-            canEdit={permissions.canEdit && !busy && !workingDirty}
+            canApprove={
+              permissions.canApprove &&
+              !mutationBusy &&
+              !workingDirty &&
+              !wineDirty
+            }
+            canEdit={
+              permissions.canEdit &&
+              !mutationBusy &&
+              !workingDirty &&
+              !wineDirty
+            }
             fieldConfirmations={snapshot.reviewConfirmation?.fieldConfirmations}
             negativeConfirmations={
               snapshot.reviewConfirmation?.negativeConfirmations
             }
             onApprove={approve}
             actionErrorId={error ? "listing-action-error" : undefined}
-            busy={busy}
+            busy={mutationBusy}
             onSave={save}
             onDirtyChange={setReviewDirty}
           />
@@ -1071,17 +1112,24 @@ export function ListingReviewClient({
               snapshot.reviewConfirmation?.negativeConfirmations ?? {}
             }
             canConfirm={
-              permissions.canEdit && !busy && !reviewDirty && !workingDirty
+              permissions.canEdit &&
+              !mutationBusy &&
+              !reviewDirty &&
+              !workingDirty &&
+              !wineDirty
             }
             onChange={saveConfirmations}
           />
           <ComplianceFlags
             flags={model.blockingFlags}
-            canResolve={permissions.canResolveFlags && !busy}
+            canResolve={permissions.canResolveFlags && !mutationBusy}
             onResolve={resolveFlag}
           />
           <DeliveryPanel
-            model={{ ...delivery, canReview: delivery.canReview && !busy }}
+            model={{
+              ...delivery,
+              canReview: delivery.canReview && !mutationBusy,
+            }}
             sku={content?.sku ?? null}
             onCsv={exportCsv}
             onPublish={publish}

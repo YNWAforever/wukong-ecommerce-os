@@ -24,6 +24,8 @@ export type PhysicalInvocationUsage = {
 };
 
 export type PhysicalInvocationRecord = {
+  /** Transport-owned: only the first repairable schema parse failure. */
+  schemaRepairEligible?: boolean;
   ordinal: number;
   phase: "request" | "repair" | "transport_retry";
   outcome: "started" | "response" | "api_error" | "refusal" | "invalid_output";

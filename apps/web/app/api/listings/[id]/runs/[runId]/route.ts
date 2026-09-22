@@ -1,3 +1,4 @@
+import { readWineProgress } from "../../../../../../lib/wine-progress";
 import { z } from "zod";
 import type { Database } from "@wukong/db";
 import { getDatabase } from "../../../../../../lib/intake-runtime";
@@ -34,6 +35,7 @@ export function createListingRunHandler(deps: {
             throw new ApiError(404, "run_not_found", "Run not found.");
           const current = await repos.listingInputs.getCurrent(id);
           return {
+            wineProgress: await readWineProgress(repos, run),
             runId: run.id,
             state: run.executionState,
             attempt: run.runAttempt,

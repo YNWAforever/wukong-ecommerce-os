@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { prepareWineTls } from "./wine-local-tls.mjs";
+import { spawn, execFileSync } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -8,7 +9,9 @@ import { connect as connectTls } from "node:tls";
 
 const root = process.cwd();
 const port = process.env.PORT ?? "49217";
-const workerPort = "8787";
+const wineFixtureEnabled = process.env.WUKONG_WINE_E2E === "1";
+const wineTls = wineFixtureEnabled ? prepareWineTls(root) : null;
+const workerPort = wineFixtureEnabled ? "8789" : "8787";
 const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const workerUrl = `http://127.0.0.1:${workerPort}`;
 const publicImagePort = 49218;
@@ -29,7 +32,7 @@ const localHyperdriveEnvironmentVariable =
 const runtimeEnv = {
   ...process.env,
   DATABASE_URL: runtimeUrl,
-  NODE_EXTRA_CA_CERTS: localCaPath,
+  NODE_EXTRA_CA_CERTS: wineTls?.bundle ?? localCaPath,
   S3_BUCKET: process.env.S3_BUCKET ?? "wukong-local",
   // Pinned to the TLS proxy on purpose, and deliberately not inherited from
   // S3_ENDPOINT. The runtime hands signed object URLs to SHOPLINE, and
@@ -44,6 +47,7 @@ const runtimeEnv = {
   S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY ?? "wukong-secret",
   S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE ?? "true",
   AI_PROVIDER: "fake",
+  WINE_ENRICHMENT_ENABLED: wineFixtureEnabled ? "true" : "false",
   SHOPLINE_ADAPTER: "mock",
   PRODUCT_SHOT_PROVIDER: productShotFixtureEnabled ? "fake" : "disabled",
   PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: productShotFixtureEnabled
@@ -55,7 +59,7 @@ const runtimeEnv = {
   PRODUCT_IMAGE_PUBLIC_ORIGIN: productShotFixtureEnabled
     ? `https://localhost:${publicImagePort}`
     : undefined,
-  QUEUE_INGRESS_URL: workerUrl,
+  QUEUE_INGRESS_URL: wineFixtureEnabled ? "https://localhost:49218" : workerUrl,
   QUEUE_INGRESS_SECRET: ingressSecret,
 
   AUTH_SECRET:
@@ -77,7 +81,12 @@ delete workerEnv.PHOTOROOM_API_KEY;
 
 const localWrangler = {
   name: "wukong-runtime-e2e",
-  main: resolve(root, "apps/worker/src/cloudflare.ts"),
+  main: resolve(
+    root,
+    wineFixtureEnabled
+      ? "tests/e2e/wine-runtime-worker.ts"
+      : "apps/worker/src/cloudflare.ts",
+  ),
   compatibility_date: "2026-07-19",
   compatibility_flags: ["nodejs_compat"],
   hyperdrive: [
@@ -88,13 +97,27 @@ const localWrangler = {
     },
   ],
   vars: {
-    WEBSITE_FETCH_BASE_URL:
-      process.env.E2E_WEBSITE_FETCH_BASE_URL ?? "http://127.0.0.1:49219",
+    WEBSITE_FETCH_BASE_URL: wineFixtureEnabled
+      ? "https://callback.test"
+      : (process.env.E2E_WEBSITE_FETCH_BASE_URL ?? "http://127.0.0.1:49219"),
     QUEUE_INGRESS_SECRET: ingressSecret,
-    BUILD_SHA: "local-e2e",
+    BUILD_SHA: wineFixtureEnabled
+      ? execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: root,
+          encoding: "utf8",
+          windowsHide: true,
+        }).trim()
+      : "local-e2e",
     SHOPLINE_ADAPTER: "mock",
     SHOPLINE_PUBLISH_ENABLED: "false",
     AI_PROVIDER: "fake",
+    WINE_ENRICHMENT_ENABLED: wineFixtureEnabled ? "true" : "false",
+    ...(wineFixtureEnabled
+      ? {
+          OPENCODE_GO_API_KEY: "synthetic-local-only",
+          TAVILY_API_KEY: "synthetic-local-only",
+        }
+      : {}),
     PRODUCT_SHOT_PROVIDER: runtimeEnv.PRODUCT_SHOT_PROVIDER,
     PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY:
       runtimeEnv.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
@@ -145,6 +168,8 @@ const SENSITIVE_BINDINGS = new Set([
   "S3_SECRET_ACCESS_KEY",
   "SHOPLINE_TOKEN_ENCRYPTION_KEY",
   "PHOTOROOM_API_KEY",
+  "OPENCODE_GO_API_KEY",
+  "TAVILY_API_KEY",
 ]);
 const ANSI_ESCAPE_PATTERN = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const DEFAULT_SENSITIVE_VALUES = [
@@ -473,12 +498,15 @@ async function startPublicImageProxy() {
     "node_modules/.photoroom-services/certs/private.key",
   );
   const server = https.createServer(
-    { cert: await readFile(certPath), key: await readFile(keyPath) },
+    {
+      cert: await readFile(wineTls?.cert ?? certPath),
+      key: await readFile(wineTls?.key ?? keyPath),
+    },
     (request, response) => {
       const upstream = http.request(
         {
           hostname: "127.0.0.1",
-          port: Number(port),
+          port: Number(wineFixtureEnabled ? workerPort : port),
           path: request.url,
           method: request.method,
           headers: request.headers,
@@ -536,6 +564,16 @@ async function runServer() {
   try {
     await waitForTlsPort("localhost", 9012);
     await access(localCaPath);
+    if (wineFixtureEnabled) {
+      start("wine-provider", [
+        "--filter",
+        "@wukong/db",
+        "exec",
+        "node",
+        "../../tests/e2e/wine-provider-runner.mjs",
+      ]);
+      await waitFor("http://127.0.0.1:49221/health", "Synthetic wine HTTP");
+    }
 
     if (!process.env.E2E_WEBSITE_FETCH_BASE_URL) {
       start("website-callback", [
@@ -568,6 +606,8 @@ async function runServer() {
       workerEnv,
     );
     await waitFor(`${workerUrl}/health`, "Wrangler");
+
+    if (wineFixtureEnabled) await startPublicImageProxy();
 
     start("web", [
       "--filter",

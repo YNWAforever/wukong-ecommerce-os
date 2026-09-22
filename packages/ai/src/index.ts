@@ -98,3 +98,64 @@ export {
   OpenCodeGoListingProvider,
   type OpenCodeGoListingProviderConfig,
 } from "./opencode-go-listing-provider.js";
+export {
+  TAVILY_REQUEST_TIMEOUT_MS,
+  TAVILY_RESPONSE_LIMIT_BYTES,
+  TavilyProvider,
+  TavilyProviderError,
+} from "./tavily-provider.js";
+export type {
+  TavilyProviderConfig,
+  TavilyProviderErrorCode,
+  TavilyResponse,
+  TavilyResult,
+} from "./tavily-provider.js";
+export { TypedJsonCompletionClient } from "./typed-json-completion.js";
+export type { TypedJsonCompletionConfig } from "./typed-json-completion.js";
+export {
+  WineEnrichmentProvider,
+  validateWineSupportProposal,
+  wineExtractionSchema,
+  wineVerificationProposalSchema,
+  wineSupportProposalSchema,
+  wineFrozenContextSchema,
+  wineQualityIssueSchema,
+} from "./wine-enrichment-provider.js";
+export type {
+  WineExtraction,
+  WineSupportProposal,
+  WineFrozenContext,
+  WineVerificationRequest,
+  WineVerificationResult,
+  WineObserverCoordinate,
+  WineObserverFactory,
+  WineEnrichmentProviderConfig,
+} from "./wine-enrichment-provider.js";
+export {
+  WINE_PROMPT_VERSIONS,
+  WINE_PROMPTS,
+  WINE_STAGE_ROLES,
+  WINE_EXECUTION_SNAPSHOT,
+  wineExecutionSnapshotSchema,
+} from "./wine-enrichment-prompts.js";
+export type {
+  WineRole,
+  WineLogicalStage,
+  WineExecutionSnapshot,
+} from "./wine-enrichment-prompts.js";
+export {
+  wineGenerationRequestSchema,
+  wineOutputAnnotationSchema,
+  wineGenerationCandidateSchema,
+  wineCheckResponseSchema,
+  type WineGenerationRequest,
+  type WineGenerationCandidate,
+  type WineGenerationResult,
+  type WineCheckRequest,
+  type WineCheckResult,
+} from "./wine-enrichment-schemas.js";
+
+export {
+  validateWineGenerationRequest,
+  wineCandidateIssues,
+} from "./wine-enrichment-content-validation.js";

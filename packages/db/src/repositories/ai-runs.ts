@@ -5,7 +5,12 @@ import { aiRuns } from "../schema.js";
 
 export type AppendAiRunInput = {
   listingId: string;
-  task: "extract" | "generate" | "product_shot";
+  task:
+    | "extract"
+    | "generate"
+    | "product_shot"
+    | "wine_verification"
+    | "wine_quality_check";
   idempotencyKey: string;
   provider: string;
   model: string;
@@ -23,7 +28,12 @@ export type AppendAiRunInput = {
 export type BeginAiInvocationInput = {
   listingId: string;
   pipelineRunId: string;
-  task: "extract" | "generate" | "product_shot";
+  task:
+    | "extract"
+    | "generate"
+    | "product_shot"
+    | "wine_verification"
+    | "wine_quality_check";
   stage: string;
   callOrdinal: number;
   provider: string;

@@ -8,6 +8,8 @@ import {
   type WebsiteJob,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  wineListingJobSchema,
+  type WineListingJob,
   shoplinePublishJobSchema,
   signQueueRequest,
   type ListingJob,
@@ -25,7 +27,7 @@ export type CloudflareIngressClient = {
   ): Promise<{ accepted: true }>;
   enqueue(
     path: typeof LISTING_INGRESS_PATH,
-    payload: ListingJob,
+    payload: ListingJob | WineListingJob,
   ): Promise<{ accepted: true }>;
   enqueue(
     path: typeof SHOPLINE_INGRESS_PATH,
@@ -72,7 +74,12 @@ export function createCloudflareIngressClient(
       | typeof SHOPLINE_INGRESS_PATH
       | typeof WEBSITE_INGRESS_PATH
       | typeof PRODUCT_SHOT_INGRESS_PATH,
-    payload: ListingJob | ShoplinePublishJob | WebsiteJob | ProductShotJob,
+    payload:
+      | ListingJob
+      | WineListingJob
+      | ShoplinePublishJob
+      | WebsiteJob
+      | ProductShotJob,
   ): Promise<{ accepted: true }> {
     try {
       const env = options.env ?? process.env;
@@ -83,7 +90,7 @@ export function createCloudflareIngressClient(
         path === PRODUCT_SHOT_INGRESS_PATH
           ? productShotJobSchema
           : path === LISTING_INGRESS_PATH
-            ? listingJobSchema
+            ? listingJobSchema.or(wineListingJobSchema)
             : path === SHOPLINE_INGRESS_PATH
               ? shoplinePublishJobSchema
               : path === WEBSITE_INGRESS_PATH

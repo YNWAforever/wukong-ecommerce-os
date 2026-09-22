@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -141,6 +143,8 @@ function readyCount(files: ListingIntakeFile[]): number {
 }
 
 export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [files, setFiles] = useState<ListingIntakeFile[]>([]);
   const filesRef = useRef<ListingIntakeFile[]>([]);
   const [note, setNote] = useState("");
@@ -309,11 +313,29 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
 
   return (
     <form className="intake-form" onSubmit={submit}>
+      <p className="helper-copy">
+        {t(
+          "請加入清晰的正面標籤、背面標籤及包裝相片；年份、容量及條碼需可辨認。",
+          "Add clear front label, back label and package photos with readable vintage, volume and barcode.",
+        )}
+      </p>
+      <p className="helper-copy">
+        {t(
+          "可選填商戶貨號、售價及庫存。AI 不會猜測這些資料。啟用酒類搜尋時，處理可能使用網絡搜尋及 Tavily 點數。",
+          "Merchant SKU, price and stock are optional; AI will not guess them. When wine research is enabled, processing may use network search and Tavily credits.",
+        )}
+      </p>
       <div className="upload-dropzone">
         <label htmlFor="listing-files" className="upload-label">
-          <span className="upload-title">加入商品資料</span>
+          <span className="upload-title">
+            {t("加入商品資料", "Add product information")}
+          </span>
           <span className="upload-subtitle">
-            上載瓶身圖片或供應商資料 · JPG, PNG, WebP · PDF
+            {t(
+              "上載瓶身圖片或供應商資料",
+              "Upload bottle photos or supplier documents",
+            )}{" "}
+            · JPG, PNG, WebP · PDF
           </span>
           <span className="secondary-button upload-button">
             選擇檔案 <span>Select files</span>
@@ -336,7 +358,10 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           }}
         />
         <p className="upload-limit">
-          最多 10 張圖片及 1 份 PDF。成功上傳的檔案不會在重試時重複上傳。
+          {t(
+            "最多 10 張圖片及 1 份 PDF。成功上傳的檔案不會在重試時重複上傳。",
+            "Up to 10 images and 1 PDF. Completed uploads are retained when retrying.",
+          )}
         </p>
       </div>
 
@@ -386,7 +411,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
 
       <div className="notes-field">
         <label htmlFor="listing-note">
-          <span>補充備註</span>
+          <span>{t("補充備註", "Operator notes")}</span>
           <small>Operator notes · Optional</small>
         </label>
         <textarea
@@ -395,13 +420,16 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           onChange={(event) => setNote(event.target.value)}
           maxLength={5000}
           rows={5}
-          placeholder="例如：只保留 2024 年份；請以英文與繁體中文輸出。"
+          placeholder={t(
+            "例如：只保留 2024 年份；請以英文與繁體中文輸出。",
+            "For example: use only the 2024 vintage; draft in English and Traditional Chinese.",
+          )}
         />
         <span className="character-count">{note.length}/5000</span>
       </div>
 
       <fieldset className="processing-mode">
-        <legend>建立草稿後</legend>
+        <legend>{t("建立草稿後", "After creating the draft")}</legend>
         <label>
           <input
             type="radio"
@@ -410,7 +438,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
             checked={processingMode === "ai"}
             onChange={() => setProcessingMode("ai")}
           />
-          儲存並開始 AI 處理
+          {t("儲存並開始 AI 處理", "Save and start AI processing")}
         </label>
         <label>
           <input
@@ -420,7 +448,10 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
             checked={processingMode === "manual"}
             onChange={() => setProcessingMode("manual")}
           />
-          只儲存草稿，稍後手動處理
+          {t(
+            "只儲存草稿，稍後手動處理",
+            "Save draft for manual processing later",
+          )}
         </label>
       </fieldset>
 
@@ -436,7 +467,11 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
         </button>
       </div>
       <p className="intake-message" role="status" aria-live="polite">
-        {message ?? "檔案會先經過驗證，再交由 AI 佇列處理。"}
+        {message ??
+          t(
+            "檔案會先經過驗證，再交由 AI 佇列處理。",
+            "Files are validated before entering the AI queue.",
+          )}
       </p>
     </form>
   );

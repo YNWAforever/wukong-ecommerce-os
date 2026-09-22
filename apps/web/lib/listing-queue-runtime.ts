@@ -2,6 +2,8 @@ import {
   LISTING_INGRESS_PATH,
   listingRunKey,
   type ListingJob,
+  type WineListingJob,
+  wineStageMessageKey,
 } from "@wukong/jobs";
 
 import {
@@ -10,13 +12,17 @@ import {
   type CloudflareIngressClient,
 } from "./cloudflare-queue-runtime";
 
-export function listingApplicationJobId(input: ListingJob): string {
+export function listingApplicationJobId(
+  input: ListingJob | WineListingJob,
+): string {
   // Shared with the Worker so both sides derive byte-identical keys.
-  return listingRunKey(input);
+  return "flowVersion" in input
+    ? wineStageMessageKey(input.runId, input.stage)
+    : listingRunKey(input);
 }
 
 export type ListingPublisher = {
-  enqueue(input: ListingJob): Promise<{ id: string }>;
+  enqueue(input: ListingJob | WineListingJob): Promise<{ id: string }>;
 };
 
 type Options = {

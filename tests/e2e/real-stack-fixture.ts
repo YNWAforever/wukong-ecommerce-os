@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { createRequire } from "node:module";
 import {
   CreateBucketCommand,
   DeleteObjectsCommand,
@@ -502,4 +504,115 @@ export async function productShotDatabaseView(listingId: string) {
   } finally {
     await admin.end();
   }
+}
+/** Additive wine tenant: no deletes, migrations or bucket reset. */
+export async function prepareWineStackFixture() {
+  assertFixtureDatabaseAlignment();
+  for (const raw of [ADMIN_URL, RUNTIME_URL]) {
+    const url = new URL(raw);
+    if (
+      !["127.0.0.1", "localhost"].includes(url.hostname) ||
+      url.pathname !== "/wukong_wine_sdd"
+    )
+      throw Error("Dedicated local wine database required");
+  }
+  OPAK_WORKSPACE_ID = `ws_wine_${randomUUID().replaceAll("-", "")}`;
+  OPAK_ADMIN_EMAIL = `wine-admin-${randomUUID()}@local.invalid`;
+  OPAK_ADMIN_USER_ID = `user_wine_${randomUUID()}`;
+  FOREIGN_WORKSPACE_ID = `ws_foreign_wine_${randomUUID().replaceAll("-", "")}`;
+  await ensureBucket(s3Client());
+  const profile = {
+    ...JSON.parse(OPAK_PROFILE),
+    wineEnrichment: {
+      enabled: true,
+      tavilyCreditCap: 100,
+      allowedDomains: ["wine.synthetic.example"],
+    },
+  };
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`INSERT INTO workspaces(id,name,profile) VALUES (${OPAK_WORKSPACE_ID},'Synthetic wine acceptance',${admin.json(profile)})`;
+    await admin`INSERT INTO users(id,email) VALUES (${OPAK_ADMIN_USER_ID},${OPAK_ADMIN_EMAIL})`;
+    await admin`INSERT INTO memberships(workspace_id,user_id,role) VALUES (${OPAK_WORKSPACE_ID},${OPAK_ADMIN_USER_ID},'admin')`;
+    await admin`INSERT INTO workspace_invites(workspace_id,email,role,status) VALUES (${OPAK_WORKSPACE_ID},${OPAK_ADMIN_EMAIL},'admin','pending')`;
+    await admin`INSERT INTO workspaces(id,name,profile) VALUES (${FOREIGN_WORKSPACE_ID},'Foreign synthetic tenant','{}'::jsonb)`;
+    const [foreign] =
+      await admin`INSERT INTO listing_drafts(workspace_id,target,note) VALUES (${FOREIGN_WORKSPACE_ID},'shopline','synthetic tenant boundary') RETURNING id`;
+    const runtime = createDatabase(RUNTIME_URL);
+    try {
+      await runtime.forWorkspace(OPAK_WORKSPACE_ID, (r) =>
+        r.wineEnrichment.recordReviewedAuthority(OPAK_ADMIN_USER_ID, {
+          schemaVersion: 1,
+          domain: "wine.synthetic.example",
+          subject: { kind: "producer", name: "Fixture Estate" },
+          proofUrl: "https://wine.synthetic.example/reserve-red",
+          proofDigest: "a".repeat(64),
+          verifiedAt: new Date(Date.now() - 1000).toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          revokedAt: null,
+          verifierId: OPAK_ADMIN_USER_ID,
+        }),
+      );
+    } finally {
+      await runtime.close();
+    }
+    return {
+      workspaceId: OPAK_WORKSPACE_ID,
+      foreignListingId: foreign!.id as string,
+    };
+  } finally {
+    await admin.end();
+  }
+}
+export async function readWineRuntimeEvidence(
+  workspaceId: string,
+  listingId: string,
+) {
+  const db = createDatabase(RUNTIME_URL);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const current = await db.forWorkspace(workspaceId, async (r) => ({
+      listing: await r.listings.getById(listingId),
+      run: await r.pipelineRuns.getCurrentOperation(listingId),
+    }));
+    const runId = current.run!.id;
+    const stages =
+      await admin`select stage,state,output from wine_stages where workspace_id=${workspaceId} and run_id=${runId}`;
+    const ai =
+      await admin`select id,stage,status from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${runId} order by created_at`;
+    const search =
+      await admin`select slot,status,credits from wine_search_calls where workspace_id=${workspaceId} and run_id=${runId}`;
+    const budget =
+      await admin`select state,reserved_credits,settled_credits from search_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${runId}`;
+    const documents =
+      await admin`select source_id,kind,state from wine_document_requests where workspace_id=${workspaceId} and run_id=${runId}`;
+    return {
+      listingId,
+      runId,
+      versionId: current.listing!.activeVersionId,
+      executionState: current.run!.executionState,
+      inputRevision: current.run!.inputRevision,
+      errorCode: current.run!.errorCode,
+      stages,
+      ai,
+      search,
+      budget,
+      documents,
+    };
+  } finally {
+    await db.close();
+    await admin.end();
+  }
+}
+
+/** Readable public synthetic label; unrelated to the pending benchmark fixtures. */
+export async function wineLabelPng(
+  vintage: number | null = 2020,
+  view: "Front" | "Back" = "Front",
+) {
+  const sharp = createRequire(resolve(process.cwd(), "apps/web/package.json"))(
+    "sharp",
+  );
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#efe9de"/><rect x="230" y="50" width="140" height="150" rx="18" fill="#263d32"/><rect x="150" y="170" width="300" height="650" rx="80" fill="#263d32"/><rect x="170" y="350" width="260" height="320" rx="6" fill="#fff9ec"/><g text-anchor="middle" font-family="Arial" fill="#282623"><text x="300" y="400" font-size="25">FIXTURE ESTATE</text><text x="300" y="450" font-size="28">Reserve Red</text><text x="300" y="500" font-size="34">${vintage ?? "Vintage unknown"}</text><text x="300" y="550" font-size="23">${vintage === null ? "750 ml | ABV unclear" : "750 ml | 13% ABV"}</text><text x="300" y="590" font-size="21">1 bottle</text><text x="300" y="635" font-size="16">HONG KONG - SYNTHETIC</text></g><text x="300" y="860" text-anchor="middle" font-family="Arial" font-size="19" fill="#282623">Local acceptance fixture - ${view} - not for sale</text></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
 }

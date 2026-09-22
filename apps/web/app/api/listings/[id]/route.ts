@@ -1,3 +1,4 @@
+import { readWineProgress } from "../../../../lib/wine-progress";
 import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
 import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
 import { readSourceReadiness } from "../../../../lib/source-readiness";
@@ -225,6 +226,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
                   inputRevision: currentRun.inputRevision,
                   baseVersionId: currentRun.baseVersionId,
                 }
+              : null,
+            wineProgress: currentRun
+              ? await readWineProgress(repositories, currentRun)
               : null,
             processing,
             activeVersion: snapshot.activeVersion,

@@ -1,3 +1,5 @@
+import { wineOwnershipSchema } from "./wine-content.js";
+import { wineEnrichmentPolicySchema } from "./wine-enrichment-budget.js";
 import { sourcePreferencesSchema } from "./workspace-policy.js";
 import { z } from "zod";
 
@@ -34,6 +36,7 @@ export const listingFactsSchema = z.object({
 });
 
 export const canonicalListingSchema = listingFactsSchema.extend({
+  wineOwnership: wineOwnershipSchema.optional(),
   sku: z.string().trim().min(1),
   producer: z.string().trim().min(1),
   productType: z.enum(["wine", "spirits", "sake", "other"]),
@@ -52,6 +55,7 @@ export const canonicalListingSchema = listingFactsSchema.extend({
 });
 
 export const workspaceProfileSchema = z.object({
+  wineEnrichment: wineEnrichmentPolicySchema.optional(),
   sourcePreferences: sourcePreferencesSchema.optional(),
   listingAi: z
     .object({
@@ -93,6 +97,7 @@ export const workspaceProfileSchema = z.object({
 // read-only "view this listing" path turned routine, in-progress review
 // data into a hard error.
 export const reviewableListingSchema = listingFactsSchema.extend({
+  wineOwnership: wineOwnershipSchema.optional(),
   title: localizedTextSchema,
   description: localizedTextSchema,
   seo: z.object({

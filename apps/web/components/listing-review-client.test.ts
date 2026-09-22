@@ -1,3 +1,4 @@
+import { progress as wineProgress } from "./wine-ui-test-fixtures";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -762,6 +763,114 @@ it("binds checklist updates to the displayed ledger revision", async () => {
     expect(JSON.parse(fetcher.mock.calls[1]![1]?.body as string)).toMatchObject(
       { versionId: response.activeVersion!.id, expectedRevision: 4 },
     );
+  } finally {
+    await unmountReview(root);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("disables legacy editing for the entire deferred wine adoption and refresh", async () => {
+  let adoptDone!: (value: Response) => void,
+    refreshDone!: (value: Response) => void;
+  const adoption = new Promise<Response>((resolve) => {
+      adoptDone = resolve;
+    }),
+    refresh = new Promise<Response>((resolve) => {
+      refreshDone = resolve;
+    });
+  const snapshot = {
+    ...response,
+    inputRevision: 2,
+    wineProgress: { ...wineProgress, state: "awaiting_adoption" },
+    workingInput: {
+      revision: 2,
+      baseVersionId: response.activeVersion!.id,
+      note: null,
+      workingContent: response.activeVersion!.content,
+      fieldStates: {},
+      sources: [],
+    },
+  };
+  const diff = {
+    runId: wineProgress.runId,
+    inputRevision: 2,
+    baseVersionId: response.activeVersion!.id,
+    current: { inputRevision: 2, activeVersionId: response.activeVersion!.id },
+    state: "available",
+    adoptedVersionId: null,
+    differences: [
+      {
+        path: "title.en",
+        kind: "field",
+        before: "Old",
+        after: "New",
+        selectable: true,
+        reason: null,
+      },
+    ],
+  };
+  let reads = 0;
+  const fetcher = vi
+    .fn()
+    .mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith("/adopt")) return adoption;
+      if (url.includes("/proposals/"))
+        return Promise.resolve(Response.json(diff));
+      if (url === `/api/listings/${response.listingId}`)
+        return ++reads === 1
+          ? Promise.resolve(Response.json(snapshot))
+          : refresh;
+      return Promise.resolve(Response.json({}));
+    });
+  vi.stubGlobal("fetch", fetcher);
+  const { container, root } = await mountReview();
+  try {
+    const field =
+      (container.querySelector(
+        ".fields-form input, .listing-fields-form input, #field-producer",
+      ) as HTMLInputElement) ??
+      [
+        ...container.querySelectorAll<HTMLInputElement>(".field-control input"),
+      ][0]!;
+    expect(field).not.toBeNull();
+    expect(field.disabled).toBe(false);
+    await act(async () =>
+      (
+        container.querySelector("[data-proposal-path]") as HTMLInputElement
+      ).click(),
+    );
+    await act(async () =>
+      (
+        container.querySelector(
+          '[data-action="adopt-wine"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    expect(field.disabled).toBe(true);
+    expect(
+      (
+        container
+          .querySelector(".working-input-details textarea")!
+          .closest("fieldset") as HTMLFieldSetElement
+      ).disabled,
+    ).toBe(true);
+    await act(async () => adoptDone(Response.json({ versionId: "adopted" })));
+    expect(field.disabled).toBe(true);
+    await act(async () =>
+      refreshDone(
+        Response.json({
+          ...snapshot,
+          activeVersion: {
+            ...snapshot.activeVersion,
+            id: "00000000-0000-4000-8000-000000000202",
+          },
+        }),
+      ),
+    );
+    expect(
+      (container.querySelector(".field-control input") as HTMLInputElement)
+        .disabled,
+    ).toBe(false);
   } finally {
     await unmountReview(root);
     vi.unstubAllGlobals();
