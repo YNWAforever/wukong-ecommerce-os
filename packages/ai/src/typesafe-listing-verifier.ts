@@ -174,13 +174,25 @@ export function createTypeSafeListingVerifier(
         );
       }
 
+      const preparationElapsedMs = Math.max(0, now() - startedAt);
+      if (preparationElapsedMs >= TIMEOUT_MS) {
+        return unavailable(
+          requestedModel,
+          checkedAt,
+          preparationElapsedMs,
+          "timeout",
+          false,
+          { inputTokens: 0, outputTokens: 0 },
+        );
+      }
+
       const controller = new AbortController();
       let timeoutId: ReturnType<typeof setTimeout>;
       const deadline = new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(() => {
           reject(new DeadlineError());
           controller.abort();
-        }, TIMEOUT_MS);
+        }, TIMEOUT_MS - preparationElapsedMs);
       });
       let usage = emptyUsage();
       try {

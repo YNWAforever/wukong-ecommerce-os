@@ -199,9 +199,36 @@ describe("createTypeSafeListingVerifier", () => {
     });
   });
 
+  it("does not start a request when preparation exhausts the operation budget", async () => {
+    const fakeFetch = jsonFetch();
+    const now = vi
+      .fn<() => number>()
+      .mockReturnValueOnce(0)
+      .mockReturnValue(5_000);
+    const result = await createTypeSafeListingVerifier({
+      apiKey: "key",
+      model: "jev-1.13.0",
+      fetch: fakeFetch,
+      now,
+    }).verify(verificationFixture);
+    expect(fakeFetch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      outcome: "unavailable",
+      reason: "timeout",
+      usage: {
+        requestAttempted: false,
+        inputTokens: 0,
+        outputTokens: 0,
+        estimatedCostUsd: 0,
+        latencyMs: 5_000,
+      },
+    });
+  });
+
   it("times out a hanging body under the same deadline", async () => {
     vi.useFakeTimers();
     let cancelled = false;
+    let signal: AbortSignal | undefined;
     const stream = new ReadableStream<Uint8Array>({
       pull() {
         return new Promise<void>(() => {});
@@ -210,15 +237,25 @@ describe("createTypeSafeListingVerifier", () => {
         cancelled = true;
       },
     });
+    const fakeFetch = vi.fn<typeof fetch>(async (_url, init) => {
+      signal = init?.signal ?? undefined;
+      return new Response(stream);
+    });
     const pending = createTypeSafeListingVerifier({
       apiKey: "key",
       model: "jev-1.13.0",
-      fetch: async () => new Response(stream),
+      fetch: fakeFetch,
     }).verify(verificationFixture);
     await vi.advanceTimersByTimeAsync(5_000);
     const result = await pending;
     expect(cancelled).toBe(true);
-    expect(result.reason).toBe("timeout");
+    expect(signal?.aborted).toBe(true);
+    expect(fakeFetch).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      outcome: "unavailable",
+      reason: "timeout",
+      usage: { requestAttempted: true, estimatedCostUsd: null },
+    });
   });
 
   it("makes zero calls for skips and missing configuration", async () => {
