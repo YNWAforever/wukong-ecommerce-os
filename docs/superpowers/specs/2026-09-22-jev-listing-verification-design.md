@@ -1,7 +1,7 @@
 # WukongCommerce: advisory Jev listing verification
 
 Date: 2026-09-22
-Status: design approved in conversation; written specification awaiting review.
+Status: design and written specification approved in conversation on 2026-09-22.
 
 ## Purpose and scope
 
