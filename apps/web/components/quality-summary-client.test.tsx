@@ -57,6 +57,7 @@ const SAMPLE_SUMMARY = {
     summaryMissing: 21,
   },
   totalCostUsd: 12.5,
+  unknownCostRunCount: 0,
 };
 
 describe("QualitySummaryClient", () => {
@@ -68,6 +69,19 @@ describe("QualitySummaryClient", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows unknown charges even when the known subtotal is zero", async () => {
+    stubFetch({ ...SAMPLE_SUMMARY, totalCostUsd: 0, unknownCostRunCount: 2 });
+    const { container } = await mountClient();
+    expect(container.textContent).toContain("已知 AI 成本 / Known AI cost");
+    expect(container.textContent).toContain(
+      "另有 2 次執行成本未確認 / 2 runs have unknown cost",
+    );
+  });
+  it("omits the unknown-cost notice when all costs are known", async () => {
+    stubFetch(SAMPLE_SUMMARY);
+    const { container } = await mountClient();
+    expect(container.textContent).not.toContain("runs have unknown cost");
+  });
   it("fetches /api/quality and renders 4 stat tiles with correct values", async () => {
     const fetcher = stubFetch(SAMPLE_SUMMARY);
 
@@ -92,7 +106,12 @@ describe("QualitySummaryClient", () => {
     const tiles = container.querySelectorAll('[role="group"]');
     expect(tiles.length).toBe(4);
 
-    const expectedSubstrings = ["已評估商品", "無缺口", "有缺口", "AI 總成本"];
+    const expectedSubstrings = [
+      "已評估商品",
+      "無缺口",
+      "有缺口",
+      "已知 AI 成本",
+    ];
 
     tiles.forEach((tile, index) => {
       const labelledBy = tile.getAttribute("aria-labelledby");

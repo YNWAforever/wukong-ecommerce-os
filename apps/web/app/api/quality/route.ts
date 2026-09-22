@@ -23,10 +23,14 @@ export function createQualityHandler(deps: QualityRouteDeps) {
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
           const listings = await repositories.listings.listRecent();
-          const totalCostUsd = await repositories.aiRuns.sumCostForListings(
+          const cost = await repositories.aiRuns.summarizeCostForListings(
             listings.map((listing) => listing.id),
           );
-          return computeQualitySummary(listings, totalCostUsd);
+          return computeQualitySummary(
+            listings,
+            cost.knownCostUsd,
+            cost.unknownCostRunCount,
+          );
         });
 
       return jsonResponse(200, summary);

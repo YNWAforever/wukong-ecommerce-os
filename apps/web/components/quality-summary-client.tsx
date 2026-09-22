@@ -117,10 +117,17 @@ export function QualitySummaryClient() {
         <div role="group" aria-labelledby={totalCostLabelId}>
           <span className="metric-value">{formatUsd(data.totalCostUsd)}</span>
           <span className="metric-label" id={totalCostLabelId}>
-            AI 總成本 <small>Total AI cost</small>
+            已知 AI 成本 / <small>Known AI cost</small>
           </span>
         </div>
       </div>
+
+      {data.unknownCostRunCount > 0 && (
+        <p className="helper-copy">
+          另有 {data.unknownCostRunCount} 次執行成本未確認 /{" "}
+          {data.unknownCostRunCount} runs have unknown cost
+        </p>
+      )}
 
       <table className="members-table">
         <thead>

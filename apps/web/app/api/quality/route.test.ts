@@ -71,9 +71,9 @@ describe("GET /api/quality", () => {
                 },
               },
               aiRuns: {
-                async sumCostForListings(listingIds: readonly string[]) {
-                  calls.push(["aiRuns.sumCostForListings", listingIds]);
-                  return 12.5;
+                async summarizeCostForListings(listingIds: readonly string[]) {
+                  calls.push(["aiRuns.summarizeCostForListings", listingIds]);
+                  return { knownCostUsd: 12.5, unknownCostRunCount: 2 };
                 },
               },
             });
@@ -98,12 +98,13 @@ describe("GET /api/quality", () => {
         summaryMissing: 0,
       },
       totalCostUsd: 12.5,
+      unknownCostRunCount: 2,
     });
 
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
       ["listings.listRecent"],
-      ["aiRuns.sumCostForListings", ["l1", "l2", "l3"]],
+      ["aiRuns.summarizeCostForListings", ["l1", "l2", "l3"]],
     ]);
   });
 });

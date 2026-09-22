@@ -14,6 +14,7 @@ export type QualitySummary = {
   hasGapsCount: number;
   gapCounts: Record<keyof BulkFormContentGaps, number>;
   totalCostUsd: number;
+  unknownCostRunCount: number;
 };
 
 const EMPTY_GAP_COUNTS: Record<keyof BulkFormContentGaps, number> = {
@@ -28,6 +29,7 @@ const EMPTY_GAP_COUNTS: Record<keyof BulkFormContentGaps, number> = {
 export function computeQualitySummary(
   listings: readonly QualityAssessedListing[],
   totalCostUsd: number,
+  unknownCostRunCount = 0,
 ): QualitySummary {
   const gapCounts = { ...EMPTY_GAP_COUNTS };
   let cleanCount = 0;
@@ -52,5 +54,12 @@ export function computeQualitySummary(
     }
   }
 
-  return { totalAssessed, cleanCount, hasGapsCount, gapCounts, totalCostUsd };
+  return {
+    totalAssessed,
+    cleanCount,
+    hasGapsCount,
+    gapCounts,
+    totalCostUsd,
+    unknownCostRunCount,
+  };
 }

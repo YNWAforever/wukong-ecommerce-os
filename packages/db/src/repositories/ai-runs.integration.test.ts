@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDatabase } from "../index.js";
+import { createDatabase, type AppendAiRunInput } from "../index.js";
 
 const adminUrl =
   process.env.TEST_DATABASE_ADMIN_URL ??
@@ -32,6 +32,8 @@ describe("ai run repository", () => {
       END
       $role$;
     `);
+    await database.migrate();
+    // The runner replays every migration; applying twice must remain safe.
     await database.migrate();
     await admin.unsafe("TRUNCATE TABLE workspaces, users CASCADE");
     await admin.unsafe(`
@@ -97,4 +99,174 @@ describe("ai run repository", () => {
       expect(await repositories.aiRuns.sumCostForListings([])).toBe(0);
     });
   });
+  async function fixture(ws = workspaceId) {
+    const listing = await database.forWorkspace(ws, (r) =>
+      r.listings.create({ target: "shopline" }),
+    );
+    const [version] = await admin`
+      INSERT INTO listing_versions (workspace_id, listing_id, sequence, content, created_by)
+      VALUES (${ws}, ${listing.id}, 1, '{}'::jsonb, 'test') RETURNING id
+    `;
+    return { listingId: listing.id, listingVersionId: version!.id as string };
+  }
+
+  function verification(
+    ids: { listingId: string; listingVersionId: string },
+    key: string,
+    cost: number | null = null,
+  ): AppendAiRunInput {
+    return {
+      ...ids,
+      task: "verify",
+      idempotencyKey: key,
+      provider: "fake",
+      model: "fake-1",
+      promptVersion: "1",
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs: 5,
+      estimatedCostUsd: cost,
+      output: {
+        listingVersionId: ids.listingVersionId,
+        estimatedCostUsd: cost,
+      },
+    };
+  }
+
+  it("summarizes mixed known and unknown costs and appends idempotently", async () => {
+    const ids = await fixture();
+    await database.forWorkspace(workspaceId, async (r) => {
+      await r.aiRuns.append(verification(ids, "unknown"));
+      await r.aiRuns.append(verification(ids, "unknown"));
+      await r.aiRuns.append(verification(ids, "known", 0.123456789));
+      await r.aiRuns.append({
+        ...verification(ids, "extract", 0.01),
+        task: "extract",
+        inputTokens: 1,
+        outputTokens: 2,
+        estimatedCostUsd: 0.01,
+      });
+      expect(await r.aiRuns.summarizeCostForListings([ids.listingId])).toEqual({
+        knownCostUsd: 0.133457,
+        unknownCostRunCount: 1,
+      });
+      expect(await r.aiRuns.sumCostForListings([ids.listingId])).toBe(0.133457);
+      expect(await r.aiRuns.summarizeCostForListings([])).toEqual({
+        knownCostUsd: 0,
+        unknownCostRunCount: 0,
+      });
+    });
+    const rows =
+      await admin`SELECT output, estimated_cost_usd FROM ai_runs WHERE listing_id = ${ids.listingId} AND idempotency_key = 'known'`;
+    expect(rows[0]!.output.estimatedCostUsd).toBe(0.123456789);
+  });
+
+  it("rejects output version mismatch and same-workspace wrong-listing versions", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.append({
+          ...verification(first, "mismatch", 0),
+          output: { listingVersionId: second.listingVersionId },
+        }),
+      ),
+    ).rejects.toThrow("verification output version does not match");
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.append(
+          verification(
+            { ...first, listingVersionId: second.listingVersionId },
+            "wrong",
+            0,
+          ),
+        ),
+      ),
+    ).rejects.toThrow("verification version does not belong to listing");
+  });
+
+  it("isolates foreign workspace versions and cost aggregation", async () => {
+    const foreign = await fixture("ws_airuns_foreign");
+    await database.forWorkspace("ws_airuns_foreign", (r) =>
+      r.aiRuns.append(verification(foreign, "foreign")),
+    );
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.append(verification(foreign, "cross", 0)),
+      ),
+    ).rejects.toThrow("verification version does not belong to listing");
+    await database.forWorkspace(workspaceId, async (r) => {
+      expect(
+        await r.aiRuns.summarizeCostForListings([foreign.listingId]),
+      ).toEqual({ knownCostUsd: 0, unknownCostRunCount: 0 });
+      expect(await r.aiRuns.sumCostForListings([foreign.listingId])).toBe(0);
+    });
+  });
+
+  it("retains verification of historical versions after a new active version", async () => {
+    const ids = await fixture();
+    await database.forWorkspace(workspaceId, (r) =>
+      r.aiRuns.append(verification(ids, "historical")),
+    );
+    const [next] =
+      await admin`INSERT INTO listing_versions (workspace_id, listing_id, sequence, content, created_by) VALUES (${workspaceId}, ${ids.listingId}, 2, '{}'::jsonb, 'test') RETURNING id`;
+    await admin`UPDATE listing_drafts SET active_version_id = ${next!.id} WHERE id = ${ids.listingId}`;
+    await database.forWorkspace(workspaceId, (r) =>
+      r.aiRuns.append(verification(ids, "historical-again", 0)),
+    );
+    const rows =
+      await admin`SELECT output FROM ai_runs WHERE listing_id = ${ids.listingId}`;
+    expect(rows).toHaveLength(2);
+    expect(
+      rows.every((row) => row.output.listingVersionId === ids.listingVersionId),
+    ).toBe(true);
+  });
+
+  it.each([
+    { inputTokens: -1 },
+    { outputTokens: -1 },
+    { inputTokens: 1.5 },
+    { estimatedCostUsd: -0.1 },
+    { estimatedCostUsd: Number.NaN },
+    { estimatedCostUsd: Infinity },
+  ])("rejects invalid verification usage %j", async (override) => {
+    const ids = await fixture();
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.append({ ...verification(ids, "invalid", 0), ...override }),
+      ),
+    ).rejects.toThrow("verification usage must be nonnegative");
+  });
+
+  it.each([
+    {
+      task: "extract",
+      cost: null,
+      constraint: "ai_runs_nonverification_cost_required",
+    },
+    {
+      task: "generate",
+      cost: null,
+      constraint: "ai_runs_nonverification_cost_required",
+    },
+    {
+      task: "product_shot",
+      cost: null,
+      constraint: "ai_runs_nonverification_cost_required",
+    },
+    {
+      task: "verify",
+      cost: -0.1,
+      constraint: "ai_runs_nonnegative_known_cost",
+    },
+  ])(
+    "enforces the migration constraint for $task / $cost",
+    async ({ task, cost, constraint }) => {
+      const ids = await fixture();
+      await expect(admin`
+      INSERT INTO ai_runs (workspace_id, listing_id, task, idempotency_key, provider, model, status, input, latency_ms, estimated_cost_usd)
+      VALUES (${workspaceId}, ${ids.listingId}, ${task}, 'constraint', 'fake', 'fake-1', 'succeeded', '{}'::jsonb, 0, ${cost})
+    `).rejects.toMatchObject({ code: "23514", constraint_name: constraint });
+    },
+  );
 });
