@@ -46,6 +46,7 @@ export type {
 } from "./eval.js";
 
 export {
+  CHECK_FIELDS,
   CHECK_IDS,
   QUESTION_SET_VERSION,
   prepareVerification,
@@ -61,3 +62,7 @@ export type {
   VerificationRecord,
   VerificationResult,
 } from "./listing-verification.js";
+
+export { createTypeSafeListingVerifier } from "./typesafe-listing-verifier.js";
+export type { TypeSafeListingVerifierOptions } from "./typesafe-listing-verifier.js";
+export { estimateTypeSafeCost } from "./typesafe-pricing.js";

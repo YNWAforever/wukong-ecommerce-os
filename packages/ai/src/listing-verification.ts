@@ -187,7 +187,7 @@ export const verificationRecordSchema = verificationResultSchema.and(
   }),
 );
 
-const FIELDS: Record<CheckId, string[]> = {
+export const CHECK_FIELDS: Record<CheckId, string[]> = {
   unsupported_en: [
     "title.en",
     "description.en",
