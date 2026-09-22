@@ -67,7 +67,7 @@ export async function verifyAdvisory(
       Promise.resolve().then(() => verifier.verify(input)),
       deadline,
     ]);
-    if (raw === timeout || Date.now() - startedAt >= 5000)
+    if (raw === timeout)
       return unavailableVerification(
         "timeout",
         true,
@@ -80,9 +80,14 @@ export async function verifyAdvisory(
         true,
         Math.max(0, Date.now() - startedAt),
       );
-      if (parsed.success)
+      const usage = parsed.success
+        ? { success: true as const, data: parsed.data.usage }
+        : raw && typeof raw === "object" && "usage" in raw
+          ? verificationResultSchema.shape.usage.safeParse(raw.usage)
+          : { success: false as const };
+      if (usage.success)
         result.usage = {
-          ...parsed.data.usage,
+          ...usage.data,
           latencyMs: result.usage.latencyMs,
         };
       return result;

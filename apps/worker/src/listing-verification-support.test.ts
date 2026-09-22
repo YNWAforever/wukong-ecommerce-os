@@ -61,7 +61,7 @@ describe("advisory boundary", () => {
   });
 });
 
-it("counts synchronous verifier work in the total deadline", async () => {
+it("keeps validated usage when returned verifier work exceeds the deadline", async () => {
   vi.useFakeTimers();
   const start = Date.now();
   const result = await verifyAdvisory(input, {
@@ -79,15 +79,59 @@ it("counts synchronous verifier work in the total deadline", async () => {
         checks: [],
         numericDifferences: [],
         usage: {
-          inputTokens: null,
-          outputTokens: null,
-          estimatedCostUsd: null,
-          pricingVersion: null,
+          inputTokens: 13,
+          outputTokens: 8,
+          estimatedCostUsd: 0.0042,
+          pricingVersion: "2026-09-01",
           latencyMs: 5001,
           requestAttempted: true,
         },
       };
     }),
   });
-  expect(result.reason).toBe("timeout");
+  expect(result).toMatchObject({
+    outcome: "unavailable",
+    reason: "timeout",
+    usage: {
+      inputTokens: 13,
+      outputTokens: 8,
+      estimatedCostUsd: 0.0042,
+      pricingVersion: "2026-09-01",
+      latencyMs: 5001,
+      requestAttempted: true,
+    },
+  });
+});
+
+it("does not preserve malformed usage from an over-budget verifier result", async () => {
+  vi.useFakeTimers();
+  const start = Date.now();
+  const result = await verifyAdvisory(input, {
+    verify: vi.fn(async (): Promise<VerificationResult> => {
+      vi.setSystemTime(start + 5001);
+      return {
+        usage: {
+          inputTokens: -1,
+          outputTokens: "private",
+          estimatedCostUsd: Number.NaN,
+          pricingVersion: { private: "secret" },
+          latencyMs: -4,
+          requestAttempted: true,
+        },
+      } as unknown as VerificationResult;
+    }),
+  });
+  expect(result).toMatchObject({
+    outcome: "unavailable",
+    reason: "timeout",
+    usage: {
+      inputTokens: null,
+      outputTokens: null,
+      estimatedCostUsd: null,
+      pricingVersion: null,
+      latencyMs: 5001,
+      requestAttempted: true,
+    },
+  });
+  expect(JSON.stringify(result)).not.toContain("private");
 });
