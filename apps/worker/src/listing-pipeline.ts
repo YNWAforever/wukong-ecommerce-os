@@ -13,6 +13,8 @@ import {
   ProviderOutputError,
   ProviderRefusalError,
   type AIUsage,
+  type ListingVerifier,
+  type VerificationRecord,
   ExtractionAsset,
   ExtractionResult,
   ListingAIProvider,
@@ -20,6 +22,8 @@ import {
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
 import type { ListingJob } from "@wukong/jobs";
+
+import { sha256, verifyAdvisory } from "./listing-verification-support.js";
 
 export type ListingPipelineInput = ListingJob;
 
@@ -137,6 +141,11 @@ export type PipelineRepositories = {
     }): Promise<void>;
   };
   aiRuns: {
+    appendVerification(run: {
+      draftId: string;
+      idempotencyKey: string;
+      record: VerificationRecord;
+    }): Promise<void>;
     append(run: {
       task: "extract" | "generate" | "product_shot";
       draftId: string;
@@ -160,6 +169,7 @@ export type PipelineDependencies = {
   ): Promise<T>;
   assetInputs(assets: PipelineAsset[]): Promise<ExtractionAsset[]>;
   ai: ListingAIProvider;
+  verifier?: ListingVerifier;
   productShot?: ProductShotProvider;
   assetStore?: {
     writeObject(
@@ -493,6 +503,25 @@ export async function runListingPipeline(
         .filter((asset) => asset.mimeType.startsWith("image/"))
         .map((asset) => asset.id),
     });
+    const verificationInput = {
+      listing: generation.listing,
+      facts: extraction.facts,
+      evidence: extraction.evidence,
+      note: draft.note,
+    };
+    const verification = deps.verifier
+      ? await verifyAdvisory(verificationInput, deps.verifier)
+      : null;
+    const digests = verification
+      ? {
+          contentDigest: await sha256(verificationInput.listing),
+          evidenceDigest: await sha256({
+            facts: extraction.facts,
+            evidence: extraction.evidence,
+            note: draft.note,
+          }),
+        }
+      : null;
     const flags = scanCompliance(flattenLocalizedContent(generation.listing));
     // A ProductShotProvider/AssetStore pair is optional, and neither is wired in
     // wherever PipelineDependencies is bound to real implementations for
@@ -536,6 +565,28 @@ export async function runListingPipeline(
           repos.audit,
           idempotencyKey,
         );
+        if (verification && digests) {
+          const record = {
+            ...verification,
+            ...digests,
+            listingVersionId: version.id,
+          };
+          await repos.aiRuns.appendVerification({
+            draftId: input.draftId,
+            idempotencyKey:
+              idempotencyKey + ":verify:" + verification.questionSetVersion,
+            record,
+          });
+          await repos.audit.write({
+            ...context(input),
+            action: "listing.verification_recorded",
+            metadata: {
+              versionId: version.id,
+              outcome: record.outcome,
+              questionSetVersion: record.questionSetVersion,
+            },
+          });
+        }
         await repos.listings.replaceEvidence(version.id, extraction.evidence);
         await repos.listings.replaceFlags(version.id, flags);
         await repos.aiRuns.append(

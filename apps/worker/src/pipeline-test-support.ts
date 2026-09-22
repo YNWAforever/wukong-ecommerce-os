@@ -88,6 +88,9 @@ export type HarnessState = {
     string,
     { state: "running" | "completed"; output: unknown; leaseToken: string }
   >;
+  verificationRuns: Array<
+    Parameters<PipelineRepositories["aiRuns"]["appendVerification"]>[0]
+  >;
   aiRuns: Array<{ task: string; idempotencyKey: string }>;
   versions: string[];
   audits: string[];
@@ -156,6 +159,7 @@ export function makeHarness(options: HarnessOptions = {}): {
     status: "received",
     steps: new Map(),
     aiRuns: [],
+    verificationRuns: [],
     versions: [],
     audits: [],
     sourceAssetsCreated: [],
@@ -339,6 +343,14 @@ export function makeHarness(options: HarnessOptions = {}): {
       },
     },
     aiRuns: {
+      async appendVerification(run) {
+        if (
+          !state.verificationRuns.some(
+            (existing) => existing.idempotencyKey === run.idempotencyKey,
+          )
+        )
+          state.verificationRuns.push(run);
+      },
       async append(run) {
         if (
           !state.aiRuns.some(
@@ -418,6 +430,7 @@ export function makeTransactionAwareHarness(
       state.status = snapshot.status;
       state.steps = snapshot.steps;
       state.aiRuns = snapshot.aiRuns;
+      state.verificationRuns = snapshot.verificationRuns;
       state.versions = snapshot.versions;
       state.audits = snapshot.audits;
       state.failure = snapshot.failure;

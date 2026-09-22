@@ -15,6 +15,9 @@ export type WorkerEnv = {
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
   AI_PROVIDER?: "openai" | "fake";
   OPENAI_API_KEY?: string;
+  TYPESAFE_VERIFICATION_MODE?: string;
+  TYPESAFE_API_KEY?: string;
+  TYPESAFE_MODEL?: string;
   S3_BUCKET?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;

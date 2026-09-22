@@ -9,6 +9,9 @@ import {
   createCloudflareRuntime,
   createWorkerDatabase,
 } from "./cloudflare-runtime.js";
+import { CHECK_IDS, CHECK_FIELDS } from "@wukong/ai";
+import { unavailableVerification } from "./listing-verification-support.js";
+import { usage } from "./pipeline-test-support.js";
 import type { WorkerEnv } from "./worker-env.js";
 
 function env(): WorkerEnv {
@@ -163,4 +166,132 @@ describe("authenticatedWorkerHealth", () => {
 
     expect(health.checks.hyperdriveConnects).toBe(true);
   });
+});
+
+describe("verification runtime mapping", () => {
+  function runtimeHarness(extra: Partial<WorkerEnv> = {}) {
+    const append = vi.fn(async (_run: unknown) => undefined);
+    const repositories = { aiRuns: { append } };
+    const verifier = { verify: vi.fn() };
+    const verifierFactory = vi.fn(() => verifier);
+    const runtime = createCloudflareRuntime(
+      { ...env(), ...extra },
+      {
+        databaseFactory: () =>
+          ({
+            forWorkspace: async (
+              _id: string,
+              work: (repos: unknown) => Promise<unknown>,
+            ) => work(repositories),
+          }) as never,
+        assetStoreFactory: () => ({}) as never,
+        providerFactory: () => ({}) as never,
+        verifierFactory,
+      },
+    );
+    return { runtime, append, verifierFactory, verifier };
+  }
+  it("gates the runtime verifier factory before construction", () => {
+    const off = runtimeHarness({
+      TYPESAFE_API_KEY: "secret",
+      TYPESAFE_MODEL: "model",
+    });
+    expect(off.runtime.dependencies.verifier).toBeUndefined();
+    expect(off.verifierFactory).not.toHaveBeenCalled();
+    const on = runtimeHarness({
+      TYPESAFE_VERIFICATION_MODE: "advisory",
+      TYPESAFE_API_KEY: "secret",
+      TYPESAFE_MODEL: "model",
+    });
+    expect(on.runtime.dependencies.verifier).toBe(on.verifier);
+    expect(on.verifierFactory).toHaveBeenCalledTimes(1);
+  });
+  it("preserves the actual response model and complete successful output", async () => {
+    const { runtime, append } = runtimeHarness();
+    const record = {
+      ...unavailableVerification("network", true),
+      outcome: "completed" as const,
+      reason: null,
+      actualModel: "actual-response-model",
+      requestedModel: "alias",
+      checks: CHECK_IDS.map((id) => ({
+        id,
+        fields: CHECK_FIELDS[id],
+        assessment: "assessed" as const,
+        probability: 0.2,
+      })),
+      listingVersionId: "version1",
+      contentDigest: "a".repeat(64),
+      evidenceDigest: "b".repeat(64),
+    };
+    await runtime.dependencies.withWorkspace("ws", (repos) =>
+      repos.aiRuns.appendVerification({
+        draftId: "draft",
+        idempotencyKey: "verify",
+        record,
+      }),
+    );
+    expect(append.mock.calls[0]?.[0]).toMatchObject({
+      model: "actual-response-model",
+      provider: "typesafe",
+      output: record,
+      status: "succeeded",
+      error: null,
+    });
+  });
+  it.each(["unavailable", "skipped"] as const)(
+    "maps %s without borrowing the generation provider or requested alias",
+    async (outcome) => {
+      const { runtime, append } = runtimeHarness();
+      const record = {
+        ...unavailableVerification("network", true),
+        outcome,
+        reason:
+          outcome === "skipped"
+            ? ("input_too_large" as const)
+            : ("network" as const),
+        requestedModel: "alias",
+        listingVersionId: "version1",
+        contentDigest: "a".repeat(64),
+        evidenceDigest: "b".repeat(64),
+      };
+      await runtime.dependencies.withWorkspace("ws", async (repos) => {
+        await repos.aiRuns.appendVerification({
+          draftId: "draft",
+          idempotencyKey: "verify-key",
+          record,
+        });
+        await repos.aiRuns.append({
+          ...usage,
+          task: "generate",
+          draftId: "draft",
+          idempotencyKey: "generate-key",
+          outcome: "succeeded",
+        });
+      });
+      expect(append.mock.calls[0]?.[0]).toMatchObject({
+        listingId: "draft",
+        listingVersionId: "version1",
+        task: "verify",
+        provider: "typesafe",
+        model: "unavailable",
+        promptVersion: record.questionSetVersion,
+        input: {},
+        output: record,
+        status: outcome === "unavailable" ? "failed" : "succeeded",
+        error: record.reason,
+        inputTokens: null,
+        outputTokens: null,
+        estimatedCostUsd: null,
+      });
+      expect(append.mock.calls[1]?.[0]).toMatchObject({
+        task: "generate",
+        provider: "openai",
+        model: usage.model,
+        input: { task: "generate" },
+        output: {},
+        status: "succeeded",
+      });
+    },
+  );
 });
