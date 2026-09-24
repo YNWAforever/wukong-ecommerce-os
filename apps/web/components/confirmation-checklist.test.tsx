@@ -73,7 +73,7 @@ describe("allConfirmed", () => {
 });
 
 describe("ConfirmationChecklist rendering", () => {
-  it("renders all 15 items as checkboxes with their zh/en labels", () => {
+  it("renders all 15 items as checkboxes with selected Chinese labels", () => {
     const markup = renderToStaticMarkup(
       createElement(ConfirmationChecklist, {
         fieldConfirmations: emptyFieldConfirmations,
@@ -84,37 +84,37 @@ describe("ConfirmationChecklist rendering", () => {
 
     // Field labels (zh / en)
     expect(markup).toContain("商品名稱（繁中）");
-    expect(markup).toContain("Name (zh)");
+    expect(markup).not.toContain("Name (zh)");
     expect(markup).toContain("摘要（英文）");
-    expect(markup).toContain("Summary (en)");
+    expect(markup).not.toContain("Summary (en)");
     expect(markup).toContain("摘要（繁中）");
-    expect(markup).toContain("Summary (zh)");
+    expect(markup).not.toContain("Summary (zh)");
     expect(markup).toContain("SEO 標題（英文）");
-    expect(markup).toContain("SEO title (en)");
+    expect(markup).not.toContain("SEO title (en)");
     expect(markup).toContain("SEO 標題（繁中）");
-    expect(markup).toContain("SEO title (zh)");
+    expect(markup).not.toContain("SEO title (zh)");
     expect(markup).toContain("SEO 描述（英文）");
-    expect(markup).toContain("SEO description (en)");
+    expect(markup).not.toContain("SEO description (en)");
     expect(markup).toContain("SEO 描述（繁中）");
-    expect(markup).toContain("SEO description (zh)");
+    expect(markup).not.toContain("SEO description (zh)");
     expect(markup).toContain("SEO 關鍵字");
-    expect(markup).toContain("SEO keywords");
+    expect(markup).not.toContain("SEO keywords");
 
     // Negative condition labels (zh / en)
     expect(markup).toContain("售價未變動");
-    expect(markup).toContain("Price unchanged");
+    expect(markup).not.toContain("Price unchanged");
     expect(markup).toContain("會員權益未變動");
-    expect(markup).toContain("Membership unchanged");
+    expect(markup).not.toContain("Membership unchanged");
     expect(markup).toContain("分類未變動");
-    expect(markup).toContain("Category unchanged");
+    expect(markup).not.toContain("Category unchanged");
     expect(markup).toContain("上下架狀態未變動");
-    expect(markup).toContain("Status unchanged");
+    expect(markup).not.toContain("Status unchanged");
     expect(markup).toContain("供應商未變動");
-    expect(markup).toContain("Supplier unchanged");
+    expect(markup).not.toContain("Supplier unchanged");
     expect(markup).toContain("數量差額為中性");
-    expect(markup).toContain("Quantity delta neutral");
+    expect(markup).not.toContain("Quantity delta neutral");
     expect(markup).toContain("圖片無變動");
-    expect(markup).toContain("No image change");
+    expect(markup).not.toContain("No image change");
 
     const checkboxCount = (markup.match(/type="checkbox"/g) ?? []).length;
     expect(checkboxCount).toBe(15);
@@ -258,3 +258,6 @@ describe("ConfirmationChecklist interaction", () => {
     );
   });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "zh-Hant" }));

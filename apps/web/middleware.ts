@@ -11,7 +11,10 @@ const publicPaths = [
 ];
 
 function isPublicPath(pathname: string): boolean {
-  return publicPaths.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  if (/^\/product-images\/[^/]*\.jpg$/.test(pathname)) return true;
+  return publicPaths.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }
 
 export function middleware(request: NextRequest): NextResponse {
@@ -24,7 +27,7 @@ export function middleware(request: NextRequest): NextResponse {
   // resolve a server session and membership because a cookie alone is not authorization.
   const hasSessionCookie = Boolean(
     request.cookies.get("better-auth.session_token") ??
-      request.cookies.get("__Secure-better-auth.session_token"),
+    request.cookies.get("__Secure-better-auth.session_token"),
   );
   if (hasSessionCookie) return NextResponse.next();
   const signIn = new URL("/signin", request.url);

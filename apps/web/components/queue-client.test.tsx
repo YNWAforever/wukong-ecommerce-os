@@ -46,6 +46,12 @@ const eligibleItem = {
   sku: "OPAK-001",
   updatedAt: "2026-08-16T00:00:00.000Z",
   openBlockingFlagCount: 0,
+  reviewContext: {
+    expectedVersionId: "version_1",
+    confirmationLedgerRevision: 0,
+    expectedSourceImportId: "import_1",
+    expectedRowDigest: "digest_1",
+  },
 };
 
 const publishedItem = {
@@ -69,7 +75,7 @@ describe("QueueClient", () => {
     const { container, root } = await mount(fetcher);
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/listings",
+      "/api/listings?page=1&pageSize=100",
       expect.objectContaining({ cache: "no-store" }),
     );
     expect(container.textContent).toContain("Mosel Riesling Kabinett 2024");
@@ -169,11 +175,13 @@ describe("QueueClient", () => {
     expect(bulkCall).toBeDefined();
     expect(bulkCall!.init?.method).toBe("POST");
     expect(JSON.parse(bulkCall!.init!.body as string)).toEqual({
-      listingIds: ["listing_1"],
+      items: [{ listingId: "listing_1", ...eligibleItem.reviewContext }],
     });
 
     // The list reloads after a successful bulk-approve.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).toContain("listing_1");
 
@@ -205,7 +213,7 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Bulk approve failed");
+    expect(alert!.textContent).toContain("操作未能完成，請重試。");
 
     // Selection is preserved -- the bulk-action-bar only renders while
     // selected.size > 0, and it must still be there after a failed attempt.
@@ -213,7 +221,9 @@ describe("QueueClient", () => {
     expect(container.textContent).toContain("1 個項目已選取");
 
     // The list was not reloaded -- only the one initial /api/listings call.
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
@@ -229,7 +239,7 @@ describe("QueueClient", () => {
           Response.json(
             {
               code: "insufficient_role",
-              message: "Reviewer access is required.",
+              message: "你沒有權限執行此操作。",
             },
             { status: 403 },
           ),
@@ -252,14 +262,403 @@ describe("QueueClient", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert!.textContent).toContain("Reviewer access is required.");
+    expect(alert!.textContent).toContain("你沒有權限執行此操作。");
 
     expect(container.querySelector(".bulk-result-list")).toBeNull();
     expect(container.querySelector(".bulk-action-bar")).not.toBeNull();
 
-    const listingsCalls = calls.filter((call) => call.url === "/api/listings");
+    const listingsCalls = calls.filter((call) =>
+      call.url.startsWith("/api/listings?"),
+    );
     expect(listingsCalls.length).toBe(1);
 
     await unmount(root);
+  });
+});
+
+describe("QueueClient review context", () => {
+  it("keeps failed selections and their observed context after a partial-success reload", async () => {
+    const failedItem = {
+      ...eligibleItem,
+      id: "listing_3",
+      title: "Failed neighbor",
+      reviewContext: {
+        expectedVersionId: "version_3",
+        confirmationLedgerRevision: 2,
+        expectedSourceImportId: "import_3",
+        expectedRowDigest: "digest_3",
+      },
+    };
+    const refreshedItem = {
+      ...failedItem,
+      reviewContext: {
+        expectedVersionId: "version_4",
+        confirmationLedgerRevision: 5,
+        expectedSourceImportId: "import_4",
+        expectedRowDigest: "digest_4",
+      },
+    };
+    const requests: unknown[] = [];
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({
+            results: [
+              ...(requests.length === 1
+                ? [{ listingId: "listing_1", ok: true, versionId: "version_1" }]
+                : []),
+              {
+                listingId: "listing_3",
+                ok: false,
+                code: "version_conflict",
+                message: "需要重新檢查來源及審核證據",
+              },
+            ],
+            approved: requests.length === 1 ? 1 : 0,
+            failed: 1,
+          }),
+        );
+      }
+      listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
+      return Promise.resolve(
+        Response.json({
+          items: listLoads === 1 ? [eligibleItem, failedItem] : [refreshedItem],
+        }),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 2")!.click());
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.textContent).toContain(
+        "版本已變更，請重新載入商品、審核並重新選取。",
+      );
+      expect(
+        Array.from(
+          container.querySelectorAll<HTMLInputElement>(
+            'input[type="checkbox"]',
+          ),
+        ).filter((input) => input.checked),
+      ).toHaveLength(1);
+      expect(listLoads).toBe(2);
+      expect(container.querySelector("[role=alert]")?.textContent).toContain(
+        "無法載入資料，請重試。",
+      );
+      expect(findButtonByText(container, "批准 1")!.disabled).toBe(true);
+      await act(async () => findButtonByText(container, "重試")!.click());
+      expect(container.querySelector("[role=alert]")).toBeNull();
+
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests[1]).toEqual({
+        items: [{ listingId: failedItem.id, ...failedItem.reviewContext }],
+      });
+
+      // Explicit deselection and reselection adopt the refreshed review state.
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests[2]).toEqual({
+        items: [
+          { listingId: refreshedItem.id, ...refreshedItem.reviewContext },
+        ],
+      });
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("omits import fields for a created-origin selection", async () => {
+    const created = {
+      ...eligibleItem,
+      reviewContext: {
+        expectedVersionId: "version_created",
+        confirmationLedgerRevision: 0,
+      },
+    };
+    const requests: unknown[] = [];
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({ results: [], approved: 0, failed: 0 }),
+        );
+      }
+      return Promise.resolve(Response.json({ items: [created] }));
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests).toEqual([
+        { items: [{ listingId: created.id, ...created.reviewContext }] },
+      ]);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("requires review context before allowing selection", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [{ ...eligibleItem, reviewContext: null }],
+      }),
+    );
+    const { container, root } = await mount(fetcher);
+    try {
+      expect(
+        (container.querySelector('input[type="checkbox"]') as HTMLInputElement)
+          .disabled,
+      ).toBe(true);
+      expect(findButtonByText(container, "全選可批准項目")).toBeUndefined();
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("preserves the selection and request error feedback when the response body is malformed", async () => {
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      if (input === "/api/listings/bulk-approve") {
+        return Promise.resolve(new Response("not json", { status: 200 }));
+      }
+      listLoads += 1;
+      if (listLoads === 2)
+        return Promise.reject(new Error("reload unavailable"));
+      return Promise.resolve(Response.json({ items: [eligibleItem] }));
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "操作未能完成，請重試。",
+      );
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.querySelector(".bulk-result-list")).toBeNull();
+      expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
+  });
+});
+
+describe("QueueClient pagination", () => {
+  it("reaches rows after 100, keeps prior-page contexts and caps the total selection at 50", async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => ({
+      ...eligibleItem,
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+    let pendingResolve!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      pendingResolve = resolve;
+    });
+    const requests: {
+      items: { listingId: string; expectedVersionId: string }[];
+    }[] = [];
+    let loads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
+      if (input === "/api/listings/bulk-approve") {
+        requests.push(JSON.parse(init!.body as string));
+        return Promise.resolve(
+          Response.json({ message: "test submission" }, { status: 409 }),
+        );
+      }
+      loads++;
+      const page = Number(
+        new URL(String(input), "http://localhost").searchParams.get("page"),
+      );
+      if (loads === 2) return pending;
+      return Promise.resolve(
+        Response.json({
+          items: rows.slice((page - 1) * 100, page * 100),
+          totalMatching: 101,
+          page,
+          pageSize: 100,
+        }),
+      );
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        (
+          container.querySelector('input[type="checkbox"]') as HTMLInputElement
+        ).click(),
+      );
+      await act(async () => findButtonByText(container, "下一頁")!.click());
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+      expect(container.textContent).toContain("正在更新工作佇列");
+      await act(async () =>
+        pendingResolve(
+          Response.json({
+            items: [rows[100]],
+            totalMatching: 101,
+            page: 2,
+            pageSize: 100,
+          }),
+        ),
+      );
+      expect(container.textContent).toContain("Row 100");
+      expect(container.textContent).toContain("符合 101 個");
+      expect(findButtonByText(container, "下一頁")!.disabled).toBe(true);
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("2 個項目已選取");
+      rows[0] = {
+        ...rows[0]!,
+        reviewContext: {
+          ...eligibleItem.reviewContext,
+          expectedVersionId: "changed",
+        },
+      };
+      await act(async () => findButtonByText(container, "上一頁")!.click());
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain("50 個項目已選取");
+      await act(async () => findButtonByText(container, "批准 50")!.click());
+      expect(requests[0]!.items).toHaveLength(50);
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({ listingId: "row-100" }),
+      );
+      expect(requests[0]!.items).toContainEqual(
+        expect.objectContaining({
+          listingId: "row-0",
+          expectedVersionId: "version_1",
+        }),
+      );
+    } finally {
+      await unmount(root);
+    }
+  });
+});
+
+/**
+ * A checkbox that looks live and does nothing.
+ *
+ * The queue capped the selection at 50 by refusing to add the 51st, and said
+ * nothing: the box stayed unchecked, the count stayed at 50, and the operator
+ * was left to conclude the row was somehow ineligible. Select-all had the same
+ * shape -- it stopped at 50 and dropped the rest in silence.
+ *
+ * The cap itself is right; it mirrors what the API accepts. Only the silence
+ * was the defect.
+ */
+describe("the bulk selection cap", () => {
+  /** Eligible rows, all on one page, so the cap is reachable in one click. */
+  function eligibleRows(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      ...eligibleItem,
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+  }
+
+  function listFetcher(count: number) {
+    return vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: eligibleRows(count),
+        totalMatching: count,
+        page: 1,
+        pageSize: 100,
+      }),
+    );
+  }
+
+  function checkboxes(container: HTMLElement): HTMLInputElement[] {
+    return Array.from(
+      container.querySelectorAll('input[type="checkbox"]'),
+    ) as HTMLInputElement[];
+  }
+
+  const CAP_NOTICE = "一次最多可選取 50 個項目";
+
+  it("tells the operator when select-all leaves rows behind", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+
+      expect(container.textContent).toContain("50 個項目已選取");
+      expect(container.textContent).toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("explains a checkbox click it refuses instead of ignoring it", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      // Make room, so the notice is gone and the next click is a fresh refusal
+      // rather than the leftover from select-all.
+      const [first] = checkboxes(container);
+      await act(async () => first!.click());
+      expect(container.textContent).toContain("49 個項目已選取");
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+      await act(async () => first!.click());
+      expect(container.textContent).toContain("50 個項目已選取");
+
+      const refused = checkboxes(container).find((box) => !box.checked);
+      await act(async () => refused!.click());
+
+      expect(container.textContent).toContain("50 個項目已選取");
+      expect(container.textContent).toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("stops warning once clearing the selection makes room again", async () => {
+    const { container, root } = await mount(listFetcher(51));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      expect(container.textContent).toContain(CAP_NOTICE);
+
+      await act(async () => findButtonByText(container, "清除選取")!.click());
+
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("never warns while the selection still has room", async () => {
+    const { container, root } = await mount(listFetcher(3));
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+
+      expect(container.textContent).toContain("3 個項目已選取");
+      expect(container.textContent).not.toContain(CAP_NOTICE);
+    } finally {
+      await unmount(root);
+    }
   });
 });

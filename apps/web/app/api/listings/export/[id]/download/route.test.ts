@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { AssetObjectMissingError } from "@wukong/assets";
 import { describe, expect, it } from "vitest";
 
 import { createDownloadExportHandler } from "./route.js";
@@ -85,7 +87,7 @@ function makeAssetStore(
         // Matches the exact error MemoryAssetStore/S3AssetStore throw for a
         // missing object body (packages/assets/src/asset-store.ts,
         // packages/assets/src/s3-asset-store.ts).
-        throw new Error("Asset object has no stored body");
+        throw new AssetObjectMissingError();
       }
       if (options.throwsUnrelatedError) {
         // A DIFFERENT failure -- e.g. a transient R2/S3 outage, a network
@@ -227,5 +229,57 @@ describe("GET /api/listings/export/[id]/download", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.code).toBe("internal_error");
+  });
+});
+
+describe("artifact readiness and provenance", () => {
+  it.each(["pending", "failed"])(
+    "refuses %s artifacts before reading storage",
+    async (artifactStatus) => {
+      const { handler, assetStore } = makeHandler({
+        attempt: makeExportAttempt({
+          provenance: { version: 1 },
+          artifactStatus,
+          artifactSha256: "a".repeat(64),
+        }),
+      });
+      const response = await handler(request(), routeContext(VALID_ATTEMPT_ID));
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe("export_artifact_not_ready");
+      expect(assetStore.calls).toHaveLength(0);
+    },
+  );
+  it("verifies ready bytes and marks legacy downloads as incomplete provenance", async () => {
+    const bytes = new TextEncoder().encode("fake-xlsx-bytes");
+    const { handler } = makeHandler({
+      attempt: makeExportAttempt({
+        provenance: { version: 1 },
+        artifactStatus: "ready",
+        artifactSha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+    });
+    expect(
+      (await handler(request(), routeContext(VALID_ATTEMPT_ID))).headers.get(
+        "x-export-provenance",
+      ),
+    ).toBe("complete");
+    const legacy = makeHandler();
+    expect(
+      (
+        await legacy.handler(request(), routeContext(VALID_ATTEMPT_ID))
+      ).headers.get("x-export-provenance"),
+    ).toBe("incomplete");
+  });
+  it("rejects stored bytes that no longer match the ready artifact", async () => {
+    const { handler } = makeHandler({
+      attempt: makeExportAttempt({
+        provenance: { version: 1 },
+        artifactStatus: "ready",
+        artifactSha256: "a".repeat(64),
+      }),
+    });
+    const response = await handler(request(), routeContext(VALID_ATTEMPT_ID));
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("export_artifact_hash_mismatch");
   });
 });

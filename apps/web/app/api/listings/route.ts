@@ -1,8 +1,35 @@
+import { sectionKeySchema } from "@wukong/core";
+import {
+  prepareWineAdmission,
+  recoverableWineAdmission,
+  type WineAdmissionContext,
+} from "../../../lib/wine-enrichment-service";
+import { preflightWineCapability } from "../../../lib/wine-capability-client";
+import { requireListingRecovery } from "../../../lib/listing-recovery-readiness";
+import { createHash } from "node:crypto";
+import { acceptListingOperation } from "../../../lib/listing-operation-service";
+import { dispatchListingOperation } from "../../../lib/dispatch-listing-operation";
+import { readSourceReadiness } from "../../../lib/source-readiness";
 import { z } from "zod";
+import {
+  isImageMimeType,
+  MAX_LISTING_IMAGES,
+  MAX_LISTING_PDFS,
+} from "@wukong/assets";
+import type { WorkspaceRepositories } from "@wukong/db";
+
+import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
+import { allConfirmed } from "../../../lib/review-confirmation-keys";
 
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
+import {
+  acceptSourceWithoutDecoding,
+  requestProductShotFromProcess,
+  type ProductShotRequestInput,
+  type ProductShotRequestResult,
+} from "../../../lib/product-shot-request";
 import {
   ApiError,
   jsonResponse,
@@ -18,18 +45,68 @@ import {
 const listingSchema = z
   .object({
     sourceAssetIds: z
-      .array(z.string().uuid())
-      .min(1)
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((value) => value.toLowerCase()),
+      )
       .max(11)
       .refine(
         (ids) => new Set(ids).size === ids.length,
         "Asset IDs must be unique",
       ),
     note: z.string().max(5_000).optional().default(""),
+    processingMode: z.enum(["ai", "manual"]).default("ai"),
+    wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
+    wineSection: sectionKeySchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (body) => body.sourceAssetIds.length > 0 || body.note.trim().length > 0,
+    "Add a source or a note.",
+  );
 
-export function createListingHandler(deps: IntakeRouteDeps<true>) {
+type CreateListingDeps = IntakeRouteDeps<true> & {
+  preflightWineCapability?: typeof preflightWineCapability;
+  /**
+   * Optional so tests can leave image work out. Production wires the same
+   * requester the process route uses -- see the dispatch below for why creating
+   * a listing has to start image work at all.
+   */
+  requestProductShot?: (
+    input: ProductShotRequestInput,
+  ) => Promise<ProductShotRequestResult>;
+};
+
+const recoverableAdmission = new Set([
+  "ai_configuration_required",
+  "provider_capability",
+  "budget_blocked",
+]);
+async function acceptOrSave(
+  repositories: WorkspaceRepositories,
+  input: Parameters<typeof acceptListingOperation>[1],
+  admission: WineAdmissionContext,
+) {
+  try {
+    return {
+      accepted: await acceptListingOperation(repositories, input, admission),
+      blocked: null,
+    };
+  } catch (error) {
+    if (
+      recoverableWineAdmission(error) ||
+      (error instanceof ApiError && recoverableAdmission.has(error.code))
+    )
+      return {
+        accepted: null,
+        blocked: { code: error.code, message: error.message },
+      };
+    throw error;
+  }
+}
+export function createListingHandler(deps: CreateListingDeps) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
@@ -43,9 +120,58 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
 
       const body = listingSchema.parse(await request.json());
 
-      const listing = await deps
+      const requestKey =
+        request.headers.get("Idempotency-Key")?.toLowerCase() ?? null;
+      if (requestKey) z.string().uuid().parse(requestKey);
+      if (body.sourceAssetIds.length === 0 && !requestKey)
+        throw new ApiError(
+          400,
+          "idempotency_key_required",
+          "A request key is required for a note-only draft.",
+        );
+      await requireListingRecovery(deps.getDatabase());
+      const wineAdmission =
+        body.processingMode === "ai"
+          ? await prepareWineAdmission(
+              deps.getDatabase(),
+              context.workspaceId,
+              body.wineMode,
+              deps.preflightWineCapability,
+            )
+          : {};
+      const createDigest = createHash("sha256")
+        .update(JSON.stringify(body))
+        .digest("hex");
+      const acceptedCreate = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
+          await repositories.pipelineRuns.lockCreateRequests(
+            requestKey,
+            body.sourceAssetIds,
+          );
+          if (requestKey) {
+            const prior =
+              await repositories.pipelineRuns.findCreateRequest(requestKey);
+            if (prior) {
+              if (prior.digest !== createDigest)
+                throw new ApiError(
+                  409,
+                  "idempotency_conflict",
+                  "This request key has different inputs.",
+                );
+              return { ...prior.response, replayed: true } as any;
+            }
+          }
+          const finish = async (value: any) => {
+            if (requestKey)
+              await repositories.pipelineRuns.recordCreateRequest(
+                requestKey,
+                createDigest,
+                value.listing.id,
+                value,
+              );
+            return value;
+          };
           const assets = await repositories.sourceAssets.getByIds(
             body.sourceAssetIds,
           );
@@ -60,24 +186,75 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
               "One or more source assets were not found.",
             );
           }
-          if (assets.some(({ listingId }) => listingId !== null)) {
-            throw new ApiError(
-              409,
-              "source_asset_already_used",
-              "One or more source assets are already associated.",
+          // A create whose response was lost is the common case here, not an
+          // exotic one: the operator sees nothing happen and clicks again.
+          // Assets are single-use, so the previous attempt had already claimed
+          // them and the retry was answered with 409 -- leaving the listing
+          // stranded, reachable only by someone who knew to go looking for it.
+          //
+          // The asset set is itself the natural idempotency key. If EVERY
+          // requested asset is already attached to one and the same listing,
+          // this is that listing being created again, so return it. Anything
+          // else -- a partial overlap, assets split across listings -- is a
+          // genuine conflict and still refuses.
+          const attached = assets.filter(({ listingId }) => listingId !== null);
+          if (attached.length > 0) {
+            const owners = new Set(attached.map(({ listingId }) => listingId));
+            const owner = owners.size === 1 ? [...owners][0] : null;
+            const existing =
+              owner != null && attached.length === assets.length
+                ? await repositories.listings.getById(owner)
+                : null;
+            if (!existing) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "One or more source assets are already associated.",
+              );
+            }
+            // Same assets but different words is a different request wearing
+            // the same key. Returning the old listing would silently discard
+            // what the operator just typed, so say so instead.
+            if (existing.note !== (body.note.trim() || null)) {
+              throw new ApiError(
+                409,
+                "source_asset_already_used",
+                "These files already belong to another listing.",
+              );
+            }
+            const snapshot = await repositories.listingInputs.initialize(
+              { listingId: existing.id, actorId: context.actorId },
+              { ...context, entityId: existing.id },
+              repositories.audit,
             );
+            const admission =
+              body.processingMode === "manual"
+                ? { accepted: null, blocked: null }
+                : await acceptOrSave(
+                    repositories,
+                    {
+                      ...context,
+                      listingId: existing.id,
+                      expectedInputRevision: snapshot.revision,
+                      baseVersionId: snapshot.baseVersionId,
+                      operationKey: `create:${existing.id}`,
+                      wineMode: body.wineMode,
+                      wineSection: body.wineSection,
+                    },
+                    wineAdmission,
+                  );
+            return finish({ listing: existing, ...admission, snapshot });
           }
 
-          const imageKinds = new Set(["image/jpeg", "image/png", "image/webp"]);
           const imageCount = assets.filter(({ kind }) =>
-            imageKinds.has(kind),
+            isImageMimeType(kind),
           ).length;
           const pdfCount = assets.filter(
             ({ kind }) => kind === "application/pdf",
           ).length;
           if (
-            imageCount > 10 ||
-            pdfCount > 1 ||
+            imageCount > MAX_LISTING_IMAGES ||
+            pdfCount > MAX_LISTING_PDFS ||
             imageCount + pdfCount !== assets.length
           ) {
             throw new ApiError(
@@ -105,51 +282,56 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
               hasNote: body.note.trim().length > 0,
             },
           });
-          return created;
+          const snapshot = await repositories.listingInputs.initialize(
+            { listingId: created.id, actorId: context.actorId },
+            { ...context, entityId: created.id },
+            repositories.audit,
+          );
+          const admission =
+            body.processingMode === "manual"
+              ? { accepted: null, blocked: null }
+              : await acceptOrSave(
+                  repositories,
+                  {
+                    ...context,
+                    listingId: created.id,
+                    expectedInputRevision: snapshot.revision,
+                    baseVersionId: null,
+                    operationKey: `create:${created.id}`,
+                    wineMode: body.wineMode,
+                    wineSection: body.wineSection,
+                  },
+                  wineAdmission,
+                );
+          return finish({ listing: created, ...admission, snapshot });
         });
 
-      let processing:
-        | { state: "queued"; jobId: string; errorCode: null }
-        | {
-            state: "retry_required";
-            jobId: null;
-            errorCode: "queue_unavailable";
-          };
-
-      try {
-        const job = await deps.publisher.enqueue({
-          workspaceId: context.workspaceId,
-          draftId: listing.id,
-          activeVersionSequence: 0,
-        });
-        processing = { state: "queued", jobId: job.id, errorCode: null };
-        console.info(
-          JSON.stringify({
-            event: "listing.enqueue_accepted",
+      const { listing, accepted, snapshot, blocked } = acceptedCreate;
+      if (accepted && !acceptedCreate.replayed)
+        await dispatchListingOperation(
+          deps.getDatabase(),
+          context.workspaceId,
+          accepted,
+          deps.publisher,
+        );
+      const processing = accepted?.processing ?? null;
+      let productShot: ProductShotRequestResult | undefined;
+      if (
+        accepted &&
+        accepted.flowVersion !== "wine-enrichment-v1" &&
+        !acceptedCreate.replayed &&
+        body.processingMode === "ai" &&
+        deps.requestProductShot
+      ) {
+        try {
+          productShot = await deps.requestProductShot({
             workspaceId: context.workspaceId,
             listingId: listing.id,
-            jobId: job.id,
-          }),
-        );
-      } catch (error) {
-        processing = {
-          state: "retry_required",
-          jobId: null,
-          errorCode: "queue_unavailable",
-        };
-        // The draft is deliberately kept and the request still succeeds, so
-        // this log is the only record of why the queue could not take it.
-        // Without the reason, an unset variable and an unreachable Worker are
-        // the same line.
-        console.error(
-          JSON.stringify({
-            event: "listing.enqueue_failed",
-            workspaceId: context.workspaceId,
-            listingId: listing.id,
-            errorCode: "queue_unavailable",
-            queueReason: queueIngressReason(error) ?? "unknown",
-          }),
-        );
+            actorId: context.actorId,
+          });
+        } catch {
+          productShot = { state: "request_failed" };
+        }
       }
 
       return jsonResponse(201, {
@@ -158,7 +340,11 @@ export function createListingHandler(deps: IntakeRouteDeps<true>) {
           status: listing.status,
           target: listing.target,
         },
+        inputRevision: snapshot.revision,
+        activeVersionId: snapshot.baseVersionId,
         processing,
+        ...(blocked ? { processingBlocked: blocked } : {}),
+        ...(productShot ? { productShot } : {}),
       });
     });
   };
@@ -169,20 +355,130 @@ type ListListingsDeps = {
   getDatabase: IntakeRouteDeps["getDatabase"];
 };
 
+async function readQueueReviewContext(
+  item: {
+    id: string;
+    status: string;
+    activeVersion: { id: string } | null;
+    openBlockingFlagCount: number;
+  },
+  repositories: Pick<
+    WorkspaceRepositories,
+    "reviewConfirmations" | "platformProducts"
+  >,
+): Promise<ListingReviewContext | null> {
+  if (
+    item.status !== "in_review" ||
+    item.openBlockingFlagCount !== 0 ||
+    !item.activeVersion
+  )
+    return null;
+
+  const confirmation = await repositories.reviewConfirmations.getByVersionId(
+    item.activeVersion.id,
+  );
+  if (
+    !confirmation ||
+    confirmation.listingId !== item.id ||
+    confirmation.versionId !== item.activeVersion.id ||
+    !Number.isInteger(confirmation.revision) ||
+    confirmation.revision < 0 ||
+    !allConfirmed(
+      confirmation.fieldConfirmations,
+      confirmation.negativeConfirmations,
+    )
+  )
+    return null;
+
+  const reviewContext: ListingReviewContext = {
+    expectedVersionId: item.activeVersion.id,
+    confirmationLedgerRevision: confirmation.revision,
+  };
+  const link = await repositories.platformProducts.getByListingId(item.id);
+  if (
+    link?.origin !== "import" &&
+    (confirmation.sourceImportId != null || confirmation.rowDigest != null)
+  )
+    return null;
+  if (link?.origin === "import") {
+    // Expose the source bound to the completed checklist only while it still
+    // matches the current import. Refreshing the queue must not rebind a stale
+    // checklist to new source data.
+    if (
+      !confirmation.sourceImportId ||
+      !confirmation.rowDigest ||
+      confirmation.sourceImportId !== link.sourceImportId ||
+      confirmation.rowDigest !== link.contentDigest
+    )
+      return null;
+    reviewContext.expectedSourceImportId = confirmation.sourceImportId;
+    reviewContext.expectedRowDigest = confirmation.rowDigest;
+  }
+  return reviewContext;
+}
+
+const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(21474836).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(100),
+  q: z.string().trim().optional(),
+  status: z
+    .enum([
+      "received",
+      "processing",
+      "needs_info",
+      "in_review",
+      "approved",
+      "publishing",
+      "published",
+      "publish_failed",
+      "failed",
+      "reopened",
+    ])
+    .optional(),
+});
 export function createListListingsHandler(deps: ListListingsDeps) {
-  return async function listListings(): Promise<Response> {
+  return async function listListings(request?: Request): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const { items, counts } = await deps
+      const query = listQuerySchema.parse(
+        Object.fromEntries(
+          new URL(request?.url ?? "http://local/api/listings").searchParams,
+        ),
+      );
+      const { items, counts, totalMatching } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const items = await repositories.listings.listRecent(100);
+          const page = await repositories.reads.listingPage(query);
+          const hydrated = await repositories.listings.getByIds(page.ids);
+          const byId = new Map(hydrated.map((item) => [item.id, item]));
+          const items = page.ids.flatMap((id) =>
+            byId.has(id) ? [byId.get(id)!] : [],
+          );
           const counts = await repositories.listings.countByStatus();
-          return { items, counts };
+          const reviewedItems = await Promise.all(
+            items.map(async (item) => ({
+              ...item,
+              reviewContext: await readQueueReviewContext(item, repositories),
+              sourceReadiness: await readSourceReadiness(
+                repositories,
+                context.workspaceId,
+                item.id,
+              ),
+            })),
+          );
+          return {
+            items: reviewedItems,
+            counts,
+            totalMatching: page.totalMatching,
+          };
         });
 
       return jsonResponse(200, {
         counts,
+        page: query.page,
+        pageSize: query.pageSize,
+        totalMatching,
+        scope: "workspace",
         items: items.map((item) => {
           const content = item.activeVersion?.content as
             | {
@@ -207,6 +503,8 @@ export function createListListingsHandler(deps: ListListingsDeps) {
             sku: content?.sku ?? null,
             updatedAt,
             openBlockingFlagCount: item.openBlockingFlagCount,
+            reviewContext: item.reviewContext,
+            sourceReadiness: item.sourceReadiness,
           };
         }),
       });
@@ -223,4 +521,12 @@ export const POST = createListingHandler({
   getAssetStore,
   getDatabase,
   publisher: listingPublisher,
+  // Deliberately NOT the decoding validator. It imports `sharp`, and a native
+  // module in this route's graph is what shipped 500s from the admin panel's
+  // home page once already -- Next's tracer cannot follow sharp's dlopen(), so
+  // libvips is dropped from the bundle and the route dies at runtime while
+  // building clean. `tests/sharp-native-bundling.test.mjs` guards this route
+  // specifically. See `acceptSourceWithoutDecoding` for what that costs.
+  requestProductShot: (input) =>
+    requestProductShotFromProcess(input, acceptSourceWithoutDecoding),
 });

@@ -1,4 +1,5 @@
 import {
+  PRODUCT_SHOT_INGRESS_PATH,
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   signQueueRequest,
@@ -11,6 +12,10 @@ import {
   QueueIngressError,
 } from "./cloudflare-queue-runtime.js";
 
+// Load cross-package Worker dependencies before the behavioral test deadline.
+const ingressUrl = new URL("../../worker/src/ingress.ts", import.meta.url);
+const { handleIngress } = await import(/* @vite-ignore */ ingressUrl.href);
+
 const payload = {
   workspaceId: "ws_opak",
   draftId: "00000000-0000-4000-8000-000000000001",
@@ -22,12 +27,12 @@ describe("Cloudflare queue ingress runtime", () => {
     const ingress = null as unknown as CloudflareIngressClient;
 
     if (false) {
-      // @ts-expect-error The SHOPLINE ingress message never carries the persisted digest.
       void ingress.enqueue(SHOPLINE_INGRESS_PATH, {
         workspaceId: "ws_opak",
         draftId: "00000000-0000-4000-8000-000000000001",
         versionId: "00000000-0000-4000-8000-000000000002",
         connectionId: "00000000-0000-4000-8000-000000000003",
+        // @ts-expect-error The SHOPLINE ingress message never carries the persisted digest.
         payloadDigest: "must-not-cross-ingress",
       });
     }
@@ -170,4 +175,111 @@ describe("Cloudflare queue ingress runtime", () => {
     ).resolves.toEqual({ accepted: true });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+});
+
+it("signs and sends website IDs through their distinct ingress path", async () => {
+  const fetch = vi.fn(
+    async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(null, { status: 202 }),
+  );
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.example",
+      QUEUE_INGRESS_SECRET: "synthetic-secret",
+    },
+    fetch,
+  });
+  const job = {
+    kind: "website_scan" as const,
+    workspaceId: "ws",
+    scanId: payload.draftId,
+    revision: 0,
+  };
+  await client.enqueue("/ingress/website-scans", job);
+  expect(String(fetch.mock.calls[0]?.[0])).toBe(
+    "https://worker.example/ingress/website-scans",
+  );
+  expect(
+    JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string),
+  ).toEqual(job);
+});
+
+it("signs a strict independent product-shot envelope", async () => {
+  const fetch = vi.fn(async () => new Response(null, { status: 202 }));
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://queue.example",
+      QUEUE_INGRESS_SECRET: "s".repeat(32),
+    },
+    fetch,
+  });
+  const shot = {
+    kind: "product_shot" as const,
+    workspaceId: "ws",
+    draftId: payload.draftId,
+    attemptId: payload.draftId,
+  };
+  await client.enqueue(PRODUCT_SHOT_INGRESS_PATH, shot);
+  expect(
+    JSON.parse(
+      (fetch.mock.calls[0] as unknown as [unknown, RequestInit])[1]
+        .body as string,
+    ),
+  ).toEqual(shot);
+  await expect(
+    client.enqueue(PRODUCT_SHOT_INGRESS_PATH, {
+      ...shot,
+      storageKey: "private",
+    } as never),
+  ).rejects.toMatchObject({ reason: "invalid_payload" });
+});
+
+it("signs the complete strict wine envelope without dropping its immutable flow", async () => {
+  const wine = {
+    ...payload,
+    schemaVersion: 2 as const,
+    flowVersion: "wine-enrichment-v1" as const,
+    runId: "00000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation" as const,
+  };
+  const send = vi.fn(
+    async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(null, { status: 202 }),
+  );
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.test",
+      QUEUE_INGRESS_SECRET: "synthetic",
+    },
+    fetch: send,
+  });
+  await client.enqueue(LISTING_INGRESS_PATH, wine);
+  expect(JSON.parse(String(send.mock.calls[0]![1]!.body))).toEqual(wine);
+});
+
+it("delivers signed wine Web publisher bytes through actual Worker ingress validation", async () => {
+  const send = vi.fn(async () => undefined);
+  const secret = "synthetic-8c";
+  const client = createCloudflareIngressClient({
+    env: {
+      QUEUE_INGRESS_URL: "https://worker.test",
+      QUEUE_INGRESS_SECRET: secret,
+    },
+    fetch: async (url, init) =>
+      handleIngress(new Request(url, init), {
+        QUEUE_INGRESS_SECRET: secret,
+        LISTING_QUEUE: { send },
+      } as never),
+  });
+  const wine = {
+    ...payload,
+    schemaVersion: 2 as const,
+    flowVersion: "wine-enrichment-v1" as const,
+    runId: "00000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "extraction" as const,
+  };
+  await client.enqueue(LISTING_INGRESS_PATH, wine);
+  expect(send).toHaveBeenCalledExactlyOnceWith(wine);
 });

@@ -1,4 +1,4 @@
-import type { CanonicalListing } from "@wukong/core";
+import type { ReviewableListing } from "@wukong/core";
 import type { BulkFormGapsInput } from "@wukong/shopline";
 
 /**
@@ -12,7 +12,7 @@ import type { BulkFormGapsInput } from "@wukong/shopline";
  * adapter -- there is no empty-string case to special-case here.
  */
 export function canonicalListingToGapsInput(
-  content: CanonicalListing,
+  content: ReviewableListing,
 ): BulkFormGapsInput {
   return {
     nameEn: content.title.en,

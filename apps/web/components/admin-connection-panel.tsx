@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Connection = { shopDomain: string; connectedAt: string } | null;
 
@@ -14,7 +14,11 @@ async function responseError(response: Response): Promise<Error> {
   }
 }
 
-export function AdminConnectionPanel() {
+export function AdminConnectionPanel({
+  onConnectionChanged,
+}: { onConnectionChanged?: () => void | Promise<void> } = {}) {
+  const mounted = useRef(false);
+  const submitting = useRef(false);
   const [connection, setConnection] = useState<Connection>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -28,40 +32,54 @@ export function AdminConnectionPanel() {
     const response = await fetch("/api/workspace/connection");
     if (!response.ok) throw await responseError(response);
     const body = (await response.json()) as { connection: Connection };
+    if (!mounted.current) return;
     setConnection(body.connection);
     setLoaded(true);
   }, []);
 
   useEffect(() => {
-    load().catch((loadError) =>
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load the connection.",
-      ),
+    mounted.current = true;
+    load().catch(
+      (loadError) =>
+        mounted.current &&
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Unable to load the connection.",
+        ),
     );
+    return () => {
+      mounted.current = false;
+    };
   }, [load]);
 
   const run = useCallback(
     async (work: () => Promise<void>, success: string) => {
+      if (submitting.current) return;
+      submitting.current = true;
       setBusy(true);
       setError(null);
       setMessage(null);
       try {
         await work();
+        if (!mounted.current) return;
         await load();
+        if (!mounted.current) return;
         setMessage(success);
+        await onConnectionChanged?.();
       } catch (runError) {
+        if (!mounted.current) return;
         setError(
           runError instanceof Error
             ? runError.message
             : "Unable to complete request.",
         );
       } finally {
-        setBusy(false);
+        submitting.current = false;
+        if (mounted.current) setBusy(false);
       }
     },
-    [load],
+    [load, onConnectionChanged],
   );
 
   const connect = () =>
@@ -72,6 +90,7 @@ export function AdminConnectionPanel() {
         body: JSON.stringify({ shopDomain, accessToken }),
       });
       if (!response.ok) throw await responseError(response);
+      if (!mounted.current) return;
       setAccessToken("");
     }, "已連線 Connected");
 
@@ -83,6 +102,7 @@ export function AdminConnectionPanel() {
         body: JSON.stringify({ accessToken }),
       });
       if (!response.ok) throw await responseError(response);
+      if (!mounted.current) return;
       setAccessToken("");
       setRotating(false);
     }, "存取權杖已更新 Token rotated");

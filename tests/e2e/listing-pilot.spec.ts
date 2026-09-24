@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-
 import {
+  OPAK_WORKSPACE_ID,
   enrollAndSignInOpakAdmin,
   expectedMockShoplineRemoteId,
   prepareRealStackFixture,
@@ -9,6 +9,11 @@ import {
   verifyUploadedAsset,
 } from "./real-stack-fixture.js";
 
+async function onePagePdf(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  document.addPage([72, 72]);
+  return Buffer.from(await document.save());
+}
 function parseCsvRow(row: string): string[] {
   const fields: string[] = [];
   let field = "";
@@ -48,26 +53,48 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   test.setTimeout(120_000);
   await enrollAndSignInOpakAdmin(page);
 
-  await page.locator("#listing-files").setInputFiles([
-    {
-      name: "bottle-label.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    },
-    {
-      name: "supplier-sheet.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from(
-        "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
-        "utf8",
-      ),
-    },
+  const bottleLabel = {
+    name: "bottle-label.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  };
+  const fileInput = page.locator("#listing-files");
+  await fileInput.setInputFiles(bottleLabel);
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "bottle-label.png",
   ]);
+
+  await fileInput.setInputFiles({
+    name: "back-label.png",
+    mimeType: "image/png",
+    buffer: bottleLabel.buffer,
+  });
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "bottle-label.png",
+    "back-label.png",
+  ]);
+
   await page
-    .getByLabel("補充備註")
+    .locator(".file-row", { hasText: "bottle-label.png" })
+    .getByRole("button", { name: /移除/ })
+    .click();
+  await fileInput.setInputFiles(bottleLabel);
+  await fileInput.setInputFiles([]);
+  await expect(page.locator(".file-row strong")).toHaveText([
+    "back-label.png",
+    "bottle-label.png",
+  ]);
+  await expect(page.locator(".file-preview")).toHaveCount(2);
+  await page.screenshot({
+    path: "test-results/t03-native-selection.png",
+    fullPage: true,
+  });
+
+  await page
+    .getByLabel("Operator notes")
     .fill(
       "Opak Cellar Riesling wine 2024, Germany, Mosel, Riesling, 750ml, 12.5% ABV, SKU OPAK-DEMO-001, HK$288, stock 12",
     );
@@ -88,18 +115,61 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
     expect(await blocked.json()).toMatchObject({ code: "approval_required" });
   }
 
-  await expect(page.getByRole("heading", { name: "來源依據" })).toBeVisible({
+  await expect(
+    page.getByRole("heading", { name: "Source evidence" }),
+  ).toBeVisible({
     timeout: 45_000,
   });
-  await expect(page.getByRole("heading", { name: "商品欄位" })).toBeVisible();
   await expect(
-    page.locator("blockquote").filter({ hasText: "SKU OPAK-DEMO-001" }),
+    page.getByRole("heading", { name: "Listing fields" }),
   ).toBeVisible();
-  await expect(page.getByText(/沒有需要處理的合規提示/)).toBeVisible();
+  await expect(
+    page.locator("blockquote").filter({ hasText: "Opak Cellar" }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No open compliance flags", { exact: true }),
+  ).toBeVisible();
 
-  const title = page.getByLabel("商品名稱（英文）");
+  // Commercial facts remain operator-owned. Save them through the working
+  // document, then process that immutable revision before reviewing its version.
+  await page
+    .getByText("Edit sources, notes and working draft", { exact: true })
+    .click();
+  await page.getByLabel("Merchant SKU").fill("OPAK-DEMO-001");
+  await page.getByLabel("Selling price (HK$)").fill("288");
+  await page.getByLabel("Stock", { exact: true }).fill("12");
+  await page.getByRole("button", { name: "Save and process with AI" }).click();
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/listings/${draftId}`);
+        if (!response.ok()) return null;
+        const body = (await response.json()) as {
+          activeVersion?: {
+            content?: {
+              sku?: string | null;
+              priceHkd?: number | null;
+              stockQuantity?: number | null;
+            };
+          } | null;
+        };
+        return body.activeVersion?.content ?? null;
+      },
+      { timeout: 45_000 },
+    )
+    .toMatchObject({
+      sku: "OPAK-DEMO-001",
+      priceHkd: 288,
+      stockQuantity: 12,
+    });
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Listing fields" }),
+  ).toBeVisible();
+
+  const title = page.getByLabel("Title (English)", { exact: true });
   await title.fill("Opak Cellar Riesling 2024 — reviewed");
-  await page.getByRole("button", { name: /儲存草稿/ }).click();
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText(/Draft saved/)).toBeVisible();
   await expect(title).toHaveValue("Opak Cellar Riesling 2024 — reviewed");
 
@@ -142,11 +212,15 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
     await expect(checkbox).toBeChecked();
   }
 
-  await page.getByRole("button", { name: /批准上架/ }).click();
+  await page
+    .getByRole("button", { name: "Approve listing", exact: true })
+    .click();
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: /匯出 SHOPLINE CSV/ }).click();
+  await page
+    .getByRole("button", { name: "Create CSV · CSV fallback", exact: true })
+    .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/-opak-\d{4}-\d{2}\.csv$/);
   const downloadPath = await download.path();
@@ -155,11 +229,20 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   expect(csv).toContain("OPAK-DEMO-001,Opak Cellar Riesling 2024 — reviewed");
 
   const csvRows = csv.trimEnd().split("\r\n");
-  const csvImageUrl = parseCsvRow(csvRows[1]!)[13];
-  expect(csvImageUrl).toMatch(/^https?:\/\//);
-  const imageHead = await page.request.head(csvImageUrl!);
-  expect(imageHead.ok()).toBe(true);
-  expect(Number(imageHead.headers()["content-length"])).toBeGreaterThan(0);
+  const csvImageUrls = parseCsvRow(csvRows[1]!)[13]?.split(";") ?? [];
+  expect(csvImageUrls).toHaveLength(2);
+  // Verify every presigned image URL emitted in the multi-image CSV field.
+  for (const csvImageUrl of csvImageUrls) {
+    expect(csvImageUrl).toMatch(/^https?:\/\//);
+    const imageResponse = await page.request.get(csvImageUrl);
+    expect(imageResponse.ok()).toBe(true);
+    expect(imageResponse.headers()["content-type"]).toMatch(/^image\//);
+    const imageBytes = await imageResponse.body();
+    expect(imageBytes.byteLength).toBeGreaterThan(0);
+    expect(Number(imageResponse.headers()["content-length"])).toBe(
+      imageBytes.byteLength,
+    );
+  }
 
   const queuedResponse = page.waitForResponse(
     (response) =>
@@ -167,7 +250,9 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
       response.request().method() === "POST" &&
       response.status() === 202,
   );
-  await page.getByRole("button", { name: /發布至 SHOPLINE/ }).click();
+  await page
+    .getByRole("button", { name: "Create via API", exact: true })
+    .click();
   expect((await queuedResponse).status()).toBe(202);
   await expect(page.getByText(/Publish queued/)).toBeVisible();
 
@@ -198,14 +283,28 @@ test("Opak admin completes real intake, AI review, approval, CSV, and mock SHOPL
   expect(expectedRemoteProductId).toMatch(/^mock_[a-f0-9]{16}$/);
 
   await page.reload();
-  await expect(page.locator(".review-status")).toContainText("published");
+  await expect(page.locator(".review-status")).toContainText("Published");
   await expect(page.getByText(expectedRemoteProductId)).toBeVisible();
   await mkdir("test-results", { recursive: true });
   await writeFile("test-results/real-stack-draft-id.txt", draftId!, "utf8");
+  await page.screenshot({
+    path: "test-results/listing-pilot-complete.png",
+    fullPage: true,
+  });
+  await writeFile(
+    "test-results/real-stack-workspace-id.txt",
+    OPAK_WORKSPACE_ID,
+    "utf8",
+  );
 
   const audit = await verifyCompletedAudit(draftId!);
   expect(audit.missingActions).toEqual([]);
-  expect(audit.aiRunTasks).toEqual(["extract", "generate"]);
+  expect(audit.aiRunTasks).toEqual([
+    "extract",
+    "generate",
+    "extract",
+    "generate",
+  ]);
   expect(audit.accessibleForeignRecordCount).toBe(0);
   expect(audit.accessibleForeignTables).toEqual([]);
   expect(audit.passed).toBe(true);

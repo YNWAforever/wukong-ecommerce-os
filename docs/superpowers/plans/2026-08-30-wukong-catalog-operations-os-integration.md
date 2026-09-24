@@ -102,7 +102,7 @@ Rendered as one structured entry per route rather than a single wide table — t
 - **Missing contract:** none — reuse the existing functional flow; only the layout/copy should be adopted from the Site.
 - **Disposition:** extend (visual layer only). **Priority:** high (public-facing, low risk).
 - **Dependencies:** ADR-5 (public/auth boundary).
-- **Acceptance evidence:** existing `apps/web/auth.test.ts`, `auth-flow.test.ts`; add visual-regression capture per §14.
+- **Acceptance evidence:** existing `apps/web/auth.test.ts`, `auth-flow.test.ts`; capture both viewports per §14 as a human-read artefact ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md): the capture is not a pixel assertion).
 
 ### `/register` — Invite-only enrolment
 
@@ -203,6 +203,30 @@ Rendered as one structured entry per route rather than a single wide table — t
 - **Runtime, [Observed, resolving the prior Unverified item]:** `apps/web/app/(app)/listings/new/page.tsx` renders `ListingIntakeClient` exclusively — this is the original photo/PDF wine-listing intake flow (breadcrumb "建立草稿"/"Create Draft", copy about uploading bottle photos and supplier data for AI extraction), i.e. exactly the flow the master instruction says should become the pilot's _blocked_ "New products" tab. `POST /api/listings/import` (`apps/web/app/api/listings/import/route.ts`, backed by `apps/web/lib/bulk-form-import.ts`'s `createBulkFormImporter`) is a complete, tested, operator-role-gated Bulk Update import endpoint — but **zero UI anywhere calls it**. So the route isn't ambiguously wired; it's unambiguously wired to the wrong flow for this pilot, with the right flow's backend built but entirely unreachable from any page.
 - **Parity:** visual — Site-only concept (Site's 3-tab layout has no runtime analogue at all today). Interaction — Missing (Bulk Update import has no UI path). Real capability — Runtime-only-partial (the import API itself is fully functional and tested; only its UI entry point is missing).
 - **Missing contract:** restructure this route into the Site's 3-tab IA (Existing products primary / Supporting evidence / New products blocked), with the "Existing products" tab calling the existing `POST /api/listings/import`, and the current `ListingIntakeClient` flow moving to the disabled "New products" tab (ADR-2, §9).
+
+> **As built (2026-09-15).** The proposal above was not built on this route. What exists:
+>
+> - **Host route:** `/listings/import` (`apps/web/app/(app)/listings/import/page.tsx`), titled
+>   "Catalog import", renders `ListingIntakeTabs` (`apps/web/components/listing-intake-tabs.tsx`,
+>   first added in `34064f1`), with scanning/importing disabled for a viewer session.
+> - **Tabs — four, not three** (`listing-intake-tabs.tsx:16-24`): Website (the default,
+>   `:13`; `WebsiteImportPanel`, `/api/website-scans`), Workbook (`WorkbookImportPanel`,
+>   `/api/workbook-imports`, with the Bulk Update `BulkImportPanel` calling
+>   `POST /api/listings/import` inside a collapsed "Connected SHOPLINE update" section, `:85-99`;
+>   `bulk-import-panel.tsx:176`), Supporting evidence (`SupportingEvidencePanel`), and New
+>   products.
+> - **New products is blocked:** the tab renders only `NewProductBlockedPanel`
+>   (`apps/web/components/new-product-blocked-panel.tsx:10-23`), which explains that the Bulk
+>   Update export cannot create products and offers no action.
+> - **`/listings/new` is unchanged in shape:** `apps/web/app/(app)/listings/new/page.tsx` still
+>   renders `ListingIntakeClient` (photo/PDF AI draft intake, `POST /api/listings`), now localised
+>   (release-gate-closure W4). It was not moved into the blocked tab, and it is still linked from
+>   `/catalog`, the queue and the shell nav (`apps/web/app/(app)/shell-nav-items.ts:35`) beside
+>   `/listings/import` (`:11`).
+>
+> So "Existing products primary" became a Workbook tab that is not the default, and the
+> photo/PDF flow the proposal would have disabled remains reachable on its own route.
+
 - **Disposition:** extend — build a new primary tab wired to the already-working import API; move (don't discard) the existing intake flow into the blocked tab.
 - **Priority:** high (this is the entry point for the entire Opak flow).
 - **Dependencies:** none — the backend it needs already exists and is tested.
@@ -416,6 +440,13 @@ Each entry: conflicting claims → evidence for each side → operational/securi
 
 **Desktop/375px acceptance captures and visual-regression scope:** every route in §5 needs both viewports captured at minimum; routes marked Partial or Missing need before/after captures once built.
 
+> **Amended 2026-09-13 (W9).** The comparison half of this scope was never
+> built -- no `toHaveScreenshot`, no committed baseline -- so it asserted
+> nothing. Captures remain, as artefacts a person reads; the automated
+> acceptance evidence is the hard overflow assertion, `<h1>` presence, the
+> accessibility-tree and contrast assertions, and the localisation ratchet.
+> Reasoning and what would reverse it: [visual-regression decision](../specs/2026-09-13-visual-regression-decision.md).
+
 **Skip link:** **[Unverified]** whether the current authenticated shell (`apps/web/app/(app)/layout.tsx`) has a skip link — no subagent was asked to check this specifically. Add one if confirmed missing, per master instruction §7's explicit accessibility requirement.
 
 ---
@@ -447,6 +478,11 @@ All twelve marked **Proposed**. Decision owners are roles (runtime tech lead / O
 - **Migration path:** Package E.
 - **Reversal trigger:** if the wiring-confirmation task reveals `/listings/new` already serves a different, incompatible purpose that can't be safely tabbed.
 - **Decision owner:** runtime tech lead.
+
+> **As built (2026-09-15).** The one-route tabbed IA was adopted, but on a new route,
+> `/listings/import`, not on `/listings/new`, and with four tabs rather than three. See the
+> as-built note under §5 `/listings/new` for the citations. `/listings/new` was neither tabbed nor
+> redirected: it still serves the photo/PDF draft flow.
 
 ### ADR-3: Plain-CSS design tokens and component reuse
 
@@ -771,7 +807,7 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Auth/audit/idempotency:** N/A.
 - **Tests/commands:** `pnpm --filter @wukong/web test`, `pnpm typecheck`, new locale-persistence test.
 - **Observability:** N/A.
-- **Acceptance evidence:** visual-regression capture of the shell in both locales/viewports (§14).
+- **Acceptance evidence:** the shell captured in both locales/viewports (§14) as a human-read artefact, plus the localisation ratchet, which fails a surface with no notion of language ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md)).
 - **Rollback:** revert; no data implications.
 - **Size:** M.
 
@@ -810,6 +846,13 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **Outcome:** the four highest-severity items land: sheet-name fix (§7 G6, **done**, PR #51), Variant ID hard block (§7 G7, **done**, PR #51), `/listings/new` restructured into the Site's 3-tab IA with the "Existing products" tab wired to the already-working `POST /api/listings/import` (§7 G11, resolved-and-scoped, not yet built), and the source-import/freshness-gate function (§11, not yet built).
 - **Dependencies:** Package A only — this can start immediately and should be prioritized ahead of B–D if resourcing is constrained, since it's the highest-risk area.
 - **Files:** `packages/shopline/src/bulk-form-xlsx.ts` (sheet name, done), `packages/shopline/src/bulk-form.ts` (Variant ID, done), `apps/web/app/(app)/listings/new/page.tsx` (add 3-tab layout; move existing `ListingIntakeClient` into the disabled "New products" tab; new "Existing products" tab component calling `POST /api/listings/import`), new `sourceImportId` entity + `assertExportFreshness` service (§11), `apps/web/lib/bulk-form-import.ts` (call the new freshness assertion).
+
+> **As built (2026-09-15).** The 3-tab restructure of `apps/web/app/(app)/listings/new/page.tsx`
+> did not happen; that page still renders `ListingIntakeClient`. The tabbed intake was built on
+> `/listings/import` as four tabs (Website, Workbook, Supporting evidence, New products — blocked)
+> in `apps/web/components/listing-intake-tabs.tsx:16-24`. Full citations in the as-built note under
+> §5 `/listings/new`.
+
 - **Reuse disposition:** extend, narrow fixes (§6) — this package touches the strongest-built code in the repo and should change as little as possible beyond the specific defects named.
 - **API/data/migration impact:** possible new table/columns for the explicit `sourceImportId` entity if one doesn't already exist under another name (**verify first**, §11) — full expand/contract migration discipline required if so (§10).
 - **Feature flag:** none — these are correctness fixes, not experimental features.
@@ -889,7 +932,7 @@ Ten packages, lettered to match the master instruction's own A–K skeleton (I i
 - **API/data/migration impact:** none expected beyond minor fixes.
 - **Feature flag:** none.
 - **Auth/audit/idempotency:** N/A directly, though the CSRF/cookie item from Package C should be re-verified here as a final check.
-- **Tests/commands:** accessibility-tree assertions, contrast checks, visual-regression suite across every route in §5.
+- **Tests/commands:** accessibility-tree assertions, contrast checks, and the hard overflow plus `<h1>`-presence sweep across every route in §5 ([amended 2026-09-13](../specs/2026-09-13-visual-regression-decision.md): there is no visual-regression suite, and this clause no longer claims one).
 - **Observability:** N/A.
 - **Acceptance evidence:** WCAG 2.2 AA checklist passes for every affected route.
 - **Rollback:** revert individual fixes as needed.
@@ -937,7 +980,7 @@ pnpm --filter @wukong/db audit:verify
 
 - **Route/function parity:** one acceptance test per §5 entry once built — start with §5's flagged unknowns (`/listings/new` wiring, `/batches` wave-cap) since those need confirmation before their disposition is even settled.
 - **Public/protected boundaries:** verify every route in §5 enforces the role listed; add a negative test for each protected route confirming a lower-role session is rejected.
-- **Both locales, desktop and 375px mobile:** per §14's visual-regression scope, every route.
+- **Both locales, desktop and 375px mobile:** per §14's capture scope as amended, every route.
 - **Auth invitation/reset and role matrix:** extend existing `auth.test.ts`/`flow-routes.test.ts` coverage to the CSRF/cookie hardening from Package C once landed.
 - **Cross-workspace/RLS denial:** replicate the existing `memberships.integration.test.ts` pattern for every new tenant-scoped table (§15).
 - **Catalog pagination/search/cohorts:** new integration test for the >100-row case (§16 Package D).
@@ -962,6 +1005,31 @@ pnpm --filter @wukong/db audit:verify
 ## 18. Rollout, Opak UAT, go/no-go and rollback
 
 **Staged rollout (unchanged from master instruction, cross-checked against actual repo state):**
+
+> **Reconciled 2026-09-15 against [release-gate-closure §2](./2026-09-11-release-gate-closure.md#2-corrected-package-status).**
+> The "Current readiness" column below was written on 2026-08-30, when G6, G7, G12 and G4 were
+> proposals. All four are now closed in code, so the column's reasons are false even though its
+> verdict (not ready) still holds. The original table is kept unchanged beneath this reconciled one.
+>
+> | Stage                    | Engineering gate, verified 2026-09-15                                                                                                                                                                                                                                                                                                                                                         | Still open, and who closes it                                                                                                                                                                                                                                                                 | Readiness                                      |
+> | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+> | 1. Attended contract UAT | G6 sheet name: `packages/shopline/src/bulk-form-xlsx.ts:387` emits `name="Default"`. G7 Variant ID: `packages/shopline/src/bulk-form.ts:630` rejects a non-null `variantId`. Both done in code                                                                                                                                                                                                | **Human/merchant:** a manual SHOPLINE re-import of a generated file has not been performed; Opak has not accepted ADR-12's rollback meaning; Stage 1 entry in `docs/runbooks/opak-uat-rollout.md` needs deployed code and explicit manual-write authority                                     | **Not started** — blocked on merchant evidence |
+> | 2. Golden set            | G4 freshness gate: server-verified digest attestation (W1, `apps/web/app/api/listings/export/route.ts:36`, set equality at `:109`; migration `0025`); approval freshness via `apps/web/lib/listing-approval.ts:290`. Eight-field ledger records per field (W6, `0027_review_confirmation_field_records.sql`); approval invalidation is audited and shown on `/jobs` (W7). Package G `partial` | **Human/merchant:** Stage 1 sign-off. **Engineering, unproven:** W1's `source-binding.integration.test.ts` edit has not been executed and Playwright was not run for W1 (release-gate-closure W1 "Not proven"); W6 evidence digests are `null` for all eight fields under today's AI pipeline | **Not started**                                |
+> | 3. Shadow pilot          | Multi-product export accepts up to `MAX_BULK_EXPORT_ITEMS` = 100 listings (`apps/web/app/api/listings/export/route.ts:35`, `apps/web/lib/bulk-approve-limit.ts:25`). Package H `partial`; Package I `partial`                                                                                                                                                                                 | **Human/merchant:** Stage 2 sign-off and two weeks of clean `/jobs` reconciliation against real imports                                                                                                                                                                                       | **Not started**                                |
+> | 4. Catalog-scale rollout | G12 wave cap: `MAX_ENRICHMENT_WAVE_SIZE` = 5 (`apps/web/lib/enrichment-wave-limit.ts:23`) enforced on create (`apps/web/lib/enrichment-batch-service.ts:169`) and clamped on advance (`:382`, W8)                                                                                                                                                                                             | **Engineering:** every one of Packages A–J is `partial` (release-gate-closure §2), so "all of A–J complete" is not met. **Human/merchant:** written Opak sign-off after Stage 3                                                                                                               | **Not started**                                |
+>
+> Release-gate checklist (`docs/runbooks/production-readiness.md`): six boxes are proven by
+> `pnpm release-gate:check`, which CI cannot substitute for sign-off; fourteen are annotated as
+> needing a person (W10). CI (`.github/workflows/ci.yml:54-193`) runs frozen install, format and
+> forbidden-surface checks, migration, lint, typecheck, unit, integration, build and Playwright —
+> evidence about the repository, not about a deployment.
+>
+> **Overall readiness remains No-Go**, for a different reason than the paragraph below gives: the
+> four named engineering blockers are closed; what remains is merchant evidence (UAT stage
+> sign-offs, ADR-12 acceptance, a real SHOPLINE re-import), deployment evidence, and the `partial`
+> tails listed in release-gate-closure §2.
+
+_Original table, as written 2026-08-30 (superseded by the note above):_
 
 | Stage                    | Scope                                        | Gate to advance                                                                                                          | Current readiness                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |

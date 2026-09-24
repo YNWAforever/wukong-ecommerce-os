@@ -326,7 +326,7 @@ const CATEGORY_PRODUCT_TYPES = new Map<
 export type BulkFormCell = string | null;
 export type BulkFormSheet = readonly (readonly BulkFormCell[])[];
 
-/** A row exactly as the sheet holds it. Blank and whitespace-only cells are null. */
+/** A normalized string row; blank and whitespace-only cells are null, not typed XLSX cells. */
 export type BulkFormRawRow = Readonly<Record<BulkFormColumnKey, string | null>>;
 
 /**
@@ -472,6 +472,9 @@ const matchesHeaders = (
   row: readonly BulkFormCell[],
   locale: "en" | "zh",
 ): boolean =>
+  row
+    .slice(BULK_FORM_COLUMNS.length)
+    .every((cell) => (cell ?? "").trim() === "") &&
   BULK_FORM_COLUMNS.every(
     (column, index) => (row[index] ?? "").trim() === column[locale],
   );

@@ -1,23 +1,29 @@
+import { resolve } from "node:path";
+import { createRequire } from "node:module";
 import {
   CreateBucketCommand,
   DeleteObjectsCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { expect, type Page } from "@playwright/test";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createDatabase } from "../../packages/db/src/client.js";
+import { hashPassword } from "../../apps/web/lib/password-crypto.js";
 import postgres from "postgres";
 
 import { S3AssetStore } from "../../packages/assets/src/s3-asset-store.js";
 import { verifyAudit } from "../../packages/db/src/cli/audit-verify.js";
 import { runPnpm } from "./run-pnpm.js";
 
-export const OPAK_WORKSPACE_ID = "ws_opak";
-export const OPAK_ADMIN_EMAIL = "opak-admin-e2e@local.invalid";
+export let OPAK_WORKSPACE_ID = `ws_opak_${randomUUID().replaceAll("-", "")}`;
+export let OPAK_ADMIN_EMAIL = `opak-admin-e2e-${randomUUID()}@local.invalid`;
+export let OPAK_ADMIN_USER_ID = `user_opak_admin_e2e_${randomUUID()}`;
 export const OPAK_ADMIN_PASSWORD = "Local-only admin password 1!";
-export const OPAK_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
-export const FOREIGN_WORKSPACE_ID = "ws_foreign_e2e";
+export let OPAK_CONNECTION_ID = randomUUID();
+export let FOREIGN_WORKSPACE_ID = `ws_foreign_e2e_${randomUUID().replaceAll("-", "")}`;
 
 export const ADMIN_URL =
   process.env.TEST_DATABASE_ADMIN_URL ??
@@ -72,15 +78,22 @@ function s3Client() {
   });
 }
 
-async function resetBucket(client: S3Client) {
+async function ensureBucket(client: S3Client) {
   try {
     await client.send(new CreateBucketCommand({ Bucket: S3_BUCKET }));
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     if (!/BucketAlreadyOwnedByYou|BucketAlreadyExists/i.test(name)) throw error;
   }
+}
+
+async function resetBucket(client: S3Client) {
+  await ensureBucket(client);
   const listed = await client.send(
-    new ListObjectsV2Command({ Bucket: S3_BUCKET }),
+    new ListObjectsV2Command({
+      Bucket: S3_BUCKET,
+      Prefix: `ws/${OPAK_WORKSPACE_ID}/`,
+    }),
   );
   if (listed.Contents?.length) {
     await client.send(
@@ -110,7 +123,28 @@ async function ensureRuntimeRole() {
   }
 }
 
+function assertFixtureDatabaseAlignment() {
+  const admin = new URL(ADMIN_URL);
+  const runtime = new URL(RUNTIME_URL);
+  const identity = (url: URL) =>
+    `${url.hostname.toLowerCase()}:${url.port || "5432"}${url.pathname}`;
+  if (identity(admin) !== identity(runtime)) {
+    throw new Error(
+      "TEST_DATABASE_ADMIN_URL and TEST_DATABASE_URL must target the same host, port, and database for the real-stack fixture.",
+    );
+  }
+}
+
 export async function prepareRealStackFixture() {
+  assertFixtureDatabaseAlignment();
+  // Each setup gets a fresh tenant. Earlier tests' immutable runs/outbox and
+  // audit evidence must survive for the release audit after all browser files.
+  OPAK_WORKSPACE_ID = `ws_opak_${randomUUID().replaceAll("-", "")}`;
+  OPAK_ADMIN_EMAIL = `opak-admin-e2e-${randomUUID()}@local.invalid`;
+  OPAK_ADMIN_USER_ID = `user_opak_admin_e2e_${randomUUID()}`;
+  OPAK_CONNECTION_ID = randomUUID();
+  FOREIGN_WORKSPACE_ID = `ws_foreign_e2e_${randomUUID().replaceAll("-", "")}`;
+
   await ensureRuntimeRole();
   await runPnpm(["--filter", "@wukong/db", "db:migrate"], {
     ...process.env,
@@ -127,11 +161,9 @@ export async function prepareRealStackFixture() {
     await admin`DELETE FROM password_login_guards`;
     await admin`DELETE FROM auth_accounts`;
     await admin`DELETE FROM auth_audit_events`;
-    await admin`DELETE FROM workspaces WHERE id IN (${OPAK_WORKSPACE_ID}, ${FOREIGN_WORKSPACE_ID})`;
-    await admin`DELETE FROM users WHERE email = ${OPAK_ADMIN_EMAIL}`;
     await admin`INSERT INTO workspaces (id, name, profile) VALUES (${OPAK_WORKSPACE_ID}, 'Opak Cellar', ${OPAK_PROFILE}::jsonb)`;
-    await admin`INSERT INTO users (id, email) VALUES ('user_opak_admin_e2e', ${OPAK_ADMIN_EMAIL})`;
-    await admin`INSERT INTO memberships (workspace_id, user_id, role) VALUES (${OPAK_WORKSPACE_ID}, 'user_opak_admin_e2e', 'admin')`;
+    await admin`INSERT INTO users (id, email) VALUES (${OPAK_ADMIN_USER_ID}, ${OPAK_ADMIN_EMAIL})`;
+    await admin`INSERT INTO memberships (workspace_id, user_id, role) VALUES (${OPAK_WORKSPACE_ID}, ${OPAK_ADMIN_USER_ID}, 'admin')`;
     await admin`INSERT INTO prompt_versions (workspace_id, key, version, template, model) VALUES (${OPAK_WORKSPACE_ID}, 'listing-generation', '1.0.0', ${OPAK_PROMPT}, 'gpt-5.6-terra')`;
     await admin`INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES (${OPAK_WORKSPACE_ID}, ${OPAK_ADMIN_EMAIL}, 'admin', 'pending')`;
     await admin`INSERT INTO shopline_connections (id, workspace_id, shop_domain, encrypted_access_token) VALUES (${OPAK_CONNECTION_ID}, ${OPAK_WORKSPACE_ID}, 'opak-cellar.mock.shopline.test', 'mock-e2e-token')`;
@@ -156,22 +188,43 @@ type MailpitMessage = {
 
 async function latestEmailUrl(recipient: string): Promise<string> {
   let message: MailpitMessage | undefined;
-  await expect
-    .poll(async () => {
-      const response = await fetch(`${MAILPIT_URL}/api/v1/messages`);
-      if (!response.ok) return false;
-      const payload = (await response.json()) as {
-        messages?: MailpitMessage[];
-      };
-      message = payload.messages?.find(
-        (candidate) =>
-          candidate.To?.some(
-            (entry) => entry.Address.toLowerCase() === recipient,
-          ) && /reset your wukong password/i.test(candidate.Subject),
+  try {
+    await expect
+      .poll(async () => {
+        const response = await fetch(`${MAILPIT_URL}/api/v1/messages`);
+        if (!response.ok) return false;
+        const payload = (await response.json()) as {
+          messages?: MailpitMessage[];
+        };
+        message = payload.messages?.find(
+          (candidate) =>
+            candidate.To?.some(
+              (entry) => entry.Address.toLowerCase() === recipient,
+            ) && /reset your wukong password/i.test(candidate.Subject),
+        );
+        return Boolean(message);
+      })
+      .toBe(true);
+  } catch (error) {
+    const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+    try {
+      const audits = await admin<
+        Array<{ outcome: string; reason: string | null }>
+      >`
+        SELECT outcome, reason
+        FROM auth_audit_events
+        WHERE lower(email) = lower(${recipient})
+        ORDER BY created_at DESC
+        LIMIT 3
+      `;
+      throw new Error(
+        `Enrollment email absent; auth audit: ${JSON.stringify(audits)}`,
+        { cause: error },
       );
-      return Boolean(message);
-    })
-    .toBe(true);
+    } finally {
+      await admin.end();
+    }
+  }
   const detail = (await fetch(
     `${MAILPIT_URL}/api/v1/message/${message!.ID}`,
   ).then((response) => response.json())) as { Text?: string; HTML?: string };
@@ -274,4 +327,292 @@ export async function verifyCompletedAudit(draftId: string) {
     draftId,
     url: RUNTIME_URL,
   });
+}
+
+/** The import journey uses the real database/auth boundary, without Queue, mail or asset services. */
+export async function prepareBulkImportFixture() {
+  for (const raw of [ADMIN_URL, RUNTIME_URL]) {
+    const url = new URL(raw);
+    if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname))
+      throw new Error(
+        "Bulk import browser fixtures require isolated local database URLs",
+      );
+  }
+  await ensureRuntimeRole();
+  const database = createDatabase(RUNTIME_URL, { migrationUrl: ADMIN_URL });
+  try {
+    await database.migrate();
+  } finally {
+    await database.close();
+  }
+  const suffix = randomUUID();
+  const workspaceId = "ws_import_" + suffix.replaceAll("-", "");
+  const userId = "user_import_" + suffix;
+  const email = "bulk-import-" + suffix + "@local.invalid";
+  const password = "Synthetic import password 1!";
+  const connectionId = randomUUID();
+  const passwordHash = await hashPassword(password);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`INSERT INTO workspaces (id,name,profile) VALUES (${workspaceId},'Synthetic import workspace',${OPAK_PROFILE}::jsonb)`;
+    await admin`INSERT INTO users(id,email,auth_email_verified) VALUES (${userId},${email},true)`;
+    await admin`INSERT INTO memberships(workspace_id,user_id,role) VALUES (${workspaceId},${userId},'operator')`;
+    await admin`INSERT INTO workspace_invites(workspace_id,email,role,status) VALUES (${workspaceId},${email},'operator','accepted')`;
+    await admin`INSERT INTO auth_accounts(id,user_id,account_id,provider_id,password) VALUES (${randomUUID()},${userId},${userId},'credential',${passwordHash})`;
+  } finally {
+    await admin.end();
+  }
+  return { workspaceId, userId, email, password, connectionId };
+}
+
+export async function signInBulkImportOperator(
+  page: Page,
+  fixture: Awaited<ReturnType<typeof prepareBulkImportFixture>>,
+  openWorkbook = true,
+) {
+  await page.goto("/signin?callbackUrl=%2Flistings%2Fimport");
+  await page.evaluate(() => {
+    document.cookie = "locale=en; path=/; max-age=31536000";
+  });
+  await page.reload();
+  await page.getByLabel("Email address").fill(fixture.email);
+  await page.getByLabel("Password", { exact: true }).fill(fixture.password);
+  await page.getByRole("button", { name: "Sign in with password" }).click();
+  await expect(page).toHaveURL(/\/listings\/import$/);
+  if (openWorkbook)
+    await page.getByRole("tab", { name: "Workbook", exact: true }).click();
+}
+
+/** Unique local reviewer workspace for the attended Bulk Update journey. */
+export async function prepareBulkUpdateFixture() {
+  const fixture = await prepareBulkImportFixture();
+  // Bulk Update can run before the listing pilot on fresh CI storage. Ensure
+  // its export bucket exists without deleting another fixture's objects.
+  await ensureBucket(s3Client());
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`UPDATE memberships SET role='reviewer' WHERE workspace_id=${fixture.workspaceId} AND user_id=${fixture.userId}`;
+    await admin`INSERT INTO prompt_versions(workspace_id,key,version,template,model) VALUES (${fixture.workspaceId},'listing-generation','1.0.0',${OPAK_PROMPT},'fake-listing-provider')`;
+    await admin`INSERT INTO shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) VALUES (${fixture.connectionId},${fixture.workspaceId},'synthetic-update.invalid','synthetic-disabled')`;
+  } finally {
+    await admin.end();
+  }
+  return fixture;
+}
+
+const PRODUCT_SHOT_CONTENT = {
+  sku: "SHOT-SYNTHETIC",
+  producer: "Synthetic",
+  productType: "wine",
+  country: "Germany",
+  region: "Mosel",
+  vintage: 2024,
+  grapeVarieties: ["Riesling"],
+  volumeMl: 750,
+  abvPercent: 12,
+  packQuantity: 1,
+  priceHkd: 200,
+  stockQuantity: 4,
+  criticScores: [],
+  awards: [],
+  title: { en: "Synthetic bottle", "zh-Hant": "合成酒瓶" },
+  description: { en: "Synthetic evidence", "zh-Hant": "合成證據" },
+  seo: {
+    title: { en: "Synthetic bottle", "zh-Hant": "合成酒瓶" },
+    description: { en: "Synthetic evidence", "zh-Hant": "合成證據" },
+  },
+  tags: [],
+  imageAssetIds: [],
+};
+export const PRODUCT_SHOT_PNGS = {
+  success: Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAABQAAAAoCAYAAAD+MdrbAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANklEQVRIie3UsQ0AQAwCsdt/aX6GSF+6oKVAiVvtZ1I4G87ZzKcMDuNhPIyH8TAexsN42H2CB86xOhsP0yq+AAAAAElFTkSuQmCC",
+    "base64",
+  ),
+  definitiveFailure: Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAABQAAAAoCAYAAAD+MdrbAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANElEQVRIie3UsQkAQAwDsdt/af8MgS+FexcmUe1zUpgNczb5lOAQD8fD8XA8HA/Hw3jYOQ+xpDob+OJPJwAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+  ambiguous: Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAABQAAAAoCAYAAAD+MdrbAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANUlEQVRIie3UsQ0AQAwCMe+/ND9DpC+voKVAibH9jQq1oc5GnyIc5KE8lIfyUB7Kw+XhrhM8lJc6GzRQvGgAAAAASUVORK5CYII=",
+    "base64",
+  ),
+} as const;
+export async function createProductShotListing(
+  images: readonly Buffer[],
+  status = "in_review",
+) {
+  const listingId = randomUUID(),
+    versionId = randomUUID(),
+    client = s3Client();
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false }),
+    sources: string[] = [],
+    sourceKeys: string[] = [];
+  try {
+    await admin`insert into listing_drafts(id,workspace_id,status) values (${listingId},${OPAK_WORKSPACE_ID},${status})`;
+    await admin`insert into listing_versions(id,workspace_id,listing_id,sequence,content,created_by) values (${versionId},${OPAK_WORKSPACE_ID},${listingId},1,${admin.json(PRODUCT_SHOT_CONTENT)},${OPAK_ADMIN_USER_ID})`;
+    await admin`update listing_drafts set active_version_id=${versionId} where id=${listingId} and workspace_id=${OPAK_WORKSPACE_ID}`;
+    for (const [index, bytes] of images.entries()) {
+      const id = randomUUID(),
+        key = `ws/${OPAK_WORKSPACE_ID}/sources/${id}/fixture-${index}.png`;
+      await client.send(
+        new PutObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: key,
+          Body: bytes,
+          ContentType: "image/png",
+        }),
+      );
+      await admin`insert into source_assets(id,workspace_id,listing_id,storage_key,kind,metadata) values (${id},${OPAK_WORKSPACE_ID},${listingId},${key},'image/png',${admin.json({ size: bytes.length, mimeType: "image/png" })})`;
+      sources.push(id);
+      sourceKeys.push(key);
+    }
+  } finally {
+    await admin.end();
+  }
+  return { listingId, versionId, sources, sourceKeys };
+}
+export async function productShotDatabaseView(listingId: string) {
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const attempts = await admin<
+      Array<{
+        id: string;
+        state: string;
+        callCount: number;
+        sourceAssetId: string;
+      }>
+    >`
+      select id,state,call_count as "callCount",source_asset_id as "sourceAssetId"
+      from product_shot_attempts where workspace_id=${OPAK_WORKSPACE_ID} and listing_id=${listingId} order by generation`;
+    const sources = await admin<Array<{ id: string; storageKey: string }>>`
+      select id,storage_key as "storageKey"
+      from source_assets
+      where workspace_id=${OPAK_WORKSPACE_ID}
+        and listing_id=${listingId}
+        and (
+          metadata->>'role' is null
+          or metadata->>'role' not like 'product_shot_%'
+        )
+      order by created_at,id`;
+    const [publication] = await admin<Array<{ publicUrl: string }>>`
+      select u.public_url as "publicUrl" from product_shot_publications p
+      join product_shot_approval_urls u on u.workspace_id=p.workspace_id and u.publication_id=p.id
+      where p.workspace_id=${OPAK_WORKSPACE_ID} and p.listing_id=${listingId}
+      order by p.created_at desc limit 1`;
+    return { attempts, sources, publicUrl: publication?.publicUrl ?? null };
+  } finally {
+    await admin.end();
+  }
+}
+/** Additive wine tenant: no deletes, migrations or bucket reset. */
+export async function prepareWineStackFixture() {
+  assertFixtureDatabaseAlignment();
+  for (const raw of [ADMIN_URL, RUNTIME_URL]) {
+    const url = new URL(raw);
+    if (
+      !["127.0.0.1", "localhost"].includes(url.hostname) ||
+      url.pathname !== "/wukong_wine_sdd"
+    )
+      throw Error("Dedicated local wine database required");
+  }
+  OPAK_WORKSPACE_ID = `ws_wine_${randomUUID().replaceAll("-", "")}`;
+  OPAK_ADMIN_EMAIL = `wine-admin-${randomUUID()}@local.invalid`;
+  OPAK_ADMIN_USER_ID = `user_wine_${randomUUID()}`;
+  FOREIGN_WORKSPACE_ID = `ws_foreign_wine_${randomUUID().replaceAll("-", "")}`;
+  await ensureBucket(s3Client());
+  const profile = {
+    ...JSON.parse(OPAK_PROFILE),
+    wineEnrichment: {
+      enabled: true,
+      tavilyCreditCap: 100,
+      allowedDomains: ["wine.synthetic.example"],
+    },
+  };
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    await admin`INSERT INTO workspaces(id,name,profile) VALUES (${OPAK_WORKSPACE_ID},'Synthetic wine acceptance',${admin.json(profile)})`;
+    await admin`INSERT INTO users(id,email) VALUES (${OPAK_ADMIN_USER_ID},${OPAK_ADMIN_EMAIL})`;
+    await admin`INSERT INTO memberships(workspace_id,user_id,role) VALUES (${OPAK_WORKSPACE_ID},${OPAK_ADMIN_USER_ID},'admin')`;
+    await admin`INSERT INTO workspace_invites(workspace_id,email,role,status) VALUES (${OPAK_WORKSPACE_ID},${OPAK_ADMIN_EMAIL},'admin','pending')`;
+    await admin`INSERT INTO workspaces(id,name,profile) VALUES (${FOREIGN_WORKSPACE_ID},'Foreign synthetic tenant','{}'::jsonb)`;
+    const [foreign] =
+      await admin`INSERT INTO listing_drafts(workspace_id,target,note) VALUES (${FOREIGN_WORKSPACE_ID},'shopline','synthetic tenant boundary') RETURNING id`;
+    const runtime = createDatabase(RUNTIME_URL);
+    try {
+      await runtime.forWorkspace(OPAK_WORKSPACE_ID, (r) =>
+        r.wineEnrichment.recordReviewedAuthority(OPAK_ADMIN_USER_ID, {
+          schemaVersion: 1,
+          domain: "wine.synthetic.example",
+          subject: { kind: "producer", name: "Fixture Estate" },
+          proofUrl: "https://wine.synthetic.example/reserve-red",
+          proofDigest: "a".repeat(64),
+          verifiedAt: new Date(Date.now() - 1000).toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          revokedAt: null,
+          verifierId: OPAK_ADMIN_USER_ID,
+        }),
+      );
+    } finally {
+      await runtime.close();
+    }
+    return {
+      workspaceId: OPAK_WORKSPACE_ID,
+      foreignListingId: foreign!.id as string,
+    };
+  } finally {
+    await admin.end();
+  }
+}
+export async function readWineRuntimeEvidence(
+  workspaceId: string,
+  listingId: string,
+) {
+  const db = createDatabase(RUNTIME_URL);
+  const admin = postgres(ADMIN_URL, { max: 1, prepare: false });
+  try {
+    const current = await db.forWorkspace(workspaceId, async (r) => ({
+      listing: await r.listings.getById(listingId),
+      run: await r.pipelineRuns.getCurrentOperation(listingId),
+    }));
+    const runId = current.run!.id;
+    const stages =
+      await admin`select stage,state,output from wine_stages where workspace_id=${workspaceId} and run_id=${runId}`;
+    const ai =
+      await admin`select id,stage,status from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${runId} order by created_at`;
+    const search =
+      await admin`select slot,status,credits from wine_search_calls where workspace_id=${workspaceId} and run_id=${runId}`;
+    const budget =
+      await admin`select state,reserved_credits,settled_credits from search_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${runId}`;
+    const documents =
+      await admin`select source_id,kind,state from wine_document_requests where workspace_id=${workspaceId} and run_id=${runId}`;
+    return {
+      listingId,
+      runId,
+      versionId: current.listing!.activeVersionId,
+      executionState: current.run!.executionState,
+      inputRevision: current.run!.inputRevision,
+      errorCode: current.run!.errorCode,
+      stages,
+      ai,
+      search,
+      budget,
+      documents,
+    };
+  } finally {
+    await db.close();
+    await admin.end();
+  }
+}
+
+/** Readable public synthetic label; unrelated to the pending benchmark fixtures. */
+export async function wineLabelPng(
+  vintage: number | null = 2020,
+  view: "Front" | "Back" = "Front",
+) {
+  const sharp = createRequire(resolve(process.cwd(), "apps/web/package.json"))(
+    "sharp",
+  );
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#efe9de"/><rect x="230" y="50" width="140" height="150" rx="18" fill="#263d32"/><rect x="150" y="170" width="300" height="650" rx="80" fill="#263d32"/><rect x="170" y="350" width="260" height="320" rx="6" fill="#fff9ec"/><g text-anchor="middle" font-family="Arial" fill="#282623"><text x="300" y="400" font-size="25">FIXTURE ESTATE</text><text x="300" y="450" font-size="28">Reserve Red</text><text x="300" y="500" font-size="34">${vintage ?? "Vintage unknown"}</text><text x="300" y="550" font-size="23">${vintage === null ? "750 ml | ABV unclear" : "750 ml | 13% ABV"}</text><text x="300" y="590" font-size="21">1 bottle</text><text x="300" y="635" font-size="16">HONG KONG - SYNTHETIC</text></g><text x="300" y="860" text-anchor="middle" font-family="Arial" font-size="19" fill="#282623">Local acceptance fixture - ${view} - not for sale</text></svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
 }

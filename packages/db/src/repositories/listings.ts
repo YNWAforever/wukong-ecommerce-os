@@ -1,7 +1,12 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { canonicalListingSchema, reviewableListingSchema } from "@wukong/core";
+import {
+  canonicalListingSchema,
+  reviewableListingSchema,
+  inheritWineOwnership,
+} from "@wukong/core";
 import type {
+  ApprovalInvalidationCause,
   AuditContext,
   AuditWriter,
   CanonicalListing,
@@ -11,7 +16,7 @@ import type {
   ListingStatus,
   ReviewableListing,
 } from "@wukong/core";
-import { transitionListing } from "@wukong/core";
+import { APPROVAL_INVALIDATED_ACTION, transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import {
   complianceFlags,
@@ -27,7 +32,7 @@ export type Listing = typeof listingDrafts.$inferSelect;
 export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
 export type ListingSummary = Listing & {
-  activeVersion: { id: string; content: CanonicalListing } | null;
+  activeVersion: { id: string; content: ReviewableListing } | null;
   /**
    * Open, blocking-severity compliance flags on the active version. A listing
    * is bulk-approvable exactly when this is 0 and status is `in_review` — the
@@ -49,6 +54,7 @@ export type ReviewSnapshot = {
 };
 
 export type ListingRepository = {
+  lockReviewState(listingId: string): Promise<void>;
   create(input: CreateListingInput): Promise<Listing>;
   /**
    * Replaces the draft's note. Used when a re-import changes the source row:
@@ -63,6 +69,16 @@ export type ListingRepository = {
    * round trip per product.
    */
   statusesByIds(ids: readonly string[]): Promise<Record<string, ListingStatus>>;
+  /**
+   * Status and active version for each of the given drafts, keyed by draft ID.
+   * The importer needs the version to say which approval a re-import
+   * invalidated; `statusesByIds` omits it and `getByIds` loads content.
+   */
+  approvalStatesByIds(
+    ids: readonly string[],
+  ): Promise<
+    Record<string, { status: ListingStatus; activeVersionId: string | null }>
+  >;
   listRecent(limit?: number): Promise<ListingSummary[]>;
   /**
    * Fetches exactly the listings with the given ids, unbounded by
@@ -80,6 +96,12 @@ export type ListingRepository = {
    */
   countByStatus(): Promise<Record<ListingStatus, number>>;
   requireById(id: string): Promise<Listing & { activeVersionSequence: number }>;
+  /**
+   * Strict on purpose: this is the publish path, so it parses the active
+   * version with `canonicalListingSchema` and throws when the content is not
+   * publish-ready. A draft may legitimately be saved without a SKU or a price,
+   * and this is the gate where that stops being acceptable.
+   */
   requireForPublish(id: string): Promise<{
     id: string;
     target: "shopline";
@@ -105,13 +127,35 @@ export type ListingRepository = {
     context: AuditContext,
     audit: AuditWriter,
   ): Promise<void>;
+  invalidateApprovalForConfirmationChange(
+    id: string,
+    versionId: string,
+    context: AuditContext,
+    audit: AuditWriter,
+  ): Promise<"unchanged" | "reopened" | "publishing" | "stale">;
+  promoteManual(
+    id: string,
+    content: ReviewableListing,
+    context: AuditContext,
+    audit: AuditWriter,
+    flags: ComplianceFlag[],
+  ): Promise<ListingVersion>;
   editReview(
     id: string,
     baseVersionId: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     changedFields: string[],
     context: AuditContext,
     audit: AuditWriter,
+    /**
+     * Flags for the version this edit creates.
+     *
+     * Omit and the base version's flags are copied forward unchanged, which is
+     * the safe default: a Save must never be able to empty the approval gate.
+     * Supply them when the caller has re-scanned the edited copy, so a claim
+     * typed in after generation is caught and one edited out is cleared.
+     */
+    flags?: ComplianceFlag[],
   ): Promise<ListingVersion>;
   beginPublish(
     id: string,
@@ -140,7 +184,7 @@ export type ListingRepository = {
   ): Promise<void>;
   appendVersion(
     id: string,
-    content: CanonicalListing,
+    content: ReviewableListing,
     context: AuditContext,
     audit: AuditWriter,
     pipelineIdempotencyKey?: string,
@@ -303,6 +347,14 @@ export function createListingRepository(
         throw new Error("listing note update did not match exactly one row");
     },
 
+    async lockReviewState(listingId) {
+      scope.assertOpen();
+      await transaction
+        .select({ id: listingDrafts.id })
+        .from(listingDrafts)
+        .where(byId(listingId))
+        .for("update");
+    },
     async getById(id) {
       scope.assertOpen();
       const [listing] = await transaction
@@ -327,6 +379,33 @@ export function createListingRepository(
         );
       return Object.fromEntries(
         rows.map((row) => [row.id, row.status as ListingStatus]),
+      );
+    },
+
+    async approvalStatesByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return {};
+      const rows = await transaction
+        .select({
+          id: listingDrafts.id,
+          status: listingDrafts.status,
+          activeVersionId: listingDrafts.activeVersionId,
+        })
+        .from(listingDrafts)
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, [...ids]),
+          ),
+        );
+      return Object.fromEntries(
+        rows.map((row) => [
+          row.id,
+          {
+            status: row.status as ListingStatus,
+            activeVersionId: row.activeVersionId,
+          },
+        ]),
       );
     },
 
@@ -384,9 +463,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
@@ -454,9 +538,14 @@ export function createListingRepository(
         flagCounts.map((row) => [row.versionId, row.count]),
       );
 
+      // Reviewable, not canonical: this is a LIST path. A draft saved without a
+      // SKU or price is a normal in-progress listing, and parsing it with the
+      // publish-ready schema made safeParse fail, which set activeVersion to
+      // null and rendered the row as an unnamed product with no SKU.
+      // Completeness is still enforced in requireForPublish.
       return rows.map(({ listing, activeVersion }) => {
         const parsed = activeVersion?.id
-          ? canonicalListingSchema.safeParse(activeVersion.content)
+          ? reviewableListingSchema.safeParse(activeVersion.content)
           : null;
         return {
           ...listing,
@@ -711,6 +800,88 @@ export function createListingRepository(
       });
     },
 
+    async invalidateApprovalForConfirmationChange(
+      id,
+      versionId,
+      context,
+      audit,
+    ) {
+      scope.assertOpen();
+      await this.lockReviewState(id);
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== versionId) return "stale";
+      if (listing.status === "publishing") return "publishing";
+      if (
+        !(["approved", "published", "publish_failed"] as const).includes(
+          listing.status as "approved" | "published" | "publish_failed",
+        )
+      )
+        return "unchanged";
+      const next = await transitionListing(
+        listing.status,
+        "reopen",
+        context,
+        audit,
+      );
+      const updated = await transaction
+        .update(listingDrafts)
+        .set({ status: next, updatedAt: new Date() })
+        .where(
+          and(
+            byId(id),
+            eq(listingDrafts.status, listing.status),
+            eq(listingDrafts.activeVersionId, versionId),
+          ),
+        )
+        .returning({ id: listingDrafts.id });
+      if (updated.length !== 1)
+        throw new Error("listing changed while updating confirmations");
+      // The transition record says the status moved; this says why the
+      // approval stopped holding, which is what an operator needs to see.
+      await audit.write({
+        ...context,
+        action: APPROVAL_INVALIDATED_ACTION,
+        metadata: {
+          cause: "confirmation_changed" satisfies ApprovalInvalidationCause,
+          fromStatus: listing.status,
+          versionId,
+        },
+      });
+      return "reopened";
+    },
+    async promoteManual(id, content, context, audit, flags) {
+      scope.assertOpen();
+      await this.lockReviewState(id);
+      const listing = await this.requireById(id);
+      if (listing.activeVersionId !== null)
+        throw new Error("stale review version");
+      const parsed = inheritWineOwnership(
+        null,
+        reviewableListingSchema.parse(content),
+      );
+      const next = await transitionListing(
+        listing.status,
+        "submit_manual",
+        context,
+        audit,
+      );
+      const version = await this.appendVersion(id, parsed, context, audit);
+      await this.replaceFlags(version.id, flags);
+      await transaction
+        .update(listingDrafts)
+        .set({
+          activeVersionId: version.id,
+          status: next,
+          updatedAt: new Date(),
+        })
+        .where(byId(id));
+      await audit.write({
+        ...context,
+        action: "listing.manual_submitted",
+        metadata: { versionId: version.id },
+      });
+      return version;
+    },
     async editReview(
       id,
       baseVersionId,
@@ -718,6 +889,7 @@ export function createListingRepository(
       changedFields,
       context,
       audit,
+      flags,
     ) {
       scope.assertOpen();
       const listing = await this.requireById(id);
@@ -739,7 +911,57 @@ export function createListingRepository(
       const nextStatus: ListingStatus | undefined =
         nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
       if (!nextStatus) throw new Error(`listing is ${listing.status}`);
-      const version = await this.appendVersion(id, content, context, audit);
+      const base = await this.getReviewSnapshot(id);
+      if (base?.activeVersion?.id !== baseVersionId)
+        throw new Error("stale review version");
+      const inherited = inheritWineOwnership(
+        base.activeVersion.content,
+        reviewableListingSchema.parse(content),
+      );
+      const version = await this.appendVersion(id, inherited, context, audit);
+      // A compliance flag belongs to the version it was raised against, and an
+      // edit appends a new one. Carrying them is not housekeeping: flags are
+      // read by active version id, `approveListing` refuses only on an OPEN
+      // BLOCKING flag it can actually see, so saving ANY edit -- even one
+      // nowhere near the flagged field -- silently emptied the gate and let the
+      // listing be approved. `listing-approval.ts` already does exactly this
+      // wherever it appends a version; this path was the one that did not.
+      //
+      // Evidence is deliberately NOT carried. Here the content is what changed,
+      // so the previous version's excerpts may no longer support the values
+      // they are attached to, and asserting that they do would be worse than
+      // showing none.
+      if (flags) {
+        // The caller re-scanned the edited copy, so it -- not the base version
+        // -- decides. That is what lets a claim edited OUT clear its flag, which
+        // a blind copy-forward never could.
+        await this.replaceFlags(version.id, flags);
+      } else {
+        const carriedFlags = await transaction
+          .select({
+            code: complianceFlags.code,
+            severity: complianceFlags.severity,
+            status: complianceFlags.status,
+            details: complianceFlags.details,
+            resolvedAt: complianceFlags.resolvedAt,
+          })
+          .from(complianceFlags)
+          .where(
+            and(
+              eq(complianceFlags.workspaceId, workspaceId),
+              eq(complianceFlags.listingVersionId, baseVersionId),
+            ),
+          );
+        if (carriedFlags.length > 0) {
+          await transaction.insert(complianceFlags).values(
+            carriedFlags.map((flag) => ({
+              ...flag,
+              workspaceId,
+              listingVersionId: version.id,
+            })),
+          );
+        }
+      }
       const updated = await transaction
         .update(listingDrafts)
         .set({

@@ -1,10 +1,15 @@
-import type { CanonicalListing, ListingFacts } from "@wukong/core";
+import type {
+  ReviewableListing,
+  ListingFacts,
+  ProductShotState,
+} from "@wukong/core";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -288,6 +293,7 @@ export const listingDrafts = pgTable(
     target: text("target").default("shopline").notNull(),
     note: text("note"),
     activeVersionId: uuid("active_version_id"),
+    inputRevision: integer("input_revision").default(0).notNull(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -322,11 +328,16 @@ export const listingVersions = pgTable(
     listingId: uuid("listing_id").notNull(),
     sequence: integer("sequence").notNull(),
     pipelineIdempotencyKey: text("pipeline_idempotency_key"),
-    content: jsonb("content").$type<CanonicalListing>().notNull(),
+    content: jsonb("content").$type<ReviewableListing>().notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("listing_versions_workspace_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
     uniqueIndex("listing_versions_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -366,6 +377,11 @@ export const sourceAssets = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("source_assets_workspace_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
     uniqueIndex("source_assets_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -499,13 +515,21 @@ export const aiRuns = pgTable(
       precision: 14,
       scale: 6,
     }),
+    pipelineRunId: uuid("pipeline_run_id"),
+    stage: text("stage"),
+    callOrdinal: integer("call_ordinal"),
+    usageCertainty: text("usage_certainty"),
+    failureCategory: text("failure_category"),
+    httpStatus: integer("http_status"),
+    providerCode: text("provider_code"),
+    providerRequestId: text("provider_request_id"),
     createdAt: timestamps.createdAt,
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
     check(
       "ai_runs_nonverification_cost_required",
-      sql`${table.task} = 'verify' OR ${table.estimatedCostUsd} IS NOT NULL`,
+      sql`${table.task} = 'verify' OR ${table.pipelineRunId} IS NOT NULL OR ${table.estimatedCostUsd} IS NOT NULL`,
     ),
     check(
       "ai_runs_nonnegative_known_cost",
@@ -581,6 +605,34 @@ export const listingPipelineRuns = pgTable(
       name: "listing_pipeline_runs_workspace_version_fkey",
       columns: [table.workspaceId, table.versionId],
       foreignColumns: [listingVersions.workspaceId, listingVersions.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const aiBudgetReservations = pgTable(
+  "ai_budget_reservations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    pipelineRunId: uuid("pipeline_run_id").notNull(),
+    pricingVersion: text("pricing_version").notNull(),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }).notNull(),
+    settledUsd: numeric("settled_usd", { precision: 14, scale: 6 }),
+    state: text("state").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("ai_budget_reservations_workspace_run_uq").on(
+      table.workspaceId,
+      table.pipelineRunId,
+    ),
+    foreignKey({
+      name: "ai_budget_reservations_workspace_run_fkey",
+      columns: [table.workspaceId, table.pipelineRunId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
     }).onDelete("restrict"),
   ],
 );
@@ -744,6 +796,11 @@ export const sourceImports = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("source_imports_workspace_connection_id_uq").on(
+      table.workspaceId,
+      table.connectionId,
+      table.id,
+    ),
     uniqueIndex("source_imports_workspace_id_uq").on(
       table.workspaceId,
       table.id,
@@ -767,6 +824,39 @@ export const sourceImports = pgTable(
   ],
 );
 
+/**
+ * What one confirmed field was confirmed against.
+ *
+ * Digests rather than copies, so no merchant content enters a second table.
+ * Each is sha256 hex of a JSON encoding:
+ *
+ * - `afterDigest` pins the value in the confirmed version.
+ * - `before` pins the merchant's cell in the imported row.
+ull` when the
+ *   listing has no imported row or the cell was blank -- a recorded fact that
+ *   nothing was supplied, not a missing value.
+ * - `evidenceDigest` pins the grounding the AI offered for the field, or
+ull`
+ *   when it offered none. Content, not ids: evidence rows are replaced wholesale
+ *   and copied forward under fresh ids, so an id identifies a row rather than
+ *   the grounding it carries.
+ *
+ * Evidence about the confirmed version and its source -- not a transcript of
+ * the reviewer's screen, which does not render the merchant's prior value.
+ *
+ * Defined here, beside the column that stores it, so the stored shape and the
+ * repository's shape cannot drift: two structural copies let an added optional
+ * property pass `tsc` silently.
+ */
+export type ReviewFieldRecord = {
+  afterDigest: string;
+  before: { column: string; digest: string } | null;
+  evidenceDigest: string | null;
+};
+
+/** Keyed by confirmation field key. See 0027_review_confirmation_field_records.sql. */
+export type ReviewFieldRecords = Record<string, ReviewFieldRecord>;
+
 export const reviewConfirmations = pgTable(
   "review_confirmations",
   {
@@ -785,6 +875,9 @@ export const reviewConfirmations = pgTable(
     revision: integer("revision").notNull().default(0),
     sourceImportId: uuid("source_import_id"),
     rowDigest: text("row_digest"),
+    // What each confirmed field was confirmed against (0027). NULL for every
+    // row written before it existed. See ReviewFieldRecord above.
+    fieldRecords: jsonb("field_records").$type<ReviewFieldRecords>(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -841,6 +934,9 @@ export const exportAttempts = pgTable(
             | "included"
             | "excluded_no_op"
             | "excluded_stale"
+            | "excluded_unapproved"
+            | "excluded_blocked"
+            | "excluded_unconfirmed"
             | "not_import_origin"
             | "raw_row_invalid"
             | "listing_not_found";
@@ -848,6 +944,17 @@ export const exportAttempts = pgTable(
         }>
       >()
       .notNull(),
+    provenance: jsonb("provenance").$type<Record<string, unknown>>(),
+    sourceAttestation:
+      jsonb("source_attestation").$type<
+        Array<{ listingId: string; contentDigest: string }>
+      >(),
+    artifactSha256: text("artifact_sha256"),
+    artifactStatus: text("artifact_status").$type<
+      "pending" | "ready" | "failed"
+    >(),
+    artifactErrorCode: text("artifact_error_code"),
+    artifactReadyAt: timestamp("artifact_ready_at", { withTimezone: true }),
     rowCount: integer("row_count").notNull(),
     specVersion: text("spec_version").notNull(),
     createdAt: timestamps.createdAt,
@@ -889,17 +996,65 @@ export const importResults = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" })
       .notNull(),
     listingId: uuid("listing_id").notNull(),
-    /** Null when the recorded listing's bulk-form file came from the
-     * single-listing `deliver` (bulk_form) path, which persists no
-     * export_attempts row -- only the multi-product `/api/listings/export`
-     * route produces one to reference here. */
+    /** Null for explicitly unlinked historical/manual reports. */
     exportAttemptId: uuid("export_attempt_id"),
+    mode: text("mode").notNull().default("legacy_historical"),
+    versionId: uuid("version_id"),
+    idempotencyKey: text("idempotency_key"),
+    supersedesResultId: uuid("supersedes_result_id"),
+    correctionReason: text("correction_reason"),
+    revision: integer("revision").notNull().default(1),
     outcome: text("outcome").notNull(),
     rejectReason: text("reject_reason"),
     recordedBy: text("recorded_by").notNull(),
     createdAt: timestamps.createdAt,
   },
   (table) => [
+    uniqueIndex("import_results_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("import_results_idempotency_uq")
+      .on(table.workspaceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    uniqueIndex("import_results_export_revision_uq")
+      .on(
+        table.workspaceId,
+        table.exportAttemptId,
+        table.listingId,
+        table.revision,
+      )
+      .where(sql`${table.mode} = 'export'`),
+    uniqueIndex("import_results_manual_revision_uq")
+      .on(table.workspaceId, table.listingId, table.revision)
+      .where(sql`${table.mode} = 'historical_manual'`),
+    uniqueIndex("import_results_successor_uq")
+      .on(table.workspaceId, table.supersedesResultId)
+      .where(sql`${table.supersedesResultId} IS NOT NULL`),
+    check(
+      "import_results_mode_check",
+      sql`${table.mode} IN ('legacy_historical', 'historical_manual', 'export')`,
+    ),
+    check("import_results_revision_check", sql`${table.revision} > 0`),
+    foreignKey({
+      name: "import_results_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "import_results_predecessor_fkey",
+      columns: [table.workspaceId, table.supersedesResultId],
+      foreignColumns: [table.workspaceId, table.id],
+    }).onDelete("restrict"),
+    index("import_results_workspace_listing_version_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.versionId,
+    ),
     index("import_results_workspace_listing_idx").on(
       table.workspaceId,
       table.listingId,
@@ -926,6 +1081,7 @@ export const importResults = pgTable(
 );
 
 export const enrichmentBatchStatus = pgEnum("enrichment_batch_status", [
+  "paused",
   "open",
   "running",
   "completed",
@@ -956,6 +1112,7 @@ export const enrichmentBatches = pgTable(
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
     status: enrichmentBatchStatus("status").default("open").notNull(),
+    controlRevision: integer("control_revision").default(0).notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
@@ -972,6 +1129,55 @@ export const enrichmentBatches = pgTable(
   ],
 );
 
+/**
+ * Work we have decided to send, written before we try to send it.
+ *
+ * The row is inserted in the same transaction that claims the work, so a
+ * process that dies before the queue call leaves an unambiguous record:
+ * `dispatched_at IS NULL` means nobody sent it, and re-sending is safe.
+ * Inferring the same thing from `listing_pipeline_runs` is impossible -- that
+ * row appears only once the pipeline claims its first step, so its absence
+ * cannot tell "never sent" from "sent and still queued".
+ *
+ * The partial index on undispatched rows is SQL-only (see migration 0023);
+ * Drizzle has no expression for it.
+ */
+export const listingDispatchOutbox = pgTable(
+  "listing_dispatch_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    /** The queue run key. Unique per workspace, so a retry cannot duplicate. */
+    dedupeKey: text("dedupe_key").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    createdAt: timestamps.createdAt,
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("listing_dispatch_outbox_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("listing_dispatch_outbox_dedupe_uq").on(
+      table.workspaceId,
+      table.dedupeKey,
+    ),
+    index("listing_dispatch_outbox_workspace_listing_idx").on(
+      table.workspaceId,
+      table.listingId,
+    ),
+    foreignKey({
+      name: "listing_dispatch_outbox_workspace_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+  ],
+);
+
 export const enrichmentBatchItems = pgTable(
   "enrichment_batch_items",
   {
@@ -983,6 +1189,12 @@ export const enrichmentBatchItems = pgTable(
     listingId: uuid("listing_id").notNull(),
     status: enrichmentBatchItemStatus("status").default("pending").notNull(),
     idempotencyKey: text("idempotency_key"),
+    retryOfItemId: uuid("retry_of_item_id"),
+    isCurrent: boolean("is_current").default(true).notNull(),
+    pipelineRunId: uuid("pipeline_run_id"),
+    inputRevision: integer("input_revision"),
+    outcome: text("outcome"),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   },
@@ -991,15 +1203,17 @@ export const enrichmentBatchItems = pgTable(
       table.workspaceId,
       table.id,
     ),
-    uniqueIndex("enrichment_batch_items_batch_listing_uq").on(
-      table.workspaceId,
-      table.batchId,
-      table.listingId,
-    ),
+    uniqueIndex("enrichment_batch_items_batch_listing_uq")
+      .on(table.workspaceId, table.batchId, table.listingId)
+      .where(sql`${table.isCurrent}`),
     index("enrichment_batch_items_workspace_batch_status_idx").on(
       table.workspaceId,
       table.batchId,
       table.status,
+    ),
+    uniqueIndex("enrichment_batch_items_workspace_run_uq").on(
+      table.workspaceId,
+      table.pipelineRunId,
     ),
     index("enrichment_batch_items_workspace_listing_idx").on(
       table.workspaceId,
@@ -1140,5 +1354,1085 @@ export const auditEvents = pgTable(
       table.action,
       table.createdAt,
     ),
+  ],
+);
+
+export const sourceRowSnapshots = pgTable(
+  "source_row_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    sourceImportId: uuid("source_import_id").notNull(),
+    remoteProductId: text("remote_product_id").notNull(),
+    sourceRowDigest: text("source_row_digest").notNull(),
+    rawRow: jsonb("raw_row").$type<Record<string, string | null>>().notNull(),
+    specVersion: text("spec_version").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("source_row_snapshots_product_uq").on(
+      table.workspaceId,
+      table.sourceImportId,
+      table.connectionId,
+      table.remoteProductId,
+    ),
+    uniqueIndex("source_row_snapshots_listing_id_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    index("source_row_snapshots_import_idx").on(
+      table.workspaceId,
+      table.connectionId,
+      table.sourceImportId,
+    ),
+    foreignKey({
+      name: "source_row_snapshots_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "source_row_snapshots_import_fkey",
+      columns: [table.workspaceId, table.connectionId, table.sourceImportId],
+      foreignColumns: [
+        sourceImports.workspaceId,
+        sourceImports.connectionId,
+        sourceImports.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const bulkUpdateApprovalReceipts = pgTable(
+  "bulk_update_approval_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    receiptOrdinal: bigint("receipt_ordinal", { mode: "bigint" })
+      .generatedAlwaysAsIdentity()
+      .notNull(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    sourceSnapshotId: uuid("source_snapshot_id").notNull(),
+    confirmationVersionId: uuid("confirmation_version_id").notNull(),
+    confirmationRevision: integer("confirmation_revision").notNull(),
+    approvedBy: text("approved_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("bulk_update_approval_receipts_ordinal_uq").on(
+      table.receiptOrdinal,
+    ),
+    uniqueIndex("bulk_update_approval_receipts_binding_uq").on(
+      table.workspaceId,
+      table.versionId,
+      table.sourceSnapshotId,
+      table.confirmationVersionId,
+      table.confirmationRevision,
+    ),
+    index("bulk_update_approval_receipts_version_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.versionId,
+    ),
+    index("bulk_update_approval_receipts_confirmation_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.confirmationVersionId,
+    ),
+    index("bulk_update_approval_receipts_snapshot_idx").on(
+      table.workspaceId,
+      table.listingId,
+      table.sourceSnapshotId,
+    ),
+    foreignKey({
+      name: "bulk_update_approval_receipts_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "bulk_update_approval_receipts_confirmation_version_fkey",
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.confirmationVersionId,
+      ],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "bulk_update_approval_receipts_snapshot_fkey",
+      columns: [table.workspaceId, table.listingId, table.sourceSnapshotId],
+      foreignColumns: [
+        sourceRowSnapshots.workspaceId,
+        sourceRowSnapshots.listingId,
+        sourceRowSnapshots.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const exportVerifications = pgTable(
+  "export_verifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    exportAttemptId: uuid("export_attempt_id").notNull(),
+    identityKey: text("identity_key").notNull(),
+    artifactSha256: text("artifact_sha256").notNull(),
+    suppliedSha256: text("supplied_sha256").notNull(),
+    merchantAttestedExportAt: timestamp("merchant_attested_export_at", {
+      withTimezone: true,
+    }).notNull(),
+    connectionId: text("connection_id").notNull(),
+    policyVersion: text("policy_version").$type<"fresh-export-v1">().notNull(),
+    filename: text("filename").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    provenance: jsonb("provenance").$type<Record<string, unknown>>().notNull(),
+    comparison: jsonb("comparison")
+      .$type<import("@wukong/shopline").FreshExportComparison>()
+      .notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.workspaceId, t.exportAttemptId],
+      foreignColumns: [exportAttempts.workspaceId, exportAttempts.id],
+      name: "export_verifications_attempt_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("export_verifications_identity_uq").on(
+      t.workspaceId,
+      t.identityKey,
+    ),
+    index("export_verifications_history_idx").on(
+      t.workspaceId,
+      t.exportAttemptId,
+      t.createdAt,
+      t.id,
+    ),
+  ],
+);
+
+export const websiteScans = pgTable(
+  "website_scans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    requestedUrl: text("requested_url").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    requestKey: text("request_key").notNull(),
+    state: text("state").notNull(),
+    checkpoint: jsonb("checkpoint")
+      .$type<import("./repositories/website-catalog.js").WebsiteCheckpoint>()
+      .notNull(),
+    revision: integer("revision").notNull().default(0),
+    attempts: integer("attempts").notNull().default(0),
+    discoveryRequests: integer("discovery_requests").notNull().default(0),
+    productRequests: integer("product_requests").notNull().default(0),
+    robotsRequests: integer("robots_requests").notNull().default(0),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    nextEligibleAt: timestamp("next_eligible_at", {
+      withTimezone: true,
+    }).notNull(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
+    dispatchStatus: text("dispatch_status").notNull().default("pending"),
+    dispatchAttempts: integer("dispatch_attempts").notNull().default(0),
+    dispatchAt: timestamp("dispatch_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    uniqueIndex("website_scans_workspace_id_uq").on(t.workspaceId, t.id),
+    uniqueIndex("website_scans_request_uq").on(t.workspaceId, t.requestKey),
+  ],
+);
+export const websiteScanSteps = pgTable(
+  "website_scan_steps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    scanId: uuid("scan_id").notNull(),
+    revision: integer("revision").notNull(),
+    leaseToken: uuid("lease_token").notNull(),
+    requestState: text("request_state").notNull(),
+    result:
+      jsonb("result").$type<
+        import("./repositories/website-catalog.js").WebsiteStepResult
+      >(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("website_steps_revision_uq").on(
+      t.workspaceId,
+      t.scanId,
+      t.revision,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.scanId],
+      foreignColumns: [websiteScans.workspaceId, websiteScans.id],
+    }),
+  ],
+);
+export const websiteProducts = pgTable(
+  "website_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    canonicalSourceUrl: text("canonical_source_url").notNull(),
+    sourceScanId: uuid("source_scan_id").notNull(),
+    sourceKey: text("source_key").notNull(),
+    observation: jsonb("observation")
+      .$type<import("@wukong/core").WebsiteProduct>()
+      .notNull(),
+    savedBy: text("saved_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    index("website_products_scan_idx").on(t.workspaceId, t.sourceScanId),
+    uniqueIndex("website_products_source_uq").on(
+      t.workspaceId,
+      t.canonicalSourceUrl,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.sourceScanId],
+      foreignColumns: [websiteScans.workspaceId, websiteScans.id],
+    }),
+  ],
+);
+
+export const workbookImports = pgTable(
+  "workbook_imports",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    workbookSha256: text("workbook_sha256").notNull(),
+    filename: text("filename").notNull(),
+    sheetName: text("sheet_name").notNull(),
+    headerContractSha256: text("header_contract_sha256").notNull(),
+    productBindings: jsonb("product_bindings")
+      .$type<Record<string, string>>()
+      .notNull(),
+    normalizedSheet: jsonb("normalized_sheet")
+      .$type<import("@wukong/shopline").BulkFormSheet>()
+      .notNull(),
+    specVersion: text("spec_version").notNull(),
+    inferredExportTime: jsonb("inferred_export_time").$type<
+      import("@wukong/shopline").InferredWorkbookTime
+    >(),
+    totalRows: integer("total_rows").notNull(),
+    eligibleProducts: integer("eligible_products").notNull(),
+    excludedRows: integer("excluded_rows").notNull(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("workbook_imports_workspace_id_uq").on(t.workspaceId, t.id),
+    uniqueIndex("workbook_imports_digest_uq").on(
+      t.workspaceId,
+      t.workbookSha256,
+    ),
+  ],
+);
+export const workbookProducts = pgTable(
+  "workbook_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    importId: uuid("import_id").notNull(),
+    rowNumber: integer("row_number").notNull(),
+    product: jsonb("product")
+      .$type<import("@wukong/shopline").WorkbookBaseProduct>()
+      .notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex("workbook_products_row_uq").on(
+      t.workspaceId,
+      t.importId,
+      t.rowNumber,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.importId],
+      foreignColumns: [workbookImports.workspaceId, workbookImports.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const productShotAttempts = pgTable(
+  "product_shot_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    sourceAssetId: uuid("source_asset_id").notNull(),
+    sourceDigest: text("source_digest").notNull(),
+    providerVersion: text("provider_version").notNull(),
+    renderVersion: text("render_version").notNull(),
+    generation: integer("generation").notNull(),
+    state: text("state").$type<ProductShotState>().notNull().default("queued"),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    callCount: integer("call_count").notNull().default(0),
+    estimatedCostUsd: numeric("estimated_cost_usd", {
+      precision: 14,
+      scale: 6,
+    }),
+    cutoutAssetId: uuid("cutout_asset_id"),
+    cutoutDigest: text("cutout_digest"),
+    candidateAssetId: uuid("candidate_asset_id"),
+    candidateDigest: text("candidate_digest"),
+    candidateWidth: integer("candidate_width"),
+    candidateHeight: integer("candidate_height"),
+    candidateSize: integer("candidate_size"),
+    candidateLowResolution: boolean("candidate_low_resolution"),
+    errorCode: text("error_code"),
+    actorId: text("actor_id").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("product_shot_attempts_workspace_listing_id_uq").on(
+      t.workspaceId,
+      t.listingId,
+      t.id,
+    ),
+    index("product_shot_attempts_cutout_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.cutoutAssetId,
+    ),
+    index("product_shot_attempts_candidate_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.candidateAssetId,
+    ),
+    uniqueIndex("product_shot_attempts_identity_generation_uq").on(
+      t.workspaceId,
+      t.listingId,
+      t.sourceAssetId,
+      t.sourceDigest,
+      t.providerVersion,
+      t.renderVersion,
+      t.generation,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("restrict"),
+    ...[t.sourceAssetId, t.cutoutAssetId, t.candidateAssetId].map((assetId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, assetId],
+        foreignColumns: [
+          sourceAssets.workspaceId,
+          sourceAssets.listingId,
+          sourceAssets.id,
+        ],
+      }).onDelete("restrict"),
+    ),
+    check(
+      "product_shot_attempts_state_check",
+      sql`${t.state} IN ('queued','processing','cutout_ready','candidate_ready','approved','failed','outcome_unknown')`,
+    ),
+  ],
+);
+
+export const productShotSelections = pgTable(
+  "product_shot_selections",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    attemptId: uuid("attempt_id").notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.listingId] }),
+    index("product_shot_selections_attempt_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.attemptId,
+    ),
+
+    foreignKey({
+      columns: [t.workspaceId, t.listingId, t.attemptId],
+      foreignColumns: [
+        productShotAttempts.workspaceId,
+        productShotAttempts.listingId,
+        productShotAttempts.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const productShotDailyDispatches = pgTable(
+  "product_shot_daily_dispatches",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    dispatchDay: date("dispatch_day").notNull(),
+    dispatchedCount: integer("dispatched_count").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.dispatchDay] })],
+);
+
+export const productShotPublications = pgTable(
+  "product_shot_publications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    listingId: uuid("listing_id").notNull(),
+    attemptId: uuid("attempt_id").notNull(),
+    observedVersionId: uuid("observed_version_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    storageKey: text("storage_key").notNull(),
+    candidateDigest: text("candidate_digest").notNull(),
+    sourceAssetId: uuid("source_asset_id").notNull(),
+    sourceDigest: text("source_digest").notNull(),
+    providerVersion: text("provider_version").notNull(),
+    renderVersion: text("render_version").notNull(),
+    size: integer("size").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: text("revoked_by"),
+  },
+  (t) => [
+    uniqueIndex("product_shot_publications_workspace_id_uq").on(
+      t.workspaceId,
+      t.id,
+    ),
+    uniqueIndex("product_shot_publications_binding_uq").on(
+      t.workspaceId,
+      t.attemptId,
+      t.versionId,
+      t.candidateDigest,
+    ),
+    index("product_shot_publications_asset_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.versionId,
+      t.assetId,
+    ),
+    index("product_shot_publications_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.assetId,
+    ),
+    index("product_shot_publications_attempt_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.attemptId,
+    ),
+    index("product_shot_publications_observed_version_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.observedVersionId,
+    ),
+    index("product_shot_publications_source_asset_fk_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.sourceAssetId,
+    ),
+    foreignKey({
+      columns: [t.workspaceId, t.listingId, t.attemptId],
+      foreignColumns: [
+        productShotAttempts.workspaceId,
+        productShotAttempts.listingId,
+        productShotAttempts.id,
+      ],
+    }).onDelete("restrict"),
+    ...[t.observedVersionId, t.versionId].map((versionId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, versionId],
+        foreignColumns: [
+          listingVersions.workspaceId,
+          listingVersions.listingId,
+          listingVersions.id,
+        ],
+      }).onDelete("restrict"),
+    ),
+    ...[t.assetId, t.sourceAssetId].map((assetId) =>
+      foreignKey({
+        columns: [t.workspaceId, t.listingId, assetId],
+        foreignColumns: [
+          sourceAssets.workspaceId,
+          sourceAssets.listingId,
+          sourceAssets.id,
+        ],
+      }).onDelete("restrict"),
+    ),
+  ],
+);
+
+export const productShotApprovalUrls = pgTable(
+  "product_shot_approval_urls",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    publicationId: uuid("publication_id").notNull(),
+    publicUrl: text("public_url").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.publicationId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.publicationId],
+      foreignColumns: [
+        productShotPublications.workspaceId,
+        productShotPublications.id,
+      ],
+    }).onDelete("restrict"),
+  ],
+);
+
+export const listingInputRevisions = pgTable(
+  "listing_input_revisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    revision: integer("revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    note: text("note"),
+    sources: jsonb("sources")
+      .$type<import("@wukong/core").ResolvedSourceSelection[]>()
+      .notNull(),
+    workingContent: jsonb("working_content")
+      .$type<import("@wukong/core").WorkingListing>()
+      .notNull(),
+    fieldStates: jsonb("field_states")
+      .$type<import("@wukong/core").WorkingFieldStates>()
+      .notNull(),
+    inputDigest: text("input_digest").notNull(),
+    operationKey: text("operation_key"),
+    requestDigest: text("request_digest"),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("listing_input_revisions_revision_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.revision,
+    ),
+    uniqueIndex("listing_input_revisions_operation_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.operationKey,
+    ),
+    foreignKey({
+      name: "listing_input_revisions_listing_fkey",
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    foreignKey({
+      name: "listing_input_revisions_version_fkey",
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingCreateRequests = pgTable(
+  "listing_create_requests",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestKey] }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+  ],
+);
+
+export const listingEnrichmentSuggestions = pgTable(
+  "listing_enrichment_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_enrichment_suggestions_identity_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    uniqueIndex("listing_enrichment_suggestions_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingEnrichmentDecisions = pgTable(
+  "listing_enrichment_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    suggestionId: uuid("suggestion_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    actorId: text("actor_id").notNull(),
+    selectedFields: jsonb("selected_fields").notNull(),
+    decision: text("decision").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_enrichment_decisions_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.suggestionId],
+      foreignColumns: [
+        listingEnrichmentSuggestions.workspaceId,
+        listingEnrichmentSuggestions.listingId,
+        listingEnrichmentSuggestions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingClaimSupports = pgTable(
+  "listing_claim_supports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    suggestionId: uuid("suggestion_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    baseVersionId: uuid("base_version_id"),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    actorId: text("actor_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("listing_claim_supports_identity_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.id,
+    ),
+    uniqueIndex("listing_claim_supports_request_uq").on(
+      table.workspaceId,
+      table.listingId,
+      table.requestKey,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.suggestionId],
+      foreignColumns: [
+        listingEnrichmentSuggestions.workspaceId,
+        listingEnrichmentSuggestions.listingId,
+        listingEnrichmentSuggestions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.baseVersionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+  ],
+);
+
+export const listingVersionClaimSupports = pgTable(
+  "listing_version_claim_supports",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    supportId: uuid("support_id").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    actorId: text("actor_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.versionId,
+        table.supportId,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.supportId],
+      foreignColumns: [
+        listingClaimSupports.workspaceId,
+        listingClaimSupports.listingId,
+        listingClaimSupports.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId, table.inputRevision],
+      foreignColumns: [
+        listingInputRevisions.workspaceId,
+        listingInputRevisions.listingId,
+        listingInputRevisions.revision,
+      ],
+    }),
+  ],
+);
+
+// Migration 0041 owns RLS, grants and immutable triggers for these tables.
+export const wineStages = pgTable(
+  "wine_stages",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    stage: text("stage").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    inputDigest: text("input_digest").notNull(),
+    dependencyDigest: text("dependency_digest").notNull(),
+    state: text("state").notNull().default("started"),
+    output: jsonb("output"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.stage] }),
+    foreignKey({
+      name: "wine_stages_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineEvidence = pgTable(
+  "wine_evidence",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.sourceId] }),
+    foreignKey({
+      name: "wine_evidence_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineSectionSnapshots = pgTable(
+  "wine_section_snapshots",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    versionId: uuid("version_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.versionId] }),
+    foreignKey({
+      name: "wine_sections_run_fk",
+      columns: [t.workspaceId, t.listingId, t.runId],
+      foreignColumns: [
+        listingPipelineRuns.workspaceId,
+        listingPipelineRuns.listingId,
+        listingPipelineRuns.id,
+      ],
+    }),
+    foreignKey({
+      name: "wine_sections_version_fk",
+      columns: [t.workspaceId, t.listingId, t.versionId],
+      foreignColumns: [
+        listingVersions.workspaceId,
+        listingVersions.listingId,
+        listingVersions.id,
+      ],
+    }),
+    index("wine_sections_version_idx").on(
+      t.workspaceId,
+      t.listingId,
+      t.versionId,
+    ),
+  ],
+);
+export const wineSourceAuthorities = pgTable(
+  "wine_source_authorities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    reviewerId: text("reviewer_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index("wine_authorities_workspace_idx").on(t.workspaceId)],
+);
+export const wineTrustedContexts = pgTable(
+  "wine_trusted_contexts",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    contextKey: text("context_key").notNull(),
+    inputDigest: text("input_digest").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.contextKey] }),
+    foreignKey({
+      name: "wine_context_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const searchBudgetReservations = pgTable(
+  "search_budget_reservations",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    pipelineRunId: uuid("pipeline_run_id").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    reservedCredits: integer("reserved_credits").notNull(),
+    settledCredits: integer("settled_credits"),
+    state: text("state").notNull().default("held"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.pipelineRunId] }),
+    foreignKey({
+      name: "search_budget_run_fk",
+      columns: [t.workspaceId, t.pipelineRunId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+  ],
+);
+export const wineSearchCalls = pgTable(
+  "wine_search_calls",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    slot: text("slot").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    maximumCredits: integer("maximum_credits").notNull(),
+    credits: integer("credits"),
+    output: jsonb("output"),
+    diagnostic: jsonb("diagnostic"),
+    status: text("status").notNull().default("started"),
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.slot] }),
+    foreignKey({
+      name: "wine_calls_reservation_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [
+        searchBudgetReservations.workspaceId,
+        searchBudgetReservations.pipelineRunId,
+      ],
+    }),
+  ],
+);
+export const wineDocumentRequests = pgTable(
+  "wine_document_requests",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    runId: uuid("run_id").notNull(),
+    sourceId: uuid("source_id").notNull(),
+    kind: text("kind").notNull(),
+    inputRevision: integer("input_revision").notNull(),
+    state: text("state").notNull().default("started"),
+    result: jsonb("result"),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.runId, t.sourceId, t.kind] }),
+    foreignKey({
+      name: "wine_document_source_fk",
+      columns: [t.workspaceId, t.runId, t.sourceId],
+      foreignColumns: [
+        wineEvidence.workspaceId,
+        wineEvidence.runId,
+        wineEvidence.sourceId,
+      ],
+    }),
+  ],
+);
+export const wineEvidenceCache = pgTable(
+  "wine_evidence_cache",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    snapshotId: uuid("snapshot_id").notNull(),
+    runId: uuid("run_id").notNull(),
+    identityKey: text("identity_key").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    rulesVersion: text("rules_version").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.snapshotId] }),
+    foreignKey({
+      name: "wine_cache_run_fk",
+      columns: [t.workspaceId, t.runId],
+      foreignColumns: [listingPipelineRuns.workspaceId, listingPipelineRuns.id],
+    }),
+    index("wine_cache_lookup_idx").on(
+      t.workspaceId,
+      t.identityKey,
+      t.policyVersion,
+      t.rulesVersion,
+      t.capturedAt.desc(),
+    ),
+    index("wine_cache_run_idx").on(t.workspaceId, t.runId),
   ],
 );

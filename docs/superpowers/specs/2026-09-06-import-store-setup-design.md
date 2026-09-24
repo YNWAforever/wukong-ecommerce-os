@@ -1,0 +1,9 @@
+# Inline SHOPLINE store setup design
+
+Approved 2026-09-06. Import currently shows a missing-connection error after submission and sends users toward an admin page they may not be allowed to see. Add a bilingual store-setup card above workbook selection on /listings/import. Show loading, unavailable/retry, connected-domain and missing-store states. Preserve the actual file input, selected File and entered export timestamp throughout setup.
+
+All authenticated workspace members can read a minimal setup summary (domain only, no token or encrypted value). Only admin/owner can manage connections; operators/reviewers/viewers see administrator guidance when disconnected. An admin opens the existing connection form inline, outside the import form, without navigation. Successful connection refreshes status and enables eligible import. Unknown/disconnected state prevents sending workbook bytes; server import authorization remains authoritative. Existing connected stores can import without credential-storage configuration, because importing does not decrypt the token.
+
+Report unavailable credential storage before rendering token-entry controls. Use the existing encryption-key validator to distinguish absent/invalid keys; expose a boolean only. Do not reveal keys, enable SHOPLINE writes, configure production secrets, deploy, upload the real workbook or add tokenless store registration. Reuse the existing POST/PATCH connection and audit boundary; do not expand credential mutation permissions or weaken source binding.
+
+Use existing plain CSS, locale context, React, Next and injected route factories. No schema/dependency changes. Regressions cover scoped summary/role matrix/no secret leakage, missing/invalid configuration, inline connection success, denied roles, request retry, no nested forms, and actual selected-file/time preservation. Synthetic verification only. Production encryption configuration remains a separate operational prerequisite.

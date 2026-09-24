@@ -1,6 +1,9 @@
 "use client";
+import { complianceLabel } from "../lib/review-ui-copy";
+import { useLocale } from "../lib/locale-context";
+import { localized, commonCopy, formatNumber } from "../lib/ui-copy";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { allConfirmed } from "./confirmation-checklist";
 import type { ListingField, ListingReviewModel } from "./listing-view-models";
@@ -9,10 +12,13 @@ export type { ListingField, ListingReviewModel } from "./listing-view-models";
 
 type ListingFieldsFormProps = {
   model: ListingReviewModel;
+  actionErrorId?: string;
+  busy?: boolean;
   canEdit?: boolean;
   canApprove?: boolean;
   fieldConfirmations?: Record<string, boolean>;
   negativeConfirmations?: Record<string, boolean>;
+  onDirtyChange?: (dirty: boolean) => void;
   onApprove?: () => void;
   onSave?: (fields: ListingField[], baseVersionId: string) => void;
 };
@@ -71,8 +77,13 @@ function inputValue(value: ListingField["value"]): string {
   return value === null ? "" : String(value);
 }
 
-function displayConfidence(value: number | null): string {
-  return value === null ? "未評估" : `信心度 ${Math.round(value * 100)}%`;
+function displayConfidence(
+  value: number | null,
+  locale: ReturnType<typeof useLocale>,
+): string {
+  return value === null
+    ? localized(locale, "未評估", "Not assessed")
+    : `${localized(locale, "信心度", "Confidence")} ${formatNumber(Math.round(value * 100), locale)}%`;
 }
 
 function fieldId(key: string) {
@@ -81,13 +92,18 @@ function fieldId(key: string) {
 
 export function ListingFieldsForm({
   model,
+  actionErrorId,
+  busy = false,
   canEdit = true,
   canApprove = true,
   fieldConfirmations = {},
   negativeConfirmations = {},
+  onDirtyChange,
   onApprove,
   onSave,
 }: ListingFieldsFormProps) {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [fields, setFields] = useState(model.fields);
   const hasOpenBlockingFlag = useMemo(
     () => model.blockingFlags.some((flag) => flag.status === "open"),
@@ -97,11 +113,33 @@ export function ListingFieldsForm({
     fieldConfirmations,
     negativeConfirmations,
   );
+  /**
+   * Edits typed but not yet saved.
+   *
+   * `fields` is local state; approving sends only the loaded version id, so a
+   * reviewer who corrected a title and pressed Approve without pressing Save
+   * approved the version WITHOUT their correction -- and the screen showed the
+   * corrected text the whole time, so there was nothing to notice. Compared by
+   * key rather than position, because a re-render can reorder the array.
+   */
+  const isDirty = useMemo(() => {
+    const saved = new Map(
+      model.fields.map((field) => [field.key, field.value]),
+    );
+    return fields.some((field) => saved.get(field.key) !== field.value);
+  }, [fields, model.fields]);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
   const approvalDisabled =
     !canApprove ||
     hasOpenBlockingFlag ||
     confirmationsIncomplete ||
-    model.status !== "in_review";
+    isDirty ||
+    // Reopened listings are approvable: the approve path submits them for
+    // review first (packages/db/src/repositories/listings.ts, approve).
+    (model.status !== "in_review" && model.status !== "reopened");
 
   function updateField(key: string, value: string) {
     setFields((current) =>
@@ -114,6 +152,8 @@ export function ListingFieldsForm({
   return (
     <form
       className="listing-fields-form"
+      aria-describedby={actionErrorId}
+      aria-busy={busy}
       onSubmit={(event) => {
         event.preventDefault();
         onSave?.(fields, model.versionId);
@@ -121,13 +161,11 @@ export function ListingFieldsForm({
     >
       <div className="form-heading">
         <div>
-          <p className="eyebrow">
-            內容審核 <span>CONTENT REVIEW</span>
-          </p>
-          <h2 id="fields-heading">商品欄位</h2>
+          <p className="eyebrow">{t("內容審核", "Content review")}</p>
+          <h2 id="fields-heading">{t("商品欄位", "Listing fields")}</h2>
         </div>
         <span className="version-label">
-          版本 {model.versionId.slice(0, 12)}
+          {t("版本", "Version")} {model.versionId}
         </span>
       </div>
 
@@ -138,10 +176,7 @@ export function ListingFieldsForm({
         if (groupFields.length === 0) return null;
         return (
           <fieldset className="field-group" key={group.label}>
-            <legend>
-              <span>{group.label}</span>
-              <small>{group.englishLabel}</small>
-            </legend>
+            <legend>{t(group.label, group.englishLabel)}</legend>
             <div className="field-grid">
               {groupFields.map((field) => {
                 const id = fieldId(field.key);
@@ -153,8 +188,7 @@ export function ListingFieldsForm({
                     key={field.key}
                   >
                     <label htmlFor={id}>
-                      <span>{field.label}</span>
-                      <small>{field.englishLabel}</small>
+                      {t(field.label, field.englishLabel)}
                     </label>
                     {isLongText ? (
                       <textarea
@@ -187,21 +221,26 @@ export function ListingFieldsForm({
                             : "confidence"
                         }
                       >
-                        {displayConfidence(field.confidence)}
+                        {displayConfidence(field.confidence, locale)}
                       </span>
                       {field.value === null ? (
-                        <span className="missing-value">需要資料</span>
+                        <span className="missing-value">
+                          {t("需要資料", "Needs information")}
+                        </span>
                       ) : null}
                       {field.evidence ? (
                         <span className="source-copy">
-                          來源：{field.evidence.source}
+                          {t("來源：", "Source:")}
+                          {field.evidence.source}
                           {field.evidence.page
-                            ? ` · 第 ${field.evidence.page} 頁`
+                            ? ` · ${t("頁", "Page")} ${formatNumber(field.evidence.page, locale)}`
                             : ""}{" "}
                           · 「{field.evidence.excerpt}」
                         </span>
                       ) : (
-                        <span className="source-copy">尚未有來源摘錄</span>
+                        <span className="source-copy">
+                          {t("尚未有來源摘錄", "No source excerpt")}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -214,7 +253,7 @@ export function ListingFieldsForm({
 
       <div className="form-actions">
         <button className="secondary-button" type="submit" disabled={!canEdit}>
-          儲存草稿 <span>Save draft</span>
+          {busy ? commonCopy[locale].loading : t("儲存草稿", "Save draft")}
         </button>
         <button
           className="primary-button"
@@ -226,31 +265,52 @@ export function ListingFieldsForm({
               ? "approval-help"
               : confirmationsIncomplete
                 ? "confirmation-help"
-                : undefined
+                : isDirty
+                  ? "unsaved-help"
+                  : undefined
           }
         >
-          批准上架 <span>Approve listing</span>
+          {t("批准上架", "Approve listing")}
         </button>
       </div>
+      {!hasOpenBlockingFlag && !confirmationsIncomplete && isDirty ? (
+        <div id="unsaved-help" className="inline-warning" role="alert">
+          {t(
+            "你有未儲存修改。請先保存，再確認最新版本。",
+            "You have unsaved changes. Save them first, then confirm the latest version.",
+          )}
+        </div>
+      ) : null}
       {hasOpenBlockingFlag ? (
         <div id="approval-help" className="inline-warning" role="alert">
-          <strong>尚有開放的阻塞提示：</strong>{" "}
+          <strong>{t("尚有開放的阻塞提示：", "Open blocking flags:")}</strong>{" "}
           {model.blockingFlags
             .filter((flag) => flag.status === "open")
-            .map((flag) => flag.label)
+            .map((flag) => complianceLabel(flag.code, locale, "label"))
             .join("、")}
-          。完成處理並記錄理由後才能批准上架。
+          {t(
+            "。完成處理並記錄理由後才能批准上架。",
+            ". Resolve flags and record reasons before approval.",
+          )}
         </div>
       ) : null}
       {!hasOpenBlockingFlag && confirmationsIncomplete ? (
         <div id="confirmation-help" className="inline-warning" role="alert">
-          <strong>審核確認尚未完成：</strong>
-          請在下方確認清單勾選所有 8 個欄位與 7 項條件後才能批准上架。
+          <strong>
+            {t("審核確認尚未完成：", "Review confirmations are incomplete:")}
+          </strong>
+          {t(
+            "請在下方確認清單勾選所有 8 個欄位與 7 項條件後才能批准上架。",
+            "Confirm all 8 fields and 7 conditions in the checklist before approval.",
+          )}
         </div>
       ) : null}
       {!canApprove ? (
         <p className="helper-copy">
-          你的角色只能檢視內容，需由審核員或管理員批准。
+          {t(
+            "你的角色只能檢視內容，需由審核員或管理員批准。",
+            "Your role can only view content. A reviewer or administrator must approve.",
+          )}
         </p>
       ) : null}
     </form>

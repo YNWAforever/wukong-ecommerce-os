@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { inArray, and, desc, eq, sql, ne, isNotNull } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { exportAttempts } from "../schema.js";
@@ -9,6 +9,9 @@ export type ExportManifestOutcome =
   | "included"
   | "excluded_no_op"
   | "excluded_stale"
+  | "excluded_unapproved"
+  | "excluded_blocked"
+  | "excluded_unconfirmed"
   | "not_import_origin"
   | "raw_row_invalid"
   | "listing_not_found";
@@ -25,15 +28,29 @@ export type ExportManifestEntry = {
   reason?: string;
 };
 
+export type ArtifactStatus = "pending" | "ready" | "failed";
+
 export type EnsureExportAttemptInput = {
+  provenance?: Record<string, unknown>;
+  artifactSha256?: string;
   idempotencyKey: string;
   requestedBy: string;
   manifest: ExportManifestEntry[];
   rowCount: number;
   specVersion: string;
+  sourceAttestation?: Array<{ listingId: string; contentDigest: string }>;
 };
 
 export type ExportAttempt = {
+  provenance?: Record<string, unknown> | null;
+  sourceAttestation?: Array<{
+    listingId: string;
+    contentDigest: string;
+  }> | null;
+  artifactSha256?: string | null;
+  artifactStatus?: ArtifactStatus | null;
+  artifactErrorCode?: string | null;
+  artifactReadyAt?: Date | null;
   id: string;
   requestedBy: string;
   manifest: ExportManifestEntry[];
@@ -58,38 +75,39 @@ export type EnsuredExportAttempt = ExportAttempt & {
 
 export type ExportAttemptRepository = {
   /**
-   * `idempotencyKey` must be fully deterministic from everything that
-   * affects `manifest` -- every input that can change which listings are
-   * included or why one was excluded has to feed the key, or two requests
-   * that mean different things collide on the same row and the caller
-   * silently gets back whichever one landed first.
+   * Identity covers canonical manifest, row order, source/approval provenance,
+   * source attestation, header/spec and artifact hash. Conflicts must match
+   * every stored input. Omitted provenance/hash is reserved for historical
+   * compatibility; production exports always provide both and start pending.
    *
-   * This method cannot know what the key is derived from, so it cannot
-   * detect that kind of collision in general. What it does do is a sanity
-   * check on repeat calls: it compares the full `manifest` array already
-   * stored under this key against the input's `manifest`, entry by entry
-   * (order-independent -- both sides are sorted by `listingId:versionId`
-   * before comparing, since the key is itself derived from the sorted
-   * listing/version set and two calls with the same set in a different
-   * array order are the same request by the key's own definition). If the
-   * stored manifest disagrees with the input once order is normalized,
-   * something in the caller's key construction missed an input that
-   * matters, and this throws instead of quietly handing back stale data
-   * from an unrelated request.
-   *
-   * `rowCount` and `specVersion` are checked too, and deliberately not
-   * dropped as "redundant" with the manifest check: `rowCount` is computed
-   * by the caller through a separate code path (a count of changed
-   * spreadsheet columns, not a tally of the manifest's `included` entries),
-   * so a caller bug that produces a correct manifest but a wrong `rowCount`
-   * would only be caught here, not by comparing manifests. This is
-   * defense-in-depth across independently-computed fields, not one check
-   * standing in for another.
+   * `sourceAttestation` is evidence about what the operator claimed, not
+   * derived data -- a retry under the same key that carries a different
+   * attestation must not be allowed to silently keep the first one, or the
+   * stored record would misrepresent what was actually attested for this
+   * attempt. As of the route currently calling `ensure()`
+   * (apps/web/app/api/listings/export/route.ts), the idempotency key is not
+   * guaranteed to change when only the attested digest changes: a listing
+   * excluded for `row_digest_mismatch` records just that reason code, not
+   * the wrong digest itself, so two different (both incorrect) attested
+   * digests for the same excluded listing in an otherwise unchanged batch
+   * produce identical provenance/manifest/artifact bytes and thus the same
+   * key. This comparison is what actually closes that gap, independent of
+   * whether the calling route already threads a real attestation through.
    */
   ensure(input: EnsureExportAttemptInput): Promise<EnsuredExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
+  markReady(input: {
+    id: string;
+    artifactSha256: string;
+  }): Promise<ExportAttempt>;
+  markFailed(input: {
+    id: string;
+    artifactSha256: string;
+    errorCode: string;
+  }): Promise<ExportAttempt>;
   /** Newest-first, this workspace's export attempts only. `limit` defaults
    * to 100 and must be between 1 and 100. */
+  getByIds(ids: readonly string[]): Promise<ExportAttempt[]>;
   listForWorkspace(limit?: number): Promise<ExportAttempt[]>;
   /** Every export attempt whose manifest contains an entry for this listing,
    * newest first. Uses a jsonb containment check since `manifest` carries no
@@ -103,16 +121,14 @@ export type ExportAttemptRepository = {
       id: string;
       outcome: ExportManifestOutcome;
       reason?: string;
+      artifactStatus?: ArtifactStatus | null;
+      provenanceComplete?: boolean;
       createdAt: Date;
     }>
   >;
 };
 
-// Mirrors the listingId:versionId normalization the idempotency key itself
-// is derived from (sha256 of the sorted "listingId:versionId" pair set), so
-// a repeat call whose manifest entries arrive in a different array order --
-// e.g. reconstructed from a Set/Map, or from a UI re-render -- compares
-// equal instead of being mistaken for a genuine key collision.
+// Normalize legacy manifest membership; new provenance also binds canonical row order.
 const manifestSortKey = (entry: ExportManifestEntry): string =>
   `${entry.listingId}:${entry.versionId ?? "null"}`;
 
@@ -123,7 +139,24 @@ const sortedManifest = (
     manifestSortKey(a).localeCompare(manifestSortKey(b)),
   );
 
+// Array order carries no meaning for the attestation either -- normalize by
+// listingId the same way `sortedManifest` normalizes manifest order, so a
+// legitimate retry that reconstructs the same attestation from a Map/Set in
+// a different order is not flagged as a false mismatch.
+const sortedAttestation = (
+  attestation: Array<{ listingId: string; contentDigest: string }> | null,
+): Array<{ listingId: string; contentDigest: string }> | null =>
+  attestation === null
+    ? null
+    : [...attestation].sort((a, b) => a.listingId.localeCompare(b.listingId));
+
 const COLUMNS = {
+  provenance: exportAttempts.provenance,
+  sourceAttestation: exportAttempts.sourceAttestation,
+  artifactSha256: exportAttempts.artifactSha256,
+  artifactStatus: exportAttempts.artifactStatus,
+  artifactErrorCode: exportAttempts.artifactErrorCode,
+  artifactReadyAt: exportAttempts.artifactReadyAt,
   id: exportAttempts.id,
   requestedBy: exportAttempts.requestedBy,
   manifest: exportAttempts.manifest,
@@ -152,9 +185,55 @@ export function createExportAttemptRepository(
     return row ?? null;
   };
 
+  async function transition(
+    input: { id: string; artifactSha256: string; errorCode?: string },
+    ready: boolean,
+  ): Promise<ExportAttempt> {
+    scope.assertOpen();
+    const binding = and(
+      eq(exportAttempts.workspaceId, workspaceId),
+      eq(exportAttempts.id, input.id),
+      eq(exportAttempts.artifactSha256, input.artifactSha256),
+      isNotNull(exportAttempts.provenance),
+    );
+    const [updated] = await transaction
+      .update(exportAttempts)
+      .set(
+        ready
+          ? {
+              artifactStatus: "ready",
+              artifactErrorCode: null,
+              artifactReadyAt: sql`coalesce(${exportAttempts.artifactReadyAt}, now())`,
+            }
+          : { artifactStatus: "failed", artifactErrorCode: input.errorCode },
+      )
+      .where(and(binding, ne(exportAttempts.artifactStatus, "ready")))
+      .returning(COLUMNS);
+    if (updated) return updated;
+    const [existing] = await transaction
+      .select(COLUMNS)
+      .from(exportAttempts)
+      .where(binding)
+      .limit(1);
+    if (!existing || existing.artifactStatus !== "ready")
+      throw new Error(
+        "export artifact state does not match the committed identity",
+      );
+    return existing;
+  }
+
   return {
     async ensure(input) {
       scope.assertOpen();
+      if (
+        (input.provenance === undefined) !==
+          (input.artifactSha256 === undefined) ||
+        (input.artifactSha256 !== undefined &&
+          !/^[0-9a-f]{64}$/.test(input.artifactSha256))
+      )
+        throw new Error(
+          "export artifact provenance and hash are required together",
+        );
       // `.returning()` on an `onConflictDoNothing()` insert yields a row
       // only when THIS call's insert actually won -- a conflicting repeat
       // gets back an empty array, not the existing row. That is what lets
@@ -169,6 +248,10 @@ export function createExportAttemptRepository(
           manifest: input.manifest,
           rowCount: input.rowCount,
           specVersion: input.specVersion,
+          provenance: input.provenance ?? null,
+          sourceAttestation: input.sourceAttestation ?? null,
+          artifactSha256: input.artifactSha256 ?? null,
+          artifactStatus: input.provenance ? "pending" : null,
         })
         .onConflictDoNothing()
         .returning(COLUMNS);
@@ -176,6 +259,12 @@ export function createExportAttemptRepository(
       const row = insertedRow ?? (await selectByKey(input.idempotencyKey));
       if (!row) throw new Error("export attempt insert did not return a row");
       if (
+        row.artifactSha256 !== (input.artifactSha256 ?? null) ||
+        !isDeepStrictEqual(row.provenance, input.provenance ?? null) ||
+        !isDeepStrictEqual(
+          sortedAttestation(row.sourceAttestation ?? null),
+          sortedAttestation(input.sourceAttestation ?? null),
+        ) ||
         row.rowCount !== input.rowCount ||
         row.specVersion !== input.specVersion ||
         !isDeepStrictEqual(
@@ -189,6 +278,9 @@ export function createExportAttemptRepository(
       }
       return { ...row, wasCreated };
     },
+
+    markReady: (input) => transition(input, true),
+    markFailed: (input) => transition(input, false),
 
     async getById(id) {
       scope.assertOpen();
@@ -215,6 +307,8 @@ export function createExportAttemptRepository(
         .select({
           id: exportAttempts.id,
           manifest: exportAttempts.manifest,
+          artifactStatus: exportAttempts.artifactStatus,
+          provenance: exportAttempts.provenance,
           createdAt: exportAttempts.createdAt,
         })
         .from(exportAttempts)
@@ -235,10 +329,34 @@ export function createExportAttemptRepository(
         return {
           id: row.id,
           outcome: entry?.outcome ?? "listing_not_found",
+          artifactStatus: row.artifactStatus,
+          provenanceComplete: row.provenance !== null,
           reason: entry?.reason,
           createdAt: row.createdAt,
         };
       });
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(exportAttempts)
+        .where(
+          and(
+            eq(exportAttempts.workspaceId, workspaceId),
+            inArray(exportAttempts.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(desc(exportAttempts.createdAt), desc(exportAttempts.id))
+        .limit(100);
+      return rows;
     },
 
     async listForWorkspace(limit = 100) {

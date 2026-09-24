@@ -1,4 +1,12 @@
-import { assertAssetKey, SUPPORTED_ASSET_MIME_TYPES } from "@wukong/assets";
+import {
+  inspectUploadedSource,
+  SourceInspectionError,
+} from "@wukong/assets/inspect-source";
+import {
+  assertAssetKey,
+  MAX_ASSET_SIZE,
+  SUPPORTED_ASSET_MIME_TYPES,
+} from "@wukong/assets";
 import { z } from "zod";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -18,7 +26,7 @@ const finalizeAssetSchema = z
   .object({
     key: z.string().min(1).max(1024),
     mimeType: z.enum(SUPPORTED_ASSET_MIME_TYPES),
-    size: z.number().int().min(1).max(20 * 1024 * 1024),
+    size: z.number().int().min(1).max(MAX_ASSET_SIZE),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
@@ -46,9 +54,15 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
-      const object = await deps.getAssetStore().head(context.workspaceId, body.key);
+      const object = await deps
+        .getAssetStore()
+        .head(context.workspaceId, body.key);
       if (!object) {
-        throw new ApiError(404, "asset_not_found", "Uploaded asset was not found.");
+        throw new ApiError(
+          404,
+          "asset_not_found",
+          "Uploaded asset was not found.",
+        );
       }
       if (object.size !== body.size || object.mimeType !== body.mimeType) {
         throw new ApiError(
@@ -58,11 +72,42 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       }
 
-      const asset = await deps.getDatabase().forWorkspace(
-        context.workspaceId,
-        async (repositories) => {
-          if (await repositories.sourceAssets.getByStorageKey(body.key)) {
-            throw new ApiError(409, "asset_already_finalized", "Asset is already finalized.");
+      let inspection;
+      try {
+        inspection = await inspectUploadedSource(
+          deps.getAssetStore(),
+          context.workspaceId,
+          body.key,
+          body,
+        );
+      } catch (error) {
+        if (error instanceof SourceInspectionError)
+          throw new ApiError(422, error.code, error.message);
+        throw error;
+      }
+      const finalized = await deps
+        .getDatabase()
+        .forWorkspace(context.workspaceId, async (repositories) => {
+          const existing = await repositories.sourceAssets.getByStorageKey(
+            body.key,
+          );
+          if (existing) {
+            // A replay, not a conflict. The key names one immutable upload, so
+            // the same key carrying the same content is the same asset. Once a
+            // client can resume a stored key instead of re-uploading, a
+            // finalize whose response was lost is the ordinary way to arrive
+            // here, and refusing it stranded bytes already safely in storage.
+            const recorded = (existing.metadata ?? {}) as {
+              clientSha256?: unknown;
+            };
+            if (recorded.clientSha256 !== body.sha256) {
+              throw new ApiError(
+                409,
+                "asset_already_finalized",
+                "Asset is already finalized with different content.",
+              );
+            }
+            return { asset: existing, replayed: true };
           }
           const created = await repositories.sourceAssets.create({
             storageKey: body.key,
@@ -71,7 +116,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
               size: object.size,
               mimeType: object.mimeType,
               clientSha256: body.sha256,
-              hashVerified: false,
+              ...inspection,
             },
           });
           await repositories.audit.write({
@@ -82,14 +127,17 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
             metadata: {
               size: object.size,
               mimeType: object.mimeType,
-              hashVerified: false,
+              ...inspection,
             },
           });
-          return created;
-        },
-      );
+          return { asset: created, replayed: false };
+        });
 
-      return jsonResponse(201, { assetId: asset.id });
+      // 200 rather than 201 on a replay: nothing was created this time, and the
+      // client only needs the id either way.
+      return jsonResponse(finalized.replayed ? 200 : 201, {
+        assetId: finalized.asset.id,
+      });
     });
   };
 }

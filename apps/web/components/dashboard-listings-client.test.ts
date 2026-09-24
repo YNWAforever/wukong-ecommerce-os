@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ListingStatus } from "@wukong/core";
 
+import { stateLabel } from "../lib/ui-copy";
 import {
   DashboardListingsClient,
   dashboardMetricsFromCounts,
@@ -58,6 +59,7 @@ const baseItem = {
   sku: "OPAK-001",
   updatedAt: "2026-08-16T00:00:00.000Z",
   openBlockingFlagCount: 0,
+  reviewContext: null,
 };
 
 describe("mapDashboardItems", () => {
@@ -71,6 +73,15 @@ describe("mapDashboardItems", () => {
   it("carries a zero count through unchanged", () => {
     const [item] = mapDashboardItems([baseItem]);
     expect(item?.openBlockingFlagCount).toBe(0);
+  });
+
+  it("keeps a reopened listing in review but marks it reopened", () => {
+    const [reopened, inReview] = mapDashboardItems([
+      { ...baseItem, id: "listing_r", status: "reopened" },
+      baseItem,
+    ]);
+    expect(reopened).toMatchObject({ status: "in_review", reopened: true });
+    expect(inReview).toMatchObject({ status: "in_review", reopened: false });
   });
 });
 
@@ -205,7 +216,7 @@ describe("DashboardListingsClient", () => {
 
     const { container, root } = await mount(fetcher);
 
-    const tiles = container.querySelectorAll('[role="group"]');
+    const tiles = container.querySelectorAll('.metric-strip > [role="group"]');
     expect(tiles.length).toBe(3);
 
     const expectedSubstrings = ["進行中", "待你審核", "阻塞上架"];
@@ -240,6 +251,44 @@ describe("DashboardListingsClient", () => {
     // multi-lane view (queue-groups) must not appear here.
     expect(container.querySelector(".queue-groups")).toBeNull();
     expect(container.querySelectorAll(".queue-item").length).toBe(5);
+
+    await unmount(root);
+  });
+
+  it("shows a Reopened tag only on the reopened teaser item", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [
+          {
+            ...baseItem,
+            id: "listing_r",
+            title: "Reopened Riesling",
+            status: "reopened",
+          },
+          {
+            ...baseItem,
+            id: "listing_i",
+            title: "Fresh Riesling",
+            status: "in_review",
+          },
+        ],
+        counts: { ...zeroCounts, in_review: 1, reopened: 1 },
+      }),
+    );
+
+    const { container, root } = await mount(fetcher);
+
+    const reopenedLink = container.querySelector(
+      'a[href="/listings/listing_r"]',
+    )!;
+    const reopenedItem = reopenedLink.closest("li.queue-item")!;
+    const freshLink = container.querySelector('a[href="/listings/listing_i"]')!;
+    const freshItem = freshLink.closest("li.queue-item")!;
+
+    expect(reopenedItem.querySelector(".status-tag")?.textContent).toBe(
+      stateLabel("reopened", "zh-Hant"),
+    );
+    expect(freshItem.querySelector(".status-tag")).toBeNull();
 
     await unmount(root);
   });
@@ -303,4 +352,51 @@ describe("DashboardListingsClient", () => {
 
     await unmount(root);
   });
+});
+
+it("discloses the latest-five bound while keeping full-workspace metrics and compact provenance", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      items: [
+        {
+          ...baseItem,
+          sourceReadiness: {
+            sourceImportId: "import-1",
+            merchantAttestedExportAt: "2026-09-05T04:00:00.000Z",
+            currentVersionId: "version-1",
+            reviewedBinding: {
+              versionId: "version-1",
+              sourceImportId: "import-1",
+              rowDigest: "digest",
+              revision: 3,
+            },
+            approvedBinding: null,
+            headerContractCurrent: true,
+            freshnessAttested: false as const,
+            eligible: false as const,
+            eligibleAfterAttestation: true,
+            reason: "not_attested" as const,
+            downstreamVerification: "unverified" as const,
+            scope: "advisory_current_read" as const,
+          },
+        },
+      ],
+      counts: { ...zeroCounts, failed: 200 },
+    }),
+  );
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain("最新五個項目");
+    expect(container.textContent).toContain("僅顯示工作區最新五個項目");
+    expect(container.textContent).toContain("摘要統計涵蓋整個工作區");
+    expect(container.textContent).not.toContain("最需要處理的項目");
+    expect(container.querySelector(".metric-strip")?.textContent).toContain(
+      "200",
+    );
+    expect(container.textContent).toContain("匯入: import-1");
+    expect(container.textContent).toContain("商戶確認的匯出時間:");
+    expect(container.textContent).toContain("修訂 3 · 版本 version-1");
+  } finally {
+    await unmount(root);
+  }
 });

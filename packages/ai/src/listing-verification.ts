@@ -1,8 +1,8 @@
 import {
-  canonicalListingSchema,
+  reviewableListingSchema,
   fieldEvidenceSchema,
   listingFactsSchema,
-  type CanonicalListing,
+  type ReviewableListing,
   type FieldEvidence,
   type ListingFacts,
 } from "@wukong/core";
@@ -23,7 +23,7 @@ export const CHECK_IDS = [
 
 export type CheckId = (typeof CHECK_IDS)[number];
 export type VerificationInput = {
-  listing: CanonicalListing;
+  listing: ReviewableListing;
   facts: ListingFacts;
   evidence: FieldEvidence[];
   note: string | null;
@@ -249,7 +249,7 @@ export type PreparedVerification =
     };
 
 const inputSchema = z.object({
-  listing: canonicalListingSchema,
+  listing: reviewableListingSchema,
   facts: listingFactsSchema,
   evidence: z.array(fieldEvidenceSchema),
   note: z.string().nullable(),

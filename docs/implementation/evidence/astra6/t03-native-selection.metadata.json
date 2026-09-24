@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-09-16T03:22:37.5224437+08:00",
+  "evidence": "synthetic-local-browser-harness",
+  "browser": "Chromium via Playwright",
+  "baseUrl": "http://127.0.0.1:49217",
+  "database": "isolated local Postgres fixture",
+  "provider": "fake",
+  "paidCalls": false,
+  "scenario": "native input append, remove, reselect, cancel and two image previews",
+  "result": "passed"
+}

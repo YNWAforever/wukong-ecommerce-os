@@ -1,3 +1,12 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "../../../../../lib/review-confirmation-keys";
+import {
+  hashBulkFormHeaderContract,
+  hashBulkFormRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
 import { ASSET_EXPORT_READ_TTL_MS } from "@wukong/assets";
 import { BULK_FORM_COLUMNS } from "@wukong/shopline";
 import { describe, expect, it, vi } from "vitest";
@@ -13,6 +22,48 @@ import { createDeliverListingHandler, defaultDelivery } from "./route.js";
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
+const bulkRaw = Object.fromEntries(
+  BULK_FORM_COLUMNS.map((column) => [
+    column.key,
+    column.key === "nameEn" ? "Demo Estate Riesling" : "",
+  ]),
+);
+const bulkDigest = hashBulkFormRow(bulkRaw as never);
+const bulkBinding = {
+  sourceRows: {
+    async getForProduct() {
+      return {
+        id: "source_1",
+        listingId,
+        connectionId: "conn_1",
+        sourceImportId: "import_1",
+        remoteProductId: "remote_1",
+        sourceRowDigest: bulkDigest,
+        rawRow: structuredClone(bulkRaw),
+        headerContractSha256: hashBulkFormHeaderContract(),
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+  },
+  approvalReceipts: {
+    async getByVersionId() {
+      return {
+        id: "receipt_1",
+        listingId,
+        versionId,
+        sourceSnapshotId: "source_1",
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        connectionId: "conn_1",
+        sourceImportId: "import_1",
+        remoteProductId: "remote_1",
+        sourceRowDigest: bulkDigest,
+        headerContractSha256: hashBulkFormHeaderContract(),
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+  },
+};
 const context = {
   workspaceId: "ws_opak",
   actorId: "reviewer_1",
@@ -119,6 +170,7 @@ function makeDefaultRuntime(
     connectionId: "00000000-0000-4000-8000-000000000301",
   };
   const repositories = {
+    productShots: { requiresWorkflow: async () => false },
     listings: {
       async requireForPublish() {
         order.push("listing");
@@ -532,6 +584,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     };
     const sourceAssets = { getByIds: vi.fn(async () => imageAssets) };
     const repositories = {
+      productShots: { requiresWorkflow: async () => false },
       listings: {
         async requireForPublish() {
           return {
@@ -642,7 +695,24 @@ describe("POST /api/listings/[id]/deliver", () => {
       forWorkspace: vi.fn(
         async (_workspaceId: string, work: (repos: any) => unknown) =>
           work({
+            ...bulkBinding,
             listings: {
+              async lockReviewState() {},
+              async getReviewSnapshot() {
+                return {
+                  listing: {
+                    id: listingId,
+                    status: "approved",
+                    activeVersionId: versionId,
+                  },
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
               async requireForPublish() {
                 return {
                   id: listingId,
@@ -657,12 +727,39 @@ describe("POST /api/listings/[id]/deliver", () => {
                 };
               },
             },
+            reviewConfirmations: {
+              async getByVersionId() {
+                return {
+                  id: "confirmation",
+                  listingId,
+                  versionId,
+                  revision: 0,
+                  sourceImportId: "import_1",
+                  rowDigest: bulkDigest,
+                  fieldConfirmations: Object.fromEntries(
+                    CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+                  ),
+                  negativeConfirmations: Object.fromEntries(
+                    CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+                  ),
+                };
+              },
+            },
+            sourceImports: {
+              async getById() {
+                return { headerContractSha256: hashBulkFormHeaderContract() };
+              },
+            },
             sourceAssets: { listForListing: async () => [] },
             audit: { write: vi.fn(async () => undefined) },
             platformProducts: {
               async getByListingId() {
                 return {
                   remoteProductId: "remote_1",
+                  origin: "import",
+                  sourceImportId: "import_1",
+                  contentDigest: bulkDigest,
+                  connectionId: "conn_1",
                   rawRow: Object.fromEntries(
                     BULK_FORM_COLUMNS.map((column) => [
                       column.key,
@@ -690,7 +787,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -709,7 +809,24 @@ describe("POST /api/listings/[id]/deliver", () => {
       forWorkspace: vi.fn(
         async (_workspaceId: string, work: (repos: any) => unknown) =>
           work({
+            ...bulkBinding,
             listings: {
+              async lockReviewState() {},
+              async getReviewSnapshot() {
+                return {
+                  listing: {
+                    id: listingId,
+                    status: "approved",
+                    activeVersionId: versionId,
+                  },
+                  activeVersion: {
+                    id: versionId,
+                    sequence: 1,
+                    content: deliveryContent,
+                  },
+                  flags: [],
+                };
+              },
               async requireForPublish() {
                 return {
                   id: listingId,
@@ -722,6 +839,29 @@ describe("POST /api/listings/[id]/deliver", () => {
                   },
                   flags: [],
                 };
+              },
+            },
+            reviewConfirmations: {
+              async getByVersionId() {
+                return {
+                  id: "confirmation",
+                  listingId,
+                  versionId,
+                  revision: 0,
+                  sourceImportId: "import_1",
+                  rowDigest: bulkDigest,
+                  fieldConfirmations: Object.fromEntries(
+                    CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+                  ),
+                  negativeConfirmations: Object.fromEntries(
+                    CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+                  ),
+                };
+              },
+            },
+            sourceImports: {
+              async getById() {
+                return { headerContractSha256: hashBulkFormHeaderContract() };
               },
             },
             sourceAssets: { listForListing: async () => [] },
@@ -749,7 +889,10 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({ method: "bulk_form" }),
+        body: JSON.stringify({
+          method: "bulk_form",
+          attestedContentDigest: bulkDigest,
+        }),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -757,5 +900,142 @@ describe("POST /api/listings/[id]/deliver", () => {
     expect(response.status).toBe(409);
     const json = await response.json();
     expect(json.code).toBe("no_remote_link");
+  });
+});
+
+it.each(["csv", "bulk_form", "shopline_api"] as const)(
+  "rejects direct website IDs for %s before artifact or queue work",
+  async (method) => {
+    const runtime = makeDefaultRuntime();
+    runtime.repositories.listings.requireForPublish = async () => {
+      throw new Error("Listing not found");
+    };
+    Object.assign(runtime.repositories.listings, {
+      getReviewSnapshot: async () => null,
+      lockReviewState: async () => null,
+    });
+    const enqueue = vi.fn();
+    const handler = createDeliverListingHandler({
+      sessionContext: { resolve: async () => context },
+      delivery: defaultDelivery({ ingressClient: { enqueue } as never }),
+    });
+    const response = await handler(
+      new Request("http://localhost/api/listings/website/deliver", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ method, attestedContentDigest: bulkDigest }),
+      }),
+      {
+        params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000901" }),
+      },
+    );
+    expect(response.status).toBe(404);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(runtime.repositories.publishJobs.ensure).not.toHaveBeenCalled();
+    expect(runtime.createReadUrl).not.toHaveBeenCalled();
+    expect(runtime.audits).toEqual([]);
+  },
+);
+
+it("returns actionable publication feedback without exposing capability URLs", async () => {
+  const handler = createDeliverListingHandler({
+    sessionContext: { resolve: async () => context },
+    delivery: {
+      deliver: async () => {
+        throw Object.assign(new Error("Approve the product image"), {
+          name: "ProductImageApprovalRequiredError",
+        });
+      },
+    },
+  });
+  const result = await handler(
+    new Request("https://app.example", {
+      method: "POST",
+      body: JSON.stringify({ method: "csv" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+  expect(result.status).toBe(409);
+  expect(await result.json()).toMatchObject({
+    code: "image_approval_required",
+    message: expect.stringContaining("Approve the current product image"),
+  });
+});
+
+it("default CSV composition emits the versioned public JPEG and blocks revoked publication", async () => {
+  const f = makeDefaultRuntime({ imageAssetIds: ["candidate"] });
+  const resolveApprovedProductImage = vi.fn(
+    async () =>
+      "https://images.example/product-images/" + "a".repeat(43) + ".jpg",
+  );
+  Object.assign(f.repositories.productShots, {
+    requiresWorkflow: async () => true,
+    resolveApprovedProductImage,
+  });
+  const input = {
+    workspaceId: context.workspaceId,
+    actorId: context.actorId,
+    draftId: listingId,
+    method: "csv" as const,
+  };
+  const result = await defaultDelivery().deliver(input);
+  expect(result.kind).toBe("csv");
+  if (result.kind !== "csv") throw new Error("CSV missing");
+  expect(result.body).toContain("https://images.example/product-images/");
+  expect(resolveApprovedProductImage).toHaveBeenCalledWith({
+    workspaceId: context.workspaceId,
+    listingId,
+    versionId,
+    assetId: "candidate",
+  });
+  expect(f.createReadUrl).not.toHaveBeenCalled();
+  resolveApprovedProductImage.mockRejectedValueOnce(
+    Object.assign(new Error("image_approval_required"), {
+      name: "ProductShotConflict",
+      code: "image_approval_required",
+    }),
+  );
+  const handler = createDeliverListingHandler({
+    sessionContext: { resolve: async () => context },
+    delivery: defaultDelivery(),
+  });
+  expect(
+    (
+      await handler(
+        new Request("https://app.example", {
+          method: "POST",
+          body: '{"method":"csv"}',
+        }),
+        { params: Promise.resolve({ id: listingId }) },
+      )
+    ).status,
+  ).toBe(409);
+  expect(f.createReadUrl).not.toHaveBeenCalled();
+});
+
+it("refuses a bulk_form delivery that carries no attestation", async () => {
+  // The route coerced an absent field to false and passed it straight into
+  // createBulkExport, so the first UI to call this would have inherited a
+  // refusal nobody chose. Failing loudly is the point.
+  const handler = createDeliverListingHandler({
+    sessionContext: {
+      async resolve() {
+        return context;
+      },
+    },
+    delivery: defaultDelivery(),
+  });
+
+  const response = await handler(
+    new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
+      method: "POST",
+      body: JSON.stringify({ method: "bulk_form" }),
+    }),
+    { params: Promise.resolve({ id: listingId }) },
+  );
+
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({
+    code: "attestation_incomplete",
   });
 });

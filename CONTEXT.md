@@ -1,5 +1,69 @@
 # Domain Context
 
+## Operations workbench
+
+`/dashboard` is a read-only operations worklist. Its workspace-scoped repository
+returns counts and paginated membership from one SQL snapshot over retained
+listings, export attempts, website scans and successful workbook imports. Counts
+cover all history under the selected kind, rather than the displayed page. Unknown
+states remain explicitly unclassified. An import task count and its affected
+product count are different measures.
+
+The three main states are needs attention, in progress and completed. Completed
+exports are labelled operator-reported results, not verified SHOPLINE acceptance;
+completed scans describe previews, not saved or published products. Independent
+workbook products gain no listing approval or export binding from this view.
+
+Localized row links preserve validated dashboard return context. Jobs opens the
+exact export attempt independently of its history page; Catalog accepts an exact
+workbook import scope. Changing that identity cannot retain another import's rows
+or another attempt's reconciliation panel. Existing detailed screens still own
+review versions, source binding, receipt validation and every mutation.
+
+Primary navigation is Workbench, Catalog, Imports and Exports & results. Work
+Queue, Batches, New listing, All Jobs, Quality and System map remain in Tools;
+admin navigation remains role gated. The UI uses the existing locale cookie,
+reactive URL filters, request cancellation, explicit stale/observed labels and
+focus/retry refresh without polling. No schema migration or new provider behavior
+is introduced. Verification is recorded in
+`docs/superpowers/plans/2026-09-06-operations-workbench-results.md`.
+
+## Reviewed product images
+
+Product-shot processing is separate from listing copy generation. An operator
+selects one actual uploaded image (automatic when exactly one is eligible), then
+reviews the exact persisted white JPEG beside its private original. Background
+removal runs in the Worker; deterministic rendering uses the Node-only assets
+subpath. Live processing is disabled by default.
+
+Attempts retain leases and cutout checkpoints. Queue redelivery never blindly
+repeats a possibly billed call. An uncertain outcome requires explicit consent
+to a fresh attempt; stored cutouts and candidates are reused without another
+provider dispatch. The daily workspace allowance counts dispatched attempts,
+including uncertain outcomes.
+
+Image acceptance binds the current source, observed listing version, candidate
+digest and render/provider identity. Changing sources invalidates acceptance,
+even when returning to a previously accepted source. Factual approval is still
+required. A confirmation-ledger change reopens an approved listing in the same
+transaction, under the listing lock; mutations during publishing fail closed.
+Saved images remain available for reapproval without processing again.
+A shared server policy blocks image-carrying delivery until the current
+version has a matching unrevoked publication; the Worker validates under the
+same transaction lock as its publish preparation.
+
+Approved JPEGs have stable HTTPS capability URLs through a narrowly privileged
+public lookup. Original files stay private. Historical publications pin immutable
+objects and remain available after draft replacement unless explicitly revoked.
+The 71-column Bulk Update contains no image column and retains its independent
+factual and source-binding checks; it does not become a new-product XLSX format.
+
+Implementation and verification status is recorded in
+`docs/superpowers/plans/2026-09-07-photoroom-product-shot-results.md`;
+operator setup and recovery are in `docs/runbooks/product-shot-processing.md`.
+Synthetic acceptance does not establish live glass/label quality, billing or
+SHOPLINE acceptance, and does not authorize production activation.
+
 ## Shopline delivery
 
 Shopline delivery is the listing decision that determines whether a specific
@@ -23,8 +87,10 @@ The bulk form is how Wukong reads existing platform listings in and writes
 enrichment back. Reading it is a total function over a cell matrix that reports
 issues instead of throwing. Writing it is a diff: only the eight enrichable
 content columns may change, the ten `DO NOT EDIT` columns are echoed verbatim,
-and stock delta columns are always reset to `+0` so a re-import never moves
-inventory.
+and stock delta columns retain blank values while nonblank values are reset to
+`+0`. Merchant acceptance of blank versus `+0` remains an authorized re-import
+UAT decision. This is normalized string-grid preservation, not preservation of
+original XLSX bytes, numeric cell types, styles or whitespace-only cells.
 
 Export writes back only through a listing's `platform_products` link — the
 join the importer records between a listing and the remote product it came
@@ -44,15 +110,92 @@ against it instead of creating a duplicate. Only `import`-origin rows carry a
 SKU, spec version, raw row, and content digest — a `created`-origin row has
 none of that, since there was no imported sheet to derive it from.
 
+## Workbook catalog base import
+
+The Workbook tab on /listings/import previews a supported XLSX immediately after
+selection, then imports all eligible rows after one explicit Import action. It
+requires operator access but no SHOPLINE connection, store URL or export-time
+input. The preview samples at most 20 products and reports full eligible/excluded
+counts; the supported limits are 4 MiB and 5,000 data rows. Existing parser rules
+exclude variants, duplicate Product IDs and rows missing required identifiers;
+their normalized source rows remain in immutable evidence.
+The declared Default worksheet is selected through its workbook relationship, so
+its rows and recorded sheet name cannot disagree. Missing or ambiguous Default
+sheets fail validation.
+
+The preview endpoint is stateless. Save reparses the original bytes and compares
+the preview's byte/header digests before writing workspace-scoped workbook_imports
+and workbook_products in one transaction with a counts-only audit. Identical bytes
+in one workspace return the original import; changed bytes create a separate source.
+Stored products are bound to their immutable source's eligible row digests.
+
+A recognizable filename date is optional, unverified local text with unknown
+timezone. It never sets merchantAttestedExportAt or freshness approval. Workbook
+products have their own catalog source and detail view, without listing drafts,
+platform links or export authority. IDs and SKUs from a workbook do not establish
+store ownership or support merging with another source. Migration 0020 is required
+before deploying code that reads the new catalog tables; local verification does
+not authorize that rollout.
+
+## Connected SHOPLINE import browser contract
+
+The optional Connected SHOPLINE update section on /listings/import retains the selected workbook until a separate submit. Operators
+must explicitly enter SHOPLINE export time in Hong Kong UTC+08:00; the browser
+converts it to an ISO UTC instant and sends merchantAttestedExportAt plus the
+exact filename in URLSearchParams, with the raw workbook body. No timestamp is
+inferred from upload time or file metadata. Validation/API/network failures
+preserve file and time for retry; an in-flight guard prevents duplicate submits.
+Native fetch is invoked without the dependency object as its receiver.
+/listings/new remains the separate create-intake route. This attestation does
+not verify merchant-side freshness or replace source-bound approval eligibility.
+
 ## Bulk approve
 
-Bulk approve lets a reviewer select several `in_review` listings with no open
-blocking compliance flags and approve them in one action. It is not a new
-kind of approval — each selected listing goes through the exact same
-single-listing approval logic, once per listing, in its own transaction, so
-one listing's stale flag cannot roll back another's legitimate approval.
-There is no field-level or partial-within-a-listing approval anywhere in the
-system; approval is still whole-listing, all-or-nothing.
+Bulk approve selects fully confirmed in_review listings with no open blocking
+flags. The queue captures each item's observed version, confirmation revision
+and imported source ID/digest at selection. It submits {items: [...]}; legacy
+ID-only requests receive 400 review_context_required. Batches are limited to
+50 distinct UUIDs, including case-insensitive duplicate rejection.
+
+Both approval routes use the shared service's mandatory version, complete
+checklist, revision and applicable source checks. Imported source must match
+both the current platform link and confirmation ledger. A lost/overwritten
+import origin cannot erase an existing request or ledger source binding.
+Single approval retains its early checks before optional product-shot I/O.
+
+Each item has its own workspace transaction, preserving valid approvals when
+another item fails. Failed selections retain their original review context
+across reloads; only successes clear automatically. Explicit reselection can
+adopt newly reviewed context. Approval remains whole-listing, all-or-nothing.
+Approval and Bulk Update eligibility acquire the listing draft lock. Database
+triggers serialize platform source, confirmation and compliance flag changes
+with that lock. Imported approval appends a receipt bound to the immutable
+source row, exact approved version and reviewed checklist revision. A product-shot
+promotion may inherit the reviewed predecessor checklist only until the promoted
+version receives a checklist of its own; that requires renewed approval.
+
+## Bulk Update source and artifact history
+
+Each import preserves every parsed row in source_row_snapshots before updating
+the current platform mirror. Old imports and their approved receipts remain
+immutable to the runtime role. Missing historical source or approval evidence
+fails closed; reimport and renewed approval are required. Reconfirming a new
+source alone cannot reuse a previous approval. Receipt insertion order uses a
+database identity ordinal rather than transaction timestamps.
+
+Multi-export builds from the approved immutable rows, verifies their full row
+hashes and uses canonical listing order. Its versioned provenance and workbook
+SHA-256 determine the attempt identity. Attempts start pending and become ready
+only after conditional object creation/read-back and hash verification. Failed
+uploads remain failed or pending if the state database is unavailable; matching
+retries recover identical bytes without overwriting existing objects. New
+downloads require readiness and matching bytes. Legacy all-null provenance rows
+remain historical downloads explicitly marked incomplete.
+
+Single Bulk Update delivery uses the same durable eligibility rules but retains
+its direct workbook response. The operator UI now uses stable multi-export
+attempt references for Bulk Update delivery and result reconciliation. Generated XLSX is not proof of SHOPLINE acceptance
+or of current merchant-side protected fields.
 
 ## Workspace roles
 
@@ -72,3 +215,72 @@ membership, is enforced in the `memberships` repository itself
 via `MembershipGuardViolation`) — not only at the
 `apps/web/app/api/workspace/members/[userId]/route.ts` route layer — so the
 guarantee holds for any caller of the repository, not just the current UI.
+
+## Bulk Update export eligibility
+
+Single-listing bulk-form delivery and multi-product export share the same
+eligibility policy and workbook builder. They require an approved/published
+active version, no open blocking flags, all eight field and seven negative
+confirmations for that listing/version, an import-origin remote link, matching
+confirmation/source metadata, explicit freshness attestation and the current
+header contract. Create CSV/API delivery keeps its separate policy.
+
+Export prepares request-local evidence and rechecks version, confirmation
+revision, flags and source/link identity at the final audit/attempt boundary.
+An all-excluded or all-no-op multi-export returns a manifest with rowCount 0
+and exportAttemptId null; it creates no object or successful export event.
+Single bulk_form requests must explicitly send freshnessAttested: true.
+
+Durable approved-source receipts and pending/ready/failed artifact records
+now enforce source/approval binding, verified workbook hashes and retry identity;
+see Bulk Update source and artifact history above. Object-store publication is
+verified through the recoverable artifact lifecycle, not an atomic cross-store
+transaction. Merchant-side freshness and SHOPLINE acceptance remain unverified.
+
+## Bulk Update result reconciliation
+
+Catalog reviewers select imported listings and attest freshness for that exact selection. The UI generates through the shared multi-export API, retains the attempt reference across detail-loading failures and downloads only ready artifacts. Imported listings expose Bulk Update XLSX; Create CSV and API controls follow their separate origin capabilities.
+
+Operator reports bind to included manifest members and the exact exported version, rather than a later active version. Idempotency keys protect retries; corrections append against the observed predecessor. Jobs derives accepted/rejected/unreported totals from included members and complete relevant report history. Rejection and correction reasons remain visible after reload. All reports remain independently unverified against a fresh SHOPLINE export.
+
+Historical/manual entry is explicitly unlinked and cannot close attempt reconciliation. Its per-listing revision history is durable; legacy reports are never promoted into trusted export receipts. Migration 0017 preserves append-only reports and is replay-safe, including protection during earlier privilege regrants. It has only been rehearsed in disposable local databases.
+
+Task 5 verification: docs/superpowers/plans/2026-09-05-result-reconciliation-verification.md. Subsequent local Tasks 6/7 are described below; production migration and deployment remain unauthorized.
+
+## Workbook fidelity and catalog usability (local Tasks 6/7)
+
+Independent synthetic output comparison covers all 71 Bulk Update columns. Nonblank extra headers are refused; normalized blank stock deltas remain blank and nonblank deltas become +0. Raw Excel types/styles are not preserved, and merchant acceptance of neutral blanks is unverified. Runbooks retain exact source/artifact/digests and require current protected-field comparison plus authorization before restoration.
+
+Catalog/listing/Jobs reads have workspace-scoped counts and deterministic pagination; quality gaps scan all active versions in bounded batches with an observed interval. Source-readiness views use server evidence but never attest freshness or independently verify SHOPLINE acceptance. Read recovery preserves filters, observed selections and imperative refresh failures. The existing locale cookie drives affected pages/forms, HK formatting and keyboard-accessible shell/table behavior. Capability labels describe implementation maturity separately from operational verification.
+
+GET /api/quality adds retained-evidence reviewMetrics: version-cohort approval fraction, creation-to-first-approval elapsed time and qualified complete-content edit field-change fraction. Missing or over-limit edit evidence is explicitly unavailable; these are not model-quality or reviewer-effort metrics. See docs/superpowers/plans/2026-09-05-review-quality-metric-contract.md and docs/superpowers/plans/2026-09-05-fidelity-usability-verification.md for exact populations, limits and synthetic checks. No production migration, provider calls or SHOPLINE writes were authorized.
+
+## Fresh-export comparison evidence
+
+Ready Bulk Update attempts with complete provenance can retain a comparison with a later supplied Default-sheet workbook. The authenticated reviewer/admin/owner explicitly attests the same store and export time; the time must follow artifact readiness and cannot be in the future. The server verifies the exact delivered artifact digest and every included version binding again when recording. No source import, approval, operator report or publish state changes.
+
+Products match by exact product ID. Eight intended content fields and 61 protected fields are compared as normalized strings; two quantity-delta instruction fields remain separate observations. Missing, duplicate or variant target products are inconclusive. Protected-field differences do not establish causation, stock neutrality or authenticated live SHOPLINE acceptance. Operator report totals and their unverified status retain their existing meaning.
+
+Migration 0018 adds append-only, workspace-scoped evidence and transactional audit records. Identical evidence retries retain the first record; different snapshots append. History returns bounded summaries with exact totals, and full evidence is loaded by workspace and attempt. Uploads are limited to 4 MiB and 5,000 rows; the complete retained evidence envelope is limited to 2 MiB, with explicit rejection rather than truncation. The supplied workbook digest and normalized relevant rows are retained, but original supplied XLSX bytes, types and styles are not. Store and export time remain operator-attested.
+
+This phase is local synthetic development only. Migration 0018 has not been authorized or applied to production, and no deployment or merchant write is implied. Verification is recorded in docs/superpowers/plans/2026-09-05-fresh-export-verification-results.md.
+
+## Attempt evidence packets
+
+A reviewer/admin/owner selects an exact retained comparison for a ready export, previews its evidence summary, then downloads canonical JSON. The packet combines the manifest, artifact digest, included source/version/approval references, complete applicable operator receipt chains, explicit unreported members and the selected normalized comparison. It never substitutes the latest comparison or changes report/comparison state.
+
+Attempt, comparison and receipts are read in one database statement with an as-of timestamp. The delivered artifact bytes are checked against its digest. Preview snapshotSha256 excludes only asOf; changed evidence requires a new preview before download. The downloaded envelope contains payload and payloadSha256; sorted-json-v1 sorts object keys and preserves deterministic array order. Payload SHA-256 includes asOf. Complete packets are capped at 3 MiB and 1,000 receipt revisions; excess is refused, never truncated. A content-free download audit means a response was prepared, not proof of client receipt. No new schema or evidence storage is added.
+
+Packets are supplied-snapshot review evidence, not UAT sign-off or merchant-write authorization. Store/time remain operator-attested; original supplied XLSX bytes are not retained or revalidated. Normalized cells and delta observations do not establish live SHOPLINE state, causality or stock neutrality. This phase is local synthetic development, stacked on 88c3b0b. Exact checks are recorded in docs/superpowers/plans/2026-09-05-attempt-evidence-packet-results.md.
+
+## Inline store setup during catalog import
+
+The import page shows a store-status card above file selection. Signed-in workspace members can see the connected domain; admin/owner users can open the existing connection form inline when credential storage is configured. Other roles see guidance to ask an administrator. Missing or invalid credential-storage configuration is shown before token entry.
+
+The setup summary is read-only, workspace-scoped and not cached. It exposes no token or encryption key. Connection creation/rotation retain the existing admin authorization and audit boundary. Unknown or missing store status prevents sending the workbook, while file selection and the entered export time stay mounted during setup and refresh. A connected store does not require token decryption for spreadsheet import; the operator permission and existing server import checks still apply.
+
+## Website catalog observations
+
+Catalog import defaults to Website. Operators, reviewers, admins and owners can paste a public HTTPS storefront URL, preview at most 20 unique products and save selected immutable observations without a SHOPLINE connection or credential key. The scan ID is retained in the page URL for reload; credentials are never included. Polling stops on unmount or storefront change. Retrying preserves the previous preview as read-only until the new scan completes, and changing the storefront clears the old selection. Website products appear in Catalog with read-only source evidence and cannot be exported, approved or published.
+
+Workbook remains an explicit import choice with the existing inline store setup, selected file and export-time behavior. Supporting evidence and new-product safeguards are unchanged. Website scans use the existing listing queue, signed Worker-to-Node callback, protected Node public transport, workspace-scoped durable steps and transactional audits. Local synthetic acceptance uses a separate test-only callback bundle injecting PublicFetch at the real route factory; production code contains no test URL/address bypass. Production use requires a separately authorized migration 0019 rollout and trusted HTTPS WEBSITE_FETCH_BASE_URL configuration.

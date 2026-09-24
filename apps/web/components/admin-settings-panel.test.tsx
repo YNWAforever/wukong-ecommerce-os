@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("./workspace-policy-panel", () => ({
+  WorkspacePolicyPanel: () => null,
+}));
 import { AdminSettingsPanel } from "./admin-settings-panel";
 
 (

@@ -1,3 +1,9 @@
+export { productShotSecretNames } from "./listing-provider-config.mjs";
+import {
+  listingProviderSecretNames,
+  productShotSecretNames,
+  wineEnrichmentSecretNames,
+} from "./listing-provider-config.mjs";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -79,6 +85,31 @@ export function verifyExactSecretNames(
   }
 }
 
+export function verifyRuntimeSecretNames(source, env, configuredNames) {
+  const enabled = env.WINE_ENRICHMENT_ENABLED === "true";
+  const baseNames = wineEnrichmentSecretNames(
+    productShotSecretNames(
+      listingProviderSecretNames(
+        source.requiredSecrets,
+        env.AI_PROVIDER?.trim() || "openai",
+      ),
+      env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider,
+    ),
+    enabled,
+  );
+  const typeSafe = readTypeSafeRuntimeConfig(env);
+  const secretPolicy = typeSafeSecretPolicy(baseNames, typeSafe.mode);
+  // A rollback stops admission, not accepted full/research execution. Retain its key.
+  verifyExactSecretNames(
+    secretPolicy.required,
+    enabled
+      ? configuredNames
+      : configuredNames.filter((name) => name !== "TAVILY_API_KEY"),
+    secretPolicy.optional,
+  );
+  return secretPolicy.required;
+}
+
 function main() {
   const environment = process.argv[2]?.trim();
   if (!environment)
@@ -87,11 +118,7 @@ function main() {
     readFileSync(new URL("cloudflare-runtime.config.json", root), "utf8"),
   );
   const selected = source.environments[environment];
-  const typeSafe = readTypeSafeRuntimeConfig(process.env);
-  const secretPolicy = typeSafeSecretPolicy(
-    source.requiredSecrets,
-    typeSafe.mode,
-  );
+  readTypeSafeRuntimeConfig(process.env);
   if (!selected) throw new Error("unsupported CLOUDFLARE_ENV");
 
   // corepack is not installed everywhere pnpm is. Hardcoding it made this
@@ -134,13 +161,13 @@ function main() {
     process.stderr.write(`${decision.warning}\n`);
     return;
   }
-  verifyExactSecretNames(
-    secretPolicy.required,
+  const requiredNames = verifyRuntimeSecretNames(
+    source,
+    process.env,
     parseSecretNames(result.stdout),
-    secretPolicy.optional,
   );
   process.stdout.write(
-    `Worker secret preflight passed for ${selected.worker}: ${secretPolicy.required.length} required names\n`,
+    `Worker secret preflight passed for ${selected.worker}: ${requiredNames.length} exact names\n`,
   );
 }
 

@@ -1,16 +1,33 @@
+import { readCopyClaimSupports } from "./listing-claim-support";
+import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
+  missingWorkspaceFields,
+  readWorkingField,
   approveListing as domainApprove,
   assertApprovalFreshness,
   type AuditContext,
   type CanonicalListing,
 } from "@wukong/core";
 import type {
+  WorkspaceRepository,
+  ProductShotRepository,
   AuditWriter,
+  SourceRowRepository,
+  SourceRowSnapshot,
+  ApprovalReceiptRepository,
   ListingRepository,
   PlatformProductRepository,
   ReviewConfirmationRepository,
   SourceAssetRepository,
+  WorkspaceRepositories,
 } from "@wukong/db";
+
+import {
+  hashBulkFormRow,
+  hashBulkFormHeaderContract,
+  isBulkFormRawRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+} from "@wukong/shopline";
 
 import { allConfirmed } from "./review-confirmation-keys";
 import { ApiError } from "./route-support";
@@ -26,8 +43,16 @@ import { ApiError } from "./route-support";
  * that's not a barrier to calling these functions from there.
  */
 export type ApproveOneRepositories = {
+  workspaces?: Pick<WorkspaceRepository, "requireProfile">;
+  listingEnrichment?: WorkspaceRepositories["listingEnrichment"];
+  listingInputs?: WorkspaceRepositories["listingInputs"];
+  productShots?: Pick<
+    ProductShotRepository,
+    "currentForListing" | "approvedForAsset" | "bindApprovedVersion"
+  >;
   listings: Pick<
     ListingRepository,
+    | "lockReviewState"
     | "getReviewSnapshot"
     | "approve"
     | "promoteAndApprove"
@@ -41,6 +66,8 @@ export type ApproveOneRepositories = {
   >;
   reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
   platformProducts: Pick<PlatformProductRepository, "getByListingId">;
+  sourceRows: Pick<SourceRowRepository, "getForProduct">;
+  approvalReceipts: Pick<ApprovalReceiptRepository, "record">;
   audit: AuditWriter;
 };
 
@@ -62,68 +89,11 @@ export type ApproveOneAssetStore = {
 
 export type ApproveOneDeps = {
   approve?: typeof domainApprove;
-  /**
-   * When supplied, `approveOne` re-asserts that the version it is about to
-   * approve is still the one the caller validated (confirmation checklist,
-   * source-freshness check, etc.) — not just whatever happens to be active
-   * by the time this function's own `getReviewSnapshot` read runs.
-   *
-   * `POST /api/listings/[id]/approve` reads and validates a snapshot in its
-   * own earlier, separate `forWorkspace` call (its "phase 0"), then this
-   * function reads a second, fresh snapshot in its own transaction. Without
-   * this check, a concurrent edit landing between those two reads (e.g. a
-   * `PUT /api/listings/[id]/review` promoting a new version) would make
-   * `approveOne` silently approve that new version instead — one with no
-   * confirmation-ledger row and no freshness check against it. Optional
-   * because bulk-approve (`POST /api/listings/bulk-approve`) has no
-   * client-held "version I reviewed" to pin against; it intentionally
-   * approves whatever is currently active.
-   */
-  expectedVersionId?: string;
-  /**
-   * When supplied, `approveOne` re-reads `reviewConfirmations.getByVersionId`
-   * inside its own transaction and re-verifies both that the revision still
-   * matches and that the checklist is still fully confirmed -- not just that
-   * phase 0 (the route's separate, earlier `forWorkspace` call) saw a
-   * matching, complete checklist. `expectedVersionId` staying the same does
-   * NOT imply this is still true: `PATCH
-   * /api/listings/[id]/review-confirmations` bumps the ledger's revision for
-   * the *same* version without ever calling `appendVersion`, so a second
-   * reviewer can edit the checklist for the version being approved without
-   * the active version changing at all. Optional for the same reason as
-   * `expectedVersionId` -- bulk-approve has no client-held ledger revision to
-   * pin against.
-   */
-  confirmationLedgerRevision?: number;
-  /**
-   * When `expectedVersionId` is supplied (bulk-approve never supplies it;
-   * see that field's doc), `approveOne` re-reads `platformProducts
-   * .getByListingId` inside its own transaction and re-derives whether the
-   * freshness gate applies at all (`link !== null && link.origin ===
-   * "import"`) -- it does NOT gate that re-derivation on whether this or
-   * `expectedRowDigest` were supplied. That matters because gate
-   * *applicability* itself can go stale, not just the values it checks once
-   * it applies: a create-origin listing's `platform_products` row can flip
-   * to `origin: "import"` via a concurrent catalog re-import matching the
-   * same connection/remote-product id (`bulk-form-import.ts`'s "existing
-   * link" refresh branch), without ever calling `appendVersion` -- so phase 0
-   * (the route's earlier, separate `forWorkspace` call) correctly saw no
-   * gate and the client never sent these fields, yet the gate now applies by
-   * commit time. If the freshly re-read link says the gate applies but
-   * this/`expectedRowDigest` are `undefined`, `approveOne` throws the same
-   * `400 source_freshness_required` phase 0 would have. If the gate applies
-   * and both are supplied, it re-runs `assertApprovalFreshness` against the
-   * freshly-read link -- not just trusting phase 0's earlier read of
-   * *values*, either: a concurrent re-import can also just update
-   * `contentDigest`/`sourceImportId` on a link that was already `origin:
-   * "import"` (`upsertMany`'s `onConflictDoUpdate`), again without calling
-   * `appendVersion`. Per the design doc, "the content freshness check still
-   * runs at approval time regardless of when the confirmation itself was
-   * recorded" -- this is what makes that true in full, not just for the
-   * values but for the gate itself.
-   */
+  /** The version and checklist revision observed by the reviewer. Never default to current state. */
+  expectedVersionId: string;
+  confirmationLedgerRevision: number;
+  /** Required whenever the current platform link has import origin. */
   sourceImportId?: string;
-  /** Paired with `sourceImportId`; see that field's doc. */
   expectedRowDigest?: string;
   /**
    * Set by the route handler once it has already flattened a chosen
@@ -188,43 +158,77 @@ export async function findProductShotAssets(
   return { cutout, priorFinalAssetIds };
 }
 
+/** Validate the current imported row against the immutable source snapshot. */
+export async function readApprovalSourceSnapshot(
+  listingId: string,
+  link: {
+    sourceImportId: string | null;
+    connectionId: string;
+    remoteProductId: string;
+    contentDigest: string | null;
+    rawRow: Record<string, string | null> | null;
+  },
+  repositories: Pick<ApproveOneRepositories, "sourceRows">,
+): Promise<SourceRowSnapshot | null> {
+  if (
+    !link.sourceImportId ||
+    !link.contentDigest ||
+    !link.rawRow ||
+    !isBulkFormRawRow(link.rawRow)
+  )
+    return null;
+  const row = await repositories.sourceRows.getForProduct({
+    sourceImportId: link.sourceImportId,
+    connectionId: link.connectionId,
+    remoteProductId: link.remoteProductId,
+  });
+  if (
+    !row ||
+    row.listingId !== listingId ||
+    row.sourceImportId !== link.sourceImportId ||
+    row.connectionId !== link.connectionId ||
+    row.remoteProductId !== link.remoteProductId ||
+    row.sourceRowDigest !== link.contentDigest ||
+    row.headerContractSha256 !== hashBulkFormHeaderContract() ||
+    row.specVersion !== SHOPLINE_BULK_FORM_SPEC_VERSION ||
+    !isBulkFormRawRow(row.rawRow) ||
+    hashBulkFormRow(row.rawRow) !== row.sourceRowDigest ||
+    hashBulkFormRow(link.rawRow) !== row.sourceRowDigest
+  )
+    return null;
+  return row;
+}
+
 /**
- * Approves one listing's active version. Extracted from the single-listing
- * approve route so the bulk-approve route can reuse the exact same checks —
- * `getReviewSnapshot`, the target/activeVersion gate, the domain approval
- * call, the repository write, and the blocking-flags error mapping — without
- * duplicating them. Behavior for a single ID must stay identical to what
- * `POST /api/listings/[id]/approve` did before this extraction; that route's
- * own existing test file is the proof.
+ * Both approval routes validate the reviewer's observed version, checklist and
+ * imported source here, inside their workspace transaction. The single route's
+ * earlier checks only fail fast before optional product-shot I/O.
  *
- * When `deps.precomputedFinalAsset` is supplied, the route handler has
- * already flattened a chosen background onto a cutout asset (outside any
- * transaction) and stored the result. This function persists that asset,
- * appends it as a new listing version carrying the prior version's
- * evidence/flags, and promotes+approves that new version via
- * `promoteAndApprove` instead of the existing active version. Bulk approve
- * never supplies this, and today no real listing has a cutout asset, so this
- * branch is presently a no-op for every real approval.
+ * A precomputed final asset is persisted as a new version carrying the reviewed
+ * evidence and flags, then promoted through the existing approval repository.
+ * Asset reads, compositing and object writes remain outside this transaction.
  *
- * When `deps.expectedVersionId`/`confirmationLedgerRevision`/
- * `sourceImportId`+`expectedRowDigest` are supplied, this function re-checks
- * each of them against a fresh read taken inside its own transaction, rather
- * than trusting whatever an earlier, separate read (the approve route's own
- * "phase 0" pre-check) already validated. This is what actually closes the
- * race window between that earlier read and this function's write: the
- * active version, the confirmation ledger, and the linked product's content
- * digest can each go stale independently of one another, since a checklist
- * edit or a catalog re-import updates its own row without ever calling
- * `appendVersion`. The earlier, separate read exists only to fail fast
- * before the (potentially expensive) product-shot I/O above runs -- this
- * function's own re-checks are the actual source of truth.
+ * The draft lock serializes flag, confirmation and source writes through the
+ * database review-lock triggers. Imported approvals append an immutable receipt.
  */
 export async function approveOne(
   id: string,
   auditContext: AuditContext,
   repositories: ApproveOneRepositories,
-  deps: ApproveOneDeps = {},
+  deps: ApproveOneDeps,
 ): Promise<ApproveOneResult> {
+  if (
+    !deps?.expectedVersionId ||
+    !Number.isInteger(deps.confirmationLedgerRevision) ||
+    deps.confirmationLedgerRevision < 0
+  ) {
+    throw new ApiError(
+      400,
+      "review_context_required",
+      "Open the listing and complete its review before approving.",
+    );
+  }
+  await repositories.listings.lockReviewState(id);
   const snapshot = await repositories.listings.getReviewSnapshot(id);
   if (!snapshot) {
     throw new ApiError(404, "listing_not_found", "Listing not found.");
@@ -233,8 +237,8 @@ export async function approveOne(
     throw new ApiError(409, "approval_required", "可批准的版本不存在。");
   }
   if (
-    deps.expectedVersionId !== undefined &&
-    snapshot.activeVersion.id !== deps.expectedVersionId
+    snapshot.activeVersion.id !== deps.expectedVersionId ||
+    snapshot.listing.activeVersionId !== snapshot.activeVersion.id
   ) {
     throw new ApiError(
       409,
@@ -243,99 +247,228 @@ export async function approveOne(
     );
   }
 
-  if (deps.confirmationLedgerRevision !== undefined) {
-    const confirmation = await repositories.reviewConfirmations.getByVersionId(
-      snapshot.activeVersion.id,
+  if (repositories.workspaces) {
+    const profile = await repositories.workspaces.requireProfile();
+    const missing = missingWorkspaceFields(
+      snapshot.activeVersion.content as unknown as Record<string, unknown>,
+      profile.requiredFields,
     );
-    if ((confirmation?.revision ?? -1) !== deps.confirmationLedgerRevision) {
+    if (missing.length)
       throw new ApiError(
         409,
-        "confirmation_ledger_stale",
-        "The confirmation checklist has changed since you loaded it.",
+        "workspace_required_fields",
+        `Complete workspace-required fields: ${missing.join(", ")}`,
+      );
+  }
+  let reviewedClaimSupportIds: string[] = [];
+  let reviewedClaimInputRevision = 0;
+  if (repositories.listingEnrichment && repositories.listingInputs) {
+    const supports = await readCopyClaimSupports(
+      {
+        listingEnrichment: repositories.listingEnrichment,
+        listingInputs: repositories.listingInputs,
+      },
+      id,
+      snapshot.activeVersion.content as unknown as Record<string, unknown>,
+    );
+    const bound = supports.length
+      ? await repositories.listingEnrichment.versionClaimIds(
+          id,
+          snapshot.activeVersion.id,
+        )
+      : [];
+    reviewedClaimSupportIds = supports
+      .filter((support) => support.valid && bound.includes(support.id))
+      .map((support) => support.id);
+    reviewedClaimInputRevision =
+      (await repositories.listingInputs.getCurrent(id))?.revision ?? 0;
+    if (
+      supports.some(
+        (support) =>
+          support.valid &&
+          !bound.includes(support.id) &&
+          !supports.some(
+            (other) =>
+              other.valid &&
+              other.field === support.field &&
+              other.text === support.text &&
+              bound.includes(other.id),
+          ),
+      )
+    )
+      throw new ApiError(
+        422,
+        "claim_review_required",
+        "Save the supported copy as a review version before approval.",
+      );
+    if (
+      supports.some(
+        (support) =>
+          !support.valid &&
+          String(
+            readWorkingField(
+              snapshot.activeVersion!.content,
+              support.copyField,
+            ),
+          ).includes(support.text) &&
+          !supports.some(
+            (other) =>
+              other.valid &&
+              other.field === support.field &&
+              other.text === support.text,
+          ),
+      )
+    )
+      throw new ApiError(
+        422,
+        "claim_support_stale",
+        "Claim evidence changed. Review and accept matching evidence again before approval.",
+      );
+  }
+  const confirmation = await repositories.reviewConfirmations.getByVersionId(
+    snapshot.activeVersion.id,
+  );
+  if ((confirmation?.revision ?? -1) !== deps.confirmationLedgerRevision) {
+    throw new ApiError(
+      409,
+      "confirmation_ledger_stale",
+      "The confirmation checklist has changed since you loaded it.",
+    );
+  }
+  if (
+    !confirmation ||
+    !allConfirmed(
+      confirmation.fieldConfirmations,
+      confirmation.negativeConfirmations,
+    )
+  ) {
+    throw new ApiError(
+      422,
+      "confirmation_incomplete",
+      "Complete the confirmation checklist before approving.",
+    );
+  }
+
+  // Re-import can change origin/source without creating a listing version.
+  // Re-derive applicability in the approval transaction for every caller.
+  const link = await repositories.platformProducts.getByListingId(id);
+  if (
+    link?.origin !== "import" &&
+    (deps.sourceImportId !== undefined ||
+      deps.expectedRowDigest !== undefined ||
+      confirmation.sourceImportId != null ||
+      confirmation.rowDigest != null)
+  ) {
+    throw new ApiError(
+      409,
+      "source_origin_changed",
+      "This listing's imported source link has changed. Review the listing again.",
+    );
+  }
+  if (link !== null && link.origin === "import") {
+    if (!deps.sourceImportId || !deps.expectedRowDigest) {
+      throw new ApiError(
+        400,
+        "source_freshness_required",
+        "This listing is linked to an imported product and requires freshness fields.",
+      );
+    }
+    const result = await assertApprovalFreshness(
+      {
+        workspaceId: auditContext.workspaceId,
+        listingId: id,
+        expectedSourceImportId: deps.sourceImportId,
+        expectedRowDigest: deps.expectedRowDigest,
+        expectedVersionId: deps.expectedVersionId,
+      },
+      {
+        async getPlatformProductLink() {
+          return link;
+        },
+        async getActiveVersionId() {
+          return snapshot.activeVersion?.id ?? null;
+        },
+      },
+    );
+    if (!result.ok) {
+      throw new ApiError(
+        409,
+        result.reason,
+        "This listing's source data no longer matches what was reviewed.",
       );
     }
     if (
-      !confirmation ||
-      !allConfirmed(
-        confirmation.fieldConfirmations,
-        confirmation.negativeConfirmations,
-      )
+      confirmation.sourceImportId !== deps.sourceImportId ||
+      confirmation.rowDigest !== deps.expectedRowDigest
     ) {
       throw new ApiError(
-        422,
-        "confirmation_incomplete",
-        "Complete the confirmation checklist before approving.",
+        409,
+        "confirmation_source_stale",
+        "The confirmation checklist belongs to different source data. Review the listing again.",
       );
     }
   }
 
-  // Re-derive whether the freshness gate applies at all from a fresh read --
-  // NOT gated on `deps.sourceImportId`/`expectedRowDigest` being supplied.
-  // Those two only reflect what the CLIENT saw when phase 0 (the route's
-  // earlier, separate `forWorkspace` call) ran, which can itself be stale by
-  // commit time: a create-origin listing's `platform_products` row can flip
-  // to `origin: "import"` via a concurrent catalog re-import matching the
-  // same connection/remote-product id (`bulk-form-import.ts`'s "existing
-  // link" refresh branch), without ever calling `appendVersion` -- so the
-  // client never had freshness fields to send, yet the gate now applies.
-  // Trusting `deps.sourceImportId !== undefined` here would silently skip
-  // the check for exactly that listing.
-  //
-  // Gated on `deps.expectedVersionId !== undefined` instead -- the same
-  // signal the version-conflict check above uses -- because that is the
-  // caller's actual, stable opt-in for "run full phase-3 re-validation",
-  // supplied by the route handler itself rather than derived from anything
-  // that can go stale. Bulk approve never supplies `expectedVersionId` (it
-  // has no client-held review state to pin against at all, the same
-  // reasoning documented on `confirmationLedgerRevision` above) and so never
-  // re-derives this gate -- re-deriving it unconditionally for every
-  // `approveOne` caller would make bulk approve start 400-ing on every
-  // import-origin listing, which is out of this task's scope and would be a
-  // new regression, not a fix.
-  if (deps.expectedVersionId !== undefined) {
-    const link = await repositories.platformProducts.getByListingId(id);
-    if (link !== null && link.origin === "import") {
-      if (
-        deps.sourceImportId === undefined ||
-        deps.expectedRowDigest === undefined
-      ) {
-        throw new ApiError(
-          400,
-          "source_freshness_required",
-          "This listing is linked to an imported product and requires freshness fields.",
-        );
-      }
-      const activeVersionId = snapshot.activeVersion.id;
-      const result = await assertApprovalFreshness(
-        {
-          workspaceId: auditContext.workspaceId,
-          listingId: id,
-          expectedSourceImportId: deps.sourceImportId,
-          expectedRowDigest: deps.expectedRowDigest,
-          expectedVersionId: activeVersionId,
-        },
-        {
-          async getPlatformProductLink() {
-            return link;
-          },
-          async getActiveVersionId() {
-            return activeVersionId;
-          },
-        },
-      );
-      if (!result.ok) {
-        throw new ApiError(
-          409,
-          result.reason,
-          "This listing's source data no longer matches what was reviewed.",
-        );
-      }
-    }
+  const sourceRow =
+    link?.origin === "import"
+      ? await readApprovalSourceSnapshot(id, link, repositories)
+      : null;
+  if (link?.origin === "import" && !sourceRow) {
+    throw new ApiError(
+      409,
+      "source_snapshot_required",
+      "Reimport this product before approving; its source snapshot is unavailable or has changed.",
+    );
   }
 
   let versionIdToApprove: string = snapshot.activeVersion.id;
 
-  if (deps.precomputedFinalAsset) {
+  // Re-read current selection under the listing review lock.
+  const shot = await repositories.productShots?.currentForListing(id);
+  // Enabled installations require acceptance even before source selection or
+  // dispatch setup. Read legacy assets only when they can affect this decision.
+  const hasLegacyCutout =
+    !shot &&
+    usesProductShotWorkflow({ hasSelection: false, hasLegacyCutout: false })
+      ? Boolean((await findProductShotAssets(id, repositories)).cutout)
+      : false;
+  let imagePublication: { publicationToken: string } | null = null;
+  if (
+    usesProductShotWorkflow({ hasSelection: Boolean(shot), hasLegacyCutout })
+  ) {
+    if (!shot || shot.state !== "approved" || !shot.candidate)
+      throw new ApiError(
+        409,
+        "image_approval_required",
+        "Review and accept the final product image before approving the listing.",
+      );
+    imagePublication = await repositories.productShots!.approvedForAsset({
+      listingId: id,
+      versionId: snapshot.activeVersion.id,
+      assetId: shot.candidate.assetId,
+    });
+    if (!imagePublication)
+      throw new ApiError(
+        409,
+        "image_approval_required",
+        "Accept the image for the current listing version.",
+      );
+    const newVersion = await repositories.listings.appendVersion(
+      id,
+      {
+        ...snapshot.activeVersion.content,
+        imageAssetIds: [shot.candidate.assetId],
+      } as CanonicalListing,
+      auditContext,
+      repositories.audit,
+    );
+    await repositories.listings.replaceEvidence(
+      newVersion.id,
+      snapshot.evidence,
+    );
+    await repositories.listings.replaceFlags(newVersion.id, snapshot.flags);
+    versionIdToApprove = newVersion.id;
+  } else if (deps.precomputedFinalAsset) {
     const { storageKey, priorFinalAssetIds } = deps.precomputedFinalAsset;
     const finalAsset = await repositories.sourceAssets.create({
       storageKey,
@@ -381,6 +514,18 @@ export async function approveOne(
     versionIdToApprove = newVersion.id;
   }
 
+  if (
+    versionIdToApprove !== snapshot.activeVersion.id &&
+    reviewedClaimSupportIds.length
+  ) {
+    await repositories.listingEnrichment!.bindVersionClaims({
+      listingId: id,
+      versionId: versionIdToApprove,
+      supportIds: reviewedClaimSupportIds,
+      inputRevision: reviewedClaimInputRevision,
+      actorId: auditContext.actorId,
+    });
+  }
   try {
     const approved = await (deps.approve ?? domainApprove)(
       versionIdToApprove,
@@ -407,6 +552,35 @@ export async function approveOne(
         auditContext,
         repositories.audit,
       );
+    }
+    if (imagePublication) {
+      await repositories.productShots!.bindApprovedVersion({
+        publicationToken: imagePublication.publicationToken,
+        expectedVersionId: snapshot.activeVersion.id,
+        versionId: approved.versionId,
+        actorId: auditContext.actorId,
+      });
+    }
+    if (sourceRow) {
+      const receipt = await repositories.approvalReceipts.record({
+        listingId: id,
+        versionId: approved.versionId,
+        sourceSnapshotId: sourceRow.id,
+        confirmationVersionId: snapshot.activeVersion.id,
+        confirmationRevision: confirmation.revision,
+        approvedBy: auditContext.actorId,
+      });
+      if (receipt.wasCreated)
+        await repositories.audit.write({
+          ...auditContext,
+          action: "listing.bulk_update_approval_bound",
+          metadata: {
+            approvalReceiptId: receipt.id,
+            sourceSnapshotId: sourceRow.id,
+            versionId: approved.versionId,
+            confirmationRevision: confirmation.revision,
+          },
+        });
     }
     return {
       listingId: id,

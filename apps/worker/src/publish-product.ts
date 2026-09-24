@@ -72,6 +72,11 @@ export type PublishJobRecord = {
 };
 
 export type PublishRepositories = {
+  /** Production composition supplies the repositories owned by this transaction. */
+  imageRepositories?: Pick<
+    import("@wukong/db").WorkspaceRepositories,
+    "sourceAssets" | "productShots"
+  >;
   listings: {
     requireForPublish(id: string): Promise<PublishListingSnapshot>;
     beginPublish(
@@ -152,6 +157,8 @@ export type PublishDependencies = {
     workspaceId: string,
     draftId: string,
     imageAssetIds: readonly string[],
+    versionId: string,
+    repositories: PublishRepositories,
   ) => Promise<readonly string[]>;
 };
 
@@ -391,11 +398,43 @@ export async function publishApprovedProduct(
         return { terminalError: error };
       }
 
-      const imageUrls = await dependencies.resolveImageUrls(
-        input.workspaceId,
-        input.draftId,
-        listing.activeVersion?.content.imageAssetIds ?? [],
-      );
+      let imageUrls: readonly string[];
+      try {
+        imageUrls = await dependencies.resolveImageUrls(
+          input.workspaceId,
+          input.draftId,
+          listing.activeVersion?.content.imageAssetIds ?? [],
+          input.expectedVersionId,
+          repositories,
+        );
+      } catch (cause) {
+        if (
+          !(cause instanceof Error) ||
+          !(
+            cause.name === "ProductImageApprovalRequiredError" ||
+            (cause.name === "ProductShotConflict" &&
+              (cause as { code?: string }).code === "image_approval_required")
+          )
+        )
+          throw cause;
+        const error = new PublishDeliveryError("not_approved");
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        await repositories.audit.write({
+          workspaceId: input.workspaceId,
+          actorId: PUBLISH_ACTOR_ID,
+          entityId: input.draftId,
+          action: "listing.publish_policy_rejected",
+          metadata: {
+            versionId: input.expectedVersionId,
+            reason: "image_approval_required",
+          },
+        });
+        return { terminalError: error };
+      }
       const connection =
         await repositories.shoplineConnections.getById(connectionId);
       const outcome = evaluateDeliveryPolicy({

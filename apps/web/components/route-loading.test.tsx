@@ -25,13 +25,13 @@ async function unmount(root: Root) {
 }
 
 describe("RouteLoading", () => {
-  it("renders a status element with bilingual loading copy", async () => {
+  it("renders a status element with selected default locale loading copy", async () => {
     const { container, root } = await mount();
 
     const status = container.querySelector('[role="status"]');
     expect(status).not.toBeNull();
-    expect(status!.textContent).toMatch(/載入中/);
-    expect(status!.textContent).toMatch(/Loading/);
+    expect(status!.textContent).toMatch(/正在載入/);
+    expect(status!.textContent).not.toMatch(/Loading/);
 
     await unmount(root);
   });

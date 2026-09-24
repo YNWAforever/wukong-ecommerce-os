@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer";
 
 import { z } from "zod";
+import type { ProductShotJob } from "./product-shot-queue.js";
+import type { WebsiteJob } from "./website-queue.js";
 
 const safeId = z
   .string()
@@ -18,8 +20,75 @@ export const listingJobSchema = z
     workspaceId: safeId,
     draftId: z.string().uuid(),
     activeVersionSequence: z.number().int().nonnegative(),
+    /**
+     * Which deliberate re-run of this revision this message is.
+     *
+     * `activeVersionSequence` alone cannot identify a run: a listing that ends
+     * in `needs_info` appends no version, so its sequence stays where it was and
+     * the derived key keeps resolving to the run that already completed. The
+     * operator supplies what was missing and nothing can happen.
+     *
+     * Optional, and absent means 0, so a message produced before this field
+     * existed still parses and still derives exactly the key it derived before.
+     * A NEW producer must not run against an OLD Worker, though: the schema is
+     * strict, so an unrecognized key makes safeParse fail and the consumer acks
+     * the message away. Deploy the Worker first.
+     */
+    runAttempt: z.number().int().min(0).max(999).optional(),
+    schemaVersion: z.literal(2).optional(),
+    runId: z.string().uuid().optional(),
+    inputRevision: z.number().int().positive().optional(),
   })
   .strict();
+
+/** Wine messages stay separate until the Worker installs flow-aware dispatch. */
+export const wineStageSchema = z.enum([
+  "extraction",
+  "search_basic",
+  "verification",
+  "search_deep",
+  "verification_deep",
+  "generation",
+  "quality_check",
+  "commit_candidate",
+]);
+export const wineListingJobSchema = z.strictObject({
+  schemaVersion: z.literal(2),
+  flowVersion: z.literal("wine-enrichment-v1"),
+  workspaceId: safeId,
+  draftId: z.uuid(),
+  runId: z.uuid(),
+  inputRevision: z.number().int().positive(),
+  activeVersionSequence: z.number().int().nonnegative(),
+  stage: wineStageSchema,
+});
+export type WineListingJob = z.infer<typeof wineListingJobSchema>;
+export function wineStageMessageKey(
+  runId: string,
+  stage: WineListingJob["stage"],
+): string {
+  return `wine-run:${z.uuid().parse(runId)}:${wineStageSchema.parse(stage)}`;
+}
+
+/**
+ * The idempotency key for one listing pipeline run.
+ *
+ * Both the web producer and the Worker derive this, and they must agree
+ * exactly, so it lives here rather than being spelled out on each side.
+ * Attempt 0 keeps the historical `listing:<ws>:<draft>:<sequence>` form so
+ * every run already recorded stays reachable under the same key.
+ */
+export function listingRunKey(input: {
+  workspaceId: string;
+  draftId: string;
+  activeVersionSequence: number;
+  runAttempt?: number;
+  runId?: string;
+}): string {
+  if (input.runId) return `listing-run:${input.runId}`;
+  const base = `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  return input.runAttempt ? `${base}#${input.runAttempt}` : base;
+}
 
 export const shoplinePublishJobSchema = z
   .object({
@@ -32,7 +101,12 @@ export const shoplinePublishJobSchema = z
 
 export type ListingJob = z.infer<typeof listingJobSchema>;
 export type ShoplinePublishJob = z.infer<typeof shoplinePublishJobSchema>;
-export type QueueMessage = ListingJob | ShoplinePublishJob;
+export type QueueMessage =
+  | ListingJob
+  | WineListingJob
+  | ShoplinePublishJob
+  | WebsiteJob
+  | ProductShotJob;
 
 type SignInput = {
   secret: string;
@@ -77,8 +151,7 @@ function isConstantTimeEqual(expected: string, received: string): boolean {
   let difference = expectedBytes.length ^ receivedBytes.length;
 
   for (let index = 0; index < length; index += 1) {
-    difference |=
-      (expectedBytes[index] ?? 0) ^ (receivedBytes[index] ?? 0);
+    difference |= (expectedBytes[index] ?? 0) ^ (receivedBytes[index] ?? 0);
   }
 
   return difference === 0;
@@ -88,10 +161,16 @@ export async function verifyQueueRequest(input: VerifyInput): Promise<boolean> {
   if (!/^\d+$/.test(input.timestamp)) return false;
 
   const timestamp = Number(input.timestamp);
-  if (!Number.isSafeInteger(timestamp) || input.timestamp !== String(timestamp)) {
+  if (
+    !Number.isSafeInteger(timestamp) ||
+    input.timestamp !== String(timestamp)
+  ) {
     return false;
   }
-  if (!Number.isFinite(input.nowSeconds) || Math.abs(input.nowSeconds - timestamp) > 300) {
+  if (
+    !Number.isFinite(input.nowSeconds) ||
+    Math.abs(input.nowSeconds - timestamp) > 300
+  ) {
     return false;
   }
 

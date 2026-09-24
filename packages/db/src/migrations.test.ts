@@ -51,3 +51,39 @@ it("adds durable publish-job lease columns and the tenant lease index", async ()
   expect(migration?.sql).toContain("workspace_id, status, lease_expires_at");
   expect(migration?.sql).toContain("pending_enqueue");
 });
+
+it("loads the additive product-shot migration with forced RLS and narrow publication mutations", async () => {
+  const migrations = await loadSqlMigrations(
+    new URL("../drizzle/", import.meta.url),
+  );
+  const migration = migrations.find(
+    ({ name }) => name === "0021_product_shots.sql",
+  );
+  expect(migration).toBeDefined();
+  expect(migration?.sql).toContain("FORCE ROW LEVEL SECURITY");
+  expect(migration?.sql).toContain(
+    "GRANT UPDATE(revoked_at,revoked_by) ON product_shot_publications",
+  );
+  expect(migration?.sql).toContain("storage_key text NOT NULL");
+  expect(migration?.sql).toContain(
+    "SECURITY DEFINER SET search_path=pg_catalog",
+  );
+  expect(migration?.sql).toContain("TO wukong_image_lookup USING(true)");
+  expect(migration?.sql).toContain("product_shot_approval_urls");
+});
+
+it("discovers all reviewed additive wine migrations in release order without a parallel registry", async () => {
+  const migrations = await loadSqlMigrations(
+    new URL("../drizzle/", import.meta.url),
+  );
+  expect(
+    migrations
+      .filter(({ name }) => /^004[1234]_/.test(name))
+      .map(({ name }) => name),
+  ).toEqual([
+    "0041_wine_enrichment.sql",
+    "0042_wine_acquisition.sql",
+    "0043_wine_runtime_recovery.sql",
+    "0044_wine_section_run_index.sql",
+  ]);
+});

@@ -50,11 +50,20 @@ describe("listing pipeline run repository", () => {
           ...input,
           step: "started",
           leaseToken: claim.leaseToken!,
+          output: { retained: "original" },
         });
         await repos.pipelineRuns.recordStep({
           ...input,
           step: "started",
           leaseToken: claim.leaseToken!,
+          output: { retained: "replay-must-not-overwrite" },
+        });
+        const replayed = await repos.pipelineRuns.getState(
+          input.idempotencyKey,
+        );
+        expect(replayed?.steps.get("started")).toEqual({
+          state: "completed",
+          output: { retained: "original" },
         });
         await repos.pipelineRuns.complete({
           ...input,

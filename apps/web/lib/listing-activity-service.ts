@@ -19,6 +19,8 @@ export type ListingActivityExportEntry = {
   id: string;
   outcome: string;
   reason?: string;
+  artifactStatus?: string | null;
+  provenanceComplete?: boolean;
   createdAt: Date;
 };
 
@@ -48,10 +50,15 @@ export type ListingActivityRepositories = {
     >;
   };
   exportAttempts: {
-    listContainingListing(
-      listingId: string,
-    ): Promise<
-      Array<{ id: string; outcome: string; reason?: string; createdAt: Date }>
+    listContainingListing(listingId: string): Promise<
+      Array<{
+        id: string;
+        outcome: string;
+        reason?: string;
+        artifactStatus?: string | null;
+        provenanceComplete?: boolean;
+        createdAt: Date;
+      }>
     >;
   };
 };
@@ -93,6 +100,8 @@ export async function getListingActivity(
       id: attempt.id,
       outcome: attempt.outcome,
       reason: attempt.reason,
+      artifactStatus: attempt.artifactStatus,
+      provenanceComplete: attempt.provenanceComplete ?? false,
       createdAt: attempt.createdAt,
     })),
   ];

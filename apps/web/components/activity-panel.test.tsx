@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ActivityPanel } from "./activity-panel";
 
@@ -33,6 +33,8 @@ type TestActivityEntry =
       id: string;
       outcome: string;
       reason?: string;
+      artifactStatus?: string | null;
+      provenanceComplete?: boolean;
       createdAt: string;
     };
 
@@ -73,7 +75,7 @@ describe("ActivityPanel", () => {
 
     const heading = container.querySelector('[role="heading"], h1, h2, h3');
     expect(heading).not.toBeNull();
-    expect(heading!.textContent).toMatch(/活動記錄|Activity/);
+    expect(heading!.textContent).toMatch(/此商品的完整記錄/);
 
     const items = container.querySelectorAll('[role="listitem"], li');
     expect(items.length).toBe(2);
@@ -113,7 +115,7 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(/已批准 Approved/);
+    expect(container.textContent).toMatch(/已批准/);
     expect(container.textContent).not.toContain("listing.approved");
 
     await unmount(root);
@@ -131,7 +133,7 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(/預算用盡 Budget exhausted/);
+    expect(container.textContent).toMatch(/預算用盡/);
     expect(container.textContent).not.toContain("budget_exhausted");
 
     await unmount(root);
@@ -148,15 +150,13 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toMatch(
-      /來源資料無效，未納入 Excluded, invalid source row/,
-    );
+    expect(container.textContent).toMatch(/來源資料無效，未納入/);
     expect(container.textContent).not.toContain("raw_row_invalid");
 
     await unmount(root);
   });
 
-  it("humanizes an unmapped audit action into readable prose instead of raw dots/underscores", async () => {
+  it("shows a safe localized label for an unmapped audit action", async () => {
     const entries: TestActivityEntry[] = [
       {
         kind: "audit",
@@ -168,10 +168,70 @@ describe("ActivityPanel", () => {
     ];
     const { container, root } = await mount(entries);
 
-    expect(container.textContent).toContain("some unknown action");
+    expect(container.textContent).toContain("其他活動記錄");
     expect(container.textContent).not.toContain("some.unknown.action");
     expect(container.textContent).not.toContain("_");
 
     await unmount(root);
   });
+
+  it.each([
+    ["confirmation_changed", "確認內容已變更"],
+    ["source_reimported_changed", "重新匯入，來源資料已變更"],
+    ["source_reimported_unchanged", "重新匯入，來源資料未變"],
+  ])(
+    "names an approval invalidated by %s and its cause",
+    async (cause, text) => {
+      const { container, root } = await mount([
+        {
+          kind: "audit",
+          id: "audit_inv",
+          action: "listing.approval_invalidated",
+          metadata: { cause, fromStatus: "approved", versionId: "v1" },
+          createdAt: "2026-09-14T00:00:00.000Z",
+        },
+      ]);
+
+      expect(container.textContent).toContain("批准已失效");
+      expect(container.textContent).toContain(text);
+      expect(container.textContent).not.toContain(cause);
+
+      await unmount(root);
+    },
+  );
+
+  it("names an invalidation with an unknown cause without printing the raw value", async () => {
+    const { container, root } = await mount([
+      {
+        kind: "audit",
+        id: "audit_inv",
+        action: "listing.approval_invalidated",
+        metadata: { cause: "some_future_cause" },
+        createdAt: "2026-09-14T00:00:00.000Z",
+      },
+    ]);
+
+    expect(container.textContent).toContain("批准已失效");
+    expect(container.textContent).not.toContain("some_future_cause");
+
+    await unmount(root);
+  });
 });
+
+it("shows artifact failure separately from included membership", async () => {
+  const { container, root } = await mount([
+    {
+      kind: "export",
+      id: "failed",
+      outcome: "included",
+      artifactStatus: "failed",
+      provenanceComplete: true,
+      createdAt: "2026-09-05T00:00:00Z",
+    },
+  ]);
+  expect(container.textContent).toContain("失敗");
+  await unmount(root);
+});
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "zh-Hant" }));

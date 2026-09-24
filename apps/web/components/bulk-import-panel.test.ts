@@ -3,12 +3,30 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
+import { localized, type BilingualMessage } from "../lib/ui-copy.js";
 import {
   BulkImportPanel,
   MAX_BULK_IMPORT_BYTES,
   submitBulkImport,
+  type BulkImportOutcome,
   validateBulkImportFile,
 } from "./bulk-import-panel.js";
+
+/**
+ * The outcome as an English reader sees it.
+ *
+ * Every failure message is a `[zh, en]` pair now, so the cases below would
+ * otherwise have to restate both halves to assert one sentence. A separate
+ * case checks that the pair really does hold two languages.
+ */
+function inEnglish(outcome: BulkImportOutcome) {
+  return outcome.kind === "success"
+    ? outcome
+    : { ...outcome, message: localized("en", ...outcome.message) };
+}
+
+const englishOf = (message: BilingualMessage | null) =>
+  message === null ? null : localized("en", ...message);
 
 function xlsxFile(name: string, size: number): File {
   return new File([new Uint8Array(size)], name, {
@@ -19,14 +37,14 @@ function xlsxFile(name: string, size: number): File {
 describe("validateBulkImportFile", () => {
   it("rejects a file that is not .xlsx", () => {
     const file = xlsxFile("catalog.csv", 100);
-    expect(validateBulkImportFile(file)).toBe(
+    expect(englishOf(validateBulkImportFile(file))).toBe(
       "Choose an .xlsx SHOPLINE Bulk Update workbook.",
     );
   });
 
   it("rejects a file over the 4 MiB runtime limit", () => {
     const file = xlsxFile("catalog.xlsx", MAX_BULK_IMPORT_BYTES + 1);
-    expect(validateBulkImportFile(file)).toBe(
+    expect(englishOf(validateBulkImportFile(file))).toBe(
       "Workbook exceeds the 4 MiB runtime limit.",
     );
   });
@@ -40,10 +58,14 @@ describe("validateBulkImportFile", () => {
 describe("submitBulkImport", () => {
   it("returns a validation_error without calling the fetcher for a bad extension", async () => {
     const fetcher = vi.fn<typeof fetch>();
-    const result = await submitBulkImport(xlsxFile("catalog.csv", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.csv", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "validation_error",
       message: "Choose an .xlsx SHOPLINE Bulk Update workbook.",
     });
@@ -54,9 +76,10 @@ describe("submitBulkImport", () => {
     const fetcher = vi.fn<typeof fetch>();
     const result = await submitBulkImport(
       xlsxFile("catalog.xlsx", MAX_BULK_IMPORT_BYTES + 1),
+      "2026-08-01T08:00",
       { fetcher },
     );
-    expect(result).toEqual({
+    expect(inEnglish(result)).toEqual({
       kind: "validation_error",
       message: "Workbook exceeds the 4 MiB runtime limit.",
     });
@@ -67,10 +90,14 @@ describe("submitBulkImport", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockRejectedValue(new TypeError("Failed to fetch"));
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
     });
@@ -82,10 +109,14 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         new Response("<html>gateway timeout</html>", { status: 504 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "network_error",
       message: "Could not reach the server. Try again.",
     });
@@ -99,6 +130,7 @@ describe("submitBulkImport", () => {
           parsedRows: 2,
           createdDrafts: 2,
           refreshedProducts: 0,
+          invalidatedApprovals: 2,
           issues: [
             {
               code: "quantity_negative",
@@ -113,15 +145,20 @@ describe("submitBulkImport", () => {
         { status: 201 },
       ),
     );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "success",
       specVersion: "opak-2026-05",
       parsedRows: 2,
       createdDrafts: 2,
       refreshedProducts: 0,
+      invalidatedApprovals: 2,
       issues: [
         {
           code: "quantity_negative",
@@ -134,9 +171,30 @@ describe("submitBulkImport", () => {
       ],
     });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/listings/import",
+      "/api/listings/import?merchantAttestedExportAt=2026-08-01T00%3A00%3A00.000Z&filename=catalog.xlsx",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("treats a response without invalidatedApprovals as zero", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          specVersion: "opak-2026-05",
+          parsedRows: 1,
+          createdDrafts: 1,
+          refreshedProducts: 0,
+          issues: [],
+        },
+        { status: 201 },
+      ),
+    );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+    expect(result).toMatchObject({ kind: "success", invalidatedApprovals: 0 });
   });
 
   it.each([
@@ -162,10 +220,14 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         Response.json({ code, message: "server detail" }, { status: 400 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({ kind: "api_error", code, message });
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({ kind: "api_error", code, message });
   });
 
   it("falls back to the server's message for an unrecognized error code", async () => {
@@ -177,10 +239,14 @@ describe("submitBulkImport", () => {
           { status: 400 },
         ),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "some_future_code",
       message: "server-provided detail",
@@ -193,10 +259,14 @@ describe("submitBulkImport", () => {
       .mockResolvedValue(
         Response.json({ message: "server-provided detail" }, { status: 500 }),
       );
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "unknown_error",
       message: "server-provided detail",
@@ -207,10 +277,14 @@ describe("submitBulkImport", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({}, { status: 500 }));
-    const result = await submitBulkImport(xlsxFile("catalog.xlsx", 100), {
-      fetcher,
-    });
-    expect(result).toEqual({
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      {
+        fetcher,
+      },
+    );
+    expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "unknown_error",
       message: "The import failed.",
@@ -221,6 +295,57 @@ describe("submitBulkImport", () => {
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("bilingual failure copy", () => {
+  /**
+   * The acceptance criterion for this surface: the toggle changes every
+   * string. A message this panel writes itself must therefore hold two
+   * languages, not one sentence repeated -- which is exactly what an
+   * English-only table looked like to a reader who chose Chinese.
+   */
+  it("gives its own failures a real translation, not the same sentence twice", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ code: "shopline_connection_missing" }, { status: 409 }),
+      );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+
+    expect(result.kind).toBe("api_error");
+    const [zh, en] = (result as { message: BilingualMessage }).message;
+    expect(zh).not.toBe(en);
+    expect(zh).toMatch(/[一-鿿]/);
+    expect(en).not.toMatch(/[一-鿿]/);
+  });
+
+  it("repeats a server-written message rather than inventing a translation", async () => {
+    // batch-list.tsx:87 takes the same position: text we did not write is
+    // shown as it stands, because translating it here would be invention.
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { code: "some_future_code", message: "server-provided detail" },
+          { status: 400 },
+        ),
+      );
+    const result = await submitBulkImport(
+      xlsxFile("catalog.xlsx", 100),
+      "2026-08-01T08:00",
+      { fetcher },
+    );
+
+    const [zh, en] = (result as { message: BilingualMessage }).message;
+    expect([zh, en]).toEqual([
+      "server-provided detail",
+      "server-provided detail",
+    ]);
+  });
+});
 
 describe("BulkImportPanel", () => {
   it("renders the real parsed/created/refreshed counts after a successful import", async () => {
@@ -235,6 +360,14 @@ describe("BulkImportPanel", () => {
         },
         { status: 201 },
       ),
+    );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        connection: { shopDomain: "synthetic.myshopline.com" },
+        canImport: true,
+        canManageConnection: false,
+        credentialStorageConfigured: true,
+      }),
     );
     vi.stubGlobal("fetch", fetcher);
 
@@ -255,12 +388,103 @@ describe("BulkImportPanel", () => {
     await act(async () => {
       input!.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    // submitBulkImport awaits one fetch + one .json() call, so flush once more.
+    const timeInput = container.querySelector<HTMLInputElement>(
+      "#merchant-attested-export-at",
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(timeInput, "2026-08-01T08:00");
     await act(async () => {
+      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
       await Promise.resolve();
     });
 
     expect(container.textContent).toContain("2");
+    expect(container.textContent).not.toMatch(
+      /已失效批准|Approvals invalidated/,
+    );
+
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+  });
+
+  it("shows how many approvals the import invalidated", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          specVersion: "opak-2026-05",
+          parsedRows: 2,
+          createdDrafts: 2,
+          refreshedProducts: 0,
+          invalidatedApprovals: 2,
+          issues: [],
+        },
+        { status: 201 },
+      ),
+    );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        connection: { shopDomain: "synthetic.myshopline.com" },
+        canImport: true,
+        canManageConnection: false,
+        credentialStorageConfigured: true,
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(BulkImportPanel));
+    });
+
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    Object.defineProperty(input!, "files", {
+      configurable: true,
+      value: [xlsxFile("catalog.xlsx", 100)],
+    });
+    await act(async () => {
+      input!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const timeInput = container.querySelector<HTMLInputElement>(
+      "#merchant-attested-export-at",
+    )!;
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(timeInput, "2026-08-01T08:00");
+    await act(async () => {
+      timeInput.dispatchEvent(new Event("input", { bubbles: true }));
+      timeInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toMatch(
+      /已失效批准 2 筆|Approvals invalidated: 2/,
+    );
+    expect(container.textContent).toMatch(
+      /須重新批准才能匯出|need renewed approval before export/,
+    );
 
     await act(async () => root.unmount());
     document.body.innerHTML = "";

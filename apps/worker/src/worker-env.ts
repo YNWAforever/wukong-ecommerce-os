@@ -1,23 +1,44 @@
 import type {
+  Hyperdrive,
+  Queue,
+  MessageBatch,
+} from "@cloudflare/workers-types";
+import type {
+  ProductShotJob,
   ListingJob,
+  WineListingJob,
+  WebsiteJob,
   QueueMessage,
   ShoplinePublishJob,
 } from "@wukong/jobs";
 
 export type WorkerEnv = {
   HYPERDRIVE: Hyperdrive;
-  LISTING_QUEUE: Queue<ListingJob>;
+  LISTING_QUEUE: Queue<
+    ListingJob | WineListingJob | WebsiteJob | ProductShotJob
+  >;
   SHOPLINE_QUEUE: Queue<ShoplinePublishJob>;
   QUEUE_INGRESS_SECRET?: string;
   BUILD_SHA?: string;
+  WEBSITE_FETCH_BASE_URL?: string;
   SHOPLINE_ADAPTER?: "disabled" | "mock" | "real";
   SHOPLINE_PUBLISH_ENABLED?: "true" | "false";
   SHOPLINE_TOKEN_ENCRYPTION_KEY?: string;
-  AI_PROVIDER?: "openai" | "fake";
+  LISTING_PAID_OPERATIONS_ENABLED?: "true" | "false";
+  AI_PROVIDER?: "openai" | "fake" | "openrouter" | "opencode-go";
+  OPENCODE_GO_API_KEY?: string;
+  TAVILY_API_KEY?: string;
+  WINE_ENRICHMENT_ENABLED?: "true" | "false";
+  OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
   TYPESAFE_VERIFICATION_MODE?: string;
   TYPESAFE_API_KEY?: string;
   TYPESAFE_MODEL?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_LISTING_MODEL?: string;
+  PRODUCT_SHOT_PROVIDER?: "disabled" | "fake" | "photoroom";
+  PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?: string;
+  PHOTOROOM_API_KEY?: string;
   S3_BUCKET?: string;
   S3_ENDPOINT?: string;
   S3_REGION?: string;

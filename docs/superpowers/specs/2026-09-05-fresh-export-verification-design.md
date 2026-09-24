@@ -1,0 +1,25 @@
+# Fresh-export verification design
+
+Approved scope: compare a later supplied SHOPLINE workbook with the exact delivered Bulk Update artifact; show intended-content matches, protected-field differences and missing/ambiguous products; retain evidence separately from operator reports. Synthetic-only development, no publication or operational rollout authority.
+
+## Contract
+
+A reviewer/admin/owner records a comparison for a ready export attempt with complete durable provenance. The server uses the authenticated workspace, validates all included version bindings, reads the existing artifact and verifies its SHA-256 before comparing. The supplied workbook must use the current Default/71-column contract, have at most 5,000 data rows and fit the existing 4 MiB upload limit. The form requires filename, explicit Hong Kong export time and an explicit same-store attestation. Time must be strictly after artifact readiness and no later than the injected server clock. No time is inferred from file metadata. No import, source refresh, draft, approval, operator result or publish mutation occurs.
+
+Comparison identity is the exact attempt/artifact digest plus supplied-workbook SHA-256, attested timestamp, attested same connection and comparison policy version. Repeated identical evidence returns the same record; different snapshots append new records. The server validates immutable attempt identity again when recording and writes a content-free audit event in the same transaction. The evidence table is workspace-scoped, append-only, references the same-workspace attempt, and has deterministic history ordering. No trusted evidence is backfilled.
+
+Match by exact product ID, never row order or SKU. The delivered workbook must match the provenance's exact included product membership. Later snapshots may contain unrelated products; their count is disclosed. Duplicate product IDs must never silently choose a row. Missing expected products and unsupported target variants are explicit inconclusive outcomes. Eight enrichable fields and 61 protected fields are compared as normalized strings, with per-field expected/observed values. Two quantity-delta instruction columns are shown separately and cannot establish stock neutrality. Changes in protected fields are observed differences, not claims that Wukong caused them.
+
+Retain the supplied workbook digest and the complete normalized relevant comparison rows/results sufficient to reproduce the comparison, plus policy, actor, timestamp, filename, attempt/version binding and connection. This first slice does not retain or offer a download of original supplied XLSX bytes and must state that explicitly. No claim of raw Excel type/style fidelity, authenticated merchant origin, causal application or current live SHOPLINE truth. Labels use "Matches compared fields" / "Differences found" / "Inconclusive" and "supplied snapshot; store and time operator-attested". Existing reconciliation.verificationStatus and operator accepted/rejected totals retain their current meaning; comparison records are a separate panel/history.
+
+## Operator flow
+
+Each ready export reconciliation panel offers a bilingual reviewer-only compare action. Choose workbook, enter Hong Kong export time, attest same store, submit; display safe validation/retry errors and retain inputs. Refresh the comparison history and show counts, per-product outcomes and field differences without hiding unresolved prior evidence. History has an explicit bounded page size/total and no false full-history claim. Existing exact report retries and reconciliation state ordering are preserved.
+
+## Validation
+
+Comparator regressions: all 71 categories, exact IDs/leading zeros/reorder, changed content, protected inventory/price/SKU, missing/duplicate target, extra catalog rows, variants, header/shape bounds, blank/+0 observations and normalization limits. Route regressions: unauthenticated/role/foreign attempt, missing/incomplete provenance, artifact hash mismatch, invalid/future/old time, same-store requirement, malformed/large workbook, repeat/new evidence, audit atomicity and no source/result/publish writes. Real isolated PostgreSQL: RLS and foreign FK rejection, append-only even after privilege regrant, idempotent races/history and migration fresh/upgrade/replay. Synthetic browser: export, compare matching snapshot, compare changed/missing product snapshot, retry/reload history, both locales and narrow viewport. Existing full suite remains regression gate.
+
+## Implementation bounds
+
+The comparator accepts the Default worksheet with the current English and Traditional Chinese header rows, 5,000 data rows, and cells of at most 32,767 characters. It rejects oversized evidence without truncation: normalized comparison and full response envelope are bounded to 2 MiB. History returns metadata and outcome/count summaries only (10 per page by default, maximum 20), with exact workspace-and-attempt-scoped full evidence fetched on demand by verification ID. Identical digest/time/connection/policy evidence retains the first recorded filename and actor; renaming the same snapshot does not replace that record.

@@ -1,4 +1,4 @@
-﻿import postgres from "postgres";
+import postgres from "postgres";
 
 /**
  * The audited lifecycle a draft must be able to show, in order.
@@ -38,6 +38,32 @@ export const REQUIRED_AUDIT_SEQUENCE = [
  * literals from this module, never user input, so interpolating them is safe.
  */
 export const TENANT_TABLES = [
+  "wine_stages",
+  "wine_evidence",
+  "wine_section_snapshots",
+  "wine_source_authorities",
+  "wine_trusted_contexts",
+  "wine_search_calls",
+  "wine_document_requests",
+  "wine_evidence_cache",
+  "search_budget_reservations",
+  "listing_enrichment_suggestions",
+  "listing_enrichment_decisions",
+  "listing_claim_supports",
+  "listing_version_claim_supports",
+  "listing_create_requests",
+  "ai_budget_reservations",
+  "listing_input_revisions",
+  "product_shot_attempts",
+  "product_shot_selections",
+  "product_shot_daily_dispatches",
+  "product_shot_publications",
+  "product_shot_approval_urls",
+  "website_scans",
+  "website_scan_steps",
+  "website_products",
+  "workbook_imports",
+  "workbook_products",
   "memberships",
   "workspace_invites",
   "listing_drafts",
@@ -50,11 +76,15 @@ export const TENANT_TABLES = [
   "shopline_connections",
   "platform_products",
   "source_imports",
+  "source_row_snapshots",
+  "bulk_update_approval_receipts",
   "review_confirmations",
   "export_attempts",
+  "export_verifications",
   "import_results",
   "enrichment_batches",
   "enrichment_batch_items",
+  "listing_dispatch_outbox",
   "publish_jobs",
   "review_events",
   "audit_events",
@@ -118,8 +148,10 @@ export async function verifyAudit(
   try {
     return await client.begin(async (transaction) => {
       await transaction`select set_config('app.workspace_id', ${input.workspaceId}, true)`;
-      const auditRows = await transaction<{ action: string }[]>`
-        select action
+      const auditRows = await transaction<
+        { action: string; metadata: Record<string, unknown> }[]
+      >`
+        select action, metadata
         from audit_events
         where workspace_id = ${input.workspaceId} and entity_id = ${input.draftId}
         order by created_at asc, id asc
@@ -148,6 +180,17 @@ export async function verifyAudit(
       const actions = auditRows.map((row) => row.action);
       const aiRunTasks = aiRows.map((row) => row.task);
       const missingActions = requiredSequenceMissing(actions);
+      const shots = await transaction<ProductShotAuditAttempt[]>`
+        select id, state, dispatched_at as "dispatchedAt", cutout_asset_id as "cutoutAssetId", candidate_asset_id as "candidateAssetId"
+        from product_shot_attempts where workspace_id=${input.workspaceId} and listing_id::text=${input.draftId}
+      `;
+      const shotPublications = await transaction<ProductShotAuditPublication[]>`
+        select id, attempt_id as "attemptId", version_id as "versionId", revoked_at as "revokedAt"
+        from product_shot_publications where workspace_id=${input.workspaceId} and listing_id::text=${input.draftId}
+      `;
+      missingActions.push(
+        ...productShotAuditMissing(shots, shotPublications, auditRows),
+      );
       for (const task of ["extract", "generate"] as const) {
         if (!aiRunTasks.includes(task)) missingActions.push(`ai_runs.${task}`);
       }
@@ -221,4 +264,166 @@ if (
   void main().then((exitCode) => {
     process.exitCode = exitCode;
   });
+}
+
+/** Website observations have their own lifecycle; no listing approval/export is inferred. */
+export async function verifyWebsiteAudit(input: {
+  workspaceId: string;
+  scanId: string;
+  url: string;
+}) {
+  if (!input.workspaceId.trim() || !input.scanId.trim())
+    throw new Error("workspace and scan are required");
+  const client = postgres(input.url, {
+    connect_timeout: 10,
+    max: 1,
+    prepare: false,
+  });
+  try {
+    return await client.begin(async (tx) => {
+      await tx`select set_config('app.workspace_id',${input.workspaceId},true)`;
+      const [scan] =
+        await tx`select state from website_scans where workspace_id=${input.workspaceId} and id=${input.scanId}`;
+      const events =
+        await tx`select action,metadata from audit_events where workspace_id=${input.workspaceId} and entity_id=${input.scanId}`;
+      const steps =
+        await tx`select revision from website_scan_steps where workspace_id=${input.workspaceId} and scan_id=${input.scanId} and request_state='completed'`;
+      const products =
+        await tx`select id from website_products where workspace_id=${input.workspaceId} and source_scan_id=${input.scanId}`;
+      const missingActions: string[] = [];
+      if (!scan) missingActions.push("website.scan_missing");
+      if (!events.some((e) => e.action === "website.scan_created"))
+        missingActions.push("website.scan_created");
+      for (const step of steps)
+        if (
+          !events.some(
+            (e) =>
+              e.action === "website.scan_step_completed" &&
+              e.metadata?.revision === step.revision,
+          )
+        )
+          missingActions.push(`website.scan_step_completed.${step.revision}`);
+      if (
+        scan &&
+        ["ready", "partial", "failed"].includes(String(scan.state)) &&
+        !events.some((e) => e.action === "website.scan_finished")
+      )
+        missingActions.push("website.scan_finished");
+      for (const product of products)
+        if (
+          !events.some(
+            (e) =>
+              e.action === "website.products_saved" &&
+              Array.isArray(e.metadata?.productIds) &&
+              e.metadata.productIds.includes(product.id),
+          )
+        )
+          missingActions.push(`website.products_saved.${product.id}`);
+      const probe = [
+        `select 'workspaces' as source,count(*)::bigint as count from workspaces where id<>$1`,
+        ...TENANT_TABLES.map(
+          (t) => `select '${t}',count(*) from ${t} where workspace_id<>$1`,
+        ),
+      ].join(" union all ");
+      const foreign = await tx.unsafe<{ source: string; count: number }[]>(
+        `select source,count::int from (${probe}) counts where count>0`,
+        [input.workspaceId],
+      );
+      return {
+        workspaceId: input.workspaceId,
+        scanId: input.scanId,
+        missingActions,
+        accessibleForeignRecordCount: foreign.reduce(
+          (n, r) => n + toCount(r),
+          0,
+        ),
+        accessibleForeignTables: foreign.map((r) => r.source),
+        passed: missingActions.length === 0 && foreign.length === 0,
+      };
+    });
+  } finally {
+    await client.end();
+  }
+}
+
+type ProductShotAuditAttempt = {
+  id: string;
+  state: string;
+  dispatchedAt: Date | null;
+  cutoutAssetId: string | null;
+  candidateAssetId: string | null;
+};
+type ProductShotAuditPublication = {
+  id: string;
+  attemptId: string;
+  versionId: string;
+  revokedAt: Date | null;
+};
+/** Optional image workflow: verify retained checkpoints by attempt and exact version,
+ * so one successful attempt cannot hide a missing event on another attempt. */
+export function productShotAuditMissing(
+  attempts: readonly ProductShotAuditAttempt[],
+  publications: readonly ProductShotAuditPublication[],
+  events: readonly {
+    action: string;
+    metadata: Record<string, unknown> | null;
+  }[],
+): string[] {
+  const missing: string[] = [];
+  const has = (
+    action: string,
+    attemptId: string,
+    versionId?: string,
+    publicationId?: string,
+  ) =>
+    events.some(
+      (event) =>
+        event.action === "product_shot." + action &&
+        event.metadata?.attemptId === attemptId &&
+        (versionId === undefined || event.metadata.versionId === versionId) &&
+        (publicationId === undefined ||
+          event.metadata.publicationId === publicationId),
+    );
+  for (const attempt of attempts) {
+    const required = ["requested"];
+    if (attempt.dispatchedAt) required.push("dispatched");
+    if (attempt.cutoutAssetId) required.push("cutout_saved");
+    if (attempt.candidateAssetId) required.push("candidate_saved");
+    if (attempt.state === "failed" || attempt.state === "outcome_unknown")
+      required.push(attempt.state);
+    for (const action of required)
+      if (!has(action, attempt.id))
+        missing.push(`product_shot.${action}:${attempt.id}`);
+  }
+  for (const publication of publications) {
+    if (!has("approved", publication.attemptId, publication.versionId))
+      missing.push(`product_shot.approved:${publication.id}`);
+    if (
+      publication.revokedAt &&
+      !has(
+        "revoked",
+        publication.attemptId,
+        publication.versionId,
+        publication.id,
+      )
+    )
+      missing.push(`product_shot.revoked:${publication.id}`);
+  }
+  const attemptIds = new Set(attempts.map((attempt) => attempt.id));
+  const replaced = new Set(
+    events
+      .filter(
+        (event) =>
+          event.action === "product_shot.source_replaced" &&
+          typeof event.metadata?.attemptId === "string" &&
+          typeof event.metadata.previousAttemptId === "string" &&
+          event.metadata.attemptId !== event.metadata.previousAttemptId &&
+          attemptIds.has(event.metadata.attemptId) &&
+          attemptIds.has(event.metadata.previousAttemptId),
+      )
+      .map((event) => event.metadata!.attemptId),
+  );
+  if (replaced.size < attempts.length - 1)
+    missing.push("product_shot.source_replaced");
+  return missing;
 }

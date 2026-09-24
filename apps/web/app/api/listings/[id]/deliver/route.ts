@@ -1,3 +1,4 @@
+import { createBulkExportDeps } from "../../../../../lib/bulk-export-service";
 import { z } from "zod";
 import {
   ASSET_EXPORT_READ_TTL_MS,
@@ -26,8 +27,29 @@ import {
 } from "../../../../../lib/delivery-service";
 
 const bodySchema = z
-  .object({ method: z.enum(["csv", "shopline_api", "bulk_form"]) })
+  .object({
+    method: z.enum(["csv", "shopline_api", "bulk_form"]),
+    attestedContentDigest: z.string().min(1).optional(),
+  })
   .strict();
+/**
+ * A bulk form delivery must say what the operator attested.
+ *
+ * The export path takes per-listing evidence; this path carries one listing,
+ * so it carries one digest. Refusing here keeps the two paths honest about
+ * the same thing rather than letting this one default its way past the gate.
+ */
+function requireAttestation(digest: string | undefined): string {
+  if (!digest) {
+    throw new ApiError(
+      400,
+      "attestation_incomplete",
+      "A bulk form delivery must carry the attested source digest.",
+    );
+  }
+  return digest;
+}
+
 export const runtime = "nodejs";
 type RouteContext = { params: Promise<{ id: string }> };
 type DeliveryPort = { deliver(input: DeliverInput): Promise<DeliveryResult> };
@@ -117,6 +139,13 @@ function responseFor(result: DeliveryResult, listingId: string): Response {
         message: "SHOPLINE is not connected; use CSV fallback.",
         csvFallback: result.csvFallback,
       });
+    case "bulk_update_ineligible":
+      return jsonResponse(409, {
+        code: result.entry.reason ?? result.entry.outcome,
+        message:
+          "Bulk Update review or source evidence is incomplete or changed; reload before exporting.",
+        manifest: [result.entry],
+      });
     case "no_remote_link":
       return jsonResponse(409, {
         code: "no_remote_link",
@@ -145,8 +174,31 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
           actorId: session.actorId,
           draftId: id,
           method: body.method,
+          ...(body.method === "bulk_form"
+            ? {
+                // Absence used to coerce to false and ride into createBulkExport
+                // as an unattested export, so the first UI wired to this method
+                // would have inherited a refusal nobody chose. There is no
+                // bulk_form UI today; when there is, it must fail loudly here
+                // rather than silently.
+                attestedContentDigest: requireAttestation(
+                  body.attestedContentDigest,
+                ),
+              }
+            : {}),
         });
       } catch (error) {
+        if (
+          error instanceof Error &&
+          ((error.name === "ProductShotConflict" &&
+            (error as { code?: string }).code === "image_approval_required") ||
+            error.name === "ProductImageApprovalRequiredError")
+        )
+          throw new ApiError(
+            409,
+            "image_approval_required",
+            "Approve the current product image and restore its publication before exporting.",
+          );
         if (
           error instanceof Error &&
           /listing not found|foreign listing/i.test(error.message)
@@ -177,12 +229,40 @@ export function defaultDelivery(
           input.workspaceId,
           async (repositories) => {
             return deliverListing(input, {
-              listings: repositories.listings,
-              imageUrls: (workspaceId, draftId, imageAssetIds) =>
+              bulkUpdate: createBulkExportDeps(repositories),
+              listings: {
+                ...repositories.listings,
+                async approvalState(draftId) {
+                  const states =
+                    await repositories.listings.approvalStatesByIds?.([
+                      draftId,
+                    ]);
+                  return states?.[draftId] ?? null;
+                },
+              },
+              imageUrls: async (
+                workspaceId,
+                draftId,
+                imageAssetIds,
+                versionId,
+              ) =>
                 resolveListingImageUrls({
                   workspaceId,
                   draftId,
                   imageAssetIds,
+                  publication:
+                    (await repositories.productShots.requiresWorkflow({
+                      listingId: draftId,
+                      provider: process.env.PRODUCT_SHOT_PROVIDER,
+                    }))
+                      ? {
+                          versionId,
+                          resolveApprovedProductImage: (value) =>
+                            repositories.productShots.resolveApprovedProductImage(
+                              value,
+                            ),
+                        }
+                      : undefined,
                   sourceAssets: repositories.sourceAssets,
                   assetStore,
                   // The operator downloads this file and uploads it to SHOPLINE
@@ -215,12 +295,31 @@ export function defaultDelivery(
         input.workspaceId,
         async (repositories) => {
           return prepareShoplineDelivery(input, {
-            listings: repositories.listings,
-            imageUrls: (workspaceId, draftId, imageAssetIds) =>
+            listings: {
+              ...repositories.listings,
+              async approvalState(draftId) {
+                const states =
+                  await repositories.listings.approvalStatesByIds?.([draftId]);
+                return states?.[draftId] ?? null;
+              },
+            },
+            imageUrls: async (workspaceId, draftId, imageAssetIds, versionId) =>
               resolveListingImageUrls({
                 workspaceId,
                 draftId,
                 imageAssetIds,
+                publication: (await repositories.productShots.requiresWorkflow({
+                  listingId: draftId,
+                  provider: process.env.PRODUCT_SHOT_PROVIDER,
+                }))
+                  ? {
+                      versionId,
+                      resolveApprovedProductImage: (value) =>
+                        repositories.productShots.resolveApprovedProductImage(
+                          value,
+                        ),
+                    }
+                  : undefined,
                 sourceAssets: repositories.sourceAssets,
                 assetStore,
               }),

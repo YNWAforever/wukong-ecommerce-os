@@ -13,7 +13,7 @@ pnpm 11.7 + Turborepo monorepo · Node 24 · TypeScript 7 (5.9 in `apps/web`), s
 - **Worker**: Cloudflare Workers (wrangler) — Queues, Hyperdrive, R2
 - **DB**: Postgres (Neon) via Drizzle ORM + `postgres` driver; raw SQL migrations
 - **Auth**: better-auth (email/password + magic link), argon2, nodemailer
-- **AI**: `openai` SDK directly in `packages/ai` — no OpenRouter here
+- **AI**: `openai` SDK in `packages/ai` — OpenAI and explicitly selected OpenRouter listing adapters
 - **Validation**: zod v4 everywhere · **Tests**: Vitest + Playwright · **Format**: Prettier
 
 ## Build & Run
@@ -38,7 +38,7 @@ apps/web        Next.js UI + API routes (Vercel)
 apps/worker     Cloudflare Worker: HMAC ingress + Queue consumers
 packages/core   Domain: listing schema, workflow state machine, compliance, review, audit ports
 packages/db     Drizzle schema, raw SQL migrations, workspace-scoped repositories, audit:verify CLI
-packages/ai     ListingAIProvider contract, OpenAI + fake implementations, prompts, evals
+packages/ai     ListingAIProvider contract, OpenAI + OpenRouter + fake implementations, prompts, evals
 packages/shopline  SHOPLINE connector, projection, CSV fallback, token vault
 packages/assets S3/R2 asset store, presigning, key canonicalization
 packages/jobs   Queue message contracts (zod)

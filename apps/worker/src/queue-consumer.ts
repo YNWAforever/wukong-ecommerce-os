@@ -1,3 +1,13 @@
+import { consumeWineMessage as defaultConsumeWineMessage } from "./wine-consumer.js";
+import {
+  consumeProductShotMessage as defaultConsumeProductShotMessage,
+  PRODUCT_SHOT_MAX_ATTEMPTS,
+  type ProductShotAttempt,
+} from "./product-shot-consumer.js";
+import {
+  consumeWebsiteMessage as defaultConsumeWebsiteMessage,
+  type WebsiteConsumerOutcome,
+} from "./website-consumer.js";
 import {
   consumeListingMessage as defaultConsumeListingMessage,
   LISTING_MAX_ATTEMPTS,
@@ -30,6 +40,19 @@ type ListingAttempt = {
 };
 
 type QueueDependencies = {
+  consumeWineMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<ListingConsumerOutcome>;
+  consumeProductShotMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+    attempt: ProductShotAttempt,
+  ) => Promise<"ack" | { retryAfterSeconds: number }>;
+  consumeWebsiteMessage?: (
+    payload: unknown,
+    env: WorkerEnv,
+  ) => Promise<WebsiteConsumerOutcome>;
   consumeListingMessage?: (
     payload: unknown,
     env: WorkerEnv,
@@ -72,10 +95,51 @@ export async function handleQueue(
   const consume =
     dependencies.consumeListingMessage ?? defaultConsumeListingMessage;
   for (const message of batch.messages) {
-    const outcome = await consume(message.body, env, {
-      attempt: message.attempts,
-      maxAttempts: LISTING_MAX_ATTEMPTS,
-    });
+    if (
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "flowVersion" in message.body
+    ) {
+      const outcome = await (
+        dependencies.consumeWineMessage ?? defaultConsumeWineMessage
+      )(message.body, env);
+      if (outcome === "ack") message.ack();
+      else message.retry({ delaySeconds: outcome.retryAfterSeconds });
+      continue;
+    }
+    if (
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "kind" in message.body &&
+      message.body.kind === "product_shot"
+    ) {
+      // Product-shot messages ride the listing queue, so they share its retry
+      // budget. The consumer needs to know which delivery this is: the last one
+      // has to record a terminal state, because the listing DLQ has no consumer
+      // and the attempt row would otherwise stay `queued` for ever.
+      const outcome = await (
+        dependencies.consumeProductShotMessage ??
+        defaultConsumeProductShotMessage
+      )(message.body, env, {
+        attempt: message.attempts,
+        maxAttempts: PRODUCT_SHOT_MAX_ATTEMPTS,
+      });
+      if (outcome === "ack") message.ack();
+      else message.retry({ delaySeconds: outcome.retryAfterSeconds });
+      continue;
+    }
+    const website =
+      typeof message.body === "object" &&
+      message.body !== null &&
+      "kind" in message.body;
+    const outcome = website
+      ? await (
+          dependencies.consumeWebsiteMessage ?? defaultConsumeWebsiteMessage
+        )(message.body, env)
+      : await consume(message.body, env, {
+          attempt: message.attempts,
+          maxAttempts: LISTING_MAX_ATTEMPTS,
+        });
     if (outcome === "ack") message.ack();
     else message.retry({ delaySeconds: outcome.retryAfterSeconds });
   }

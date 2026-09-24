@@ -4,6 +4,9 @@ import {
   LISTING_INGRESS_PATH,
   SHOPLINE_INGRESS_PATH,
   listingJobSchema,
+  wineListingJobSchema,
+  wineStageMessageKey,
+  listingRunKey,
   shoplinePublishJobSchema,
   signQueueRequest,
   verifyQueueRequest,
@@ -105,5 +108,109 @@ describe("queue signing vector", () => {
         body: "{}",
       }),
     ).resolves.toBe("6UdPcVDj1a7-vHLBVMYWhcENn3OQzYFUdJVk2GhFpkE");
+  });
+});
+
+describe("listing run identity", () => {
+  const base = { workspaceId: "ws_opak", draftId, activeVersionSequence: 0 };
+
+  it("keeps the historical key for the first run", () => {
+    // Every run already recorded was keyed this way. A new key format here
+    // would orphan them and re-run work that is already done and paid for.
+    expect(listingRunKey(base)).toBe(`listing:ws_opak:${draftId}:0`);
+    expect(listingRunKey({ ...base, runAttempt: 0 })).toBe(
+      `listing:ws_opak:${draftId}:0`,
+    );
+  });
+
+  it("gives a deliberate re-run its own key", () => {
+    expect(listingRunKey({ ...base, runAttempt: 1 })).toBe(
+      `listing:ws_opak:${draftId}:0#1`,
+    );
+    expect(listingRunKey({ ...base, runAttempt: 2 })).not.toBe(
+      listingRunKey({ ...base, runAttempt: 1 }),
+    );
+  });
+
+  it("distinguishes a re-run from a later revision", () => {
+    // Attempt 1 of revision 0 and revision 1 are different work; collapsing
+    // them would let one read back the other's cached result.
+    expect(listingRunKey({ ...base, runAttempt: 1 })).not.toBe(
+      listingRunKey({ ...base, activeVersionSequence: 1 }),
+    );
+  });
+
+  it("accepts a message from a producer that predates runAttempt", () => {
+    const parsed = listingJobSchema.parse(base);
+    expect(parsed.runAttempt).toBeUndefined();
+    expect(listingRunKey(parsed)).toBe(`listing:ws_opak:${draftId}:0`);
+  });
+
+  it("still rejects an unknown field", () => {
+    expect(() =>
+      listingJobSchema.parse({ ...base, operationId: "nope" }),
+    ).toThrow();
+  });
+
+  it("rejects a runAttempt that is not a bounded non-negative integer", () => {
+    for (const runAttempt of [-1, 1.5, 1000]) {
+      expect(() => listingJobSchema.parse({ ...base, runAttempt })).toThrow();
+    }
+  });
+});
+
+describe("wine stage envelope", () => {
+  const runId = "987330b0-9c2b-43eb-956d-e924052e3cb5";
+  const message = {
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    workspaceId: "ws_wine",
+    draftId,
+    runId,
+    inputRevision: 1,
+    activeVersionSequence: 0,
+    stage: "extraction",
+  };
+  it("parses marked stage coordinates without enabling the legacy consumer", () => {
+    expect(wineListingJobSchema.parse(message)).toEqual(message);
+    expect(listingJobSchema.safeParse(message).success).toBe(false);
+    expect(wineStageMessageKey(runId, "extraction")).toBe(
+      `wine-run:${runId}:extraction`,
+    );
+    expect(wineStageMessageKey(runId, "generation")).not.toBe(
+      wineStageMessageKey(runId, "extraction"),
+    );
+  });
+  it.each([
+    "schemaVersion",
+    "flowVersion",
+    "workspaceId",
+    "draftId",
+    "runId",
+    "inputRevision",
+    "activeVersionSequence",
+    "stage",
+  ])("requires %s", (key) => {
+    const malformed = { ...message } as Record<string, unknown>;
+    delete malformed[key];
+    expect(wineListingJobSchema.safeParse(malformed).success).toBe(false);
+  });
+  it.each([
+    { flowVersion: "unknown" },
+    { stage: "publish" },
+    { inputRevision: 0 },
+    { runId: "bad" },
+    { schemaVersion: 1 },
+    { wineMode: "copy" },
+    { policy: {} },
+    { runAttempt: 1 },
+  ])("rejects altered or unowned coordinates %j", (change) => {
+    expect(
+      wineListingJobSchema.safeParse({ ...message, ...change }).success,
+    ).toBe(false);
+  });
+  it("validates key coordinates at runtime", () => {
+    expect(() => wineStageMessageKey("bad:id", "extraction")).toThrow();
+    expect(() => wineStageMessageKey(runId, "publish" as never)).toThrow();
   });
 });

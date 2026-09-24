@@ -30,6 +30,7 @@ export type JobsLedgerSources = {
 };
 
 const BATCH_STATUS: Record<EnrichmentBatch["status"], NormalizedStatus> = {
+  paused: "pending",
   open: "pending",
   running: "running",
   completed: "succeeded",
@@ -161,13 +162,28 @@ export function buildJobsLedger(
         kind: "export",
         id: attempt.id,
         listingId: null,
-        normalizedStatus: "succeeded",
-        rawStatus: "export_attempts",
+        normalizedStatus:
+          attempt.artifactStatus === "pending"
+            ? "pending"
+            : attempt.artifactStatus === "failed"
+              ? "failed"
+              : attempt.artifactStatus === "ready" ||
+                  attempt.artifactStatus == null
+                ? "succeeded"
+                : FALLBACK_STATUS,
+        rawStatus: attempt.artifactStatus ?? "export_attempts",
         createdAt: attempt.createdAt,
         summary:
-          excluded > 0
+          (excluded > 0
             ? `Export: ${included} row(s), ${excluded} excluded`
-            : `Export: ${included} row(s)`,
+            : `Export: ${included} row(s)`) +
+          (attempt.provenance == null
+            ? " (historical; provenance incomplete)"
+            : attempt.artifactStatus === "pending"
+              ? " (file pending)"
+              : attempt.artifactStatus === "failed"
+                ? " (file failed)"
+                : ""),
       };
     }),
     ...sources.importResults.map((result): LedgerEntry => ({
@@ -177,10 +193,7 @@ export function buildJobsLedger(
       normalizedStatus: result.outcome === "accepted" ? "succeeded" : "failed",
       rawStatus: result.outcome,
       createdAt: result.createdAt,
-      summary:
-        result.outcome === "accepted"
-          ? "Import accepted by SHOPLINE"
-          : `Import rejected: ${truncateRejectReason(result.rejectReason)}`,
+      summary: `${result.mode === "export" ? "Operator reported" : "Historical/manual operator reported"} ${result.outcome} (unverified)${result.outcome === "rejected" ? `: ${truncateRejectReason(result.rejectReason)}` : ""}`,
     })),
   ];
 
@@ -205,7 +218,15 @@ export function buildJobsLedger(
     // Descending, matching Task 1's listForWorkspace tiebreak convention
     // (desc(createdAt), desc(id)) -- keeps a same-instant tie ordered the
     // same way whether it's read via a repository directly or through here.
-    return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+    return a.id > b.id
+      ? -1
+      : a.id < b.id
+        ? 1
+        : a.kind > b.kind
+          ? -1
+          : a.kind < b.kind
+            ? 1
+            : 0;
   });
   return entries.slice(0, limit);
 }

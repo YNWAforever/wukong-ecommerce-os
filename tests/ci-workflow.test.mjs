@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { check } from "prettier";
+
 import {
   knownFormatDebtEntries,
   matchesKnownFormatDebt,
+  protectedUnrelatedFileEntries,
 } from "../scripts/check-runtime-format.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -147,7 +151,10 @@ test("runs the real storage, mail, browser, and audit release gate", () => {
     workflow,
     /pnpm exec playwright test --project=chromium --workers=1 --reporter=line/,
   );
-  assert.match(workflow, /audit:verify --workspace ws_opak --draft/);
+  assert.match(
+    workflow,
+    /audit:verify --workspace "\$WORKSPACE_ID" --draft "\$DRAFT_ID"/,
+  );
 });
 
 test("defines a reproducible runtime formatting gate", () => {
@@ -168,16 +175,14 @@ test("renders and validates Cloudflare configuration without production credenti
     workflow,
     /node --test tests\/ci-workflow\.test\.mjs tests\/cloudflare-config\.test\.mjs/,
   );
-  const playwrightStep = workflow.indexOf(
-    "Playwright Wrangler Queue acceptance",
-  );
+  const playwrightStep = workflow.indexOf("- name: Playwright");
   const localConnection = workflow.indexOf(
     "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE:",
   );
   assert.ok(playwrightStep >= 0);
   assert.ok(
     localConnection > playwrightStep,
-    "the local Hyperdrive connection belongs only to the Playwright step",
+    "the local Hyperdrive connection belongs only to the Playwright steps",
   );
   assert.match(
     workflow,
@@ -236,28 +241,8 @@ test("documents the isolated Cloudflare production runtime and stop conditions",
 test("keeps the formatting-debt waiver exact, hash-pinned, and fail-closed", () => {
   const expected = [
     [
-      "apps/web/app/api/assets/finalize/route.test.ts",
-      "3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b",
-    ],
-    [
-      "apps/web/app/api/assets/finalize/route.ts",
-      "5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2",
-    ],
-    [
-      "apps/web/app/api/assets/presign/route.ts",
-      "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
-    ],
-    [
-      "apps/worker/src/listing-consumer.test.ts",
-      "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
-    ],
-    [
       "packages/db/src/publish-jobs-schema.test.ts",
       "8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8",
-    ],
-    [
-      "packages/jobs/src/cloudflare-queue.ts",
-      "1f17ed387564268afbdf82c4354a04d7e27b0525d0d2a5dfc613c925796f1b43",
     ],
   ];
   assert.deepEqual(knownFormatDebtEntries(), expected);
@@ -405,4 +390,189 @@ test("uses one stable Compose project across worktrees", () => {
   assert.ok(inspect >= 0 && down > inspect && up > down);
   assert.match(localRunbook, /shared Compose project[\s\S]*worktree/i);
   assert.match(localRunbook, /--force-recreate[\s\S]*replace/i);
+});
+
+test("prepares the configured local bucket before storage integration tests", () => {
+  const prepare = workflow.indexOf(
+    "- name: Prepare integration object storage",
+  );
+  const integration = workflow.indexOf("- name: Integration tests");
+  assert.ok(
+    prepare >= 0,
+    "CI must create its bucket before first integration write",
+  );
+  assert.ok(
+    prepare < integration,
+    "bucket setup must precede integration tests",
+  );
+  const step = workflow.slice(prepare, integration);
+  assert.match(step, /CreateBucketCommand/);
+  assert.match(step, /HeadBucketCommand/);
+  assert.match(step, /Bucket: process.env.S3_BUCKET/);
+  assert.match(step, /endpoint: process.env.S3_ENDPOINT/);
+  assert.match(step, /BucketAlreadyOwnedByYou/);
+  assert.match(step, /throw error/);
+});
+
+test("runs product-shot acceptance separately with synthetic image processing and TLS", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  assert.ok(
+    image >= 0 && image < legacy,
+    "image mode must run separately before legacy audit evidence",
+  );
+  const step = workflow.slice(image, legacy);
+  assert.match(step, /WUKONG_PRODUCT_SHOT_E2E: "1"/);
+  assert.match(step, /playwright test tests\/e2e\/product-shot\.spec\.ts/);
+  assert.match(step, /--retries=0/);
+  assert.match(step, /openssl verify/);
+  assert.match(step, /photoroom-services\/certs\/public\.crt/);
+  const config = readFileSync(
+    new URL("../playwright.config.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(config, /WUKONG_PRODUCT_SHOT_E2E/);
+  assert.match(config, /testIgnore:[\s\S]*?product-shot\.spec\.ts/);
+});
+
+test("CI image mode exercises both synthetic failure outcomes for the actual fixture bytes", () => {
+  const image = workflow.indexOf("- name: Playwright product-shot acceptance");
+  const legacy = workflow.indexOf(
+    "- name: Playwright Wrangler Queue acceptance",
+  );
+  const step = workflow.slice(image, legacy);
+  const configured = step.match(/PRODUCT_SHOT_SYNTHETIC_SCENARIO: '([^']+)'/);
+  assert.ok(
+    configured,
+    "image acceptance must configure fake failure scenarios",
+  );
+  const scenarios = JSON.parse(configured[1]);
+  const fixture = readFileSync(
+    new URL("./e2e/real-stack-fixture.ts", import.meta.url),
+    "utf8",
+  );
+  for (const [name, outcome] of [
+    ["definitiveFailure", "definitive_failure"],
+    ["ambiguous", "ambiguous_completion"],
+  ]) {
+    const match = fixture.match(
+      new RegExp(`${name}: Buffer\\.from\\(\\s*"([^"]+)"`),
+    );
+    assert.ok(match, `synthetic ${name} image must exist`);
+    const digest = createHash("sha256")
+      .update(Buffer.from(match[1], "base64"))
+      .digest("hex");
+    assert.equal(scenarios[digest], outcome);
+  }
+  assert.equal(Object.keys(scenarios).length, 2);
+  assert.doesNotMatch(
+    workflow.slice(legacy),
+    /PRODUCT_SHOT_SYNTHETIC_SCENARIO:/,
+  );
+});
+
+test("browser modes allow the real-stack harness to stop detached children", async () => {
+  const previous = process.env.PLAYWRIGHT_E2E;
+  process.env.PLAYWRIGHT_E2E = "1";
+  try {
+    const { default: config } = await import("../playwright.config.ts");
+    assert.deepEqual(config.webServer.gracefulShutdown, {
+      signal: "SIGTERM",
+      timeout: 15000,
+    });
+    if (process.platform !== "win32")
+      assert.match(config.webServer.command, /&& exec node/);
+    assert.equal(config.webServer.reuseExistingServer, !process.env.CI);
+  } finally {
+    if (previous === undefined) delete process.env.PLAYWRIGHT_E2E;
+    else process.env.PLAYWRIGHT_E2E = previous;
+  }
+});
+
+test("audits the workspace and draft emitted by the same completed browser fixture", () => {
+  assert.match(
+    workflow,
+    /WORKSPACE_ID="\$\(cat test-results\/real-stack-workspace-id\.txt\)"/,
+  );
+  assert.match(workflow, /test -n "\$WORKSPACE_ID"/);
+  const pilot = readFileSync(
+    new URL("./e2e/listing-pilot.spec.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    pilot,
+    /writeFile\(\s*"test-results\/real-stack-workspace-id\.txt",\s*OPAK_WORKSPACE_ID,/,
+  );
+  assert.match(
+    pilot,
+    /writeFile\("test-results\/real-stack-draft-id\.txt", draftId!/,
+  );
+});
+
+test("keeps the protected-file exclusions exact and self-justifying", async () => {
+  // The gate has two escape hatches. knownFormatDebt is hash-pinned and has
+  // been pinned by a test for as long as it has existed. protectedUnrelatedFiles
+  // was neither exported nor tested, so a path added to it left the gate in
+  // silence -- and because the gate diff-scopes to merge-base..HEAD, a file
+  // already on main is never looked at either. That combination is how the
+  // 2026-08-30 specification sat unformatted while CI stayed green, with the
+  // failure waiting for the next commit that happened to touch it.
+  const expected = [
+    ".gitignore",
+    "apps/web/.gitignore",
+    "apps/web/auth.test.ts",
+    "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
+    "docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md",
+  ];
+
+  assert.deepEqual(protectedUnrelatedFileEntries(), expected);
+
+  // A Prettier-clean file must never be parked here. The list is for documents
+  // kept exactly as received; it is not a way to skip formatting. The two
+  // dotfiles are belt-and-braces: extname is "" for both, which is not in
+  // supportedExtensions, so the gate never reaches them regardless.
+  for (const file of expected) {
+    if (!file.endsWith(".md") && !file.endsWith(".ts")) continue;
+    const source = readFileSync(
+      new URL(file, new URL("../", import.meta.url)),
+      "utf8",
+    ).replaceAll("\r\n", "\n");
+    assert.equal(
+      await check(source, { filepath: file }),
+      false,
+      file + " is Prettier-clean, so it does not need an exemption",
+    );
+  }
+});
+
+test("keeps the three end-to-end ports disjoint", () => {
+  // The auth mode and the real-stack public-image server both claimed 49218.
+  // Whichever started second died on EADDRINUSE, and because
+  // real-stack-server.mjs binds the application port as well, losing the image
+  // port took the app down with it -- so the failure surfaced as a refused
+  // connection on 49217, a port that was never the conflict. Derived from the
+  // sources rather than restated, so moving a port cannot re-collide silently.
+  const config = readFileSync(
+    new URL("playwright.config.ts", new URL("../", import.meta.url)),
+    "utf8",
+  );
+  const harness = readFileSync(
+    new URL("tests/e2e/real-stack-server.mjs", new URL("../", import.meta.url)),
+    "utf8",
+  );
+
+  const authPort = /--port (\d+)"/.exec(config)?.[1];
+  const appPort = /PORT: "(\d+)"/.exec(config)?.[1];
+  const imagePort = /publicImagePort = (\d+);/.exec(harness)?.[1];
+
+  assert.ok(authPort, "auth-mode dev server port not found");
+  assert.ok(appPort, "real-stack app port not found");
+  assert.ok(imagePort, "public-image port not found");
+  assert.equal(
+    new Set([authPort, appPort, imagePort]).size,
+    3,
+    `ports collide: auth=${authPort} app=${appPort} image=${imagePort}`,
+  );
 });

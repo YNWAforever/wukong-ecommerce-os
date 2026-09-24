@@ -7,7 +7,8 @@ type ComplianceFlagFields = {
     | "health_claim"
     | "guarantee"
     | "rating_without_evidence"
-    | "superlative";
+    | "superlative"
+    | "exclusivity";
   severity: "blocking" | "warning";
 };
 
@@ -19,14 +20,197 @@ export type ComplianceFlag = ComplianceFlagFields &
 
 const blockingPatterns = [
   { rule: "health_claim" as const, pattern: /health benefit|治療|保健功效/i },
-  { rule: "guarantee" as const, pattern: /guaranteed|保證/i }
+  { rule: "guarantee" as const, pattern: /guaranteed|保證/i },
 ];
 
+/**
+ * Wording that asserts a rank rather than a property.
+ *
+ * A warning, not a blocker. "Finest" is a claim someone has to stand behind,
+ * but stopping every listing that uses one would stop the pilot, and the flag
+ * already forces a human to look. Kept narrow on purpose: "perfect with grilled
+ * lamb" is a pairing suggestion, not a superlative, so `perfect` is not here.
+ */
+const SUPERLATIVE =
+  // No `\b` before `#`: it is not a word character, so the boundary can never
+  // match at the start of "#1 in its appellation".
+  /\b(?:the\s+)?(?:best|finest|greatest|unrivall?ed|unmatched|unsurpassed|number\s+one)\b|\bworld'?s\s+(?:best|finest)\b|#\s?1\b|最佳|最好|最頂級|世界第一|無與倫比/i;
+
+/**
+ * Wording that asserts a score or an award.
+ *
+ * Deliberately matches the CLAIM, not the value: `95 points`, `RP 95`, `gold
+ * medal`, a named critic. Whether the claim is allowed is decided by whether
+ * the listing carries a grounded `criticScores` or `awards` fact -- and a fact
+ * exists only if extraction tied it to an evidence excerpt.
+ */
+const RATING_CLAIM =
+  /\b\d{2,3}\s*(?:points|pts)\b|\b(?:RP|WS|JS|WA|AG)\s?\d{2,3}\b|\b(?:robert\s+parker|wine\s+spectator|james\s+suckling|decanter|jancis\s+robinson|wine\s+advocate)\b|\b(?:gold|silver|bronze)\s+medal\b|\b\d{2,3}\s*分\b|金獎|銀獎|銅獎|帕克/i;
+
+/**
+ * Wording that claims a product is uniquely available here.
+ *
+ * A warning rather than a blocker, and the reason is a real limitation: the
+ * workspace policy says "exclusivity claims require evidence", but the listing
+ * schema carries no exclusivity fact to check that evidence against -- unlike a
+ * critic score or an award. So this is the strongest honest enforcement
+ * available: a person has to look and, if the claim is good, answer the flag
+ * with the reason. Making it blocking would block every listing that says
+ * "exclusive" with no mechanical way to satisfy it.
+ */
+const EXCLUSIVITY_CLAIM =
+  /\bexclusiv(?:e|ely|ity)\b|\bsole\s+(?:importer|distributor|agent|stockist)\b|\bonly\s+(?:available|stockist)\b|獨家|唯一(?:指定)?(?:代理|進口)?|總代理/i;
+
+/**
+ * What the listing can actually support, as extracted and grounded.
+ *
+ * Only the counts matter: a fact exists at all only if extraction tied it to an
+ * evidence excerpt, so "this listing has a critic score" already means
+ * "something in the source said so".
+ */
+export type GroundedClaims = {
+  criticScores: ReadonlyArray<{
+    source?: unknown;
+    score?: unknown;
+    evidenceId?: unknown;
+  }>;
+  awards: ReadonlyArray<{
+    name?: unknown;
+    year?: unknown;
+    evidenceId?: unknown;
+  }>;
+};
+
+const CRITIC_ALIASES: ReadonlyArray<{
+  pattern: RegExp;
+  factPattern: RegExp;
+}> = [
+  {
+    pattern: /\b(?:robert\s+parker|RP|wine\s+advocate|WA)\b/i,
+    factPattern: /robert\s+parker|wine\s+advocate|\bRP\b|\bWA\b/i,
+  },
+  {
+    pattern: /\b(?:wine\s+spectator|WS)\b/i,
+    factPattern: /wine\s+spectator|\bWS\b/i,
+  },
+  {
+    pattern: /\b(?:james\s+suckling|JS)\b/i,
+    factPattern: /james\s+suckling|\bJS\b/i,
+  },
+  {
+    pattern: /\b(?:antonio\s+galloni|AG)\b/i,
+    factPattern: /antonio\s+galloni|\bAG\b/i,
+  },
+  { pattern: /\bdecanter\b/i, factPattern: /decanter/i },
+  { pattern: /\bjancis\s+robinson\b/i, factPattern: /jancis\s+robinson/i },
+  { pattern: /帕克/i, factPattern: /robert\s+parker|帕克|\bRP\b/i },
+];
+
+function ratingClaimSupported(value: string, claims: GroundedClaims): boolean {
+  const hasEvidence = (fact: { evidenceId?: unknown }) =>
+    typeof fact.evidenceId === "string" && fact.evidenceId.trim().length > 0;
+  const scoreValue = (score: unknown) =>
+    String(score ?? "")
+      .trim()
+      .match(/^(\d{1,3})(?:\/(?:20|100))?$/)?.[1];
+  let recognized = false;
+  // Check every named critic separately, binding its adjacent score when present.
+  for (const critic of CRITIC_ALIASES) {
+    for (const match of value.matchAll(
+      new RegExp(critic.pattern.source, "gi"),
+    )) {
+      recognized = true;
+      const before = value.slice(0, match.index);
+      const after = value.slice(match.index! + match[0].length);
+      const score =
+        after.match(
+          /^\s*(?:(?:awarded|rated|score[sd]?|評分|給予|[:：-])\s*)?(\d{2,3})(?:\b|\s*分)/i,
+        )?.[1] ??
+        before.match(
+          /(\d{2,3})\s*(?:points|pts|分)\s*(?:(?:by|from)\s*)?$/i,
+        )?.[1];
+      if (
+        !claims.criticScores.some(
+          (fact) =>
+            hasEvidence(fact) &&
+            typeof fact.source === "string" &&
+            critic.factPattern.test(fact.source) &&
+            (!score || scoreValue(fact.score) === score),
+        )
+      )
+        return false;
+    }
+  }
+  // A supported first claim never licenses another unsupported number later in the field.
+  for (const match of value.matchAll(
+    /\b(\d{2,3})\s*(?:points|pts)\b|\b(?:RP|WS|JS|WA|AG)\s?(\d{2,3})\b|\b(\d{2,3})\s*分/gi,
+  )) {
+    recognized = true;
+    const score = match.slice(1).find(Boolean);
+    if (
+      !claims.criticScores.some(
+        (fact) => hasEvidence(fact) && scoreValue(fact.score) === score,
+      )
+    )
+      return false;
+  }
+  const medals = [
+    { claim: /\bgold\s+medal\b|金獎/gi, fact: /\bgold\b|金獎/i },
+    { claim: /\bsilver\s+medal\b|銀獎/gi, fact: /\bsilver\b|銀獎/i },
+    { claim: /\bbronze\s+medal\b|銅獎/gi, fact: /\bbronze\b|銅獎/i },
+  ];
+  for (const medal of medals)
+    for (const match of value.matchAll(medal.claim)) {
+      recognized = true;
+      const clause =
+        value
+          .slice(0, match.index)
+          .split(/[;.!?\n；。]/)
+          .at(-1)! + value.slice(match.index).split(/[;.!?\n；。]/)[0]!;
+      const years = clause.match(/\b(?:19|20)\d{2}\b/g) ?? [];
+      const competition = clause.match(
+        /\b(?:decanter|IWSC|IWC|international\s+wine\s+challenge|international\s+wine\s+and\s+spirit\s+competition)\b/i,
+      )?.[0];
+      if (
+        !claims.awards.some(
+          (fact) =>
+            hasEvidence(fact) &&
+            typeof fact.name === "string" &&
+            medal.fact.test(fact.name) &&
+            years.every((year) =>
+              (fact.name + " " + String(fact.year ?? "")).includes(year),
+            ) &&
+            (!competition ||
+              fact.name.toLowerCase().includes(competition.toLowerCase())),
+        )
+      )
+        return false;
+    }
+  return recognized;
+}
+
+/**
+ * Flags in generated or edited copy.
+ *
+ * `rating_without_evidence` and `superlative` were declared in the flag type and
+ * given bilingual labels on the review screen, but no pattern produced either,
+ * so both sets of UI strings were unreachable -- and a description could assert
+ * "Awarded 100 points by Robert Parker" with `criticScores: []` and pass every
+ * check between the model and a merchant's storefront.
+ *
+ * `claims` is optional so the rating rule fires only when the caller genuinely
+ * knows what the listing supports. Guessing either way is worse: without the
+ * facts, an unsupported score and a perfectly grounded one are the same
+ * sentence.
+ */
 export function scanCompliance(
-  fields: Record<string, string>
+  fields: Record<string, string>,
+  claims?: GroundedClaims,
 ): ComplianceFlag[] {
-  return Object.entries(fields).flatMap(([field, value]) =>
-    blockingPatterns
+  const canSupportRatingClaim = (value: string): boolean =>
+    claims === undefined || ratingClaimSupported(value, claims);
+  return Object.entries(fields).flatMap(([field, value]) => {
+    const flags: ComplianceFlag[] = blockingPatterns
       .filter(({ pattern }) => pattern.test(value))
       .map(({ rule }, index) => ({
         id: `${field}:${rule}:${index}`,
@@ -34,16 +218,106 @@ export function scanCompliance(
         rule,
         severity: "blocking" as const,
         status: "open" as const,
-        resolutionReason: null
-      }))
-  );
+        resolutionReason: null,
+      }));
+    if (!canSupportRatingClaim(value) && RATING_CLAIM.test(value)) {
+      flags.push({
+        id: `${field}:rating_without_evidence:0`,
+        field,
+        rule: "rating_without_evidence",
+        severity: "blocking",
+        status: "open",
+        resolutionReason: null,
+      });
+    }
+    if (EXCLUSIVITY_CLAIM.test(value)) {
+      flags.push({
+        id: `${field}:exclusivity:0`,
+        field,
+        rule: "exclusivity",
+        // See EXCLUSIVITY_CLAIM: nothing in the schema can verify it, so the
+        // most this can honestly do is put it in front of a person.
+        severity: "warning",
+        status: "open",
+        resolutionReason: null,
+      });
+    }
+    if (SUPERLATIVE.test(value)) {
+      flags.push({
+        id: `${field}:superlative:0`,
+        field,
+        rule: "superlative",
+        // See SUPERLATIVE: a rank claim needs a person to look, not a full stop.
+        severity: "warning",
+        status: "open",
+        resolutionReason: null,
+      });
+    }
+    return flags;
+  });
+}
+
+/**
+ * The copy a compliance scan reads, as one flat map.
+ *
+ * Shared so the pipeline and the operator's save look at the SAME eight fields.
+ * Two private copies of this list is how a rule ends up enforced on generated
+ * copy and not on edited copy, which is the gap that let an operator type a
+ * claim in after generation and have nothing notice.
+ */
+export function localizedCopyFields(listing: {
+  title: { en: string; "zh-Hant": string };
+  description: { en: string; "zh-Hant": string };
+  seo: {
+    title: { en: string; "zh-Hant": string };
+    description: { en: string; "zh-Hant": string };
+  };
+}): Record<string, string> {
+  return {
+    titleEn: listing.title.en,
+    titleZhHant: listing.title["zh-Hant"],
+    descriptionEn: listing.description.en,
+    descriptionZhHant: listing.description["zh-Hant"],
+    seoTitleEn: listing.seo.title.en,
+    seoTitleZhHant: listing.seo.title["zh-Hant"],
+    seoDescriptionEn: listing.seo.description.en,
+    seoDescriptionZhHant: listing.seo.description["zh-Hant"],
+  };
+}
+
+/**
+ * Re-scan results, with answers the operator already gave kept.
+ *
+ * A re-scan alone would undo every resolution on every save, so a flag someone
+ * had answered would come back open and block approval again. Carrying every
+ * resolution instead would be worse: the operator could resolve a flag, rewrite
+ * the flagged sentence into something else objectionable, and keep the old
+ * answer attached to text it was never about.
+ *
+ * So a resolution survives only while the field it was raised on is untouched.
+ * Edit that field and the flag comes back open, with the change in front of the
+ * person who has to justify it.
+ */
+export function carryResolutions(
+  scanned: readonly ComplianceFlag[],
+  previous: readonly ComplianceFlag[],
+  unchangedFields: ReadonlySet<string>,
+): ComplianceFlag[] {
+  return scanned.map((flag) => {
+    if (!unchangedFields.has(flag.field)) return flag;
+    const answered = previous.find(
+      (candidate) =>
+        candidate.id === flag.id && candidate.status === "resolved",
+    );
+    return answered ?? flag;
+  });
 }
 
 export async function resolveFlag(
   flag: ComplianceFlag,
   reason: string,
   auditContext: AuditContext,
-  auditWriter: AuditWriter
+  auditWriter: AuditWriter,
 ): Promise<ComplianceFlag> {
   const resolutionReason = reason.trim();
   if (resolutionReason.length < 10) {
@@ -52,7 +326,7 @@ export async function resolveFlag(
   const resolved: ComplianceFlag = {
     ...flag,
     status: "resolved",
-    resolutionReason
+    resolutionReason,
   };
   await auditWriter.write({
     ...auditContext,
@@ -61,8 +335,59 @@ export async function resolveFlag(
       flagId: flag.id,
       field: flag.field,
       rule: flag.rule,
-      resolutionReason
-    }
+      resolutionReason,
+    },
   });
   return resolved;
+}
+
+/**
+ * Which of a workspace's claim rules are actually machine-checked.
+ *
+ * `workspaceProfile.claimPolicy` is free text, and until now its only use was
+ * being pasted into the model's prompt. That makes it a statement of intent
+ * that nothing verifies: a workspace could add "no origin claims without
+ * certification" and every listing would keep passing, with no signal that the
+ * rule was decorative.
+ *
+ * This does not make free text enforceable -- it makes the gap visible. A
+ * policy line that matches no rule comes back in `unenforced`, and the seeded
+ * pilot profile is asserted to have none, so adding a rule without a checker
+ * fails the build instead of quietly meaning nothing.
+ */
+const POLICY_RULES: ReadonlyArray<{
+  matches: RegExp;
+  rule: ComplianceFlagFields["rule"];
+}> = [
+  { matches: /\brating|\bscore|\bcritic/i, rule: "rating_without_evidence" },
+  { matches: /\baward|\bmedal/i, rule: "rating_without_evidence" },
+  { matches: /\bhealth/i, rule: "health_claim" },
+  { matches: /\bguarantee/i, rule: "guarantee" },
+  { matches: /\bsuperlative|\bbest\b/i, rule: "superlative" },
+  { matches: /\bexclusiv/i, rule: "exclusivity" },
+];
+
+export type ClaimPolicyCoverage = {
+  enforced: Array<{ policy: string; rules: ComplianceFlagFields["rule"][] }>;
+  /** Policy lines no deterministic rule implements. Intent, not enforcement. */
+  unenforced: string[];
+};
+
+export function claimPolicyCoverage(
+  claimPolicy: readonly string[],
+): ClaimPolicyCoverage {
+  const enforced: ClaimPolicyCoverage["enforced"] = [];
+  const unenforced: string[] = [];
+  for (const policy of claimPolicy) {
+    const rules = [
+      ...new Set(
+        POLICY_RULES.filter((entry) => entry.matches.test(policy)).map(
+          (entry) => entry.rule,
+        ),
+      ),
+    ];
+    if (rules.length) enforced.push({ policy, rules });
+    else unenforced.push(policy);
+  }
+  return { enforced, unenforced };
 }

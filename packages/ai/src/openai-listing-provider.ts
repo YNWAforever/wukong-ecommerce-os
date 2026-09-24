@@ -1,13 +1,5 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import {
-  canonicalListingSchema,
-  fieldEvidenceSchema,
-  listingFactsSchema,
-  workspaceProfileSchema,
-  type FieldEvidence,
-  type ListingFacts,
-} from "@wukong/core";
 import { z } from "zod";
 
 import {
@@ -21,28 +13,40 @@ import {
   type ListingAIProvider,
 } from "./contracts.js";
 import {
+  ListingProviderError,
+  ProviderApiError,
+  ProviderOutputError,
+  ProviderRefusalError,
+  UnsupportedAssetError,
+  providerFailureDiagnostic,
+  type PhysicalInvocationObserver,
+} from "./listing-provider-errors.js";
+import {
+  FACT_KEYS,
+  assertFactsGrounded,
+  assertGenerationGrounding,
+  buildSafeListing,
+  extractionOutputSchema,
+  generationInputRuntimeSchema,
+  generationOutputSchema,
+} from "./listing-output-validation.js";
+
+export {
+  ListingProviderError,
+  UnsupportedAssetError,
+  ProviderApiError,
+  ProviderRefusalError,
+  ProviderOutputError,
+} from "./listing-provider-errors.js";
+import {
   EXTRACTION_INSTRUCTIONS,
   EXTRACTION_PROMPT,
   GENERATION_INSTRUCTIONS,
   GENERATION_PROMPT,
 } from "./prompts.js";
 
-const extractionOutputSchema = z.object({
-  facts: listingFactsSchema,
-  evidence: z.array(fieldEvidenceSchema),
-  missingFields: z.array(z.string()),
-});
-
-const generationOutputSchema = z.object({ listing: canonicalListingSchema });
-
-const generationInputRuntimeSchema = z.object({
-  facts: listingFactsSchema,
-  evidence: z.array(fieldEvidenceSchema),
-  profile: workspaceProfileSchema,
-  imageAssetIds: z.array(z.string().min(1)),
-});
-
 type ProviderResponse = {
+  _request_id?: string;
   output_parsed?: unknown;
   usage?: {
     input_tokens?: number | null;
@@ -58,7 +62,7 @@ export type ResponsesClientPort = {
   responses: {
     parse(
       request: unknown,
-      options?: { signal?: AbortSignal },
+      options?: { signal?: AbortSignal; maxRetries?: number },
     ): Promise<ProviderResponse>;
   };
 };
@@ -78,6 +82,8 @@ export type OpenAIListingProviderConfig = {
   clientFactory?: () => ResponsesClientPort;
   apiKey?: string;
   timeoutMs?: number;
+  invocationObserver?: PhysicalInvocationObserver;
+  maxOutputTokens?: number;
 };
 
 const DEFAULT_MODEL = "gpt-5.6-terra";
@@ -92,23 +98,7 @@ const DEFAULT_PRICING: ModelPricing = {
   longContextOutputMultiplier: 1.5,
 };
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const FACT_KEYS = Object.keys(listingFactsSchema.shape) as Array<
-  keyof ListingFacts
->;
-const MAX_EVIDENCE_EXCERPT_LENGTH = 500;
 const SAFE_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-
-export class ListingProviderError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
-}
-
-export class UnsupportedAssetError extends ListingProviderError {}
-export class ProviderApiError extends ListingProviderError {}
-export class ProviderRefusalError extends ListingProviderError {}
-export class ProviderOutputError extends ListingProviderError {}
 
 function isHttpsUrl(value: string): boolean {
   try {
@@ -184,236 +174,6 @@ function makeUsage(
   };
 }
 
-function normalizedTokens(value: string): string[] {
-  return (
-    value
-      .normalize("NFKC")
-      .toLowerCase()
-      .match(/[\p{L}\p{N}]+/gu) ?? []
-  );
-}
-
-function excerptContainsExactTerm(excerpt: string, expected: string): boolean {
-  const expectedTokens = normalizedTokens(expected);
-  if (expectedTokens.length === 0) return false;
-  const excerptTokens = normalizedTokens(excerpt);
-  return excerptTokens.some((_, start) =>
-    expectedTokens.every(
-      (token, offset) => excerptTokens[start + offset] === token,
-    ),
-  );
-}
-
-function excerptContainsNumber(excerpt: string, expected: number): boolean {
-  const values = excerpt.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-  return values.some((value) => Number.isFinite(value) && value === expected);
-}
-
-function excerptSupportsValue(excerpt: string, value: unknown): boolean {
-  if (typeof value === "string")
-    return excerptContainsExactTerm(excerpt, value);
-  if (typeof value === "number") return excerptContainsNumber(excerpt, value);
-  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-    return value.every((item) => excerptContainsExactTerm(excerpt, item));
-  }
-  return false;
-}
-
-function evidenceSupportsValue(
-  evidence: FieldEvidence[],
-  value: unknown,
-): boolean {
-  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-    return value.every((item) =>
-      evidence.some((entry) => excerptSupportsValue(entry.excerpt, item)),
-    );
-  }
-  return evidence.some((entry) => excerptSupportsValue(entry.excerpt, value));
-}
-
-function isMeaningfulFact(value: unknown): boolean {
-  return (
-    value !== null &&
-    value !== undefined &&
-    (!Array.isArray(value) || value.length > 0)
-  );
-}
-
-function assertComplexFactEvidence(
-  key: "criticScores" | "awards",
-  value: ListingFacts[typeof key],
-  evidenceForField: FieldEvidence[],
-  allowedSources?: Set<string>,
-): void {
-  for (const item of value) {
-    const evidenceId = item.evidenceId;
-    if (allowedSources && !allowedSources.has(evidenceId)) {
-      throw new ProviderOutputError("AI claim referenced an unknown source");
-    }
-    const supporting = evidenceForField.filter(
-      (entry) => entry.sourceAssetId === evidenceId,
-    );
-    const terms =
-      key === "criticScores"
-        ? (() => {
-            const score = item as ListingFacts["criticScores"][number];
-            return [score.source, score.score];
-          })()
-        : [(item as ListingFacts["awards"][number]).name];
-    if (
-      !supporting.some((entry) =>
-        terms.every((term) => excerptSupportsValue(entry.excerpt, term)),
-      )
-    ) {
-      throw new ProviderOutputError(
-        "AI claim evidence did not support its value",
-      );
-    }
-  }
-}
-
-function assertFactsGrounded(
-  facts: ListingFacts,
-  evidence: FieldEvidence[],
-  options: { allowedSources?: Set<string>; note?: string | null } = {},
-): void {
-  for (const item of evidence) {
-    if (item.excerpt.length > MAX_EVIDENCE_EXCERPT_LENGTH) {
-      throw new ProviderOutputError(
-        "AI evidence excerpt exceeded the allowed bound",
-      );
-    }
-    if (
-      options.allowedSources &&
-      !options.allowedSources.has(item.sourceAssetId)
-    ) {
-      throw new ProviderOutputError("AI evidence referenced an unknown source");
-    }
-    if (
-      item.sourceAssetId === NOTE_SOURCE_ID &&
-      options.note !== undefined &&
-      !(options.note ?? "").includes(item.excerpt)
-    ) {
-      throw new ProviderOutputError(
-        "AI evidence was not present in the supplied note",
-      );
-    }
-    if (!FACT_KEYS.includes(item.field as keyof ListingFacts)) {
-      throw new ProviderOutputError("AI evidence referenced an unknown field");
-    }
-    const value = facts[item.field as keyof ListingFacts];
-    if (!isMeaningfulFact(value)) {
-      throw new ProviderOutputError("AI evidence referenced an absent fact");
-    }
-  }
-
-  for (const key of FACT_KEYS) {
-    const value = facts[key];
-    if (!isMeaningfulFact(value)) continue;
-    const evidenceForField = evidence.filter((item) => item.field === key);
-    const isSystemDefault =
-      key === "packQuantity" && value === 1 && evidenceForField.length === 0;
-    if (evidenceForField.length === 0 && !isSystemDefault) {
-      throw new ProviderOutputError("AI fact had no supporting evidence");
-    }
-    if (isSystemDefault) continue;
-    if (key === "criticScores" || key === "awards") {
-      assertComplexFactEvidence(
-        key,
-        value as ListingFacts[typeof key],
-        evidenceForField,
-        options.allowedSources,
-      );
-      continue;
-    }
-    if (!evidenceSupportsValue(evidenceForField, value)) {
-      throw new ProviderOutputError(
-        "AI evidence did not support its fact value",
-      );
-    }
-  }
-}
-
-function assertGenerationGrounding(
-  listing: z.infer<typeof canonicalListingSchema>,
-  input: GenerationInput,
-): void {
-  for (const key of FACT_KEYS) {
-    if (JSON.stringify(listing[key]) !== JSON.stringify(input.facts[key])) {
-      throw new ProviderOutputError("AI generation changed a protected fact");
-    }
-  }
-  if (
-    JSON.stringify(listing.imageAssetIds) !==
-    JSON.stringify(input.imageAssetIds)
-  ) {
-    throw new ProviderOutputError(
-      "AI generation changed supplied image assets",
-    );
-  }
-}
-
-function buildSafeListing(
-  input: GenerationInput,
-): z.infer<typeof canonicalListingSchema> {
-  const facts = input.facts;
-  const required = {
-    sku: facts.sku,
-    producer: facts.producer,
-    productType: facts.productType,
-    country: facts.country,
-    volumeMl: facts.volumeMl,
-    abvPercent: facts.abvPercent,
-    priceHkd: facts.priceHkd,
-  };
-  for (const [key, value] of Object.entries(required)) {
-    if (value === null)
-      throw new ProviderOutputError(`Safe generation requires ${key}`);
-  }
-
-  const title = `${facts.producer}${facts.vintage === null ? "" : ` ${facts.vintage}`}`;
-  const origin =
-    facts.region === null ? facts.country : `${facts.region}, ${facts.country}`;
-  const grapes =
-    facts.grapeVarieties.length === 0
-      ? ""
-      : ` Grape: ${facts.grapeVarieties.join(", ")}.`;
-  const vintage = facts.vintage === null ? "" : ` Vintage: ${facts.vintage}.`;
-  const descriptionEn = `${facts.producer}. Product type: ${facts.productType}. Origin: ${origin}.${vintage}${grapes} Volume: ${facts.volumeMl} ml. ABV: ${facts.abvPercent}%.`;
-  const typeZh = {
-    wine: "葡萄酒",
-    spirits: "烈酒",
-    sake: "清酒",
-    other: "其他",
-  }[facts.productType ?? "other"];
-  const grapesZh =
-    facts.grapeVarieties.length === 0
-      ? ""
-      : `葡萄品種：${facts.grapeVarieties.join("、")}。`;
-  const vintageZh = facts.vintage === null ? "" : `年份：${facts.vintage}。`;
-  const descriptionZh = `${facts.producer}。產品類型：${typeZh}。產地：${origin}。${vintageZh}${grapesZh}容量：${facts.volumeMl}毫升。酒精濃度：${facts.abvPercent}%。`;
-  const tags = [
-    facts.productType,
-    facts.country,
-    facts.region,
-    facts.vintage === null ? null : String(facts.vintage),
-    ...facts.grapeVarieties,
-  ].filter((value): value is string => value !== null);
-
-  return canonicalListingSchema.parse({
-    ...facts,
-    ...required,
-    title: { en: title, "zh-Hant": title },
-    description: { en: descriptionEn, "zh-Hant": descriptionZh },
-    seo: {
-      title: { en: title, "zh-Hant": title },
-      description: { en: descriptionEn, "zh-Hant": descriptionZh },
-    },
-    tags,
-    imageAssetIds: input.imageAssetIds,
-  });
-}
-
 function validatePricing(pricing: ModelPricing): void {
   const required = [pricing.inputUsdPerMillion, pricing.outputUsdPerMillion];
   const optional = [
@@ -437,6 +197,8 @@ export class OpenAIListingProvider implements ListingAIProvider {
   private readonly now: () => number;
   private readonly clientFactory: () => ResponsesClientPort;
   private readonly timeoutMs: number;
+  private readonly invocationObserver?: PhysicalInvocationObserver;
+  private readonly maxOutputTokens: number;
 
   constructor(
     client?: ResponsesClientPort,
@@ -459,10 +221,21 @@ export class OpenAIListingProvider implements ListingAIProvider {
     this.clientFactory =
       config.clientFactory ??
       (() =>
-        new OpenAI(
-          config.apiKey === undefined ? undefined : { apiKey: config.apiKey },
-        ) as unknown as ResponsesClientPort);
+        new OpenAI({
+          ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
+          maxRetries: 0,
+        }) as unknown as ResponsesClientPort);
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.invocationObserver = config.invocationObserver;
+    this.maxOutputTokens = config.maxOutputTokens ?? 4096;
+    if (
+      !Number.isInteger(this.maxOutputTokens) ||
+      this.maxOutputTokens < 1 ||
+      this.maxOutputTokens > 100000
+    )
+      throw new TypeError(
+        "maxOutputTokens must be an integer between 1 and 100000",
+      );
     if (
       !Number.isInteger(this.timeoutMs) ||
       this.timeoutMs < 1_000 ||
@@ -480,25 +253,143 @@ export class OpenAIListingProvider implements ListingAIProvider {
     return this.client;
   }
 
+  private physicalUsage(
+    response: ProviderResponse,
+  ): import("./listing-provider-errors.js").PhysicalInvocationUsage {
+    const token = (value: unknown) =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+        ? value
+        : null;
+    const inputTokens = token(response.usage?.input_tokens),
+      outputTokens = token(response.usage?.output_tokens);
+    return {
+      inputTokens,
+      outputTokens,
+      costUsd:
+        inputTokens === null || outputTokens === null
+          ? null
+          : makeUsage(response, this.model, "physical", this.pricing, 0)
+              .estimatedCostUsd,
+      certainty:
+        inputTokens === null || outputTokens === null ? "unknown" : "estimated",
+    };
+  }
+  private async observeResponse(
+    response: ProviderResponse,
+    ordinal: number,
+    phase: "request" | "repair",
+  ): Promise<void> {
+    const refusal = containsRefusal(response);
+    const outcome = refusal
+      ? "refusal"
+      : response.output_parsed == null
+        ? "invalid_output"
+        : "response";
+    await this.invocationObserver?.({
+      ordinal,
+      phase,
+      outcome,
+      diagnostic: {
+        category: refusal
+          ? "refusal"
+          : response.output_parsed == null
+            ? "invalid_output"
+            : "internal",
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: providerFailureDiagnostic({
+          request_id: response._request_id,
+        }).requestId,
+      },
+      usage: this.physicalUsage(response),
+    });
+  }
+  private async observeInvalidOutput(
+    response: ProviderResponse,
+    ordinal: number,
+    phase: "request" | "repair",
+  ): Promise<void> {
+    await this.invocationObserver?.({
+      ordinal,
+      phase,
+      outcome: "invalid_output",
+      diagnostic: {
+        category: "invalid_output",
+        retryable: false,
+        httpStatus: 200,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: this.physicalUsage(response),
+    });
+  }
   private async parseWithOneRepair(
     request: Record<string, unknown>,
+    validate: (output: unknown) => void,
   ): Promise<ProviderResponse> {
     let response: ProviderResponse;
+    let ordinal = 1;
+    await this.invocationObserver?.({
+      ordinal: 1,
+      phase: "request",
+      outcome: "started",
+      diagnostic: {
+        category: "internal",
+        retryable: false,
+        httpStatus: null,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        certainty: "unknown",
+      },
+    });
     try {
       response = await this.getClient().responses.parse(request, {
         signal: AbortSignal.timeout(this.timeoutMs),
+        maxRetries: 0,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      const diagnostic = providerFailureDiagnostic(error);
+      await this.invocationObserver?.({
+        ordinal,
+        phase: ordinal === 1 ? "request" : "repair",
+        outcome: "api_error",
+        diagnostic,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)
           ? "AI provider request timed out"
           : "AI provider request failed",
+        diagnostic,
       );
     }
-    if (containsRefusal(response))
+    if (containsRefusal(response)) {
+      await this.observeResponse(response, 1, "request");
       throw new ProviderRefusalError("AI provider refused the request");
-    if (response.output_parsed != null) return response;
+    }
+    if (response.output_parsed != null) {
+      try {
+        validate(response.output_parsed);
+      } catch (error) {
+        await this.observeInvalidOutput(response, 1, "request");
+        throw error;
+      }
+      await this.observeResponse(response, 1, "request");
+      return response;
+    }
+    await this.observeResponse(response, 1, "request");
     const repairRequest = {
       ...request,
       input: [
@@ -510,22 +401,67 @@ export class OpenAIListingProvider implements ListingAIProvider {
         },
       ],
     };
+    ordinal = 2;
+    await this.invocationObserver?.({
+      ordinal: 2,
+      phase: "repair",
+      outcome: "started",
+      diagnostic: {
+        category: "internal",
+        retryable: false,
+        httpStatus: null,
+        providerCode: null,
+        requestId: null,
+      },
+      usage: {
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+        certainty: "unknown",
+      },
+    });
     try {
       response = await this.getClient().responses.parse(repairRequest, {
         signal: AbortSignal.timeout(this.timeoutMs),
+        maxRetries: 0,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
+      const diagnostic = providerFailureDiagnostic(error);
+      await this.invocationObserver?.({
+        ordinal,
+        phase: ordinal === 1 ? "request" : "repair",
+        outcome: "api_error",
+        diagnostic,
+        usage: {
+          inputTokens: null,
+          outputTokens: null,
+          costUsd: null,
+          certainty: "unknown",
+        },
+      });
       throw new ProviderApiError(
         /timeout|timed out|abort|etimedout/i.test(message)
           ? "AI provider request timed out"
           : "AI provider request failed",
+        diagnostic,
       );
     }
-    if (containsRefusal(response))
+    if (containsRefusal(response)) {
+      await this.observeResponse(response, 2, "repair");
       throw new ProviderRefusalError("AI provider refused the request");
-    if (response.output_parsed == null)
+    }
+    if (response.output_parsed == null) {
+      await this.observeResponse(response, 2, "repair");
       throw new ProviderOutputError("AI provider returned no parsed output");
+    }
+    try {
+      validate(response.output_parsed);
+    } catch (error) {
+      await this.observeInvalidOutput(response, 2, "repair");
+      throw error;
+    }
+    await this.observeResponse(response, 2, "repair");
     return response;
   }
 
@@ -534,7 +470,10 @@ export class OpenAIListingProvider implements ListingAIProvider {
     const start = this.now();
     const request = {
       model: this.model,
-      reasoning: { effort: "low" },
+      max_output_tokens: this.maxOutputTokens,
+      ...(/^(?:gpt-5|o[1-9])/.test(this.model)
+        ? { reasoning: { effort: "low" } }
+        : {}),
       input: [
         {
           role: "system",
@@ -559,7 +498,15 @@ export class OpenAIListingProvider implements ListingAIProvider {
         format: zodTextFormat(extractionOutputSchema, "listing_extraction"),
       },
     };
-    const response = await this.parseWithOneRepair(request);
+    const response = await this.parseWithOneRepair(request, (output) => {
+      const parsed = extractionOutputSchema.parse(output);
+      const allowedSources = new Set(input.assets.map((asset) => asset.id));
+      allowedSources.add(NOTE_SOURCE_ID);
+      assertFactsGrounded(parsed.facts, parsed.evidence, {
+        allowedSources,
+        note: input.note,
+      });
+    });
     let parsed: z.infer<typeof extractionOutputSchema>;
     try {
       parsed = extractionOutputSchema.parse(response.output_parsed);
@@ -592,7 +539,9 @@ export class OpenAIListingProvider implements ListingAIProvider {
     let validatedInput: GenerationInput;
     try {
       validatedInput = generationInputRuntimeSchema.parse(input);
-      assertFactsGrounded(validatedInput.facts, validatedInput.evidence);
+      assertFactsGrounded(validatedInput.facts, validatedInput.evidence, {
+        operatorProvidedFields: validatedInput.operatorProvidedFields,
+      });
     } catch (error) {
       if (error instanceof ProviderOutputError) throw error;
       throw new ProviderOutputError(
@@ -604,7 +553,10 @@ export class OpenAIListingProvider implements ListingAIProvider {
     const start = this.now();
     const request = {
       model: this.model,
-      reasoning: { effort: "low" },
+      max_output_tokens: this.maxOutputTokens,
+      ...(/^(?:gpt-5|o[1-9])/.test(this.model)
+        ? { reasoning: { effort: "low" } }
+        : {}),
       input: [
         {
           role: "system",
@@ -626,8 +578,11 @@ export class OpenAIListingProvider implements ListingAIProvider {
         format: zodTextFormat(generationOutputSchema, "listing_generation"),
       },
     };
-    const response = await this.parseWithOneRepair(request);
-    let modelListing: z.infer<typeof canonicalListingSchema>;
+    const response = await this.parseWithOneRepair(request, (output) => {
+      const parsed = generationOutputSchema.parse(output);
+      assertGenerationGrounding(parsed.listing, validatedInput);
+    });
+    let modelListing: z.infer<typeof generationOutputSchema>["listing"];
     try {
       modelListing = generationOutputSchema.parse(
         response.output_parsed,

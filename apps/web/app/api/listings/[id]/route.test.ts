@@ -1,3 +1,6 @@
+vi.mock("../../../../lib/source-readiness", () => ({
+  readSourceReadiness: async () => null,
+}));
 import { describe, expect, it, vi } from "vitest";
 
 import { createListingViewHandler } from "./route.js";
@@ -18,6 +21,10 @@ function handlerFor(
   role: "viewer" | "operator" | "reviewer" | "admin" | "owner",
   hasConnection = false,
   overrides: {
+    productShots?: { currentForListing: (id: string) => Promise<any> };
+    importResults?: {
+      listHistoricalForListing: (id: string) => Promise<any[]>;
+    };
     sourceAssets?: { listForListing: (id: string) => Promise<any[]> };
     workspaces?: { requireProfile: () => Promise<any> };
     assetStore?: { createReadUrl: (...args: any[]) => Promise<any> };
@@ -30,6 +37,9 @@ function handlerFor(
       listBatchesForListing: (id: string) => Promise<any[]>;
     };
     exportAttempts?: { listContainingListing: (id: string) => Promise<any[]> };
+    pipelineRuns?: { getState: (key: string) => Promise<any> };
+    listingInputs?: { getCurrent: (id: string) => Promise<any> };
+    listingSnapshot?: any;
   } = {},
 ) {
   return createListingViewHandler({
@@ -45,17 +55,62 @@ function handlerFor(
           work: (repositories: any) => Promise<T>,
         ) {
           return work({
+            productShots: overrides.productShots,
             listings: {
               async getReviewSnapshot() {
+                return (
+                  overrides.listingSnapshot ?? {
+                    listing: { id: listingId, status: "in_review" },
+                    activeVersion: {
+                      id: "version_1",
+                      content: { sku: "OPAK-1" },
+                    },
+                    evidence: [],
+                    flags: [],
+                  }
+                );
+              },
+              // The handler derives the pipeline run key from the current
+              // revision, the same way POST .../process does.
+              async requireById() {
                 return {
-                  listing: { id: listingId, status: "in_review" },
-                  activeVersion: {
-                    id: "version_1",
-                    content: { sku: "OPAK-1" },
-                  },
-                  evidence: [],
-                  flags: [],
+                  id: listingId,
+                  status: "in_review",
+                  activeVersionSequence: 1,
                 };
+              },
+            },
+            listingInputs: overrides.listingInputs ?? {
+              async getCurrent() {
+                return null;
+              },
+            },
+            pipelineRuns: {
+              async getCurrentOperation() {
+                return overrides.pipelineRuns
+                  ? {
+                      id: "00000000-0000-4000-8000-000000000201",
+                      idempotencyKey: "current-run-key",
+                      executionState: "queued",
+                      runAttempt: 1,
+                      retryOfRunId: "00000000-0000-4000-8000-000000000200",
+                      acceptedAt: new Date("2026-09-16T00:00:00.000Z"),
+                      errorCode: null,
+                      inputRevision: 1,
+                      baseVersionId: null,
+                    }
+                  : null;
+              },
+              async getLatestState() {
+                return null;
+              },
+              async getState(key: string) {
+                return overrides.pipelineRuns?.getState(key) ?? null;
+              },
+            },
+            importResults: overrides.importResults ?? {
+              async listHistoricalForListing() {
+                return [];
               },
             },
             publishJobs: {
@@ -109,7 +164,7 @@ function handlerFor(
     getAssetStore: () =>
       (overrides.assetStore ?? {
         async createReadUrl() {
-          throw new Error("createReadUrl should not have been called");
+          return { url: "https://assets.example/source" };
         },
       }) as never,
   });
@@ -175,7 +230,12 @@ describe("GET /api/listings/[id]", () => {
       });
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ permissions });
+      expect(await response.json()).toMatchObject({
+        permissions: {
+          ...permissions,
+          canRecordImportResult: role !== "viewer",
+        },
+      });
     },
   );
 });
@@ -191,7 +251,9 @@ it("derives connected status from the workspace SHOPLINE connection", async () =
 });
 
 it("returns null productShot when no cutout asset exists for the listing", async () => {
-  const createReadUrl = vi.fn();
+  const createReadUrl = vi.fn(async () => ({
+    url: "https://assets.example/source.jpg",
+  }));
   const response = await handlerFor("reviewer", false, {
     sourceAssets: {
       async listForListing() {
@@ -212,7 +274,7 @@ it("returns null productShot when no cutout asset exists for the listing", async
 
   const body = await response.json();
   expect(body.productShot).toBeNull();
-  expect(createReadUrl).not.toHaveBeenCalled();
+  expect(createReadUrl).toHaveBeenCalledOnce();
 });
 
 it("resolves a preview URL and the workspace brand color when a cutout exists", async () => {
@@ -267,7 +329,7 @@ it("resolves shoplineLink from the platform product link when one exists", async
   const response = await handlerFor("reviewer", true, {
     platformProducts: {
       async getByListingId() {
-        return { remoteProductId: "remote_existing_1" };
+        return { remoteProductId: "remote_existing_1", origin: "import" };
       },
     },
   })(new Request("http://localhost"), {
@@ -276,7 +338,7 @@ it("resolves shoplineLink from the platform product link when one exists", async
 
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
-    shoplineLink: { remoteProductId: "remote_existing_1" },
+    shoplineLink: { remoteProductId: "remote_existing_1", origin: "import" },
   });
 });
 
@@ -375,4 +437,351 @@ it("includes the listing's activity feed in the response", async () => {
   expect(response.status).toBe(200);
   const body = await response.json();
   expect(Array.isArray(body.activity)).toBe(true);
+});
+
+it("returns durable manual history from the authorized listing read", async () => {
+  const history = [
+    { id: "manual-receipt", mode: "historical_manual", revision: 2 },
+  ];
+  const listHistoricalForListing = vi.fn().mockResolvedValue(history);
+  const response = await handlerFor("operator", false, {
+    importResults: { listHistoricalForListing },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json()).historicalImportResults).toEqual(history);
+  expect(listHistoricalForListing).toHaveBeenCalledWith(listingId);
+});
+
+it("marks enabled workflow so disabled legacy screens do not fetch new review state", async () => {
+  vi.stubEnv("PRODUCT_SHOT_PROVIDER", "fake");
+  try {
+    const response = await handlerFor("reviewer")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+    expect((await response.json()).productShotWorkflow).toBe(true);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it.each([
+  ["multiple sources", "fake", false, false, true],
+  ["setup missing", "photoroom", false, false, true],
+  ["disabled legacy", "disabled", false, false, false],
+  ["actual legacy cutout", "fake", true, false, false],
+  ["selected workflow after disablement", "disabled", true, true, true],
+])(
+  "listing view classifies %s from server state",
+  async (_label, provider, legacy, selected, expected) => {
+    vi.stubEnv("PRODUCT_SHOT_PROVIDER", provider as string);
+    try {
+      const response = await handlerFor("reviewer", false, {
+        productShots: {
+          currentForListing: async () =>
+            selected ? { state: "candidate_ready" } : null,
+        },
+        sourceAssets: {
+          listForListing: async () =>
+            legacy
+              ? [
+                  {
+                    kind: "image/png",
+                    storageKey: "legacy",
+                    metadata: { role: "product_shot_cutout" },
+                  },
+                ]
+              : [
+                  { kind: "image/png", metadata: {}, storageKey: "front.png" },
+                  { kind: "image/jpeg", metadata: {}, storageKey: "back.jpg" },
+                ],
+        },
+        assetStore: { createReadUrl: async () => ({ url: "/legacy" }) },
+      })(new Request("http://localhost"), {
+        params: Promise.resolve({ id: listingId }),
+      });
+      expect(response.status).toBe(200);
+      expect((await response.json()).productShotWorkflow).toBe(expected);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  },
+);
+
+describe("processing summary", () => {
+  const extractedRun = {
+    status: "succeeded" as const,
+    resultStatus: "needs_info" as const,
+    errorCode: null,
+    steps: new Map([
+      [
+        "extracted",
+        {
+          state: "completed" as const,
+          output: {
+            facts: {
+              sku: null,
+              producer: "Demo Estate",
+              productType: "wine",
+              country: "Germany",
+              region: "Mosel",
+              vintage: 2024,
+              grapeVarieties: ["Riesling"],
+              volumeMl: 750,
+              abvPercent: 12.5,
+              packQuantity: 1,
+              priceHkd: null,
+              stockQuantity: null,
+              criticScores: [],
+              awards: [],
+            },
+            evidence: [],
+            missingFields: ["sku", "priceHkd", "stockQuantity"],
+            usage: {
+              inputTokens: 100,
+              outputTokens: 50,
+              estimatedCostUsd: 0.001,
+              latencyMs: 25,
+              model: "gpt-5.6-terra",
+              promptVersion: "1.1.0",
+            },
+          },
+        },
+      ],
+    ]),
+  };
+
+  it("returns the facts a needs_info run already extracted", async () => {
+    // Without this the page has nothing to show: a needs_info run writes no
+    // version, so activeVersion carries none of what the model read.
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: { getState: async () => extractedRun },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.processing.resultStatus).toBe("needs_info");
+    expect(body.processing.extractedFacts.producer).toBe("Demo Estate");
+    expect(body.processing.missingFields).toEqual([
+      "sku",
+      "priceHkd",
+      "stockQuantity",
+    ]);
+  });
+
+  it("keeps model and cost telemetry out of the response", async () => {
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: { getState: async () => extractedRun },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const body = await response.text();
+    expect(body).not.toContain("estimatedCostUsd");
+    expect(body).not.toContain("gpt-5.6-terra");
+  });
+
+  it("reports a stable error code for a failed run", async () => {
+    const response = await handlerFor("operator", false, {
+      pipelineRuns: {
+        getState: async () => ({
+          status: "failed" as const,
+          resultStatus: null,
+          errorCode: "provider_failure",
+          steps: new Map(),
+        }),
+      },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+
+    const body = await response.json();
+    expect(body.processing.runStatus).toBe("failed");
+    expect(body.processing.errorCode).toBe("provider_failure");
+  });
+
+  it("is null when the listing has never been processed", async () => {
+    const response = await handlerFor("operator")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: listingId }) },
+    );
+
+    expect((await response.json()).processing).toBeNull();
+  });
+});
+
+it("returns the current run and source working document without an active version", async () => {
+  const workingContent = {
+    title: { en: "", "zh-Hant": "" },
+    description: { en: "", "zh-Hant": "" },
+  };
+  const response = await handlerFor("operator", false, {
+    listingSnapshot: {
+      listing: {
+        id: listingId,
+        status: "received",
+        note: "Front label only",
+        inputRevision: 1,
+      },
+      activeVersion: null,
+      evidence: [],
+      flags: [],
+    },
+    listingInputs: {
+      async getCurrent() {
+        return {
+          revision: 1,
+          baseVersionId: null,
+          note: "Front label only",
+          workingContent,
+          fieldStates: {},
+          sources: ["00000000-0000-4000-8000-000000000301"],
+        };
+      },
+    },
+    pipelineRuns: {
+      async getState() {
+        return {
+          status: "started",
+          resultStatus: null,
+          errorCode: null,
+          steps: new Map(),
+        };
+      },
+    },
+    sourceAssets: {
+      async listForListing() {
+        return [
+          {
+            id: "00000000-0000-4000-8000-000000000301",
+            kind: "image/png",
+            storageKey: "ws/ws_opak/sources/front.png",
+            metadata: { fileName: "front.png" },
+          },
+        ];
+      },
+    },
+  })(new Request("http://localhost"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    activeVersion: null,
+    inputRevision: 1,
+    workingInput: {
+      revision: 1,
+      note: "Front label only",
+      workingContent,
+    },
+    sources: [
+      {
+        assetId: "00000000-0000-4000-8000-000000000301",
+        mimeType: "image/png",
+        name: "front.png",
+        previewUrl: "https://assets.example/source",
+      },
+    ],
+    currentRun: {
+      runId: "00000000-0000-4000-8000-000000000201",
+      state: "queued",
+      attempt: 1,
+      retryOfRunId: "00000000-0000-4000-8000-000000000200",
+      inputRevision: 1,
+      baseVersionId: null,
+    },
+  });
+});
+
+it("keeps attached legacy originals selected in a revision-zero recovery document", async () => {
+  const assetId = "00000000-0000-4000-8000-000000000301";
+  const response = await handlerFor("operator", false, {
+    listingSnapshot: {
+      listing: {
+        id: listingId,
+        status: "failed",
+        note: "Legacy note",
+        inputRevision: 0,
+      },
+      activeVersion: null,
+      evidence: [],
+      flags: [],
+    },
+    sourceAssets: {
+      listForListing: async () => [
+        {
+          id: assetId,
+          kind: "image/png",
+          storageKey: "source.png",
+          metadata: { clientSha256: "a".repeat(64), size: 10 },
+        },
+      ],
+    },
+    assetStore: {
+      createReadUrl: async () => ({ url: "https://assets.example/original" }),
+    },
+  })(new Request("https://test"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.workingInput.sources).toEqual([
+    {
+      assetId,
+      role: "other_image",
+      use: "analyse",
+      hero: false,
+      digest: "a".repeat(64),
+    },
+  ]);
+  expect(result.workingInput.workingContent.imageAssetIds).toEqual([assetId]);
+});
+it("shows generated active fields in the working editor while retaining manual values", async () => {
+  const { emptyWorkingListing } = await import("@wukong/core");
+  const working = {
+    revision: 1,
+    baseVersionId: null,
+    note: null,
+    workingContent: { ...emptyWorkingListing(), producer: "Human producer" },
+    fieldStates: {
+      producer: {
+        owner: "operator",
+        state: "manual",
+        locked: true,
+        evidenceRefs: [],
+      },
+    },
+    sources: [],
+  };
+  const active = {
+    ...emptyWorkingListing(),
+    producer: "AI producer",
+    title: { en: "Generated title", "zh-Hant": "生成名稱" },
+  };
+  const handler = handlerFor("operator", false, {
+    listingInputs: { getCurrent: async () => working },
+    listingSnapshot: {
+      listing: { id: listingId, status: "in_review", inputRevision: 1 },
+      activeVersion: {
+        id: "00000000-0000-4000-8000-000000000202",
+        content: active,
+      },
+      evidence: [],
+      flags: [],
+    },
+  });
+  const response = await handler(new Request("https://test"), {
+    params: Promise.resolve({ id: listingId }),
+  });
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result.workingInput.workingContent.title.en).toBe("Generated title");
+  expect(result.workingInput.workingContent.producer).toBe("Human producer");
+  expect(result.workingInput.baseVersionId).toBe(
+    "00000000-0000-4000-8000-000000000202",
+  );
 });

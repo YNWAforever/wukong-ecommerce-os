@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -11,7 +12,7 @@ const appUrl =
   "postgres://wukong_app:wukong-app-local@localhost:54329/wukong";
 const ignoreNotice = (): void => undefined;
 
-const workspaceId = "ws_airuns";
+const workspaceId = `ws_airuns_${randomUUID()}`;
 
 describe("ai run repository", () => {
   const admin = postgres(adminUrl, {
@@ -45,6 +46,180 @@ describe("ai run repository", () => {
   afterAll(async () => {
     await database.close();
     await admin.end();
+  });
+
+  async function createPhysicalRun() {
+    return database.forWorkspace(workspaceId, async (repositories) => {
+      const listing = await repositories.listings.create({
+        target: "shopline",
+        note: null,
+      });
+      const snapshot = await repositories.listingInputs.initialize(
+        { listingId: listing.id, actorId: "integration" },
+        { workspaceId, actorId: "integration", entityId: listing.id },
+        repositories.audit,
+      );
+      const run = await repositories.pipelineRuns.acceptOperation({
+        listingId: listing.id,
+        inputRevision: snapshot.revision,
+        baseVersionId: null,
+        activeVersionSequence: 0,
+        requestKey: randomUUID(),
+        requestDigest:
+          randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", ""),
+        execution: { input: snapshot },
+      });
+      return { listing, run };
+    });
+  }
+
+  it("claims a physical invocation once and finalizes its pending row once", async () => {
+    const { listing, run } = await createPhysicalRun();
+    const begin = () =>
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.beginInvocation({
+          listingId: listing.id,
+          pipelineRunId: run.id,
+          task: "extract",
+          stage: "extract",
+          callOrdinal: 1,
+          provider: "openai",
+          model: "test-model",
+          promptVersion: "test",
+        }),
+      );
+    expect(await begin()).toEqual({ claimed: true });
+    expect(await begin()).toEqual({ claimed: false });
+    const [pending] =
+      await admin`select status,estimated_cost_usd,input from ai_runs where pipeline_run_id=${run.id}`;
+    expect(pending).toMatchObject({
+      status: "started",
+      estimated_cost_usd: null,
+      input: { promptVersion: "test" },
+    });
+
+    const finalize = () =>
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.finalizeInvocation({
+          pipelineRunId: run.id,
+          stage: "extract",
+          callOrdinal: 1,
+          status: "succeeded",
+          inputTokens: 10,
+          outputTokens: 5,
+          latencyMs: 1,
+          estimatedCostUsd: "0.010000",
+          usageCertainty: "estimated",
+        }),
+      );
+    expect(await finalize()).toBe(true);
+    expect(await finalize()).toBe(false);
+  });
+
+  it("admits only one concurrent exact-cap hold and retains unknown spend", async () => {
+    const first = await createPhysicalRun();
+    const second = await createPhysicalRun();
+    const reserve = (pipelineRunId: string) =>
+      database.forWorkspace(workspaceId, (r) =>
+        r.aiBudgetReservations.reserve({
+          pipelineRunId,
+          reservedUsd: "0.050000",
+          workspaceCapUsd: "0.050000",
+          pricingVersion: "test",
+        }),
+      );
+    const results = await Promise.all([
+      reserve(first.run.id),
+      reserve(second.run.id),
+    ]);
+    expect(results.filter((x) => x.accepted)).toHaveLength(1);
+    expect(results.filter((x) => !x.accepted)).toHaveLength(1);
+    const accepted = results[0]!.accepted ? first : second;
+    await database.forWorkspace(workspaceId, (r) =>
+      r.aiRuns.beginInvocation({
+        listingId: accepted.listing.id,
+        pipelineRunId: accepted.run.id,
+        task: "extract",
+        stage: "extract",
+        callOrdinal: 1,
+        provider: "openai",
+        model: "test-model",
+        promptVersion: "test",
+      }),
+    );
+    expect(
+      await database.forWorkspace(workspaceId, (r) =>
+        r.aiBudgetReservations.settleFromInvocations(accepted.run.id),
+      ),
+    ).toBe("unknown");
+    expect(
+      await database.forWorkspace(workspaceId, (r) =>
+        r.aiBudgetReservations.settleFromInvocations(accepted.run.id),
+      ),
+    ).toBe("unknown");
+    const third = await createPhysicalRun();
+    expect(await reserve(third.run.id)).toEqual({
+      accepted: false,
+      state: "budget_blocked",
+    });
+  });
+
+  it("preserves a pending invocation's unknown cost when migrations replay", async () => {
+    const { listing, run } = await createPhysicalRun();
+    await database.forWorkspace(workspaceId, (r) =>
+      r.aiRuns.beginInvocation({
+        listingId: listing.id,
+        pipelineRunId: run.id,
+        task: "generate",
+        stage: "generate",
+        callOrdinal: 1,
+        provider: "openai",
+        model: "test-model",
+        promptVersion: "test",
+      }),
+    );
+    await database.migrate();
+    const [pending] =
+      await admin`select status,estimated_cost_usd,input from ai_runs where pipeline_run_id=${run.id}`;
+    expect(pending).toMatchObject({
+      status: "started",
+      estimated_cost_usd: null,
+      input: { promptVersion: "test" },
+    });
+  });
+  it("counts failed physical invocations with unknown usage without blocking migration replay", async () => {
+    const { listing, run } = await createPhysicalRun();
+    await database.forWorkspace(workspaceId, async (r) => {
+      await r.aiRuns.beginInvocation({
+        listingId: listing.id,
+        pipelineRunId: run.id,
+        task: "generate",
+        stage: "generate",
+        callOrdinal: 1,
+        provider: "openai",
+        model: "test-model",
+        promptVersion: "test",
+      });
+      expect(
+        await r.aiRuns.finalizeInvocation({
+          pipelineRunId: run.id,
+          stage: "generate",
+          callOrdinal: 1,
+          status: "failed",
+          inputTokens: null,
+          outputTokens: null,
+          latencyMs: 1,
+          estimatedCostUsd: null,
+          usageCertainty: "unknown",
+        }),
+      ).toBe(true);
+    });
+    await database.migrate();
+    expect(
+      await database.forWorkspace(workspaceId, (r) =>
+        r.aiRuns.summarizeCostForListings([listing.id]),
+      ),
+    ).toEqual({ knownCostUsd: 0, unknownCostRunCount: 1 });
   });
 
   it("sums observed cost across the given drafts only", async () => {

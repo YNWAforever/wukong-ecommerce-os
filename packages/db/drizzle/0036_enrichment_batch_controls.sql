@@ -1,0 +1,11 @@
+ALTER TYPE enrichment_batch_status ADD VALUE IF NOT EXISTS 'paused';
+ALTER TABLE enrichment_batches ADD COLUMN IF NOT EXISTS control_revision integer NOT NULL DEFAULT 0;
+ALTER TABLE enrichment_batches ADD COLUMN IF NOT EXISTS command_receipts jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE enrichment_batch_items ADD COLUMN IF NOT EXISTS retry_of_item_id uuid;
+ALTER TABLE enrichment_batch_items ADD COLUMN IF NOT EXISTS is_current boolean NOT NULL DEFAULT true;
+DROP INDEX IF EXISTS enrichment_batch_items_batch_listing_uq;
+CREATE UNIQUE INDEX enrichment_batch_items_batch_listing_uq ON enrichment_batch_items(workspace_id,batch_id,listing_id) WHERE is_current;
+ALTER TABLE enrichment_batch_items DROP CONSTRAINT IF EXISTS enrichment_batch_items_retry_fkey;
+ALTER TABLE enrichment_batch_items ADD CONSTRAINT enrichment_batch_items_retry_fkey FOREIGN KEY(workspace_id,retry_of_item_id) REFERENCES enrichment_batch_items(workspace_id,id) ON DELETE RESTRICT;
+ALTER TABLE enrichment_batch_items DROP CONSTRAINT enrichment_batch_items_outcome_check;
+ALTER TABLE enrichment_batch_items ADD CONSTRAINT enrichment_batch_items_outcome_check CHECK(outcome IS NULL OR outcome IN ('this_run_success','needs_input','failed','already_prepared','skipped','superseded','cancelled'));

@@ -143,16 +143,37 @@ CLOUDFLARE_HYPERDRIVE_ID="<hyperdrive-id>" \
 pnpm runtime:doctor production
 ```
 
-`health-signed` is the check that matters. It is the only one that proves Vercel
-and the Worker hold the same secret, because every other check proves only that a
-value is _present_.
+`health-signed` is the check that matters, but read it for what it is: it signs
+with the `QUEUE_INGRESS_SECRET` **from the shell above**, so it proves that value
+matches the Worker's. The command block tells you to paste the Worker's secret,
+so it can pass while Vercel holds something else entirely. `local-ingress-env`
+reports on the same shell and is named accordingly; nothing in this command reads
+Vercel at all.
 
-| `health-signed` says                               | Meaning                                              |
-| -------------------------------------------------- | ---------------------------------------------------- |
-| `secret agrees and the database answers`           | done                                                 |
-| `Vercel's QUEUE_INGRESS_SECRET does not match ...` | the two values differ; re-set the Worker secret      |
-| `secret matches, but the database did not answer`  | secret is fine; the Neon connection string is wrong  |
-| `worker unreachable`                               | `QUEUE_INGRESS_URL` is wrong or the Worker is not up |
+**Confirm Vercel separately, every time**, and compare the value yourself:
+
+```bash
+vercel env pull --environment=production .env.production.check
+```
+
+Delete that file afterwards; it holds live secrets and must never be committed.
+A Vercel/Worker `QUEUE_INGRESS_SECRET` mismatch is the most common failure in
+this sequence, and it is the one the doctor is structurally unable to see.
+
+`listing-provider` is the other line to read before letting anyone use the app.
+It reports what the deployed Worker is actually running and fails production on
+`fake` — a Worker on the fake provider invents every fact and every sentence it
+returns, and until now did so behind an all-green report. It also prints the
+Worker's product-shot provider: if the web app has `PRODUCT_SHOT_PROVIDER` set
+and this line says `disabled`, image work is requested and then refused, so set
+the two together.
+
+| `health-signed` says                               | Meaning                                                    |
+| -------------------------------------------------- | ---------------------------------------------------------- |
+| `secret agrees and the database answers`           | this shell's secret matches; Vercel still unverified       |
+| `Vercel's QUEUE_INGRESS_SECRET does not match ...` | this shell and the Worker differ; re-set the Worker secret |
+| `secret matches, but the database did not answer`  | secret is fine; the Neon connection string is wrong        |
+| `worker unreachable`                               | `QUEUE_INGRESS_URL` is wrong or the Worker is not up       |
 
 Finally, create a draft in the production app and confirm it no longer falls back
 to `retry_required`.

@@ -1,3 +1,7 @@
+import { readWineProgress } from "../../../../lib/wine-progress";
+import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
+import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
+import { readSourceReadiness } from "../../../../lib/source-readiness";
 import type { AssetStore } from "@wukong/assets";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -8,6 +12,8 @@ import {
   withRouteErrors,
 } from "../../../../lib/route-support";
 import { getListingActivity } from "../../../../lib/listing-activity-service";
+import { readProcessingSummary } from "../../../../lib/listing-processing-summary";
+import { listingApplicationJobId } from "../../../../lib/listing-queue-runtime";
 import { authSessionContext } from "../../../../lib/session-context";
 import type { SessionContextPort } from "../../../../lib/session-context-port";
 
@@ -39,6 +45,7 @@ const roleRank: Record<string, number> = {
 function listingPermissions(role: string) {
   const rank = roleRank[role] ?? 0;
   return {
+    canRecordImportResult: rank >= 20,
     canProcess: rank >= 20,
     canEdit: rank >= 20,
     canResolveFlags: rank >= 20,
@@ -101,11 +108,17 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               (asset.metadata as Record<string, unknown> | null)?.role ===
                 "product_shot_cutout",
           );
+          const productShotWorkflow = usesProductShotWorkflow({
+            hasSelection: Boolean(
+              await repositories.productShots?.currentForListing(id),
+            ),
+            hasLegacyCutout: Boolean(cutout),
+          });
           let productShot: {
             previewUrl: string;
             brandBackgroundColor: string | null;
           } | null = null;
-          if (cutout) {
+          if (cutout && !productShotWorkflow) {
             const profile = await repositories.workspaces.requireProfile();
             const read = await deps
               .getAssetStore()
@@ -118,15 +131,112 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             };
           }
 
+          // A run that ended in `needs_info` wrote no version, so without this
+          // the page can only say that information is needed. The extraction
+          // step is recorded with its full output before the missingFields
+          // check, so what the model did read off the sources is already
+          // durable -- this reads it back.
+          const originalAssets = listingAssets.filter(
+            (asset: any) =>
+              !["product_shot_cutout", "product_shot_candidate"].includes(
+                asset.metadata?.role,
+              ),
+          );
+          const legacyWorkingContent = snapshot.activeVersion?.content ?? {
+            ...emptyWorkingListing(),
+            imageAssetIds: originalAssets
+              .filter((asset: any) => asset.kind.startsWith("image/"))
+              .map((asset: any) => asset.id),
+          };
+          const legacyWorkingInput = {
+            revision: 0,
+            baseVersionId: snapshot.activeVersion?.id ?? null,
+            note: snapshot.listing.note ?? null,
+            workingContent: legacyWorkingContent,
+            fieldStates: {},
+            sources: originalAssets.map((asset: any) => ({
+              assetId: asset.id,
+              role: asset.kind.startsWith("image/")
+                ? "other_image"
+                : "supplier_document",
+              use: "analyse",
+              hero: false,
+              digest:
+                asset.metadata?.sha256 ?? asset.metadata?.clientSha256 ?? "",
+            })),
+          };
+          const workingInput =
+            (await repositories.listingInputs?.getCurrent(id)) ?? null;
+          const currentRun =
+            (await repositories.pipelineRuns.getCurrentOperation?.(id)) ?? null;
+          const processing = readProcessingSummary(
+            currentRun
+              ? await repositories.pipelineRuns.getState(
+                  currentRun.idempotencyKey,
+                )
+              : await repositories.pipelineRuns.getLatestState?.(id),
+          );
+          const sources = await Promise.all(
+            originalAssets.map(async (asset: any) => {
+              const read = await deps
+                .getAssetStore()
+                .createReadUrl(session.workspaceId, asset.storageKey, {
+                  expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
+                });
+              return {
+                assetId: asset.id,
+                mimeType: asset.kind,
+                name:
+                  asset.metadata?.fileName ?? asset.storageKey.split("/").pop(),
+                previewUrl: read.url,
+              };
+            }),
+          );
+
           return {
+            sourceReadiness: await readSourceReadiness(
+              repositories,
+              session.workspaceId,
+              id,
+            ),
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,
+            inputRevision: snapshot.listing.inputRevision ?? 0,
+            workingInput: workingInput
+              ? {
+                  ...workingInput,
+                  ...workingBaselineForReview(
+                    workingInput.workingContent,
+                    workingInput.fieldStates,
+                    snapshot.activeVersion?.content,
+                  ),
+                  baseVersionId: snapshot.activeVersion?.id ?? null,
+                }
+              : legacyWorkingInput,
+            sources,
+            currentRun: currentRun
+              ? {
+                  runId: currentRun.id,
+                  state: currentRun.executionState,
+                  attempt: currentRun.runAttempt,
+                  retryOfRunId: currentRun.retryOfRunId,
+                  acceptedAt: currentRun.acceptedAt,
+                  errorCode: currentRun.errorCode,
+                  inputRevision: currentRun.inputRevision,
+                  baseVersionId: currentRun.baseVersionId,
+                }
+              : null,
+            wineProgress: currentRun
+              ? await readWineProgress(repositories, currentRun)
+              : null,
+            processing,
             activeVersion: snapshot.activeVersion,
             evidence: snapshot.evidence,
             flags: snapshot.flags,
             connection,
             productShot,
+            productShotWorkflow,
             delivery: job
               ? {
                   status: job.status,
@@ -137,7 +247,10 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               : null,
             queueStatus: job?.status ?? null,
             shoplineLink: platformProductLink
-              ? { remoteProductId: platformProductLink.remoteProductId }
+              ? {
+                  remoteProductId: platformProductLink.remoteProductId,
+                  origin: platformProductLink.origin,
+                }
               : null,
             reviewConfirmation: reviewConfirmation
               ? {
@@ -151,9 +264,13 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             contentDigest: platformProductLink?.contentDigest ?? null,
             permissions: listingPermissions(session.role),
             activity,
+            historicalImportResults:
+              await repositories.importResults.listHistoricalForListing(id),
           };
         });
-      return jsonResponse(200, result);
+      const response = jsonResponse(200, result);
+      response.headers.set("Cache-Control", "no-store");
+      return response;
     });
   };
 }

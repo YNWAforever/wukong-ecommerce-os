@@ -1,3 +1,4 @@
+import { localized } from "../../lib/ui-copy";
 import { cookies } from "next/headers";
 
 import { AppShellNav } from "../../components/app-shell-nav";
@@ -6,7 +7,7 @@ import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
-import { SHELL_NAV_ITEMS } from "./shell-nav-items";
+import { visibleNavItems } from "./shell-nav-items";
 import { resolveWorkspaceChrome } from "./workspace-chrome";
 
 export default async function AppLayout({
@@ -21,11 +22,11 @@ export default async function AppLayout({
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
-        跳到主要內容 <span>Skip to content</span>
+        {localized(locale, "跳到主要內容", "Skip to content")}
       </a>
       <header className="topbar">
         <AppShellNav
-          navItems={SHELL_NAV_ITEMS}
+          navItems={visibleNavItems(session?.role ?? null)}
           isAdmin={isAdmin}
           workspaceName={workspaceName}
           roleLabelZh={roleLabel.zh}
@@ -33,12 +34,15 @@ export default async function AppLayout({
           initialLocale={locale}
         />
       </header>
-      <main id="main-content" className="app-main">
+      <main id="main-content" className="app-main" tabIndex={-1}>
         {children}
       </main>
       <footer className="app-footer">
         <span>Wukong Ecommerce OS</span>
-        <span>{workspaceName} pilot · HKD · en / zh-Hant</span>
+        <span>
+          {workspaceName} · HKD ·{" "}
+          {localized(locale, "試行工作區", "Pilot workspace")}
+        </span>
       </footer>
     </div>
   );

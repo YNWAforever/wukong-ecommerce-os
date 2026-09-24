@@ -1,3 +1,4 @@
+import { WorkbenchReturnLink } from "../../../../components/workbench-return-link";
 import { ListingReviewClient } from "../../../../components/listing-review-client";
 
 export default async function ListingReviewPage({
@@ -5,7 +6,7 @@ export default async function ListingReviewPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ processing?: string }>;
+  searchParams: Promise<{ processing?: string; returnTo?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const initialProcessing =
@@ -13,6 +14,14 @@ export default async function ListingReviewPage({
       ? query.processing
       : undefined;
   return (
-    <ListingReviewClient listingId={id} initialProcessing={initialProcessing} />
+    <>
+      {typeof query.returnTo === "string" ? (
+        <WorkbenchReturnLink returnTo={query.returnTo} />
+      ) : null}
+      <ListingReviewClient
+        listingId={id}
+        initialProcessing={initialProcessing}
+      />
+    </>
   );
 }

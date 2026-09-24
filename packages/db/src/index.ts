@@ -67,6 +67,8 @@ export type {
 export type {
   ReviewConfirmation,
   ReviewConfirmationRepository,
+  ReviewFieldRecord,
+  ReviewFieldRecords,
   UpsertReviewConfirmationInput,
 } from "./repositories/review-confirmations.js";
 export type {
@@ -81,6 +83,7 @@ export type {
   CreateImportResultInput,
   ImportResult,
   ImportResultOutcome,
+  ImportResultMode,
   ImportResultRepository,
 } from "./repositories/import-results.js";
 export type {
@@ -107,3 +110,120 @@ export {
   type ShoplineConnectionSeedRuntime,
   type ShoplineConnectionSeedStore,
 } from "./seed-shopline-connection.js";
+export type {
+  SourceRowSnapshot,
+  CreateSourceRowInput,
+  SourceRowRepository,
+} from "./repositories/source-rows.js";
+export type {
+  BulkUpdateApprovalReceipt,
+  RecordApprovalReceiptInput,
+  ApprovalReceiptRepository,
+} from "./repositories/approval-receipts.js";
+
+export {
+  ImportResultConflict,
+  validateExportResultBinding,
+} from "./repositories/import-results.js";
+
+export * from "./repositories/export-verifications.js";
+export type {
+  ExportEvidenceSnapshot,
+  ExportEvidenceRepository,
+} from "./repositories/export-evidence.js";
+export * from "./repositories/website-catalog.js";
+export type {
+  WorkbookSaveInput,
+  WorkbookSaveResult,
+  WorkbookCatalogProduct,
+  WorkbookCatalogRepository,
+} from "./repositories/workbook-catalog.js";
+
+export {
+  classifyListing,
+  workbenchStateForReason,
+  type WorkbenchItem,
+  type WorkbenchKind,
+  type WorkbenchPage,
+  type WorkbenchQuery,
+  type WorkbenchReason,
+  type WorkbenchState,
+} from "./repositories/workbench-contract.js";
+
+export {
+  createWorkbenchReadRepository,
+  type WorkbenchReadRepository,
+} from "./repositories/workbench-reads.js";
+export {
+  PRODUCT_SHOT_LEASE_MS,
+  ProductShotConflict,
+} from "./repositories/product-shots.js";
+export type {
+  ProductShotRepository,
+  ProductShotAttempt,
+  ProductShotPublication,
+  ProductShotOutputMetadata,
+  ProductShotClaim,
+} from "./repositories/product-shots.js";
+export * from "./repositories/listing-inputs.js";
+export type { ListingOperation } from "./repositories/listing-operations.js";
+export type {
+  ListingEnrichmentSuggestion,
+  ListingEnrichmentPayload,
+} from "./repositories/listing-enrichment.js";
+export type {
+  WineEnrichmentRepository,
+  WineVersionOrigin,
+  StageRecord,
+  SearchCall,
+  SearchCallRecord,
+  WineTrustedContext,
+} from "./repositories/wine-enrichment.js";
+export { wineTrustedContextSchema } from "./repositories/wine-enrichment.js";
+export type { SearchBudgetReservationRepository } from "./repositories/search-budget-reservations.js";
+export { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
+
+export * from "./repositories/wine-acquisition.js";
+export * from "./repositories/wine-acquisition-calls.js";
+export {
+  createWineGoStore,
+  type WineGoStore,
+  type WineGoCoordinates,
+  type WineGoCall,
+  type WineGoCompletion,
+  type WineGoStage,
+} from "./repositories/wine-go-invocations.js";
+
+export * from "./wine-stage-artifacts.js";
+export * from "./wine-stage-dependencies.js";
+
+export * from "./wine-generation-ownership.js";
+export {
+  readAdoptedWineDependencies,
+  type AdoptedWineCoordinates,
+  type WineCopySupport,
+  type ValidatedWineOrigin,
+  type AdoptedWineDependencies,
+} from "./wine-adopted-dependencies.js";
+
+export * from "./wine-original-extraction.js";
+
+export {
+  authorizeWineVerifiedEvidence,
+  WineEvidenceAuthorizationError,
+} from "./wine-verified-evidence.js";
+export * from "./wine-copy-snapshot.js";
+export * from "./wine-generation-request.js";
+export * from "./wine-copy-dependencies.js";
+
+export * from "./wine-identity-selection.js";
+
+export { projectWineContent } from "./wine-proposal.js";
+
+export {
+  adoptWineProposal,
+  type AdoptWineProposalInput,
+} from "./wine-proposal-adoption.js";
+
+export * from "./wine-display.js";
+export * from "./wine-proposal-diff.js";

@@ -53,6 +53,15 @@ export type {
   BulkFormUpdateOptions,
 } from "./bulk-form.js";
 export {
+  inferWorkbookExportTime,
+  prepareWorkbookBase,
+} from "./workbook-base.js";
+export type {
+  InferredWorkbookTime,
+  PreparedWorkbookBase,
+  WorkbookBaseProduct,
+} from "./workbook-base.js";
+export {
   hashBulkFormHeaderContract,
   hashBulkFormRow,
 } from "./bulk-form-digest.js";
@@ -89,3 +98,5 @@ export {
   decryptShoplineToken,
   encryptShoplineToken,
 } from "./token-vault.js";
+
+export * from "./fresh-export-comparison.js";

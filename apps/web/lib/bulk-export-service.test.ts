@@ -1,6 +1,15 @@
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "./review-confirmation-keys";
 import { describe, expect, it } from "vitest";
 
-import { BULK_FORM_COLUMNS, ShoplineBulkFormError } from "@wukong/shopline";
+import {
+  BULK_FORM_COLUMNS,
+  hashBulkFormRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
+  ShoplineBulkFormError,
+} from "@wukong/shopline";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
 import { createBulkExport, sheetsMatch } from "./bulk-export-service.js";
@@ -110,7 +119,7 @@ function depsWith(
   > = {
     listing_changed: {
       remoteProductId: "prod-changed",
-      rawRow: rawRowFor(),
+      rawRow: rawRowFor({ productId: "prod-changed" }),
       origin: "import",
       sourceImportId: "import_1",
       contentDigest: "digest_1",
@@ -159,7 +168,85 @@ function depsWith(
       content: contentFor({ title: { en: "Title EN", "zh-Hant": "新標題" } }),
     },
   };
-  return {
+  const fixtureListingIds = new Map<string, string>();
+  const boundLinks = new Map<
+    string,
+    NonNullable<
+      Awaited<
+        ReturnType<
+          Parameters<typeof createBulkExport>[1]["getPlatformProductLink"]
+        >
+      >
+    >
+  >();
+  let reviewingListingId = "";
+  const result: Parameters<typeof createBulkExport>[1] = {
+    async getReviewState(listingId: string) {
+      reviewingListingId = listingId;
+      return {
+        status: "approved",
+        activeVersionId: (await result.getActiveVersion(listingId))?.id ?? null,
+        flags: [],
+      };
+    },
+    async getReviewConfirmation(versionId: string) {
+      // Fixtures may override the version lookup; remember the caller's listing
+      // rather than guessing from version ID spelling.
+      const listingId = fixtureListingIds.get(versionId)!;
+      const link = boundLinks.get(listingId);
+      return {
+        id: "confirmation",
+        listingId,
+        versionId,
+        revision: 0,
+        fieldConfirmations: Object.fromEntries(
+          CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+        ),
+        negativeConfirmations: Object.fromEntries(
+          CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+        ),
+        sourceImportId: link?.sourceImportId ?? "import_1",
+        rowDigest: link?.contentDigest ?? "digest_1",
+      };
+    },
+    async getApprovalReceipt(versionId) {
+      const listingId = fixtureListingIds.get(versionId)!;
+      const link = boundLinks.get(listingId);
+      return {
+        id: "receipt_" + listingId,
+        workspaceId: "ws_1",
+        listingId,
+        versionId,
+        sourceSnapshotId: "source_" + listingId,
+        confirmationVersionId: versionId,
+        confirmationRevision: 0,
+        approvedBy: "reviewer",
+        createdAt: new Date(0),
+        connectionId: link?.connectionId ?? "conn_1",
+        sourceImportId: link?.sourceImportId ?? "import_1",
+        remoteProductId: link?.remoteProductId ?? "prod-1",
+        sourceRowDigest: link?.contentDigest ?? "digest_1",
+        headerContractSha256: "contract_1",
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+      };
+    },
+    async getSourceRow() {
+      const listingId = reviewingListingId;
+      const link = boundLinks.get(listingId)!;
+      return {
+        id: "source_" + listingId,
+        workspaceId: "ws_1",
+        listingId,
+        sourceImportId: link.sourceImportId!,
+        connectionId: link.connectionId,
+        remoteProductId: link.remoteProductId,
+        sourceRowDigest: link.contentDigest!,
+        rawRow: link.rawRow!,
+        headerContractSha256: "contract_1",
+        specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+        createdAt: new Date(0),
+      };
+    },
     async getPlatformProductLink(listingId: string) {
       return links[listingId] ?? null;
     },
@@ -174,6 +261,47 @@ function depsWith(
     },
     ...overrides,
   };
+  const getLink = result.getPlatformProductLink;
+  result.getPlatformProductLink = async (listingId) => {
+    const link = await getLink(listingId);
+    if (!link) return null;
+    return link.contentDigest === "digest_1" && link.rawRow
+      ? { ...link, contentDigest: hashBulkFormRow(link.rawRow as never) }
+      : link;
+  };
+  const getVersion = result.getActiveVersion;
+  result.getActiveVersion = async (listingId) => {
+    const version = await getVersion(listingId);
+    if (version) {
+      fixtureListingIds.set(version.id, listingId);
+      if (!boundLinks.has(listingId)) {
+        const link = await result.getPlatformProductLink(listingId);
+        if (link) boundLinks.set(listingId, structuredClone(link));
+      }
+    }
+    return version;
+  };
+  return result;
+}
+
+/**
+ * The digest an operator would have to attest for `listingId` to pass the
+ * per-listing freshness gate, read straight from the same `deps` object the
+ * test is about to hand to `createBulkExport` -- so it can never drift from
+ * what the gate itself reads. Safe to call ahead of the real export call for
+ * every fixture in this file except the hand-rolled call-counting override in
+ * the "mixed 3-listing batch" test below, which is why that test instead
+ * sources its digests from separate, fresh `depsWith()` instances.
+ */
+async function digestFor(
+  deps: Parameters<typeof createBulkExport>[1],
+  listingId: string,
+): Promise<string> {
+  const link = await deps.getPlatformProductLink(listingId);
+  if (!link?.contentDigest) {
+    throw new Error(`fixture for ${listingId} has no content digest to attest`);
+  }
+  return link.contentDigest;
 }
 
 describe("createBulkExport", () => {
@@ -201,12 +329,20 @@ describe("createBulkExport", () => {
         return links;
       },
     });
+    // Sourced from separate, fresh `depsWith()` instances -- not from `deps`
+    // above -- so computing these digests doesn't itself consume one of
+    // `staleCallCount`'s calls before the real export runs.
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(depsWith(), "listing_changed")],
+      ["listing_noop", await digestFor(depsWith(), "listing_noop")],
+      ["listing_stale", await digestFor(depsWith(), "listing_stale")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop", "listing_stale"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
@@ -232,14 +368,19 @@ describe("createBulkExport", () => {
   });
 
   it("does not write a no-op listing's row into the actual emitted workbook bytes", async () => {
+    const deps = depsWith();
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_noop", await digestFor(deps, "listing_noop")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop"],
-        freshnessAttested: true,
+        attestedDigests,
       },
-      depsWith(),
+      deps,
     );
     expect(result.rowCount).toBe(1);
 
@@ -286,12 +427,18 @@ describe("createBulkExport", () => {
         return depsWith().getActiveVersion(listingId);
       },
     });
+    const attestedDigests = new Map([
+      [
+        "listing_blank_trailing_column",
+        await digestFor(deps, "listing_blank_trailing_column"),
+      ],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_blank_trailing_column"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
@@ -311,13 +458,13 @@ describe("createBulkExport", () => {
     expect(dataRow.length).toBeLessThan(BULK_FORM_COLUMNS.length);
   });
 
-  it("excludes every import-origin listing with not_attested when freshnessAttested is false", async () => {
+  it("excludes every import-origin listing with not_attested when no digest was attested for it", async () => {
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed"],
-        freshnessAttested: false,
+        attestedDigests: new Map(),
       },
       depsWith(),
     );
@@ -353,7 +500,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_created"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: `origin: "created"` is rejected
+        // before `checkBulkUpdateEligibility` looks at the attestation.
+        attestedDigests: new Map(),
       },
       deps,
     );
@@ -362,20 +511,24 @@ describe("createBulkExport", () => {
         listingId: "listing_created",
         versionId: "version_created",
         outcome: "not_import_origin",
+        reason: "not_import_origin",
       },
     ]);
     expect(result.rowCount).toBe(0);
   });
 
   it("produces rowCount 0 with a full manifest, not an error, when every listing is excluded", async () => {
+    const deps = depsWith();
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_noop"],
-        freshnessAttested: true,
+        attestedDigests: new Map([
+          ["listing_noop", await digestFor(deps, "listing_noop")],
+        ]),
       },
-      depsWith(),
+      deps,
     );
     expect(result.rowCount).toBe(0);
     expect(result.manifest).toHaveLength(1);
@@ -387,7 +540,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_missing"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: there's no active version to
+        // check eligibility for.
+        attestedDigests: new Map(),
       },
       depsWith({
         async getActiveVersion() {
@@ -433,7 +588,9 @@ describe("createBulkExport", () => {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_invalid_row"],
-        freshnessAttested: true,
+        // Never reaches the freshness gate: `isBulkFormRawRow` rejects the
+        // link's raw row first.
+        attestedDigests: new Map(),
       },
       deps,
     );
@@ -491,13 +648,17 @@ describe("createBulkExport", () => {
         return depsWith().getActiveVersion(listingId);
       },
     });
+    const attestedDigests = new Map([
+      ["listing_dup_a", await digestFor(deps, "listing_dup_a")],
+      ["listing_dup_b", await digestFor(deps, "listing_dup_b")],
+    ]);
     await expect(
       createBulkExport(
         {
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_dup_a", "listing_dup_b"],
-          freshnessAttested: true,
+          attestedDigests,
         },
         deps,
       ),
@@ -532,13 +693,17 @@ describe("createBulkExport", () => {
       },
     });
 
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_other_store", await digestFor(deps, "listing_other_store")],
+    ]);
     await expect(
       createBulkExport(
         {
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_changed", "listing_other_store"],
-          freshnessAttested: true,
+          attestedDigests,
         },
         deps,
       ),
@@ -575,15 +740,83 @@ describe("createBulkExport", () => {
       },
     });
 
+    const getConfirmation = deps.getReviewConfirmation;
+    deps.getReviewConfirmation = async (versionId) => {
+      const confirmation = await getConfirmation(versionId);
+      return confirmation && versionId === "version_other_import"
+        ? { ...confirmation, sourceImportId: "import_2" }
+        : confirmation;
+    };
+    const attestedDigests = new Map([
+      ["listing_changed", await digestFor(deps, "listing_changed")],
+      ["listing_other_import", await digestFor(deps, "listing_other_import")],
+    ]);
     const result = await createBulkExport(
       {
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_other_import"],
-        freshnessAttested: true,
+        attestedDigests,
       },
       deps,
     );
     expect(result.rowCount).toBe(2);
+  });
+});
+
+describe("per-listing attestation", () => {
+  it("excludes a listing whose attested digest no longer matches", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed"],
+        attestedDigests: new Map([["listing_changed", "stale-digest"]]),
+      },
+      depsWith(),
+    );
+
+    expect(result.manifest[0]).toMatchObject({
+      listingId: "listing_changed",
+      outcome: "excluded_stale",
+    });
+  });
+
+  it("treats a listing with no attestation as unattested", async () => {
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "user_1",
+        listingIds: ["listing_changed"],
+        attestedDigests: new Map(),
+      },
+      depsWith(),
+    );
+
+    expect(result.manifest[0]).toMatchObject({ outcome: "excluded_stale" });
+  });
+});
+
+describe("immutable export ordering", () => {
+  it("uses identical workbook bytes, evidence and manifest when listing IDs are reordered", async () => {
+    const input = {
+      workspaceId: "ws_1",
+      requestedBy: "reviewer",
+      attestedDigests: new Map([
+        ["listing_changed", await digestFor(depsWith(), "listing_changed")],
+        ["listing_stale", await digestFor(depsWith(), "listing_stale")],
+      ]),
+    };
+    const forward = await createBulkExport(
+      { ...input, listingIds: ["listing_changed", "listing_stale"] },
+      depsWith(),
+    );
+    const reverse = await createBulkExport(
+      { ...input, listingIds: ["listing_stale", "listing_changed"] },
+      depsWith(),
+    );
+    expect(reverse.body).toEqual(forward.body);
+    expect(reverse.evidence).toEqual(forward.evidence);
+    expect(reverse.manifest).toEqual(forward.manifest);
   });
 });

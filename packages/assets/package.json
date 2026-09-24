@@ -13,6 +13,21 @@
       "types": "./src/product-shot-flatten.ts",
       "development": "./src/product-shot-flatten.ts",
       "default": "./dist/product-shot-flatten.js"
+    },
+    "./product-shot-render": {
+      "types": "./src/product-shot-render.ts",
+      "development": "./src/product-shot-render.ts",
+      "default": "./dist/product-shot-render.js"
+    },
+    "./media-policy": {
+      "types": "./src/media-policy.ts",
+      "development": "./src/media-policy.ts",
+      "default": "./dist/media-policy.js"
+    },
+    "./inspect-source": {
+      "types": "./src/inspect-source.ts",
+      "development": "./src/inspect-source.ts",
+      "default": "./dist/inspect-source.js"
     }
   },
   "scripts": {
@@ -24,6 +39,8 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.910.0",
     "@aws-sdk/s3-request-presigner": "^3.910.0",
+    "@wukong/core": "workspace:*",
+    "pdf-lib": "1.17.1",
     "sharp": "^0.35.3"
   },
   "devDependencies": {

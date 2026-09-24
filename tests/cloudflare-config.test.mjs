@@ -99,8 +99,11 @@ test("renders deterministic non-secret Wrangler config", () => {
     observability: { enabled: true },
     secrets: { required: requiredSecrets },
     vars: {
+      PRODUCT_SHOT_PROVIDER: "disabled",
       BUILD_SHA: safeRendererInputs.BUILD_SHA,
       AI_PROVIDER: "fake",
+      LISTING_PAID_OPERATIONS_ENABLED: "false",
+      WINE_ENRICHMENT_ENABLED: "false",
       OPENAI_LISTING_MODEL: "gpt-5-mini",
       SHOPLINE_ADAPTER: "mock",
       SHOPLINE_PUBLISH_ENABLED: "false",
@@ -149,7 +152,9 @@ test("renders deterministic non-secret Wrangler config", () => {
   assert.deepEqual(Object.keys(config.vars).sort(), [
     "AI_PROVIDER",
     "BUILD_SHA",
+    "LISTING_PAID_OPERATIONS_ENABLED",
     "OPENAI_LISTING_MODEL",
+    "PRODUCT_SHOT_PROVIDER",
     "S3_BUCKET",
     "S3_ENDPOINT",
     "S3_FORCE_PATH_STYLE",
@@ -157,6 +162,7 @@ test("renders deterministic non-secret Wrangler config", () => {
     "SHOPLINE_ADAPTER",
     "SHOPLINE_PUBLISH_ENABLED",
     "TYPESAFE_VERIFICATION_MODE",
+    "WINE_ENRICHMENT_ENABLED",
   ]);
 });
 
@@ -265,7 +271,7 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
   const rootPackage = readJson("package.json");
   assert.equal(
     rootPackage.scripts.test,
-    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/typesafe-runtime-config.test.mjs tests/runtime-doctor.test.mjs && turbo run test",
+    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/typesafe-runtime-config.test.mjs tests/runtime-doctor.test.mjs tests/runtime-env-manifest.test.mjs tests/release-gate.test.mjs && turbo run test",
   );
 });
 
@@ -313,4 +319,263 @@ test("restores preview configuration for downstream CI gates", () => {
   assert.equal(config.name, expected.preview.worker);
   assert.equal(config.vars.SHOPLINE_ADAPTER, "mock");
   assert.equal(config.vars.SHOPLINE_PUBLISH_ENABLED, "false");
+});
+
+test("renders optional trusted website callback origin without requiring it for legacy runtime", () => {
+  const result = render({ WEBSITE_FETCH_BASE_URL: "https://web.example" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.WEBSITE_FETCH_BASE_URL,
+    "https://web.example",
+  );
+  assert.equal(
+    render({ WEBSITE_FETCH_BASE_URL: "http://web.example" }).status,
+    1,
+  );
+  assert.equal(
+    render({ WEBSITE_FETCH_BASE_URL: "https://web.example/path" }).status,
+    1,
+  );
+  assert.equal(render().status, 0);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.WEBSITE_FETCH_BASE_URL,
+    undefined,
+  );
+});
+
+test("product shots default disabled and live mode validates budget with secret-only key", () => {
+  assert.equal(render().status, 0);
+  assert.equal(
+    readJson(".wrangler/wrangler.generated.jsonc").vars.PRODUCT_SHOT_PROVIDER,
+    "disabled",
+  );
+  for (const value of [
+    "",
+    "0",
+    "-1",
+    "1.5",
+    "Infinity",
+    "2147483648",
+    "9007199254740991",
+  ])
+    assert.notEqual(
+      render({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: value,
+      }).status,
+      0,
+    );
+  assert.notEqual(render({ PRODUCT_SHOT_PROVIDER: "other" }).status, 0);
+  const result = render({
+    PRODUCT_SHOT_PROVIDER: "photoroom",
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
+    PHOTOROOM_API_KEY: "must-not-render",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.ok(config.secrets.required.includes("PHOTOROOM_API_KEY"));
+  assert.equal(
+    config.vars.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY,
+    "2147483647",
+  );
+  assert.ok(!JSON.stringify(config).includes("must-not-render"));
+  assert.equal(render().status, 0);
+});
+
+test("renders OpenRouter alone and composes product-shot secrets without values", () => {
+  for (const provider of ["disabled", "fake", "photoroom"]) {
+    const result = render({
+      AI_PROVIDER: "openrouter",
+      OPENAI_LISTING_MODEL: "",
+      OPENROUTER_LISTING_MODEL: "vendor/model-1",
+      OPENROUTER_API_KEY: "secret-marker",
+      PRODUCT_SHOT_PROVIDER: provider,
+      PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "1",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const config = readJson(".wrangler/wrangler.generated.jsonc");
+    assert.equal(config.vars.OPENROUTER_LISTING_MODEL, "vendor/model-1");
+    assert.equal(config.vars.OPENAI_LISTING_MODEL, undefined);
+    assert.equal(config.vars.SHOPLINE_PUBLISH_ENABLED, "false");
+    assert.ok(config.secrets.required.includes("OPENROUTER_API_KEY"));
+    assert.ok(!config.secrets.required.includes("OPENAI_API_KEY"));
+    assert.equal(
+      config.secrets.required.includes("PHOTOROOM_API_KEY"),
+      provider === "photoroom",
+    );
+    assert.doesNotMatch(JSON.stringify(config), /secret-marker/);
+    assert.throws(
+      () =>
+        verifyExactSecretNames(config.secrets.required, [
+          ...config.secrets.required,
+          "OPENAI_API_KEY",
+        ]),
+      /unexpected: OPENAI_API_KEY/,
+    );
+  }
+});
+test("rejects missing and dynamic OpenRouter models", () => {
+  for (const model of [
+    "",
+    "openrouter/auto",
+    "vendor/model:free",
+    "vendor/model-latest",
+    "vendor/model-online",
+    "vendor/search",
+    "vendor/model name",
+    "vendor/" + "a".repeat(128),
+  ]) {
+    const result = render({
+      AI_PROVIDER: "openrouter",
+      OPENROUTER_LISTING_MODEL: model,
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /OPENROUTER_LISTING_MODEL/);
+  }
+});
+test("listing secret helper preserves legacy choices and rejects invalid providers", async () => {
+  const { listingProviderSecretNames } =
+    await import("../scripts/listing-provider-config.mjs");
+  for (const provider of ["fake", "openai"])
+    assert.deepEqual(
+      listingProviderSecretNames(requiredSecrets, provider),
+      requiredSecrets,
+    );
+  assert.throws(
+    () => listingProviderSecretNames(requiredSecrets, "other"),
+    /AI_PROVIDER/,
+  );
+});
+test("renders pinned Go model and its dedicated secret without leaking values", () => {
+  const result = render({
+    AI_PROVIDER: "opencode-go",
+    OPENAI_LISTING_MODEL: "",
+    OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+    OPENCODE_GO_API_KEY: "go-secret-marker",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.equal(config.vars.OPENCODE_GO_LISTING_MODEL, "deepseek-v4.1-flash");
+  assert.equal(config.vars.OPENAI_LISTING_MODEL, undefined);
+  assert.ok(config.secrets.required.includes("OPENCODE_GO_API_KEY"));
+  assert.ok(!config.secrets.required.includes("OPENAI_API_KEY"));
+  assert.doesNotMatch(JSON.stringify(config), /go-secret-marker/);
+  for (const model of ["", "deepseek-flash", "deepseek-v4-flash", "auto"])
+    assert.notEqual(
+      render({ AI_PROVIDER: "opencode-go", OPENCODE_GO_LISTING_MODEL: model })
+        .status,
+      0,
+    );
+});
+
+test("wine full research requires only Worker Tavily secret names when enabled", () => {
+  for (const enabled of [undefined, "false", "true"]) {
+    const result = render({
+      AI_PROVIDER: "opencode-go",
+      OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+      ...(enabled ? { WINE_ENRICHMENT_ENABLED: enabled } : {}),
+      TAVILY_API_KEY: "tavily-secret-marker",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const config = readJson(".wrangler/wrangler.generated.jsonc");
+    assert.equal(config.vars.WINE_ENRICHMENT_ENABLED, enabled ?? "false");
+    assert.equal(
+      config.secrets.required.includes("TAVILY_API_KEY"),
+      enabled === "true",
+    );
+    assert.doesNotMatch(JSON.stringify(config), /tavily-secret-marker/);
+  }
+});
+
+test("enabled wine configuration rejects a different provider", () => {
+  const result = render({ WINE_ENRICHMENT_ENABLED: "true" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /opencode-go/);
+});
+
+test("deployment preflight requires enabled Tavily and permits retained drain credentials when disabled", async () => {
+  const { verifyRuntimeSecretNames } =
+    await import("../scripts/verify-cloudflare-secrets.mjs");
+  const source = readJson("cloudflare-runtime.config.json");
+  const env = { AI_PROVIDER: "opencode-go", WINE_ENRICHMENT_ENABLED: "true" };
+  const base = [
+    ...requiredSecrets.filter((n) => n !== "OPENAI_API_KEY"),
+    "OPENCODE_GO_API_KEY",
+  ];
+  assert.doesNotThrow(() =>
+    verifyRuntimeSecretNames(source, env, [...base, "TAVILY_API_KEY"]),
+  );
+  assert.throws(
+    () => verifyRuntimeSecretNames(source, env, base),
+    /missing: TAVILY_API_KEY/,
+  );
+  for (const configured of [base, [...base, "TAVILY_API_KEY"]])
+    assert.doesNotThrow(() =>
+      verifyRuntimeSecretNames(
+        source,
+        { ...env, WINE_ENRICHMENT_ENABLED: "false" },
+        configured,
+      ),
+    );
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(
+        source,
+        { ...env, WINE_ENRICHMENT_ENABLED: "false" },
+        [...base, "UNEXPECTED_SECRET"],
+      ),
+    /unexpected: UNEXPECTED_SECRET/,
+  );
+});
+
+test("Jev composes with Go, wine, and product-shot secret policies", async () => {
+  const { verifyRuntimeSecretNames } =
+    await import("../scripts/verify-cloudflare-secrets.mjs");
+  const source = readJson("cloudflare-runtime.config.json");
+  const env = {
+    AI_PROVIDER: "opencode-go",
+    OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+    WINE_ENRICHMENT_ENABLED: "true",
+    PRODUCT_SHOT_PROVIDER: "photoroom",
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "10",
+    TYPESAFE_VERIFICATION_MODE: "advisory",
+    TYPESAFE_MODEL: "jev-1.13.0",
+  };
+  const result = render(env);
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  const names = config.secrets.required;
+  for (const name of [
+    "TYPESAFE_API_KEY",
+    "TAVILY_API_KEY",
+    "PHOTOROOM_API_KEY",
+    "OPENCODE_GO_API_KEY",
+  ])
+    assert.ok(names.includes(name));
+  assert.deepEqual(verifyRuntimeSecretNames(source, env, names), names);
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(
+        source,
+        env,
+        names.filter((name) => name !== "TYPESAFE_API_KEY"),
+      ),
+    /missing: TYPESAFE_API_KEY/,
+  );
+  assert.doesNotThrow(() =>
+    verifyRuntimeSecretNames(
+      source,
+      {
+        ...env,
+        WINE_ENRICHMENT_ENABLED: "false",
+        TYPESAFE_VERIFICATION_MODE: "off",
+      },
+      names,
+    ),
+  );
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(source, env, [...names, "UNEXPECTED_SECRET"]),
+    /unexpected: UNEXPECTED_SECRET/,
+  );
 });

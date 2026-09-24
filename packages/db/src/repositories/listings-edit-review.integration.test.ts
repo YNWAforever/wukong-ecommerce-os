@@ -11,6 +11,7 @@ const appUrl =
   process.env.TEST_DATABASE_URL ??
   "postgres://wukong_app:wukong-app-local@localhost:54329/wukong";
 const workspaceId = "ws_edit_review";
+const otherWorkspaceId = "ws_edit_review_foreign";
 
 const listingContent: CanonicalListing = {
   sku: "OPAK-001",
@@ -64,15 +65,33 @@ describe("listing review edits guard in-flight states", () => {
     entityId: listingId,
   });
 
+  const invalidationEvents = async (listingId: string) =>
+    (
+      await admin<{ action: string; metadata: Record<string, unknown> }[]>`
+        select action, metadata from audit_events
+        where workspace_id = ${workspaceId} and entity_id = ${listingId}
+        order by created_at, id`
+    ).map((row) => ({ action: row.action, metadata: row.metadata }));
+
   beforeAll(async () => {
     await admin.unsafe(
       "DO $role$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wukong_app') THEN CREATE ROLE wukong_app LOGIN PASSWORD 'wukong-app-local' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS; END IF; END $role$;",
     );
     await database.migrate();
     await admin.unsafe(`DELETE FROM workspaces WHERE id = '${workspaceId}'`);
+    await admin.unsafe(
+      `DELETE FROM workspaces WHERE id = '${otherWorkspaceId}'`,
+    );
+    await admin.unsafe(`
+      INSERT INTO workspaces (id, name, profile) VALUES
+        ('${otherWorkspaceId}', '${otherWorkspaceId}', '{}'::jsonb)
+    `);
   });
 
   afterAll(async () => {
+    await admin.unsafe(
+      `DELETE FROM workspaces WHERE id = '${otherWorkspaceId}'`,
+    );
     await database.close();
     await admin.end();
   });
@@ -93,6 +112,148 @@ describe("listing review edits guard in-flight states", () => {
     await admin`update listing_drafts set status = ${status}::listing_status, active_version_id = ${created.versionId} where workspace_id = ${workspaceId} and id = ${created.listingId}`;
     return created;
   }
+
+  /**
+   * A blocking compliance flag must not be erasable by an ordinary Save.
+   *
+   * Flags are stored against the version they were raised on, and every edit
+   * appends a new version. `approveListing` refuses only on an OPEN BLOCKING
+   * flag it can see (`packages/core/src/review.ts`), and it reads them off the
+   * ACTIVE version -- so an edit that carried nothing forward left the new
+   * version with an empty flag set and the gate simply opened. The edit did not
+   * even have to touch the flagged field.
+   *
+   * `listing-approval.ts` already calls `replaceFlags(newVersion.id,
+   * snapshot.flags)` wherever it appends a version. This path was the one that
+   * did not.
+   */
+  it("carries compliance flags onto the version an edit creates", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details) values (${workspaceId}, ${versionId}, 'rating_without_evidence', 'blocking', 'open', ${admin.json({ id: "flag_1", field: "description" })})`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+
+    const carried =
+      await admin`select code, severity, status, details from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(carried).toHaveLength(1);
+    expect(carried[0]).toMatchObject({
+      code: "rating_without_evidence",
+      severity: "blocking",
+      status: "open",
+    });
+    // The gate reads from the active version, so this is what approval sees.
+    const snapshot = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getReviewSnapshot(listingId),
+    );
+    expect(snapshot?.flags).toHaveLength(1);
+    expect(snapshot?.flags[0]).toMatchObject({
+      severity: "blocking",
+      status: "open",
+    });
+  });
+
+  it("keeps a resolved flag resolved rather than reopening it", async () => {
+    // Carrying must not lose the resolution either: re-raising a flag an
+    // operator has already answered would block a listing they had cleared.
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details, resolved_at) values (${workspaceId}, ${versionId}, 'rating_without_evidence', 'blocking', 'resolved', ${admin.json({ id: "flag_2", field: "description", resolutionReason: "Score verified against the importer sheet." })}, now())`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+
+    const carried =
+      await admin`select status, details from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(carried[0]?.status).toBe("resolved");
+    expect(
+      (carried[0]?.details as { resolutionReason?: string })?.resolutionReason,
+    ).toBe("Score verified against the importer sheet.");
+  });
+
+  /**
+   * When the caller has re-scanned the edited copy, IT decides.
+   *
+   * The copy-forward above is the safe default, but it can only ever preserve
+   * what was already there -- so a claim the operator edited OUT kept its flag
+   * for ever. The review route re-scans and passes the result, and that result
+   * has to replace the carried set rather than be added to it.
+   */
+  it("replaces the carried flags when the caller supplies its own", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+    await admin`insert into compliance_flags (workspace_id, listing_version_id, code, severity, status, details) values (${workspaceId}, ${versionId}, 'health_claim', 'blocking', 'open', ${admin.json({ id: "flag_3", field: "descriptionEn" })})`;
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["title"],
+        contextFor(listingId),
+        repos.audit,
+        // The operator removed the offending sentence, so the re-scan is empty.
+        [],
+      ),
+    );
+
+    const remaining =
+      await admin`select code from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(remaining).toEqual([]);
+    // The base version keeps its own history; only the new version changes.
+    const original =
+      await admin`select code from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${versionId}`;
+    expect(original).toHaveLength(1);
+  });
+
+  it("writes a flag the caller raised that the base version never had", async () => {
+    const { listingId, versionId } = await seedListing("in_review");
+
+    const version = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.editReview(
+        listingId,
+        versionId,
+        editedContent,
+        ["description"],
+        contextFor(listingId),
+        repos.audit,
+        [
+          {
+            id: "descriptionEn:rating_without_evidence:0",
+            field: "descriptionEn",
+            rule: "rating_without_evidence",
+            severity: "blocking",
+            status: "open",
+            resolutionReason: null,
+          },
+        ],
+      ),
+    );
+
+    const written =
+      await admin`select code, severity, status from compliance_flags where workspace_id = ${workspaceId} and listing_version_id = ${version.id}`;
+    expect(written).toEqual([
+      {
+        code: "rating_without_evidence",
+        severity: "blocking",
+        status: "open",
+      },
+    ]);
+  });
 
   it("refuses an edit while a SHOPLINE delivery is in flight", async () => {
     const { listingId, versionId } = await seedListing("publishing");
@@ -173,5 +334,112 @@ describe("listing review edits guard in-flight states", () => {
       repos.listings.getById(listingId),
     );
     expect(after?.status).toBe("reopened");
+  });
+
+  it.each(["approved", "published", "publish_failed"])(
+    "reopens %s when its current confirmation ledger changes, and records why",
+    async (status) => {
+      const { listingId, versionId } = await seedListing(status);
+      const result = await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.invalidateApprovalForConfirmationChange(
+          listingId,
+          versionId,
+          contextFor(listingId),
+          repos.audit,
+        ),
+      );
+      const after = await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.getById(listingId),
+      );
+      expect(result).toBe("reopened");
+      expect(after?.status).toBe("reopened");
+      expect(after?.activeVersionId).toBe(versionId);
+      // `audit_events.id` is a random uuid (not monotonic) and both events can
+      // land in the same transaction with the same `created_at`, so ordering
+      // by (created_at, id) is not reliable here -- we only assert that both
+      // the transition and the invalidation were recorded.
+      const events = await invalidationEvents(listingId);
+      const transitionEvent = events.find(
+        (row) => row.action === "listing.transition",
+      );
+      const invalidationEvent = events.find(
+        (row) => row.action === "listing.approval_invalidated",
+      );
+      expect(transitionEvent).toBeDefined();
+      expect(invalidationEvent).toBeDefined();
+      expect(invalidationEvent!.metadata).toEqual({
+        cause: "confirmation_changed",
+        fromStatus: status,
+        versionId,
+      });
+    },
+  );
+
+  it("fails closed while publishing and keeps the in-flight status", async () => {
+    const { listingId, versionId } = await seedListing("publishing");
+    const result = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.invalidateApprovalForConfirmationChange(
+        listingId,
+        versionId,
+        contextFor(listingId),
+        repos.audit,
+      ),
+    );
+    const after = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getById(listingId),
+    );
+    expect(result).toBe("publishing");
+    expect(after?.status).toBe("publishing");
+    expect(
+      (await invalidationEvents(listingId)).filter(
+        (row) => row.action === "listing.approval_invalidated",
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects a confirmation write observed against a superseded version", async () => {
+    const { listingId } = await seedListing("approved");
+    await expect(
+      forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.invalidateApprovalForConfirmationChange(
+          listingId,
+          "00000000-0000-4000-8000-000000000999",
+          contextFor(listingId),
+          repos.audit,
+        ),
+      ),
+    ).resolves.toBe("stale");
+  });
+
+  it("reads approval states for exactly the requested listings in this workspace", async () => {
+    const approved = await seedListing("approved");
+    const inReview = await seedListing("in_review");
+
+    const states = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.approvalStatesByIds([
+        approved.listingId,
+        inReview.listingId,
+      ]),
+    );
+    expect(states).toEqual({
+      [approved.listingId]: {
+        status: "approved",
+        activeVersionId: approved.versionId,
+      },
+      [inReview.listingId]: {
+        status: "in_review",
+        activeVersionId: inReview.versionId,
+      },
+    });
+    expect(
+      await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.approvalStatesByIds([]),
+      ),
+    ).toEqual({});
+    expect(
+      await forWorkspace(database, otherWorkspaceId, (repos) =>
+        repos.listings.approvalStatesByIds([approved.listingId]),
+      ),
+    ).toEqual({});
   });
 });

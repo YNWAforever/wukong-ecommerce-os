@@ -1,17 +1,21 @@
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../lib/locale";
+import { readPageCopy } from "../../../lib/read-page-copy";
+import { commonCopy } from "../../../lib/ui-copy";
 import { QueueClient } from "../../../components/queue-client";
 
-export default function QueuePage() {
+export default async function QueuePage() {
+  const locale = resolveLocale(
+    (await cookies()).get(LOCALE_COOKIE_NAME)?.value,
+  );
+  const copy = readPageCopy.queue[locale];
   return (
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            工作佇列 <span>WORK QUEUE</span>
-          </p>
-          <h1>依狀態排序的完整工作佇列</h1>
-          <p className="lede">
-            檢視所有進行中商品，並批量批准已符合條件的項目。
-          </p>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.title}</h1>
+          <p className="lede">{copy.description}</p>
         </div>
       </div>
       <QueueClient />

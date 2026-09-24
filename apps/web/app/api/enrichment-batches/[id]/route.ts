@@ -42,7 +42,7 @@ export function createGetEnrichmentBatchHandler(
       }
 
       const { id } = await context.params;
-      const { batch, counts } = await deps.getBatch({
+      const { batch, counts, items, spentUsd } = await deps.getBatch({
         workspaceId: session.workspaceId,
         batchId: id,
       });
@@ -50,6 +50,8 @@ export function createGetEnrichmentBatchHandler(
       return jsonResponse(200, {
         batch: { ...batch, createdAt: batch.createdAt.toISOString() },
         counts,
+        items,
+        spentUsd,
       });
     });
   };

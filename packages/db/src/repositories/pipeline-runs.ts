@@ -1,6 +1,8 @@
-import { and, desc, eq, exists, lt, not, sql } from "drizzle-orm";
+import { createListingOperationRecoveryRepository } from "./listing-operation-recovery.js";
+import { inArray, and, desc, eq, exists, lt, not, sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { listingPipelineRuns, listingPipelineSteps } from "../schema.js";
+import { createListingOperationRepository } from "./listing-operations.js";
 
 export type PipelineResult = {
   status: "in_review" | "needs_info";
@@ -15,7 +17,7 @@ export type PipelineRunState = {
   errorCode: string | null;
   steps: ReadonlyMap<
     PipelineStepName,
-    { state: "running" | "completed"; output: unknown }
+    { state: "running" | "completed" | "failed"; output: unknown }
   >;
 };
 /**
@@ -23,7 +25,7 @@ export type PipelineRunState = {
  * it. Must outlive the worst-case provider call, or a redelivery reclaims a
  * step that is still running and the extraction is paid for twice.
  */
-export const PIPELINE_STEP_LEASE_MS = 300_000;
+export const PIPELINE_STEP_LEASE_MS = 360_000;
 
 export type PipelineRunSummary = {
   id: string;
@@ -45,57 +47,74 @@ export type StepClaim = {
    */
   leaseExpiresAt: Date | null;
 };
-export type PipelineRunRepository = {
-  getCompleted(key: string): Promise<PipelineResult | null>;
-  getState(key: string): Promise<PipelineRunState | null>;
-  /** Newest-first, this workspace's pipeline runs only. `limit` defaults to
-   * 100 and must be between 1 and 100. */
-  listForWorkspace(limit?: number): Promise<PipelineRunSummary[]>;
-  claimStep(input: {
-    idempotencyKey: string;
-    listingId: string;
-    activeVersionSequence: number;
-    step: PipelineStepName;
-  }): Promise<StepClaim>;
-  recordStep(input: {
-    idempotencyKey: string;
-    listingId: string;
-    activeVersionSequence: number;
-    step: PipelineStepName;
-    leaseToken: string;
-    output?: unknown;
-  }): Promise<void>;
-  complete(input: {
-    idempotencyKey: string;
-    listingId: string;
-    activeVersionSequence: number;
-    step: PipelineStepName;
-    leaseToken?: string;
-    status: PipelineResult["status"];
-    versionId: string | null;
-  }): Promise<void>;
-  fail(input: {
-    idempotencyKey: string;
-    listingId: string;
-    activeVersionSequence: number;
-    errorCode: string;
-    step: PipelineStepName;
-    leaseToken?: string;
-  }): Promise<boolean>;
-  releaseStep(input: {
-    idempotencyKey: string;
-    step: PipelineStepName;
-    leaseToken: string;
-  }): Promise<void>;
-  /**
-   * Returns a failed run to `started` so an operator can re-drive it, and drops
-   * any step still marked `running`. A failed run has no live worker by
-   * definition -- those rows are orphaned leases, and leaving them would block
-   * the retry until they went stale. Completed steps are kept so the retry does
-   * not pay for extraction again. No-op unless the run is currently failed.
-   */
-  reopenFailed(idempotencyKey: string): Promise<boolean>;
-};
+export type PipelineRunRepository = ReturnType<
+  typeof createListingOperationRepository
+> &
+  ReturnType<typeof createListingOperationRecoveryRepository> & {
+    getLatestState(listingId: string): Promise<PipelineRunState | null>;
+    getCompleted(key: string): Promise<PipelineResult | null>;
+    getState(key: string): Promise<PipelineRunState | null>;
+    /**
+     * How many runs already exist for this listing at this revision.
+     *
+     * Used to number a deliberate re-run. A listing that ended in `needs_info`
+     * appends no version, so its `activeVersionSequence` never moves and the key
+     * derived from it alone keeps resolving to the completed run; this count is
+     * what makes the next run addressable.
+     */
+    countRuns(input: {
+      listingId: string;
+      activeVersionSequence: number;
+    }): Promise<number>;
+    /** Newest-first, this workspace's pipeline runs only. `limit` defaults to
+     * 100 and must be between 1 and 100. */
+    getByIds(ids: readonly string[]): Promise<PipelineRunSummary[]>;
+    listForWorkspace(limit?: number): Promise<PipelineRunSummary[]>;
+    claimStep(input: {
+      idempotencyKey: string;
+      listingId: string;
+      activeVersionSequence: number;
+      step: PipelineStepName;
+    }): Promise<StepClaim>;
+    recordStep(input: {
+      idempotencyKey: string;
+      listingId: string;
+      activeVersionSequence: number;
+      step: PipelineStepName;
+      leaseToken: string;
+      output?: unknown;
+    }): Promise<void>;
+    complete(input: {
+      idempotencyKey: string;
+      listingId: string;
+      activeVersionSequence: number;
+      step: PipelineStepName;
+      leaseToken?: string;
+      status: PipelineResult["status"];
+      versionId: string | null;
+    }): Promise<void>;
+    fail(input: {
+      idempotencyKey: string;
+      listingId: string;
+      activeVersionSequence: number;
+      errorCode: string;
+      step: PipelineStepName;
+      leaseToken?: string;
+    }): Promise<boolean>;
+    releaseStep(input: {
+      idempotencyKey: string;
+      step: PipelineStepName;
+      leaseToken: string;
+    }): Promise<void>;
+    /**
+     * Returns a failed run to `started` so an operator can re-drive it, and drops
+     * any step still marked `running`. A failed run has no live worker by
+     * definition -- those rows are orphaned leases, and leaving them would block
+     * the retry until they went stale. Completed steps are kept so the retry does
+     * not pay for extraction again. No-op unless the run is currently failed.
+     */
+    reopenFailed(idempotencyKey: string): Promise<boolean>;
+  };
 
 export function createPipelineRunRepository(
   transaction: WorkspaceTransaction,
@@ -132,7 +151,8 @@ export function createPipelineRunRepository(
       })
       .from(listingPipelineRuns)
       .where(runWhere(input.idempotencyKey))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (
       !run ||
       run.listingId !== input.listingId ||
@@ -202,6 +222,30 @@ export function createPipelineRunRepository(
       ? stepLeaseExists(runId, step, leaseToken)
       : and(completedStepExists(runId, step), not(runningStepExists(runId)));
   return {
+    ...createListingOperationRepository(transaction, workspaceId, scope),
+    ...createListingOperationRecoveryRepository(
+      transaction,
+      workspaceId,
+      scope,
+    ),
+    async getLatestState(listingId) {
+      scope.assertOpen();
+      const rows = await transaction
+        .select({ key: listingPipelineRuns.idempotencyKey })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            eq(listingPipelineRuns.workspaceId, workspaceId),
+            eq(listingPipelineRuns.listingId, listingId),
+          ),
+        )
+        .orderBy(
+          desc(listingPipelineRuns.createdAt),
+          desc(listingPipelineRuns.id),
+        )
+        .limit(1);
+      return rows[0] ? this.getState(rows[0].key) : null;
+    },
     async getCompleted(key) {
       scope.assertOpen();
       const [run] = await transaction
@@ -219,6 +263,24 @@ export function createPipelineRunRepository(
         status: run.status as "in_review" | "needs_info",
         versionId: run.versionId,
       };
+    },
+
+    async countRuns(input) {
+      scope.assertOpen();
+      const [row] = await transaction
+        .select({ total: sql<number>`count(*)::int` })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            eq(listingPipelineRuns.workspaceId, workspaceId),
+            eq(listingPipelineRuns.listingId, input.listingId),
+            eq(
+              listingPipelineRuns.activeVersionSequence,
+              input.activeVersionSequence,
+            ),
+          ),
+        );
+      return row?.total ?? 0;
     },
 
     async getState(key) {
@@ -251,7 +313,7 @@ export function createPipelineRunRepository(
         );
       const steps = new Map<
         PipelineStepName,
-        { state: "running" | "completed"; output: unknown }
+        { state: "running" | "completed" | "failed"; output: unknown }
       >();
       for (const row of rows) {
         if (
@@ -260,7 +322,12 @@ export function createPipelineRunRepository(
           row.step === "generated"
         ) {
           steps.set(row.step, {
-            state: row.state === "completed" ? "completed" : "running",
+            state:
+              row.state === "completed"
+                ? "completed"
+                : row.state === "failed"
+                  ? "failed"
+                  : "running",
             output: row.output,
           });
         }
@@ -276,6 +343,45 @@ export function createPipelineRunRepository(
         errorCode: run.errorCode,
         steps,
       };
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (ids.length === 0) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select({
+          id: listingPipelineRuns.id,
+          listingId: listingPipelineRuns.listingId,
+          versionId: listingPipelineRuns.versionId,
+          status: listingPipelineRuns.status,
+          errorCode: listingPipelineRuns.errorCode,
+          createdAt: listingPipelineRuns.createdAt,
+        })
+        .from(listingPipelineRuns)
+        .where(
+          and(
+            eq(listingPipelineRuns.workspaceId, workspaceId),
+            inArray(listingPipelineRuns.id, [...ids]),
+          ),
+        )
+        // Rows created within one shared `db.forWorkspace` transaction share
+        // Postgres's per-transaction `now()`, so `created_at` alone can tie --
+        // `id` breaks the tie deterministically instead of leaving same-instant
+        // rows in an arbitrary order.
+        .orderBy(
+          desc(listingPipelineRuns.createdAt),
+          desc(listingPipelineRuns.id),
+        )
+        .limit(100);
+      return rows.map((row) => ({
+        id: row.id,
+        listingId: row.listingId,
+        versionId: row.versionId,
+        status: row.status as "started" | "succeeded" | "failed",
+        errorCode: row.errorCode,
+        createdAt: row.createdAt,
+      }));
     },
 
     async listForWorkspace(limit = 100) {
@@ -316,7 +422,7 @@ export function createPipelineRunRepository(
     async claimStep(input) {
       scope.assertOpen();
       const run = await ensureRun(input);
-      if (run.status === "succeeded") {
+      if (run.status === "succeeded" || run.status === "failed") {
         return {
           claimed: false,
           completed: true,
@@ -417,6 +523,7 @@ export function createPipelineRunRepository(
     async recordStep(input) {
       scope.assertOpen();
       const run = await ensureRun(input);
+      if (run.status !== "started") throw new Error("pipeline run is terminal");
       const updated = await transaction
         .update(listingPipelineSteps)
         .set({
@@ -430,10 +537,28 @@ export function createPipelineRunRepository(
             eq(listingPipelineSteps.pipelineRunId, run.id),
             eq(listingPipelineSteps.step, input.step),
             eq(listingPipelineSteps.leaseToken, input.leaseToken),
+            eq(listingPipelineSteps.state, "running"),
           ),
         )
         .returning({ id: listingPipelineSteps.id });
-      if (!updated.length) throw new Error("pipeline step lease lost");
+      if (!updated.length) {
+        // The original owner can replay an acknowledged checkpoint without
+        // overwriting its persisted output. Terminal runs remain fenced above.
+        const [completed] = await transaction
+          .select({ id: listingPipelineSteps.id })
+          .from(listingPipelineSteps)
+          .where(
+            and(
+              eq(listingPipelineSteps.workspaceId, workspaceId),
+              eq(listingPipelineSteps.pipelineRunId, run.id),
+              eq(listingPipelineSteps.step, input.step),
+              eq(listingPipelineSteps.leaseToken, input.leaseToken),
+              eq(listingPipelineSteps.state, "completed"),
+            ),
+          )
+          .limit(1);
+        if (!completed) throw new Error("pipeline step lease lost");
+      }
     },
 
     async complete(input) {
@@ -450,6 +575,7 @@ export function createPipelineRunRepository(
         .where(
           and(
             runWhere(input.idempotencyKey),
+            eq(listingPipelineRuns.status, "started"),
             eq(listingPipelineRuns.listingId, input.listingId),
             eq(
               listingPipelineRuns.activeVersionSequence,
@@ -469,10 +595,14 @@ export function createPipelineRunRepository(
     async fail(input) {
       scope.assertOpen();
       const [run] = await transaction
-        .select({ id: listingPipelineRuns.id })
+        .select({
+          id: listingPipelineRuns.id,
+          inputRevision: sql<number>`input_revision`,
+        })
         .from(listingPipelineRuns)
         .where(runWhere(input.idempotencyKey))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!run) return false;
       const leaseGuard = input.leaseToken
         ? stepLeaseExists(run.id, input.step, input.leaseToken)
@@ -510,6 +640,18 @@ export function createPipelineRunRepository(
           ),
         )
         .returning({ id: listingPipelineRuns.id });
+      if (updated.length && run.inputRevision > 0) {
+        await transaction
+          .update(listingPipelineSteps)
+          .set({ state: "failed", updatedAt: new Date() })
+          .where(
+            and(
+              eq(listingPipelineSteps.workspaceId, workspaceId),
+              eq(listingPipelineSteps.pipelineRunId, run.id),
+              eq(listingPipelineSteps.state, "running"),
+            ),
+          );
+      }
       return updated.length > 0;
     },
 
@@ -554,7 +696,8 @@ export function createPipelineRunRepository(
         .select({ id: listingPipelineRuns.id })
         .from(listingPipelineRuns)
         .where(runWhere(input.idempotencyKey))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!run) return;
       await transaction
         .delete(listingPipelineSteps)

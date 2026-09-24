@@ -29,7 +29,7 @@ function env(): WorkerEnv {
     LISTING_QUEUE: { send: vi.fn(async () => undefined) } as never,
     SHOPLINE_QUEUE: { send: vi.fn(async () => undefined) } as never,
     QUEUE_INGRESS_SECRET: secret,
-    BUILD_SHA: "abc123",
+    BUILD_SHA: "abc1234",
     SHOPLINE_ADAPTER: "disabled",
   };
 }
@@ -189,7 +189,10 @@ describe("Cloudflare Worker ingress", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      buildSha: "abc123",
+      aiProvider: "openai",
+      productShotProvider: "disabled",
+      wineEnrichmentEnabled: false,
+      buildSha: "abc1234",
       adapterMode: "disabled",
       bindings: {
         hyperdrive: true,
@@ -252,7 +255,7 @@ describe("Cloudflare Worker ingress", () => {
     expect(response.status).toBe(401);
   });
 
-  it("keeps the unauthenticated GET /health body unchanged", async () => {
+  it("limits unauthenticated GET /health to safe metadata", async () => {
     const response = await handleIngress(
       new Request("https://worker.test/health", { method: "GET" }),
       env(),
@@ -264,8 +267,89 @@ describe("Cloudflare Worker ingress", () => {
     // Pins the unauthenticated surface: it must never grow authenticated detail.
     expect(Object.keys(await response.json()).sort()).toEqual([
       "adapterMode",
+      "aiProvider",
       "bindings",
       "buildSha",
+      "productShotProvider",
+      "wineEnrichmentEnabled",
     ]);
   });
+});
+
+it("accepts the strict website variant on the existing listing queue", async () => {
+  const bindings = env();
+  bindings.WEBSITE_FETCH_BASE_URL = "https://app.example";
+  const payload = {
+    kind: "website_scan",
+    workspaceId: "ws",
+    scanId: listing.draftId,
+    revision: 0,
+  };
+  const response = await handleIngress(
+    await signedRequest("/ingress/website-scans", payload),
+    bindings,
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(response.status).toBe(202);
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledWith(payload);
+  expect(bindings.SHOPLINE_QUEUE.send).not.toHaveBeenCalled();
+});
+it("refuses website ingress when its callback is not configured", async () => {
+  const response = await handleIngress(
+    await signedRequest("/ingress/website-scans", {
+      kind: "website_scan",
+      workspaceId: "ws",
+      scanId: listing.draftId,
+      revision: 0,
+    }),
+    env(),
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(response.status).toBe(503);
+});
+
+const shot = {
+  kind: "product_shot",
+  workspaceId: "ws_opak",
+  draftId: listing.draftId,
+  attemptId: shopline.versionId,
+};
+it("accepts signed strict product shots on the existing listing binding and denies malformed or unsigned ingress", async () => {
+  const bindings = env();
+  for (const [payload, signature, status] of [
+    [shot, undefined, 202],
+    [{ ...shot, storageKey: "injected" }, undefined, 400],
+    [shot, "unsigned", 401],
+  ] as const) {
+    const res = await handleIngress(
+      await signedRequest("/ingress/product-shots", payload, { signature }),
+      bindings,
+      undefined,
+      { nowSeconds: () => nowSeconds },
+    );
+    expect(res.status).toBe(status);
+  }
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(shot);
+});
+
+it("accepts an authenticated generation-first wine envelope with admission flags off", async () => {
+  const bindings = env();
+  const job = {
+    ...listing,
+    schemaVersion: 2,
+    flowVersion: "wine-enrichment-v1",
+    runId: "10000000-0000-4000-8000-000000000002",
+    inputRevision: 1,
+    stage: "generation",
+  };
+  const result = await handleIngress(
+    await signedRequest(LISTING_INGRESS_PATH, job),
+    bindings,
+    undefined,
+    { nowSeconds: () => nowSeconds },
+  );
+  expect(result.status).toBe(202);
+  expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledWith(job);
 });

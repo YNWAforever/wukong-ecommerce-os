@@ -28,15 +28,22 @@ function handlerFor(
 
 const request = new Request(
   "http://localhost/api/enrichment-batches/batch_1/advance",
-  { method: "POST" },
+  {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      expectedControlRevision: 0,
+      idempotencyKey: "00000000-0000-4000-8000-000000000001",
+    }),
+  },
 );
 const context = { params: Promise.resolve({ id: "batch_1" }) };
 
 describe("POST /api/enrichment-batches/[id]/advance", () => {
   it("advances for an operator and reports the wave", async () => {
-    const response = await handlerFor("operator")(request, context);
+    const response = await handlerFor("operator")(request.clone(), context);
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(await response.json()).toMatchObject({
       enqueued: 2,
       status: "running",
@@ -45,11 +52,11 @@ describe("POST /api/enrichment-batches/[id]/advance", () => {
 
   it("reports an exhausted budget without failing the request", async () => {
     const response = await handlerFor("operator", "budget_exhausted")(
-      request,
+      request.clone(),
       context,
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(await response.json()).toMatchObject({
       status: "budget_exhausted",
       enqueued: 0,
@@ -65,7 +72,7 @@ describe("POST /api/enrichment-batches/[id]/advance", () => {
       called += 1;
     });
 
-    expect((await handler(request, context)).status).toBe(403);
+    expect((await handler(request.clone(), context)).status).toBe(403);
     expect(called).toBe(0);
   });
 });

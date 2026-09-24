@@ -6,8 +6,11 @@ vi.mock("@wukong/db", () => ({ createDatabase: dbMocks.createDatabase }));
 
 import {
   authenticatedWorkerHealth,
+  workerHealth,
   createCloudflareRuntime,
   createWorkerDatabase,
+  createProductShotRuntime,
+  readProductShotRuntimeConfig,
 } from "./cloudflare-runtime.js";
 import { CHECK_IDS, CHECK_FIELDS } from "@wukong/ai";
 import { unavailableVerification } from "./listing-verification-support.js";
@@ -69,7 +72,10 @@ describe("Cloudflare runtime", () => {
         },
       ]),
     };
-    const repositories = { sourceAssets };
+    const repositories = {
+      sourceAssets,
+      productShots: { requiresWorkflow: async () => false },
+    };
     const database = {
       close: vi.fn(async () => undefined),
       forWorkspace: vi.fn(
@@ -294,4 +300,402 @@ describe("verification runtime mapping", () => {
       });
     },
   );
+});
+
+describe("independent product shot runtime", () => {
+  it("defaults disabled and requires live key and positive finite integer budget", () => {
+    expect(readProductShotRuntimeConfig({})).toMatchObject({
+      providerName: "disabled",
+      dailyLimit: 0,
+    });
+    for (const budget of [
+      undefined,
+      "",
+      "0",
+      "-1",
+      "1.5",
+      "Infinity",
+      "NaN",
+      "2147483648",
+      "9007199254740991",
+    ]) {
+      expect(() =>
+        readProductShotRuntimeConfig({
+          PRODUCT_SHOT_PROVIDER: "photoroom",
+          PHOTOROOM_API_KEY: "synthetic",
+          PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: budget,
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      readProductShotRuntimeConfig({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2",
+      }),
+    ).toThrow("PHOTOROOM_API_KEY");
+    expect(() =>
+      readProductShotRuntimeConfig({ PRODUCT_SHOT_PROVIDER: "other" }),
+    ).toThrow();
+    expect(
+      readProductShotRuntimeConfig({
+        PRODUCT_SHOT_PROVIDER: "photoroom",
+        PHOTOROOM_API_KEY: "synthetic",
+        PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2",
+      }),
+    ).toMatchObject({ providerName: "photoroom", dailyLimit: 2 });
+  });
+  it("creates an image-only fake runtime without an OpenAI key or listing provider", async () => {
+    const close = vi.fn(async () => {}),
+      providerFactory = vi.fn(() => {
+        throw new Error("text must be independent");
+      });
+    const runtime = createProductShotRuntime(
+      { PRODUCT_SHOT_PROVIDER: "fake" } as never,
+      {
+        databaseFactory: () => ({ forWorkspace: vi.fn(), close }) as never,
+        assetStoreFactory: () => ({}) as never,
+        providerFactory,
+      },
+    );
+    const provider = runtime.dependencies.providerFor({
+      providerVersion: "fake:1.0.0",
+      renderVersion: "white-v1",
+    } as never);
+    const output = await provider.generateProductShot({
+      assets: [{ id: "a", mimeType: "image/png", readUrl: "" }],
+    });
+    expect([...output.cutoutPng.slice(0, 8)]).toEqual([
+      137, 80, 78, 71, 13, 10, 26, 10,
+    ]);
+    expect(providerFactory).not.toHaveBeenCalled();
+    await runtime.close();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["definitive_failure", "rejected"],
+    ["ambiguous_completion", "outcome_unknown"],
+  ] as const)(
+    "allows the explicit synthetic fixture to produce %s",
+    async (scenario, code) => {
+      const runtime = createProductShotRuntime(
+        {
+          BUILD_SHA: "local-e2e",
+          PRODUCT_SHOT_PROVIDER: "fake",
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: JSON.stringify({
+            ["a".repeat(64)]: scenario,
+          }),
+        } as never,
+        {
+          databaseFactory: () =>
+            ({ forWorkspace: vi.fn(), close: vi.fn(async () => {}) }) as never,
+          assetStoreFactory: () => ({}) as never,
+        },
+      );
+      const provider = runtime.dependencies.providerFor({
+        providerVersion: "fake:1.0.0",
+        renderVersion: "white-v1",
+        sourceDigest: "a".repeat(64),
+      } as never);
+      await expect(
+        provider.generateProductShot({
+          assets: [{ id: "a", mimeType: "image/png", readUrl: "" }],
+        }),
+      ).rejects.toMatchObject({ code });
+      await runtime.close();
+    },
+  );
+
+  it("refuses synthetic scenario controls for non-fake providers", () => {
+    expect(() =>
+      createProductShotRuntime(
+        {
+          BUILD_SHA: "local-e2e",
+          PRODUCT_SHOT_PROVIDER: "photoroom",
+          PHOTOROOM_API_KEY: "inherited-real-key",
+          PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "1",
+          PRODUCT_SHOT_SYNTHETIC_SCENARIO: "definitive_failure",
+        } as never,
+        {
+          databaseFactory: () => ({}) as never,
+          assetStoreFactory: () => ({}) as never,
+        },
+      ),
+    ).toThrow("PRODUCT_SHOT_SYNTHETIC_SCENARIO is test-only");
+  });
+});
+
+it("accepts the repository maximum daily product shot allowance", () => {
+  expect(
+    readProductShotRuntimeConfig({
+      PRODUCT_SHOT_PROVIDER: "photoroom",
+      PHOTOROOM_API_KEY: "synthetic",
+      PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "2147483647",
+    }).dailyLimit,
+  ).toBe(2147483647);
+});
+
+it("rechecks versioned publication for queued SHOPLINE images and never signs source", async () => {
+  const resolveApprovedProductImage = vi.fn(
+    async () => "https://images.example/final.jpg",
+  );
+  const createReadUrl = vi.fn();
+  const repositories = {
+    productShots: {
+      requiresWorkflow: async () => true,
+      resolveApprovedProductImage,
+    },
+    sourceAssets: { getByIds: vi.fn() },
+  };
+  const runtime = createCloudflareRuntime(
+    { AI_PROVIDER: "fake", PRODUCT_SHOT_PROVIDER: "fake" } as never,
+    {
+      databaseFactory: () =>
+        ({
+          forWorkspace: async (_ws: string, work: any) => work(repositories),
+          close: async () => {},
+        }) as never,
+      assetStoreFactory: () => ({ createReadUrl }) as never,
+      providerFactory: () => ({}) as never,
+    },
+  );
+  expect(
+    await runtime.resolveImageUrls("ws", "listing", ["final"], "version"),
+  ).toEqual(["https://images.example/final.jpg"]);
+  expect(resolveApprovedProductImage).toHaveBeenCalledWith({
+    workspaceId: "ws",
+    listingId: "listing",
+    versionId: "version",
+    assetId: "final",
+  });
+  expect(createReadUrl).not.toHaveBeenCalled();
+  const scopedRepositories = {
+    ...repositories,
+    productShots: {
+      requiresWorkflow: async () => true,
+      resolveApprovedProductImage: vi.fn(
+        async () => "https://images.example/scoped.jpg",
+      ),
+    },
+  };
+  expect(
+    await runtime.resolveImageUrls(
+      "ws",
+      "listing",
+      ["final"],
+      "version",
+      scopedRepositories as never,
+    ),
+  ).toEqual(["https://images.example/scoped.jpg"]);
+  expect(
+    scopedRepositories.productShots.resolveApprovedProductImage,
+  ).toHaveBeenCalledOnce();
+  resolveApprovedProductImage.mockRejectedValueOnce(
+    new Error("image_approval_required"),
+  );
+  await expect(
+    runtime.resolveImageUrls("ws", "listing", ["final"], "version"),
+  ).rejects.toThrow("image_approval_required");
+});
+
+it("constructs OpenRouter without OpenAI configuration and records its provider", async () => {
+  const { OpenRouterListingProvider } = await import("@wukong/ai");
+  const append = vi.fn(async () => {});
+  const runtime = createCloudflareRuntime(
+    {
+      AI_PROVIDER: "openrouter",
+      OPENROUTER_API_KEY: "synthetic",
+      OPENROUTER_LISTING_MODEL: "vendor/model-1",
+    } as never,
+    {
+      assetStoreFactory: () => ({}) as never,
+      databaseFactory: () =>
+        ({
+          forWorkspace: async (_id: string, work: any) =>
+            work({ aiRuns: { append } }),
+          close: async () => {},
+        }) as never,
+    },
+  );
+  expect(runtime.dependencies.ai.extract).toBeTypeOf("function");
+  await runtime.dependencies.withWorkspace("ws", async (r) => {
+    await r.aiRuns.append({ draftId: "listing", task: "extract" } as never);
+  });
+  expect(append).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "openrouter" }),
+  );
+});
+it.each(["OPENROUTER_API_KEY", "OPENROUTER_LISTING_MODEL"])(
+  "requires %s when an OpenRouter operation starts",
+  (missing) => {
+    expect(() =>
+      createCloudflareRuntime(
+        {
+          AI_PROVIDER: "openrouter",
+          OPENROUTER_API_KEY: "synthetic",
+          OPENROUTER_LISTING_MODEL: "vendor/model-1",
+          [missing]: undefined,
+        } as never,
+        {
+          assetStoreFactory: () => ({}) as never,
+          databaseFactory: () => ({}) as never,
+        },
+      ).dependencies.ai.extract({ assets: [], note: null }),
+    ).toThrow(missing);
+  },
+);
+it("exposes only allowlisted provider health metadata", async () => {
+  const { workerHealth } = await import("./cloudflare-runtime.js");
+  expect(
+    workerHealth({
+      ...env(),
+      AI_PROVIDER: "openrouter",
+      PRODUCT_SHOT_PROVIDER: "photoroom",
+    } as never),
+  ).toMatchObject({
+    aiProvider: "openrouter",
+    productShotProvider: "photoroom",
+  });
+  const unsafe = workerHealth({
+    ...env(),
+    AI_PROVIDER: "secret-marker",
+    PRODUCT_SHOT_PROVIDER: "secret-marker",
+  } as never);
+  expect(unsafe).toMatchObject({
+    aiProvider: "unknown",
+    productShotProvider: "unknown",
+  });
+  expect(JSON.stringify(unsafe)).not.toContain("secret-marker");
+});
+it("includes recovery schema readiness only in authenticated health", async () => {
+  const health = await authenticatedWorkerHealth(env(), {
+    createDatabase: () =>
+      ({
+        ping: async () => undefined,
+        close: async () => undefined,
+        inspectListingRecoveryCompatibility: async () => ({
+          ready: true,
+          missing: [],
+        }),
+      }) as never,
+  });
+  expect(health.checks.listingRecoveryReady).toBe(true);
+  expect(workerHealth(env())).not.toHaveProperty("checks");
+});
+it("advertises verified consumer support independently from admission flags", async () => {
+  const database = {
+    ping: async () => undefined,
+    close: vi.fn(async () => undefined),
+    inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+    inspectWineRuntimeCompatibility: async () => ({
+      ready: true,
+      version: "wine-runtime-0043-v1",
+    }),
+    inspectWineEnrichmentCompatibility: async () => ({
+      ready: true,
+      version: "wine-enrichment-0042-v1",
+    }),
+  };
+  const bindings = {
+    ...env(),
+    BUILD_SHA: "a".repeat(40),
+    OPENCODE_GO_API_KEY: "go-secret",
+    TAVILY_API_KEY: "tavily-secret",
+  };
+  const health = await authenticatedWorkerHealth(bindings, {
+    createDatabase: () => database as never,
+  });
+  expect(health).toHaveProperty("wine");
+  expect((health as any).wine).toMatchObject({
+    schemaVersion: 1,
+    consumerSupported: true,
+    goConfigured: true,
+    tavilyConfigured: true,
+    queueReady: true,
+    databaseReady: true,
+    buildSha: "a".repeat(40),
+    execution: {
+      flowVersion: "wine-enrichment-v1",
+      model: "deepseek-v4.1-flash",
+    },
+  });
+  expect(JSON.stringify(health)).not.toMatch(/go-secret|tavily-secret/);
+  expect(workerHealth(bindings)).not.toHaveProperty("wine");
+  expect(database.close).toHaveBeenCalledTimes(1);
+});
+it("fails closed on absent schema inspection and sanitizes build metadata", async () => {
+  const health = await authenticatedWorkerHealth(
+    { ...env(), BUILD_SHA: "secret-marker" },
+    {
+      createDatabase: () =>
+        ({
+          ping: async () => undefined,
+          close: async () => undefined,
+        }) as never,
+    },
+  );
+  expect(health).toHaveProperty("wine");
+  expect((health as any).wine).toMatchObject({
+    consumerSupported: true,
+    goConfigured: false,
+    tavilyConfigured: false,
+    databaseReady: false,
+    buildSha: "unknown",
+  });
+  expect(JSON.stringify(health)).not.toContain("secret-marker");
+});
+it.each([
+  { ready: false, version: "wine-enrichment-0042-v1" },
+  { ready: true, version: "old" },
+  null,
+])(
+  "rejects missing or mismatched wine database compatibility %j",
+  async (wine) => {
+    const health = await authenticatedWorkerHealth(
+      { ...env(), BUILD_SHA: "a".repeat(40) },
+      {
+        createDatabase: () =>
+          ({
+            ping: async () => undefined,
+            close: async () => undefined,
+            inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+            inspectWineEnrichmentCompatibility: async () => wine,
+          }) as never,
+      },
+    );
+    expect(health.wine.databaseReady).toBe(false);
+  },
+);
+it("does not infer wine queue readiness from configuration strings", async () => {
+  const health = await authenticatedWorkerHealth(
+    { ...env(), LISTING_QUEUE: undefined } as never,
+    {
+      createDatabase: () =>
+        ({
+          ping: async () => undefined,
+          close: async () => undefined,
+          inspectListingRecoveryCompatibility: async () => ({ ready: true }),
+          inspectWineEnrichmentCompatibility: async () => ({
+            ready: true,
+            version: "wine-enrichment-0042-v1",
+          }),
+        }) as never,
+    },
+  );
+  expect(health.wine.queueReady).toBe(false);
+  expect(health.wine.consumerSupported).toBe(true);
+});
+
+it("reports a safe default-false wine flag without changing accepted capability", async () => {
+  const { workerHealth } = await import("./cloudflare-runtime.js");
+  expect(workerHealth(env())).toHaveProperty("wineEnrichmentEnabled", false);
+  expect(
+    workerHealth({ ...env(), WINE_ENRICHMENT_ENABLED: "true" } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", true);
+  expect(
+    workerHealth({
+      ...env(),
+      WINE_ENRICHMENT_ENABLED: "secret-marker",
+    } as never),
+  ).toHaveProperty("wineEnrichmentEnabled", false);
 });

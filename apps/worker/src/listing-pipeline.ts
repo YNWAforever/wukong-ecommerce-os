@@ -1,14 +1,19 @@
+import {
+  runPersistedListingOperation,
+  type PipelineOperationHooks,
+} from "./listing-operation-pipeline.js";
 import type {
   AuditContext,
   AuditWriter,
-  CanonicalListing,
+  ReviewableListing,
   ComplianceFlag,
   FieldEvidence,
   ListingStatus,
   WorkspaceProfile,
 } from "@wukong/core";
-import { scanCompliance } from "@wukong/core";
+import { localizedCopyFields, scanCompliance } from "@wukong/core";
 import {
+  factsSufficientForGeneration,
   ProviderApiError,
   ProviderOutputError,
   ProviderRefusalError,
@@ -21,14 +26,15 @@ import {
   ProductShotProvider,
 } from "@wukong/ai";
 import type { PipelineStepName } from "@wukong/db";
-import type { ListingJob } from "@wukong/jobs";
+import { listingRunKey, type ListingJob } from "@wukong/jobs";
 
 import { sha256, verifyAdvisory } from "./listing-verification-support.js";
 
 export type ListingPipelineInput = ListingJob;
 
 function listingPipelineJobId(input: ListingPipelineInput): string {
-  return `listing:${input.workspaceId}:${input.draftId}:${input.activeVersionSequence}`;
+  // Shared with the web producer so both sides derive byte-identical keys.
+  return listingRunKey(input);
 }
 export type PipelineResult = {
   status: "in_review" | "needs_info";
@@ -53,6 +59,7 @@ export type PipelineListing = {
 export type PipelineAuditWriter = AuditWriter;
 
 export type PipelineRepositories = {
+  operations?: PipelineOperationHooks;
   listings: {
     requireById(id: string): Promise<PipelineListing>;
     startProcessing(
@@ -62,7 +69,7 @@ export type PipelineRepositories = {
     ): Promise<void>;
     appendVersion(
       id: string,
-      content: CanonicalListing,
+      content: ReviewableListing,
       context: AuditContext,
       audit: PipelineAuditWriter,
       pipelineIdempotencyKey?: string,
@@ -163,6 +170,11 @@ export type PipelineRepositories = {
 };
 
 export type PipelineDependencies = {
+  aiForOperation?(
+    workspaceId: string,
+    run: import("@wukong/db").ListingOperation,
+  ): ListingAIProvider;
+  settleOperation?(workspaceId: string, runId: string): Promise<void>;
   withWorkspace<T>(
     workspaceId: string,
     work: (repositories: PipelineRepositories) => Promise<T>,
@@ -170,6 +182,8 @@ export type PipelineDependencies = {
   assetInputs(assets: PipelineAsset[]): Promise<ExtractionAsset[]>;
   ai: ListingAIProvider;
   verifier?: ListingVerifier;
+  /** Legacy opt-in only. Durable product_shot messages own the new workflow.
+   * createCloudflareRuntime deliberately never supplies this dependency. */
   productShot?: ProductShotProvider;
   assetStore?: {
     writeObject(
@@ -187,7 +201,10 @@ export type PipelineDependencies = {
   };
 };
 export type PipelineErrorCode =
-  "provider_timeout" | "provider_failure" | "pipeline_failure";
+  | "provider_timeout"
+  | "provider_failure"
+  | "pipeline_failure"
+  | import("@wukong/ai").ProviderFailureCategory;
 export class PipelineTimeoutError extends Error {
   constructor(message = "listing provider timed out") {
     super(message);
@@ -239,21 +256,18 @@ function aiRunFrom(
     ...usage,
   };
 }
-function flattenLocalizedContent(
-  listing: CanonicalListing,
-): Record<string, string> {
-  return {
-    titleEn: listing.title.en,
-    titleZhHant: listing.title["zh-Hant"],
-    descriptionEn: listing.description.en,
-    descriptionZhHant: listing.description["zh-Hant"],
-    seoTitleEn: listing.seo.title.en,
-    seoTitleZhHant: listing.seo.title["zh-Hant"],
-    seoDescriptionEn: listing.seo.description.en,
-    seoDescriptionZhHant: listing.seo.description["zh-Hant"],
-  };
-}
+// The field list lives in @wukong/core so the operator's save scans exactly the
+// same eight fields. A private copy here is how a rule ends up enforced on
+// generated copy and not on edited copy.
 function classifyError(error: unknown): PipelineErrorCode {
+  if (
+    error instanceof ProviderApiError ||
+    error instanceof ProviderOutputError ||
+    error instanceof ProviderRefusalError
+  ) {
+    if (error.diagnostic.category !== "internal")
+      return error.diagnostic.category;
+  }
   if (error instanceof PipelineTimeoutError) return "provider_timeout";
   const message = error instanceof Error ? error.message : "";
   if (
@@ -295,7 +309,7 @@ function asGenerated(value: unknown): { versionId: string } | null {
   return value as { versionId: string };
 }
 
-export async function runListingPipeline(
+async function executeListingPipeline(
   input: ListingPipelineInput,
   deps: PipelineDependencies,
   options: PipelineAttemptOptions = {},
@@ -419,7 +433,14 @@ export async function runListingPipeline(
       claimedLeaseToken = null;
     }
 
-    if (extraction.missingFields.length > 0) {
+    // Gate on whether the product can be WRITTEN ABOUT, not on whether every
+    // fact is present. `missingFields` lists everything absent -- which the
+    // review screen shows the operator -- and that included optional facts like
+    // region and vintage, plus the merchant data the model is forbidden to read
+    // off a label at all. So a perfectly usable extraction of a non-vintage
+    // spirit was sent to needs_info, with no version saved, for want of a
+    // region it was never going to find.
+    if (!factsSufficientForGeneration(extraction.facts)) {
       if (!completionStep) throw new Error("pipeline completion step missing");
       const result: PipelineResult = { status: "needs_info", versionId: null };
       await deps.withWorkspace(input.workspaceId, async (repos) => {
@@ -522,7 +543,14 @@ export async function runListingPipeline(
           }),
         }
       : null;
-    const flags = scanCompliance(flattenLocalizedContent(generation.listing));
+    // The generated copy is scanned against what the listing can actually
+    // support. Without the second argument a description asserting "95 points
+    // from Robert Parker" reads the same as a grounded one, and the rule that
+    // exists to catch it could never fire.
+    const flags = scanCompliance(localizedCopyFields(generation.listing), {
+      criticScores: generation.listing.criticScores,
+      awards: generation.listing.awards,
+    });
     // A ProductShotProvider/AssetStore pair is optional, and neither is wired in
     // wherever PipelineDependencies is bound to real implementations for
     // production today — this whole feature stays a no-op until a future task
@@ -682,4 +710,19 @@ export async function runListingPipeline(
     });
     throw error;
   }
+}
+
+export async function runListingPipeline(
+  input: ListingPipelineInput,
+  deps: PipelineDependencies,
+  options: PipelineAttemptOptions = {},
+): Promise<PipelineResult> {
+  if (input.runId)
+    return runPersistedListingOperation(
+      input,
+      deps,
+      options,
+      executeListingPipeline,
+    );
+  return executeListingPipeline(input, deps, options);
 }

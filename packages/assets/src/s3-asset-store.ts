@@ -1,3 +1,10 @@
+import { MAX_ASSET_SIZE } from "./media-policy.js";
+import {
+  wineImageSnapshotKey,
+  verifyWineSnapshotBytes,
+  type WineImageSnapshotInput,
+  type WineImageSnapshot,
+} from "./wine-image-snapshot.js";
 import {
   GetObjectCommand,
   HeadObjectCommand,
@@ -10,6 +17,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
   ASSET_UPLOAD_TTL_MS,
+  AssetObjectMissingError,
   assertAnyAssetKey,
   assertAssetKey,
   createAssetKey,
@@ -62,11 +70,68 @@ export class S3AssetStore implements AssetStore {
     this.#now = options.now ?? (() => new Date());
   }
 
+  /**
+   * `requestChecksumCalculation` is pinned to `WHEN_REQUIRED` on purpose.
+   *
+   * The SDK default is `WHEN_SUPPORTED`, which computes a request checksum and,
+   * when presigning, signs it into the URL as `x-amz-checksum-crc32`. A presign
+   * has no body, so that value is always the CRC32 of zero bytes --
+   * `AAAAAA==` -- baked into a URL the browser then PUTs real file bytes to.
+   * Backends differ in whether they enforce it, which is exactly what makes it
+   * dangerous: it works until a storage backend checks, and then every upload
+   * fails at once with a checksum mismatch nobody changed.
+   *
+   * `WHEN_REQUIRED` omits it unless the operation genuinely demands one, so the
+   * signature covers only what the client can actually honour. This does not
+   * weaken integrity: the upload is still bounded by a signed `ContentLength`
+   * and `ContentType`, and finalize re-reads the stored object.
+   *
+   * An explicit caller value still wins, so a deployment that needs a different
+   * policy can set one.
+   */
   static fromConfig(bucket: string, config: S3ClientConfig = {}): S3AssetStore {
     return new S3AssetStore({
       bucket,
-      transport: new S3Client(config) as S3Transport,
+      transport: new S3Client({
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        ...config,
+      }) as S3Transport,
     });
+  }
+
+  /** Server-only write-once namespace. Never issue an upload credential for this key. */
+  async createWineImageSnapshot(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot> {
+    const key = wineImageSnapshotKey(input);
+    try {
+      await this.#transport.send(
+        new PutObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+          Body: new Uint8Array(input.bytes),
+          ContentType: input.mimeType,
+          ContentLength: input.bytes.byteLength,
+          IfNoneMatch: "*",
+        }) as S3Command,
+      );
+    } catch (error) {
+      if (httpStatus(error) !== 412) throw error;
+    }
+    const response = (await this.#transport.send(
+      new GetObjectCommand({ Bucket: this.#bucket, Key: key }) as S3Command,
+    )) as { Body?: S3Body };
+    if (!response.Body) throw new AssetObjectMissingError();
+    const bytes = await readBody(response.Body, MAX_ASSET_SIZE);
+    verifyWineSnapshotBytes(bytes, input.expectedDigest);
+    const readUrl = await this.#presign(
+      this.#transport,
+      new GetObjectCommand({ Bucket: this.#bucket, Key: key }) as S3Command,
+      { expiresIn: TEN_MINUTES_SECONDS },
+    );
+    if (new URL(readUrl).protocol !== "https:")
+      throw Error("wine_snapshot_https_required");
+    return { bytes, readUrl };
   }
 
   async createUpload(input: CreateUploadInput) {
@@ -161,22 +226,94 @@ export class S3AssetStore implements AssetStore {
     return { size: body.byteLength, mimeType };
   }
 
-  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+  async writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean> {
     assertAnyAssetKey(workspaceId, key);
-    const response = (await this.#transport.send(
-      new GetObjectCommand({
-        Bucket: this.#bucket,
-        Key: key,
-      }) as unknown as S3Command,
-    )) as {
-      Body?: { transformToByteArray(): Promise<Uint8Array> };
-    };
-    if (!response.Body) {
-      // apps/web/app/api/listings/export/[id]/download/route.ts matches this
-      // exact message to distinguish "object never written" from any other
-      // read failure -- keep the two in sync if this text changes.
-      throw new Error("Asset object has no stored body");
+    try {
+      await this.#transport.send(
+        new PutObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+          Body: body,
+          ContentType: mimeType,
+          ContentLength: body.byteLength,
+          IfNoneMatch: "*",
+        }) as unknown as S3Command,
+      );
+      return true;
+    } catch (error) {
+      if (httpStatus(error) === 412) return false;
+      throw error;
     }
-    return response.Body.transformToByteArray();
   }
+
+  async readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array> {
+    assertAnyAssetKey(workspaceId, key);
+    try {
+      const response = (await this.#transport.send(
+        new GetObjectCommand({
+          Bucket: this.#bucket,
+          Key: key,
+        }) as unknown as S3Command,
+      )) as { Body?: S3Body };
+      if (!response.Body) throw new AssetObjectMissingError();
+      return await readBody(response.Body, options?.maxBytes);
+    } catch (error) {
+      if (httpStatus(error) === 404) throw new AssetObjectMissingError();
+      throw error;
+    }
+  }
+}
+
+function httpStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null || !("$metadata" in error))
+    return undefined;
+  return (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+    ?.httpStatusCode;
+}
+
+type S3Body = {
+  transformToByteArray(): Promise<Uint8Array>;
+  transformToWebStream?(): ReadableStream<Uint8Array>;
+};
+async function readBody(body: S3Body, maxBytes?: number): Promise<Uint8Array> {
+  if (maxBytes === undefined) return body.transformToByteArray();
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 1 ||
+    !body.transformToWebStream
+  )
+    throw Error("bounded_asset_stream_required");
+  const reader = body.transformToWebStream().getReader(),
+    chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw Error("asset_body_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
 }

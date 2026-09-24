@@ -1,3 +1,9 @@
+import {
+  wineImageSnapshotKey,
+  verifyWineSnapshotBytes,
+  type WineImageSnapshotInput,
+  type WineImageSnapshot,
+} from "./wine-image-snapshot.js";
 import { randomUUID } from "node:crypto";
 
 export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -5,16 +11,26 @@ export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
 // to SHOPLINE by a person, so the ten-minute upload window does not apply to the
 // image URLs inside it.
 export const ASSET_EXPORT_READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export const MAX_ASSET_SIZE = 20 * 1024 * 1024;
-
-export const SUPPORTED_ASSET_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-] as const;
-
-export type AssetMimeType = (typeof SUPPORTED_ASSET_MIME_TYPES)[number];
+// The media policy lives in a leaf module with no `node:` imports, so a client
+// component can import it without pulling this file's crypto (and, through the
+// package index, the AWS SDK) into the browser bundle. Re-exported here so every
+// existing importer of these names keeps working unchanged.
+export {
+  MAX_ASSET_SIZE,
+  MAX_LISTING_IMAGES,
+  MAX_LISTING_PDFS,
+  SUPPORTED_ASSET_MIME_TYPES,
+  isImageMimeType,
+  isSupportedAssetMimeType,
+  rejectAsset,
+  type AssetMimeType,
+  type MediaRejection,
+} from "./media-policy.js";
+import {
+  MAX_ASSET_SIZE,
+  SUPPORTED_ASSET_MIME_TYPES,
+  type AssetMimeType,
+} from "./media-policy.js";
 
 export type CreateUploadInput = {
   workspaceId: string;
@@ -35,7 +51,17 @@ export class AssetInputError extends Error {
   }
 }
 
+export class AssetObjectMissingError extends Error {
+  constructor() {
+    super("Asset object has no stored body");
+    this.name = "AssetObjectMissingError";
+  }
+}
+
 export interface AssetStore {
+  createWineImageSnapshot?(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot>;
   createUpload(input: CreateUploadInput): Promise<{
     key: string;
     uploadUrl: string;
@@ -54,7 +80,18 @@ export interface AssetStore {
     body: Uint8Array,
     mimeType: string,
   ): Promise<AssetObjectMetadata>;
-  readObject(workspaceId: string, key: string): Promise<Uint8Array>;
+  readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array>;
+  /** Atomically create; false means another writer already created the object. */
+  writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean>;
 }
 
 export function assertWorkspaceId(workspaceId: string): void {
@@ -224,6 +261,23 @@ export class MemoryAssetStore implements AssetStore {
     { metadata: AssetObjectMetadata; body?: Uint8Array }
   >();
 
+  async createWineImageSnapshot(
+    input: WineImageSnapshotInput,
+  ): Promise<WineImageSnapshot> {
+    const key = wineImageSnapshotKey(input);
+    if (!this.#objects.has(key))
+      this.#objects.set(key, {
+        metadata: { size: input.bytes.byteLength, mimeType: input.mimeType },
+        body: new Uint8Array(input.bytes),
+      });
+    const bytes = new Uint8Array(this.#objects.get(key)!.body!);
+    verifyWineSnapshotBytes(bytes, input.expectedDigest);
+    return {
+      bytes,
+      readUrl: `https://memory.invalid/${encodeURIComponent(key)}`,
+    };
+  }
+
   async createUpload(input: CreateUploadInput) {
     const key = createAssetKey(input);
     return {
@@ -263,20 +317,41 @@ export class MemoryAssetStore implements AssetStore {
   ): Promise<AssetObjectMetadata> {
     assertAnyAssetKey(workspaceId, key);
     const metadata: AssetObjectMetadata = { size: body.byteLength, mimeType };
-    this.#objects.set(key, { metadata, body });
+    this.#objects.set(key, { metadata, body: new Uint8Array(body) });
     return metadata;
   }
 
-  async readObject(workspaceId: string, key: string): Promise<Uint8Array> {
+  async readObject(
+    workspaceId: string,
+    key: string,
+    options?: { maxBytes: number },
+  ): Promise<Uint8Array> {
     assertAnyAssetKey(workspaceId, key);
     const entry = this.#objects.get(key);
     if (!entry?.body) {
       // apps/web/app/api/listings/export/[id]/download/route.ts matches this
       // exact message to distinguish "object never written" from any other
       // read failure -- keep the two in sync if this text changes.
-      throw new Error("Asset object has no stored body");
+      throw new AssetObjectMissingError();
     }
-    return entry.body;
+    if (options && entry.body.byteLength > options.maxBytes)
+      throw Error("asset_body_too_large");
+    return new Uint8Array(entry.body);
+  }
+
+  async writeObjectIfAbsent(
+    workspaceId: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string,
+  ): Promise<boolean> {
+    assertAnyAssetKey(workspaceId, key);
+    if (this.#objects.has(key)) return false;
+    this.#objects.set(key, {
+      metadata: { size: body.byteLength, mimeType },
+      body: new Uint8Array(body),
+    });
+    return true;
   }
 
   putObject(

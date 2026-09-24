@@ -10,8 +10,23 @@ import {
   type BulkFormIssue,
   type BulkFormSheet,
 } from "@wukong/shopline";
+import {
+  APPROVAL_INVALIDATED_ACTION,
+  type ApprovalInvalidationCause,
+  type ListingStatus,
+} from "@wukong/core";
 
 import { ApiError } from "./route-support";
+
+// Statuses whose approval a re-import breaks. `publishing` is included even
+// though a confirmation change refuses it: nothing is transitioned here, and a
+// publish running under a stale approval is exactly what must not go unseen.
+const APPROVAL_HOLDING_STATUSES: ReadonlySet<ListingStatus> = new Set([
+  "approved",
+  "published",
+  "publish_failed",
+  "publishing",
+]);
 
 export type BulkFormImportDeps = { getDatabase(): Database };
 
@@ -36,6 +51,8 @@ export type BulkFormImportResult = {
   parsedRows: number;
   createdDrafts: number;
   refreshedProducts: number;
+  /** Approved, published, publish-failed or publishing listings this import re-bound. */
+  invalidatedApprovals: number;
   issues: BulkFormIssue[];
 };
 
@@ -144,9 +161,23 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           known.map((product) => [product.remoteProductId, product]),
         );
 
+        // One read for every linked listing, not one per row. It sees this
+        // transaction's snapshot: a listing approved concurrently after it is
+        // missed here, and since its receipt still names an older import, the
+        // next re-import records it.
+        const approvalStates = await repositories.listings.approvalStatesByIds(
+          known
+            .map((product) => product.listingId)
+            .filter((id): id is string => id !== null),
+        );
+        let invalidatedApprovals = 0;
+
         let createdDrafts = 0;
         let refreshedProducts = 0;
         const mirrors: UpsertPlatformProductInput[] = [];
+        const sourceRows: Array<
+          Parameters<typeof repositories.sourceRows.createMany>[0][number]
+        > = [];
 
         for (const row of parsed.rows) {
           const prior = knownByRemoteId.get(row.productId);
@@ -185,7 +216,8 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           // Both branches are domain mutations, so both are audited. Refreshing
           // a snapshot rewrites the row and its digest — the record of what the
           // catalog looked like — and that must not happen unrecorded. An
-          // unchanged re-import mutates nothing and so writes nothing.
+          // unchanged re-import has no per-listing content event; its new source
+          // snapshot and aggregate import event still preserve that observation.
           if (isNewDraft || isRefresh) {
             // Metadata carries identifiers only — never merchant content.
             await repositories.audit.write({
@@ -204,6 +236,44 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             });
           }
 
+          const approvalState = isNewDraft
+            ? undefined
+            : approvalStates[listingId];
+          if (
+            approvalState &&
+            APPROVAL_HOLDING_STATUSES.has(approvalState.status)
+          ) {
+            invalidatedApprovals += 1;
+            const cause: ApprovalInvalidationCause = isRefresh
+              ? "source_reimported_changed"
+              : "source_reimported_unchanged";
+            // Identifiers only. Status is deliberately left alone: the event,
+            // not a transition, is what makes the lost approval visible.
+            await repositories.audit.write({
+              workspaceId: input.workspaceId,
+              actorId: input.actorId,
+              entityId: listingId,
+              action: APPROVAL_INVALIDATED_ACTION,
+              metadata: {
+                cause,
+                fromStatus: approvalState.status,
+                versionId: approvalState.activeVersionId,
+                sourceImportId: sourceImport.id,
+                priorSourceImportId: prior?.sourceImportId ?? null,
+              },
+            });
+          }
+
+          sourceRows.push({
+            listingId,
+            connectionId: connection.id,
+            sourceImportId: sourceImport.id,
+            remoteProductId: row.productId,
+            sourceRowDigest: contentDigest,
+            rawRow,
+            headerContractSha256,
+            specVersion: parsed.specVersion,
+          });
           mirrors.push({
             connectionId: connection.id,
             remoteProductId: row.productId,
@@ -221,6 +291,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
         }
 
         // One statement for every mirror row rather than one per product.
+        await repositories.sourceRows.createMany(sourceRows);
         await repositories.platformProducts.upsertMany(mirrors);
 
         // One aggregate event per import call, entityId'd to the sourceImport
@@ -236,6 +307,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             parsedRows: parsed.rows.length,
             createdDrafts,
             refreshedProducts,
+            invalidatedApprovals,
             issueCount: parsed.issues.length,
           },
         });
@@ -245,6 +317,7 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           parsedRows: parsed.rows.length,
           createdDrafts,
           refreshedProducts,
+          invalidatedApprovals,
           issues: [...parsed.issues],
         };
       });

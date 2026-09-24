@@ -19,7 +19,11 @@ function requestFor(sourceAssetIds: string[]) {
   return new Request("http://localhost/api/listings", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sourceAssetIds, note: "intake" }),
+    body: JSON.stringify({
+      sourceAssetIds,
+      note: "intake",
+      processingMode: "manual",
+    }),
   });
 }
 
@@ -27,6 +31,13 @@ function harness(kinds: string[]) {
   const mutations: string[] = [];
   const ids = kinds.map((_kind, index) => uuid(index + 1));
   const repositories = {
+    pipelineRuns: { async lockCreateRequests() {} },
+    listingInputs: {
+      async initialize() {
+        mutations.push("input_revision");
+        return { revision: 1, baseVersionId: null };
+      },
+    },
     sourceAssets: {
       async getByIds() {
         return kinds.map((kind, index) => ({
@@ -108,6 +119,11 @@ describe("listing source composition", () => {
     const response = await test.handler(requestFor(test.ids));
 
     expect(response.status).toBe(201);
-    expect(test.mutations).toEqual(["create", "attach", "audit"]);
+    expect(test.mutations).toEqual([
+      "create",
+      "attach",
+      "audit",
+      "input_revision",
+    ]);
   });
 });

@@ -1,3 +1,11 @@
+import {
+  listingProviderSecretNames,
+  validateOpenRouterListingModel,
+  validateOpenCodeGoListingModel,
+  productShotSecretNames,
+  wineEnrichmentSecretNames,
+} from "./listing-provider-config.mjs";
+
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -36,14 +44,29 @@ const buildSha = safeToken(
   /^[A-Za-z0-9._-]{7,128}$/,
 );
 const aiProvider = requiredInput("AI_PROVIDER");
-if (!new Set(["fake", "openai"]).has(aiProvider)) {
+if (!new Set(["fake", "openai", "openrouter", "opencode-go"]).has(aiProvider)) {
   throw new Error("AI_PROVIDER is invalid");
 }
-const openAiListingModel = safeToken(
-  "OPENAI_LISTING_MODEL",
-  requiredInput("OPENAI_LISTING_MODEL"),
-  /^[A-Za-z0-9._:-]{1,128}$/,
-);
+const listingModel =
+  aiProvider === "opencode-go"
+    ? {
+        OPENCODE_GO_LISTING_MODEL: validateOpenCodeGoListingModel(
+          requiredInput("OPENCODE_GO_LISTING_MODEL"),
+        ),
+      }
+    : aiProvider === "openrouter"
+      ? {
+          OPENROUTER_LISTING_MODEL: validateOpenRouterListingModel(
+            requiredInput("OPENROUTER_LISTING_MODEL"),
+          ),
+        }
+      : {
+          OPENAI_LISTING_MODEL: safeToken(
+            "OPENAI_LISTING_MODEL",
+            requiredInput("OPENAI_LISTING_MODEL"),
+            /^[A-Za-z0-9._:-]{1,128}$/,
+          ),
+        };
 const s3Bucket = requiredInput("S3_BUCKET");
 if (s3Bucket !== selected.r2Bucket) {
   throw new Error("S3_BUCKET does not match the selected environment");
@@ -61,11 +84,45 @@ if (s3ForcePathStyle !== "false") {
   throw new Error("S3_FORCE_PATH_STYLE must be false");
 }
 
-const typeSafe = readTypeSafeRuntimeConfig(process.env);
-const secretPolicy = typeSafeSecretPolicy(
-  source.requiredSecrets,
-  typeSafe.mode,
+const websiteFetchBaseUrl = process.env.WEBSITE_FETCH_BASE_URL?.trim();
+if (websiteFetchBaseUrl) {
+  const url = new URL(websiteFetchBaseUrl);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("WEBSITE_FETCH_BASE_URL must be a trusted HTTPS origin");
+  }
+}
+const productShotProvider =
+  process.env.PRODUCT_SHOT_PROVIDER?.trim() || source.productShot.provider;
+const wineEnabled = process.env.WINE_ENRICHMENT_ENABLED === "true";
+if (wineEnabled && aiProvider !== "opencode-go")
+  throw new Error("WINE_ENRICHMENT_ENABLED requires AI_PROVIDER=opencode-go");
+const secretNames = wineEnrichmentSecretNames(
+  productShotSecretNames(
+    listingProviderSecretNames(source.requiredSecrets, aiProvider),
+    productShotProvider,
+  ),
+  wineEnabled,
 );
+const shotBudget =
+  process.env.PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY?.trim();
+if (
+  (shotBudget || productShotProvider === "photoroom") &&
+  (!Number.isSafeInteger(Number(shotBudget)) ||
+    Number(shotBudget) <= 0 ||
+    Number(shotBudget) > 2_147_483_647)
+)
+  throw new Error(
+    "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be an integer from 1 to 2147483647",
+  );
+const typeSafe = readTypeSafeRuntimeConfig(process.env);
+const secretPolicy = typeSafeSecretPolicy(secretNames, typeSafe.mode);
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({
   queue,
@@ -86,9 +143,19 @@ const wrangler = {
   observability: { enabled: true },
   secrets: { required: secretPolicy.required },
   vars: {
+    ...(websiteFetchBaseUrl
+      ? { WEBSITE_FETCH_BASE_URL: websiteFetchBaseUrl }
+      : {}),
+    PRODUCT_SHOT_PROVIDER: productShotProvider,
+    ...(shotBudget
+      ? { PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: shotBudget }
+      : {}),
     BUILD_SHA: buildSha,
     AI_PROVIDER: aiProvider,
-    OPENAI_LISTING_MODEL: openAiListingModel,
+    LISTING_PAID_OPERATIONS_ENABLED:
+      process.env.LISTING_PAID_OPERATIONS_ENABLED === "true" ? "true" : "false",
+    WINE_ENRICHMENT_ENABLED: wineEnabled ? "true" : "false",
+    ...listingModel,
     SHOPLINE_ADAPTER: environment === "preview" ? "mock" : "disabled",
     SHOPLINE_PUBLISH_ENABLED: "false",
     S3_BUCKET: s3Bucket,

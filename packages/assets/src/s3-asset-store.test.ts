@@ -294,3 +294,42 @@ describe("S3AssetStore exports/ namespace", () => {
     );
   });
 });
+
+describe("immutable export objects", () => {
+  const key =
+    "ws/ws_opak/exports/11111111-1111-4111-8111-111111111111/export.xlsx";
+  it("uses conditional create and treats a precondition failure as an existing object", async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValue({ $metadata: { httpStatusCode: 412 } });
+    const store = new S3AssetStore({ bucket: "bucket", transport: { send } });
+    await expect(
+      store.writeObjectIfAbsent(
+        "ws_opak",
+        key,
+        new Uint8Array([1]),
+        "test/type",
+      ),
+    ).resolves.toBe(false);
+    expect(send.mock.calls[0][0].input).toMatchObject({
+      IfNoneMatch: "*",
+      Key: key,
+    });
+  });
+  it("normalizes a real object 404 but preserves provider failures", async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce({
+        name: "NoSuchKey",
+        $metadata: { httpStatusCode: 404 },
+      })
+      .mockRejectedValueOnce(new Error("provider outage"));
+    const store = new S3AssetStore({ bucket: "bucket", transport: { send } });
+    await expect(store.readObject("ws_opak", key)).rejects.toMatchObject({
+      name: "AssetObjectMissingError",
+    });
+    await expect(store.readObject("ws_opak", key)).rejects.toThrow(
+      "provider outage",
+    );
+  });
+});

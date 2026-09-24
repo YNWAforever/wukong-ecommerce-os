@@ -19,36 +19,34 @@ const supportedExtensions = new Set([
 ]);
 const generatedFiles = new Set(["pnpm-lock.yaml"]);
 const semanticOnlyFiles = new Set([".env.example"]);
+/**
+ * Files the gate does not format, because their exact bytes are the point.
+ *
+ * Both plan documents here were uploaded as reference material and are kept as
+ * received; reformatting one would rewrite the record of what was asked for.
+ * The two dotfiles are belt-and-braces, since neither has an extension in
+ * supportedExtensions and the gate never reaches them anyway.
+ *
+ * Unlike knownFormatDebt this carries no hash, so it cannot detect an edit --
+ * .gitignore legitimately changes. What it must not do is grow in silence, so
+ * the list is exported and pinned exactly by tests/ci-workflow.test.mjs, which
+ * also refuses to let a Prettier-clean file be parked here.
+ */
 const protectedUnrelatedFiles = new Set([
   ".gitignore",
   "apps/web/.gitignore",
   "apps/web/auth.test.ts",
   "docs/superpowers/plans/2026-07-12-shopline-ai-listing-mvp.md",
+  "docs/superpowers/plans/Wukong_Catalog_Operations_OS_Claude_Code_Opus_Planning_Specification_2026-08-30.md",
 ]);
+
+export function protectedUnrelatedFileEntries() {
+  return [...protectedUnrelatedFiles];
+}
 const knownFormatDebt = new Map([
-  [
-    "apps/web/app/api/assets/finalize/route.test.ts",
-    "3abb816c52d65a7223313586b4ee6dd56da80abd43e5598a98ddda3b4d50845b",
-  ],
-  [
-    "apps/web/app/api/assets/finalize/route.ts",
-    "5aaa692c0b800758e6e63012d8aca47bc31b517b4924244763f3256fa1c097b2",
-  ],
-  [
-    "apps/web/app/api/assets/presign/route.ts",
-    "7adbcb02f097f202c849e229d9510f8c3a59059072aa81b55c0ad997c37388ea",
-  ],
-  [
-    "apps/worker/src/listing-consumer.test.ts",
-    "004dcee5a589f459004489c538632cf202a225066922996be1e35b9b00fea41f",
-  ],
   [
     "packages/db/src/publish-jobs-schema.test.ts",
     "8c0609853aa150a6d7fd532e41f387fb152462758d35f4d860a80685f932c5d8",
-  ],
-  [
-    "packages/jobs/src/cloudflare-queue.ts",
-    "1f17ed387564268afbdf82c4354a04d7e27b0525d0d2a5dfc613c925796f1b43",
   ],
 ]);
 

@@ -1,12 +1,17 @@
+import { buildSafeListing } from "./listing-output-validation.js";
 import { describe, expect, it, vi } from "vitest";
 
+import { ProviderOutputError as publicError } from "./index.js";
+import { ProviderOutputError as sharedError } from "./listing-provider-errors.js";
 import {
   OpenAIListingProvider,
   ProviderApiError,
-  ProviderOutputError,
+  ProviderOutputError as legacyError,
   ProviderRefusalError,
   UnsupportedAssetError,
 } from "./openai-listing-provider.js";
+
+const ProviderOutputError = legacyError;
 
 const facts = {
   sku: "OPAK-DEMO-001",
@@ -154,6 +159,20 @@ function extractionResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("OpenAIListingProvider", () => {
+  it.each(["gpt-4o", "gpt-4o-2024-08-06", "gpt-4.1", "gpt-4.1-2025-04-14"])(
+    "omits unsupported reasoning parameters for admitted model %s",
+    async (model) => {
+      const { client, parse } = fakeClient(extractionResponse());
+      const provider = new OpenAIListingProvider(client, { model });
+      await provider.extract({ assets: [], note: groundingNote });
+      expect(parse.mock.calls[0]![0]).not.toHaveProperty("reasoning");
+    },
+  );
+  it("preserves the public provider output error class identity", () => {
+    expect(publicError).toBe(legacyError);
+    expect(sharedError).toBe(legacyError);
+  });
+
   it("uses Responses structured parsing, multimodal HTTPS inputs, configured model, and deterministic telemetry", async () => {
     const { client, parse } = fakeClient(
       extractionResponse({
@@ -196,14 +215,14 @@ describe("OpenAIListingProvider", () => {
     };
     expect(JSON.stringify(request.input)).toContain('"type":"input_image"');
     expect(JSON.stringify(request.input)).toContain('"type":"input_file"');
-    expect(JSON.stringify(request.input)).toContain("listing-extraction@1.0.0");
+    expect(JSON.stringify(request.input)).toContain("listing-extraction@1.1.0");
     expect(result.usage).toEqual({
       inputTokens: 100,
       outputTokens: 50,
       estimatedCostUsd: 0.001,
       latencyMs: 25,
       model: "gpt-5.6-terra",
-      promptVersion: "1.0.0",
+      promptVersion: "1.1.0",
     });
   });
 
@@ -480,10 +499,15 @@ describe("OpenAIListingProvider", () => {
   it("rejects substring evidence collisions while accepting exact multiword, numeric, and source claims", async () => {
     const collisions = [
       {
-        note: `${groundingNote} product classification winery.`,
+        // `region` is a verbatim fact, so a longer word that merely contains it
+        // does not support it. This probe used to sit on `productType`, which is
+        // now a `classified` fact: a four-value enum has no verbatim form on a
+        // label, so it is grounded by citing the text it was judged from rather
+        // than by restating the value. See fact-grounding-rules.ts.
+        note: `${groundingNote} slope Moselle.`,
         facts: { ...facts },
         evidence: evidence.map((item) =>
-          item.field === "productType" ? { ...item, excerpt: "winery" } : item,
+          item.field === "region" ? { ...item, excerpt: "Moselle" } : item,
         ),
       },
       {
@@ -624,13 +648,24 @@ describe("OpenAIListingProvider", () => {
       { output_parsed: null, usage: {}, output: [] },
       extractionResponse(),
     );
+    const invocations: string[] = [];
     await expect(
-      new OpenAIListingProvider(client).extract({
+      new OpenAIListingProvider(client, {
+        invocationObserver: (record) => {
+          invocations.push(`${record.ordinal}:${record.outcome}`);
+        },
+      }).extract({
         assets: [],
         note: groundingNote,
       }),
     ).resolves.toMatchObject({ facts });
     expect(parse).toHaveBeenCalledTimes(2);
+    expect(invocations).toEqual([
+      "1:started",
+      "1:invalid_output",
+      "2:started",
+      "2:response",
+    ]);
     expect(JSON.stringify(parse.mock.calls[1]?.[0])).toContain("repair");
   });
 
@@ -663,12 +698,25 @@ describe("OpenAIListingProvider", () => {
     ).rejects.toBeInstanceOf(ProviderRefusalError);
     expect(refusal.parse).toHaveBeenCalledTimes(1);
 
-    const parse = vi.fn().mockRejectedValue(new Error("secret-token-sk-test"));
+    const parse = vi.fn().mockRejectedValue(
+      Object.assign(new Error("secret-token-sk-test"), {
+        status: 429,
+        code: "rate_limit_exceeded",
+        request_id: "req_safe",
+      }),
+    );
     const error = await new OpenAIListingProvider({ responses: { parse } })
       .extract({ assets: [], note: null })
       .catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ProviderApiError);
     expect(String(error)).not.toContain("secret-token");
+    expect((error as ProviderApiError).diagnostic).toMatchObject({
+      category: "rate_limited",
+      retryable: true,
+      httpStatus: 429,
+      providerCode: "rate_limit_exceeded",
+      requestId: "req_safe",
+    });
     expect(parse).toHaveBeenCalledTimes(1);
   });
 
@@ -708,6 +756,26 @@ describe("OpenAIListingProvider", () => {
     );
     expect(result.usage.inputTokens).toBe(0);
     expect(result.usage.estimatedCostUsd).toBe(0);
+  });
+  it("does not admit model-supplied server ownership into a generated listing", async () => {
+    const { client } = fakeClient({
+      output_parsed: {
+        listing: {
+          ...listingFixture,
+          wineOwnership: { schemaVersion: 1, sections: [] },
+        },
+      },
+      output: [],
+    });
+
+    const result = await new OpenAIListingProvider(client).generate({
+      facts,
+      evidence,
+      profile,
+      imageAssetIds: ["asset_image"],
+    });
+
+    expect(result.listing).not.toHaveProperty("wineOwnership");
   });
   it("rejects generated protected-fact mutations", async () => {
     const changed = fakeClient({
@@ -774,5 +842,93 @@ describe("OpenAIListingProvider", () => {
         imageAssetIds: ["asset_image"],
       }),
     ).rejects.toBeInstanceOf(ProviderOutputError);
+  });
+});
+
+it("disables hidden SDK transport retries so each physical call owns one ledger row", async () => {
+  const parse = vi.fn().mockRejectedValue(new Error("transport"));
+  await expect(
+    new OpenAIListingProvider({ responses: { parse } }).extract({
+      assets: [],
+      note: "operator note",
+    }),
+  ).rejects.toThrow();
+  expect(parse).toHaveBeenCalledTimes(1);
+  expect(parse.mock.calls[0]?.[1]).toMatchObject({
+    maxRetries: 0,
+    signal: expect.any(AbortSignal),
+  });
+});
+
+it("keeps absent provider token usage unknown rather than recording a zero-cost call", async () => {
+  const invocationObserver = vi.fn();
+  const parse = vi.fn().mockResolvedValue({ output_parsed: null });
+  await expect(
+    new OpenAIListingProvider(
+      { responses: { parse } },
+      { invocationObserver },
+    ).extract({ assets: [], note: "operator note" }),
+  ).rejects.toThrow();
+  const terminals = invocationObserver.mock.calls
+    .map(([event]) => event)
+    .filter((event) => event.outcome !== "started");
+  expect(terminals.length).toBeGreaterThan(0);
+  for (const event of terminals)
+    expect(event.usage).toEqual({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      certainty: "unknown",
+    });
+});
+
+describe("trusted manual generation inputs", () => {
+  const input = () => ({
+    facts,
+    evidence: evidence.filter(
+      (e) => !["producer", "sku", "priceHkd"].includes(e.field),
+    ),
+    operatorProvidedFields: ["producer", "sku", "priceHkd"] as Array<
+      keyof typeof facts
+    >,
+    profile: { ...profile, locales: ["en", "zh-Hant"] as ["en", "zh-Hant"] },
+    imageAssetIds: ["asset_image"],
+  });
+  it("generates from manual facts without inventing source evidence", async () => {
+    const request = input();
+    const parse = vi.fn().mockResolvedValue({
+      output_parsed: { listing: buildSafeListing(request) },
+    });
+    const result = await new OpenAIListingProvider(
+      { responses: { parse } },
+      { model: "gpt-4.1" },
+    ).generate(request);
+    expect(parse).toHaveBeenCalledOnce();
+    expect(result.listing.producer).toBe(facts.producer);
+    expect(result.listing.priceHkd).toBe(facts.priceHkd);
+  });
+  it("still refuses unsupported automatic facts before transport", async () => {
+    const request = input();
+    request.evidence = request.evidence.filter((e) => e.field !== "country");
+    const parse = vi.fn();
+    await expect(
+      new OpenAIListingProvider({ responses: { parse } }).generate(request),
+    ).rejects.toThrow("no supporting evidence");
+    expect(parse).not.toHaveBeenCalled();
+  });
+  it("still rejects provider mutation of a manual fact", async () => {
+    const request = input();
+    const parse = vi.fn().mockResolvedValue({
+      output_parsed: {
+        listing: {
+          ...buildSafeListing(request),
+          producer: "Changed producer",
+        },
+      },
+    });
+    await expect(
+      new OpenAIListingProvider({ responses: { parse } }).generate(request),
+    ).rejects.toThrow("protected fact");
+    expect(parse).toHaveBeenCalledOnce();
   });
 });

@@ -6,7 +6,7 @@ import {
 } from "./capability-registry.js";
 
 const VALID_STATES: readonly CapabilityState[] = [
-  "live",
+  "implemented",
   "pilot",
   "planned",
   "blocked",
@@ -53,7 +53,21 @@ describe("CAPABILITY_REGISTRY", () => {
       "use strict";
       // @ts-expect-error -- readonly at the type level; this proves the
       // runtime backstop actually rejects the mutation too, not just TS.
-      CAPABILITY_REGISTRY[0].state = "live";
+      CAPABILITY_REGISTRY[0].state = "implemented";
     }).toThrow(TypeError);
   });
+});
+
+it("does not claim production verification from implementation metadata", () => {
+  expect(
+    CAPABILITY_REGISTRY.some(
+      (entry) =>
+        entry.description.includes("live in production") ||
+        entry.description.includes("Production runs"),
+    ),
+  ).toBe(false);
+  expect(
+    CAPABILITY_REGISTRY.find((entry) => entry.id === "ai-listing-generation")
+      ?.state,
+  ).toBe("implemented");
 });

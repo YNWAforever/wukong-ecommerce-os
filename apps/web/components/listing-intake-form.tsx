@@ -1,59 +1,155 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-type IntakeFileState = {
+import {
+  isImageMimeType,
+  MAX_ASSET_SIZE,
+  rejectAsset,
+  type MediaRejection,
+} from "@wukong/assets/media-policy";
+
+/**
+ * One chosen file, and how far it has got.
+ *
+ * `assetId` and `storedKey` are what make a retry cheap. `storedKey` means the
+ * bytes reached object storage but finalize did not confirm them; `assetId`
+ * means the asset exists and must never be uploaded again. Both survive a
+ * failed submit, which is the whole point -- the form used to keep only a
+ * status string, so after any failure it could not tell a file it had already
+ * sent from one it had not.
+ */
+export type ListingIntakeFile = {
   id: string;
   file: File;
   status: "ready" | "uploading" | "uploaded" | "error";
   message?: string;
+  assetId?: string;
+  storedKey?: string;
+  previewUrl?: string;
 };
 
-export type ListingIntakePayload = { files: File[]; note: string };
+/**
+ * What creating a draft needs to know about one file.
+ *
+ * Deliberately narrower than the row the form renders: the upload caller has no
+ * business reading a status string or a rejection message, and keeping it out
+ * means the two cannot drift into disagreeing about which is authoritative.
+ */
+export type ListingIntakeUpload = Pick<
+  ListingIntakeFile,
+  "id" | "file" | "assetId" | "storedKey"
+>;
+
+export type ListingIntakePayload = {
+  files: ListingIntakeUpload[];
+  note: string;
+  processingMode?: "ai" | "manual";
+  idempotencyKey?: string;
+};
+
+/** Reports one file's progress so it outlives a failure later in the batch. */
+export type ListingIntakeProgress = (
+  id: string,
+  progress: { assetId?: string; storedKey?: string },
+) => void;
+
 export type ListingIntakeFormProps = {
-  onCreate?: (payload: ListingIntakePayload) => Promise<void> | void;
+  onCreate?: (
+    payload: ListingIntakePayload,
+    report: ListingIntakeProgress,
+  ) => Promise<void> | void;
 };
 
-const imageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+/**
+ * Identifies a chosen file well enough to spot the same one picked twice.
+ *
+ * Also the React key, so it must not depend on position: re-validating the
+ * union renumbers the array, and an index-based key would make React reuse the
+ * wrong row and show one file's status against another's name.
+ */
+function fileIdentity(file: File): string {
+  return `${file.name}-${file.size}-${file.lastModified}`;
+}
 
-function validateFiles(files: File[]): {
-  accepted: IntakeFileState[];
+const rejectionCopy: Record<MediaRejection, string> = {
+  unsupported_type: "只接受 JPG、PNG、WebP 或 PDF。",
+  empty_file: "檔案是空的，請重新選取。",
+  too_large: `檔案超過 ${Math.round(MAX_ASSET_SIZE / (1024 * 1024))} MB 上限。`,
+  too_many_images: "圖片數量已達上限。",
+  too_many_pdfs: "PDF 數量已達上限。",
+};
+
+type CandidateFile = Pick<
+  ListingIntakeFile,
+  "file" | "assetId" | "storedKey" | "previewUrl"
+>;
+
+/**
+ * Applies the SHARED media policy, so what this form accepts is what presign,
+ * finalize and the create route accept. It previously enforced no size limit at
+ * all, so an operator could be told a 25 MB photo was ready and only discover
+ * the cap once presign refused it -- after they had committed to the upload.
+ *
+ * Carries `assetId`/`storedKey` through, because this runs on every add and
+ * every removal: rebuilding rows from the File alone would silently throw away
+ * completed uploads the moment the operator touched the selection again.
+ */
+function validateFiles(candidates: CandidateFile[]): {
+  accepted: ListingIntakeFile[];
   errors: string[];
 } {
-  const images = files.filter((file) => imageTypes.has(file.type));
-  const pdfs = files.filter((file) => file.type === "application/pdf");
   const errors: string[] = [];
-  if (images.length > 10)
-    errors.push("最多可加入 10 張 JPG、PNG 或 WebP 圖片。");
-  if (pdfs.length > 1) errors.push("每個草稿最多可加入 1 份 PDF。");
-  const accepted: IntakeFileState[] = [];
-  files.forEach((file, index) => {
-    const acceptedType =
-      imageTypes.has(file.type) || file.type === "application/pdf";
-    const overImageLimit =
-      imageTypes.has(file.type) && images.indexOf(file) >= 10;
-    const overPdfLimit =
-      file.type === "application/pdf" && pdfs.indexOf(file) >= 1;
+  const accepted: ListingIntakeFile[] = [];
+  let images = 0;
+  let pdfs = 0;
+  for (const candidate of candidates) {
+    const { file } = candidate;
+    const rejection = rejectAsset(
+      { mimeType: file.type, size: file.size },
+      { imagesBefore: images, pdfsBefore: pdfs },
+    );
+    if (rejection === null) {
+      if (isImageMimeType(file.type)) images += 1;
+      else pdfs += 1;
+    } else if (
+      (rejection === "too_many_images" || rejection === "too_many_pdfs") &&
+      !errors.includes(rejectionCopy[rejection])
+    ) {
+      errors.push(rejectionCopy[rejection]);
+    }
     accepted.push({
-      id: `${file.name}-${file.size}-${index}`,
+      id: fileIdentity(file),
       file,
+      assetId: candidate.assetId,
+      storedKey: candidate.storedKey,
+      previewUrl: candidate.previewUrl,
       status:
-        acceptedType && !overImageLimit && !overPdfLimit ? "ready" : "error",
-      message: !acceptedType
-        ? "只接受 JPG、PNG、WebP 或 PDF。"
-        : overImageLimit
-          ? "圖片數量已達上限。"
-          : overPdfLimit
-            ? "PDF 數量已達上限。"
-            : undefined,
+        rejection !== null
+          ? "error"
+          : candidate.assetId !== undefined
+            ? "uploaded"
+            : "ready",
+      message: rejection === null ? undefined : rejectionCopy[rejection],
     });
-  });
+  }
   return { accepted, errors };
 }
 
+function readyCount(files: ListingIntakeFile[]): number {
+  return files.filter((item) => item.status !== "error").length;
+}
+
 export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
-  const [files, setFiles] = useState<IntakeFileState[]>([]);
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
+  const [files, setFiles] = useState<ListingIntakeFile[]>([]);
+  const filesRef = useRef<ListingIntakeFile[]>([]);
   const [note, setNote] = useState("");
+  const [processingMode, setProcessingMode] = useState<"ai" | "manual">("ai");
+  const createAttempt = useRef<{ signature: string; key: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const validFiles = useMemo(
@@ -61,51 +157,154 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
     [files],
   );
 
-  function handleFiles(nextFiles: FileList | null) {
-    if (!nextFiles) return;
-    const parsed = validateFiles(Array.from(nextFiles));
-    setFiles(parsed.accepted);
+  function commitFiles(next: ListingIntakeFile[]) {
+    filesRef.current = next;
+    setFiles(next);
+  }
+
+  useEffect(
+    () => () => {
+      for (const item of filesRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
+    },
+    [],
+  );
+
+  /**
+   * Add to the selection rather than replace it.
+   *
+   * A bottle shot and a back label are two trips to the file picker on most
+   * phones, and this used to overwrite the whole array on the second one -- the
+   * first photo disappeared with no warning and no way back to it except to
+   * find the file again. Re-validating the union rather than only the new files
+   * keeps the 10-image and 1-PDF caps meaningful across both trips.
+   */
+  function handleFiles(nextFiles: File[]) {
+    if (nextFiles.length === 0) return;
+    const current = filesRef.current;
+    const seen = new Set(current.map((item) => fileIdentity(item.file)));
+    const unique = nextFiles.filter((file) => !seen.has(fileIdentity(file)));
+    const duplicates = nextFiles.length - unique.length;
+    const added = unique.map((file) => ({
+      file,
+      previewUrl: isImageMimeType(file.type)
+        ? URL.createObjectURL(file)
+        : undefined,
+    }));
+    const parsed = validateFiles([...current, ...added]);
+    commitFiles(parsed.accepted);
     setMessage(
       parsed.errors[0] ??
-        `${parsed.accepted.filter((item) => item.status !== "error").length} 個檔案已準備`,
+        (duplicates > 0
+          ? `已略過 ${duplicates} 個重複檔案；${readyCount(parsed.accepted)} 個檔案已準備。`
+          : `${readyCount(parsed.accepted)} 個檔案已準備`),
+    );
+  }
+
+  function removeFile(id: string) {
+    const removed = filesRef.current.find((item) => item.id === id);
+    // Re-validate what is left: dropping an image can bring a file that was
+    // over the cap back under it, and leaving it marked as an error would
+    // strand a file the operator can now actually use.
+    const parsed = validateFiles(
+      filesRef.current.filter((item) => item.id !== id),
+    );
+    commitFiles(parsed.accepted);
+    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    setMessage(
+      parsed.errors[0] ?? `${readyCount(parsed.accepted)} 個檔案已準備`,
+    );
+  }
+
+  /**
+   * Records one file's progress the moment it happens.
+   *
+   * Committed to state during the submit rather than after it, so a throw from
+   * a later file cannot take the earlier files' progress down with it.
+   */
+  function reportProgress(
+    id: string,
+    progress: { assetId?: string; storedKey?: string },
+  ) {
+    commitFiles(
+      filesRef.current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              assetId: progress.assetId ?? item.assetId,
+              storedKey: progress.storedKey ?? item.storedKey,
+              status: progress.assetId ? ("uploaded" as const) : item.status,
+            }
+          : item,
+      ),
     );
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (validFiles.length === 0) {
-      setMessage("請先加入至少一個圖片或 PDF 檔案。");
+    const normalizedNote = note.trim();
+    if (validFiles.length === 0 && normalizedNote.length === 0) {
+      setMessage("請加入至少一個檔案，或填寫可保存的產品資料。");
       return;
+    }
+    const signature = JSON.stringify({
+      files: validFiles.map((item) => item.id),
+      note: normalizedNote,
+      processingMode,
+    });
+    if (createAttempt.current?.signature !== signature) {
+      createAttempt.current = { signature, key: crypto.randomUUID() };
     }
     setBusy(true);
     setMessage("正在準備上傳…");
-    setFiles((current) =>
-      current.map((item) =>
+    commitFiles(
+      filesRef.current.map((item) =>
         item.status === "ready" ? { ...item, status: "uploading" } : item,
       ),
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     try {
-      await onCreate?.({
-        files: validFiles.map((item) => item.file),
-        note: note.trim(),
-      });
-      setFiles((current) =>
-        current.map((item) =>
+      await onCreate?.(
+        {
+          files: validFiles,
+          note: normalizedNote,
+          processingMode,
+          idempotencyKey: createAttempt.current.key,
+        },
+        reportProgress,
+      );
+      commitFiles(
+        filesRef.current.map((item) =>
           item.status === "uploading" ? { ...item, status: "uploaded" } : item,
         ),
       );
       setMessage("草稿已建立，下一步會進入 AI 處理佇列。");
+      createAttempt.current = null;
     } catch (error) {
-      setFiles((current) =>
-        current.map((item) =>
-          item.status === "uploading" ? { ...item, status: "ready" } : item,
-        ),
-      );
-      setMessage(
+      const failure =
         error instanceof Error
           ? error.message
-          : "Unable to create the listing draft.",
+          : "Unable to create the listing draft.";
+      // The count has to be read from the NEXT state, not the render-time
+      // snapshot: `reportProgress` committed each completed upload while this
+      // submit was still running, so the closed-over `files` predates them.
+      // Only the files that did NOT finish go back to the queue. A file with
+      // an assetId is done, and saying otherwise is what re-sent it.
+      const next = filesRef.current.map((item) =>
+        item.status === "uploading"
+          ? {
+              ...item,
+              status: item.assetId ? ("uploaded" as const) : ("ready" as const),
+            }
+          : item,
+      );
+      const reusable = next.filter((item) => item.assetId).length;
+      commitFiles(next);
+      setMessage(
+        reusable > 0
+          ? `${failure} 已上傳的 ${reusable} 個檔案會保留，重試只會上傳其餘檔案。`
+          : failure,
       );
     } finally {
       setBusy(false);
@@ -114,11 +313,29 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
 
   return (
     <form className="intake-form" onSubmit={submit}>
+      <p className="helper-copy">
+        {t(
+          "請加入清晰的正面標籤、背面標籤及包裝相片；年份、容量及條碼需可辨認。",
+          "Add clear front label, back label and package photos with readable vintage, volume and barcode.",
+        )}
+      </p>
+      <p className="helper-copy">
+        {t(
+          "可選填商戶貨號、售價及庫存。AI 不會猜測這些資料。啟用酒類搜尋時，處理可能使用網絡搜尋及 Tavily 點數。",
+          "Merchant SKU, price and stock are optional; AI will not guess them. When wine research is enabled, processing may use network search and Tavily credits.",
+        )}
+      </p>
       <div className="upload-dropzone">
         <label htmlFor="listing-files" className="upload-label">
-          <span className="upload-title">加入商品資料</span>
+          <span className="upload-title">
+            {t("加入商品資料", "Add product information")}
+          </span>
           <span className="upload-subtitle">
-            上載瓶身圖片或供應商資料 · JPG, PNG, WebP · PDF
+            {t(
+              "上載瓶身圖片或供應商資料",
+              "Upload bottle photos or supplier documents",
+            )}{" "}
+            · JPG, PNG, WebP · PDF
           </span>
           <span className="secondary-button upload-button">
             選擇檔案 <span>Select files</span>
@@ -129,10 +346,22 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           type="file"
           accept="image/jpeg,image/png,image/webp,application/pdf"
           multiple
-          onChange={(event) => handleFiles(event.target.files)}
+          onChange={(event) => {
+            // A native FileList is live: clearing the input empties it. Copy
+            // the File objects synchronously before React schedules any work.
+            const selected = Array.from(event.currentTarget.files ?? []);
+            // Clear the input so choosing the SAME file again still fires a
+            // change event -- otherwise removing a file and re-picking it does
+            // nothing, which reads as the picker being broken.
+            event.currentTarget.value = "";
+            handleFiles(selected);
+          }}
         />
         <p className="upload-limit">
-          最多 10 張圖片及 1 份 PDF。成功上傳的檔案不會在重試時重複上傳。
+          {t(
+            "最多 10 張圖片及 1 份 PDF。成功上傳的檔案不會在重試時重複上傳。",
+            "Up to 10 images and 1 PDF. Completed uploads are retained when retrying.",
+          )}
         </p>
       </div>
 
@@ -140,6 +369,16 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
         <ul className="file-list" aria-live="polite">
           {files.map((item) => (
             <li className={`file-row file-${item.status}`} key={item.id}>
+              {item.previewUrl ? (
+                <img
+                  className="file-preview"
+                  src={item.previewUrl}
+                  alt={`${item.file.name} 預覽`}
+                  width={64}
+                  height={64}
+                  style={{ objectFit: "cover" }}
+                />
+              ) : null}
               <div>
                 <strong>{item.file.name}</strong>
                 <span>
@@ -153,9 +392,18 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
                   : item.status === "uploading"
                     ? "上傳中…"
                     : item.status === "uploaded"
-                      ? "已完成"
+                      ? "已上傳"
                       : item.message}
               </span>
+              {item.status === "uploading" ? null : (
+                <button
+                  type="button"
+                  className="link-button file-remove"
+                  onClick={() => removeFile(item.id)}
+                >
+                  移除 <span>Remove</span>
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -163,7 +411,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
 
       <div className="notes-field">
         <label htmlFor="listing-note">
-          <span>補充備註</span>
+          <span>{t("補充備註", "Operator notes")}</span>
           <small>Operator notes · Optional</small>
         </label>
         <textarea
@@ -172,22 +420,58 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
           onChange={(event) => setNote(event.target.value)}
           maxLength={5000}
           rows={5}
-          placeholder="例如：只保留 2024 年份；請以英文與繁體中文輸出。"
+          placeholder={t(
+            "例如：只保留 2024 年份；請以英文與繁體中文輸出。",
+            "For example: use only the 2024 vintage; draft in English and Traditional Chinese.",
+          )}
         />
         <span className="character-count">{note.length}/5000</span>
       </div>
+
+      <fieldset className="processing-mode">
+        <legend>{t("建立草稿後", "After creating the draft")}</legend>
+        <label>
+          <input
+            type="radio"
+            name="processing-mode"
+            value="ai"
+            checked={processingMode === "ai"}
+            onChange={() => setProcessingMode("ai")}
+          />
+          {t("儲存並開始 AI 處理", "Save and start AI processing")}
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="processing-mode"
+            value="manual"
+            checked={processingMode === "manual"}
+            onChange={() => setProcessingMode("manual")}
+          />
+          {t(
+            "只儲存草稿，稍後手動處理",
+            "Save draft for manual processing later",
+          )}
+        </label>
+      </fieldset>
 
       <div className="form-actions intake-actions">
         <button
           className="primary-button"
           type="submit"
-          disabled={busy || validFiles.length === 0}
+          disabled={
+            busy || (validFiles.length === 0 && note.trim().length === 0)
+          }
         >
           建立上架草稿 <span>Create listing draft</span>
         </button>
       </div>
       <p className="intake-message" role="status" aria-live="polite">
-        {message ?? "檔案會先經過驗證，再交由 AI 佇列處理。"}
+        {message ??
+          t(
+            "檔案會先經過驗證，再交由 AI 佇列處理。",
+            "Files are validated before entering the AI queue.",
+          )}
       </p>
     </form>
   );

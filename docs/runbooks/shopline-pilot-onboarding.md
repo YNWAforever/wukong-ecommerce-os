@@ -50,10 +50,10 @@ Prerequisite: the workspace has a verified SHOPLINE connection.
    pnpm --filter @wukong/shopline bulk-form:profile <bulk-update-form.xlsx>
    ```
 
-4. Upload it:
+4. Prefer `/listings/import`: select the workbook, explicitly enter its SHOPLINE export time in Hong Kong UTC+08:00, then submit. The browser retains the file/time for a failed-request retry. For a direct request, URL-encode the original filename and actual merchant-attested export timestamp (never use upload time):
 
    ```bash
-   curl -X POST "$WUKONG_BASE_URL/api/listings/import" \
+   curl -X POST "$WUKONG_BASE_URL/api/listings/import?filename=bulk-update-form.xlsx&merchantAttestedExportAt=<URL-encoded-ISO-timestamp>" \
      -H "Cookie: $WUKONG_SESSION_COOKIE" \
      -H "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" \
      --data-binary @bulk-update-form.xlsx
@@ -62,9 +62,7 @@ Prerequisite: the workspace has a verified SHOPLINE connection.
    Requires the operator role. The response reports `parsedRows`,
    `createdDrafts`, `refreshedProducts`, and up to 100 parse issues.
 
-5. Re-running the same file is safe. A product already imported keeps its
-   existing draft and only refreshes its row snapshot; `refreshedProducts`
-   counts the ones whose content actually changed since the last import.
+5. A re-import refreshes the source snapshot without creating another draft for the same product. Source changes require renewed review confirmations and approval; re-importing alone cannot reuse the previous approved-source receipt.
 
 Failure codes are deliberately distinct: `upload_not_a_workbook` (400) means the
 bytes are not a readable xlsx, `bulk_form_unreadable` (422) means the workbook
@@ -121,83 +119,37 @@ wave already in flight can overshoot by at most the cost of that wave, so size
 
 ## 6. Exporting enrichment back to SHOPLINE
 
-Once an enriched draft is approved, export it as a bulk update form and
-re-import that file into SHOPLINE by hand — the same download-then-upload
-shape as CSV delivery, using the same route:
+For imported products use the catalog Bulk Update XLSX action. Review all eight field and seven negative confirmations, approve the exact version/source, select the intended listings and attest freshness for that selection. Retain the resulting export attempt reference even if detail loading fails; retry detail loading without generating another artifact. Download only the ready artifact and retain its exact bytes and SHA-256 privately.
 
-```bash
-curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/deliver" \
-  -H "Cookie: $WUKONG_SESSION_COOKIE" \
-  -H "Content-Type: application/json" \
-  -d '{"method":"bulk_form"}' \
-  -o export.xlsx
-```
+Export requires approved/published status, no open blocking flags, matching immutable approved-source evidence and current header contract. Missing or stale evidence fails closed. Re-import current merchant data and renew review/approval when the source changes. Attestation cannot independently detect later merchant-side price, stock or logistics changes.
 
-This only applies to a listing imported from an existing SHOPLINE product —
-one with a linked `platform_products` row. A listing authored fresh in
-Wukong has no known remote product ID, so there is nothing for a bulk-form
-row to update; use `shopline_api` or `csv` for those, unchanged. Requesting
-`bulk_form` for an unlinked listing returns `409 no_remote_link`.
+Single-listing direct delivery remains available with body `{"method":"bulk_form","freshnessAttested":true}`, but the operator UI uses stable multi-export attempts for reconciliation. Create CSV and direct API capabilities remain separate from this existing-product pilot.
 
-Requires the listing to be `approved` (or `published`), the same review gate
-CSV and API delivery already enforce.
-
-**Re-import the catalog immediately before exporting.** The exported file
-carries every non-enriched column exactly as it stood at the listing's last
-import — price, stock, everything except the eight fields Wukong enriched.
-If the merchant changed a price or stock level directly in SHOPLINE since
-that import, uploading this export will silently revert it. This is not
-validated or warned about automatically; re-importing right before exporting
-is the operator's responsibility for now.
+Before an authorized manual SHOPLINE import, independently compare all 71 fields and preserve the pre-change source as described in [Opak UAT rollout](./opak-uat-rollout.md). The output is a normalized string workbook, not an exact typed-cell or byte copy. Blank deltas remain blank; nonblank deltas become +0. Merchant acceptance of these representations and actual stock neutrality require authorized re-import/fresh-export UAT. Do not open and re-save the workbook in Excel.
 
 ## 7. Recording a SHOPLINE import result
 
-After manually re-importing a Wukong-generated bulk-form file into SHOPLINE (§6), record what SHOPLINE actually reported. Nothing does this automatically — the `/jobs` ledger only shows that a file was _generated_, not what happened after you uploaded it.
+Use the attempt detail in /jobs to report each included member against its exported version. The equivalent POST /api/listings/<draft-uuid>/shopline-import-result body is:
 
-```bash
-curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
-  -H "Cookie: $WUKONG_SESSION_COOKIE" \
-  -H "Content-Type: application/json" \
-  -d '{"outcome":"accepted"}'
+```json
+{
+  "mode": "export",
+  "outcome": "accepted",
+  "exportAttemptId": "<export-attempt-uuid>",
+  "versionId": "<exported-version-uuid>",
+  "idempotencyKey": "<stable-key-for-this-report>"
+}
 ```
 
-If SHOPLINE rejected the row, record why:
+Requires operator access. A rejected outcome must include rejectReason; accepted outcomes omit it. Reuse the same idempotency key for an unchanged retry. Corrections use a new key and include supersedesResultId (the observed preceding receipt) and correctionReason. Reports append instead of replacing history, and rejection/correction explanations remain visible after reload.
 
-```bash
-curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
-  -H "Cookie: $WUKONG_SESSION_COOKIE" \
-  -H "Content-Type: application/json" \
-  -d '{"outcome":"rejected","rejectReason":"duplicate SKU"}'
-```
-
-If this listing's file came from a multi-product export, include that export's id so the record can be traced back to the exact file:
-
-```bash
-curl -X POST "$WUKONG_BASE_URL/api/listings/<draft-uuid>/shopline-import-result" \
-  -H "Cookie: $WUKONG_SESSION_COOKIE" \
-  -H "Content-Type: application/json" \
-  -d '{"outcome":"accepted","exportAttemptId":"<export-attempt-uuid>"}'
-```
-
-Requires the operator role. This call is per-listing: reconciling a multi-product export means calling it once per listing in that batch, the same way approving many listings at once (below) calls single-listing approval logic once per listing rather than as one combined request. Recorded results appear in the `/jobs` ledger as `import_result` entries.
+Historical entries use mode historical_manual and omit exportAttemptId/versionId; they remain explicitly unlinked and cannot reconcile an attempt. /jobs derives accepted/rejected/unreported totals from included members. All reports remain operator assertions, independently unverified against SHOPLINE. A fresh-export comparison records normalized evidence from a supplied snapshot; its store and export time remain operator-attested, and it does not independently establish live merchant state.
 
 ## 8. Approving many listings at once
 
-From the dashboard's work queue, an `in_review` listing with no open blocking
-compliance flags can be selected via its checkbox. "Select all eligible"
-selects every flag-free `in_review` listing currently loaded, up to 50 at a
-time — the API refuses more than 50 IDs in one request. Selecting more than
-50 requires approving in batches.
+The work queue selects fully confirmed in_review listings without open blocking flags, at most 50 distinct listings per batch. Selection captures the observed version, confirmation revision and applicable source identity/digest; legacy ID-only approval requests are rejected. Each item has its own transaction, so a conflict does not block unrelated approvals.
 
-Approving a selection calls the same single-listing approval logic once per
-listing, sequentially, each in its own transaction. A listing whose flags
-changed since the queue last loaded (for example, a compliance re-scan
-opened a new flag between page load and clicking approve) fails on its own
-without blocking the rest of the batch — the result list shows exactly which
-listings succeeded and which didn't, and why.
-
-Nothing about single-listing review changes: this is a faster way to approve
-many already-eligible listings, not a new kind of approval.
+Failures retain their original review context across reloads. Review and explicitly reselect to adopt new context; only successful items clear automatically. Approval remains whole-listing and does not apply content to SHOPLINE.
 
 ## 9. Workspace admin area
 
@@ -242,3 +194,35 @@ No operator action changes: request delivery via `shopline_api` exactly as
 before. The create-vs-update decision is made automatically from the listing's
 recorded remote-product link, both when the request is made and again by the
 worker immediately before it calls SHOPLINE.
+
+### Fresh-export comparison
+
+For a ready attempt, a reviewer/admin/owner can open its separate comparison panel, select a later SHOPLINE workbook, enter its Hong Kong export time and attest the same store. The timestamp must be after artifact readiness and no later than the current time. Retry with the same file, timestamp and attestation after a network failure; identical evidence returns the original record.
+
+Review intended-content and protected-field differences, missing or ambiguous products, and quantity instruction observations separately. History is paged; select a record to inspect its full normalized evidence. Comparisons do not change operator accepted/rejected totals or their unverified status. A match means only that the compared normalized fields match the supplied snapshot.
+
+The system retains the supplied digest and normalized relevant rows, not the original supplied XLSX bytes. Retain authorized original workbooks in the approved private evidence location. This feature requires the reviewed code and migration 0018 to be deployed through a separately authorized rollout; local synthetic verification does not authorize that rollout.
+
+### Download an attempt evidence packet
+
+Open the exact comparison to review, preview its evidence packet, then download the JSON attachment. Review the selected comparison ID, receipt and member counts, and as-of time. A newer comparison is not chosen automatically. If receipts changed after preview, refresh and review the new summary before downloading. Unavailable requests can be retried while retaining the selection.
+
+The packet includes the selected normalized comparison and applicable operator receipt revisions, with explicit unreported members. It is bounded to 3 MiB and 1,000 receipt revisions; oversized evidence is refused. To check integrity, canonicalize the parsed payload using the declared sorted-json-v1 rules and compare its UTF-8 SHA-256 with payloadSha256. The hash detects payload changes; it is not an authenticated merchant signature.
+
+Retain the downloaded packet only in the approved private evidence location. It does not contain original supplied XLSX bytes, replace required merchant evidence, advance a UAT stage, or authorize a write. Store/time are operator-attested and reports remain independently unverified. A download audit records response preparation, not receipt by the reviewer. Use requires a separately authorized rollout of the reviewed code; this phase adds no migration.
+
+### Store setup on the import page
+
+On `/listings/import`, choose **Workbook** and use the store-status card before submitting a workbook. An admin/owner can choose **Set up store**, enter the store domain and access token in the inline form, and connect without navigating away. The selected workbook and Hong Kong export time remain in place. Use **Refresh status** if another administrator connected the store.
+
+If you lack administrator access, the card explains who must complete setup. If credential storage is unavailable, ask the system administrator to configure the server before entering a token. The form does not offer tokenless registration, and connecting a store does not enable SHOPLINE writes. Existing connected stores can still import spreadsheets when credential storage is unavailable because this operation does not decrypt the token.
+
+### Preview a website catalog
+
+Open **Catalog import**, keep **Website** selected and paste the public HTTPS storefront URL. Choose **Preview products**, inspect the bounded preview (at most 20 products), select the observations to retain and choose **Save selected products**. Operator access or higher is required; no SHOPLINE account, token or credential-encryption key is required. The page URL retains the scan ID for reload.
+
+A partial preview may omit products or fields. Review the warnings and actual source/capture time. **Retry scan** keeps the previous preview visible but unavailable for selection until the replacement scan finishes. Changing the storefront clears previous selections. Saved website observations appear in Catalog and remain read-only; they do not establish platform IDs, inventory quantities, export readiness or publication authority.
+
+Choose **Workbook** to use the existing SHOPLINE import and inline store setup. The selected workbook and export time remain mounted when switching import choices. Website preview does not change workbook, supporting-evidence or new-product safeguards.
+
+Production rollout is separate: migration 0019, the existing queue's signed Node callback and trusted HTTPS WEBSITE_FETCH_BASE_URL must be configured and verified under an authorized release. Local synthetic browser success and a bounded single-product compatibility probe do not establish whole-store or deployed-host compatibility.

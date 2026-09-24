@@ -1,3 +1,6 @@
+import { wineOwnershipSchema } from "./wine-content.js";
+import { wineEnrichmentPolicySchema } from "./wine-enrichment-budget.js";
+import { sourcePreferencesSchema } from "./workspace-policy.js";
 import { z } from "zod";
 
 export const localizedTextSchema = z.object({
@@ -33,6 +36,7 @@ export const listingFactsSchema = z.object({
 });
 
 export const canonicalListingSchema = listingFactsSchema.extend({
+  wineOwnership: wineOwnershipSchema.optional(),
   sku: z.string().trim().min(1),
   producer: z.string().trim().min(1),
   productType: z.enum(["wine", "spirits", "sake", "other"]),
@@ -51,6 +55,22 @@ export const canonicalListingSchema = listingFactsSchema.extend({
 });
 
 export const workspaceProfileSchema = z.object({
+  wineEnrichment: wineEnrichmentPolicySchema.optional(),
+  sourcePreferences: sourcePreferencesSchema.optional(),
+  listingAi: z
+    .object({
+      provider: z.enum(["openai", "openrouter", "opencode-go"]),
+      model: z.string().min(1).max(200),
+      pricingVersion: z.string().min(1).max(128),
+      runCeilingUsd: z.string().regex(/^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/),
+      budgetCapUsd: z.string().regex(/^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/),
+      maxInputTokens: z.number().int().positive().max(10000000),
+      inputUsdPerMillion: z.number().positive().max(10000),
+      outputUsdPerMillion: z.number().positive().max(10000),
+      maxOutputTokens: z.number().int().positive().max(16384),
+    })
+    .strict()
+    .optional(),
   name: z.string().min(1),
   currency: z.literal("HKD"),
   locales: z.tuple([z.literal("en"), z.literal("zh-Hant")]),
@@ -77,6 +97,7 @@ export const workspaceProfileSchema = z.object({
 // read-only "view this listing" path turned routine, in-progress review
 // data into a hard error.
 export const reviewableListingSchema = listingFactsSchema.extend({
+  wineOwnership: wineOwnershipSchema.optional(),
   title: localizedTextSchema,
   description: localizedTextSchema,
   seo: z.object({

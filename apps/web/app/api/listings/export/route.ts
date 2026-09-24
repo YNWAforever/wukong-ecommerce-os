@@ -1,16 +1,21 @@
+import type { ExportAttempt } from "@wukong/db";
 import { createHash } from "node:crypto";
 
 import type { AssetStore } from "@wukong/assets";
-import { BULK_FORM_XLSX_MIME_TYPE, createExportAssetKey } from "@wukong/assets";
 import {
-  hashBulkFormHeaderContract,
-  ShoplineBulkFormError,
-} from "@wukong/shopline";
+  artifactHash,
+  ensureExportArtifact,
+  ExportArtifactConflict,
+} from "../../../../lib/export-artifact";
+import { ShoplineBulkFormError } from "@wukong/shopline";
 import { z } from "zod";
 
+import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 import {
   createBulkExport,
-  type CreateBulkExportDeps,
+  createBulkExportDeps,
+  recheckBulkExport,
+  BulkUpdateEligibilityConflict,
   type ExportManifestEntry,
 } from "../../../../lib/bulk-export-service";
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
@@ -27,8 +32,27 @@ export const runtime = "nodejs";
 
 const bodySchema = z
   .object({
-    listingIds: z.array(z.string().min(1)).min(1),
-    freshnessAttested: z.boolean(),
+    listingIds: z.array(z.string().min(1)).min(1).max(MAX_BULK_EXPORT_ITEMS),
+    attestation: z.object({
+      listings: z
+        .array(
+          z.object({
+            listingId: z.string().min(1),
+            contentDigest: z.string().min(1),
+          }),
+        )
+        .min(1)
+        .max(MAX_BULK_EXPORT_ITEMS)
+        // Same rule listingIds already carries. Without it two entries for one
+        // listing collapse in the Map below and the set-equality check still
+        // passes, silently picking whichever digest came last.
+        .refine(
+          (listings) =>
+            new Set(listings.map((entry) => entry.listingId)).size ===
+            listings.length,
+          { message: "attestation must not name a listing twice" },
+        ),
+    }),
   })
   .strict()
   .refine(
@@ -51,29 +75,15 @@ function assertReviewer(role: string): void {
   }
 }
 
-/**
- * `workspaceId + freshnessAttested + sorted "listingId:versionId" pairs`,
- * hashed. `freshnessAttested` MUST be folded into the key: two requests for
- * the same listings/versions but different attestation values mean genuinely
- * different things (one may exclude every listing as `not_attested`, the
- * other may not), and colliding them on the same idempotency key would hand
- * the second caller back the first caller's stale, wrong manifest. A
- * `versionId` of `null` (e.g. a `listing_not_found` entry) participates as
- * the literal string `"null"` so those entries still affect the key instead
- * of being silently dropped.
- */
-function computeIdempotencyKey(
-  workspaceId: string,
-  freshnessAttested: boolean,
-  manifest: readonly Pick<ExportManifestEntry, "listingId" | "versionId">[],
-): string {
-  const pairs = manifest
-    .map((entry) => `${entry.listingId}:${entry.versionId ?? "null"}`)
-    .sort()
-    .join(",");
-  return createHash("sha256")
-    .update(`${workspaceId}:${freshnessAttested}:${pairs}`)
-    .digest("hex");
+/** Canonical JSON makes object property insertion order irrelevant to request identity. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
 }
 
 export type ExportListingsRouteDeps = {
@@ -84,7 +94,7 @@ export type ExportListingsRouteDeps = {
       work: (repositories: any) => Promise<T>,
     ): Promise<T>;
   };
-  getAssetStore: () => Pick<AssetStore, "writeObject">;
+  getAssetStore: () => Pick<AssetStore, "readObject" | "writeObjectIfAbsent">;
 };
 
 export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
@@ -96,63 +106,91 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
       assertReviewer(session.role);
       const body = bodySchema.parse(await request.json());
 
+      // Set equality, not containment: an attestation that omits a requested
+      // listing never covered it, and one that names an extra listing was made
+      // against a different selection. Either way the evidence does not
+      // describe this export, so it is a bad request rather than a per-listing
+      // outcome.
+      const attested = new Map(
+        body.attestation.listings.map((entry) => [
+          entry.listingId,
+          entry.contentDigest,
+        ]),
+      );
+      if (
+        attested.size !== body.listingIds.length ||
+        body.listingIds.some((listingId) => !attested.has(listingId))
+      ) {
+        throw new ApiError(
+          400,
+          "attestation_incomplete",
+          "The attestation does not cover exactly the listings requested.",
+        );
+      }
+
       try {
-        // The callback only returns identifiers and DB-durable data
-        // (`attempt`) plus the pure-function output (`body`) -- the actual
-        // asset-store write happens AFTER this resolves, once the
-        // transaction has committed. Doing it inside the callback would let
-        // a later failure in the same callback (e.g. the audit insert
-        // hitting a transient error) roll back the `ensure()`d row while the
-        // already-written object survives, orphaned under a key nothing will
-        // ever reference again (a retry recomputes the same idempotency key
-        // but `ensure()` does a fresh INSERT with a new random id). Writing
-        // only after commit makes the one remaining failure direction the
-        // safe one: a committed attempt whose object isn't written yet,
-        // which a retry with the same idempotency key self-heals, since
-        // `createBulkExport` is pure over its deps and the same inputs
-        // deterministically produce the same bytes.
-        const { attempt, body: workbookBody } = await deps
-          .getDatabase()
-          .forWorkspace(session.workspaceId, async (repositories) => {
-            const exportDeps: CreateBulkExportDeps = {
-              async getActiveVersion(listingId) {
-                const snapshot =
-                  await repositories.listings.getReviewSnapshot(listingId);
-                if (!snapshot?.activeVersion) return null;
-                return {
-                  id: snapshot.activeVersion.id,
-                  content: snapshot.activeVersion.content,
-                };
-              },
-              getPlatformProductLink: (listingId) =>
-                repositories.platformProducts.getByListingId(listingId),
-              async getSourceImportHeaderContractSha256(sourceImportId) {
-                const sourceImport =
-                  await repositories.sourceImports.getById(sourceImportId);
-                return sourceImport?.headerContractSha256 ?? null;
-              },
-              currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
-            };
+        const database = deps.getDatabase();
+        const input = {
+          workspaceId: session.workspaceId,
+          requestedBy: session.actorId,
+          listingIds: body.listingIds,
+          attestedDigests: attested,
+        };
+        const exported = await database.forWorkspace(
+          session.workspaceId,
+          (repositories) =>
+            createBulkExport(input, createBulkExportDeps(repositories)),
+        );
+        if (exported.rowCount === 0) {
+          return jsonResponse(200, {
+            exportAttemptId: null,
+            manifest: exported.manifest,
+            rowCount: 0,
+          });
+        }
 
-            // May throw ShoplineBulkFormError for a genuine validation
-            // problem in the requested set (e.g. two listing ids resolving
-            // to the same SHOPLINE remoteProductId) -- caught below, not
-            // here, so it can be mapped to a real HTTP error response
-            // instead of aborting the transaction with an opaque 500.
-            const exported = await createBulkExport(
-              {
-                workspaceId: session.workspaceId,
-                requestedBy: session.actorId,
-                listingIds: body.listingIds,
-                freshnessAttested: body.freshnessAttested,
-              },
-              exportDeps,
-            );
+        const artifactSha256 = artifactHash(exported.body);
+        // Excluded-for-mismatch, not attested-count: the set-equality guard
+        // above already forces attested.size to equal manifest.length on
+        // every request that reaches here, so that count is invariant and
+        // tells a reviewer nothing. This one varies with which digests
+        // actually failed to match on this attempt.
+        //
+        // Named for the reason it counts, not for a cause it cannot prove:
+        // also returns row_digest_mismatch when a review CONFIRMATION has gone
+        // stale against current source content, which is a different fault from
+        // the operator attesting the wrong digest. The manifest records only the
+        // reason, not which of the three comparisons fired, so this counts any
+        // digest disagreement. A reader of the raw audit row has only the field
+        // name to go on, so it must not claim the operator was at fault.
+        const rowDigestMismatchCount = exported.manifest.filter(
+          (entry) => entry.reason === "row_digest_mismatch",
+        ).length;
+        const provenance = {
+          identityVersion: 1,
+          workspaceId: session.workspaceId,
+          rowDigestMismatchCount,
+          headerContractSha256: exported.headerContractSha256,
+          specVersion: exported.specVersion,
+          rowOrder: exported.evidence.map((entry) => entry.listingId),
+          evidence: exported.evidence,
+          manifest: exported.manifest,
+        };
+        const idempotencyKey = createHash("sha256")
+          .update(canonicalJson({ provenance, artifactSha256 }))
+          .digest("hex");
 
-            const idempotencyKey = computeIdempotencyKey(
-              session.workspaceId,
-              body.freshnessAttested,
-              exported.manifest,
+        // Revalidate the captured evidence in a fresh workspace transaction at
+        // the attempt/artifact boundary. Nothing is persisted or audited if it
+        // changed. Commit the attempt and audit before uploading, so rollback
+        // cannot leave an orphan object. Artifact readiness is a separate concern.
+        const attempt = await database.forWorkspace(
+          session.workspaceId,
+          async (repositories) => {
+            await recheckBulkExport(
+              input,
+              exported.evidence,
+              createBulkExportDeps(repositories),
             );
 
             const ensured = await repositories.exportAttempts.ensure({
@@ -161,6 +199,9 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               manifest: exported.manifest,
               rowCount: exported.rowCount,
               specVersion: exported.specVersion,
+              provenance,
+              artifactSha256,
+              sourceAttestation: body.attestation.listings,
             });
 
             // Only a genuinely new attempt gets its own audit event --
@@ -177,6 +218,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                 action: "listing.bulk_export_created",
                 metadata: {
                   exportAttemptId: ensured.id,
+                  rowDigestMismatchCount,
                   includedListingIds: ensured.manifest
                     .filter(
                       (entry: ExportManifestEntry) =>
@@ -213,30 +255,89 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
               }
             }
 
-            return { attempt: ensured, body: exported.body };
-          });
-
-        // Always write the workbook, even on a repeat request that hit the
-        // same idempotency key -- see the comment above on why this is an
-        // intentional, self-healing idempotent overwrite rather than wasted
-        // work.
-        await deps.getAssetStore().writeObject(
-          session.workspaceId,
-          createExportAssetKey({
-            workspaceId: session.workspaceId,
-            exportAttemptId: attempt.id,
-            fileName: `export-${attempt.id}.xlsx`,
-          }),
-          workbookBody,
-          BULK_FORM_XLSX_MIME_TYPE,
+            return ensured;
+          },
         );
+
+        let verified = false;
+        let ready: ExportAttempt;
+        try {
+          await ensureExportArtifact(
+            {
+              workspaceId: session.workspaceId,
+              id: attempt.id,
+              artifactSha256: attempt.artifactSha256,
+              body: exported.body,
+            },
+            deps.getAssetStore(),
+          );
+          verified = true;
+          ready = await database.forWorkspace<ExportAttempt>(
+            session.workspaceId,
+            (repositories) =>
+              repositories.exportAttempts.markReady({
+                id: attempt.id,
+                artifactSha256,
+              }),
+          );
+        } catch (error) {
+          const code =
+            error instanceof ExportArtifactConflict
+              ? error.code
+              : verified
+                ? "artifact_state_commit_failed"
+                : "artifact_upload_failed";
+          let artifactStatus = attempt.artifactStatus;
+          try {
+            const failed = await database.forWorkspace<ExportAttempt>(
+              session.workspaceId,
+              (repositories) =>
+                repositories.exportAttempts.markFailed({
+                  id: attempt.id,
+                  artifactSha256,
+                  errorCode: code,
+                }),
+            );
+            artifactStatus = failed.artifactStatus;
+          } catch {
+            // The pending record remains retryable if the state database is unavailable.
+            console.error(
+              JSON.stringify({
+                event: "export.artifact_state_unavailable",
+                exportAttemptId: attempt.id,
+              }),
+            );
+          }
+          return jsonResponse(
+            error instanceof ExportArtifactConflict ? 409 : 503,
+            {
+              code,
+              message:
+                error instanceof ExportArtifactConflict
+                  ? error.message
+                  : "The export file could not be confirmed ready; retry the export.",
+              exportAttemptId: attempt.id,
+              artifactStatus,
+            },
+          );
+        }
 
         return jsonResponse(200, {
           exportAttemptId: attempt.id,
           manifest: attempt.manifest,
           rowCount: attempt.rowCount,
+          artifactStatus: ready.artifactStatus,
+          artifactSha256,
         });
       } catch (error) {
+        if (error instanceof BulkUpdateEligibilityConflict) {
+          return jsonResponse(409, {
+            code: "export_eligibility_changed",
+            message: error.message,
+            manifest: [error.entry],
+            rowCount: 0,
+          });
+        }
         if (error instanceof ShoplineBulkFormError) {
           return jsonResponse(409, {
             code: "export_validation_failed",

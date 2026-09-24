@@ -34,6 +34,27 @@ const completedResult = {
 };
 
 describe("verification contracts", () => {
+  it("accepts incomplete reviewable drafts without inventing missing evidence", () => {
+    const input = structuredClone(verificationFixture);
+    input.note = null;
+    input.evidence = [];
+    input.listing.sku = null;
+    input.listing.priceHkd = null;
+    input.listing.volumeMl = null;
+    input.facts.volumeMl = null;
+    input.listing.producer = null;
+    input.facts.producer = null;
+    const prepared = prepareVerification(input);
+    expect(prepared.reason).toBeNull();
+    if (prepared.reason !== null) throw new Error("unexpected skipped draft");
+    expect(prepared.insufficient).toContain("volume");
+    expect(prepared.insufficient).toContain("producer");
+    expect(prepared.questions.volume).toBeUndefined();
+    expect(prepared.numericDifferences).not.toContain("volumeMl");
+    expect(prepared.state.generated).toMatchObject({
+      facts: { sku: null, priceHkd: null, volumeMl: null, producer: null },
+    });
+  });
   it("accepts a completed result containing all nine unique checks", () => {
     expect(verificationResultSchema.parse(completedResult)).toEqual(
       completedResult,

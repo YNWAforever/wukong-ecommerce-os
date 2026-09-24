@@ -1,8 +1,11 @@
+import type { SourceReadiness } from "./source-readiness";
 import type { ListingStatus } from "@wukong/core";
 
 export type CatalogOrigin = "import" | "created";
 
-export type CatalogItem = {
+export type PlatformCatalogItem = {
+  sourceType: "platform";
+  sourceReadiness?: SourceReadiness;
   id: string;
   remoteProductId: string;
   origin: CatalogOrigin;
@@ -19,7 +22,31 @@ export type CatalogItem = {
   contentDigest: string | null;
 };
 
+export type WebsiteCatalogItem = {
+  sourceType: "website";
+  id: string;
+  title: string;
+  sourceUrl: string;
+  capturedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type WorkbookCatalogItem = {
+  sourceType: "workbook";
+  id: string;
+  title: string;
+  sku: string;
+  sourceProductId: string;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
+export type CatalogItem =
+  PlatformCatalogItem | WebsiteCatalogItem | WorkbookCatalogItem;
 export type CatalogSummary = {
+  website: number;
+  workbook: number;
   total: number;
   linked: number;
   unlinked: number;
@@ -29,6 +56,11 @@ export type CatalogSummary = {
 };
 
 export type CatalogPage = {
+  scope?: "workspace";
+  capabilities: {
+    canGenerateBulkUpdate: boolean;
+    canRecordImportResult: boolean;
+  };
   items: CatalogItem[];
   summary: CatalogSummary;
   page: number;
@@ -41,12 +73,24 @@ export function summarizeCatalog(
 ): CatalogSummary {
   return {
     total: items.length,
-    linked: items.filter((item) => item.listingId !== null).length,
-    unlinked: items.filter((item) => item.listingId === null).length,
-    needsReview: items.filter((item) => item.needsReview).length,
-    needsAttention: items.filter((item) => item.needsAttention).length,
-    published: items.filter((item) => item.listingStatus === "published")
-      .length,
+    workbook: items.filter((item) => item.sourceType === "workbook").length,
+    website: items.filter((item) => item.sourceType === "website").length,
+    linked: items.filter(
+      (item) => item.sourceType === "platform" && item.listingId !== null,
+    ).length,
+    unlinked: items.filter(
+      (item) => item.sourceType === "platform" && item.listingId === null,
+    ).length,
+    needsReview: items.filter(
+      (item) => item.sourceType === "platform" && item.needsReview,
+    ).length,
+    needsAttention: items.filter(
+      (item) => item.sourceType === "platform" && item.needsAttention,
+    ).length,
+    published: items.filter(
+      (item) =>
+        item.sourceType === "platform" && item.listingStatus === "published",
+    ).length,
   };
 }
 
@@ -60,11 +104,34 @@ export function summarizeCatalog(
 export function filterCatalogItemsServer(
   items: readonly CatalogItem[],
   query: string | undefined,
-  filter: "all" | "attention" | "review" | "unlinked" | "published",
+  filter:
+    | "workbook"
+    | "website"
+    | "all"
+    | "attention"
+    | "review"
+    | "unlinked"
+    | "published",
 ): CatalogItem[] {
   const normalizedQuery = (query ?? "").trim().toLocaleLowerCase();
 
   return items.filter((item) => {
+    if (item.sourceType === "workbook")
+      return (
+        (filter === "all" || filter === "workbook") &&
+        (!normalizedQuery ||
+          [item.title, item.sku, item.sourceProductId].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ))
+      );
+    if (item.sourceType === "website")
+      return (
+        (filter === "all" || filter === "website") &&
+        (!normalizedQuery ||
+          [item.title, item.sourceUrl].some((value) =>
+            value.toLocaleLowerCase().includes(normalizedQuery),
+          ))
+      );
     const matchesFilter =
       filter === "all" ||
       (filter === "attention" && item.needsAttention) ||

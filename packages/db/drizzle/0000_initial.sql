@@ -262,10 +262,24 @@ ALTER TABLE ai_runs ALTER COLUMN prompt_version_id DROP NOT NULL;
 ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS latency_ms integer;
 ALTER TABLE ai_runs ADD COLUMN IF NOT EXISTS estimated_cost_usd numeric(14,6);
 UPDATE ai_runs SET latency_ms = 0 WHERE latency_ms IS NULL;
-UPDATE ai_runs SET estimated_cost_usd = 0 WHERE estimated_cost_usd IS NULL;
 ALTER TABLE ai_runs ALTER COLUMN latency_ms SET NOT NULL;
 ALTER TABLE ai_runs ALTER COLUMN estimated_cost_usd TYPE numeric(14,6);
-ALTER TABLE ai_runs ALTER COLUMN estimated_cost_usd SET NOT NULL;
+DO $$
+BEGIN
+  -- Before physical invocation accounting, every ai_runs row represented a
+  -- completed logical run and legacy NULL costs can safely become zero. Once
+  -- pipeline_run_id exists, NULL is a required unknown-cost state for an
+  -- in-flight or unreconciled provider call and must survive migration replay.
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'ai_runs'
+      AND column_name = 'pipeline_run_id'
+  ) THEN
+    UPDATE ai_runs SET estimated_cost_usd = 0 WHERE estimated_cost_usd IS NULL;
+    ALTER TABLE ai_runs ALTER COLUMN estimated_cost_usd SET NOT NULL;
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS ai_runs_workspace_listing_idx
   ON ai_runs (workspace_id, listing_id);
 CREATE INDEX IF NOT EXISTS ai_runs_workspace_prompt_version_idx

@@ -69,6 +69,7 @@ export type PlatformProductRepository = {
     connectionId: string,
     remoteProductIds: readonly string[],
   ): Promise<PlatformProduct[]>;
+  getByIds(ids: readonly string[]): Promise<PlatformProduct[]>;
   listRecent(limit?: number): Promise<PlatformProduct[]>;
   /**
    * The link the exporter reads: does this listing have a known remote
@@ -249,6 +250,24 @@ export function createPlatformProductRepository(
             inArray(platformProducts.remoteProductId, [...remoteProductIds]),
           ),
         );
+      return rows.map(toPlatformProduct);
+    },
+
+    async getByIds(ids) {
+      scope.assertOpen();
+      if (!ids.length) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(platformProducts)
+        .where(
+          and(
+            eq(platformProducts.workspaceId, workspaceId),
+            inArray(platformProducts.id, [...ids]),
+          ),
+        )
+        .orderBy(desc(platformProducts.updatedAt))
+        .limit(100);
       return rows.map(toPlatformProduct);
     },
 

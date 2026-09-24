@@ -1,6 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { useLocale } from "../lib/locale-context";
+import {
+  localized,
+  sharedMessages,
+  type BilingualMessage,
+} from "../lib/ui-copy";
 
 export type AdvanceBatchSuccess = {
   kind: "success";
@@ -12,8 +19,8 @@ export type AdvanceBatchSuccess = {
 };
 
 export type AdvanceBatchFailure =
-  | { kind: "api_error"; code: string; message: string }
-  | { kind: "network_error"; message: string };
+  | { kind: "api_error"; code: string; message: BilingualMessage }
+  | { kind: "network_error"; message: BilingualMessage };
 
 export type AdvanceBatchOutcome = AdvanceBatchSuccess | AdvanceBatchFailure;
 
@@ -26,26 +33,35 @@ export type AdvanceBatchDeps = { fetcher: typeof fetch };
 // authentication_unavailable, internal_error, ...) are not mapped here, same
 // as bulk-import-panel.tsx and create-batch-form.tsx: they fall back to the
 // server-provided message.
-const API_ERROR_MESSAGES: Record<string, string> = {
-  insufficient_role: "Operator access is required.",
-  batch_not_found: "This batch no longer exists.",
+const API_ERROR_MESSAGES: Record<string, BilingualMessage> = {
+  insufficient_role: sharedMessages.operatorRequired,
+  batch_not_found: sharedMessages.batchNotFound,
 };
+
+const ADVANCE_FAILED: BilingualMessage = [
+  "此批次未能推進。",
+  "The batch could not be advanced.",
+];
 
 export async function submitAdvanceBatch(
   batchId: string,
   deps: AdvanceBatchDeps = { fetcher: fetch },
+  command?: { expectedControlRevision: number; idempotencyKey: string },
 ): Promise<AdvanceBatchOutcome> {
+  const { fetcher } = deps;
   let response: Response;
   try {
-    response = await deps.fetcher(
-      `/api/enrichment-batches/${batchId}/advance`,
-      { method: "POST" },
-    );
+    response = await fetcher(`/api/enrichment-batches/${batchId}/advance`, {
+      method: "POST",
+      ...(command
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(command),
+          }
+        : {}),
+    });
   } catch {
-    return {
-      kind: "network_error",
-      message: "Could not reach the server. Try again.",
-    };
+    return { kind: "network_error", message: sharedMessages.unreachable };
   }
 
   let body: Record<string, unknown>;
@@ -56,19 +72,18 @@ export async function submitAdvanceBatch(
     // 502/504/524 gateway page) rather than the application itself, but the
     // caller cannot tell the difference and does not need to: either way we
     // could not get something usable back from the server.
-    return {
-      kind: "network_error",
-      message: "Could not reach the server. Try again.",
-    };
+    return { kind: "network_error", message: sharedMessages.unreachable };
   }
 
   if (!response.ok) {
     const code = typeof body.code === "string" ? body.code : "unknown_error";
-    const message =
+    // A message the server wrote is shown as it stands: translating it here
+    // would mean inventing a Chinese version of text we did not write.
+    const message: BilingualMessage =
       API_ERROR_MESSAGES[code] ??
       (typeof body.message === "string"
-        ? body.message
-        : "The batch could not be advanced.");
+        ? [body.message, body.message]
+        : ADVANCE_FAILED);
     return { kind: "api_error", code, message };
   }
 
@@ -85,17 +100,35 @@ export async function submitAdvanceBatch(
 export function AdvanceBatchButton({
   batchId,
   onAdvanced,
+  controlRevision,
 }: {
   batchId: string;
+  controlRevision?: number;
   onAdvanced?: (outcome: AdvanceBatchOutcome) => void;
 }) {
+  const locale = useLocale();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const command = useRef<
+    { expectedControlRevision: number; idempotencyKey: string } | undefined
+  >(undefined);
+  const [message, setMessage] = useState<BilingualMessage | null>(null);
 
   async function handleClick() {
     setBusy(true);
     setMessage(null);
-    const result = await submitAdvanceBatch(batchId);
+    command.current ??=
+      controlRevision === undefined
+        ? undefined
+        : {
+            expectedControlRevision: controlRevision,
+            idempotencyKey: crypto.randomUUID(),
+          };
+    const result = await submitAdvanceBatch(
+      batchId,
+      { fetcher: fetch },
+      command.current,
+    );
+    if (result.kind !== "network_error") command.current = undefined;
     if (result.kind !== "success") {
       setMessage(result.message);
     }
@@ -111,11 +144,13 @@ export function AdvanceBatchButton({
         disabled={busy}
         onClick={handleClick}
       >
-        {busy ? "推進中…" : "推進下一波"} <span>Advance</span>
+        {busy
+          ? localized(locale, "推進中…", "Advancing…")
+          : localized(locale, "推進下一波", "Advance")}
       </button>
       {message ? (
         <p className="intake-message" role="status" aria-live="polite">
-          {message}
+          {localized(locale, ...message)}
         </p>
       ) : null}
     </div>

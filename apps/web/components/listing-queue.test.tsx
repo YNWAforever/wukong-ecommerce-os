@@ -3,7 +3,9 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 
+import { stateLabel } from "../lib/ui-copy.js";
 import { ListingQueue } from "./listing-queue.js";
+import { queueGroups } from "./listing-view-models.js";
 import type { QueueItem } from "./listing-view-models.js";
 
 (
@@ -102,10 +104,99 @@ describe("ListingQueue", () => {
     expect(ariaLabel).toBe("Opak Cabernet 2024 · 2 個未解決的合規標記");
 
     const titleAttr = checkbox!.getAttribute("title");
-    expect(titleAttr).toBe(
-      "Opak Cabernet 2024 · 2 個未解決的合規標記 · 2 unresolved compliance flags",
-    );
+    expect(titleAttr).toBe("Opak Cabernet 2024 · 2 個未解決的合規標記");
 
     await unmount(root);
+  });
+});
+
+describe("ListingQueue review readiness", () => {
+  it("explains missing review readiness without claiming zero unresolved flags", async () => {
+    const { container, root } = await mount([buildQueueItem()]);
+    try {
+      const checkbox = container.querySelector(
+        'input[type="checkbox"]',
+      ) as HTMLInputElement;
+      expect(checkbox.disabled).toBe(true);
+      expect(checkbox.getAttribute("title")).toContain("請開啟項目完成審核");
+      expect(checkbox.getAttribute("title")).not.toContain("0 unresolved");
+    } finally {
+      await unmount(root);
+    }
+  });
+});
+
+/**
+ * The same status, named two different ways.
+ *
+ * Queue headings carried their own copy while the catalog badge read from
+ * `states`, and the two drifted: a published listing was 已上架 on the queue
+ * and 已發佈 in the catalog, and publishing was 發布中 on the queue against
+ * 發佈中 everywhere else -- the Simplified form of a word the rest of the
+ * product spells the Traditional way. An operator moving between two screens
+ * saw two vocabularies for one workflow.
+ *
+ * The fix is one map, not two that agree today.
+ */
+describe("queue group headings", () => {
+  it("names a status exactly as the rest of the product does", async () => {
+    const { container, root } = await mount([
+      buildQueueItem({ status: "published" }),
+      buildQueueItem({ id: "listing_2", status: "publishing" }),
+    ]);
+    try {
+      const headings = Array.from(container.querySelectorAll("h3")).map(
+        (heading) => heading.textContent,
+      );
+
+      expect(headings).toContain(stateLabel("published", "zh-Hant"));
+      expect(headings).toContain(stateLabel("publishing", "zh-Hant"));
+      // The wording the queue used to carry on its own.
+      expect(headings).not.toContain("已上架");
+      expect(headings).not.toContain("發布中");
+    } finally {
+      await unmount(root);
+    }
+  });
+
+  it("has a shared label for every group it renders", async () => {
+    // Guards the risk the unification introduces: a queue status missing from
+    // `states` would render "狀態未明" where a real label used to be.
+    for (const group of queueGroups) {
+      expect(stateLabel(group.status, "zh-Hant")).not.toBe("狀態未明");
+      expect(stateLabel(group.status, "en")).not.toBe("Unknown status");
+    }
+  });
+});
+
+describe("reopened listings", () => {
+  it("stay in the review group and carry a Reopened tag", async () => {
+    const { container, root } = await mount([
+      buildQueueItem({
+        id: "listing_r",
+        title: "Reopened Riesling",
+        reopened: true,
+      }),
+      buildQueueItem({ id: "listing_i", title: "Fresh Riesling" }),
+    ]);
+    try {
+      const group = container.querySelector(
+        'section[aria-labelledby="queue-in_review"]',
+      )!;
+      const items = Array.from(group.querySelectorAll("li.queue-item"));
+      expect(items).toHaveLength(2);
+      const reopened = items.find((item) =>
+        item.textContent?.includes("Reopened Riesling"),
+      )!;
+      const fresh = items.find((item) =>
+        item.textContent?.includes("Fresh Riesling"),
+      )!;
+      expect(reopened.querySelector(".status-tag")?.textContent).toBe(
+        stateLabel("reopened", "zh-Hant"),
+      );
+      expect(fresh.querySelector(".status-tag")).toBeNull();
+    } finally {
+      await unmount(root);
+    }
   });
 });

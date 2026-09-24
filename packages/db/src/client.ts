@@ -1,3 +1,68 @@
+import { inspectWineRuntimeCompatibility } from "./wine-runtime-compatibility.js";
+import { createWineGoInvocationRepository } from "./repositories/wine-go-invocations.js";
+import {
+  createWineAcquisitionRepository,
+  type WineAcquisitionRepository,
+} from "./repositories/wine-acquisition.js";
+import {
+  createWineEnrichmentRepository,
+  type WineEnrichmentRepository,
+} from "./repositories/wine-enrichment.js";
+import {
+  createSearchBudgetReservationRepository,
+  type SearchBudgetReservationRepository,
+} from "./repositories/search-budget-reservations.js";
+import { inspectWineEnrichmentCompatibility } from "./wine-enrichment-compatibility.js";
+import {
+  createListingEnrichmentRepository,
+  type ListingEnrichmentRepository,
+} from "./repositories/listing-enrichment.js";
+import { inspectListingRecoveryCompatibility } from "./listing-recovery-compatibility.js";
+import {
+  createAiBudgetReservationRepository,
+  type AiBudgetReservationRepository,
+} from "./repositories/ai-budget-reservations.js";
+import {
+  createListingInputRepository,
+  type ListingInputRepository,
+} from "./repositories/listing-inputs.js";
+import { createHash } from "node:crypto";
+import {
+  createProductShotRepository,
+  type ProductShotRepository,
+} from "./repositories/product-shots.js";
+import {
+  createWorkbenchReadRepository,
+  type WorkbenchReadRepository,
+} from "./repositories/workbench-reads.js";
+import {
+  createWorkbookCatalogRepository,
+  type WorkbookCatalogRepository,
+} from "./repositories/workbook-catalog.js";
+import {
+  createWebsiteCatalogRepository,
+  type WebsiteCatalogRepository,
+} from "./repositories/website-catalog.js";
+import {
+  createExportEvidenceRepository,
+  type ExportEvidenceRepository,
+} from "./repositories/export-evidence.js";
+import {
+  createExportVerificationRepository,
+  type ExportVerificationRepository,
+} from "./repositories/export-verifications.js";
+import {
+  createWorkspaceReadRepository,
+  type WorkspaceReadRepository,
+} from "./repositories/workspace-reads.js";
+import {
+  createSourceRowRepository,
+  type SourceRowRepository,
+} from "./repositories/source-rows.js";
+import {
+  createApprovalReceiptRepository,
+  type ApprovalReceiptRepository,
+} from "./repositories/approval-receipts.js";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -49,6 +114,10 @@ import {
   type EnrichmentBatchRepository,
 } from "./repositories/enrichment-batches.js";
 import {
+  createListingDispatchOutboxRepository,
+  type ListingDispatchOutboxRepository,
+} from "./repositories/listing-dispatch-outbox.js";
+import {
   createMembershipRepository,
   type MembershipRepository,
 } from "./repositories/memberships.js";
@@ -78,7 +147,21 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  wineAcquisition: WineAcquisitionRepository;
+  wineEnrichment: WineEnrichmentRepository;
+  searchBudgetReservations: SearchBudgetReservationRepository;
+  productShots: ProductShotRepository;
+  workbench: WorkbenchReadRepository;
+  workbookCatalog: WorkbookCatalogRepository;
+  websiteCatalog: WebsiteCatalogRepository;
+  exportEvidence: ExportEvidenceRepository;
+  exportVerifications: ExportVerificationRepository;
+  reads: WorkspaceReadRepository;
+  sourceRows: SourceRowRepository;
+  approvalReceipts: ApprovalReceiptRepository;
   listings: ListingRepository;
+  listingInputs: ListingInputRepository;
+  listingEnrichment: ListingEnrichmentRepository;
   sourceAssets: SourceAssetRepository;
   publishJobs: PublishJobRepository;
   shoplineConnections: ShoplineConnectionRepository;
@@ -88,14 +171,19 @@ export type WorkspaceRepositories = {
   exportAttempts: ExportAttemptRepository;
   importResults: ImportResultRepository;
   enrichmentBatches: EnrichmentBatchRepository;
+  /** Work recorded before it is sent, so a crash mid-send stays recoverable. */
+  dispatchOutbox: ListingDispatchOutboxRepository;
   pipelineRuns: PipelineRunRepository;
+  wineGoInvocations: ReturnType<typeof createWineGoInvocationRepository>;
   aiRuns: AiRunRepository;
+  aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
   memberships: MembershipRepository;
   audit: WorkspaceAuditWriter;
 };
 
 export type DatabaseOptions = {
+  publicImageOrigin?: string;
   migrationUrl?: string;
   maxConnections?: number;
   /** Injected by tests; production uses the real postgres driver. */
@@ -103,6 +191,36 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  inspectWineRuntimeCompatibility?(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
+  findAbandonedWineOperations?(input: {
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<Array<{ workspaceId: string; runId: string }>>;
+  inspectWineEnrichmentCompatibility(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
+  inspectListingRecoveryCompatibility(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
+  findAbandonedListingOperations(input: {
+    olderThanSeconds: number;
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<Array<{ workspaceId: string; runId: string }>>;
+  lookupPublishedImage(token: string): Promise<{
+    workspaceId: string;
+    storageKey: string;
+    digest: string;
+    size: number;
+  } | null>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
   /**
@@ -110,6 +228,9 @@ export type Database = {
    * not forWorkspace: wukong_app cannot enumerate tenants, so this calls a
    * SECURITY DEFINER function (0007_stuck_listing_sweeper.sql) instead.
    */
+  findStuckWebsiteScans(input: {
+    maxRows: number;
+  }): Promise<Array<{ workspaceId: string; scanId: string; revision: number }>>;
   findStuckListingJobs(input: {
     olderThanSeconds: number;
     maxRows: number;
@@ -118,6 +239,24 @@ export type Database = {
       workspaceId: string;
       draftId: string;
       activeVersionSequence: number;
+    }>
+  >;
+  /**
+   * Work recorded in the outbox that no queue message ever carried.
+   *
+   * Cross-workspace, so the Worker's cron can heal a workspace nobody is
+   * advancing. `findStuckListingJobs` cannot answer this: it needs a draft
+   * with a source asset, and an imported draft has none.
+   */
+  findUndispatchedListingJobs(input: {
+    olderThanSeconds: number;
+    maxRows: number;
+    maxAttempts: number;
+  }): Promise<
+    Array<{
+      workspaceId: string;
+      outboxId: string;
+      payload: Record<string, unknown>;
     }>
   >;
   forWorkspace<T>(
@@ -168,7 +307,55 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        productShots: createProductShotRepository(
+          transaction,
+          workspaceId,
+          scope,
+          options.publicImageOrigin ?? process.env.PRODUCT_IMAGE_PUBLIC_ORIGIN,
+        ),
+        workbench: createWorkbenchReadRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        workbookCatalog: createWorkbookCatalogRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        websiteCatalog: createWebsiteCatalogRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        exportEvidence: createExportEvidenceRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        exportVerifications: createExportVerificationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        reads: createWorkspaceReadRepository(transaction, workspaceId, scope),
+        sourceRows: createSourceRowRepository(transaction, workspaceId, scope),
+        approvalReceipts: createApprovalReceiptRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         listings: createListingRepository(transaction, workspaceId, scope),
+        listingEnrichment: createListingEnrichmentRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        listingInputs: createListingInputRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         sourceAssets: createSourceAssetRepository(
           transaction,
           workspaceId,
@@ -214,12 +401,42 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        dispatchOutbox: createListingDispatchOutboxRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         pipelineRuns: createPipelineRunRepository(
           transaction,
           workspaceId,
           scope,
         ),
+        wineAcquisition: createWineAcquisitionRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineEnrichment: createWineEnrichmentRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        searchBudgetReservations: createSearchBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        wineGoInvocations: createWineGoInvocationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
+        aiBudgetReservations: createAiBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         workspaces: createWorkspaceRepository(transaction, workspaceId, scope),
         memberships: createMembershipRepository(
           transaction,
@@ -237,6 +454,69 @@ export function createDatabase(
   };
 
   return {
+    inspectWineEnrichmentCompatibility: () =>
+      inspectWineEnrichmentCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
+    inspectListingRecoveryCompatibility: () =>
+      inspectListingRecoveryCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
+    inspectWineRuntimeCompatibility: () =>
+      inspectWineRuntimeCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
+    async findAbandonedWineOperations(input) {
+      if (
+        !Number.isSafeInteger(input.maxRows) ||
+        input.maxRows < 1 ||
+        input.maxRows > 20 ||
+        !Number.isSafeInteger(input.maxAttempts) ||
+        input.maxAttempts < 5 ||
+        input.maxAttempts > 100
+      )
+        throw Error("invalid wine recovery bounds");
+      const rows =
+        await client`select * from public.sweeper_find_abandoned_wine_operations(${input.maxRows},${input.maxAttempts})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        runId: String(row.run_id),
+      }));
+    },
+    async findAbandonedListingOperations(input) {
+      if (
+        !Number.isSafeInteger(input.olderThanSeconds) ||
+        input.olderThanSeconds < 900 ||
+        input.olderThanSeconds > 86400 ||
+        !Number.isSafeInteger(input.maxRows) ||
+        input.maxRows < 1 ||
+        input.maxRows > 20 ||
+        !Number.isSafeInteger(input.maxAttempts) ||
+        input.maxAttempts < 5 ||
+        input.maxAttempts > 100
+      )
+        throw new Error("invalid recovery bounds");
+      const rows =
+        await client`select * from sweeper_find_abandoned_listing_operations(${input.olderThanSeconds},${input.maxRows},${input.maxAttempts})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        runId: String(row.run_id),
+      }));
+    },
+    async lookupPublishedImage(token) {
+      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+      const hash = createHash("sha256").update(token).digest("hex");
+      const [row] =
+        await client`select * from public.lookup_published_product_image(${hash})`;
+      return row
+        ? {
+            workspaceId: String(row.workspace_id),
+            storageKey: String(row.storage_key),
+            digest: String(row.digest),
+            size: Number(row.size),
+          }
+        : null;
+    },
     async migrate() {
       if (!options.migrationUrl) {
         throw new Error("migrationUrl is required for migrations");
@@ -272,6 +552,17 @@ export function createDatabase(
       // must not open a tenant transaction or set a workspace GUC.
       await client`select 1`;
     },
+    async findStuckWebsiteScans({ maxRows }) {
+      if (!Number.isInteger(maxRows) || maxRows < 1 || maxRows > 10)
+        throw new Error("Website sweeper maxRows must be 1..10");
+      const rows =
+        await client`select * from sweeper_find_website_scans(${maxRows})`;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        scanId: String(row.scan_id),
+        revision: Number(row.revision),
+      }));
+    },
     async findStuckListingJobs({ olderThanSeconds, maxRows }) {
       const rows = await client`
         select workspace_id, draft_id, active_version_sequence
@@ -281,6 +572,21 @@ export function createDatabase(
         workspaceId: String(row.workspace_id),
         draftId: String(row.draft_id),
         activeVersionSequence: Number(row.active_version_sequence),
+      }));
+    },
+    async findUndispatchedListingJobs({
+      olderThanSeconds,
+      maxRows,
+      maxAttempts,
+    }) {
+      const rows = await client`
+        select workspace_id, outbox_id, payload
+        from sweeper_find_undispatched_listing_jobs(${olderThanSeconds}, ${maxRows}, ${maxAttempts})
+      `;
+      return rows.map((row) => ({
+        workspaceId: String(row.workspace_id),
+        outboxId: String(row.outbox_id),
+        payload: row.payload as Record<string, unknown>,
       }));
     },
     forWorkspace: runForWorkspace,

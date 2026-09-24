@@ -1,5 +1,5 @@
 import { MemoryAssetStore } from "@wukong/assets";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createPresignAssetHandler } from "./assets/presign/route.js";
 import { createListingHandler } from "./listings/route.js";
@@ -34,7 +34,13 @@ function fakeDatabase(repositories: Record<string, unknown>) {
       _workspaceId: string,
       work: (repos: Record<string, unknown>) => Promise<T>,
     ): Promise<T> {
-      return work(repositories);
+      return work({
+        ...repositories,
+        pipelineRuns: {
+          async lockCreateRequests() {},
+          ...(repositories.pipelineRuns as object),
+        },
+      });
     },
   };
 }
@@ -87,7 +93,9 @@ describe("POST /api/assets/presign", () => {
 
 describe("POST /api/listings", () => {
   it("creates one received SHOPLINE draft, associates owned assets, and audits", async () => {
+    vi.stubEnv("AI_PROVIDER", "fake");
     const calls: unknown[] = [];
+    const listingId = "00000000-0000-4000-8000-000000000101";
     const handler = createListingHandler({
       sessionContext,
       publisher,
@@ -119,11 +127,65 @@ describe("POST /api/listings", () => {
             async create(input: unknown) {
               calls.push(input);
               return {
-                id: "listing_1",
+                id: listingId,
                 status: "received",
                 target: "shopline",
+                activeVersionId: null,
+                activeVersionSequence: 0,
               };
             },
+            async lockReviewState() {},
+            async getById() {
+              return {
+                id: listingId,
+                status: "received",
+                activeVersionId: null,
+                activeVersionSequence: 0,
+              };
+            },
+            async requireById() {
+              return { activeVersionSequence: 0 };
+            },
+          },
+          listingInputs: {
+            async initialize() {
+              return { revision: 1, baseVersionId: null };
+            },
+            async getCurrent() {
+              return { revision: 1, baseVersionId: null, workingContent: {} };
+            },
+          },
+          pipelineRuns: {
+            async findOperationRequest() {
+              return null;
+            },
+            async acceptOperation(input: {
+              requestKey: string;
+              requestDigest: string;
+            }) {
+              return {
+                id: "00000000-0000-4000-8000-000000000201",
+                idempotencyKey: input.requestKey,
+                inputRevision: 1,
+                baseVersionId: null,
+                runAttempt: 1,
+                executionState: "queued",
+                activeVersionSequence: 0,
+                requestDigest: input.requestDigest,
+              };
+            },
+          },
+          dispatchOutbox: {
+            async record(rows: Array<Record<string, unknown>>) {
+              return rows.map((row) => ({
+                ...row,
+                id: "outbox_1",
+                listingId,
+                attempts: 0,
+              }));
+            },
+            async markDispatched() {},
+            async markAttempted() {},
           },
           audit: {
             async write(event: unknown) {
@@ -145,8 +207,15 @@ describe("POST /api/listings", () => {
 
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({
-      listing: { id: "listing_1", status: "received", target: "shopline" },
-      processing: { state: "queued", jobId: "job_test", errorCode: null },
+      listing: { id: listingId, status: "received", target: "shopline" },
+      inputRevision: 1,
+      activeVersionId: null,
+      processing: {
+        state: "queued",
+        jobId: expect.any(String),
+        runId: "00000000-0000-4000-8000-000000000201",
+        pollAfterMs: 3000,
+      },
     });
     expect(calls).toContainEqual({
       target: "shopline",
@@ -155,7 +224,7 @@ describe("POST /api/listings", () => {
     expect(calls).toContainEqual({
       action: "listing.created",
       actorId: "user_1",
-      entityId: "listing_1",
+      entityId: listingId,
       metadata: { assetCount: 2, hasNote: true },
       workspaceId: "ws_opak",
     });
@@ -200,3 +269,8 @@ describe("POST /api/listings", () => {
     });
   });
 });
+
+vi.mock("@wukong/assets/inspect-source", () => ({
+  SourceInspectionError: class extends Error {},
+  inspectUploadedSource: async () => ({ hashVerified: true }),
+}));

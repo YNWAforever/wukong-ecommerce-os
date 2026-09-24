@@ -63,3 +63,40 @@ describe("resolveListingImageUrls", () => {
     expect(seen).toEqual([{ expiresInMs: undefined }]);
   });
 });
+
+it("uses only approved publication URLs and never signs a source in the new workflow", async () => {
+  const { input, seen } = harness();
+  const calls: unknown[] = [];
+  expect(
+    await resolveListingImageUrls({
+      ...input,
+      publication: {
+        versionId: "v1",
+        resolveApprovedProductImage: async (value) => {
+          calls.push(value);
+          return "https://images.example/image.jpg";
+        },
+      },
+    }),
+  ).toEqual(["https://images.example/image.jpg"]);
+  expect(calls).toEqual([
+    { workspaceId, listingId: draftId, versionId: "v1", assetId: asset.id },
+  ]);
+  expect(seen).toEqual([]);
+});
+it("blocks empty images and unavailable publications without raw fallback", async () => {
+  const { input, seen } = harness();
+  const publication = {
+    versionId: "v1",
+    resolveApprovedProductImage: async () => {
+      throw new Error("Approve the product image before exporting");
+    },
+  };
+  await expect(
+    resolveListingImageUrls({ ...input, publication }),
+  ).rejects.toThrow("Approve");
+  await expect(
+    resolveListingImageUrls({ ...input, imageAssetIds: [], publication }),
+  ).rejects.toThrow();
+  expect(seen).toEqual([]);
+});

@@ -1,5 +1,5 @@
 import type {
-  CanonicalListing,
+  ReviewableListing,
   FieldEvidence,
   ListingFacts,
   WorkspaceProfile,
@@ -35,6 +35,8 @@ export type ExtractionResult = {
 };
 
 export type GenerationInput = {
+  /** Internal trusted provenance, derived from the accepted working-copy snapshot. */
+  operatorProvidedFields?: Array<keyof ListingFacts>;
   facts: ListingFacts;
   evidence: FieldEvidence[];
   profile: WorkspaceProfile;
@@ -42,7 +44,12 @@ export type GenerationInput = {
 };
 
 export type GenerationResult = {
-  listing: CanonicalListing;
+  /**
+   * Reviewable, not canonical: a photo-only draft has no SKU, price or stock,
+   * and those are merchant data the model may not read off a label. Publishing
+   * still requires canonical, at `requireForPublish`.
+   */
+  listing: ReviewableListing;
   usage: AIUsage;
 };
 

@@ -1,4 +1,8 @@
 import {
+  batchAdvanceSchema,
+  batchControlError,
+} from "../../../../../lib/enrichment-batch-control-service";
+import {
   createEnrichmentBatchService,
   type AdvanceBatchInput,
   type AdvanceBatchResult,
@@ -26,7 +30,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export function createAdvanceEnrichmentBatchHandler(deps: AdvanceRouteDeps) {
   return async function advanceEnrichmentBatch(
-    _request: Request,
+    request: Request,
     context: RouteContext,
   ): Promise<Response> {
     return withRouteErrors(async () => {
@@ -40,15 +44,19 @@ export function createAdvanceEnrichmentBatchHandler(deps: AdvanceRouteDeps) {
       }
 
       const { id } = await context.params;
+      const body = batchAdvanceSchema.parse(await request.json());
       // An exhausted budget is a normal outcome, not a failure: the operator
       // asked whether there was more to do and the answer is no.
-      const result = await deps.advanceBatch({
-        workspaceId: session.workspaceId,
-        actorId: session.actorId,
-        batchId: id,
-      });
+      const result = await deps
+        .advanceBatch({
+          ...body,
+          workspaceId: session.workspaceId,
+          actorId: session.actorId,
+          batchId: id,
+        })
+        .catch(batchControlError);
 
-      return jsonResponse(200, result);
+      return jsonResponse(202, result);
     });
   };
 }

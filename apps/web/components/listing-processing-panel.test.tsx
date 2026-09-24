@@ -15,8 +15,8 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("尚未開始處理 · Processing not started");
-    expect(markup).toContain("開始處理 · Start processing");
+    expect(markup).toContain("Processing not started");
+    expect(markup).toContain("Start processing");
   });
 
   it("offers processing when a received listing has no known enqueue outcome", () => {
@@ -43,28 +43,44 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("已加入處理佇列 · Queued for processing");
+    expect(markup).toContain("Queued for processing");
     expect(markup).not.toContain("Start processing");
   });
 
-  it.each([
-    ["processing", "AI 正在建立商品資料 · AI processing"],
-    ["needs_info", "需要補充商品資料 · More information needed"],
-  ] as const)("shows %s without a retry button", (status, copy) => {
+  it("shows a processing listing without any action", () => {
+    // A delivery is mid-flight; there is nothing useful to press.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
-        status={status}
+        status="processing"
         canProcess
         onProcess={vi.fn()}
         busy={false}
       />,
     );
 
-    expect(markup).toContain(copy);
+    expect(markup).toContain("AI processing");
     expect(markup).not.toContain("Start processing");
+    expect(markup).not.toContain("Run processing again");
   });
 
-  it("shows terminal failure recovery guidance without a retry button", () => {
+  it("offers a re-run once a listing has asked for more information", () => {
+    // The route now numbers this as a new run rather than answering 409, so
+    // supplying the missing details can actually produce a new result.
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="needs_info"
+        canProcess
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("More information needed");
+    expect(markup).toContain("Run processing again");
+  });
+
+  it("offers a retry for a failed listing, which the server accepts", () => {
+    // Explicit retries create new operations and preserve failed history.
     const markup = renderToStaticMarkup(
       <ListingProcessingPanel
         status="failed"
@@ -74,9 +90,24 @@ describe("ListingProcessingPanel", () => {
       />,
     );
 
-    expect(markup).toContain("AI 處理未完成 · Processing failed");
-    expect(markup).toContain("來源檔案已保留");
-    expect(markup).not.toContain("Start processing");
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).toContain("photos and saved work are retained");
+    expect(markup).toContain("save the draft manually");
+    expect(markup).toContain("Run processing again");
+  });
+
+  it("withholds the retry from a viewer who cannot process", () => {
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="failed"
+        canProcess={false}
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+
+    expect(markup).toContain("Processing did not finish");
+    expect(markup).not.toContain("Run processing again");
   });
 
   it("does not expose the action to viewers", () => {
@@ -92,4 +123,21 @@ describe("ListingProcessingPanel", () => {
 
     expect(markup).not.toContain("Start processing");
   });
+  it("shows an accepted retry as queued even while the old draft status is failed", () => {
+    const markup = renderToStaticMarkup(
+      <ListingProcessingPanel
+        status="failed"
+        enqueueState="queued"
+        canProcess
+        onProcess={vi.fn()}
+        busy={false}
+      />,
+    );
+    expect(markup).toContain("Queued for processing");
+    expect(markup).not.toContain("Processing did not finish");
+    expect(markup).not.toContain("Run processing again");
+  });
 });
+
+// Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));

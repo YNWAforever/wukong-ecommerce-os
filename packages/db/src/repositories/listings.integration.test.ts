@@ -57,13 +57,13 @@ describe("workspace isolation", () => {
     expect(database.forWorkspace).toBeTypeOf("function");
   });
 
-  it("defines required AI latency and cost telemetry in schema and catalog", async () => {
+  it("defines required latency and nullable unknown AI cost in schema and catalog", async () => {
     const drizzleColumns = getTableColumns(aiRuns) as Record<
       string,
       { notNull?: boolean }
     >;
     expect(drizzleColumns.latencyMs?.notNull).toBe(true);
-    expect(drizzleColumns.estimatedCostUsd?.notNull).toBe(true);
+    expect(drizzleColumns.estimatedCostUsd?.notNull).toBe(false);
 
     const columns = await admin`
       select column_name, is_nullable, data_type, numeric_precision, numeric_scale
@@ -76,7 +76,7 @@ describe("workspace isolation", () => {
     expect(columns).toMatchObject([
       {
         column_name: "estimated_cost_usd",
-        is_nullable: "NO",
+        is_nullable: "YES",
         data_type: "numeric",
         numeric_precision: 14,
         numeric_scale: 6,
@@ -430,8 +430,128 @@ describe("workspace isolation", () => {
 
   it("uses workspace-consistent composite foreign keys for every tenant relationship", async () => {
     const expected = [
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "support_id"],
+        "listing_claim_supports",
+      ],
+      [
+        "listing_version_claim_supports",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "ai_budget_reservations",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "enrichment_batch_items",
+        ["workspace_id", "retry_of_item_id"],
+        "enrichment_batch_items",
+      ],
+      [
+        "listing_create_requests",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_drafts",
+        ["workspace_id", "current_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "listing_input_revisions",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_input_revisions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_pipeline_runs",
+        ["workspace_id", "retry_of_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_enrichment_suggestions",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_enrichment_decisions",
+        ["workspace_id", "listing_id", "suggestion_id"],
+        "listing_enrichment_suggestions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "base_version_id"],
+        "listing_versions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "input_revision"],
+        "listing_input_revisions",
+      ],
+      [
+        "listing_claim_supports",
+        ["workspace_id", "listing_id", "suggestion_id"],
+        "listing_enrichment_suggestions",
+      ],
       ["ai_runs", ["workspace_id", "listing_id"], "listing_drafts"],
       ["ai_runs", ["workspace_id", "prompt_version_id"], "prompt_versions"],
+      [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "confirmation_version_id"],
+        "listing_versions",
+      ],
+      [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "source_snapshot_id"],
+        "source_row_snapshots",
+      ],
+      [
+        "bulk_update_approval_receipts",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
       [
         "compliance_flags",
         ["workspace_id", "listing_version_id"],
@@ -448,6 +568,11 @@ describe("workspace isolation", () => {
         "listing_drafts",
       ],
       [
+        "export_verifications",
+        ["workspace_id", "export_attempt_id"],
+        "export_attempts",
+      ],
+      [
         "field_evidence",
         ["workspace_id", "listing_version_id"],
         "listing_versions",
@@ -459,6 +584,23 @@ describe("workspace isolation", () => {
         "export_attempts",
       ],
       ["import_results", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
+        "import_results",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "import_results",
+        ["workspace_id", "supersedes_result_id"],
+        "import_results",
+      ],
+      // The outbox holds a queue payload for a draft, so its reference carries
+      // the workspace like every other tenant relationship here.
+      [
+        "listing_dispatch_outbox",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
       [
         "listing_drafts",
         ["workspace_id", "active_version_id"],
@@ -492,6 +634,61 @@ describe("workspace isolation", () => {
         "source_imports",
       ],
       [
+        "product_shot_approval_urls",
+        ["workspace_id", "publication_id"],
+        "product_shot_publications",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "candidate_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "cutout_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_attempts",
+        ["workspace_id", "listing_id", "source_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "attempt_id"],
+        "product_shot_attempts",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "observed_version_id"],
+        "listing_versions",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "source_asset_id"],
+        "source_assets",
+      ],
+      [
+        "product_shot_publications",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      [
+        "product_shot_selections",
+        ["workspace_id", "listing_id", "attempt_id"],
+        "product_shot_attempts",
+      ],
+      [
         "publish_jobs",
         ["workspace_id", "connection_id"],
         "shopline_connections",
@@ -515,6 +712,56 @@ describe("workspace isolation", () => {
         ["workspace_id", "connection_id"],
         "shopline_connections",
       ],
+      [
+        "source_row_snapshots",
+        ["workspace_id", "connection_id", "source_import_id"],
+        "source_imports",
+      ],
+      [
+        "source_row_snapshots",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      ["website_products", ["workspace_id", "source_scan_id"], "website_scans"],
+      ["website_scan_steps", ["workspace_id", "scan_id"], "website_scans"],
+      [
+        "search_budget_reservations",
+        ["workspace_id", "pipeline_run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_document_requests",
+        ["workspace_id", "run_id", "source_id"],
+        "wine_evidence",
+      ],
+      ["wine_evidence", ["workspace_id", "run_id"], "listing_pipeline_runs"],
+      [
+        "wine_evidence_cache",
+        ["workspace_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_search_calls",
+        ["workspace_id", "run_id"],
+        "search_budget_reservations",
+      ],
+      [
+        "wine_section_snapshots",
+        ["workspace_id", "listing_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
+      [
+        "wine_section_snapshots",
+        ["workspace_id", "listing_id", "version_id"],
+        "listing_versions",
+      ],
+      ["wine_stages", ["workspace_id", "run_id"], "listing_pipeline_runs"],
+      [
+        "wine_trusted_contexts",
+        ["workspace_id", "run_id"],
+        "listing_pipeline_runs",
+      ],
+      ["workbook_products", ["workspace_id", "import_id"], "workbook_imports"],
     ];
     const rows = await admin`
       select
@@ -531,7 +778,7 @@ describe("workspace isolation", () => {
           select 1
           from pg_index i
           where i.indrelid = c.conrelid
-            and (i.indkey::smallint[])[0:1] = c.conkey
+            and (i.indkey::smallint[])[0:array_length(c.conkey, 1)-1] = c.conkey
         ) as child_fk_indexed
       from pg_constraint c
       join pg_class child on child.oid = c.conrelid
@@ -539,13 +786,21 @@ describe("workspace isolation", () => {
       join pg_namespace n on n.oid = child.relnamespace
       where c.contype = 'f'
         and n.nspname = 'public'
-        and array_length(c.conkey, 1) = 2
+        and array_length(c.conkey, 1) >= 2
       order by child.relname, 2
     `;
 
     expect(
-      rows.map((row) => [row.child_table, row.child_columns, row.parent_table]),
-    ).toEqual(expected);
+      rows
+        .map((row) =>
+          JSON.stringify([
+            row.child_table,
+            row.child_columns,
+            row.parent_table,
+          ]),
+        )
+        .sort(),
+    ).toEqual(expected.map((row) => JSON.stringify(row)).sort());
     expect(rows.every(({ child_fk_indexed }) => child_fk_indexed)).toBe(true);
   });
 

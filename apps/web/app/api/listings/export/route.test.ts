@@ -1,6 +1,18 @@
+import { createHash } from "node:crypto";
+import { AssetObjectMissingError } from "@wukong/assets";
+import type { ReviewConfirmation } from "@wukong/db";
+import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
+import {
+  CONFIRMATION_FIELD_KEYS,
+  CONFIRMATION_NEGATIVE_KEYS,
+} from "../../../../lib/review-confirmation-keys";
+import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 import {
   BULK_FORM_COLUMNS,
   hashBulkFormHeaderContract,
+  hashBulkFormRow,
+  isBulkFormRawRow,
+  SHOPLINE_BULK_FORM_SPEC_VERSION,
 } from "@wukong/shopline";
 import { describe, expect, it } from "vitest";
 
@@ -59,7 +71,51 @@ function rawRowFor(overrides: Partial<Record<string, string>> = {}) {
   };
 }
 
+/**
+ * The digest an operator would have been shown for a given raw row --
+ * mirrors the same normalization `makeRepositories` applies to a
+ * `contentDigest: "digest_1"` fixture, so a test can attest the value the
+ * gate will actually compare against without invoking any repository mock
+ * (mocks like `listing_stale`'s are stateful -- see its call-count comment
+ * below -- and calling them to "discover" a digest would consume that state).
+ */
+function digestOf(rawRow: Record<string, string>): string {
+  if (!isBulkFormRawRow(rawRow)) {
+    throw new Error("test fixture row is missing required bulk-form columns");
+  }
+  return hashBulkFormRow(rawRow);
+}
+
+/** `listing_changed` and `listing_stale` both fixture an unmodified `rawRowFor()`. */
+const CHANGED_DIGEST = digestOf(rawRowFor());
+const NOOP_DIGEST = digestOf(
+  rawRowFor({
+    nameZh: "標題",
+    summaryEn: "Desc EN",
+    summaryZh: "描述",
+    seoTitleEn: "SEO title EN",
+    seoTitleZh: "SEO 標題",
+    seoDescriptionEn: "SEO desc EN",
+    seoDescriptionZh: "SEO 描述",
+    seoKeywords: "a, b",
+  }),
+);
+/** Deliberately wrong -- attesting this never matches a fixture's real digest. */
+const WRONG_DIGEST = "digest_the_operator_did_not_see";
+
+/** Builds the `attestation` field of a request body from listingId -> digest. */
+function attestationFor(digests: Record<string, string>) {
+  return {
+    listings: Object.entries(digests).map(([listingId, contentDigest]) => ({
+      listingId,
+      contentDigest,
+    })),
+  };
+}
+
 type ReviewSnapshotFixture = {
+  listing?: { id: string; status: string; activeVersionId: string };
+  flags?: { severity: string; status: string; field: string; rule: string }[];
   activeVersion: {
     id: string;
     sequence: number;
@@ -148,6 +204,11 @@ function makeExportAttempts() {
       rowCount: number;
       specVersion: string;
       createdAt: Date;
+      provenance: Record<string, unknown> | null;
+      artifactSha256: string | null;
+      artifactStatus: string | null;
+      artifactErrorCode: string | null;
+      artifactReadyAt: Date | null;
     }
   >();
   let counter = 0;
@@ -188,9 +249,38 @@ function makeExportAttempts() {
         rowCount: input.rowCount,
         specVersion: input.specVersion,
         createdAt: new Date(),
+        provenance: input.provenance ?? null,
+        artifactSha256: input.artifactSha256 ?? null,
+        artifactStatus: input.provenance ? "pending" : null,
+        artifactErrorCode: null,
+        artifactReadyAt: null,
       };
       store.set(input.idempotencyKey, created);
       return { ...created, wasCreated: true };
+    },
+    async markReady(input: any) {
+      const row = [...store.values()].find(
+        (row) =>
+          row.id === input.id && row.artifactSha256 === input.artifactSha256,
+      )!;
+      Object.assign(row, {
+        artifactStatus: "ready",
+        artifactErrorCode: null,
+        artifactReadyAt: new Date(),
+      });
+      return { ...row };
+    },
+    async markFailed(input: any) {
+      const row = [...store.values()].find(
+        (row) =>
+          row.id === input.id && row.artifactSha256 === input.artifactSha256,
+      )!;
+      if (row.artifactStatus !== "ready")
+        Object.assign(row, {
+          artifactStatus: "failed",
+          artifactErrorCode: input.errorCode,
+        });
+      return { ...row };
     },
     async getById(id: string) {
       for (const value of store.values()) {
@@ -211,10 +301,22 @@ function makeRepositories(
     // return -- i.e. still inside the transaction, so it must roll back
     // whatever `ensure()` just inserted.
     auditWriteThrows?: boolean;
+    missingConfirmations?: boolean;
+    confirmationOverrides?: Record<string, Partial<ReviewConfirmation> | null>;
+    beforeTransaction?: (repositories: any, call: number) => void;
   } = {},
 ) {
   const reviewSnapshots = options.reviewSnapshots ?? defaultReviewSnapshots;
-  const platformProducts = options.platformProducts ?? defaultPlatformProducts;
+  const platformProducts =
+    options.platformProducts ?? structuredClone(defaultPlatformProducts);
+  for (const link of Object.values(platformProducts)) {
+    if (
+      link?.contentDigest === "digest_1" &&
+      link.rawRow &&
+      isBulkFormRawRow(link.rawRow)
+    )
+      link.contentDigest = hashBulkFormRow(link.rawRow);
+  }
   const headerContractSha256 =
     options.headerContractSha256 ?? HEADER_CONTRACT_SHA;
   const audits: any[] = [];
@@ -225,10 +327,66 @@ function makeRepositories(
   // mismatched digest on every call after.
   let staleCallCount = 0;
 
+  const sourceSnapshots = Object.entries(platformProducts).flatMap(
+    ([listingId, link]) =>
+      !link
+        ? []
+        : [
+            {
+              id: `snapshot_${listingId}`,
+              workspaceId: context.workspaceId,
+              listingId,
+              sourceImportId: link.sourceImportId,
+              connectionId: link.connectionId,
+              remoteProductId: link.remoteProductId,
+              sourceRowDigest: link.contentDigest,
+              rawRow: structuredClone(link.rawRow),
+              headerContractSha256: HEADER_CONTRACT_SHA,
+              specVersion: SHOPLINE_BULK_FORM_SPEC_VERSION,
+            },
+          ],
+  );
+  const receipts = sourceSnapshots.map((snapshot) => ({
+    ...snapshot,
+    id: `receipt_${snapshot.listingId}`,
+    sourceSnapshotId: snapshot.id,
+    versionId: reviewSnapshots[snapshot.listingId]?.activeVersion?.id,
+    confirmationVersionId:
+      reviewSnapshots[snapshot.listingId]?.activeVersion?.id,
+    confirmationRevision: 0,
+  }));
   const repositories = {
+    sourceRows: {
+      async getForProduct(input: any) {
+        return (
+          sourceSnapshots.find(
+            (row) =>
+              row.sourceImportId === input.sourceImportId &&
+              row.connectionId === input.connectionId &&
+              row.remoteProductId === input.remoteProductId,
+          ) ?? null
+        );
+      },
+    },
+    approvalReceipts: {
+      async getByVersionId(versionId: string) {
+        return receipts.find((row) => row.versionId === versionId) ?? null;
+      },
+    },
     listings: {
+      async lockReviewState() {},
       async getReviewSnapshot(listingId: string) {
-        return reviewSnapshots[listingId] ?? null;
+        const snapshot = reviewSnapshots[listingId];
+        if (!snapshot) return null;
+        return {
+          listing: {
+            id: listingId,
+            status: "approved",
+            activeVersionId: snapshot.activeVersion?.id,
+          },
+          flags: [],
+          ...snapshot,
+        };
       },
     },
     platformProducts: {
@@ -246,8 +404,37 @@ function makeRepositories(
     },
     sourceImports: {
       async getById(id: string) {
-        if (id === "import_1") return { headerContractSha256 };
+        if (id === "import_1" || id === "import_2")
+          return { headerContractSha256 };
         return null;
+      },
+    },
+    reviewConfirmations: {
+      async getByVersionId(versionId: string) {
+        if (
+          options.missingConfirmations ||
+          options.confirmationOverrides?.[versionId] === null
+        )
+          return null;
+        const listingId = Object.keys(reviewSnapshots).find(
+          (id) => reviewSnapshots[id]?.activeVersion?.id === versionId,
+        )!;
+        const link = platformProducts[listingId];
+        return {
+          id: "confirmation",
+          listingId,
+          versionId,
+          revision: 0,
+          fieldConfirmations: Object.fromEntries(
+            CONFIRMATION_FIELD_KEYS.map((key) => [key, true]),
+          ),
+          negativeConfirmations: Object.fromEntries(
+            CONFIRMATION_NEGATIVE_KEYS.map((key) => [key, true]),
+          ),
+          sourceImportId: link?.sourceImportId ?? null,
+          rowDigest: link?.contentDigest ?? null,
+          ...options.confirmationOverrides?.[versionId],
+        };
       },
     },
     exportAttempts,
@@ -266,8 +453,10 @@ function makeRepositories(
 
 function makeAssetStore() {
   const calls: any[] = [];
+  const objects = new Map<string, Uint8Array>();
   return {
     calls,
+    objects,
     async writeObject(
       workspaceId: string,
       key: string,
@@ -275,7 +464,23 @@ function makeAssetStore() {
       mimeType: string,
     ) {
       calls.push({ workspaceId, key, body, mimeType });
+      objects.set(key, new Uint8Array(body));
       return { size: body.byteLength, mimeType };
+    },
+    async writeObjectIfAbsent(
+      workspaceId: string,
+      key: string,
+      body: Uint8Array,
+      mimeType: string,
+    ) {
+      if (objects.has(key)) return false;
+      await this.writeObject(workspaceId, key, body, mimeType);
+      return true;
+    },
+    async readObject(_workspaceId: string, key: string) {
+      const bytes = objects.get(key);
+      if (!bytes) throw new AssetObjectMissingError();
+      return new Uint8Array(bytes);
     },
   };
 }
@@ -287,11 +492,16 @@ function makeHandler(
     platformProducts?: Record<string, PlatformProductFixture>;
     headerContractSha256?: string;
     auditWriteThrows?: boolean;
+    missingConfirmations?: boolean;
+    confirmationOverrides?: Record<string, Partial<ReviewConfirmation> | null>;
+    beforeTransaction?: (repositories: any, call: number) => void;
   } = {},
 ) {
   const { repositories, audits, exportAttempts } = makeRepositories(options);
   const assetStore = makeAssetStore();
   let getDatabaseCalls = 0;
+  let transactionCalls = 0;
+  const workspaces: string[] = [];
 
   const handler = createExportListingsHandler({
     sessionContext: {
@@ -306,6 +516,8 @@ function makeHandler(
           _workspaceId: string,
           work: (repos: any) => Promise<T>,
         ) {
+          workspaces.push(_workspaceId);
+          options.beforeTransaction?.(repositories, ++transactionCalls);
           return work(repositories);
         },
       };
@@ -315,20 +527,342 @@ function makeHandler(
 
   return {
     handler,
+    repositories,
     audits,
     assetStore,
     exportAttempts,
     getDatabaseCalls: () => getDatabaseCalls,
+    workspaces,
   };
 }
 
 describe("POST /api/listings/export", () => {
+  it.each([
+    ["in_review", [], false, "excluded_unapproved"],
+    [
+      "approved",
+      [
+        {
+          severity: "blocking",
+          status: "open",
+          field: "title",
+          rule: "unverified_claim",
+        },
+      ],
+      false,
+      "excluded_blocked",
+    ],
+    ["approved", [], true, "excluded_unconfirmed"],
+  ] as const)(
+    "does not export %s content without current review eligibility (%j)",
+    async (status, flags, missingConfirmations, outcome) => {
+      const { handler, assetStore, audits, exportAttempts } = makeHandler({
+        missingConfirmations,
+        reviewSnapshots: {
+          listing_changed: {
+            ...defaultReviewSnapshots.listing_changed!,
+            listing: {
+              id: "listing_changed",
+              status,
+              activeVersionId: "version_changed",
+            },
+            flags: [...flags],
+          },
+        },
+      });
+      const response = await handler(
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.rowCount).toBe(0);
+      expect(body.exportAttemptId).toBeNull();
+      expect(body.manifest[0].outcome).toBe(outcome);
+      expect(assetStore.calls).toHaveLength(0);
+      expect(exportAttempts.ensureCalls).toHaveLength(0);
+      expect(audits).toEqual([]);
+    },
+  );
+
+  it("writes only the eligible changed product in a mixed review selection", async () => {
+    const ids = [
+      "ready",
+      "review",
+      "blocked",
+      "missing",
+      "revoked_field",
+      "revoked_negative",
+      "noop",
+    ];
+    const reviewSnapshots = Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          listing: {
+            id,
+            status: id === "review" ? "in_review" : "approved",
+            activeVersionId: "version_" + id,
+          },
+          activeVersion: {
+            id: "version_" + id,
+            sequence: 1,
+            content: contentFor("標題"),
+          },
+          flags:
+            id === "blocked"
+              ? [
+                  {
+                    severity: "blocking",
+                    status: "open",
+                    field: "title",
+                    rule: "unverified_claim",
+                  },
+                ]
+              : [],
+        },
+      ]),
+    );
+    const platformProducts = Object.fromEntries(
+      ids.map((id) => [
+        id,
+        {
+          ...defaultPlatformProducts[
+            id === "noop" ? "listing_noop" : "listing_changed"
+          ]!,
+          remoteProductId: "product-" + id,
+          rawRow: {
+            ...defaultPlatformProducts[
+              id === "noop" ? "listing_noop" : "listing_changed"
+            ]!.rawRow!,
+            productId: "product-" + id,
+          },
+        },
+      ]),
+    );
+    const { handler, assetStore, audits, workspaces } = makeHandler({
+      reviewSnapshots,
+      platformProducts,
+      confirmationOverrides: {
+        version_missing: null,
+        version_revoked_field: { fieldConfirmations: {} },
+        version_revoked_negative: {
+          negativeConfirmations: { priceUnchanged: false },
+        },
+      },
+    });
+    // Read back post-normalization: `makeRepositories` already rewrote each
+    // fixture's placeholder "digest_1" to the real hash of its (per-id)
+    // rawRow, in place on this same `platformProducts` object.
+    const response = await handler(
+      request({
+        listingIds: ids,
+        attestation: attestationFor(
+          Object.fromEntries(
+            ids.map((id) => [id, platformProducts[id]!.contentDigest!]),
+          ),
+        ),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.rowCount).toBe(1);
+    expect(
+      body.manifest.map((entry: any) => [entry.listingId, entry.outcome]),
+    ).toEqual([
+      ["blocked", "excluded_blocked"],
+      ["missing", "excluded_unconfirmed"],
+      ["noop", "excluded_no_op"],
+      ["ready", "included"],
+      ["review", "excluded_unapproved"],
+      ["revoked_field", "excluded_unconfirmed"],
+      ["revoked_negative", "excluded_unconfirmed"],
+    ]);
+    expect(assetStore.calls).toHaveLength(1);
+    const sheet = readBulkFormSheet(assetStore.calls[0].body);
+    const productColumn = BULK_FORM_COLUMNS.findIndex(
+      (column) => column.key === "productId",
+    );
+    expect(sheet.slice(2).map((row) => row[productColumn])).toEqual([
+      "product-ready",
+    ]);
+    expect(audits[0].metadata.includedListingIds).toEqual(["ready"]);
+    expect(audits[0].metadata.excludedListingIds).toEqual(ids.slice(1).sort());
+    expect(workspaces).toEqual([
+      context.workspaceId,
+      context.workspaceId,
+      context.workspaceId,
+    ]);
+  });
+
+  it.each([
+    ["version", "version_mismatch"],
+    ["status", "approval_required"],
+    ["flags", "blocking_flags"],
+    ["revocation", "confirmation_required"],
+    ["revision", "confirmation_changed"],
+    ["source", "source_import_mismatch"],
+    ["digest", "row_digest_mismatch"],
+    ["remote", "remote_link_changed"],
+    ["connection", "remote_link_changed"],
+    ["origin", "not_import_origin"],
+    ["header", "header_contract_stale"],
+  ])(
+    "rejects %s drift at the final transaction before attempt, audit or upload",
+    async (change, reason) => {
+      const { handler, assetStore, audits, exportAttempts } = makeHandler({
+        beforeTransaction(repositories, call) {
+          if (call !== 2) return;
+          const readSnapshot = repositories.listings.getReviewSnapshot;
+          repositories.listings.getReviewSnapshot = async (id: string) => {
+            const snapshot = await readSnapshot(id);
+            if (change === "version")
+              snapshot.listing = {
+                ...snapshot.listing,
+                activeVersionId: "version_new",
+              };
+            if (change === "status")
+              snapshot.listing = { ...snapshot.listing, status: "in_review" };
+            if (change === "flags")
+              snapshot.flags = [
+                {
+                  severity: "blocking",
+                  status: "open",
+                  field: "title",
+                  rule: "unverified_claim",
+                },
+              ];
+            return snapshot;
+          };
+          const readConfirmation =
+            repositories.reviewConfirmations.getByVersionId;
+          repositories.reviewConfirmations.getByVersionId = async (
+            id: string,
+          ) => {
+            const confirmation = await readConfirmation(id);
+            if (change === "revocation")
+              confirmation.fieldConfirmations.nameZh = false;
+            if (change === "revision") confirmation.revision += 1;
+            return confirmation;
+          };
+          const readLink = repositories.platformProducts.getByListingId;
+          repositories.platformProducts.getByListingId = async (id: string) => {
+            const link = { ...(await readLink(id)) };
+            if (change === "source") link.sourceImportId = "new_import";
+            if (change === "digest") link.contentDigest = "new_digest";
+            if (change === "remote") link.remoteProductId = "different_product";
+            if (change === "connection") link.connectionId = "different_store";
+            if (change === "origin") link.origin = "created";
+            return link;
+          };
+          if (change === "header")
+            repositories.sourceImports.getById = async () => ({
+              headerContractSha256: "changed",
+            });
+        },
+      });
+      const response = await handler(
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        code: "export_eligibility_changed",
+        rowCount: 0,
+        manifest: [{ reason }],
+      });
+      expect(assetStore.calls).toEqual([]);
+      expect(exportAttempts.ensureCalls).toEqual([]);
+      expect(audits).toEqual([]);
+    },
+  );
+
+  it("reuses an eligible attempt and writes the same bytes without duplicate success events", async () => {
+    const { handler, assetStore, audits } = makeHandler();
+    const payload = {
+      listingIds: ["listing_changed", "listing_noop"],
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        listing_noop: NOOP_DIGEST,
+      }),
+    };
+    const first = await (await handler(request(payload))).json();
+    const second = await (await handler(request(payload))).json();
+    expect(first.rowCount).toBe(1);
+    expect(second).toEqual(first);
+    expect(assetStore.calls).toHaveLength(1);
+    expect(audits).toHaveLength(1);
+  });
+
+  it("records a new manifest when a formerly eligible row becomes blocked", async () => {
+    const snapshots = structuredClone(defaultReviewSnapshots);
+    const { handler, assetStore } = makeHandler({ reviewSnapshots: snapshots });
+    // Give both selected rows a content change.
+    snapshots.listing_noop!.activeVersion!.content = contentFor("更新內容");
+    const payload = {
+      listingIds: ["listing_changed", "listing_noop"],
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        listing_noop: NOOP_DIGEST,
+      }),
+    };
+    const first = await (await handler(request(payload))).json();
+    snapshots.listing_noop!.flags = [
+      {
+        severity: "blocking",
+        status: "open",
+        field: "title",
+        rule: "new_blocker",
+      },
+    ];
+    const response = await handler(request(payload));
+    expect(response.status).toBe(200);
+    const second = await response.json();
+    expect(first.rowCount).toBe(2);
+    expect(second.rowCount).toBe(1);
+    expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
+    expect(second.manifest[1].outcome).toBe("excluded_blocked");
+    expect(readBulkFormSheet(assetStore.calls[1].body).slice(2)).toHaveLength(
+      1,
+    );
+  });
+
+  it("does not create an empty downloadable workbook for an all-no-op request", async () => {
+    const { handler, assetStore, audits, exportAttempts } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_noop"],
+        attestation: attestationFor({ listing_noop: NOOP_DIGEST }),
+      }),
+    );
+    expect(await response.json()).toMatchObject({
+      rowCount: 0,
+      exportAttemptId: null,
+      manifest: [{ outcome: "excluded_no_op" }],
+    });
+    expect(assetStore.calls).toEqual([]);
+    expect(exportAttempts.ensureCalls).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
   it("returns 200 with a manifest and rowCount for a mixed 3-listing batch, and writes the export exactly once", async () => {
     const { handler, assetStore, audits } = makeHandler();
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_noop", "listing_stale"],
-        freshnessAttested: true,
+        // listing_stale's first read (inside checkBulkUpdateEligibility) still
+        // returns the real, matching digest -- attesting anything else would
+        // fail eligibility for the wrong reason before the recheck (the
+        // fixture's own staleness simulation) ever runs.
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+          listing_stale: CHANGED_DIGEST,
+        }),
       }),
     );
     expect(response.status).toBe(200);
@@ -382,7 +916,10 @@ describe("POST /api/listings/export", () => {
     async (role) => {
       const { handler } = makeHandler({ role });
       const response = await handler(
-        request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+        request({
+          listingIds: ["listing_changed"],
+          attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+        }),
       );
       expect(response.status).toBe(403);
       const body = await response.json();
@@ -393,58 +930,50 @@ describe("POST /api/listings/export", () => {
   it("rejects an empty listingIds array with 400", async () => {
     const { handler } = makeHandler();
     const response = await handler(
-      request({ listingIds: [], freshnessAttested: true }),
+      request({ listingIds: [], attestation: attestationFor({}) }),
     );
     expect(response.status).toBe(400);
   });
 
-  it("returns the same exportAttemptId for two identical requests, and writes only one bulk_export_created and one review_conflict audit event across both", async () => {
+  it("repeats an all-excluded request without creating an attempt or success audit", async () => {
     const { handler, audits } = makeHandler();
-    // Uses freshnessAttested: false (not the listing_stale fixture) so the
-    // excluded_stale outcome is stable across repeat calls to the SAME
-    // handler/repositories -- listing_stale's fixture instead simulates a
-    // freshness race via a call-count counter that keeps incrementing across
-    // repeat calls within one test, which would make the manifest differ
-    // between the first and second request and defeat the point of this
-    // idempotency assertion.
+    // Attests the WRONG digest (not omission -- the route now rejects an
+    // attestation that omits a requested listingId with 400, before this
+    // per-listing outcome would ever be reached) so the excluded_stale
+    // outcome (row_digest_mismatch, not not_attested) is stable across repeat
+    // calls to the SAME handler/repositories -- listing_stale's fixture
+    // instead simulates a freshness race via a call-count counter that keeps
+    // incrementing across repeat calls within one test, which would make the
+    // manifest differ between the first and second request and defeat the
+    // point of this idempotency assertion.
     const body = {
       listingIds: ["listing_changed"],
-      freshnessAttested: false,
+      attestation: attestationFor({ listing_changed: WRONG_DIGEST }),
     };
     const first = await (await handler(request(body))).json();
     const second = await (await handler(request(body))).json();
     expect(second.exportAttemptId).toBe(first.exportAttemptId);
     expect(second.manifest).toEqual(first.manifest);
     expect(second.rowCount).toBe(first.rowCount);
-    // The second call's `ensure()` found the existing row (wasCreated:
-    // false) rather than inserting a new one, so it must not duplicate
-    // either the bulk_export_created event or the per-excluded_stale-entry
-    // review_conflict event for an export attempt that only genuinely
-    // happened once.
-    expect(audits).toHaveLength(2);
-    expect(
-      audits.filter((a: any) => a.action === "listing.bulk_export_created"),
-    ).toHaveLength(1);
-    const conflictAudits = audits.filter(
-      (a: any) => a.action === "listing.review_conflict",
-    );
-    expect(conflictAudits).toHaveLength(1);
-    expect(conflictAudits[0]).toMatchObject({
-      entityId: "listing_changed",
-      metadata: { reason: "not_attested" },
-    });
+    expect(first.exportAttemptId).toBeNull();
+    expect(audits).toEqual([]);
   });
 
-  it("writes one review_conflict event per excluded_stale entry when a request has more than one", async () => {
-    // freshnessAttested: false makes every import-origin listing excluded
-    // for the same, deterministic reason -- unlike listing_stale's
+  it("returns every stale exclusion without creating a successful export", async () => {
+    // Attesting the wrong digest for every listing (not omission -- an
+    // attestation that omits a requested listingId is now a 400 before any
+    // per-listing outcome is produced) makes every import-origin listing
+    // excluded for the same, deterministic reason -- unlike listing_stale's
     // call-count-based fixture, this holds steady within a single request
     // regardless of how many listingIds are in it.
     const { handler, audits } = makeHandler();
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_noop"],
-        freshnessAttested: false,
+        attestation: attestationFor({
+          listing_changed: WRONG_DIGEST,
+          listing_noop: WRONG_DIGEST,
+        }),
       }),
     );
     expect(response.status).toBe(200);
@@ -454,34 +983,26 @@ describe("POST /api/listings/export", () => {
         listingId: "listing_changed",
         versionId: "version_changed",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
       {
         listingId: "listing_noop",
         versionId: "version_noop",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
     ]);
-    expect(audits).toHaveLength(3);
-    expect(audits[0].action).toBe("listing.bulk_export_created");
-    const conflictAudits = audits.filter(
-      (a: any) => a.action === "listing.review_conflict",
-    );
-    expect(conflictAudits).toHaveLength(2);
-    expect(conflictAudits.map((a: any) => a.entityId).sort()).toEqual([
-      "listing_changed",
-      "listing_noop",
-    ]);
-    expect(
-      conflictAudits.every((a: any) => a.metadata.reason === "not_attested"),
-    ).toBe(true);
+    expect(body.exportAttemptId).toBeNull();
+    expect(audits).toEqual([]);
   });
 
   it("reports a listing id that does not resolve in the workspace as listing_not_found, with a 200 overall status", async () => {
     const { handler } = makeHandler();
     const response = await handler(
-      request({ listingIds: ["listing_missing"], freshnessAttested: true }),
+      request({
+        listingIds: ["listing_missing"],
+        attestation: attestationFor({ listing_missing: "irrelevant" }),
+      }),
     );
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -499,7 +1020,7 @@ describe("POST /api/listings/export", () => {
     const response = await handler(
       request({
         listingIds: ["listing_changed", "listing_changed"],
-        freshnessAttested: true,
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
       }),
     );
     expect(response.status).toBe(400);
@@ -534,13 +1055,17 @@ describe("POST /api/listings/export", () => {
       },
       platformProducts: {
         listing_dup_a: sharedLink,
-        listing_dup_b: sharedLink,
+        listing_dup_b: { ...sharedLink, sourceImportId: "import_2" },
       },
     });
+    // Read back post-normalization, like the mixed-review-selection test above.
     const response = await handler(
       request({
         listingIds: ["listing_dup_a", "listing_dup_b"],
-        freshnessAttested: true,
+        attestation: attestationFor({
+          listing_dup_a: sharedLink.contentDigest!,
+          listing_dup_b: sharedLink.contentDigest!,
+        }),
       }),
     );
     expect(response.status).toBeGreaterThanOrEqual(400);
@@ -553,11 +1078,15 @@ describe("POST /api/listings/export", () => {
     ).toBe(true);
   });
 
-  it("does not collide the idempotency key across different freshnessAttested values for the same listingIds/versions", async () => {
+  it("does not collide the idempotency key across different attested digests for the same listingIds/versions", async () => {
     const { handler } = makeHandler();
     const body = {
       listingIds: ["listing_changed"],
-      freshnessAttested: false,
+      // Wrong digest first (not omission -- the route now rejects an
+      // attestation that omits a requested listingId with 400), then the
+      // correct one below: two different attestation states for the same
+      // listingId/version, to confirm the idempotency key differs between them.
+      attestation: attestationFor({ listing_changed: WRONG_DIGEST }),
     };
     const firstResponse = await handler(request(body));
     expect(firstResponse.status).toBe(200);
@@ -568,12 +1097,15 @@ describe("POST /api/listings/export", () => {
         listingId: "listing_changed",
         versionId: "version_changed",
         outcome: "excluded_stale",
-        reason: "not_attested",
+        reason: "row_digest_mismatch",
       },
     ]);
 
     const secondResponse = await handler(
-      request({ ...body, freshnessAttested: true }),
+      request({
+        ...body,
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
     );
     expect(secondResponse.status).toBe(200);
     const second = await secondResponse.json();
@@ -601,9 +1133,369 @@ describe("POST /api/listings/export", () => {
     // the rolled-back row.
     const { handler, assetStore } = makeHandler({ auditWriteThrows: true });
     const response = await handler(
-      request({ listingIds: ["listing_changed"], freshnessAttested: true }),
+      request({
+        listingIds: ["listing_changed"],
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
     );
     expect(response.status).toBe(500);
     expect(assetStore.calls).toHaveLength(0);
+  });
+});
+
+describe("attestation evidence recorded on the attempt", () => {
+  it("passes the request's attestation through to exportAttempts.ensure()", async () => {
+    const { handler, exportAttempts } = makeHandler();
+    const attestation = attestationFor({ listing_changed: CHANGED_DIGEST });
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(exportAttempts.ensureCalls).toHaveLength(1);
+    expect(exportAttempts.ensureCalls[0].sourceAttestation).toEqual(
+      attestation.listings,
+    );
+  });
+
+  // No fully-excluded batch reaches ensure() -- rowCount === 0 returns before
+  // the attempt is ever created (see "repeats an all-excluded request" and
+  // "returns every stale exclusion" above, which both assert
+  // exportAttemptId/audits stay empty on that path). The refusal that DOES
+  // reach ensure() is a failure after the attempt row already exists but
+  // before the artifact is confirmed ready -- the route already returns that
+  // attempt's id on such a failure (see "records upload failure then
+  // recovers the same committed artifact" above), so its sourceAttestation
+  // must be recorded too.
+  it("records the attestation on a refused attempt (artifact upload failure), not only a successful one", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    assetStore.writeObjectIfAbsent = async () => {
+      throw new Error("upload unavailable");
+    };
+    const attestation = attestationFor({ listing_changed: CHANGED_DIGEST });
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation,
+      }),
+    );
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body.exportAttemptId).toEqual(expect.any(String));
+    expect(exportAttempts.ensureCalls).toHaveLength(1);
+    expect(exportAttempts.ensureCalls[0].sourceAttestation).toEqual(
+      attestation.listings,
+    );
+  });
+
+  it("audits a digest-mismatch count instead of the invariant attested count, and never leaks a digest value", async () => {
+    const { handler, audits } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop", "listing_stale"],
+        // listing_stale's first read (inside checkBulkUpdateEligibility) still
+        // returns the real, matching digest -- attesting anything else would
+        // fail eligibility for the wrong reason before the recheck (the
+        // fixture's own staleness simulation) ever runs. Mirrors the mixed
+        // 3-listing batch test above, which already exercises this exact
+        // manifest shape (one included, one no-op, one row_digest_mismatch).
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+          listing_stale: CHANGED_DIGEST,
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(audits[0].action).toBe("listing.bulk_export_created");
+    // Exactly one manifest entry (listing_stale) has reason
+    // row_digest_mismatch -- a count that varies with the request, unlike
+    // the old attestedListingCount which always equalled the request size.
+    expect(audits[0].metadata.rowDigestMismatchCount).toBe(1);
+    const serializedMetadata = JSON.stringify(audits[0].metadata);
+    expect(serializedMetadata).not.toContain(CHANGED_DIGEST);
+    expect(serializedMetadata).not.toContain(NOOP_DIGEST);
+  });
+});
+
+describe("durable artifact creation", () => {
+  it("commits canonical provenance and a hash of exactly the downloadable rows", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    const digests = attestationFor({
+      listing_noop: NOOP_DIGEST,
+      listing_changed: CHANGED_DIGEST,
+    });
+    const first = await (
+      await handler(
+        request({
+          listingIds: ["listing_noop", "listing_changed"],
+          attestation: digests,
+        }),
+      )
+    ).json();
+    const repeat = await (
+      await handler(
+        request({
+          listingIds: ["listing_changed", "listing_noop"],
+          attestation: digests,
+        }),
+      )
+    ).json();
+    expect(repeat.exportAttemptId).toBe(first.exportAttemptId);
+    expect(assetStore.calls).toHaveLength(1);
+    const attempt = await exportAttempts.getById(first.exportAttemptId);
+    expect(attempt?.artifactStatus).toBe("ready");
+    expect(attempt?.artifactSha256).toBe(
+      createHash("sha256").update(assetStore.calls[0].body).digest("hex"),
+    );
+    expect(attempt?.provenance).toMatchObject({
+      identityVersion: 1,
+      headerContractSha256: HEADER_CONTRACT_SHA,
+      rowOrder: ["listing_changed"],
+    });
+  });
+  it("records upload failure then recovers the same committed artifact", async () => {
+    const { handler, assetStore, exportAttempts } = makeHandler();
+    const original = assetStore.writeObjectIfAbsent.bind(assetStore);
+    assetStore.writeObjectIfAbsent = async () => {
+      throw new Error("upload unavailable");
+    };
+    const payload = {
+      listingIds: ["listing_changed"],
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+    };
+    const response = await handler(request(payload));
+    expect(response.status).toBe(503);
+    const failure = await response.json();
+    expect(
+      (await exportAttempts.getById(failure.exportAttemptId))?.artifactStatus,
+    ).toBe("failed");
+    assetStore.writeObjectIfAbsent = original;
+    const recovered = await (await handler(request(payload))).json();
+    expect(recovered.exportAttemptId).toBe(failure.exportAttemptId);
+    expect(
+      (await exportAttempts.getById(recovered.exportAttemptId))?.artifactStatus,
+    ).toBe("ready");
+  });
+  it("does not replace corrupted stored bytes on retry", async () => {
+    const { handler, assetStore } = makeHandler();
+    const payload = {
+      listingIds: ["listing_changed"],
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+    };
+    await handler(request(payload));
+    const key = assetStore.calls[0].key;
+    const corrupt = new Uint8Array([9]);
+    assetStore.objects.set(key, corrupt);
+    const response = await handler(request(payload));
+    expect(response.status).toBe(409);
+    expect(assetStore.calls).toHaveLength(1);
+    expect(assetStore.objects.get(key)).toEqual(corrupt);
+  });
+  it("recovers uploaded bytes after the readiness transaction fails", async () => {
+    let failReady = true;
+    const { handler, assetStore, exportAttempts } = makeHandler({
+      beforeTransaction: (repos, call) => {
+        if (call === 3 && failReady) {
+          failReady = false;
+          throw new Error("commit unavailable");
+        }
+      },
+    });
+    const payload = {
+      listingIds: ["listing_changed"],
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+    };
+    expect((await handler(request(payload))).status).toBe(503);
+    const recovered = await (await handler(request(payload))).json();
+    expect(
+      (await exportAttempts.getById(recovered.exportAttemptId))?.artifactStatus,
+    ).toBe("ready");
+    expect(assetStore.calls).toHaveLength(1);
+  });
+});
+
+it("a renewed durable approval gets a new artifact identity while preserving earlier bytes", async () => {
+  const { handler, repositories, assetStore, exportAttempts } = makeHandler();
+  const payload = {
+    listingIds: ["listing_changed"],
+    attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+  };
+  const first = await (await handler(request(payload))).json();
+  const readReceipt = repositories.approvalReceipts.getByVersionId;
+  repositories.approvalReceipts.getByVersionId = async (versionId) => {
+    const receipt = await readReceipt(versionId);
+    return receipt ? { ...receipt, id: "renewed-receipt" } : null;
+  };
+  const second = await (await handler(request(payload))).json();
+  expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
+  expect(assetStore.calls).toHaveLength(2);
+  expect(assetStore.calls[1].body).toEqual(assetStore.calls[0].body);
+  const earlier = await exportAttempts.getById(first.exportAttemptId);
+  expect((earlier?.provenance?.evidence as any[])[0].approvalReceiptId).toBe(
+    "receipt_listing_changed",
+  );
+});
+
+it("fresh source evidence and approval create a new attempt without replacing the earlier artifact", async () => {
+  const products = structuredClone(defaultPlatformProducts);
+  const { handler, repositories, assetStore, exportAttempts } = makeHandler({
+    platformProducts: products,
+  });
+  const listingIds = ["listing_changed"];
+  // Read back post-normalization, like the mixed-review-selection test above.
+  const first = await (
+    await handler(
+      request({
+        listingIds,
+        attestation: attestationFor({
+          listing_changed: products.listing_changed!.contentDigest!,
+        }),
+      }),
+    )
+  ).json();
+  const oldBytes = new Uint8Array(assetStore.calls[0].body);
+  const oldReceipt =
+    await repositories.approvalReceipts.getByVersionId("version_changed");
+  const oldSnapshot = await repositories.sourceRows.getForProduct({
+    sourceImportId: "import_1",
+    connectionId: "conn_1",
+    remoteProductId: "prod-changed",
+  });
+  products.listing_changed!.sourceImportId = "import_2";
+  products.listing_changed!.rawRow = rawRowFor({
+    slKey1: "new locked source value",
+  });
+  const newRaw = products.listing_changed!.rawRow!;
+  if (!isBulkFormRawRow(newRaw)) throw new Error("invalid fixture");
+  products.listing_changed!.contentDigest = hashBulkFormRow(newRaw);
+  const snapshot = {
+    ...oldSnapshot!,
+    id: "renewed-snapshot",
+    sourceImportId: "import_2",
+    rawRow: structuredClone(products.listing_changed!.rawRow),
+    sourceRowDigest: products.listing_changed!.contentDigest,
+  };
+  repositories.sourceRows.getForProduct = async () => snapshot;
+  repositories.approvalReceipts.getByVersionId = async () => ({
+    ...oldReceipt!,
+    sourceSnapshotId: snapshot.id,
+    sourceImportId: "import_2",
+    sourceRowDigest: snapshot.sourceRowDigest,
+    id: "renewed-receipt",
+  });
+  const second = await (
+    await handler(
+      request({
+        listingIds,
+        // The digest an operator would see now differs from what `first`
+        // attested -- attesting the stale value here would (correctly) fail
+        // freshness instead of exercising the "fresh evidence" path this test
+        // is about.
+        attestation: attestationFor({
+          listing_changed: products.listing_changed!.contentDigest!,
+        }),
+      }),
+    )
+  ).json();
+  expect(second.exportAttemptId).not.toBe(first.exportAttemptId);
+  expect(second.rowCount).toBe(1);
+  expect(assetStore.calls).toHaveLength(2);
+  expect(assetStore.objects.get(assetStore.calls[0].key)).toEqual(oldBytes);
+  expect(
+    (await exportAttempts.getById(first.exportAttemptId))?.artifactSha256,
+  ).not.toBe(
+    (await exportAttempts.getById(second.exportAttemptId))?.artifactSha256,
+  );
+});
+
+it("direct website IDs produce no bulk artifact, attempt or successful export audit", async () => {
+  const { handler, assetStore, audits, exportAttempts } = makeHandler();
+  const id = "00000000-0000-4000-8000-000000000901";
+  const response = await handler(
+    request({
+      listingIds: [id],
+      attestation: attestationFor({ [id]: "irrelevant" }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body).toMatchObject({
+    rowCount: 0,
+    exportAttemptId: null,
+    manifest: [{ listingId: id, outcome: "listing_not_found" }],
+  });
+  expect(audits).toEqual([]);
+  expect(assetStore.calls).toEqual([]);
+});
+
+describe("attestation request shape", () => {
+  it("rejects an attestation that names one listing twice", async () => {
+    // Built literally rather than through attestationFor, which is keyed by
+    // object and so cannot express a duplicate. Without the schema refine the
+    // two entries collapse in the handler Map, set equality still passes, and
+    // whichever digest came last wins silently.
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation: {
+          listings: [
+            { listingId: "listing_changed", contentDigest: CHANGED_DIGEST },
+            { listingId: "listing_changed", contentDigest: WRONG_DIGEST },
+          ],
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an attestation that omits one of two requested listingIds with 400 attestation_incomplete", async () => {
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed", "listing_noop"],
+        attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("attestation_incomplete");
+  });
+
+  it("rejects an attestation that names a listing not present in listingIds with 400 attestation_incomplete", async () => {
+    const { handler } = makeHandler();
+    const response = await handler(
+      request({
+        listingIds: ["listing_changed"],
+        attestation: attestationFor({
+          listing_changed: CHANGED_DIGEST,
+          listing_noop: NOOP_DIGEST,
+        }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("attestation_incomplete");
+  });
+
+  it("rejects a request over MAX_BULK_EXPORT_ITEMS listingIds with 400", async () => {
+    const { handler } = makeHandler();
+    const listingIds = Array.from(
+      { length: MAX_BULK_EXPORT_ITEMS + 1 },
+      (_, index) => `listing_${index}`,
+    );
+    const response = await handler(
+      request({
+        listingIds,
+        attestation: attestationFor(
+          Object.fromEntries(listingIds.map((id) => [id, "digest"])),
+        ),
+      }),
+    );
+    expect(response.status).toBe(400);
   });
 });
