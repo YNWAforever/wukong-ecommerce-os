@@ -72,6 +72,8 @@ type Row = {
   shot?: any;
   versionId?: string;
   draftVersionId?: string;
+  versionSourceImportId?: string | null;
+  versionRowDigest?: string | null;
   missing?: boolean;
   flagged?: boolean;
   broken?: boolean;
@@ -113,6 +115,18 @@ function makeHandler(
             id: row?.versionId ?? id + "-v1",
             sequence: 1,
             content: { sku: "SYNTHETIC", imageAssetIds: [] },
+            sourceImportId:
+              row?.versionSourceImportId !== undefined
+                ? row.versionSourceImportId
+                : row?.link?.origin === "import"
+                  ? row.link.sourceImportId
+                  : null,
+            sourceRowDigest:
+              row?.versionRowDigest !== undefined
+                ? row.versionRowDigest
+                : row?.link?.origin === "import"
+                  ? row.link.contentDigest
+                  : null,
           },
           evidence: [],
           flags: row?.flagged
@@ -429,6 +443,17 @@ describe("POST /api/listings/bulk-approve", () => {
       },
       importedItem(),
       "confirmation_source_stale",
+    ],
+    [
+      "version created before current import",
+      {
+        link: imported,
+        confirmation: importedConfirmation(),
+        versionSourceImportId: "import-older",
+        versionRowDigest: "digest-older",
+      },
+      importedItem(),
+      "source_version_stale",
     ],
     ["foreign listing", { missing: true }, item(id1), "listing_not_found"],
     ["blocking flag", { flagged: true }, item(id1), "blocking_flags"],

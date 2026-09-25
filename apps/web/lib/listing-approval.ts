@@ -409,6 +409,18 @@ export async function approveOne(
     }
   }
 
+  if (
+    link?.origin === "import" &&
+    ((snapshot.activeVersion.sourceImportId ?? null) !== link.sourceImportId ||
+      (snapshot.activeVersion.sourceRowDigest ?? null) !== link.contentDigest)
+  ) {
+    throw new ApiError(
+      409,
+      "source_version_stale",
+      "The imported source changed after this version was created. Review and save a new version before approving.",
+    );
+  }
+
   const sourceRow =
     link?.origin === "import"
       ? await readApprovalSourceSnapshot(id, link, repositories)

@@ -946,6 +946,30 @@ button:disabled {
   position: sticky;
   top: 20px;
 }
+.source-row-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}
+.source-row-panel h2 {
+  margin: 0 0 12px;
+}
+.source-row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 16px;
+  margin: 12px 0 0;
+}
+.source-row-grid > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.source-row-grid dt {
+  font-weight: 700;
+}
+.source-row-grid dd {
+  margin: 4px 0 0;
+}
 .panel-intro,
 .helper-copy {
   margin: 12px 0 18px;

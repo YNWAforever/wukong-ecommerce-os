@@ -73,6 +73,45 @@ describe("ShoplineConnectionRepository.create/update", () => {
     ).resolves.toBe("shptok_abc123");
   });
 
+  it("holds a connection row lock for the import transaction", async () => {
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.shoplineConnections.create({
+        shopDomain: "locked.myshopline.com",
+        accessToken: "shptok_lock",
+        base64Key: testKey,
+      }),
+    );
+    let signalLocked!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      signalLocked = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transaction = forWorkspace(
+      database,
+      workspaceId,
+      async (repositories) => {
+        await repositories.shoplineConnections.getDefault({ forUpdate: true });
+        signalLocked();
+        await gate;
+      },
+    );
+    await locked;
+    try {
+      await expect(
+        admin.unsafe(
+          "SELECT id FROM shopline_connections WHERE workspace_id = $1 FOR UPDATE NOWAIT",
+          [workspaceId],
+        ),
+      ).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      release();
+      await transaction;
+    }
+  });
+
   it("rejects creating a second connection for the same workspace", async () => {
     await forWorkspace(database, workspaceId, (repositories) =>
       repositories.shoplineConnections.create({

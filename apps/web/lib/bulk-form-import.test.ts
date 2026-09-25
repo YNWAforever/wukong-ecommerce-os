@@ -34,6 +34,8 @@ const FILENAME = "opak-export.xlsx";
 const SHEET_NAME = "Default";
 
 type Recorded = {
+  connectionReads: unknown[];
+  approvalLockRequests: { ids: readonly string[]; options: unknown }[];
   sourceRows: Record<string, unknown>[];
   created: { note: string | null }[];
   upserts: {
@@ -76,6 +78,8 @@ type Existing = {
 
 function importerWith(existing: Record<string, Existing> = {}) {
   const recorded: Recorded = {
+    connectionReads: [],
+    approvalLockRequests: [],
     sourceRows: [],
     created: [],
     upserts: [],
@@ -95,7 +99,8 @@ function importerWith(existing: Record<string, Existing> = {}) {
         ) {
           return work({
             shoplineConnections: {
-              async getDefault() {
+              async getDefault(options?: unknown) {
+                recorded.connectionReads.push(options);
                 return { id: "connection_1" };
               },
             },
@@ -141,7 +146,11 @@ function importerWith(existing: Record<string, Existing> = {}) {
               async updateNote(listingId: string, note: string) {
                 recorded.notes.push({ listingId, note });
               },
-              async approvalStatesByIds(ids: readonly string[]) {
+              async approvalStatesByIds(
+                ids: readonly string[],
+                options?: unknown,
+              ) {
+                recorded.approvalLockRequests.push({ ids, options });
                 return Object.fromEntries(
                   Object.values(existing)
                     .filter(
@@ -191,6 +200,7 @@ describe("bulk form importer", () => {
       sheet: sheetOf(rowFor(), rowFor({ productId: "remote_2", sku: "0002" })),
     });
 
+    expect(recorded.connectionReads).toEqual([{ forUpdate: true }]);
     expect(result.parsedRows).toBe(2);
     expect(result.createdDrafts).toBe(2);
     expect(result.refreshedProducts).toBe(0);
@@ -252,6 +262,9 @@ describe("bulk form importer", () => {
     expect(recorded.created).toEqual([]);
     expect(recorded.upserts[0]?.listingId).toBe("draft_existing");
     expect(recorded.upserts[0]?.origin).toBe("import");
+    expect(recorded.approvalLockRequests).toEqual([
+      { ids: ["draft_existing"], options: { forUpdate: true } },
+    ]);
   });
 
   it("does not count an unchanged re-import as a refresh", async () => {

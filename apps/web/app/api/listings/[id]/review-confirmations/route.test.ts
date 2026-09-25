@@ -66,7 +66,10 @@ function makeHandler(
     invalidation?: "unchanged" | "reopened" | "publishing" | "stale";
     evidence?: FieldEvidence[];
     currentRevision?: number | null;
+    versionSourceImportId?: string | null;
+    versionRowDigest?: string | null;
     platformProduct?: {
+      origin?: "import" | "created";
       sourceImportId: string | null;
       contentDigest: string | null;
       rawRow?: Record<string, string | null> | null;
@@ -112,7 +115,22 @@ function makeHandler(
                   activeVersion:
                     options.activeVersionId === null
                       ? null
-                      : { id: options.activeVersionId ?? versionId, content },
+                      : {
+                          id: options.activeVersionId ?? versionId,
+                          content,
+                          sourceImportId:
+                            options.versionSourceImportId !== undefined
+                              ? options.versionSourceImportId
+                              : platformProduct?.origin === "import"
+                                ? platformProduct.sourceImportId
+                                : null,
+                          sourceRowDigest:
+                            options.versionRowDigest !== undefined
+                              ? options.versionRowDigest
+                              : platformProduct?.origin === "import"
+                                ? platformProduct.contentDigest
+                                : null,
+                        },
                   evidence: options.evidence ?? [],
                 };
               },
@@ -224,6 +242,7 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
   it("upserts a confirmation and returns the new revision", async () => {
     const { handler, calls } = makeHandler({
       platformProduct: {
+        origin: "import",
         sourceImportId: "import_1",
         contentDigest: "digest_1",
       },
@@ -276,9 +295,35 @@ describe("PATCH /api/listings/[id]/review-confirmations", () => {
     ]);
   });
 
+  it("rejects a checklist for a version created before the current import", async () => {
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import_new",
+        contentDigest: "digest_new",
+      },
+      versionSourceImportId: "import_old",
+      versionRowDigest: "digest_old",
+    });
+    const response = await handler(
+      request({
+        versionId,
+        fieldConfirmations: { title: true },
+        negativeConfirmations: {},
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "source_version_stale",
+    });
+    expect(upsertInput(calls)).toBeUndefined();
+  });
+
   it("records each field against the imported row and the evidence", async () => {
     const { handler, calls } = makeHandler({
       platformProduct: {
+        origin: "import",
         sourceImportId: "import_1",
         contentDigest: "digest_1",
         rawRow: { nameZh: "opak-riesling-zh", summaryEn: "" },

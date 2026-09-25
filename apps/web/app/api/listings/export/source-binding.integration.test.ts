@@ -38,7 +38,7 @@ const exportHandler = createExportListingsHandler({
 const content = {
   sku: "SYNTHETIC-1",
   producer: "Synthetic",
-  productType: "wine",
+  productType: "wine" as const,
   country: "Germany",
   region: "Mosel",
   vintage: 2024,
@@ -142,9 +142,19 @@ it("binds the real workbook, manifest and hash to approval; re-import cannot reu
   const [draft] =
     await admin`select id from listing_drafts where workspace_id=${workspaceId}`;
   const listingId = draft!.id as string;
-  const versionId = randomUUID();
-  await admin`insert into listing_versions(id,workspace_id,listing_id,sequence,content,created_by) values (${versionId},${workspaceId},${listingId},1,${admin.json(content)},${actorId})`;
-  await admin`update listing_drafts set active_version_id=${versionId},status='in_review' where id=${listingId}`;
+  async function createReviewVersion(priceHkd: number) {
+    const version = await database.forWorkspace(workspaceId, (r) =>
+      r.listings.appendVersion(
+        listingId,
+        { ...content, priceHkd },
+        { workspaceId, actorId, entityId: listingId },
+        r.audit,
+      ),
+    );
+    await admin`update listing_drafts set active_version_id=${version.id},status='in_review' where id=${listingId}`;
+    return version.id;
+  }
+  let versionId = await createReviewVersion(100);
   async function confirm() {
     return database.forWorkspace(workspaceId, async (r) => {
       const link = (await r.platformProducts.getByListingId(listingId))!;
@@ -219,11 +229,16 @@ it("binds the real workbook, manifest and hash to approval; re-import cannot reu
   await importPrice("105");
   const afterImport = await exportListing(listingId);
   expect(afterImport).toMatchObject({ exportAttemptId: null, rowCount: 0 });
-  const secondReview = await confirm();
-  expect(secondReview.link.sourceImportId).not.toBe(
+  const staleReview = await confirm();
+  expect(staleReview.link.sourceImportId).not.toBe(
     firstReview.link.sourceImportId,
   );
   expect((await exportListing(listingId)).rowCount).toBe(0);
+  await expect(approve(staleReview)).rejects.toMatchObject({
+    code: "source_version_stale",
+  });
+  versionId = await createReviewVersion(105);
+  const secondReview = await confirm();
   await approve(secondReview);
   const second = await exportListing(listingId);
   expect(second.rowCount).toBe(1);

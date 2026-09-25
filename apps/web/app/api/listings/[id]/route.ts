@@ -262,6 +262,11 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
               : null,
             sourceImportId: platformProductLink?.sourceImportId ?? null,
             contentDigest: platformProductLink?.contentDigest ?? null,
+            importedSourceRow:
+              platformProductLink?.origin === "import"
+                ? platformProductLink.rawRow
+                : null,
+            reviewedRowDigest: snapshot.activeVersion?.sourceRowDigest ?? null,
             permissions: listingPermissions(session.role),
             activity,
             historicalImportResults:

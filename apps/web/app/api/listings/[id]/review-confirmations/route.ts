@@ -123,6 +123,20 @@ export function createReviewConfirmationsHandler(
           // and so is every field record's `before`.
           const platformProduct =
             await repositories.platformProducts.getByListingId(id);
+          const currentSource =
+            platformProduct?.origin === "import" ? platformProduct : null;
+          if (
+            (snapshot.activeVersion.sourceImportId ?? null) !==
+              (currentSource?.sourceImportId ?? null) ||
+            (snapshot.activeVersion.sourceRowDigest ?? null) !==
+              (currentSource?.contentDigest ?? null)
+          ) {
+            throw new ApiError(
+              409,
+              "source_version_stale",
+              "The imported source changed after this version was created. Review and save a new version before confirming.",
+            );
+          }
 
           // What each field is being confirmed against: the confirmed version,
           // its evidence and the imported row -- the same row whose digest is

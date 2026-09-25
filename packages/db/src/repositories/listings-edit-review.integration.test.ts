@@ -113,6 +113,37 @@ describe("listing review edits guard in-flight states", () => {
     return created;
   }
 
+  it("locks linked drafts while an import reads approval states", async () => {
+    const { listingId } = await seedListing("in_review");
+    let signalLocked!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>((resolve) => {
+      signalLocked = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transaction = forWorkspace(database, workspaceId, async (repos) => {
+      await repos.listings.approvalStatesByIds([listingId], {
+        forUpdate: true,
+      });
+      signalLocked();
+      await gate;
+    });
+    await locked;
+    try {
+      await expect(
+        admin.unsafe(
+          "SELECT id FROM listing_drafts WHERE workspace_id = $1 AND id = $2 FOR UPDATE NOWAIT",
+          [workspaceId, listingId],
+        ),
+      ).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      release();
+      await transaction;
+    }
+  });
+
   /**
    * A blocking compliance flag must not be erasable by an ordinary Save.
    *
@@ -441,5 +472,75 @@ describe("listing review edits guard in-flight states", () => {
         repos.listings.approvalStatesByIds([approved.listingId]),
       ),
     ).toEqual({});
+  });
+
+  it("binds an imported source digest to the version that reviewed it", async () => {
+    const connectionId = "b9c27568-8272-4224-86c5-4df4fce1b137";
+    const listing = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.create({ target: "shopline" }),
+    );
+    await admin`insert into shopline_connections (id, workspace_id, shop_domain, encrypted_access_token)
+      values (${connectionId}, ${workspaceId}, 'source-binding.example', 'token')`;
+    const { listingId, versionId, sourceImportId } = await forWorkspace(
+      database,
+      workspaceId,
+      async (repos) => {
+        const sourceImport = await repos.sourceImports.create({
+          connectionId,
+          filename: "source-binding.xlsx",
+          workbookSha256: "a".repeat(64),
+          headerContractSha256: "b".repeat(64),
+          sheetName: "Default",
+          rowCount: 1,
+          merchantAttestedExportAt: new Date("2026-09-01T00:00:00Z"),
+          importerId: "test:edit-review",
+          specVersion: "opak-2026-05",
+        });
+        await repos.platformProducts.upsert({
+          connectionId,
+          remoteProductId: "remote_source_binding",
+          origin: "import",
+          sku: "OPAK-001",
+          listingId: listing.id,
+          specVersion: "opak-2026-05",
+          rawRow: { sku: "OPAK-001" },
+          factsPrefill: null,
+          contentDigest: "a".repeat(64),
+          sourceImportId: sourceImport.id,
+        });
+        const version = await repos.listings.appendVersion(
+          listing.id,
+          listingContent,
+          contextFor(listing.id),
+          repos.audit,
+        );
+        return {
+          listingId: listing.id,
+          versionId: version.id,
+          sourceImportId: sourceImport.id,
+        };
+      },
+    );
+    await admin`update listing_drafts set status = 'in_review', active_version_id = ${versionId}
+      where workspace_id = ${workspaceId} and id = ${listingId}`;
+    await forWorkspace(database, workspaceId, (repos) =>
+      repos.platformProducts.upsert({
+        connectionId,
+        remoteProductId: "remote_source_binding",
+        origin: "import",
+        sku: "OPAK-001",
+        listingId,
+        specVersion: "opak-2026-05",
+        rawRow: { sku: "OPAK-001", nameEn: "Changed" },
+        factsPrefill: null,
+        contentDigest: "b".repeat(64),
+        sourceImportId,
+      }),
+    );
+    const snapshot = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getReviewSnapshot(listingId),
+    );
+    expect(snapshot?.activeVersion?.sourceImportId).toBe(sourceImportId);
+    expect(snapshot?.activeVersion?.sourceRowDigest).toBe("a".repeat(64));
   });
 });

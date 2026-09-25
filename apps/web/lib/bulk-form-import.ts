@@ -126,7 +126,11 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
     return deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
-        const connection = await repositories.shoplineConnections.getDefault();
+        // Serialize imports per connection before reading linked products.
+        // Otherwise concurrent first imports can commit an orphaned draft.
+        const connection = await repositories.shoplineConnections.getDefault({
+          forUpdate: true,
+        });
         if (!connection) {
           throw new ApiError(
             409,
@@ -161,14 +165,14 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
           known.map((product) => [product.remoteProductId, product]),
         );
 
-        // One read for every linked listing, not one per row. It sees this
-        // transaction's snapshot: a listing approved concurrently after it is
-        // missed here, and since its receipt still names an older import, the
-        // next re-import records it.
+        // Lock linked drafts before reading approval state and replacing their
+        // source links. Approval takes the same draft lock, so either operation
+        // sees the other's committed state rather than racing past it.
         const approvalStates = await repositories.listings.approvalStatesByIds(
           known
             .map((product) => product.listingId)
             .filter((id): id is string => id !== null),
+          { forUpdate: true },
         );
         let invalidatedApprovals = 0;
 

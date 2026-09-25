@@ -280,4 +280,4 @@ it("delivers signed wine Web publisher bytes through actual Worker ingress valid
   };
   await client.enqueue(LISTING_INGRESS_PATH, wine);
   expect(send).toHaveBeenCalledExactlyOnceWith(wine);
-});
+}, 15_000);

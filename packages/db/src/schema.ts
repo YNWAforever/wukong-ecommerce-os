@@ -328,6 +328,8 @@ export const listingVersions = pgTable(
     listingId: uuid("listing_id").notNull(),
     sequence: integer("sequence").notNull(),
     pipelineIdempotencyKey: text("pipeline_idempotency_key"),
+    sourceImportId: uuid("source_import_id"),
+    sourceRowDigest: text("source_row_digest"),
     content: jsonb("content").$type<ReviewableListing>().notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
