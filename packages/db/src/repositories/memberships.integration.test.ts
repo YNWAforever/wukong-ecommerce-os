@@ -226,6 +226,71 @@ describe("MembershipRepository — read and invite methods", () => {
     ).rejects.toThrow(/already an active member/i);
   });
 
+  it("reuses a legacy mixed-case pending invite instead of creating a duplicate", async () => {
+    const [legacy] = await admin.unsafe(
+      "INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES ($1, 'Mixed@opak.test', 'viewer', 'pending') RETURNING id",
+      [workspaceId],
+    );
+
+    const created = await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("mixed@opak.test", "operator"),
+    );
+    const rows = await admin.unsafe(
+      "SELECT id, email, role, status FROM workspace_invites WHERE workspace_id = $1 AND lower(email) = 'mixed@opak.test'",
+      [workspaceId],
+    );
+    expect(rows).toMatchObject([
+      {
+        id: legacy.id,
+        email: "mixed@opak.test",
+        role: "operator",
+        status: "pending",
+      },
+    ]);
+    expect(created.id).toBe(legacy.id);
+  });
+
+  it("collapses preexisting case variants when re-inviting one address", async () => {
+    const [canonical] = await admin.unsafe(
+      "INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES ($1, 'mixed@opak.test', 'viewer', 'pending') RETURNING id",
+      [workspaceId],
+    );
+    await admin.unsafe(
+      "INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES ($1, 'MIXED@opak.test', 'reviewer', 'pending')",
+      [workspaceId],
+    );
+
+    await admin.unsafe(
+      "INSERT INTO workspaces (id, name, profile) VALUES ('ws_other_invite', 'Other', '{}')",
+    );
+    await admin.unsafe(
+      "INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES ('ws_other_invite', 'MIXED@opak.test', 'viewer', 'pending')",
+    );
+    const created = await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("mixed@opak.test", "operator"),
+    );
+    const rows = await admin.unsafe(
+      "SELECT id, email, role, status FROM workspace_invites WHERE workspace_id = $1 AND lower(email) = 'mixed@opak.test'",
+      [workspaceId],
+    );
+    expect(rows).toMatchObject([
+      {
+        id: canonical.id,
+        email: "mixed@opak.test",
+        role: "operator",
+        status: "pending",
+      },
+    ]);
+    expect(created.id).toBe(canonical.id);
+    const [otherWorkspaceInvite] = await admin.unsafe(
+      "SELECT email, role, status FROM workspace_invites WHERE workspace_id = 'ws_other_invite'",
+    );
+    expect(otherWorkspaceInvite).toMatchObject({
+      email: "MIXED@opak.test",
+      role: "viewer",
+      status: "pending",
+    });
+  });
   it("re-inviting the same pending email resets role and does not duplicate the row", async () => {
     await forWorkspace(database, workspaceId, (repositories) =>
       repositories.memberships.createInvite("new@opak.test", "operator"),
