@@ -49,14 +49,10 @@ function text(root: Node): string {
 }
 const plain = (v: unknown) =>
   typeof v === "string" ? text(parseFragment(v)) : "";
+const schemaType = (value: string) =>
+  value.replace(/^https?:\/\/schema\.org\//i, "");
 const hasType = (o: Obj, type: string) =>
-  list(o["@type"]).some(
-    (t) =>
-      typeof t === "string" &&
-      (t === type ||
-        t === `https://schema.org/${type}` ||
-        t === `http://schema.org/${type}`),
-  );
+  list(o["@type"]).some((t) => typeof t === "string" && schemaType(t) === type);
 export const extractedDocumentSchema = z.strictObject({
   product: websiteProductSchema.nullable(),
   productLinks: z.array(websiteUrlSchema).max(20),
@@ -319,7 +315,7 @@ export function extractDocument(
     value: unknown,
   ): WebsiteProduct["availability"] => {
     if (typeof value !== "string") return "unknown";
-    const token = value.replace(/^https?:\/\/schema.org\//, "");
+    const token = schemaType(value);
     return token === "InStock"
       ? "in_stock"
       : token === "OutOfStock" || token === "SoldOut"

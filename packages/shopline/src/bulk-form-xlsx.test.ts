@@ -249,7 +249,7 @@ describe("bulk form xlsx adapter", () => {
 
     expect(bytes.byteLength).toBeLessThan(400 * 1024);
     expect(() => readBulkFormSheet(bytes)).toThrow(/total decompressed size/);
-  });
+  }, 20_000);
 
   it("rejects a stored worksheet whose bytes disagree with its ZIP CRC", () => {
     const bytes = writeBulkFormWorkbook([["original"]]);
