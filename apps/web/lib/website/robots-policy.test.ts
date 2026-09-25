@@ -30,6 +30,14 @@ describe("robots policy", () => {
     expect(p.isAllowed("https://store.example/a.json?x=1")).toBe(true);
     expect(p.isAllowed("https://store.example/a?private=yes")).toBe(false);
   });
+  it("reads bare-CR line endings without losing access rules", () => {
+    const p = parse(
+      "User-agent: *\rDisallow: /private\rAllow: /private/public\r",
+    );
+    expect(p.state).toBe("ready");
+    expect(p.isAllowed("https://store.example/private/a")).toBe(false);
+    expect(p.isAllowed("https://store.example/private/public/a")).toBe(true);
+  });
   it("permits missing policy, disallows unauthorized, fails unavailable", () => {
     expect(parse("", 404).isAllowed("https://store.example/a")).toBe(true);
     for (const status of [401, 403])

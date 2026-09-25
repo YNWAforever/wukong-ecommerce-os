@@ -69,7 +69,7 @@ export function parseRobots(input: {
   let agentSeen = false,
     meaningfulLine = false,
     recognizedLine = false;
-  for (const rawLine of input.text.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+  for (const rawLine of input.text.replace(/^\uFEFF/, "").split(/\r\n|\r|\n/)) {
     const line = rawLine.split("#")[0]?.trim() ?? "";
     if (!line) continue;
     meaningfulLine = true;
