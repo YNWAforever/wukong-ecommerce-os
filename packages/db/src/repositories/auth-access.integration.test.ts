@@ -9,6 +9,7 @@ import {
   createAuthAccessRepository,
   createAuthDatabase,
   createDatabase,
+  memberships,
   passwordLoginGuards,
   users,
   workspaceInvites,
@@ -220,6 +221,10 @@ describe("auth access repository", () => {
     const [invite] = await db
       .select({ status: workspaceInvites.status })
       .from(workspaceInvites);
+    const [membership] = await db
+      .select({ workspaceId: memberships.workspaceId, role: memberships.role })
+      .from(memberships)
+      .where(eq(memberships.userId, userId));
     const guards = await db
       .select()
       .from(passwordLoginGuards)
@@ -235,6 +240,7 @@ describe("auth access repository", () => {
       .where(eq(authAuditEvents.email, email));
     expect(user).toEqual({ verified: true });
     expect(invite).toEqual({ status: "accepted" });
+    expect(membership).toEqual({ workspaceId, role: "operator" });
     expect(guards).toEqual([]);
     expect(audit).toEqual({
       email,
@@ -242,6 +248,25 @@ describe("auth access repository", () => {
       outcome: "success",
       reason: "password_enrollment_completed",
     });
+  });
+
+  it("does not restore a removed membership from an accepted invite", async () => {
+    await db.insert(workspaceInvites).values({
+      workspaceId,
+      email,
+      role: "operator",
+      status: "pending",
+    });
+    await repository.completeEnrollment(userId, email);
+    await db.delete(memberships).where(eq(memberships.userId, userId));
+
+    await repository.completeEnrollment(userId, email);
+
+    const rows = await db
+      .select()
+      .from(memberships)
+      .where(eq(memberships.userId, userId));
+    expect(rows).toEqual([]);
   });
 
   it("does not partially enroll a user without an eligible invite", async () => {
