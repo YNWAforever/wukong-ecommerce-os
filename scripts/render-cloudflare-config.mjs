@@ -9,6 +9,11 @@ import {
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  readTypeSafeRuntimeConfig,
+  typeSafeSecretPolicy,
+} from "./typesafe-runtime-config.mjs";
+
 const root = new URL("../", import.meta.url);
 const source = JSON.parse(
   readFileSync(new URL("cloudflare-runtime.config.json", root), "utf8"),
@@ -116,6 +121,8 @@ if (
   throw new Error(
     "PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY must be an integer from 1 to 2147483647",
   );
+const typeSafe = readTypeSafeRuntimeConfig(process.env);
+const secretPolicy = typeSafeSecretPolicy(secretNames, typeSafe.mode);
 const policy = source.consumer;
 const consumer = (queue, deadLetterQueue) => ({
   queue,
@@ -134,7 +141,7 @@ const wrangler = {
   compatibility_flags: ["nodejs_compat"],
   limits: { cpu_ms: 240000 },
   observability: { enabled: true },
-  secrets: { required: secretNames },
+  secrets: { required: secretPolicy.required },
   vars: {
     ...(websiteFetchBaseUrl
       ? { WEBSITE_FETCH_BASE_URL: websiteFetchBaseUrl }
@@ -155,6 +162,7 @@ const wrangler = {
     S3_ENDPOINT: s3Endpoint,
     S3_REGION: s3Region,
     S3_FORCE_PATH_STYLE: s3ForcePathStyle,
+    ...typeSafe.vars,
   },
   hyperdrive: [{ binding: "HYPERDRIVE", id: hyperdriveId }],
   queues: {

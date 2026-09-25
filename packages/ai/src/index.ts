@@ -60,6 +60,28 @@ export type {
 } from "./eval.js";
 
 export {
+  CHECK_FIELDS,
+  CHECK_IDS,
+  QUESTION_SET_VERSION,
+  prepareVerification,
+  verificationRecordSchema,
+  verificationResultSchema,
+} from "./listing-verification.js";
+export type {
+  CheckId,
+  ListingVerifier,
+  PreparedVerification,
+  VerificationCheck,
+  VerificationInput,
+  VerificationRecord,
+  VerificationResult,
+} from "./listing-verification.js";
+
+export { createTypeSafeListingVerifier } from "./typesafe-listing-verifier.js";
+export type { TypeSafeListingVerifierOptions } from "./typesafe-listing-verifier.js";
+export { estimateTypeSafeCost } from "./typesafe-pricing.js";
+
+export {
   PRODUCT_TYPE_GOLDEN_SET,
   PRODUCT_TYPES,
   assertClassificationEvaluation,

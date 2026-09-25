@@ -30,6 +30,10 @@ import type {
   PipelineRepositories,
 } from "./listing-pipeline.js";
 import { resolveListingImageUrls } from "./image-resolver.js";
+import {
+  createConfiguredVerifier,
+  type VerifierFactory,
+} from "./typesafe-config.js";
 import type { WorkerEnv } from "./worker-env.js";
 
 export type CloudflareRuntime = {
@@ -51,6 +55,7 @@ export type CloudflareRuntime = {
 export type CloudflareRuntimeConfig = {
   databaseFactory?: (env: WorkerEnv) => Database;
   assetStoreFactory?: (env: WorkerEnv) => AssetStore;
+  verifierFactory?: VerifierFactory;
   providerFactory?: (env: WorkerEnv) => ListingAIProvider;
 };
 
@@ -154,6 +159,25 @@ function mapRepositories(
     pipelineRuns: repositories.pipelineRuns,
     audit: repositories.audit,
     aiRuns: {
+      async appendVerification({ draftId, idempotencyKey, record }) {
+        await repositories.aiRuns.append({
+          listingId: draftId,
+          listingVersionId: record.listingVersionId,
+          idempotencyKey,
+          task: "verify",
+          provider: "typesafe",
+          model: record.actualModel ?? "unavailable",
+          promptVersion: record.questionSetVersion,
+          input: {},
+          output: record,
+          status: record.outcome === "unavailable" ? "failed" : "succeeded",
+          error: record.reason,
+          inputTokens: record.usage.inputTokens,
+          outputTokens: record.usage.outputTokens,
+          estimatedCostUsd: record.usage.estimatedCostUsd,
+          latencyMs: record.usage.latencyMs,
+        });
+      },
       async append(run) {
         await repositories.aiRuns.append({
           listingId: run.draftId,
@@ -233,6 +257,7 @@ export function createCloudflareRuntime(
       );
     },
     ai,
+    verifier: createConfiguredVerifier(env, config.verifierFactory),
   };
 
   return {

@@ -39,8 +39,13 @@ export function createQualityHandler(deps: QualityRouteDeps) {
             const ids = await repositories.reads.scanListingIds(afterId, 100);
             if (ids.length === 0) break;
             const listings = await repositories.listings.getByIds(ids);
-            const cost = await repositories.aiRuns.sumCostForListings(ids);
-            const chunk = computeQualitySummary(listings, cost);
+            const cost =
+              await repositories.aiRuns.summarizeCostForListings(ids);
+            const chunk = computeQualitySummary(
+              listings,
+              cost.knownCostUsd,
+              cost.unknownCostRunCount,
+            );
             totalListings += listings.length;
             noActiveVersion += listings.filter(
               (item) => !(item.activeVersionId ?? item.activeVersion?.id),
@@ -52,6 +57,7 @@ export function createQualityHandler(deps: QualityRouteDeps) {
             summary.cleanCount += chunk.cleanCount;
             summary.hasGapsCount += chunk.hasGapsCount;
             summary.totalCostUsd += chunk.totalCostUsd;
+            summary.unknownCostRunCount += chunk.unknownCostRunCount;
             for (const key of Object.keys(
               summary.gapCounts,
             ) as (keyof typeof summary.gapCounts)[])

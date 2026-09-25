@@ -576,3 +576,23 @@ test("keeps the three end-to-end ports disjoint", () => {
     `ports collide: auth=${authPort} app=${appPort} image=${imagePort}`,
   );
 });
+
+test("local MinIO builds pinned official source without registry credentials", () => {
+  const minioService = composeSource
+    .replace(/\r\n/g, "\n")
+    .split("  minio:\n")[1]
+    ?.split("  minio-tls:\n")[0];
+  assert.ok(minioService);
+  assert.match(minioService, /build:\s+context: \.\/docker\/minio/);
+  assert.doesNotMatch(minioService, /image:/);
+  const dockerfile = readFileSync(
+    new URL("../docker/minio/Dockerfile", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    dockerfile,
+    /ADD --checksum=sha256:[a-f0-9]{64} https:\/\/codeload\.github\.com\/minio\/minio\/tar\.gz\/[a-f0-9]{40}/,
+  );
+  assert.doesNotMatch(dockerfile, /FROM (?:quay\.io\/)?minio\/minio|:latest/);
+  assert.match(dockerfile, /CGO_ENABLED=0 go build/);
+});

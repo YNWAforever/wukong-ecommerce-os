@@ -29,6 +29,7 @@ export type {
 export { PIPELINE_STEP_LEASE_MS } from "./repositories/pipeline-runs.js";
 export type {
   AiRunRepository,
+  AiRunCostSummary,
   AppendAiRunInput,
 } from "./repositories/ai-runs.js";
 export type { WorkspaceRepository } from "./repositories/workspaces.js";

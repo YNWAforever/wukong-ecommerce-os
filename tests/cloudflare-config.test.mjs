@@ -51,6 +51,7 @@ const safeRendererInputs = {
     "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
   S3_REGION: "auto",
   S3_FORCE_PATH_STYLE: "false",
+  TYPESAFE_VERIFICATION_MODE: "off",
 };
 
 const render = (overrides = {}) =>
@@ -111,6 +112,7 @@ test("renders deterministic non-secret Wrangler config", () => {
         "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
       S3_REGION: "auto",
       S3_FORCE_PATH_STYLE: "false",
+      TYPESAFE_VERIFICATION_MODE: "off",
     },
     hyperdrive: [{ binding: "HYPERDRIVE", id: "hyperdrive-preview-id" }],
     queues: {
@@ -159,8 +161,27 @@ test("renders deterministic non-secret Wrangler config", () => {
     "S3_REGION",
     "SHOPLINE_ADAPTER",
     "SHOPLINE_PUBLISH_ENABLED",
+    "TYPESAFE_VERIFICATION_MODE",
     "WINE_ENRICHMENT_ENABLED",
   ]);
+});
+
+test("renderer and preflight use identical advisory secret policy", () => {
+  const result = render({
+    TYPESAFE_VERIFICATION_MODE: "advisory",
+    TYPESAFE_MODEL: "jev-1.13.0",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  assert.equal(config.vars.TYPESAFE_VERIFICATION_MODE, "advisory");
+  assert.equal(config.vars.TYPESAFE_MODEL, "jev-1.13.0");
+  assert.deepEqual(config.secrets.required, [
+    ...requiredSecrets,
+    "TYPESAFE_API_KEY",
+  ]);
+  assert.doesNotThrow(() =>
+    verifyExactSecretNames(config.secrets.required, config.secrets.required),
+  );
 });
 
 test("production always renders SHOPLINE disabled and publishing false", () => {
@@ -250,7 +271,7 @@ test("removes the Railway and Redis/BullMQ runtime surface", () => {
   const rootPackage = readJson("package.json");
   assert.equal(
     rootPackage.scripts.test,
-    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/runtime-doctor.test.mjs tests/runtime-env-manifest.test.mjs tests/release-gate.test.mjs && turbo run test",
+    "node --test tests/ci-workflow.test.mjs tests/cloudflare-config.test.mjs tests/typesafe-runtime-config.test.mjs tests/runtime-doctor.test.mjs tests/runtime-env-manifest.test.mjs tests/release-gate.test.mjs && turbo run test",
   );
 });
 
@@ -503,6 +524,58 @@ test("deployment preflight requires enabled Tavily and permits retained drain cr
         { ...env, WINE_ENRICHMENT_ENABLED: "false" },
         [...base, "UNEXPECTED_SECRET"],
       ),
+    /unexpected: UNEXPECTED_SECRET/,
+  );
+});
+
+test("Jev composes with Go, wine, and product-shot secret policies", async () => {
+  const { verifyRuntimeSecretNames } =
+    await import("../scripts/verify-cloudflare-secrets.mjs");
+  const source = readJson("cloudflare-runtime.config.json");
+  const env = {
+    AI_PROVIDER: "opencode-go",
+    OPENCODE_GO_LISTING_MODEL: "deepseek-v4.1-flash",
+    WINE_ENRICHMENT_ENABLED: "true",
+    PRODUCT_SHOT_PROVIDER: "photoroom",
+    PRODUCT_SHOT_MAX_CALLS_PER_WORKSPACE_PER_DAY: "10",
+    TYPESAFE_VERIFICATION_MODE: "advisory",
+    TYPESAFE_MODEL: "jev-1.13.0",
+  };
+  const result = render(env);
+  assert.equal(result.status, 0, result.stderr);
+  const config = readJson(".wrangler/wrangler.generated.jsonc");
+  const names = config.secrets.required;
+  for (const name of [
+    "TYPESAFE_API_KEY",
+    "TAVILY_API_KEY",
+    "PHOTOROOM_API_KEY",
+    "OPENCODE_GO_API_KEY",
+  ])
+    assert.ok(names.includes(name));
+  assert.deepEqual(verifyRuntimeSecretNames(source, env, names), names);
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(
+        source,
+        env,
+        names.filter((name) => name !== "TYPESAFE_API_KEY"),
+      ),
+    /missing: TYPESAFE_API_KEY/,
+  );
+  assert.doesNotThrow(() =>
+    verifyRuntimeSecretNames(
+      source,
+      {
+        ...env,
+        WINE_ENRICHMENT_ENABLED: "false",
+        TYPESAFE_VERIFICATION_MODE: "off",
+      },
+      names,
+    ),
+  );
+  assert.throws(
+    () =>
+      verifyRuntimeSecretNames(source, env, [...names, "UNEXPECTED_SECRET"]),
     /unexpected: UNEXPECTED_SECRET/,
   );
 });

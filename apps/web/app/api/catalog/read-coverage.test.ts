@@ -144,7 +144,10 @@ describe("full read route contracts", () => {
     const getByIds = vi.fn(async (ids: string[]) =>
       ids.map((id) => ({ id, activeVersion: null })),
     );
-    const sumCostForListings = vi.fn(async (ids: string[]) => ids.length);
+    const summarizeCostForListings = vi.fn(async (ids: string[]) => ({
+      knownCostUsd: ids.length,
+      unknownCostRunCount: ids.length,
+    }));
     const response = await createQualityHandler(
       deps({
         reads: {
@@ -159,7 +162,7 @@ describe("full read route contracts", () => {
           }),
         },
         listings: { getByIds },
-        aiRuns: { sumCostForListings },
+        aiRuns: { summarizeCostForListings },
       }),
     )();
     expect(response.status).toBe(200);
@@ -169,6 +172,7 @@ describe("full read route contracts", () => {
       totalAssessed: 0,
       noActiveVersion: 237,
       totalCostUsd: 237,
+      unknownCostRunCount: 237,
       costScope: "all_history_for_workspace_listings",
     });
     expect(scanListingIds).toHaveBeenCalledTimes(3);

@@ -150,6 +150,7 @@ test("a denied name in .env.example is there for the Worker, not for Vercel", ()
       "OPENCODE_GO_API_KEY",
       "PHOTOROOM_API_KEY",
       "TAVILY_API_KEY",
+      "TYPESAFE_API_KEY",
     ],
   );
 });

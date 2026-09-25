@@ -31,6 +31,9 @@ export type WorkerEnv = {
   WINE_ENRICHMENT_ENABLED?: "true" | "false";
   OPENCODE_GO_LISTING_MODEL?: string;
   OPENAI_API_KEY?: string;
+  TYPESAFE_VERIFICATION_MODE?: string;
+  TYPESAFE_API_KEY?: string;
+  TYPESAFE_MODEL?: string;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_LISTING_MODEL?: string;
   PRODUCT_SHOT_PROVIDER?: "disabled" | "fake" | "photoroom";
