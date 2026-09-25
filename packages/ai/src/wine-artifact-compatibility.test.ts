@@ -238,6 +238,22 @@ it("rejects unannotated trailing text after an astral character", () => {
   );
 });
 
+it("counts overlapping annotation occurrences as covered", () => {
+  const r = request(),
+    c = candidate();
+  r.claims[0].field = "introduction";
+  r.claims[0].value = "aa";
+  c.annotations[0].value = "aa";
+  c.content.sections[0].en = "aaa";
+  c.annotations[0].span = "aa";
+  c.content.sections[0]["zh-Hant"] = "aaa";
+  c.annotations[1].span = "aaa";
+  c.annotations[1].value = "aa";
+  expect(core.wineGenerationRequestSchema.safeParse(r).success).toBe(true);
+  expect(core.wineGenerationCandidateSchema.safeParse(c).success).toBe(true);
+  expect(core.wineCandidateIssues(r, c)).toEqual([]);
+});
+
 it("preserves strict versioned parsing, optional ownership and required nested observations", () => {
   expect(core).toHaveProperty("wineGenerationRequestSchema");
   expect(core.wineGenerationRequestSchema.parse(request())).not.toHaveProperty(
