@@ -8,6 +8,7 @@ import { useLocalePreference } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
 import { setLocaleCookie, type Locale } from "../lib/locale";
 import type { WorkspaceRole } from "../lib/session-context";
+import type { WorkspaceOption } from "../lib/workspace-selection";
 
 export type NavItem = {
   href: string;
@@ -28,6 +29,8 @@ type AppShellNavProps = {
   navItems: NavItem[];
   isAdmin: boolean;
   workspaceName: string;
+  activeWorkspaceId?: string;
+  workspaceOptions?: WorkspaceOption[];
   roleLabelZh: string;
   roleLabelEn: string;
   initialLocale: Locale;
@@ -47,6 +50,8 @@ export function AppShellNav({
   navItems,
   isAdmin,
   workspaceName,
+  activeWorkspaceId,
+  workspaceOptions = [],
   roleLabelZh,
   roleLabelEn,
   initialLocale,
@@ -56,6 +61,8 @@ export function AppShellNav({
   const [fallbackLocale, setLocale] = useState<Locale>(initialLocale);
   const locale = preference?.locale ?? fallbackLocale;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [switchingWorkspace, setSwitchingWorkspace] = useState(false);
+  const [workspaceSwitchError, setWorkspaceSwitchError] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
@@ -122,6 +129,23 @@ export function AppShellNav({
     onLocaleChange?.(next);
   }
 
+  async function changeWorkspace(workspaceId: string) {
+    if (workspaceId === activeWorkspaceId || switchingWorkspace) return;
+    setSwitchingWorkspace(true);
+    setWorkspaceSwitchError(false);
+    try {
+      const response = await fetch("/api/workspace/select", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      if (!response.ok) throw new Error("workspace switch failed");
+      window.location.assign("/dashboard");
+    } catch {
+      setWorkspaceSwitchError(true);
+      setSwitchingWorkspace(false);
+    }
+  }
   function openDrawer() {
     setDrawerOpen(true);
   }
@@ -201,7 +225,41 @@ export function AppShellNav({
             <Link className="brand-name" href="/dashboard">
               Wukong
             </Link>
-            <span className="brand-context">{workspaceName}</span>
+            {workspaceOptions.length > 1 && activeWorkspaceId ? (
+              <label className="brand-context workspace-picker">
+                {localized(locale, "工作區", "Workspace")}
+                <select
+                  data-testid="workspace-select"
+                  aria-label={localized(
+                    locale,
+                    "選擇工作區",
+                    "Select workspace",
+                  )}
+                  value={activeWorkspaceId}
+                  disabled={switchingWorkspace}
+                  onChange={(event) =>
+                    void changeWorkspace(event.currentTarget.value)
+                  }
+                >
+                  {workspaceOptions.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+                {workspaceSwitchError ? (
+                  <span role="alert">
+                    {localized(
+                      locale,
+                      "切換工作區失敗",
+                      "Could not switch workspace",
+                    )}
+                  </span>
+                ) : null}
+              </label>
+            ) : (
+              <span className="brand-context">{workspaceName}</span>
+            )}
           </div>
         </div>
 

@@ -28,6 +28,7 @@ type InviteRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase: typeof getDatabase;
   requestEnrollment: AuthFlow["requestEnrollment"];
+  requestMagicLink: AuthFlow["requestMagicLink"];
 };
 
 export function createMemberInviteHandler(deps: InviteRouteDeps) {
@@ -71,11 +72,18 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
       // an error response -- the admin can always re-invite the same email
       // to resend, since createInvite upserts by (workspaceId, email).
       try {
-        await deps.requestEnrollment({ email: invite.email });
+        if (invite.status === "accepted") {
+          await deps.requestMagicLink({
+            email: invite.email,
+            callbackURL: "/dashboard",
+          });
+        } else {
+          await deps.requestEnrollment({ email: invite.email });
+        }
       } catch (error) {
         console.error(
           JSON.stringify({
-            event: "member_invite_enrollment_email_failed",
+            event: "member_invite_email_failed",
             errorName: error instanceof Error ? error.name : "UnknownError",
           }),
         );
@@ -95,4 +103,5 @@ export const POST = createMemberInviteHandler({
   // module instead of just this one request.
   requestEnrollment: (input) =>
     createRuntimeAuthFlow().requestEnrollment(input),
+  requestMagicLink: (input) => createRuntimeAuthFlow().requestMagicLink(input),
 });

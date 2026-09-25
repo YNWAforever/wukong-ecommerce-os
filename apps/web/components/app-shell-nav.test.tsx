@@ -74,6 +74,70 @@ describe("AppShellNav", () => {
     expect(hrefs).toContain("/admin");
   });
 
+  it("offers every active workspace when a user belongs to more than one", () => {
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        activeWorkspaceId="ws_opak"
+        workspaceOptions={[
+          { id: "ws_opak", name: "Opak Cellar" },
+          { id: "ws_second", name: "Second workspace" },
+        ]}
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="en"
+      />,
+    );
+    const selector = container.querySelector<HTMLSelectElement>(
+      "[data-testid='workspace-select']",
+    );
+    expect(selector?.value).toBe("ws_opak");
+    expect(
+      Array.from(selector?.options ?? []).map((option) => option.value),
+    ).toEqual(["ws_opak", "ws_second"]);
+  });
+  it("submits a workspace choice and reports when access is denied", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AppShellNav
+        navItems={NAV_ITEMS}
+        isAdmin={false}
+        workspaceName="Opak Cellar"
+        activeWorkspaceId="ws_opak"
+        workspaceOptions={[
+          { id: "ws_opak", name: "Opak Cellar" },
+          { id: "ws_second", name: "Second workspace" },
+        ]}
+        roleLabelZh="檢視者"
+        roleLabelEn="Viewer"
+        initialLocale="en"
+      />,
+    );
+
+    await act(async () => {
+      const selector = container.querySelector<HTMLSelectElement>(
+        "[data-testid='workspace-select']",
+      )!;
+      selector.value = "ws_second";
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/workspace/select",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ workspaceId: "ws_second" }),
+      }),
+    );
+    expect(container.querySelector("[role='alert']")?.textContent).toContain(
+      "Could not switch workspace",
+    );
+  });
   it("omits Admin when isAdmin is false", () => {
     render(
       <AppShellNav
