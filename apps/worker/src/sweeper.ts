@@ -108,6 +108,18 @@ async function recoverOutbox(
   const attempted = new Map<string, string[]>();
 
   for (const row of owed) {
+    const unusable = (reason: string) => {
+      addTo(attempted, row.workspaceId, row.outboxId);
+      failed += 1;
+      console.error(
+        JSON.stringify({
+          event: "outbox_sweeper.unusable",
+          workspaceId: row.workspaceId,
+          outboxId: row.outboxId,
+          reason,
+        }),
+      );
+    };
     const parsed = listingJobSchema
       .or(wineListingJobSchema)
       .safeParse(row.payload);
@@ -119,22 +131,16 @@ async function recoverOutbox(
       // sweeper can simply `continue` because its rows are re-derived every
       // tick; an outbox row is durable, so unless something records the
       // attempt it can never reach the cap and is retried for ever.
-      addTo(attempted, row.workspaceId, row.outboxId);
-      failed += 1;
-      console.error(
-        JSON.stringify({
-          event: "outbox_sweeper.unusable",
-          workspaceId: row.workspaceId,
-          outboxId: row.outboxId,
-          reason: parsed.success ? "workspace_mismatch" : "payload_invalid",
-        }),
-      );
+      unusable(parsed.success ? "workspace_mismatch" : "payload_invalid");
       continue;
     }
     try {
       if ("schemaVersion" in parsed.data && parsed.data.schemaVersion === 2) {
         const runId = parsed.data.runId;
-        if (!runId) continue;
+        if (!runId) {
+          unusable("run_id_missing");
+          continue;
+        }
         const operation = await database.forWorkspace(
           row.workspaceId,
           (repos) => repos.pipelineRuns.getOperation(runId),
@@ -142,8 +148,10 @@ async function recoverOutbox(
         if (
           !operation ||
           !["queued", "running"].includes(operation.executionState)
-        )
+        ) {
+          unusable("operation_inactive");
           continue;
+        }
         if ("flowVersion" in parsed.data) {
           const job = parsed.data;
           if (
@@ -151,13 +159,22 @@ async function recoverOutbox(
             operation.listingId !== job.draftId ||
             operation.inputRevision !== job.inputRevision ||
             operation.activeVersionSequence !== job.activeVersionSequence
-          )
+          ) {
+            unusable("operation_binding_mismatch");
             continue;
+          }
           const stage = await database.forWorkspace(row.workspaceId, (r) =>
             r.wineEnrichment.readStage(runId, job.stage),
           );
-          if (stage) continue; // No recovery replay of started, unknown or completed stages.
-        } else if (operation.execution?.flowVersion !== undefined) continue;
+          if (stage) {
+            // No recovery replay of started, unknown or completed stages.
+            unusable("wine_stage_started");
+            continue;
+          }
+        } else if (operation.execution?.flowVersion !== undefined) {
+          unusable("operation_flow_mismatch");
+          continue;
+        }
       }
       await env.LISTING_QUEUE.send(parsed.data);
       addTo(dispatched, row.workspaceId, row.outboxId);

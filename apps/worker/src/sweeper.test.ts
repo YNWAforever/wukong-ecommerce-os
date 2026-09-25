@@ -306,6 +306,47 @@ describe("outbox recovery", () => {
     consoleError.mockRestore();
   });
 
+  it("counts a versioned outbox row without a run ID so it cannot starve later work", async () => {
+    const send = vi.fn(async () => undefined);
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      { ...owed, payload: { ...job, schemaVersion: 2 } },
+    ]);
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(markDispatched).not.toHaveBeenCalled();
+    expect(markAttempted).toHaveBeenCalledWith([owed.outboxId]);
+  });
+  it("counts an outbox row whose versioned operation already finished", async () => {
+    const payload = {
+      ...job,
+      schemaVersion: 2,
+      runId: "00000000-0000-4000-8000-000000000901",
+      inputRevision: 1,
+    };
+    const send = vi.fn(async () => undefined);
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      { ...owed, payload },
+    ]);
+    database.forWorkspace = async (_workspaceId, work) =>
+      work({
+        pipelineRuns: {
+          getOperation: async () => ({ executionState: "completed" }),
+        },
+        dispatchOutbox: { markDispatched, markAttempted },
+      });
+
+    await handleScheduled(undefined as never, env(send), undefined as never, {
+      createDatabase: () => database as never,
+    });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(markDispatched).not.toHaveBeenCalled();
+    expect(markAttempted).toHaveBeenCalledWith([owed.outboxId]);
+  });
   it("marks each workspace through its own scope", async () => {
     // One tick spans tenants. Marking them together would need a cross-tenant
     // write, which RLS forbids and which no repository offers.
