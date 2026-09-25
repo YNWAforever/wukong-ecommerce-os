@@ -143,7 +143,9 @@ export function extractDocument(
     }
     if (
       n.tagName === "link" &&
-      attr(n, "rel")?.split(/\s+/).includes("canonical")
+      attr(n, "rel")
+        ?.split(/\s+/)
+        .some((token) => token.toLowerCase() === "canonical")
     ) {
       const value = same(attr(n, "href"));
       if (value) canonicals.add(value);
