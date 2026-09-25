@@ -222,6 +222,22 @@ it.each([
   );
 });
 
+it("rejects unannotated trailing text after an astral character", () => {
+  const r = request(),
+    c = candidate();
+  c.content.sections[0].en = "\u{1F377}750 ml";
+  c.annotations[0].span = c.content.sections[0].en;
+  expect(core.wineCandidateIssues(r, c)).toEqual([]);
+
+  c.content.sections[0].en += "X";
+  expect(core.wineCandidateIssues(r, c)).toContainEqual(
+    expect.objectContaining({
+      path: "sections.introduction.en",
+      code: "unannotated_output",
+    }),
+  );
+});
+
 it("preserves strict versioned parsing, optional ownership and required nested observations", () => {
   expect(core).toHaveProperty("wineGenerationRequestSchema");
   expect(core.wineGenerationRequestSchema.parse(request())).not.toHaveProperty(
