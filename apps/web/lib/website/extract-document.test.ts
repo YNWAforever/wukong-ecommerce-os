@@ -141,6 +141,12 @@ describe("deterministic product extraction", () => {
     expect(r.productLinks).toHaveLength(20);
     expect(r.warnings).toContain("product_link_limit");
   });
+  it("recognizes case-insensitive canonical link keywords", () => {
+    const r = extract(
+      ld(base) + '<link rel="CANONICAL" href="/products/canonical">',
+    );
+    expect(r.product?.key).toBe("https://store.example/products/canonical");
+  });
   it("bounds fields with explicit warnings", () => {
     const p = extract(
       ld({
