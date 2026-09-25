@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { memberships, users, workspaceInvites } from "../schema.js";
@@ -207,24 +207,67 @@ export function createMembershipRepository(
           .limit(1);
       }
       if (!invitee) throw new Error("failed to provision invitee");
-      const [invite] = await transaction
-        .insert(workspaceInvites)
-        .values({
-          workspaceId,
-          email: normalizedEmail,
-          role,
-          status: "pending",
-        })
-        .onConflictDoUpdate({
-          target: [workspaceInvites.workspaceId, workspaceInvites.email],
-          set: { role, status: "pending", createdAt: sql`now()` },
-        })
-        .returning({
-          id: workspaceInvites.id,
-          email: workspaceInvites.email,
-          role: workspaceInvites.role,
-          createdAt: workspaceInvites.createdAt,
-        });
+      // Older rows can differ only by email casing because the SQL unique
+      // index is case-sensitive. Keep the canonical row's ID so an admin's
+      // re-invite updates the same logical invitation instead of showing two.
+      const matchingInvites = await transaction
+        .select({ id: workspaceInvites.id, email: workspaceInvites.email })
+        .from(workspaceInvites)
+        .where(
+          and(
+            eq(workspaceInvites.workspaceId, workspaceId),
+            sql`lower(${workspaceInvites.email}) = ${normalizedEmail}`,
+          ),
+        )
+        .orderBy(workspaceInvites.id)
+        .for("update");
+      const canonicalInvite =
+        matchingInvites.find((row) => row.email === normalizedEmail) ??
+        matchingInvites[0];
+      const duplicateIds = matchingInvites
+        .filter((row) => row.id !== canonicalInvite?.id)
+        .map((row) => row.id);
+      if (duplicateIds.length) {
+        await transaction
+          .delete(workspaceInvites)
+          .where(
+            and(
+              eq(workspaceInvites.workspaceId, workspaceId),
+              inArray(workspaceInvites.id, duplicateIds),
+            ),
+          );
+      }
+      const inviteColumns = {
+        id: workspaceInvites.id,
+        email: workspaceInvites.email,
+        role: workspaceInvites.role,
+        createdAt: workspaceInvites.createdAt,
+      };
+      const inviteRows = canonicalInvite
+        ? await transaction
+            .update(workspaceInvites)
+            .set({
+              email: normalizedEmail,
+              role,
+              status: "pending",
+              createdAt: sql`now()`,
+            })
+            .where(eq(workspaceInvites.id, canonicalInvite.id))
+            .returning(inviteColumns)
+        : await transaction
+            .insert(workspaceInvites)
+            .values({
+              workspaceId,
+              email: normalizedEmail,
+              role,
+              status: "pending",
+            })
+            .onConflictDoUpdate({
+              target: [workspaceInvites.workspaceId, workspaceInvites.email],
+              set: { role, status: "pending", createdAt: sql`now()` },
+            })
+            .returning(inviteColumns);
+      const [invite] = inviteRows;
       if (!invite) throw new Error("failed to create invite");
       if (invitee.emailVerified) {
         await transaction
