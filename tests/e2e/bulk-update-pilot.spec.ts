@@ -1143,7 +1143,68 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     page.getByText("Approval invalidated (Re-imported, row unchanged)"),
   ).toBeVisible();
 
-  // A confirmation change reopens the listing, and the reopen is shown as itself.
+  // The new import is byte-for-byte identical, but its import ID is newer.
+  // The old review version must not accept fresh confirmations.
+  await expect(
+    page.getByText(
+      "The imported source changed after this version was created.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  const staleConfirmation = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/" + listingIds[0] + "/review-confirmations") &&
+      r.request().method() === "PATCH",
+  );
+  await page.locator("#confirmation-field-nameZh").click();
+  const staleResponse = await staleConfirmation;
+  expect(staleResponse.status()).toBe(409);
+  expect(await staleResponse.json()).toMatchObject({
+    code: "source_version_stale",
+  });
+
+  // Saving after checking the current row creates a version bound to this
+  // import. Reconfirm and approve that version before testing a later
+  // confirmation change.
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.getByText(/Draft saved/)).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".review-status")).toHaveText(
+    stateLabel("reopened", "en"),
+  );
+  for (const key of [
+    "nameZh",
+    "summaryEn",
+    "summaryZh",
+    "seoTitleEn",
+    "seoTitleZh",
+    "seoDescriptionEn",
+    "seoDescriptionZh",
+    "seoKeywords",
+  ]) {
+    const box = page.locator("#confirmation-field-" + key);
+    if (!(await box.isChecked())) await box.click();
+    await expect(box).toBeChecked();
+  }
+  for (const key of [
+    "priceUnchanged",
+    "membershipUnchanged",
+    "categoryUnchanged",
+    "statusUnchanged",
+    "supplierUnchanged",
+    "quantityDeltaNeutral",
+    "noImageChange",
+  ]) {
+    const box = page.locator("#confirmation-negative-" + key);
+    if (!(await box.isChecked())) await box.click();
+    await expect(box).toBeChecked();
+  }
+  await page
+    .getByRole("button", { name: "Approve listing", exact: true })
+    .click();
+  await expect(page.getByText(/Listing approved/)).toBeVisible();
+
+  // A later confirmation change now reopens the newly approved version.
   const confirmationSaved = page.waitForResponse(
     (r) =>
       r.url().endsWith("/" + listingIds[0] + "/review-confirmations") &&

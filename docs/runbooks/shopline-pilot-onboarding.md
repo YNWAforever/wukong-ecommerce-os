@@ -90,7 +90,7 @@ explicitly budgeted batch rather than automatically at import.
    curl -X POST "$WUKONG_BASE_URL/api/enrichment-batches" \
      -H "Cookie: $WUKONG_SESSION_COOKIE" \
      -H "Content-Type: application/json" \
-     -d '{"label":"zh names","gap":"untranslatedName","budgetUsd":5,"waveSize":25}'
+     -d '{"label":"zh names","gap":"untranslatedName","budgetUsd":5,"waveSize":5}'
    ```
 
    Valid gaps: `untranslatedName`, `untranslatedSeoTitle`, `seoTitleMirrorsName`,

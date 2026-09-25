@@ -410,6 +410,44 @@ describe("ListingReviewClient processing orchestration", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows the current imported row when its digest differs from the reviewed version", async () => {
+    processingFetcher().mockResolvedValue(
+      Response.json({
+        ...response,
+        sourceImportId: "import-current",
+        contentDigest: "digest-current",
+        reviewedRowDigest: "digest-reviewed",
+        reviewedSourceImportId: "import-reviewed",
+        importedSourceRow: {
+          nameEn: "Current imported name",
+          sku: "CURRENT-SKU",
+        },
+      }),
+    );
+    const { container } = await mountReview();
+    const panel = container.querySelector(".source-row-panel");
+    expect(panel?.textContent).toContain("Current imported name");
+    expect(panel?.textContent).toContain("save a new version");
+    expect(panel?.querySelector("details")?.open).toBe(true);
+  });
+
+  it("warns when an unchanged row comes from a newer import", async () => {
+    processingFetcher().mockResolvedValue(
+      Response.json({
+        ...response,
+        sourceImportId: "import-current",
+        reviewedSourceImportId: "import-reviewed",
+        contentDigest: "same-digest",
+        reviewedRowDigest: "same-digest",
+        importedSourceRow: { sku: "CURRENT-SKU" },
+      }),
+    );
+    const { container } = await mountReview();
+    const panel = container.querySelector(".source-row-panel");
+    expect(panel?.textContent).toContain("save a new version");
+    expect(panel?.querySelector("details")?.open).toBe(true);
+  });
+
   it.each([
     ["queued", "Queued for processing", false],
     ["retry_required", "Processing not started", true],

@@ -141,6 +141,9 @@ export type ListingViewResponse = {
   } | null;
   sourceImportId: string | null;
   contentDigest: string | null;
+  importedSourceRow?: Record<string, string | null> | null;
+  reviewedRowDigest?: string | null;
+  reviewedSourceImportId?: string | null;
   permissions: ListingPermissions;
   historicalImportResults?: Array<{
     id: string;
@@ -1078,6 +1081,45 @@ export function ListingReviewClient({
                 }}
               />
             </details>
+          ) : null}
+          {snapshot.importedSourceRow ? (
+            <section
+              className="source-row-panel"
+              aria-label={t("匯入來源資料", "Imported source row")}
+            >
+              <h2>{t("匯入來源資料", "Imported source row")}</h2>
+              {snapshot.contentDigest !== snapshot.reviewedRowDigest ||
+              snapshot.sourceImportId !== snapshot.reviewedSourceImportId ? (
+                <p className="inline-warning" role="alert">
+                  {t(
+                    "匯入來源在此版本建立後已變更。請核對目前資料並儲存新的審核版本。",
+                    "The imported source changed after this version was created. Review the current row and save a new version before confirming.",
+                  )}
+                </p>
+              ) : null}
+              <details
+                open={
+                  snapshot.contentDigest !== snapshot.reviewedRowDigest ||
+                  snapshot.sourceImportId !== snapshot.reviewedSourceImportId
+                }
+              >
+                <summary>
+                  {t("查看目前匯入欄位", "View current imported fields")}
+                </summary>
+                <dl className="source-row-grid">
+                  {Object.entries(snapshot.importedSourceRow)
+                    .filter(
+                      ([, value]) => value !== null && value.trim().length > 0,
+                    )
+                    .map(([field, value]) => (
+                      <div key={field}>
+                        <dt>{field}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </details>
+            </section>
           ) : null}
           <ListingFieldsForm
             key={model.versionId}

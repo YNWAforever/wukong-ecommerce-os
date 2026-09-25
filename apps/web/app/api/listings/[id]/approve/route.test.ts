@@ -103,6 +103,8 @@ function makeHandler(options: {
     resolutionReason: string | null;
   }>;
   confirmation?: ReviewConfirmationFixture;
+  versionSourceImportId?: string | null;
+  versionRowDigest?: string | null;
   platformProduct?: {
     origin: "import" | "created";
     sourceImportId: string | null;
@@ -146,6 +148,18 @@ function makeHandler(options: {
                     id: versionId,
                     sequence: 3,
                     content: { sku: "OPAK-001", imageAssetIds: [] },
+                    sourceImportId:
+                      options.versionSourceImportId !== undefined
+                        ? options.versionSourceImportId
+                        : platformProduct?.origin === "import"
+                          ? platformProduct.sourceImportId
+                          : null,
+                    sourceRowDigest:
+                      options.versionRowDigest !== undefined
+                        ? options.versionRowDigest
+                        : platformProduct?.origin === "import"
+                          ? platformProduct.contentDigest
+                          : null,
                   },
                   evidence: [],
                   flags: options.flags ?? [],
@@ -1573,6 +1587,39 @@ describe("POST /api/listings/[id]/approve", () => {
         actorId: context.actorId,
       }),
     ]);
+  });
+
+  it("refuses a current checklist attached to a version created before the import", async () => {
+    const { handler, calls } = makeHandler({
+      platformProduct: {
+        origin: "import",
+        sourceImportId: "import-2",
+        contentDigest: sourceDigest,
+      },
+      versionSourceImportId: "import-1",
+      versionRowDigest: "older-digest",
+      confirmation: {
+        ...fullyConfirmed!,
+        sourceImportId: "import-2",
+        rowDigest: sourceDigest,
+      },
+    });
+    const response = await handler(
+      request({
+        expectedVersionId: versionId,
+        confirmationLedgerRevision: 0,
+        sourceImportId: "import-2",
+        expectedRowDigest: sourceDigest,
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "source_version_stale",
+    });
+    expect(calls).not.toContainEqual(
+      expect.arrayContaining(["approvalReceipts.record"]),
+    );
   });
 
   it("refuses confirmations from a previous source even when the client sends current source metadata", async () => {

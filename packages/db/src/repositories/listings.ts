@@ -23,6 +23,7 @@ import {
   fieldEvidence,
   listingDrafts,
   listingVersions,
+  platformProducts,
   reviewEvents,
   workspaces,
 } from "../schema.js";
@@ -48,6 +49,8 @@ export type ReviewSnapshot = {
     id: string;
     sequence: number;
     content: ReviewableListing;
+    sourceImportId?: string | null;
+    sourceRowDigest?: string | null;
   } | null;
   evidence: FieldEvidence[];
   flags: ComplianceFlag[];
@@ -76,6 +79,7 @@ export type ListingRepository = {
    */
   approvalStatesByIds(
     ids: readonly string[],
+    options?: { forUpdate?: boolean },
   ): Promise<
     Record<string, { status: ListingStatus; activeVersionId: string | null }>
   >;
@@ -232,7 +236,13 @@ export function createListingRepository(
     id: string,
   ): Promise<{
     listing: Listing;
-    activeVersion: { id: string; sequence: number; content: unknown } | null;
+    activeVersion: {
+      id: string;
+      sequence: number;
+      content: unknown;
+      sourceImportId: string | null;
+      sourceRowDigest: string | null;
+    } | null;
     flags: ComplianceFlag[];
   }> => {
     const [listing] = await transaction
@@ -248,6 +258,8 @@ export function createListingRepository(
               id: listingVersions.id,
               sequence: listingVersions.sequence,
               content: listingVersions.content,
+              sourceImportId: listingVersions.sourceImportId,
+              sourceRowDigest: listingVersions.sourceRowDigest,
             })
             .from(listingVersions)
             .where(
@@ -382,10 +394,10 @@ export function createListingRepository(
       );
     },
 
-    async approvalStatesByIds(ids) {
+    async approvalStatesByIds(ids, options) {
       scope.assertOpen();
       if (ids.length === 0) return {};
-      const rows = await transaction
+      const query = transaction
         .select({
           id: listingDrafts.id,
           status: listingDrafts.status,
@@ -398,6 +410,7 @@ export function createListingRepository(
             inArray(listingDrafts.id, [...ids]),
           ),
         );
+      const rows = options?.forUpdate ? await query.for("update") : await query;
       return Object.fromEntries(
         rows.map((row) => [
           row.id,
@@ -686,6 +699,8 @@ export function createListingRepository(
                 id: activeVersion.id,
                 sequence: activeVersion.sequence,
                 content: parsedContent.data,
+                sourceImportId: activeVersion.sourceImportId,
+                sourceRowDigest: activeVersion.sourceRowDigest,
               }
             : null,
         evidence,
@@ -1144,6 +1159,21 @@ export function createListingRepository(
         )
         .orderBy(desc(listingVersions.sequence))
         .limit(1);
+      const [source] = await transaction
+        .select({
+          origin: platformProducts.origin,
+          sourceImportId: platformProducts.sourceImportId,
+          sourceRowDigest: platformProducts.contentDigest,
+        })
+        .from(platformProducts)
+        .where(
+          and(
+            eq(platformProducts.workspaceId, workspaceId),
+            eq(platformProducts.listingId, id),
+          ),
+        )
+        .orderBy(desc(platformProducts.updatedAt))
+        .limit(1);
       const [created] = await transaction
         .insert(listingVersions)
         .values({
@@ -1151,6 +1181,10 @@ export function createListingRepository(
           listingId: id,
           sequence: (latest?.sequence ?? 0) + 1,
           pipelineIdempotencyKey: pipelineIdempotencyKey ?? null,
+          sourceImportId:
+            source?.origin === "import" ? source.sourceImportId : null,
+          sourceRowDigest:
+            source?.origin === "import" ? source.sourceRowDigest : null,
           content,
           createdBy: context.actorId,
         })

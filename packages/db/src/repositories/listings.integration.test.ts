@@ -623,6 +623,11 @@ describe("workspace isolation", () => {
       ],
       ["listing_versions", ["workspace_id", "listing_id"], "listing_drafts"],
       [
+        "listing_versions",
+        ["workspace_id", "source_import_id"],
+        "source_imports",
+      ],
+      [
         "platform_products",
         ["workspace_id", "connection_id"],
         "shopline_connections",

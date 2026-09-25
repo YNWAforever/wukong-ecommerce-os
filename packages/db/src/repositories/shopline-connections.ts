@@ -25,7 +25,9 @@ export class ShoplineConnectionExistsError extends Error {
 }
 
 export type ShoplineConnectionRepository = {
-  getDefault(): Promise<ShoplineConnection | null>;
+  getDefault(options?: {
+    forUpdate?: boolean;
+  }): Promise<ShoplineConnection | null>;
   getById(id: string): Promise<ShoplineConnection | null>;
   create(input: {
     shopDomain: string;
@@ -43,9 +45,12 @@ export function createShoplineConnectionRepository(
   workspaceId: string,
   scope: WorkspaceScope,
 ): ShoplineConnectionRepository {
-  const select = async (id?: string): Promise<ShoplineConnection | null> => {
+  const select = async (
+    id?: string,
+    forUpdate = false,
+  ): Promise<ShoplineConnection | null> => {
     scope.assertOpen();
-    const [row] = await transaction
+    const query = transaction
       .select({
         id: shoplineConnections.id,
         shopDomain: shoplineConnections.shopDomain,
@@ -61,12 +66,13 @@ export function createShoplineConnectionRepository(
       )
       .orderBy(asc(shoplineConnections.createdAt))
       .limit(1);
+    const [row] = forUpdate ? await query.for("update") : await query;
     if (!row || !row.encryptedAccessToken.trim()) return null;
     return row;
   };
 
   return {
-    getDefault: () => select(),
+    getDefault: (options) => select(undefined, options?.forUpdate),
     getById: (id) => select(id),
 
     async create({ shopDomain, accessToken, base64Key }) {

@@ -579,6 +579,7 @@ test("keeps the three end-to-end ports disjoint", () => {
 
 test("local MinIO builds pinned official source without registry credentials", () => {
   const minioService = composeSource
+    .replace(/\r\n/g, "\n")
     .split("  minio:\n")[1]
     ?.split("  minio-tls:\n")[0];
   assert.ok(minioService);

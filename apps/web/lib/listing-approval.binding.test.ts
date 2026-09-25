@@ -68,7 +68,12 @@ function fixture() {
             target: "shopline",
             activeVersionId: "version-1",
           },
-          activeVersion: { id: "version-1", content: { imageAssetIds: [] } },
+          activeVersion: {
+            id: "version-1",
+            content: { imageAssetIds: [] },
+            sourceImportId: link.sourceImportId,
+            sourceRowDigest: link.contentDigest,
+          },
           flags: [],
           evidence: [],
         };
@@ -293,10 +298,13 @@ it("carries exact reviewed claim support to image-only promoted version", async 
       description: { en: text, "zh-Hant": "Wine" },
     };
   const original = repos.listings.getReviewSnapshot;
-  repos.listings.getReviewSnapshot = async () => ({
-    ...(await original()),
-    activeVersion: { id: "version-1", content },
-  });
+  repos.listings.getReviewSnapshot = async () => {
+    const snapshot = await original();
+    return {
+      ...snapshot,
+      activeVersion: { ...snapshot.activeVersion, id: "version-1", content },
+    };
+  };
   const enriched = {
     ...repos,
     listingInputs: {
