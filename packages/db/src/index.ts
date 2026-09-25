@@ -42,6 +42,7 @@ export {
 } from "./repositories/memberships.js";
 export type { AuditWriter } from "@wukong/core";
 export * from "./schema.js";
+export { isRetryablePublishJobError } from "./repositories/publish-jobs.js";
 export type {
   PublishJob,
   PublishJobRepository,

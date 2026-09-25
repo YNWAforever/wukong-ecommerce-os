@@ -279,6 +279,13 @@ describe("publish job repository", () => {
           now: new Date(now.getTime() + 30_000),
           leaseMs: 60_000,
         });
+        await repos.publishJobs.markFailed(
+          retryKey,
+          retried.leaseToken!,
+          "rate_limited",
+        );
+        const requeued = await repos.publishJobs.markQueued(retryKey);
+        const queuedJob = await repos.publishJobs.getByIdempotencyKey(retryKey);
         await repos.publishJobs.ensure({
           listingId,
           versionId,
@@ -298,15 +305,20 @@ describe("publish job repository", () => {
           terminalLease.leaseToken!,
           "invalid_credentials_or_permission",
         );
+        const terminalRequeued =
+          await repos.publishJobs.markQueued(terminalKey);
         const rejected = await repos.publishJobs.claim({
           key: terminalKey,
           expectedVersionId: versionId,
           now: new Date(now.getTime() + 30_000),
           leaseMs: 60_000,
         });
-        return { retried, rejected };
+        return { retried, requeued, queuedJob, terminalRequeued, rejected };
       },
     );
+    expect(result.requeued).toBe(true);
+    expect(result.queuedJob).toMatchObject({ status: "queued", error: null });
+    expect(result.terminalRequeued).toBe(false);
     expect(result.retried.claimed).toBe(true);
     expect(result.retried.job).toMatchObject({
       status: "running",

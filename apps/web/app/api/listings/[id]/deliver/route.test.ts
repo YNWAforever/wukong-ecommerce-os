@@ -167,6 +167,7 @@ function makeDefaultRuntime(
   const job = {
     id: "job_database_1",
     status: "pending_enqueue",
+    error: null as string | null,
     connectionId: "00000000-0000-4000-8000-000000000301",
   };
   const repositories = {
@@ -233,8 +234,16 @@ function makeDefaultRuntime(
       }),
       markQueued: vi.fn(async () => {
         order.push("markQueued");
-        if (job.status !== "pending_enqueue") return false;
+        if (
+          job.status !== "pending_enqueue" &&
+          !(
+            job.status === "failed" &&
+            ["remote_unavailable", "rate_limited"].includes(job.error ?? "")
+          )
+        )
+          return false;
         job.status = "queued";
+        job.error = null;
         return true;
       }),
     },
@@ -472,6 +481,38 @@ describe("POST /api/listings/[id]/deliver", () => {
     ]);
   });
 
+  it("re-enqueues a failed transient publish when the reviewer retries delivery", async () => {
+    const runtime = makeDefaultRuntime();
+    const ingressClient = {
+      enqueue: vi.fn(async () => ({ accepted: true as const })),
+    };
+    const delivery = defaultDelivery({ ingressClient } as never);
+    const input = {
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: listingId,
+      method: "shopline_api" as const,
+    };
+
+    await expect(delivery.deliver(input)).resolves.toMatchObject({
+      kind: "queued",
+    });
+    runtime.job.status = "failed";
+    runtime.job.error = "remote_unavailable";
+
+    await expect(delivery.deliver(input)).resolves.toMatchObject({
+      kind: "queued",
+    });
+    expect(ingressClient.enqueue).toHaveBeenCalledTimes(2);
+    expect(runtime.job).toMatchObject({ status: "queued", error: null });
+
+    runtime.job.status = "failed";
+    runtime.job.error = "invalid_credentials_or_permission";
+    await expect(delivery.deliver(input)).resolves.toMatchObject({
+      kind: "retry_required",
+    });
+    expect(ingressClient.enqueue).toHaveBeenCalledTimes(2);
+  });
   it("wires the platform product link into the request-phase idempotency key", async () => {
     const runtime = makeDefaultRuntime();
     (runtime.repositories as any).platformProducts = {
