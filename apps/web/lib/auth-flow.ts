@@ -194,7 +194,11 @@ export function createAuthFlow({
       let authenticatedResponse: Response | null = null;
       try {
         user = await access.findEligibleUser(email);
-        if (!user || !(await access.hasCredential(user.id))) {
+        if (
+          !user ||
+          !(await access.hasCredential(user.id)) ||
+          !(await access.hasWorkspaceMembership(user.id))
+        ) {
           await audit({
             email,
             userId: user?.id,
@@ -279,7 +283,7 @@ export function createAuthFlow({
       const email = normalizeEmail(input.email);
       try {
         const user = await access.findEligibleUser(email);
-        if (!user) {
+        if (!user || !(await access.hasWorkspaceMembership(user.id))) {
           await audit({
             email,
             outcome: "failure",
@@ -313,7 +317,11 @@ export function createAuthFlow({
       const email = normalizeEmail(input.email);
       try {
         const user = await access.findEligibleUser(email);
-        if (!user || !(await access.hasCredential(user.id))) {
+        if (
+          !user ||
+          !(await access.hasCredential(user.id)) ||
+          !(await access.hasWorkspaceMembership(user.id))
+        ) {
           await audit({
             email,
             userId: user?.id,

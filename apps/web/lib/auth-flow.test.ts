@@ -8,6 +8,7 @@ function harness(
   options: {
     eligible?: boolean;
     credential?: boolean;
+    membership?: boolean;
     enrollmentComplete?: boolean;
     lockedUntil?: Date | null;
     authResponse?: Response;
@@ -20,6 +21,9 @@ function harness(
   const access = {
     findEligibleUser: vi.fn().mockResolvedValue(user),
     hasCredential: vi.fn().mockResolvedValue(options.credential ?? false),
+    hasWorkspaceMembership: vi
+      .fn()
+      .mockResolvedValue(options.membership ?? true),
     isEnrollmentComplete: vi
       .fn()
       .mockResolvedValue(options.enrollmentComplete ?? true),
@@ -126,6 +130,22 @@ describe("invite-aware authentication flow", () => {
     }
   });
 
+  it("does not send sign-in or reset requests without a workspace membership", async () => {
+    const { flow, auth } = harness({ credential: true, membership: false });
+    await expect(
+      flow.passwordSignIn({
+        email: "admin@example.com",
+        password: "secret-password",
+      }),
+    ).resolves.toEqual({ ok: false, cookies: [] });
+    await expect(
+      flow.requestMagicLink({ email: "admin@example.com" }),
+    ).resolves.toEqual({ accepted: true });
+    await expect(
+      flow.requestPasswordReset({ email: "admin@example.com" }),
+    ).resolves.toEqual({ accepted: true });
+    expect(auth.handler).not.toHaveBeenCalled();
+  });
   it("records a failed password response and audits the fifth-attempt lockout", async () => {
     const { flow, access } = harness({
       credential: true,
