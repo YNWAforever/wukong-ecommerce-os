@@ -86,6 +86,34 @@ describe("POST /api/listings/import", () => {
     expect(imported).toBe(0);
   });
 
+  it("stops reading an over-limit stream before consuming another chunk", async () => {
+    let readsAfterLimit = 0;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          controller.enqueue(new Uint8Array(4 * 1024 * 1024 + 1));
+        },
+        pull(controller) {
+          readsAfterLimit += 1;
+          controller.enqueue(new Uint8Array([1]));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request(IMPORT_URL, {
+      method: "POST",
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const response = await handlerFor("operator")(request);
+
+    expect(response.status).toBe(413);
+    expect((await response.json()).code).toBe("upload_too_large");
+    expect(readsAfterLimit).toBe(0);
+  });
+
   it("rejects an empty upload", async () => {
     const response = await handlerFor("operator")(
       requestWith(new Uint8Array()),
