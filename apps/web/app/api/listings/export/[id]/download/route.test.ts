@@ -183,7 +183,7 @@ describe("GET /api/listings/export/[id]/download", () => {
 
   it("rejects a malformed export attempt id with 404 before touching the database", async () => {
     const { handler, getDatabaseCalls } = makeHandler();
-    const response = await handler(request(), routeContext("not-a-valid-uuid"));
+    const response = await handler(request(), routeContext("-".repeat(36)));
     expect(response.status).toBe(404);
     const body = await response.json();
     expect(body.code).toBe("export_attempt_not_found");

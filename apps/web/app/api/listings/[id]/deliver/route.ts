@@ -164,7 +164,7 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
       const session = await requireSessionContext(deps.sessionContext);
       assertReviewer(session.role);
       const { id } = await context.params;
-      if (!/^[0-9a-f-]{36}$/i.test(id))
+      if (!z.uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       const body = bodySchema.parse(await request.json());
       let result: DeliveryResult;

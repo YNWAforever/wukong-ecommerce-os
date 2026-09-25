@@ -171,6 +171,15 @@ function handlerFor(
 }
 
 describe("GET /api/listings/[id]", () => {
+  it("rejects malformed UUID-shaped listing IDs", async () => {
+    const response = await handlerFor("viewer")(
+      new Request("http://localhost"),
+      { params: Promise.resolve({ id: "-".repeat(36) }) },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it.each([
     [
       "viewer",

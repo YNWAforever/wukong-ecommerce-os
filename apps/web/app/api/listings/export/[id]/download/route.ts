@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { artifactHash } from "../../../../../../lib/export-artifact";
 import type { AssetStore } from "@wukong/assets";
 import {
@@ -57,7 +58,7 @@ export function createDownloadExportHandler(deps: DownloadExportRouteDeps) {
       const session = await requireSessionContext(deps.sessionContext);
       assertReviewer(session.role);
       const { id } = await context.params;
-      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      if (!z.uuid().safeParse(id).success) {
         throw new ApiError(
           404,
           "export_attempt_not_found",

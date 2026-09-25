@@ -66,7 +66,7 @@ export function createProcessListingHandler(deps: ProcessListingRouteDeps) {
 
       const { id: requestedId } = await context.params;
       const id = requestedId.toLowerCase();
-      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      if (!z.uuid().safeParse(id).success) {
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       }
 
