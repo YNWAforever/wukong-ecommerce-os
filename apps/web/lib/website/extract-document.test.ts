@@ -36,6 +36,14 @@ describe("deterministic product extraction", () => {
     expect(p).not.toHaveProperty("remoteProductId");
     expect(p).not.toHaveProperty("inventoryQuantity");
   });
+  it.each([
+    ["HTTPS://SCHEMA.ORG/InStock", "in_stock"],
+    ["HTTP://Schema.Org/OutOfStock", "out_of_stock"],
+    ["https://schema-org/InStock", "unknown"],
+  ] as const)("classifies availability URI %s", (availability, expected) => {
+    const product = extract(ld({ ...base, offers: { availability } })).product;
+    expect(product?.availability).toBe(expected);
+  });
   it("keeps unknown currency and conflicting offers unknown", () => {
     expect(
       extract(ld({ ...base, offers: { price: "50", priceCurrency: "???" } }))

@@ -319,7 +319,7 @@ export function extractDocument(
     value: unknown,
   ): WebsiteProduct["availability"] => {
     if (typeof value !== "string") return "unknown";
-    const token = value.replace(/^https?:\/\/schema.org\//, "");
+    const token = value.replace(/^https?:\/\/schema\.org\//i, "");
     return token === "InStock"
       ? "in_stock"
       : token === "OutOfStock" || token === "SoldOut"
