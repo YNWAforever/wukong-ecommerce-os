@@ -27,6 +27,15 @@ describe("deterministic product extraction", () => {
     expect(p?.price).toEqual({ amount: "123.50", currency: "HKD" });
     expect(p?.fieldSources.title).toBe("json_ld");
   });
+  it("recognizes a mixed-case schema.org Product type URI", () => {
+    const product = extract(
+      ld({ ...base, "@type": "HTTPS://SCHEMA.ORG/Product" }),
+    ).product;
+    expect(product?.title).toBe("茶 & 酒");
+    expect(
+      extract(ld({ ...base, "@type": "https://schema-org/Product" })).product,
+    ).toBeNull();
+  });
   it("does not fabricate inventory or identifiers from availability", () => {
     const p = extract(
       ld({ ...base, offers: { availability: "https://schema.org/InStock" } }),
