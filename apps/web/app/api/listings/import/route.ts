@@ -45,6 +45,43 @@ const MAX_ECHOED_ISSUES = 100;
 const ISO_8601_TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
+async function boundedBody(request: Request): Promise<Uint8Array> {
+  const tooLarge = () =>
+    new ApiError(413, "upload_too_large", "The bulk update form is too large.");
+  const declared = request.headers.get("content-length");
+  if (declared !== null && Number(declared) > MAX_UPLOAD_BYTES)
+    throw tooLarge();
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > MAX_UPLOAD_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The size violation remains the response even if cancellation fails.
+        }
+        throw tooLarge();
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 export type BulkFormImportRouteDeps = {
   sessionContext: SessionContextPort;
   readSheet(bytes: Uint8Array): BulkFormSheet;
@@ -64,7 +101,7 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         );
       }
 
-      const body = new Uint8Array(await request.arrayBuffer());
+      const body = await boundedBody(request);
       if (body.byteLength === 0) {
         throw new ApiError(
           400,
@@ -72,14 +109,6 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
           "Attach a SHOPLINE bulk update form.",
         );
       }
-      if (body.byteLength > MAX_UPLOAD_BYTES) {
-        throw new ApiError(
-          413,
-          "upload_too_large",
-          "The bulk update form is too large.",
-        );
-      }
-
       // Checked before the (potentially expensive) workbook parse below, so a
       // request missing either param fails fast instead of paying for a parse
       // whose result would just be discarded.
