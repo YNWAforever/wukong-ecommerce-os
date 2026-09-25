@@ -135,6 +135,74 @@ describe("MembershipRepository — read and invite methods", () => {
     expect(row.name).toBe("Preexisting Name");
   });
 
+  it("reuses a verified account when its stored email has different casing", async () => {
+    await admin.unsafe(
+      "INSERT INTO users (id, email, auth_email_verified) VALUES ('user_mixed', 'Mixed@opak.test', true)",
+    );
+
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("mixed@opak.test", "operator"),
+    );
+
+    const usersWithEmail = await admin.unsafe(
+      "SELECT id FROM users WHERE lower(email) = 'mixed@opak.test'",
+    );
+    const [membership] = await admin.unsafe(
+      "SELECT user_id FROM memberships WHERE workspace_id = $1 AND user_id = 'user_mixed'",
+      [workspaceId],
+    );
+    expect(usersWithEmail.map((row) => row.id)).toEqual(["user_mixed"]);
+    expect(membership?.user_id).toBe("user_mixed");
+  });
+  it("grants a new workspace to an already verified invitee", async () => {
+    await admin.unsafe(
+      "INSERT INTO workspaces (id, name, profile) VALUES ('ws_other_test', 'Other', '{}')",
+    );
+    await admin.unsafe(
+      "INSERT INTO users (id, email, auth_email_verified) VALUES ('user_existing', 'existing@opak.test', true)",
+    );
+    await admin.unsafe(
+      "INSERT INTO memberships (workspace_id, user_id, role) VALUES ('ws_other_test', 'user_existing', 'viewer')",
+    );
+
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("existing@opak.test", "operator"),
+    );
+
+    const [membership] = await admin.unsafe(
+      "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = 'user_existing'",
+      [workspaceId],
+    );
+    const [invite] = await admin.unsafe(
+      "SELECT status FROM workspace_invites WHERE workspace_id = $1 AND email = 'existing@opak.test'",
+      [workspaceId],
+    );
+    expect(membership?.role).toBe("operator");
+    expect(invite?.status).toBe("accepted");
+  });
+  it("restores membership when a verified former member is re-invited", async () => {
+    await admin.unsafe(
+      "UPDATE users SET auth_email_verified = true WHERE id = 'user_viewer'",
+    );
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.remove("user_admin", "user_viewer"),
+    );
+
+    await forWorkspace(database, workspaceId, (repositories) =>
+      repositories.memberships.createInvite("viewer@opak.test", "reviewer"),
+    );
+
+    const [membership] = await admin.unsafe(
+      "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = 'user_viewer'",
+      [workspaceId],
+    );
+    const [invite] = await admin.unsafe(
+      "SELECT status FROM workspace_invites WHERE workspace_id = $1 AND email = 'viewer@opak.test'",
+      [workspaceId],
+    );
+    expect(membership?.role).toBe("reviewer");
+    expect(invite?.status).toBe("accepted");
+  });
   it("makes a brand-new invitee findable as an eligible user", async () => {
     await forWorkspace(database, workspaceId, (repositories) =>
       repositories.memberships.createInvite("eligible@opak.test", "operator"),

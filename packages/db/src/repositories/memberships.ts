@@ -19,6 +19,7 @@ export type WorkspaceInvite = {
   id: string;
   email: string;
   role: AssignableWorkspaceRole;
+  status: "pending" | "accepted";
   createdAt: Date;
 };
 
@@ -165,6 +166,7 @@ export function createMembershipRepository(
       return rows.map((row) => ({
         ...row,
         role: row.role as AssignableWorkspaceRole,
+        status: "pending" as const,
       }));
     },
 
@@ -184,19 +186,27 @@ export function createMembershipRepository(
         .limit(1);
       if (existingMember) throw new MembershipGuardViolation("already_member");
 
-      // An invite is worthless without an account to redeem it -- self-
-      // service signup is disabled, so nothing else in this codebase ever
-      // creates a `users` row for a brand-new email. Provisioning one here,
-      // in the same transaction as the invite, is what makes the invite
-      // actually redeemable. `onConflictDoNothing` leaves an existing row
-      // (a returning teammate, or someone already known from another
-      // workspace) completely untouched -- no name, credential, or
-      // verification state is touched.
-      await transaction
-        .insert(users)
-        .values({ id: randomUUID(), email: normalizedEmail })
-        .onConflictDoNothing();
-
+      // Reuse an existing account even when its stored email has different
+      // casing. An already verified account does not need a second enrollment.
+      let [invitee] = await transaction
+        .select({ id: users.id, emailVerified: users.emailVerified })
+        .from(users)
+        .where(sql`lower(${users.email}) = ${normalizedEmail}`)
+        .orderBy(users.id)
+        .limit(1);
+      if (!invitee) {
+        await transaction
+          .insert(users)
+          .values({ id: randomUUID(), email: normalizedEmail })
+          .onConflictDoNothing();
+        [invitee] = await transaction
+          .select({ id: users.id, emailVerified: users.emailVerified })
+          .from(users)
+          .where(sql`lower(${users.email}) = ${normalizedEmail}`)
+          .orderBy(users.id)
+          .limit(1);
+      }
+      if (!invitee) throw new Error("failed to provision invitee");
       const [invite] = await transaction
         .insert(workspaceInvites)
         .values({
@@ -216,7 +226,23 @@ export function createMembershipRepository(
           createdAt: workspaceInvites.createdAt,
         });
       if (!invite) throw new Error("failed to create invite");
-      return { ...invite, role: invite.role as AssignableWorkspaceRole };
+      if (invitee.emailVerified) {
+        await transaction
+          .insert(memberships)
+          .values({ workspaceId, userId: invitee.id, role })
+          .onConflictDoNothing();
+        await transaction
+          .update(workspaceInvites)
+          .set({ status: "accepted" })
+          .where(eq(workspaceInvites.id, invite.id));
+      }
+      return {
+        ...invite,
+        role: invite.role as AssignableWorkspaceRole,
+        status: invitee.emailVerified
+          ? ("accepted" as const)
+          : ("pending" as const),
+      };
     },
 
     async revokeInvite(inviteId) {

@@ -5,9 +5,13 @@ const authMocks = vi.hoisted(() => ({
   getAuthDatabase: vi.fn(),
   getSession: vi.fn(),
   headers: vi.fn(),
+  cookies: vi.fn(),
 }));
 
-vi.mock("next/headers", () => ({ headers: authMocks.headers }));
+vi.mock("next/headers", () => ({
+  headers: authMocks.headers,
+  cookies: authMocks.cookies,
+}));
 vi.mock("../auth", () => ({
   auth: { api: { getSession: authMocks.getSession } },
   getAuthDatabase: authMocks.getAuthDatabase,
@@ -36,7 +40,10 @@ describe("session context", () => {
   it("derives workspace and actor from membership rather than request input", async () => {
     await expect(
       sessionContext(
-        { user: { id: "user_opak_operator", email: "operator@opak.example" }, workspaceId: "attacker" },
+        {
+          user: { id: "user_opak_operator", email: "operator@opak.example" },
+          workspaceId: "attacker",
+        },
         memberships,
       ),
     ).resolves.toEqual({
@@ -48,7 +55,10 @@ describe("session context", () => {
 
   it("rejects sessions without an active membership", async () => {
     await expect(
-      sessionContext({ user: { id: "unknown", email: "unknown@example.com" } }, memberships),
+      sessionContext(
+        { user: { id: "unknown", email: "unknown@example.com" } },
+        memberships,
+      ),
     ).resolves.toBeNull();
   });
 
@@ -72,14 +82,21 @@ describe("session context", () => {
     vi.stubEnv("AUTH_EMAIL_FROM", "auth@wukong.test");
     vi.stubEnv("AUTH_SECRET", "test-secret");
     vi.stubEnv("DATABASE_URL", "postgres://localhost/wukong");
-    const requestHeaders = new Headers({ cookie: "better-auth.session_token=opaque" });
+    const requestHeaders = new Headers({
+      cookie: "better-auth.session_token=opaque",
+    });
     authMocks.headers.mockResolvedValue(requestHeaders);
+    authMocks.cookies.mockResolvedValue({ get: () => undefined });
     authMocks.getSession.mockResolvedValue({
       user: { id: "user_opak_operator", email: "operator@opak.example" },
       session: { id: "session_1", userId: "user_opak_operator" },
     });
     authMocks.execute.mockResolvedValue([
-      { workspace_id: "ws_opak", actor_id: "user_opak_operator", role: "operator" },
+      {
+        workspace_id: "ws_opak",
+        actor_id: "user_opak_operator",
+        role: "operator",
+      },
     ]);
     authMocks.getAuthDatabase.mockReturnValue({ execute: authMocks.execute });
 
@@ -88,11 +105,45 @@ describe("session context", () => {
       actorId: "user_opak_operator",
       role: "operator",
     });
-    expect(authMocks.getSession).toHaveBeenCalledWith({ headers: requestHeaders });
+    expect(authMocks.getSession).toHaveBeenCalledWith({
+      headers: requestHeaders,
+    });
     expect(authMocks.execute).toHaveBeenCalledOnce();
-    expect(JSON.stringify(authMocks.execute.mock.calls[0]?.[0])).toContain("auth_get_active_membership");
+    expect(JSON.stringify(authMocks.execute.mock.calls[0]?.[0])).toContain(
+      "auth_get_active_membership",
+    );
   });
 
+  it("uses a preferred workspace cookie only through the membership query", async () => {
+    vi.stubEnv("AUTH_SMTP_URL", "smtp://localhost:1025");
+    vi.stubEnv("AUTH_EMAIL_FROM", "auth@wukong.test");
+    vi.stubEnv("AUTH_SECRET", "test-secret");
+    vi.stubEnv("DATABASE_URL", "postgres://localhost/wukong");
+    authMocks.headers.mockResolvedValue(new Headers());
+    authMocks.cookies.mockResolvedValue({
+      get: () => ({ value: "ws_preferred" }),
+    });
+    authMocks.getSession.mockResolvedValue({
+      user: { id: "user_opak_operator" },
+    });
+    authMocks.execute.mockResolvedValue([
+      {
+        workspace_id: "ws_preferred",
+        actor_id: "user_opak_operator",
+        role: "admin",
+      },
+    ]);
+    authMocks.getAuthDatabase.mockReturnValue({ execute: authMocks.execute });
+
+    await expect(createAuthSessionContextPort().resolve()).resolves.toEqual({
+      workspaceId: "ws_preferred",
+      actorId: "user_opak_operator",
+      role: "admin",
+    });
+    const query = JSON.stringify(authMocks.execute.mock.calls[0]?.[0]);
+    expect(query).toContain("auth_get_active_membership");
+    expect(query).toContain("ws_preferred");
+  });
   it("returns null for an unauthenticated Better Auth session", async () => {
     const port = createAuthSessionContextPort({
       resolveAuth: async () => null,

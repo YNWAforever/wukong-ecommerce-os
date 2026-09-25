@@ -17,6 +17,7 @@ function harness(
   options: {
     createInvite?: ReturnType<typeof vi.fn>;
     requestEnrollment?: ReturnType<typeof vi.fn>;
+    requestMagicLink?: ReturnType<typeof vi.fn>;
   } = {},
 ) {
   const createInvite =
@@ -25,10 +26,13 @@ function harness(
       id: "inv1",
       email,
       role: inviteRole,
+      status: "pending",
       createdAt: new Date("2026-01-01"),
     }));
   const requestEnrollment =
     options.requestEnrollment ?? vi.fn(async () => ({ accepted: true }));
+  const requestMagicLink =
+    options.requestMagicLink ?? vi.fn(async () => ({ accepted: true }));
   const auditWrite = vi.fn(async () => {});
   const handler = createMemberInviteHandler({
     sessionContext: {
@@ -44,8 +48,15 @@ function harness(
         }),
     }),
     requestEnrollment,
+    requestMagicLink,
   } as any);
-  return { handler, createInvite, auditWrite, requestEnrollment };
+  return {
+    handler,
+    createInvite,
+    auditWrite,
+    requestEnrollment,
+    requestMagicLink,
+  };
 }
 
 describe("POST /api/workspace/members/invite", () => {
@@ -111,6 +122,30 @@ describe("POST /api/workspace/members/invite", () => {
     expect(requestEnrollment).toHaveBeenCalledWith({ email: "new@opak.test" });
   });
 
+  it("sends a sign-in link when an already verified invitee is granted access", async () => {
+    const requestMagicLink = vi.fn(async () => ({ accepted: true }));
+    const createInvite = vi.fn(async () => ({
+      id: "inv1",
+      email: "known@opak.test",
+      role: "operator",
+      status: "accepted",
+      createdAt: new Date("2026-01-01"),
+    }));
+    const { handler, requestEnrollment } = harness("admin", {
+      createInvite,
+      requestMagicLink,
+    });
+
+    const response = await handler(
+      makeRequest({ email: "known@opak.test", role: "operator" }),
+    );
+    expect(response.status).toBe(200);
+    expect(requestMagicLink).toHaveBeenCalledWith({
+      email: "known@opak.test",
+      callbackURL: "/dashboard",
+    });
+    expect(requestEnrollment).not.toHaveBeenCalled();
+  });
   it("still returns success when the enrollment email fails to send", async () => {
     const requestEnrollment = vi.fn(async () => {
       throw new Error("smtp unreachable");

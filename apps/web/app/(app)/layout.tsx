@@ -7,6 +7,7 @@ import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
+import { listUserWorkspaces } from "../../lib/workspace-selection";
 import { visibleNavItems } from "./shell-nav-items";
 import { resolveWorkspaceChrome } from "./workspace-chrome";
 
@@ -18,6 +19,9 @@ export default async function AppLayout({
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
   const { workspaceName, roleLabel } = await resolveWorkspaceChrome(session);
+  const workspaceOptions = session
+    ? await listUserWorkspaces(session.actorId)
+    : [];
 
   return (
     <div className="app-shell">
@@ -29,6 +33,8 @@ export default async function AppLayout({
           navItems={visibleNavItems(session?.role ?? null)}
           isAdmin={isAdmin}
           workspaceName={workspaceName}
+          activeWorkspaceId={session?.workspaceId}
+          workspaceOptions={workspaceOptions}
           roleLabelZh={roleLabel.zh}
           roleLabelEn={roleLabel.en}
           initialLocale={locale}

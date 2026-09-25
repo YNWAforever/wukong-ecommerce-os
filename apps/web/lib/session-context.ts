@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
+
+import { WORKSPACE_COOKIE_NAME } from "./workspace-selection";
 
 import {
   SessionContextUnavailableError,
@@ -59,7 +61,7 @@ export async function sessionContext(
 
 /**
  * Production session context: Better Auth establishes identity, then a
- * security-definer database function resolves the first active membership.
+ * security-definer database function resolves the selected active membership.
  * No workspace or actor value is accepted from request JSON.
  */
 export function createAuthSessionContextPort(
@@ -95,12 +97,14 @@ export function createAuthSessionContextPort(
     options.membershipLookup ??
     (async (userId: string) => {
       const { getAuthDatabase } = await import("../auth");
+      const preferredWorkspaceId =
+        (await cookies()).get(WORKSPACE_COOKIE_NAME)?.value ?? null;
       const rows = await getAuthDatabase().execute<{
         workspace_id: string;
         actor_id: string;
         role: string;
       }>(
-        sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId})`,
+        sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId}, ${preferredWorkspaceId})`,
       );
       const row = rows[0];
       if (!row || !(row.role in roleOrder)) return null;

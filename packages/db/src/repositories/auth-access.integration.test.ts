@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -53,7 +53,7 @@ describe("auth access repository", () => {
     await admin`delete from auth_accounts where user_id in (${userId}, ${otherUserId})`;
     await admin`delete from workspace_invites where workspace_id = ${workspaceId}`;
     await admin`delete from users where id in (${userId}, ${otherUserId})`;
-    await admin`delete from workspaces where id = ${workspaceId}`;
+    await admin`delete from workspaces where id in (${workspaceId}, ${"ws_auth_access_second"})`;
     await db
       .insert(workspaces)
       .values({ id: workspaceId, name: "Auth access", profile: {} });
@@ -121,6 +121,58 @@ describe("auth access repository", () => {
     expect(invite?.status).toBe("accepted");
   });
 
+  it("selects only a requested membership and lists reachable workspaces", async () => {
+    const secondWorkspaceId = "ws_auth_access_second";
+    await db.insert(workspaces).values({
+      id: secondWorkspaceId,
+      name: "Second workspace",
+      profile: {},
+    });
+    await db.insert(memberships).values([
+      {
+        workspaceId,
+        userId,
+        role: "viewer",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+      {
+        workspaceId: secondWorkspaceId,
+        userId,
+        role: "admin",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    ]);
+
+    const preferred = await runtimeDb.execute<{
+      workspace_id: string;
+      actor_id: string;
+      role: string;
+    }>(
+      sql`select * from auth_get_active_membership(${userId}, ${secondWorkspaceId})`,
+    );
+    expect(preferred).toMatchObject([
+      { workspace_id: secondWorkspaceId, actor_id: userId, role: "admin" },
+    ]);
+
+    const invalid = await runtimeDb.execute<{ workspace_id: string }>(
+      sql`select workspace_id from auth_get_active_membership(${userId}, ${"unknown"})`,
+    );
+    expect(invalid).toMatchObject([{ workspace_id: workspaceId }]);
+
+    const options = await runtimeDb.execute<{
+      workspace_id: string;
+      name: string;
+      role: string;
+    }>(sql`select * from auth_list_user_workspaces(${userId})`);
+    expect(options).toMatchObject([
+      { workspace_id: workspaceId, name: "Auth access", role: "viewer" },
+      {
+        workspace_id: secondWorkspaceId,
+        name: "Second workspace",
+        role: "admin",
+      },
+    ]);
+  });
   it("reports enrollment complete only after verification and invite acceptance", async () => {
     await db.insert(workspaceInvites).values({
       workspaceId,
