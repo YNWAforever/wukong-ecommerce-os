@@ -143,6 +143,8 @@ it.each([
   "https://127.0.0.1/private",
   "https://user:pass@example.com/private",
   "https://example.com/private/secret-path",
+  "https://example.com/%252Fprivate/secret-path",
+  "https://example.com/%2574oken/secret-path",
   "https://example.com:444/private",
   "http://example.com/private",
   "https://private.internal/path",
@@ -202,6 +204,21 @@ it("keeps the exact public supporting page and safe identity query, exposing con
     url: "https://example.com/products/reserve-red?variant=750",
     linkStatus: "available",
     contentScope: "document",
+  });
+});
+it("keeps percent-encoded public source paths available", async () => {
+  const f = fixture("running");
+  const url =
+    "https://example.com/products/%E8%91%A1%E8%90%84%E9%85%92?variant=750";
+  f.append("extraction", {
+    observedAt: "2026-09-20T00:00:00.000Z",
+    identity: wineIdentity(),
+    evidence: [webEvidence({ url, domain: "example.com" })],
+    issues: [],
+  });
+  expect((await readWineProgress(f.repos, f.run))?.evidence[0]).toMatchObject({
+    url,
+    linkStatus: "available",
   });
 });
 it("marks signed source URL unavailable instead of replacing it with publisher homepage", async () => {

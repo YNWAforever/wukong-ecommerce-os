@@ -82,13 +82,19 @@ function publicLink(source: EvidenceSource, allowed: unknown): string | null {
     const url = new URL(normalized);
     if (source.domain !== url.hostname || !allowed.includes(url.hostname))
       return null;
-    const path = decodeURIComponent(url.pathname);
-    if (
-      /[\u0000-\u0020\\]/.test(path) ||
-      /(?:^|\/)(?:private|signed|token|auth|account)(?:\/|$)/i.test(path) ||
-      safeText(path) !== path
-    )
-      return null;
+    // A displayed source may be decoded again by its server; inspect nested escapes too.
+    let path = url.pathname;
+    for (let pass = 0; pass < 5; pass++) {
+      path = decodeURIComponent(path);
+      if (
+        /[\u0000-\u0020\\]/.test(path) ||
+        /(?:^|\/)(?:private|signed|token|auth|account)(?:\/|$)/i.test(path) ||
+        safeText(path) !== path
+      )
+        return null;
+      if (!/%[0-9a-fA-F]{2}/.test(path)) break;
+      if (pass === 4) return null;
+    }
     const selectors = new Set([
       "id",
       "page",
