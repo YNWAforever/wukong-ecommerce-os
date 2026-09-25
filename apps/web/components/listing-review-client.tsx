@@ -143,6 +143,7 @@ export type ListingViewResponse = {
   contentDigest: string | null;
   importedSourceRow?: Record<string, string | null> | null;
   reviewedRowDigest?: string | null;
+  reviewedSourceImportId?: string | null;
   permissions: ListingPermissions;
   historicalImportResults?: Array<{
     id: string;
@@ -1087,7 +1088,8 @@ export function ListingReviewClient({
               aria-label={t("匯入來源資料", "Imported source row")}
             >
               <h2>{t("匯入來源資料", "Imported source row")}</h2>
-              {snapshot.contentDigest !== snapshot.reviewedRowDigest ? (
+              {snapshot.contentDigest !== snapshot.reviewedRowDigest ||
+              snapshot.sourceImportId !== snapshot.reviewedSourceImportId ? (
                 <p className="inline-warning" role="alert">
                   {t(
                     "匯入來源在此版本建立後已變更。請核對目前資料並儲存新的審核版本。",
@@ -1096,7 +1098,10 @@ export function ListingReviewClient({
                 </p>
               ) : null}
               <details
-                open={snapshot.contentDigest !== snapshot.reviewedRowDigest}
+                open={
+                  snapshot.contentDigest !== snapshot.reviewedRowDigest ||
+                  snapshot.sourceImportId !== snapshot.reviewedSourceImportId
+                }
               >
                 <summary>
                   {t("查看目前匯入欄位", "View current imported fields")}

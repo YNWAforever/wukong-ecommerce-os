@@ -267,6 +267,8 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
                 ? platformProductLink.rawRow
                 : null,
             reviewedRowDigest: snapshot.activeVersion?.sourceRowDigest ?? null,
+            reviewedSourceImportId:
+              snapshot.activeVersion?.sourceImportId ?? null,
             permissions: listingPermissions(session.role),
             activity,
             historicalImportResults:
