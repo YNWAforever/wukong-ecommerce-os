@@ -1,4 +1,4 @@
-import { inflateRawSync } from "node:zlib";
+import { crc32, inflateRawSync } from "node:zlib";
 
 import type { BulkFormCell, BulkFormSheet } from "./bulk-form.js";
 
@@ -351,26 +351,6 @@ export function readBulkFormSheetName(bytes: Uint8Array): string {
     throw new BulkFormWorkbookError("workbook declares no worksheet name");
   }
   return decodeXmlText(nameMatch[1]);
-}
-
-let crcTable: Uint32Array | null = null;
-
-function crc32(bytes: Uint8Array): number {
-  if (crcTable === null) {
-    crcTable = new Uint32Array(256);
-    for (let n = 0; n < 256; n += 1) {
-      let value = n;
-      for (let bit = 0; bit < 8; bit += 1) {
-        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-      }
-      crcTable[n] = value >>> 0;
-    }
-  }
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc = (crcTable[(crc ^ byte) & 0xff] ?? 0) ^ (crc >>> 8);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
 }
 
 /**
