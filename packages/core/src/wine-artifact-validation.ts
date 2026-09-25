@@ -293,13 +293,14 @@ export function wineCandidateIssues(
       let start = text.indexOf(a.span);
       while (start >= 0) {
         for (let i = start; i < start + a.span.length; i++) coverage[i] = true;
-        start = text.indexOf(a.span, start + a.span.length);
+        start = text.indexOf(a.span, start + 1);
       }
     }
+    // indexOf and span.length use UTF-16 offsets; inspect the same code units.
     if (
-      [...text].some(
-        (ch, i) => !coverage[i] && !/\s|[.,;:!?。；，：！？、]/u.test(ch),
-      )
+      text
+        .split("")
+        .some((ch, i) => !coverage[i] && !/\s|[.,;:!?。；，：！？、]/u.test(ch))
     )
       issue(path, "unannotated_output");
     if (/[<>$€£¥]|\b(?:price|stock|sku)\b|售價|庫存|https?:\/\//i.test(text))
