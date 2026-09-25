@@ -164,6 +164,7 @@ function makeDefaultRuntime(
   const audits: any[] = [];
   const order: string[] = [];
   const ensureInputs: any[] = [];
+  const listingStatus = { value: "approved" as "approved" | "publish_failed" };
   const job = {
     id: "job_database_1",
     status: "pending_enqueue",
@@ -173,12 +174,20 @@ function makeDefaultRuntime(
   const repositories = {
     productShots: { requiresWorkflow: async () => false },
     listings: {
+      async approvalStatesByIds() {
+        return {
+          [listingId]: {
+            status: listingStatus.value,
+            activeVersionId: versionId,
+          },
+        };
+      },
       async requireForPublish() {
         order.push("listing");
         return {
           id: listingId,
           target: "shopline" as const,
-          status: "approved" as const,
+          status: listingStatus.value,
           activeVersion: {
             id: versionId,
             sequence: 1,
@@ -276,6 +285,7 @@ function makeDefaultRuntime(
     audits,
     order,
     job,
+    listingStatus,
     database,
     ensureInputs,
     repositories,
@@ -499,6 +509,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     });
     runtime.job.status = "failed";
     runtime.job.error = "remote_unavailable";
+    runtime.listingStatus.value = "publish_failed";
 
     await expect(delivery.deliver(input)).resolves.toMatchObject({
       kind: "queued",

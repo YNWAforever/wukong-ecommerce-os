@@ -149,7 +149,10 @@ export function createDeliverySnapshotReader(
     const approvalState = await deps.listings.approvalState?.(input.draftId);
     if (
       approvalState &&
-      (approvalState.status !== "approved" || !approvalState.activeVersionId)
+      (!["approved", "published", "publish_failed"].includes(
+        approvalState.status,
+      ) ||
+        !approvalState.activeVersionId)
     ) {
       return {
         listing: {
