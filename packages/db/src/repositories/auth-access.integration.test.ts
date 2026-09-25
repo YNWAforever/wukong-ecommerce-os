@@ -108,6 +108,9 @@ describe("auth access repository", () => {
       status: "pending",
     });
     await runtimeRepository.completeEnrollment(userId, email);
+    await expect(
+      runtimeRepository.hasWorkspaceMembership(userId),
+    ).resolves.toBe(true);
     await expect(runtimeRepository.isEnrollmentComplete(userId)).resolves.toBe(
       true,
     );
@@ -136,6 +139,9 @@ describe("auth access repository", () => {
       .set({ status: "accepted" })
       .where(eq(workspaceInvites.email, email));
     await expect(repository.isEnrollmentComplete(userId)).resolves.toBe(true);
+    await expect(repository.hasWorkspaceMembership(userId)).resolves.toBe(
+      false,
+    );
   });
 
   it("rejects users whose invite is not pending or accepted", async () => {

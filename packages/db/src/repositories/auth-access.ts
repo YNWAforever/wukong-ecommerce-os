@@ -31,6 +31,7 @@ export type AuthAuditEvent = {
 export type AuthAccessRepository = {
   findEligibleUser(email: string): Promise<EligibleAuthUser | null>;
   hasCredential(userId: string): Promise<boolean>;
+  hasWorkspaceMembership(userId: string): Promise<boolean>;
   isEnrollmentComplete(userId: string): Promise<boolean>;
   getPasswordGuard(email: string, now: Date): Promise<PasswordGuard>;
   recordPasswordFailure(email: string, now: Date): Promise<PasswordGuard>;
@@ -73,6 +74,14 @@ export function createAuthAccessRepository(
         )
         .limit(1);
       return Boolean(credential);
+    },
+
+    async hasWorkspaceMembership(userId) {
+      const [membership] = await db.execute<{ workspaceId: string }>(sql`
+        select workspace_id as "workspaceId"
+        from auth_get_active_membership(${userId})
+      `);
+      return Boolean(membership);
     },
 
     async isEnrollmentComplete(userId) {
