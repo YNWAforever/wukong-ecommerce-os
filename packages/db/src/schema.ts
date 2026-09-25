@@ -527,6 +527,14 @@ export const aiRuns = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
+    check(
+      "ai_runs_nonverification_cost_required",
+      sql`${table.task} = 'verify' OR ${table.pipelineRunId} IS NOT NULL OR ${table.estimatedCostUsd} IS NOT NULL`,
+    ),
+    check(
+      "ai_runs_nonnegative_known_cost",
+      sql`${table.estimatedCostUsd} IS NULL OR ${table.estimatedCostUsd} >= 0`,
+    ),
     uniqueIndex("ai_runs_workspace_task_idempotency_uq").on(
       table.workspaceId,
       table.listingId,

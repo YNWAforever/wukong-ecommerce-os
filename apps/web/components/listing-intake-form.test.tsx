@@ -44,6 +44,7 @@ afterEach(() => {
   root = undefined;
   host = undefined;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function mount() {
@@ -270,6 +271,7 @@ describe("the shared media policy", () => {
 });
 
 it("creates a manual note-only draft with a stable operation key", async () => {
+  vi.useFakeTimers();
   const onCreate = vi.fn(async (_payload: ListingIntakePayload) => undefined);
   host = document.createElement("div");
   document.body.append(host);
@@ -296,6 +298,9 @@ it("creates a manual note-only draft with a stable operation key", async () => {
     host!
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    // Submission deliberately yields to a timer before invoking onCreate.
+    // act alone does not guarantee that real timer has fired on CI.
+    await vi.runAllTimersAsync();
   });
 
   expect(onCreate).toHaveBeenCalledOnce();

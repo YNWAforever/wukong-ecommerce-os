@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyWorkingListing } from "@wukong/core";
+import { unavailableVerification } from "./listing-verification-support.js";
 import { runListingPipeline } from "./listing-pipeline.js";
 import { makeHarness, draftId, workspaceId } from "./pipeline-test-support.js";
 
@@ -56,6 +57,33 @@ describe("immutable input pipeline", () => {
     };
     return { deps, state, run, hooks, input };
   }
+  it("retains advisory verification for paid-provider immutable operations", async () => {
+    const { deps, state, input, hooks, run } = fixture();
+    hooks.get.mockResolvedValue({
+      ...run,
+      execution: { ...run.execution, provider: "openai" },
+    });
+    const verify = vi.fn(async () => unavailableVerification("network", true));
+    deps.verifier = { verify };
+
+    await expect(runListingPipeline(input, deps)).resolves.toMatchObject({
+      status: "in_review",
+    });
+
+    expect(verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: "saved note",
+        listing: expect.objectContaining({ producer: "Saved producer" }),
+      }),
+    );
+    expect(state.verificationRuns).toHaveLength(1);
+    expect(state.verificationRuns[0]?.record).toMatchObject({
+      listingVersionId: state.versions[0],
+      outcome: "unavailable",
+    });
+    expect(state.aiRuns).toHaveLength(0);
+    expect(state.audits).toContain("listing.verification_recorded");
+  });
   it("uses persisted note and preserves an unlocked operator fact", async () => {
     const { deps, state, input } = fixture();
     const extract = vi.spyOn(deps.ai, "extract");

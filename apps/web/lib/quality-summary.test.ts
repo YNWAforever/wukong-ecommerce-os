@@ -116,3 +116,14 @@ describe("computeQualitySummary", () => {
     expect(summary.gapCounts.seoTitleMirrorsName).toBe(1);
   });
 });
+
+it("preserves unknown cost coverage separately from the known subtotal", () => {
+  expect(computeQualitySummary([], 0, 3)).toMatchObject({
+    totalCostUsd: 0,
+    unknownCostRunCount: 3,
+  });
+  expect(computeQualitySummary([], 12.5)).toMatchObject({
+    totalCostUsd: 12.5,
+    unknownCostRunCount: 0,
+  });
+});

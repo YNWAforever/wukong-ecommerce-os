@@ -10,15 +10,24 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { packageRunners, shouldTryNextRunner } from "./runtime-doctor.mjs";
+import {
+  readTypeSafeRuntimeConfig,
+  typeSafeSecretPolicy,
+} from "./typesafe-runtime-config.mjs";
 
 const root = new URL("../", import.meta.url);
 
-export function compareSecretNames(requiredNames, configuredNames) {
+export function compareSecretNames(
+  requiredNames,
+  configuredNames,
+  optionalNames = [],
+) {
   const required = [...new Set(requiredNames)].sort();
   const configured = [...new Set(configuredNames)].sort();
+  const allowed = [...new Set([...required, ...optionalNames])].sort();
   return {
     missing: required.filter((name) => !configured.includes(name)),
-    unexpected: configured.filter((name) => !required.includes(name)),
+    unexpected: configured.filter((name) => !allowed.includes(name)),
   };
 }
 
@@ -55,8 +64,16 @@ export function classifyPreflight(result) {
   return { allow: false };
 }
 
-export function verifyExactSecretNames(requiredNames, configuredNames) {
-  const result = compareSecretNames(requiredNames, configuredNames);
+export function verifyExactSecretNames(
+  requiredNames,
+  configuredNames,
+  optionalNames = [],
+) {
+  const result = compareSecretNames(
+    requiredNames,
+    configuredNames,
+    optionalNames,
+  );
   if (result.missing.length || result.unexpected.length) {
     const missing = result.missing.length ? result.missing.join(", ") : "none";
     const unexpected = result.unexpected.length
@@ -70,7 +87,7 @@ export function verifyExactSecretNames(requiredNames, configuredNames) {
 
 export function verifyRuntimeSecretNames(source, env, configuredNames) {
   const enabled = env.WINE_ENRICHMENT_ENABLED === "true";
-  const requiredNames = wineEnrichmentSecretNames(
+  const baseNames = wineEnrichmentSecretNames(
     productShotSecretNames(
       listingProviderSecretNames(
         source.requiredSecrets,
@@ -80,14 +97,17 @@ export function verifyRuntimeSecretNames(source, env, configuredNames) {
     ),
     enabled,
   );
+  const typeSafe = readTypeSafeRuntimeConfig(env);
+  const secretPolicy = typeSafeSecretPolicy(baseNames, typeSafe.mode);
   // A rollback stops admission, not accepted full/research execution. Retain its key.
   verifyExactSecretNames(
-    requiredNames,
+    secretPolicy.required,
     enabled
       ? configuredNames
       : configuredNames.filter((name) => name !== "TAVILY_API_KEY"),
+    secretPolicy.optional,
   );
-  return requiredNames;
+  return secretPolicy.required;
 }
 
 function main() {
@@ -98,6 +118,7 @@ function main() {
     readFileSync(new URL("cloudflare-runtime.config.json", root), "utf8"),
   );
   const selected = source.environments[environment];
+  readTypeSafeRuntimeConfig(process.env);
   if (!selected) throw new Error("unsupported CLOUDFLARE_ENV");
 
   // corepack is not installed everywhere pnpm is. Hardcoding it made this

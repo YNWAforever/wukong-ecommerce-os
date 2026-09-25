@@ -159,10 +159,20 @@ export function QualitySummaryClient() {
             }).format(data.totalCostUsd)}
           </span>
           <span className="metric-label" id={totalCostLabelId}>
-            {localized(locale, "AI 總成本", "Total AI cost")}
+            {localized(locale, "已知 AI 成本", "Known AI cost")}
           </span>
         </div>
       </div>
+
+      {data.unknownCostRunCount > 0 && (
+        <p className="helper-copy">
+          {localized(
+            locale,
+            `另有 ${formatNumber(data.unknownCostRunCount, locale)} 次執行成本未確認`,
+            `${formatNumber(data.unknownCostRunCount, locale)} runs have unknown cost`,
+          )}
+        </p>
+      )}
 
       <ReviewQualityMetricsPanel metrics={data.reviewMetrics} />
       <table className="members-table">

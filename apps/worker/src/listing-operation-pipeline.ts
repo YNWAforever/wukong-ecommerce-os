@@ -248,7 +248,7 @@ export async function runPersistedListingOperation(
           aiRuns:
             run.execution.provider === "fake"
               ? repos.aiRuns
-              : { append: async () => {} },
+              : { ...repos.aiRuns, append: async () => {} },
           sourceAssets: {
             ...repos.sourceAssets,
             async listForListing(id) {
