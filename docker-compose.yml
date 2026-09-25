@@ -36,12 +36,10 @@ services:
       timeout: 2s
       retries: 20
   minio:
-    # quay.io, not Docker Hub: `minio/minio` and `minio/mc` both stopped
-    # resolving on Hub ("repository does not exist") and took CI down with no
-    # code change. quay.io is MinIO's other published registry. Pinned rather
-    # than `:latest` so the next upstream move is a deliberate bump here
-    # instead of a red build on an unrelated PR.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # The former quay.io community image now rejects anonymous CI pulls.
+    # Pin Chainguard's public MinIO build by digest so registry changes do not
+    # silently alter the test service or break an unrelated PR.
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: wukong
