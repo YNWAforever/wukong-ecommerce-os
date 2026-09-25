@@ -2,7 +2,10 @@ import { sql } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
-import { WORKSPACE_COOKIE_NAME } from "./workspace-selection";
+import {
+  isMissingWorkspaceSelectionFunction,
+  WORKSPACE_COOKIE_NAME,
+} from "./workspace-selection";
 
 import {
   SessionContextUnavailableError,
@@ -99,13 +102,25 @@ export function createAuthSessionContextPort(
       const { getAuthDatabase } = await import("../auth");
       const preferredWorkspaceId =
         (await cookies()).get(WORKSPACE_COOKIE_NAME)?.value ?? null;
-      const rows = await getAuthDatabase().execute<{
-        workspace_id: string;
-        actor_id: string;
-        role: string;
-      }>(
-        sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId}, ${preferredWorkspaceId})`,
-      );
+      const database = getAuthDatabase();
+      const rows = await database
+        .execute<{
+          workspace_id: string;
+          actor_id: string;
+          role: string;
+        }>(
+          sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId}, ${preferredWorkspaceId})`,
+        )
+        .catch((error: unknown) => {
+          if (!isMissingWorkspaceSelectionFunction(error)) throw error;
+          return database.execute<{
+            workspace_id: string;
+            actor_id: string;
+            role: string;
+          }>(
+            sql`select workspace_id, actor_id, role from auth_get_active_membership(${userId})`,
+          );
+        });
       const row = rows[0];
       if (!row || !(row.role in roleOrder)) return null;
       return {

@@ -144,6 +144,33 @@ describe("session context", () => {
     expect(query).toContain("auth_get_active_membership");
     expect(query).toContain("ws_preferred");
   });
+  it("uses the existing membership function until the selector migration is applied", async () => {
+    vi.stubEnv("AUTH_SMTP_URL", "smtp://localhost:1025");
+    vi.stubEnv("AUTH_EMAIL_FROM", "auth@wukong.test");
+    vi.stubEnv("AUTH_SECRET", "test-secret");
+    vi.stubEnv("DATABASE_URL", "postgres://localhost/wukong");
+    authMocks.headers.mockResolvedValue(new Headers());
+    authMocks.cookies.mockResolvedValue({ get: () => ({ value: "ws_new" }) });
+    authMocks.getSession.mockResolvedValue({ user: { id: "user_1" } });
+    authMocks.execute
+      .mockRejectedValueOnce(
+        Object.assign(new Error("undefined function"), { code: "42883" }),
+      )
+      .mockResolvedValueOnce([
+        { workspace_id: "ws_old", actor_id: "user_1", role: "viewer" },
+      ]);
+    authMocks.getAuthDatabase.mockReturnValue({ execute: authMocks.execute });
+
+    await expect(createAuthSessionContextPort().resolve()).resolves.toEqual({
+      workspaceId: "ws_old",
+      actorId: "user_1",
+      role: "viewer",
+    });
+    expect(authMocks.execute).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(authMocks.execute.mock.calls[1]?.[0])).not.toContain(
+      "ws_new",
+    );
+  });
   it("returns null for an unauthenticated Better Auth session", async () => {
     const port = createAuthSessionContextPort({
       resolveAuth: async () => null,
