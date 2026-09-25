@@ -213,6 +213,17 @@ describe("POST /api/listings/[id]/process immutable acceptance", () => {
     expect(foreign.accepted).toHaveLength(0);
   });
 
+  it("rejects malformed UUID-shaped IDs before entering the database", async () => {
+    const test = harness();
+    const response = await test.handler(
+      request(),
+      routeContext("-".repeat(36)),
+    );
+
+    expect(response.status).toBe(404);
+    expect(test.repositories.listings.lockReviewState).not.toHaveBeenCalled();
+  });
+
   it("does not accept new work while publishing", async () => {
     const test = harness({ status: "publishing" });
     const response = await test.handler(request(), routeContext());

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { readWineProgress } from "../../../../lib/wine-progress";
 import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
 import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
@@ -61,7 +62,7 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
     return withRouteErrors(async () => {
       const session = await requireSessionContext(deps.sessionContext);
       const { id } = await context.params;
-      if (!/^[0-9a-f-]{36}$/i.test(id))
+      if (!z.uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       const result = await deps
         .getDatabase()
