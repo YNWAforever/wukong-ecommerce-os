@@ -59,7 +59,8 @@ function readZipEntries(
   if (eocd < 0) throw new BulkFormWorkbookError("file is not a zip container");
 
   const entryCount = view.getUint16(eocd + 10, true);
-  let offset = view.getUint32(eocd + 16, true);
+  const centralDirectoryOffset = view.getUint32(eocd + 16, true);
+  let offset = centralDirectoryOffset;
   const decoder = new TextDecoder();
   const entries = new Map<string, Uint8Array>();
   let totalInflatedBytes = 0;
@@ -71,7 +72,9 @@ function readZipEntries(
     const method = view.getUint16(offset + 10, true);
     // The central directory is authoritative: entries written with a data
     // descriptor carry zeroed sizes in their local header.
+    const expectedCrc = view.getUint32(offset + 16, true);
     const compressedSize = view.getUint32(offset + 20, true);
+    const uncompressedSize = view.getUint32(offset + 24, true);
     const nameLength = view.getUint16(offset + 28, true);
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
@@ -86,11 +89,17 @@ function readZipEntries(
     const localNameLength = view.getUint16(localOffset + 26, true);
     const localExtraLength = view.getUint16(localOffset + 28, true);
     const start = localOffset + 30 + localNameLength + localExtraLength;
+    if (start + compressedSize > centralDirectoryOffset) {
+      throw new BulkFormWorkbookError(
+        `zip entry ${name} exceeds its container`,
+      );
+    }
     const raw = bytes.subarray(start, start + compressedSize);
 
     if (rejectDuplicateNames && entries.has(name))
       throw new BulkFormWorkbookError("workbook contains duplicate ZIP parts");
-    if (method === 0) entries.set(name, raw);
+    let data: Uint8Array;
+    if (method === 0) data = raw;
     else if (method === 8) {
       // Cap THIS entry's own inflation at whatever remains of the total
       // budget, not just the flat per-entry cap -- otherwise a rejected
@@ -125,13 +134,29 @@ function readZipEntries(
           `zip entry ${name} inflates beyond the supported size`,
         );
       }
-      totalInflatedBytes += inflated.byteLength;
-      entries.set(name, new Uint8Array(inflated));
+      data = new Uint8Array(inflated);
     } else
       throw new BulkFormWorkbookError(
         `unsupported zip compression method ${method} for ${name}`,
       );
 
+    if (data.byteLength > MAX_INFLATED_BYTES) {
+      throw new BulkFormWorkbookError(
+        `zip entry ${name} inflates beyond the supported size`,
+      );
+    }
+    if (totalInflatedBytes + data.byteLength > MAX_TOTAL_INFLATED_BYTES) {
+      throw new BulkFormWorkbookError(
+        "zip archive's total decompressed size exceeds the supported bound",
+      );
+    }
+    if (data.byteLength !== uncompressedSize || crc32(data) !== expectedCrc) {
+      throw new BulkFormWorkbookError(
+        `zip entry ${name} failed integrity check`,
+      );
+    }
+    totalInflatedBytes += data.byteLength;
+    entries.set(name, data);
     offset += 46 + nameLength + extraLength + commentLength;
   }
 

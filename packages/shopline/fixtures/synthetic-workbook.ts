@@ -2,7 +2,12 @@ import { crc32 } from "node:zlib";
 
 // Synthetic ZIP fixture builder, independent of the production writer.
 export function zipOf(
-  files: readonly { name: string; text?: string; raw?: Uint8Array }[],
+  files: readonly {
+    name: string;
+    text?: string;
+    raw?: Uint8Array;
+    uncompressed?: Uint8Array;
+  }[],
 ): Uint8Array {
   const encoder = new TextEncoder();
   const locals: Uint8Array[] = [];
@@ -14,7 +19,7 @@ export function zipOf(
     // `raw` carries an already-deflated payload, so the entry is written with
     // method 8 and the reader has to inflate it.
     const deflated = file.raw !== undefined;
-    const uncompressed = encoder.encode(file.text ?? "");
+    const uncompressed = file.uncompressed ?? encoder.encode(file.text ?? "");
     const data = file.raw ?? uncompressed;
     const crc = crc32(uncompressed);
 

@@ -12,6 +12,7 @@ import {
 import {
   BulkFormWorkbookError,
   readBulkFormSheet,
+  readDefaultBulkFormSheet,
   readBulkFormSheetName,
   writeBulkFormWorkbook,
 } from "./bulk-form-xlsx.js";
@@ -138,6 +139,27 @@ describe("bulk form xlsx adapter", () => {
     expect(readBulkFormSheet(bytes)).toEqual([["Demo Estate"]]);
   });
 
+  it("reads a deflated worksheet and rejects a mismatched CRC", () => {
+    const xml =
+      '<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>compressed</t></is></c></row></sheetData></worksheet>';
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: xml,
+        raw: deflateRawSync(Buffer.from(xml)),
+      },
+    ]);
+    expect(readBulkFormSheet(bytes)).toEqual([["compressed"]]);
+
+    const central = Buffer.from(bytes).lastIndexOf(
+      Buffer.from([0x50, 0x4b, 0x01, 0x02]),
+    );
+    expect(central).toBeGreaterThanOrEqual(0);
+    bytes[central + 16] = (bytes[central + 16] ?? 0) ^ 0xff;
+    expect(() => readBulkFormSheet(bytes)).toThrow(/integrity check/);
+  });
+
   it("keeps row numbering positional when the worksheet skips rows", () => {
     const bytes = zipOf([
       ...MINIMAL_PARTS,
@@ -206,17 +228,51 @@ describe("bulk form xlsx adapter", () => {
   });
 
   it("rejects an archive whose total decompressed size exceeds the combined bound, even though every individual entry stays under the per-entry cap", () => {
-    const first = deflateRawSync(Buffer.alloc(50 * 1024 * 1024, 0x61));
-    const second = deflateRawSync(Buffer.alloc(50 * 1024 * 1024, 0x62));
+    const firstSource = Buffer.alloc(50 * 1024 * 1024, 0x61);
+    const secondSource = Buffer.alloc(50 * 1024 * 1024, 0x62);
+    const first = deflateRawSync(firstSource);
+    const second = deflateRawSync(secondSource);
 
     const bytes = zipOf([
       ...MINIMAL_PARTS,
-      { name: "xl/worksheets/sheet1.xml", raw: new Uint8Array(first) },
-      { name: "xl/worksheets/sheet2.xml", raw: new Uint8Array(second) },
+      {
+        name: "xl/worksheets/sheet1.xml",
+        raw: new Uint8Array(first),
+        uncompressed: firstSource,
+      },
+      {
+        name: "xl/worksheets/sheet2.xml",
+        raw: new Uint8Array(second),
+        uncompressed: secondSource,
+      },
     ]);
 
     expect(bytes.byteLength).toBeLessThan(400 * 1024);
     expect(() => readBulkFormSheet(bytes)).toThrow(/total decompressed size/);
+  });
+
+  it("rejects a stored worksheet whose bytes disagree with its ZIP CRC", () => {
+    const bytes = writeBulkFormWorkbook([["original"]]);
+    const offset = Buffer.from(bytes).indexOf("original");
+    expect(offset).toBeGreaterThanOrEqual(0);
+    bytes.set(new TextEncoder().encode("modified"), offset);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+    expect(() => readDefaultBulkFormSheet(bytes)).toThrow(
+      BulkFormWorkbookError,
+    );
+  });
+
+  it("rejects a ZIP entry with a false uncompressed size", () => {
+    const bytes = writeBulkFormWorkbook([["original"]]);
+    const central = Buffer.from(bytes).lastIndexOf(
+      Buffer.from([0x50, 0x4b, 0x01, 0x02]),
+    );
+    expect(central).toBeGreaterThanOrEqual(0);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    view.setUint32(central + 24, view.getUint32(central + 24, true) + 1, true);
+
+    expect(() => readDefaultBulkFormSheet(bytes)).toThrow(/integrity check/);
   });
 
   it("rejects a file that is not a workbook", () => {
