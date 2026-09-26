@@ -357,6 +357,7 @@ export type BulkFormIssueCode =
   | "flag_not_recognized"
   | "categories_missing"
   | "variant_row_blocked"
+  | "variant_product_blocked"
   | "quantity_delta_not_neutral";
 
 export type BulkFormIssue = {
@@ -570,6 +571,7 @@ function parseRow(
   row: readonly BulkFormCell[],
   rowNumber: number,
   seenProductIds: Set<string>,
+  variantProductIds: ReadonlySet<string>,
   issues: BulkFormIssue[],
 ): BulkFormProductRow | null {
   // Worksheets omit trailing empty cells, so a short row means trailing blanks
@@ -604,6 +606,34 @@ function parseRow(
     );
     return null;
   }
+  if (raw.variantId !== null) {
+    issues.push(
+      issue(
+        "variant_row_blocked",
+        "error",
+        rowNumber,
+        "variantId",
+        raw.variantId,
+        "row has a Variant ID; variant support is not yet validated for the Opak Bulk Update pilot",
+      ),
+    );
+    return null;
+  }
+
+  if (variantProductIds.has(productId)) {
+    issues.push(
+      issue(
+        "variant_product_blocked",
+        "error",
+        rowNumber,
+        "productId",
+        productId,
+        "Product ID has a variant row in this sheet; variant products are unsupported for the Opak pilot",
+      ),
+    );
+    return null;
+  }
+
   if (seenProductIds.has(productId)) {
     issues.push(
       issue(
@@ -626,20 +656,6 @@ function parseRow(
     return null;
   }
   seenProductIds.add(productId);
-
-  if (raw.variantId !== null) {
-    issues.push(
-      issue(
-        "variant_row_blocked",
-        "error",
-        rowNumber,
-        "variantId",
-        raw.variantId,
-        "row has a Variant ID; variant support is not yet validated for the Opak Bulk Update pilot",
-      ),
-    );
-    return null;
-  }
 
   for (const column of QUANTITY_DELTA_COLUMNS) {
     const delta = raw[column];
@@ -889,6 +905,21 @@ export function parseBulkForm(sheet: BulkFormSheet): BulkFormParseResult {
     localeRow !== undefined && matchesHeaders(localeRow, "zh");
   const firstDataIndex = headerIndex + (hasLocaleHeader ? 2 : 1);
 
+  // Variant rows can follow their parent, so decide product eligibility first.
+  const productIdIndex = BULK_FORM_COLUMNS.findIndex(
+    (column) => column.key === "productId",
+  );
+  const variantIdIndex = BULK_FORM_COLUMNS.findIndex(
+    (column) => column.key === "variantId",
+  );
+  const variantProductIds = new Set<string>();
+  for (let index = firstDataIndex; index < sheet.length; index += 1) {
+    const row = sheet[index];
+    if (!row || cellAt(row, variantIdIndex) === null) continue;
+    const productId = cellAt(row, productIdIndex);
+    if (productId !== null) variantProductIds.add(productId);
+  }
+
   const rows: BulkFormProductRow[] = [];
   const seenProductIds = new Set<string>();
   for (let index = firstDataIndex; index < sheet.length; index += 1) {
@@ -896,7 +927,13 @@ export function parseBulkForm(sheet: BulkFormSheet): BulkFormParseResult {
     if (row === undefined) continue;
     if (row.every((cell) => cell === null || cell.trim().length === 0))
       continue;
-    const parsed = parseRow(row, index + 1, seenProductIds, issues);
+    const parsed = parseRow(
+      row,
+      index + 1,
+      seenProductIds,
+      variantProductIds,
+      issues,
+    );
     if (parsed !== null) rows.push(parsed);
   }
 

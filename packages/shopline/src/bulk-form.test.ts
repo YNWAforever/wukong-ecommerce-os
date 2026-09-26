@@ -216,6 +216,21 @@ describe("parseBulkForm", () => {
     expect(codes(result.issues)).toEqual(["variant_row_blocked"]);
   });
 
+  it.each([true, false])(
+    "excludes a product with variant rows regardless of parent-first order (%s)",
+    (parentFirst) => {
+      const parent = dataRow({ nameEn: "Parent product" });
+      const variant = dataRow({ variantId: "variant-001", sku: "0002" });
+      const result = parseBulkForm(
+        sheetOf(...(parentFirst ? [parent, variant] : [variant, parent])),
+      );
+
+      expect(result.rows).toHaveLength(0);
+      expect(codes(result.issues)).toContain("variant_row_blocked");
+      expect(codes(result.issues)).toContain("variant_product_blocked");
+    },
+  );
+
   it("drops a duplicate Product ID and keeps the first occurrence", () => {
     const result = parseBulkForm(
       sheetOf(dataRow({ nameEn: "first" }), dataRow({ nameEn: "second" })),
