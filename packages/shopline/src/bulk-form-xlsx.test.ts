@@ -266,6 +266,50 @@ describe("bulk form xlsx adapter", () => {
     expect(readBulkFormSheet(bytes)).toEqual([["first"], [], ["third"]]);
   });
 
+  it.each([
+    ["descending", 2, 1],
+    ["duplicate", 1, 1],
+    ["zero", 0, 0],
+  ])("rejects %s worksheet row references", (_case, first, second) => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: `<worksheet><sheetData><row r="${first}"><c r="A${first}" t="inlineStr"><is><t>first</t></is></c></row><row r="${second}"><c r="A${second}" t="inlineStr"><is><t>second</t></is></c></row></sheetData></worksheet>`,
+      },
+    ]);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(
+      /row references must increase/,
+    );
+  });
+
+  it("rejects a cell whose row number disagrees with its containing row", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1"><c r="A2" t="inlineStr"><is><t>misplaced</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(
+      /cell reference row does not match/,
+    );
+  });
+
+  it("rejects two cells with the same reference in one row", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>first</t></is></c><c r="A1" t="inlineStr"><is><t>second</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(/duplicate cell reference/);
+  });
+
   // Every number below is attacker-controlled in the uploaded file. Without
   // these bounds each case allocates until the process dies, from a payload
   // smaller than this comment.

@@ -335,6 +335,20 @@ function readWorksheet(
     const rowNumber = Number(
       /\br="(\d+)"/.exec(rowMatch[1] ?? "")?.[1] ?? rows.length + 1,
     );
+    // Worksheets omit empty rows entirely; keep the sheet positional so a
+    // 1-based row number in an issue points at the operator's spreadsheet.
+    // The row number is attacker-controlled, so bound it before allocating:
+    // a single `<row r="200000000">` would otherwise exhaust the heap.
+    if (!Number.isSafeInteger(rowNumber) || rowNumber > MAX_WORKSHEET_ROWS) {
+      throw new BulkFormWorkbookError(
+        `row reference ${rowNumber} exceeds the maximum row count`,
+      );
+    }
+    if (rowNumber <= rows.length) {
+      throw new BulkFormWorkbookError(
+        "worksheet row references must increase from 1",
+      );
+    }
     const body = rowMatch[2] ?? "";
     const cells = new Map<number, string | null>();
 
@@ -343,8 +357,19 @@ function readWorksheet(
     )) {
       const attributes = cellMatch[1] ?? "";
       const content = cellMatch[2];
-      const ref = /\br="([A-Za-z]+)\d+"/.exec(attributes)?.[1];
-      if (ref === undefined) continue;
+      const ref = /\br="([A-Za-z]+)(\d+)"/.exec(attributes);
+      if (ref === null) continue;
+      if (Number(ref[2]) !== rowNumber) {
+        throw new BulkFormWorkbookError(
+          "cell reference row does not match its containing row",
+        );
+      }
+      const column = columnIndexFromRef(ref[1] ?? "");
+      if (cells.has(column)) {
+        throw new BulkFormWorkbookError(
+          "duplicate cell reference in worksheet row",
+        );
+      }
       const type = /\bt="([^"]+)"/.exec(attributes)?.[1] ?? "n";
 
       let value: string | null = null;
@@ -359,18 +384,9 @@ function readWorksheet(
           value = literal === undefined ? null : decodeXmlText(literal);
         }
       }
-      cells.set(columnIndexFromRef(ref), value);
+      cells.set(column, value);
     }
 
-    // Worksheets omit empty rows entirely; keep the sheet positional so a
-    // 1-based row number in an issue points at the operator's spreadsheet.
-    // The row number is attacker-controlled, so bound it before allocating:
-    // a single `<row r="200000000">` would otherwise exhaust the heap.
-    if (!Number.isSafeInteger(rowNumber) || rowNumber > MAX_WORKSHEET_ROWS) {
-      throw new BulkFormWorkbookError(
-        `row reference ${rowNumber} exceeds the maximum row count`,
-      );
-    }
     while (rows.length < rowNumber - 1) rows.push([]);
 
     const width = cells.size === 0 ? 0 : Math.max(...cells.keys()) + 1;
