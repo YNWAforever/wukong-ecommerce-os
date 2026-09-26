@@ -28,6 +28,10 @@ const issueLabels: Record<BulkFormIssueCode, [string, string]> = {
     "暫不支援變體資料列；已保留來源證據",
     "Variant rows unsupported; source evidence retained",
   ],
+  variant_product_blocked: [
+    "變體商品暫不支援；已排除並保留來源證據",
+    "Product with variants excluded; source evidence retained",
+  ],
   quantity_delta_not_neutral: [
     "來源包含數量調整",
     "Source contains a quantity adjustment",
