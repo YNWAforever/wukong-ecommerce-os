@@ -27,6 +27,22 @@ describe("deterministic product extraction", () => {
     expect(p?.price).toEqual({ amount: "123.50", currency: "HKD" });
     expect(p?.fieldSources.title).toBe("json_ld");
   });
+
+  it("extracts Product JSON-LD from XHTML documents", () => {
+    const result = extractDocument({
+      url,
+      capturedAt,
+      contentType: "application/xhtml+xml; charset=utf-8",
+      html:
+        '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><head>' +
+        ld(base) +
+        "</head><body><p>Product</p></body></html>",
+    });
+
+    expect(result.product?.title).toBe("茶 & 酒");
+    expect(result.warnings).not.toContain("invalid_sitemap");
+  });
+
   it("recognizes a mixed-case schema.org Product type URI", () => {
     const product = extract(
       ld({ ...base, "@type": "HTTPS://SCHEMA.ORG/Product" }),

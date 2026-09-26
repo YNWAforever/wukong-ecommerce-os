@@ -83,9 +83,11 @@ export function extractDocument(
     if (!result.warnings.includes(code) && result.warnings.length < 30)
       result.warnings.push(code);
   };
+  const mediaType = input.contentType?.split(";")[0]?.trim().toLowerCase();
   const xml =
-    /xml/i.test(input.contentType ?? "") ||
-    /^\s*(?:<\?xml\b|<urlset\b|<sitemapindex\b)/i.test(input.html);
+    mediaType !== "application/xhtml+xml" &&
+    (/xml/i.test(mediaType ?? "") ||
+      /^\s*(?:<\?xml\b|<urlset\b|<sitemapindex\b)/i.test(input.html));
   if (
     new TextEncoder().encode(input.html).byteLength >
     (xml ? 1024 * 1024 : 2 * 1024 * 1024)
