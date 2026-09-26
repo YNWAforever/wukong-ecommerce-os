@@ -97,6 +97,33 @@ describe("website document orchestration", () => {
     },
   );
 
+  it("uses the new origin interval when scheduling redirected robots", () => {
+    const redirectedAt = new Date(now.getTime() + 600_000);
+    const s = scan("discovery");
+    s.checkpoint.robotsPolicy = parseRobots({
+      url: origin + "robots.txt",
+      status: 200,
+      text: "User-agent: *\nCrawl-delay: 600",
+    });
+    s.nextEligibleAt = new Date(redirectedAt.getTime() + 600_000);
+    s.checkpoint.nextEligibleAt = redirectedAt.toISOString();
+
+    const result = advanceWebsiteDocument(
+      s,
+      { ...doc(origin, "", 301), redirectedTo: "https://www.store.example/" },
+      redirectedAt,
+    );
+
+    expect(result.state).toBe("running");
+    expect(result.checkpoint.pending).toEqual({
+      url: "https://www.store.example/robots.txt",
+      kind: "robots",
+    });
+    expect(result.checkpoint.nextEligibleAt).toBe(
+      new Date(redirectedAt.getTime() + 1000).toISOString(),
+    );
+  });
+
   it("reapproves redirected origin before retaining any product evidence", () => {
     const result = advanceWebsiteDocument(
       scan("discovery"),
@@ -417,6 +444,54 @@ it("does not follow disallowed canonical identities or exceed the product budget
   );
   expect(budget.checkpoint.pending).toBeNull();
   expect(budget.checkpoint.preview.warnings).toContain("scan_budget_reached");
+});
+
+it("does not pass the old origin delay to redirected robots fetches", async () => {
+  const s = scan("robots");
+  const redirectedOrigin = "https://www.store.example/";
+  s.checkpoint.canonicalOrigin = redirectedOrigin;
+  s.checkpoint.pending = {
+    url: redirectedOrigin + "robots.txt",
+    kind: "robots",
+  };
+  s.checkpoint.robotsPolicy = parseRobots({
+    url: origin + "robots.txt",
+    status: 200,
+    text: "User-agent: *\nCrawl-delay: 600",
+  });
+  const publicFetch = vi.fn(
+    async (_input: Parameters<import("./public-fetch").PublicFetch>[0]) => ({
+      ...doc(redirectedOrigin + "robots.txt", ""),
+      contentType: "text/plain",
+    }),
+  );
+  const database = {
+    forWorkspace: async (_ws: string, work: any) =>
+      work({
+        websiteCatalog: {
+          beginDocumentFetch: async () => ({
+            status: "claimed",
+            scan: s,
+            step: { ...s.checkpoint.pending, lockedOrigin: redirectedOrigin },
+          }),
+          completeStep: async () => ({}),
+        },
+      }),
+  };
+
+  await createWebsiteDocumentService({
+    database: database as any,
+    publicFetch,
+    now: () => now,
+  })({
+    kind: "website_scan",
+    workspaceId: "ws",
+    scanId: s.id,
+    revision: 0,
+    leaseToken: s.id,
+  });
+
+  expect(publicFetch.mock.calls[0]![0].crawlDelaySeconds).toBe(1);
 });
 
 it("passes the persisted robots delay and path approval into protected transport", async () => {
