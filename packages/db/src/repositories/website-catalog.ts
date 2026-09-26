@@ -270,7 +270,12 @@ function validateProgress(
   if (
     next.pending &&
     Date.parse(next.nextEligibleAt) <
-      Math.max(scan.nextEligibleAt.getTime(), now.getTime() + 1000)
+      Math.max(
+        rootUrl(pending.url) === rootUrl(next.pending.url)
+          ? scan.nextEligibleAt.getTime()
+          : 0,
+        now.getTime() + 1000,
+      )
   )
     throw new Error("Next request violates crawl interval");
   const oldProducts = new Map(old.preview.products.map((p) => [p.key, p]));
@@ -531,18 +536,16 @@ export function createWebsiteCatalogRepository(
         await terminate(scan, input.now, "request_budget_exhausted");
         return { status: "stale" };
       }
+      const policy = scan.checkpoint.robotsPolicy;
+      const nextDelay =
+        policy?.origin === rootUrl(scan.checkpoint.pending!.url)
+          ? Math.max(1, policy.crawlDelaySeconds)
+          : 1;
       const [updated] = await transaction
         .update(websiteScans)
         .set({
           [field]: scan[field] + 1,
-          nextEligibleAt: new Date(
-            input.now.getTime() +
-              Math.max(
-                1,
-                scan.checkpoint.robotsPolicy?.crawlDelaySeconds ?? 1,
-              ) *
-                1000,
-          ),
+          nextEligibleAt: new Date(input.now.getTime() + nextDelay * 1000),
           updatedAt: input.now,
         })
         .where(whereScan(scan.id))

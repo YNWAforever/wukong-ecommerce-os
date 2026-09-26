@@ -23,6 +23,10 @@ import {
 
 export type WebsiteDatabase = Pick<Database, "forWorkspace">;
 const root = (url: string) => new URL(url).origin + "/";
+const crawlDelayFor = (checkpoint: WebsiteCheckpoint, url: string) =>
+  checkpoint.robotsPolicy?.origin === root(url)
+    ? Math.max(1, checkpoint.robotsPolicy.crawlDelaySeconds)
+    : 1;
 const unique = (urls: string[], limit: number) =>
   [...new Set(urls)].slice(0, limit);
 const warn = (checkpoint: WebsiteCheckpoint, warnings: string[]) => {
@@ -58,9 +62,9 @@ export function advanceWebsiteDocument(
   };
   const schedule = (url: string, kind: "robots" | "discovery" | "product") => {
     checkpoint.pending = { url, kind };
-    const delay = Math.max(1, checkpoint.robotsPolicy?.crawlDelaySeconds ?? 1);
+    const delay = crawlDelayFor(checkpoint, url);
     const nextEligibleAt = Math.max(
-      scan.nextEligibleAt.getTime(),
+      root(pending.url) === root(url) ? scan.nextEligibleAt.getTime() : 0,
       now.getTime() + delay * 1000,
     );
     if (
@@ -329,8 +333,7 @@ export function createWebsiteDocumentService(deps: {
           kind: step.kind,
           lockedOrigin: step.lockedOrigin,
           signal: AbortSignal.timeout(10_000),
-          crawlDelaySeconds:
-            scan.checkpoint.robotsPolicy?.crawlDelaySeconds ?? 1,
+          crawlDelaySeconds: crawlDelayFor(scan.checkpoint, step.url),
           approveUrl:
             step.kind === "robots"
               ? undefined

@@ -965,3 +965,76 @@ it("binds an unfetched canonical redirect to robots reapproval only", async () =
     ),
   ).rejects.toThrow();
 });
+
+it("scopes persisted crawl intervals to the requested origin after redirect", async () => {
+  const initial = await create();
+  const robots = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 0, now }),
+  ))!;
+  await run((r) => r.beginDocumentFetch({ ...robots, now }));
+  const policy = {
+    origin: "https://store.example/",
+    state: "ready" as const,
+    directives: [],
+    sitemapLinks: [],
+    crawlDelaySeconds: 600,
+    warnings: [],
+  };
+  const discovery = await run((r) =>
+    r.completeStep({
+      ...robots,
+      now,
+      observation: {
+        documentUrl: "https://store.example/robots.txt",
+        state: "running",
+        checkpoint: {
+          ...initial.checkpoint,
+          robotsPolicy: policy,
+          pending: { url: "https://store.example/", kind: "discovery" },
+          discoveryUrls: ["https://store.example/"],
+          nextEligibleAt: at(600).toISOString(),
+        },
+      },
+    }),
+  );
+  const discoveryStep = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 1, now: at(600) }),
+  ))!;
+  const oldOriginClaim = await run((r) =>
+    r.beginDocumentFetch({ ...discoveryStep, now: at(600) }),
+  );
+  if (oldOriginClaim.status !== "claimed") throw new Error("claim expected");
+  expect(oldOriginClaim.scan.nextEligibleAt).toEqual(at(1200));
+
+  const alias = "https://www.store.example/";
+  const redirectedCheckpoint: WebsiteCheckpoint = {
+    ...discovery.checkpoint,
+    canonicalOrigin: alias,
+    pending: { url: alias + "robots.txt", kind: "robots" },
+    discoveryUrls: [alias],
+    candidateUrls: [],
+    visitedUrls: [],
+    nextEligibleAt: at(601).toISOString(),
+  };
+  const redirected = await run((r) =>
+    r.completeStep({
+      ...discoveryStep,
+      now: at(600),
+      observation: {
+        documentUrl: "https://store.example/",
+        redirectedTo: alias,
+        state: "running",
+        checkpoint: redirectedCheckpoint,
+      },
+    }),
+  );
+  expect(redirected.nextEligibleAt).toEqual(at(601));
+  const reapprovalStep = (await run((r) =>
+    r.claimStep({ scanId: initial.id, revision: 2, now: at(601) }),
+  ))!;
+  const newOriginClaim = await run((r) =>
+    r.beginDocumentFetch({ ...reapprovalStep, now: at(601) }),
+  );
+  if (newOriginClaim.status !== "claimed") throw new Error("claim expected");
+  expect(newOriginClaim.scan.nextEligibleAt).toEqual(at(602));
+});
