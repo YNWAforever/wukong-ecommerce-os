@@ -11,7 +11,7 @@
  * The distinction being pinned: the same key with the same content is the same
  * asset; the same key with DIFFERENT content is still a conflict.
  */
-import { MemoryAssetStore } from "@wukong/assets";
+import { MemoryAssetStore, verifiedSourceAssetKey } from "@wukong/assets";
 import { describe, expect, it, vi } from "vitest";
 
 import { createFinalizeAssetHandler } from "./route.js";
@@ -55,6 +55,7 @@ async function storeWithUpload() {
 function harness(
   store: MemoryAssetStore,
   existing: Record<string, unknown> | null,
+  existingKey?: string,
 ) {
   const creates: unknown[] = [];
   const audits: unknown[] = [];
@@ -69,8 +70,8 @@ function harness(
         ) {
           return work({
             sourceAssets: {
-              async getByStorageKey() {
-                return existing;
+              async getByStorageKey(key: string) {
+                return !existingKey || key === existingKey ? existing : null;
               },
               async create(input: unknown) {
                 creates.push(input);
@@ -109,6 +110,22 @@ describe("POST /api/assets/finalize replayed", () => {
     expect(audits).toEqual([]);
   });
 
+  it("replays an asset finalized before verified copies used a new key", async () => {
+    const { store, key } = await storeWithUpload();
+    const { handler, creates } = harness(
+      store,
+      { id: "legacy_asset", metadata: { clientSha256: SHA } },
+      key,
+    );
+
+    const response = await handler(
+      requestFor({ key, mimeType: "image/png", size: 1024, sha256: SHA }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ assetId: "legacy_asset" });
+    expect(creates).toEqual([]);
+  });
   it("still refuses a key already holding different content", async () => {
     // Same key, different bytes. Handing back the first asset would attach the
     // wrong file to the operator's listing without telling anyone.
@@ -180,5 +197,17 @@ describe("POST /api/assets/finalize replayed", () => {
 
 vi.mock("@wukong/assets/inspect-source", () => ({
   SourceInspectionError: class extends Error {},
-  inspectUploadedSource: async () => ({ hashVerified: true }),
+  inspectUploadedSource: async (
+    _store: unknown,
+    workspaceId: string,
+    key: string,
+    expected: { mimeType: string },
+  ) => ({
+    hashVerified: true,
+    verifiedStorageKey: verifiedSourceAssetKey(
+      workspaceId,
+      key,
+      expected.mimeType,
+    ),
+  }),
 }));

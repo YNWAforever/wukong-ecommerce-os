@@ -3,7 +3,7 @@ import {
   SourceInspectionError,
 } from "@wukong/assets/inspect-source";
 import {
-  assertAssetKey,
+  assertUploadAssetKey,
   MAX_ASSET_SIZE,
   SUPPORTED_ASSET_MIME_TYPES,
 } from "@wukong/assets";
@@ -45,7 +45,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
 
       const body = finalizeAssetSchema.parse(await request.json());
       try {
-        assertAssetKey(context.workspaceId, body.key);
+        assertUploadAssetKey(context.workspaceId, body.key);
       } catch {
         throw new ApiError(
           403,
@@ -82,21 +82,26 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
         );
       } catch (error) {
         if (error instanceof SourceInspectionError)
-          throw new ApiError(422, error.code, error.message);
+          throw new ApiError(
+            error.code === "asset_already_finalized" ? 409 : 422,
+            error.code,
+            error.message,
+          );
         throw error;
       }
+      const { verifiedStorageKey, ...inspectionMetadata } = inspection;
+      const fileName = body.key.slice(body.key.lastIndexOf("/") + 1);
       const finalized = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const existing = await repositories.sourceAssets.getByStorageKey(
-            body.key,
-          );
+          const existing =
+            (await repositories.sourceAssets.getByStorageKey(
+              verifiedStorageKey,
+            )) ?? (await repositories.sourceAssets.getByStorageKey(body.key));
           if (existing) {
-            // A replay, not a conflict. The key names one immutable upload, so
-            // the same key carrying the same content is the same asset. Once a
-            // client can resume a stored key instead of re-uploading, a
-            // finalize whose response was lost is the ordinary way to arrive
-            // here, and refusing it stranded bytes already safely in storage.
+            // Reuse a finalized asset only when its recorded digest matches.
+            // The raw-key lookup also supports rows created before verified
+            // server-owned copies were introduced.
             const recorded = (existing.metadata ?? {}) as {
               clientSha256?: unknown;
             };
@@ -110,13 +115,14 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
             return { asset: existing, replayed: true };
           }
           const created = await repositories.sourceAssets.create({
-            storageKey: body.key,
+            storageKey: verifiedStorageKey,
             kind: body.mimeType,
             metadata: {
               size: object.size,
               mimeType: object.mimeType,
               clientSha256: body.sha256,
-              ...inspection,
+              fileName,
+              ...inspectionMetadata,
             },
           });
           await repositories.audit.write({
@@ -127,7 +133,7 @@ export function createFinalizeAssetHandler(deps: IntakeRouteDeps) {
             metadata: {
               size: object.size,
               mimeType: object.mimeType,
-              ...inspection,
+              ...inspectionMetadata,
             },
           });
           return { asset: created, replayed: false };

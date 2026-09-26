@@ -55,6 +55,38 @@ describe("source inspection", () => {
     expect(
       await inspectUploadedSource(store, "inspect", key, expected),
     ).toEqual(inspected);
+
+    expect(inspected.verifiedStorageKey).not.toBe(key);
+    const verifiedDirectory = inspected.verifiedStorageKey.slice(
+      0,
+      inspected.verifiedStorageKey.lastIndexOf("/") + 1,
+    );
+    expect(inspected.normalizedStorageKey.startsWith(verifiedDirectory)).toBe(
+      true,
+    );
+    const modelBytes = await store.readObject(
+      "inspect",
+      inspected.normalizedStorageKey,
+    );
+    const replacement = await sharp({
+      create: { width: 4, height: 4, channels: 3, background: "blue" },
+    })
+      .jpeg()
+      .toBuffer();
+    await store.writeObject("inspect", key, replacement, "image/jpeg");
+    expect(
+      await store.readObject("inspect", inspected.verifiedStorageKey),
+    ).toEqual(new Uint8Array(bytes));
+    expect(
+      await store.readObject("inspect", inspected.normalizedStorageKey),
+    ).toEqual(modelBytes);
+    await expect(
+      inspectUploadedSource(store, "inspect", key, {
+        mimeType: "image/jpeg",
+        size: replacement.byteLength,
+        sha256: createHash("sha256").update(replacement).digest("hex"),
+      }),
+    ).rejects.toMatchObject({ code: "asset_already_finalized" });
   });
   it("rejects spoofed MIME, corrupt pixels and a changed content digest", async () => {
     const png = await sharp({
@@ -125,4 +157,24 @@ it("rejects truncated PDF structures and caps pages before provider admission", 
   await expect(
     inspectUploadedSource(large.store, "inspect", large.key, large.expected),
   ).rejects.toMatchObject({ code: "invalid_document" });
+});
+
+it("reports an oversized changed upload as a content mismatch", async () => {
+  class OversizedUploadStore extends MemoryAssetStore {
+    override async readObject(): Promise<Uint8Array> {
+      throw Error("asset_body_too_large");
+    }
+  }
+  await expect(
+    inspectUploadedSource(
+      new OversizedUploadStore(),
+      "inspect",
+      "ws/inspect/sources/00000000-0000-4000-8000-000000000001/source.pdf",
+      {
+        mimeType: "application/pdf",
+        size: 100,
+        sha256: "a".repeat(64),
+      },
+    ),
+  ).rejects.toMatchObject({ code: "asset_content_mismatch" });
 });
