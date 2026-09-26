@@ -23,12 +23,16 @@ const ZIP_ENCRYPTION_FLAGS = 0x0001 | 0x0040 | 0x2000;
  * a worksheet declares its own row and column references, and a zip entry
  * declares nothing about how large it inflates to.
  *
- * The row and column ceilings are Excel's own limits, so no workbook a
- * spreadsheet could have produced is rejected. The inflate ceiling is generous
+ * Excel's row and column ceilings reject impossible references. A lower
+ * positional row limit also prevents a tiny workbook with one distant row
+ * from materializing a million empty arrays. The inflate ceiling is generous
  * for a worksheet but finite: without it a 272KB upload inflates to 112MB at a
  * realistic compression ratio, and a 4MB one to well over a gigabyte.
  */
 const MAX_WORKSHEET_ROWS = 1_048_576;
+// Imports allow 5,000 products; leave ample room for headers and blank rows
+// without letting one distant row allocate most of Excel's full row range.
+const MAX_MATERIALIZED_ROWS = 50_000;
 const MAX_WORKSHEET_COLUMNS = 16_384;
 const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
 // 1.5x the per-entry cap: generous for a legitimate multi-sheet/multi-part
@@ -347,6 +351,11 @@ function readWorksheet(
     if (rowNumber <= rows.length) {
       throw new BulkFormWorkbookError(
         "worksheet row references must increase from 1",
+      );
+    }
+    if (rowNumber > MAX_MATERIALIZED_ROWS) {
+      throw new BulkFormWorkbookError(
+        "worksheet row reference exceeds the supported row count",
       );
     }
     const body = rowMatch[2] ?? "";

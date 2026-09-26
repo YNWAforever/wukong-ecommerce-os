@@ -326,6 +326,18 @@ describe("bulk form xlsx adapter", () => {
     expect(() => readBulkFormSheet(bytes)).toThrow(/exceeds the maximum row/);
   });
 
+  it("rejects a tiny workbook with an in-range row that would materialize a million empty rows", () => {
+    const bytes = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1048576"><c r="A1048576" t="inlineStr"><is><t>product</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+
+    expect(bytes.byteLength).toBeLessThan(1024);
+    expect(() => readBulkFormSheet(bytes)).toThrow(/supported row count/);
+  });
   it("rejects a cell reference beyond the worksheet column limit", () => {
     const bytes = zipOf([
       ...MINIMAL_PARTS,
