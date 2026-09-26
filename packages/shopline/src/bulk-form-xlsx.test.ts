@@ -84,12 +84,30 @@ describe("bulk form xlsx adapter", () => {
       ...MINIMAL_PARTS,
       {
         name: "xl/workbook.xml",
-        text: '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Q3 &amp; Q4" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        text: '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Q3 &amp; Q4 &#35; &#x1F37E;" sheetId="1" r:id="rId1"/></sheets></workbook>',
       },
     ]);
 
-    expect(readBulkFormSheetName(bytes)).toBe("Q3 & Q4");
+    expect(readBulkFormSheetName(bytes)).toBe("Q3 & Q4 # 🍾");
   });
+
+  it.each(["&#0;", "&#xD800;", "&#x110000;"])(
+    "rejects an invalid numeric XML reference %s",
+    (reference) => {
+      const bytes = zipOf([
+        ...MINIMAL_PARTS,
+        {
+          name: "xl/workbook.xml",
+          text:
+            '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' +
+            reference +
+            '" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        },
+      ]);
+
+      expect(() => readBulkFormSheetName(bytes)).toThrow(BulkFormWorkbookError);
+    },
+  );
 
   it("rejects a workbook missing xl/workbook.xml", () => {
     expect(() => readBulkFormSheetName(zipOf(MINIMAL_PARTS))).toThrow(

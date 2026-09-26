@@ -171,15 +171,29 @@ const XML_ENTITIES = new Map([
   ["apos", "'"],
 ]);
 
+function decodeNumericXmlReference(body: string): string {
+  const hex = body.startsWith("#x") || body.startsWith("#X");
+  const codePoint = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+  const legal =
+    codePoint === 0x9 ||
+    codePoint === 0xa ||
+    codePoint === 0xd ||
+    (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+    (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+    (codePoint >= 0x10000 && codePoint <= 0x10ffff);
+  if (!legal) {
+    throw new BulkFormWorkbookError(
+      "workbook contains invalid XML character reference",
+    );
+  }
+  return String.fromCodePoint(codePoint);
+}
+
 function decodeXmlText(text: string): string {
   return text.replace(
     /&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);/g,
     (whole, body: string) => {
-      if (body.startsWith("#x") || body.startsWith("#X")) {
-        return String.fromCodePoint(Number.parseInt(body.slice(2), 16));
-      }
-      if (body.startsWith("#"))
-        return String.fromCodePoint(Number.parseInt(body.slice(1), 10));
+      if (body.startsWith("#")) return decodeNumericXmlReference(body);
       return XML_ENTITIES.get(body) ?? whole;
     },
   );
