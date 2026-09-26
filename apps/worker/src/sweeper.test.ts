@@ -211,6 +211,24 @@ describe("outbox recovery", () => {
     payload: job,
   };
 
+  it("recovers owed outbox work when an earlier recovery query fails", async () => {
+    const send = vi.fn(async () => undefined);
+    const { database, markDispatched } = makeOutboxDatabase([owed]);
+    database.findStuckListingJobs.mockRejectedValueOnce(
+      new Error("stuck listing query unavailable"),
+    );
+
+    await expect(
+      handleScheduled(undefined as never, env(send), undefined as never, {
+        createDatabase: () => database as never,
+      }),
+    ).rejects.toThrow("stuck listing query unavailable");
+
+    expect(database.findUndispatchedListingJobs).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(job);
+    expect(markDispatched).toHaveBeenCalledWith([owed.outboxId]);
+    expect(database.close).toHaveBeenCalledOnce();
+  });
   it("sends work nobody advanced and confirms it in the same tick", async () => {
     const send = vi.fn(async () => undefined);
     const { database, markDispatched, markAttempted } = makeOutboxDatabase([
@@ -233,6 +251,49 @@ describe("outbox recovery", () => {
     expect(markAttempted).not.toHaveBeenCalled();
   });
 
+  it("confirms other workspaces when one outbox confirmation fails", async () => {
+    const otherJob = { ...job, workspaceId: "ws_other" };
+    const other = {
+      ...owed,
+      workspaceId: "ws_other",
+      outboxId: "e78f9a0b-7bb7-4a6d-930d-13f39760d41d",
+      payload: otherJob,
+    };
+    const markDispatched = vi.fn(
+      async (workspaceId: string, _ids: readonly string[]) => {
+        if (workspaceId === owed.workspaceId)
+          throw new Error("confirmation unavailable");
+      },
+    );
+    const database = {
+      ...makeDatabase([]),
+      findUndispatchedListingJobs: vi.fn(async () => [owed, other]),
+      forWorkspace: async (workspaceId: string, work: any) =>
+        work({
+          dispatchOutbox: {
+            markDispatched: (ids: readonly string[]) =>
+              markDispatched(workspaceId, ids),
+            markAttempted: vi.fn(),
+          },
+        }),
+    };
+    const send = vi.fn(async () => undefined);
+
+    await expect(
+      handleScheduled(undefined as never, env(send), undefined as never, {
+        createDatabase: () => database as never,
+      }),
+    ).rejects.toThrow("confirmation unavailable");
+
+    expect(send).toHaveBeenCalledWith(job);
+    expect(send).toHaveBeenCalledWith(otherJob);
+    expect(markDispatched).toHaveBeenCalledWith(owed.workspaceId, [
+      owed.outboxId,
+    ]);
+    expect(markDispatched).toHaveBeenCalledWith(other.workspaceId, [
+      other.outboxId,
+    ]);
+  });
   it("counts a failed send as an attempt rather than confirming it", async () => {
     // Confirming an unsent row would lose the work permanently: nothing else
     // reads the outbox, so a row marked dispatched is never looked at again.

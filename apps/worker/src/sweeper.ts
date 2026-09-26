@@ -203,20 +203,43 @@ async function recoverOutbox(
     }
   }
 
+  const markFailures: unknown[] = [];
   for (const [workspaceId, ids] of dispatched) {
-    await database.forWorkspace(workspaceId, (repositories) =>
-      repositories.dispatchOutbox.markDispatched(ids),
-    );
+    try {
+      await database.forWorkspace(workspaceId, (repositories) =>
+        repositories.dispatchOutbox.markDispatched(ids),
+      );
+    } catch (error) {
+      markFailures.push(error);
+      console.error(
+        JSON.stringify({
+          event: "outbox_sweeper.mark_failed",
+          workspaceId,
+          kind: "dispatched",
+        }),
+      );
+    }
   }
   for (const [workspaceId, ids] of attempted) {
-    await database.forWorkspace(workspaceId, (repositories) =>
-      repositories.dispatchOutbox.markAttempted(ids),
-    );
+    try {
+      await database.forWorkspace(workspaceId, (repositories) =>
+        repositories.dispatchOutbox.markAttempted(ids),
+      );
+    } catch (error) {
+      markFailures.push(error);
+      console.error(
+        JSON.stringify({
+          event: "outbox_sweeper.mark_failed",
+          workspaceId,
+          kind: "attempted",
+        }),
+      );
+    }
   }
-
   console.info(
     JSON.stringify({ event: "outbox_sweeper.completed", requeued, failed }),
   );
+  if (markFailures.length) throw markFailures[0];
 }
 
 type SweeperDependencies = {
@@ -230,43 +253,62 @@ export async function handleScheduled(
   dependencies: SweeperDependencies = {},
 ): Promise<void> {
   const database = (dependencies.createDatabase ?? createWorkerDatabase)(env);
+  const failures: unknown[] = [];
+  let requeued = 0;
+  let failed = 0;
+  const attempt = async (stage: string, work: () => Promise<unknown>) => {
+    try {
+      await work();
+    } catch (error) {
+      failures.push(error);
+      console.error(JSON.stringify({ event: "sweeper.stage_failed", stage }));
+    }
+  };
+
   try {
-    if (
-      database.findAbandonedWineOperations &&
-      (await database.inspectWineRuntimeCompatibility?.())?.ready
-    ) {
+    await attempt("abandoned_wine_operations", async () => {
+      if (
+        !database.findAbandonedWineOperations ||
+        !(await database.inspectWineRuntimeCompatibility?.())?.ready
+      )
+        return;
       const abandoned = await database.findAbandonedWineOperations({
         maxRows: 20,
         maxAttempts: OUTBOX_MAX_ATTEMPTS,
       });
       for (const row of abandoned)
-        await recoverWineOperation(database, row.workspaceId, row.runId);
-    }
-    if (database.findAbandonedListingOperations) {
+        await attempt("abandoned_wine_operation", () =>
+          recoverWineOperation(database, row.workspaceId, row.runId),
+        );
+    });
+
+    await attempt("abandoned_listing_operations", async () => {
+      if (!database.findAbandonedListingOperations) return;
       const abandoned = await database.findAbandonedListingOperations({
         olderThanSeconds: 900,
         maxRows: 20,
         maxAttempts: OUTBOX_MAX_ATTEMPTS,
       });
       let terminalized = 0;
-      for (const row of abandoned) {
-        const result = await database.forWorkspace(row.workspaceId, (repos) =>
-          repos.pipelineRuns.failAbandonedOperation(
-            {
-              runId: row.runId,
-              olderThanSeconds: 900,
-              maxAttempts: OUTBOX_MAX_ATTEMPTS,
-            },
-            {
-              workspaceId: row.workspaceId,
-              actorId: "system:sweeper",
-              entityId: row.runId,
-            },
-            repos.audit,
-          ),
-        );
-        if (result.failed) terminalized++;
-      }
+      for (const row of abandoned)
+        await attempt("abandoned_listing_operation", async () => {
+          const result = await database.forWorkspace(row.workspaceId, (repos) =>
+            repos.pipelineRuns.failAbandonedOperation(
+              {
+                runId: row.runId,
+                olderThanSeconds: 900,
+                maxAttempts: OUTBOX_MAX_ATTEMPTS,
+              },
+              {
+                workspaceId: row.workspaceId,
+                actorId: "system:sweeper",
+                entityId: row.runId,
+              },
+              repos.audit,
+            ),
+          );
+          if (result.failed) terminalized++;
+        });
       console.info(
         JSON.stringify({
           event: "operation_sweeper.completed",
@@ -274,67 +316,81 @@ export async function handleScheduled(
           terminalized,
         }),
       );
-    }
-    const jobs = await database.findStuckListingJobs({
-      olderThanSeconds: SWEEP_OLDER_THAN_SECONDS,
-      maxRows: SWEEP_MAX_ROWS,
     });
-    let requeued = 0;
-    let failed = 0;
-    for (const job of jobs) {
-      const parsed = listingJobSchema.safeParse(job);
-      if (!parsed.success) continue;
-      try {
-        await env.LISTING_QUEUE.send(parsed.data);
-        requeued += 1;
-        console.info(
-          JSON.stringify({
-            event: "sweeper.requeued",
-            workspaceId: parsed.data.workspaceId,
-            listingId: parsed.data.draftId,
-            activeVersionSequence: parsed.data.activeVersionSequence,
-          }),
-        );
-      } catch (error) {
-        failed += 1;
-        console.error(
-          JSON.stringify({
-            event: "sweeper.requeue_failed",
-            workspaceId: parsed.data.workspaceId,
-            listingId: parsed.data.draftId,
-            activeVersionSequence: parsed.data.activeVersionSequence,
-            reason: "queue_send_failed",
-          }),
-        );
-      }
-    }
-    const websiteScans = await database.findStuckWebsiteScans({ maxRows: 10 });
-    for (const scan of websiteScans) {
-      const parsed = websiteJobSchema.safeParse({
-        kind: "website_scan",
-        ...scan,
+
+    await attempt("stuck_listing_jobs", async () => {
+      const jobs = await database.findStuckListingJobs({
+        olderThanSeconds: SWEEP_OLDER_THAN_SECONDS,
+        maxRows: SWEEP_MAX_ROWS,
       });
-      if (!parsed.success) continue;
-      let status: "sent" | "failed" = "sent";
-      try {
-        await env.LISTING_QUEUE.send(parsed.data);
-        requeued++;
-      } catch {
-        status = "failed";
-        failed++;
+      for (const job of jobs) {
+        const parsed = listingJobSchema.safeParse(job);
+        if (!parsed.success) continue;
+        try {
+          await env.LISTING_QUEUE.send(parsed.data);
+          requeued += 1;
+          console.info(
+            JSON.stringify({
+              event: "sweeper.requeued",
+              workspaceId: parsed.data.workspaceId,
+              listingId: parsed.data.draftId,
+              activeVersionSequence: parsed.data.activeVersionSequence,
+            }),
+          );
+        } catch {
+          failed += 1;
+          console.error(
+            JSON.stringify({
+              event: "sweeper.requeue_failed",
+              workspaceId: parsed.data.workspaceId,
+              listingId: parsed.data.draftId,
+              activeVersionSequence: parsed.data.activeVersionSequence,
+              reason: "queue_send_failed",
+            }),
+          );
+        }
       }
-      await database.forWorkspace(scan.workspaceId, (repositories) =>
-        repositories.websiteCatalog.recordDispatch({
+    });
+
+    await attempt("stuck_website_scans", async () => {
+      const websiteScans = await database.findStuckWebsiteScans({
+        maxRows: 10,
+      });
+      for (const scan of websiteScans) {
+        const parsed = websiteJobSchema.safeParse({
+          kind: "website_scan",
           ...scan,
-          status,
-          now: new Date(),
-        }),
-      );
-    }
+        });
+        if (!parsed.success) continue;
+        let status: "sent" | "failed" = "sent";
+        try {
+          await env.LISTING_QUEUE.send(parsed.data);
+          requeued++;
+        } catch {
+          status = "failed";
+          failed++;
+        }
+        await attempt("website_dispatch_record", () =>
+          database.forWorkspace(scan.workspaceId, (repositories) =>
+            repositories.websiteCatalog.recordDispatch({
+              ...scan,
+              status,
+              now: new Date(),
+            }),
+          ),
+        );
+      }
+    });
+
+    await attempt("outbox", () => recoverOutbox(database, env));
     console.info(
-      JSON.stringify({ event: "sweeper.completed", requeued, failed }),
+      JSON.stringify({
+        event: failures.length ? "sweeper.partial" : "sweeper.completed",
+        requeued,
+        failed,
+      }),
     );
-    await recoverOutbox(database, env);
+    if (failures.length) throw failures[0];
   } finally {
     await database.close();
   }
