@@ -157,6 +157,82 @@ describe("bulk form xlsx adapter", () => {
     expect(readBulkFormSheet(bytes)).toEqual([["Demo Estate"]]);
   });
 
+  it("rejects a central directory offset outside the ZIP container", () => {
+    const bytes = zipOf(MINIMAL_PARTS);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(bytes.length - 22 + 16, bytes.length + 1, true);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+  });
+
+  it("rejects a local header offset outside the ZIP container", () => {
+    const bytes = zipOf(MINIMAL_PARTS);
+    const view = new DataView(bytes.buffer);
+    const centralOffset = view.getUint32(bytes.length - 22 + 16, true);
+    view.setUint32(centralOffset + 42, bytes.length + 1, true);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+  });
+
+  it("rejects a local filename that disagrees with the central directory", () => {
+    const bytes = zipOf([
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>accepted</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+    bytes[30] = "y".charCodeAt(0);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+  });
+
+  it("rejects a local compression method that disagrees with the central directory", () => {
+    const bytes = zipOf([
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>accepted</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+    new DataView(bytes.buffer).setUint16(8, 8, true);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+  });
+
+  it.each([
+    ["conflicting", 0x0808, 0x0800],
+    ["encrypted", 0x0801, 0x0801],
+  ])("rejects %s ZIP flags", (_label, localFlags, centralFlags) => {
+    const bytes = zipOf([
+      {
+        name: "xl/worksheets/sheet1.xml",
+        text: '<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>accepted</t></is></c></row></sheetData></worksheet>',
+      },
+    ]);
+    const view = new DataView(bytes.buffer);
+    const centralOffset = view.getUint32(bytes.length - 22 + 16, true);
+    view.setUint16(6, localFlags, true);
+    view.setUint16(centralOffset + 8, centralFlags, true);
+
+    expect(() => readBulkFormSheet(bytes)).toThrow(BulkFormWorkbookError);
+  });
+
+  it("reads a valid ZIP comment containing an EOCD signature", () => {
+    const archive = zipOf([
+      ...MINIMAL_PARTS,
+      {
+        name: "xl/workbook.xml",
+        text: '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Commented" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      },
+    ]);
+    const bytes = new Uint8Array(archive.length + 30);
+    bytes.set(archive);
+    const view = new DataView(bytes.buffer);
+    view.setUint16(archive.length - 2, 30, true);
+    view.setUint32(archive.length + 8, 0x06054b50, true);
+
+    expect(readBulkFormSheetName(bytes)).toBe("Commented");
+  });
+
   it("reads a deflated worksheet and rejects a mismatched CRC", () => {
     const xml =
       '<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>compressed</t></is></c></row></sheetData></worksheet>';
