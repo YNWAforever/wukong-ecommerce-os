@@ -15,6 +15,7 @@ import type { BulkFormCell, BulkFormSheet } from "./bulk-form.js";
 const ZIP_LOCAL_HEADER = 0x04034b50;
 const ZIP_CENTRAL_HEADER = 0x02014b50;
 const ZIP_EOCD = 0x06054b50;
+const ZIP_ENCRYPTION_FLAGS = 0x0001 | 0x0040 | 0x2000;
 
 /**
  * Bounds on untrusted input. This is the only place the product parses a binary
@@ -89,6 +90,7 @@ function readZipEntries(
     ) {
       throw new BulkFormWorkbookError("malformed zip central directory");
     }
+    const flags = view.getUint16(offset + 8, true);
     const method = view.getUint16(offset + 10, true);
     // The central directory is authoritative: entries written with a data
     // descriptor carry zeroed sizes in their local header.
@@ -103,9 +105,8 @@ function readZipEntries(
     if (nextOffset > centralDirectoryEnd) {
       throw new BulkFormWorkbookError("malformed zip central directory");
     }
-    const name = decoder.decode(
-      bytes.subarray(offset + 46, offset + 46 + nameLength),
-    );
+    const nameBytes = bytes.subarray(offset + 46, offset + 46 + nameLength);
+    const name = decoder.decode(nameBytes);
 
     if (
       localOffset + 30 > centralDirectoryOffset ||
@@ -113,12 +114,31 @@ function readZipEntries(
     ) {
       throw new BulkFormWorkbookError(`malformed local header for ${name}`);
     }
+    const localFlags = view.getUint16(localOffset + 6, true);
+    const localMethod = view.getUint16(localOffset + 8, true);
     const localNameLength = view.getUint16(localOffset + 26, true);
     const localExtraLength = view.getUint16(localOffset + 28, true);
     const start = localOffset + 30 + localNameLength + localExtraLength;
     if (start + compressedSize > centralDirectoryOffset) {
       throw new BulkFormWorkbookError(
         `zip entry ${name} exceeds its container`,
+      );
+    }
+    const localName = bytes.subarray(
+      localOffset + 30,
+      localOffset + 30 + localNameLength,
+    );
+    if ((flags & ZIP_ENCRYPTION_FLAGS) !== 0) {
+      throw new BulkFormWorkbookError("encrypted ZIP entries are unsupported");
+    }
+    if (
+      localFlags !== flags ||
+      localMethod !== method ||
+      localNameLength !== nameLength ||
+      !nameBytes.every((byte, index) => byte === localName[index])
+    ) {
+      throw new BulkFormWorkbookError(
+        "zip local header does not match central directory",
       );
     }
     const raw = bytes.subarray(start, start + compressedSize);
