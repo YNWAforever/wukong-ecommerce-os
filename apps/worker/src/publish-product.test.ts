@@ -808,6 +808,43 @@ describe("publishApprovedProduct", () => {
     expect(invalid.connector.createProduct).not.toHaveBeenCalled();
   });
 
+  it("fails a publishing listing when a resumed job loses its connection", async () => {
+    const harness = makeHarness("publishing");
+    harness.repos.shoplineConnections.getById = async () => null;
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({ code: "invalid_connection" });
+
+    expect(harness.state.jobs[0]).toMatchObject({
+      status: "failed",
+      error: "invalid_connection",
+    });
+    expect(harness.state.listing.status).toBe("publish_failed");
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("fails a publishing listing when image approval is revoked before delivery", async () => {
+    const harness = makeHarness("publishing");
+    harness.resolveImageUrls.mockRejectedValueOnce(
+      Object.assign(new Error("image_approval_required"), {
+        name: "ProductShotConflict",
+        code: "image_approval_required",
+      }),
+    );
+
+    await expect(
+      publishApprovedProduct(publishInput(), harness),
+    ).rejects.toMatchObject({ code: "not_approved" });
+
+    expect(harness.state.jobs[0]).toMatchObject({
+      status: "failed",
+      error: "not_approved",
+    });
+    expect(harness.state.listing.status).toBe("publish_failed");
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+  });
+
   it("does not return a published duplicate after the listing is reopened", async () => {
     const key = `${workspaceId}:${versionId}:shopline:create`;
     const harness = makeHarness(
@@ -961,6 +998,7 @@ it("records terminal publication rejection without SHOPLINE calls or a retry lea
     error: "not_approved",
     leaseToken: null,
   });
+  expect(harness.state.listing.status).toBe("approved");
   expect(harness.connector.createProduct).not.toHaveBeenCalled();
   expect(harness.connector.updateProduct).not.toHaveBeenCalled();
   expect(harness.audits).toContainEqual(

@@ -325,6 +325,26 @@ export async function publishApprovedProduct(
         workspaceId: input.workspaceId,
         draftId: listing.id,
       };
+      const failPreparedJob = async (error: PublishDeliveryError) => {
+        await repositories.publishJobs.markFailed(
+          idempotencyKey,
+          input.leaseToken,
+          error.code,
+        );
+        if (
+          listing.status === "publishing" &&
+          listing.activeVersion?.id === input.expectedVersionId &&
+          existing?.versionId === input.expectedVersionId
+        ) {
+          await repositories.listings.markPublishFailed(
+            listing.id,
+            input.expectedVersionId,
+            error.code,
+            context(input),
+            repositories.audit,
+          );
+        }
+      };
       const bindingOutcome = evaluateDeliveryPolicy({
         workspaceId: input.workspaceId,
         draftId: input.draftId,
@@ -344,11 +364,7 @@ export async function publishApprovedProduct(
           existing?.status === "running" &&
           existing.leaseToken === input.leaseToken
         ) {
-          await repositories.publishJobs.markFailed(
-            idempotencyKey,
-            input.leaseToken,
-            error.code,
-          );
+          await failPreparedJob(error);
         }
         await repositories.audit.write({
           workspaceId: input.workspaceId,
@@ -390,11 +406,7 @@ export async function publishApprovedProduct(
       }
       if (existing.connectionId !== connectionId) {
         const error = new PublishDeliveryError("invalid_connection");
-        await repositories.publishJobs.markFailed(
-          idempotencyKey,
-          input.leaseToken,
-          error.code,
-        );
+        await failPreparedJob(error);
         return { terminalError: error };
       }
 
@@ -418,11 +430,7 @@ export async function publishApprovedProduct(
         )
           throw cause;
         const error = new PublishDeliveryError("not_approved");
-        await repositories.publishJobs.markFailed(
-          idempotencyKey,
-          input.leaseToken,
-          error.code,
-        );
+        await failPreparedJob(error);
         await repositories.audit.write({
           workspaceId: input.workspaceId,
           actorId: PUBLISH_ACTOR_ID,
@@ -452,11 +460,7 @@ export async function publishApprovedProduct(
       });
       if (outcome.kind !== "ready") {
         const error = errorFromPolicy(outcome);
-        await repositories.publishJobs.markFailed(
-          idempotencyKey,
-          input.leaseToken,
-          error.code,
-        );
+        await failPreparedJob(error);
         await repositories.audit.write({
           workspaceId: input.workspaceId,
           actorId: PUBLISH_ACTOR_ID,
