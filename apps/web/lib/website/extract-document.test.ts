@@ -43,6 +43,17 @@ describe("deterministic product extraction", () => {
     expect(result.warnings).not.toContain("invalid_sitemap");
   });
 
+  it("treats an HTML response with an XML declaration as HTML", () => {
+    const result = extractDocument({
+      url,
+      capturedAt,
+      contentType: "text/html; charset=utf-8",
+      html: '<?xml version="1.0"?><html><head>' + ld(base) + "</head></html>",
+    });
+
+    expect(result.product?.title).toBe("茶 & 酒");
+    expect(result.warnings).not.toContain("invalid_sitemap");
+  });
   it("recognizes a mixed-case schema.org Product type URI", () => {
     const product = extract(
       ld({ ...base, "@type": "HTTPS://SCHEMA.ORG/Product" }),
@@ -200,6 +211,17 @@ describe("deterministic product extraction", () => {
     expect(p?.warnings).toContain("title_truncated");
     expect(p?.warnings).toContain("attributes_truncated");
   });
+  it("still recognizes a sitemap root served as HTML", () => {
+    const result = extractDocument({
+      url: "https://store.example/sitemap.xml",
+      capturedAt,
+      contentType: "text/html",
+      html: '<?xml version="1.0"?><urlset><url><loc>https://store.example/products/a</loc></url></urlset>',
+    });
+
+    expect(result.productLinks).toEqual(["https://store.example/products/a"]);
+  });
+
   it("parses bounded sitemap locations without expanding entities", () => {
     const r = extractDocument({
       url: "https://store.example/sitemap.xml",

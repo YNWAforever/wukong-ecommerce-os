@@ -84,10 +84,14 @@ export function extractDocument(
       result.warnings.push(code);
   };
   const mediaType = input.contentType?.split(";")[0]?.trim().toLowerCase();
+  const sitemapRoot =
+    /^\s*(?:<\?xml\b[^>]*\?>\s*)?<(?:urlset|sitemapindex)\b/i.test(input.html);
+  const htmlMediaType =
+    mediaType === "text/html" || mediaType === "application/xhtml+xml";
   const xml =
-    mediaType !== "application/xhtml+xml" &&
-    (/xml/i.test(mediaType ?? "") ||
-      /^\s*(?:<\?xml\b|<urlset\b|<sitemapindex\b)/i.test(input.html));
+    sitemapRoot ||
+    (!htmlMediaType &&
+      (/xml/i.test(mediaType ?? "") || /^\s*<\?xml\b/i.test(input.html)));
   if (
     new TextEncoder().encode(input.html).byteLength >
     (xml ? 1024 * 1024 : 2 * 1024 * 1024)
