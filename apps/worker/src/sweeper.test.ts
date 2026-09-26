@@ -294,6 +294,44 @@ describe("outbox recovery", () => {
       other.outboxId,
     ]);
   });
+  it("does not consume an outbox attempt when operation verification fails", async () => {
+    const versioned = {
+      ...job,
+      schemaVersion: 2,
+      runId: "00000000-0000-4000-8000-000000000901",
+      inputRevision: 1,
+    };
+    const next = {
+      ...owed,
+      outboxId: "e78f9a0b-7bb7-4a6d-930d-13f39760d41d",
+    };
+    const { database, markDispatched, markAttempted } = makeOutboxDatabase([
+      { ...owed, payload: versioned },
+      next,
+    ]);
+    database.forWorkspace = async (_workspaceId, work) =>
+      work({
+        pipelineRuns: {
+          getOperation: async () => {
+            throw new Error("operation lookup unavailable");
+          },
+        },
+        dispatchOutbox: { markDispatched, markAttempted },
+      });
+    const send = vi.fn(async () => undefined);
+
+    await expect(
+      handleScheduled(undefined as never, env(send), undefined as never, {
+        createDatabase: () => database as never,
+      }),
+    ).rejects.toThrow("operation lookup unavailable");
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(job);
+    expect(markDispatched).toHaveBeenCalledWith([next.outboxId]);
+    expect(markAttempted).not.toHaveBeenCalled();
+    expect(database.close).toHaveBeenCalledOnce();
+  });
   it("counts a failed send as an attempt rather than confirming it", async () => {
     // Confirming an unsent row would lose the work permanently: nothing else
     // reads the outbox, so a row marked dispatched is never looked at again.
