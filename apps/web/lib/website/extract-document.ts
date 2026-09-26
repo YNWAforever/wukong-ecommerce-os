@@ -125,13 +125,23 @@ export function extractDocument(
   if (xml) {
     const localName = (n: Node) =>
       "tagName" in n ? n.tagName.slice(n.tagName.lastIndexOf(":") + 1) : null;
-    const index = dom.some((n) => localName(n) === "sitemapindex");
-    if (!index && !dom.some((n) => localName(n) === "urlset")) {
+    const root = dom.find((n) =>
+      ["urlset", "sitemapindex"].includes(localName(n) ?? ""),
+    );
+    if (!root || !("childNodes" in root)) {
       warn("invalid_sitemap");
       return result;
     }
-    for (const n of dom)
-      if (localName(n) === "loc") link(text(n), index ? "sitemap" : "product");
+    const index = localName(root) === "sitemapindex";
+    for (const entry of root.childNodes) {
+      if (
+        localName(entry) !== (index ? "sitemap" : "url") ||
+        !("childNodes" in entry)
+      )
+        continue;
+      const location = entry.childNodes.find((n) => localName(n) === "loc");
+      if (location) link(text(location), index ? "sitemap" : "product");
+    }
     return extractedDocumentSchema.parse(result);
   }
   let canonical = url;
