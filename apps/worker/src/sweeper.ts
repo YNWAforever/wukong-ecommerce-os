@@ -106,6 +106,7 @@ async function recoverOutbox(
   let failed = 0;
   const dispatched = new Map<string, string[]>();
   const attempted = new Map<string, string[]>();
+  const verificationFailures: unknown[] = [];
 
   for (const row of owed) {
     const unusable = (reason: string) => {
@@ -134,8 +135,8 @@ async function recoverOutbox(
       unusable(parsed.success ? "workspace_mismatch" : "payload_invalid");
       continue;
     }
-    try {
-      if ("schemaVersion" in parsed.data && parsed.data.schemaVersion === 2) {
+    if ("schemaVersion" in parsed.data && parsed.data.schemaVersion === 2) {
+      try {
         const runId = parsed.data.runId;
         if (!runId) {
           unusable("run_id_missing");
@@ -175,7 +176,21 @@ async function recoverOutbox(
           unusable("operation_flow_mismatch");
           continue;
         }
+      } catch (error) {
+        // A read failure says nothing about whether this job is dispatchable.
+        // Leave the attempt budget intact so a later tick can retry the read.
+        verificationFailures.push(error);
+        console.error(
+          JSON.stringify({
+            event: "outbox_sweeper.verification_failed",
+            workspaceId: row.workspaceId,
+            outboxId: row.outboxId,
+          }),
+        );
+        continue;
       }
+    }
+    try {
       await env.LISTING_QUEUE.send(parsed.data);
       addTo(dispatched, row.workspaceId, row.outboxId);
       requeued += 1;
@@ -237,8 +252,16 @@ async function recoverOutbox(
     }
   }
   console.info(
-    JSON.stringify({ event: "outbox_sweeper.completed", requeued, failed }),
+    JSON.stringify({
+      event:
+        verificationFailures.length || markFailures.length
+          ? "outbox_sweeper.partial"
+          : "outbox_sweeper.completed",
+      requeued,
+      failed,
+    }),
   );
+  if (verificationFailures.length) throw verificationFailures[0];
   if (markFailures.length) throw markFailures[0];
 }
 
