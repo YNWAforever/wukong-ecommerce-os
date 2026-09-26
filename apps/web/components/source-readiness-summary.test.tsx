@@ -51,4 +51,26 @@ describe("SourceReadinessSummary", () => {
       renderToStaticMarkup(createElement(SourceReadinessSummary, {})),
     ).toContain("來源準備狀態不明");
   });
+  it.each([false, true])(
+    "explains a missing listing version without reporting stale review evidence (compact=%s)",
+    (compact) => {
+      const html = renderToStaticMarkup(
+        createElement(SourceReadinessSummary, {
+          compact,
+          readiness: {
+            ...base,
+            currentVersionId: null,
+            reviewedBinding: null,
+            eligibleAfterAttestation: false,
+            reason: "version_mismatch",
+          },
+        }),
+      );
+      expect(html).toContain("商品版本尚未建立");
+      expect(html).toContain("手動儲存草稿");
+      expect(html).not.toContain("目前版本已變更");
+      expect(html).not.toContain("商戶確認的匯出時間");
+      expect(html).not.toContain("來源需要處理");
+    },
+  );
 });
