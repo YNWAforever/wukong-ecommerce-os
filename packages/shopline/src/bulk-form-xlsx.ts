@@ -50,23 +50,43 @@ function readZipEntries(
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   let eocd = -1;
-  for (let index = bytes.length - 22; index >= 0; index -= 1) {
-    if (view.getUint32(index, true) === ZIP_EOCD) {
-      eocd = index;
-      break;
-    }
+  let sawEndSignature = false;
+  const firstCandidate = Math.max(0, bytes.length - 22 - 0xffff);
+  for (let index = bytes.length - 22; index >= firstCandidate; index -= 1) {
+    if (view.getUint32(index, true) !== ZIP_EOCD) continue;
+    sawEndSignature = true;
+    // A ZIP comment can contain this signature; the real record must
+    // account for the full comment and follow the central directory.
+    const commentLength = view.getUint16(index + 20, true);
+    const directorySize = view.getUint32(index + 12, true);
+    const directoryOffset = view.getUint32(index + 16, true);
+    if (index + 22 + commentLength !== bytes.length) continue;
+    if (directoryOffset + directorySize !== index) continue;
+    eocd = index;
+    break;
   }
-  if (eocd < 0) throw new BulkFormWorkbookError("file is not a zip container");
+  if (eocd < 0) {
+    throw new BulkFormWorkbookError(
+      sawEndSignature
+        ? "malformed zip end record"
+        : "file is not a zip container",
+    );
+  }
 
   const entryCount = view.getUint16(eocd + 10, true);
+  const centralDirectorySize = view.getUint32(eocd + 12, true);
   const centralDirectoryOffset = view.getUint32(eocd + 16, true);
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   let offset = centralDirectoryOffset;
   const decoder = new TextDecoder();
   const entries = new Map<string, Uint8Array>();
   let totalInflatedBytes = 0;
 
   for (let n = 0; n < entryCount; n += 1) {
-    if (view.getUint32(offset, true) !== ZIP_CENTRAL_HEADER) {
+    if (
+      offset + 46 > centralDirectoryEnd ||
+      view.getUint32(offset, true) !== ZIP_CENTRAL_HEADER
+    ) {
       throw new BulkFormWorkbookError("malformed zip central directory");
     }
     const method = view.getUint16(offset + 10, true);
@@ -79,11 +99,18 @@ function readZipEntries(
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
     const localOffset = view.getUint32(offset + 42, true);
+    const nextOffset = offset + 46 + nameLength + extraLength + commentLength;
+    if (nextOffset > centralDirectoryEnd) {
+      throw new BulkFormWorkbookError("malformed zip central directory");
+    }
     const name = decoder.decode(
       bytes.subarray(offset + 46, offset + 46 + nameLength),
     );
 
-    if (view.getUint32(localOffset, true) !== ZIP_LOCAL_HEADER) {
+    if (
+      localOffset + 30 > centralDirectoryOffset ||
+      view.getUint32(localOffset, true) !== ZIP_LOCAL_HEADER
+    ) {
       throw new BulkFormWorkbookError(`malformed local header for ${name}`);
     }
     const localNameLength = view.getUint16(localOffset + 26, true);
@@ -157,7 +184,7 @@ function readZipEntries(
     }
     totalInflatedBytes += data.byteLength;
     entries.set(name, data);
-    offset += 46 + nameLength + extraLength + commentLength;
+    offset = nextOffset;
   }
 
   return entries;
