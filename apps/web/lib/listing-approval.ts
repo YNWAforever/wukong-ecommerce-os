@@ -3,7 +3,8 @@ import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
   missingWorkspaceFields,
   readWorkingField,
-  approveListing as domainApprove,
+  validateListingApproval,
+  type approveListing as domainApprove,
   assertApprovalFreshness,
   type AuditContext,
   type CanonicalListing,
@@ -539,12 +540,15 @@ export async function approveOne(
     });
   }
   try {
-    const approved = await (deps.approve ?? domainApprove)(
-      versionIdToApprove,
-      snapshot.flags,
-      auditContext,
-      repositories.audit,
-    );
+    // Validation does not audit: the repository records the committed approval.
+    const approved = deps.approve
+      ? await deps.approve(
+          versionIdToApprove,
+          snapshot.flags,
+          auditContext,
+          repositories.audit,
+        )
+      : validateListingApproval(versionIdToApprove, snapshot.flags);
     if (versionIdToApprove === snapshot.activeVersion.id) {
       if (typeof repositories.listings.approve !== "function")
         throw new Error("listing approval repository is unavailable");

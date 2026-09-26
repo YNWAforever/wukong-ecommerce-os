@@ -1,4 +1,8 @@
-import { claimIdentitySnapshot } from "@wukong/core";
+import {
+  claimIdentitySnapshot,
+  type AuditContext,
+  type AuditWriter,
+} from "@wukong/core";
 import { describe, expect, it } from "vitest";
 import {
   BULK_FORM_COLUMNS,
@@ -78,14 +82,35 @@ function fixture() {
           evidence: [],
         };
       },
-      async approve() {
+      async approve(
+        _id: string,
+        versionId: string,
+        context: AuditContext,
+        audit: AuditWriter,
+      ) {
         calls.push("approve");
+        await audit.write({
+          ...context,
+          action: "listing.approved",
+          metadata: { versionId },
+        });
       },
       async appendVersion() {
         return { id: "version-final" };
       },
-      async promoteAndApprove() {
+      async promoteAndApprove(
+        _id: string,
+        _baseVersionId: string,
+        versionId: string,
+        context: AuditContext,
+        audit: AuditWriter,
+      ) {
         calls.push("promote");
+        await audit.write({
+          ...context,
+          action: "listing.approved",
+          metadata: { versionId },
+        });
       },
       async replaceEvidence() {},
       async replaceFlags() {},
@@ -139,6 +164,35 @@ function fixture() {
 }
 
 describe("durable Bulk Update approval binding", () => {
+  it.each([false, true])(
+    "records one committed approval event when promotion is %s",
+    async (promote) => {
+      const { repos, context, deps, calls } = fixture();
+      const result = await approveOne("listing-1", context, repos as never, {
+        ...deps,
+        ...(promote
+          ? {
+              precomputedFinalAsset: {
+                storageKey: "synthetic-key",
+                priorFinalAssetIds: [],
+              },
+            }
+          : {}),
+      });
+      expect(result).toEqual({
+        listingId: "listing-1",
+        versionId: promote ? "version-final" : "version-1",
+        status: "approved",
+      });
+      expect(calls.filter((action) => action === "listing.approved")).toEqual([
+        "listing.approved",
+      ]);
+      expect(calls.indexOf("listing.approved")).toBeGreaterThan(
+        calls.indexOf(promote ? "promote" : "approve"),
+      );
+    },
+  );
+
   it("enforces tenant-required fields before approval or receipt mutation", async () => {
     const { repos, context, deps, calls } = fixture();
     const withPolicy = {

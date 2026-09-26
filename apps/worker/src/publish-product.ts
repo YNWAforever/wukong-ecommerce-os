@@ -528,23 +528,22 @@ export async function publishApprovedProduct(
           auditContext,
           repositories.audit,
         );
-        await repositories.platformProducts.upsert({
-          connectionId,
-          remoteProductId,
-          origin: input.existingLink?.origin ?? "created",
-          listingId: listing.id,
-          sku: input.existingLink?.sku ?? null,
-          specVersion: input.existingLink?.specVersion ?? null,
-          rawRow: input.existingLink?.rawRow ?? null,
-          factsPrefill: input.existingLink?.factsPrefill ?? null,
-          contentDigest: input.existingLink?.contentDigest ?? null,
-          // Same carry-forward pattern as every other field above: a fresh
-          // "created"-origin row has no source import, but refreshing an
-          // existing import-origin row must preserve its real
-          // `sourceImportId` rather than nulling out the provenance link
-          // that a freshness gate depends on.
-          sourceImportId: input.existingLink?.sourceImportId ?? null,
-        });
+        // An update already has a binding. Rewriting the claimed snapshot here
+        // would overwrite a newer import committed during the remote call.
+        if (!input.existingLink) {
+          await repositories.platformProducts.upsert({
+            connectionId,
+            remoteProductId,
+            origin: "created",
+            listingId: listing.id,
+            sku: null,
+            specVersion: null,
+            rawRow: null,
+            factsPrefill: null,
+            contentDigest: null,
+            sourceImportId: null,
+          });
+        }
       },
     );
     return {

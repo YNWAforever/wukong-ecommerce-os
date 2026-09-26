@@ -37,6 +37,27 @@ function bulkErrorMessage(body: unknown): string {
   return "Bulk approve failed -- try again.";
 }
 
+function isBulkApproveResponse(body: unknown): body is BulkApproveResponse {
+  if (typeof body !== "object" || body === null) return false;
+  const candidate = body as Partial<BulkApproveResponse>;
+  return (
+    Array.isArray(candidate.results) &&
+    typeof candidate.approved === "number" &&
+    typeof candidate.failed === "number" &&
+    candidate.results.every(
+      (result) =>
+        typeof result === "object" &&
+        result !== null &&
+        typeof result.listingId === "string" &&
+        (result.ok === true
+          ? typeof result.versionId === "string"
+          : result.ok === false &&
+            typeof result.code === "string" &&
+            typeof result.message === "string"),
+    )
+  );
+}
+
 export function QueueClient() {
   const locale = useLocale();
   const c = commonCopy[locale];
@@ -147,7 +168,11 @@ export function QueueClient() {
         );
         return;
       }
-      const result = body as BulkApproveResponse;
+      if (!isBulkApproveResponse(body)) {
+        setBulkError("Bulk approve failed -- try again.");
+        return;
+      }
+      const result = body;
       const approvedIds = new Set(
         result.results.filter((item) => item.ok).map((item) => item.listingId),
       );

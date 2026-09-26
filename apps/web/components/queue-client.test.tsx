@@ -432,6 +432,38 @@ describe("QueueClient review context", () => {
     }
   });
 
+  it("preserves the selection when a successful response omits an approved version", async () => {
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
+      if (input === "/api/listings/bulk-approve") {
+        return Promise.resolve(
+          Response.json({
+            results: [{ listingId: "listing_1", ok: true }],
+            approved: 1,
+            failed: 0,
+          }),
+        );
+      }
+      listLoads += 1;
+      return Promise.resolve(Response.json({ items: [eligibleItem] }));
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "操作未能完成，請重試。",
+      );
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.querySelector(".bulk-result-list")).toBeNull();
+      expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
+  });
+
   it("preserves the selection and request error feedback when the response body is malformed", async () => {
     let listLoads = 0;
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input) => {
