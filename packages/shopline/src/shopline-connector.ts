@@ -49,8 +49,13 @@ function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function validRemoteProductId(value: string): boolean {
+  // URL parsers normalize these two path segments out of /products/{id}.
+  return value !== "." && value !== ".." && /^[A-Za-z0-9._~-]+$/.test(value);
+}
+
 function safeRemoteProductId(value: string): string {
-  if (!/^[A-Za-z0-9._~-]+$/.test(value)) {
+  if (!validRemoteProductId(value)) {
     throw new ShoplineError("validation_failed");
   }
   return encodeURIComponent(value);
@@ -165,7 +170,8 @@ export class ShoplineConnector implements CommerceConnector {
       (body as { product: { _id?: unknown } }).product !== null
         ? (body as { product: { _id?: unknown } }).product._id
         : undefined;
-    if (!strictString(id)) throw new ShoplineError("remote_unavailable");
+    if (!strictString(id) || !validRemoteProductId(id))
+      throw new ShoplineError("remote_unavailable");
     return { remoteProductId: id };
   }
 
