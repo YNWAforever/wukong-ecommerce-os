@@ -222,6 +222,42 @@ describe("deterministic product extraction", () => {
     expect(result.productLinks).toEqual(["https://store.example/products/a"]);
   });
 
+  it("reads namespace-prefixed URL and index sitemaps", () => {
+    const urlset = extractDocument({
+      url: "https://store.example/sitemap.xml",
+      capturedAt,
+      contentType: "application/xml",
+      html: '<?xml version="1.0"?><sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:url><sm:loc>https://store.example/products/a</sm:loc></sm:url></sm:urlset>',
+    });
+    expect(urlset.productLinks).toEqual(["https://store.example/products/a"]);
+
+    const index = extractDocument({
+      url: "https://store.example/sitemap-index.xml",
+      capturedAt,
+      contentType: "application/xml",
+      html: '<?xml version="1.0"?><sm:sitemapindex xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:sitemap><sm:loc>https://store.example/sitemap-2.xml</sm:loc></sm:sitemap></sm:sitemapindex>',
+    });
+    expect(index.sitemapLinks).toEqual(["https://store.example/sitemap-2.xml"]);
+  });
+
+  it("ignores extension locations nested inside a sitemap entry", () => {
+    const result = extractDocument({
+      url: "https://store.example/sitemap.xml",
+      capturedAt,
+      contentType: "application/xml",
+      html: '<?xml version="1.0"?><sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"><sm:url><sm:loc>https://store.example/products/a</sm:loc><image:image><image:loc>https://store.example/images/a.jpg</image:loc></image:image></sm:url></sm:urlset>',
+    });
+    expect(result.productLinks).toEqual(["https://store.example/products/a"]);
+  });
+  it("recognizes a prefixed sitemap root served as HTML", () => {
+    const result = extractDocument({
+      url: "https://store.example/sitemap.xml",
+      capturedAt,
+      contentType: "text/html",
+      html: '<?xml version="1.0"?><sm:urlset xmlns:sm="http://www.sitemaps.org/schemas/sitemap/0.9"><sm:url><sm:loc>https://store.example/products/a</sm:loc></sm:url></sm:urlset>',
+    });
+    expect(result.productLinks).toEqual(["https://store.example/products/a"]);
+  });
   it("parses bounded sitemap locations without expanding entities", () => {
     const r = extractDocument({
       url: "https://store.example/sitemap.xml",

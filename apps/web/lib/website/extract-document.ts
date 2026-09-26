@@ -85,7 +85,9 @@ export function extractDocument(
   };
   const mediaType = input.contentType?.split(";")[0]?.trim().toLowerCase();
   const sitemapRoot =
-    /^\s*(?:<\?xml\b[^>]*\?>\s*)?<(?:urlset|sitemapindex)\b/i.test(input.html);
+    /^\s*(?:<\?xml\b[^>]*\?>\s*)?<(?:[^\s/>:]+:)?(?:urlset|sitemapindex)\b/i.test(
+      input.html,
+    );
   const htmlMediaType =
     mediaType === "text/html" || mediaType === "application/xhtml+xml";
   const xml =
@@ -121,16 +123,25 @@ export function extractDocument(
   }
   const dom = nodes(parse(input.html));
   if (xml) {
-    const index = dom.some(
-      (n) => "tagName" in n && n.tagName === "sitemapindex",
+    const localName = (n: Node) =>
+      "tagName" in n ? n.tagName.slice(n.tagName.lastIndexOf(":") + 1) : null;
+    const root = dom.find((n) =>
+      ["urlset", "sitemapindex"].includes(localName(n) ?? ""),
     );
-    if (!index && !dom.some((n) => "tagName" in n && n.tagName === "urlset")) {
+    if (!root || !("childNodes" in root)) {
       warn("invalid_sitemap");
       return result;
     }
-    for (const n of dom)
-      if ("tagName" in n && n.tagName === "loc")
-        link(text(n), index ? "sitemap" : "product");
+    const index = localName(root) === "sitemapindex";
+    for (const entry of root.childNodes) {
+      if (
+        localName(entry) !== (index ? "sitemap" : "url") ||
+        !("childNodes" in entry)
+      )
+        continue;
+      const location = entry.childNodes.find((n) => localName(n) === "loc");
+      if (location) link(text(location), index ? "sitemap" : "product");
+    }
     return extractedDocumentSchema.parse(result);
   }
   let canonical = url;
