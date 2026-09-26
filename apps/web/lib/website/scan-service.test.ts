@@ -78,6 +78,25 @@ describe("website document orchestration", () => {
       new Date(now.getTime() + 5000).toISOString(),
     );
   });
+
+  it.each(["901", "100000000000000"])(
+    "finishes safely when a %s-second robots delay exceeds the scan deadline",
+    (delay) => {
+      const result = advanceWebsiteDocument(
+        scan(),
+        {
+          ...doc(origin + "robots.txt", "User-agent: *\nCrawl-delay: " + delay),
+          contentType: "text/plain",
+        },
+        now,
+      );
+
+      expect(result.state).toBe("failed");
+      expect(result.checkpoint.pending).toBeNull();
+      expect(result.checkpoint.preview.warnings).toContain("scan_deadline");
+    },
+  );
+
   it("reapproves redirected origin before retaining any product evidence", () => {
     const result = advanceWebsiteDocument(
       scan("discovery"),

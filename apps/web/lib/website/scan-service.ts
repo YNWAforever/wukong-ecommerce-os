@@ -59,9 +59,18 @@ export function advanceWebsiteDocument(
   const schedule = (url: string, kind: "robots" | "discovery" | "product") => {
     checkpoint.pending = { url, kind };
     const delay = Math.max(1, checkpoint.robotsPolicy?.crawlDelaySeconds ?? 1);
-    checkpoint.nextEligibleAt = new Date(
-      Math.max(scan.nextEligibleAt.getTime(), now.getTime() + delay * 1000),
-    ).toISOString();
+    const nextEligibleAt = Math.max(
+      scan.nextEligibleAt.getTime(),
+      now.getTime() + delay * 1000,
+    );
+    if (
+      !Number.isFinite(nextEligibleAt) ||
+      nextEligibleAt >= scan.deadlineAt.getTime()
+    ) {
+      warn(checkpoint, ["scan_deadline"]);
+      return finish(true);
+    }
+    checkpoint.nextEligibleAt = new Date(nextEligibleAt).toISOString();
     return websiteStepResultSchema.parse(result);
   };
   if (document?.redirectedTo) {
