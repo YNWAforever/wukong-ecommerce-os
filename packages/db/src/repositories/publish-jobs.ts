@@ -265,9 +265,21 @@ export function createPublishJobRepository(
         .update(publishJobs)
         .set({
           status: "queued",
+          error: null,
           updatedAt: new Date(),
         })
-        .where(and(byKey(key), eq(publishJobs.status, "pending_enqueue")))
+        .where(
+          and(
+            byKey(key),
+            or(
+              eq(publishJobs.status, "pending_enqueue"),
+              and(
+                eq(publishJobs.status, "failed"),
+                inArray(publishJobs.error, [...RETRYABLE_PUBLISH_JOB_ERRORS]),
+              ),
+            ),
+          ),
+        )
         .returning({ id: publishJobs.id });
       return updated.length > 0;
     },

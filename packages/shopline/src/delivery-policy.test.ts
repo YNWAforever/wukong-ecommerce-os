@@ -84,6 +84,24 @@ describe("Shopline delivery policy", () => {
     });
   });
 
+  it("allows an approved version to be delivered again after a publish failure", () => {
+    const failedListing = {
+      ...input().listing!,
+      status: "publish_failed" as const,
+    };
+    expect(
+      evaluateDeliveryPolicy(input({ listing: failedListing })),
+    ).toMatchObject({
+      kind: "ready",
+      plan: { versionId, connectionId },
+    });
+    expect(
+      evaluateDeliveryPolicy(
+        input({ method: "csv", connection: null, listing: failedListing }),
+      ),
+    ).toMatchObject({ kind: "ready", plan: { versionId, method: "csv" } });
+  });
+
   it("returns a CSV plan from the same canonical projection and digest as the API plan", () => {
     const api = evaluateDeliveryPolicy(input());
     const csv = evaluateDeliveryPolicy(

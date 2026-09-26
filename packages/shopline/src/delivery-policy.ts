@@ -141,7 +141,9 @@ function isEligibleStatus(
   status: ListingStatus,
 ): boolean {
   return phase === "request"
-    ? status === "approved" || status === "published"
+    ? status === "approved" ||
+        status === "published" ||
+        status === "publish_failed"
     : status === "approved" ||
         status === "publishing" ||
         status === "publish_failed";

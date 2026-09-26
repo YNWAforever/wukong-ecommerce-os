@@ -3,6 +3,7 @@ import type {
   ComplianceFlag,
   ListingStatus,
 } from "@wukong/core";
+import { isRetryablePublishJobError } from "@wukong/db";
 import {
   createShoplineCsv,
   evaluateDeliveryPolicy,
@@ -148,7 +149,10 @@ export function createDeliverySnapshotReader(
     const approvalState = await deps.listings.approvalState?.(input.draftId);
     if (
       approvalState &&
-      (approvalState.status !== "approved" || !approvalState.activeVersionId)
+      (!["approved", "published", "publish_failed"].includes(
+        approvalState.status,
+      ) ||
+        !approvalState.activeVersionId)
     ) {
       return {
         listing: {
@@ -346,7 +350,12 @@ export type ShoplineDeliveryDeps = Omit<DeliveryDeps, "publisher"> & {
       connectionId: string;
       idempotencyKey: string;
       payloadDigest: string;
-    }): Promise<{ id: string; status: string; connectionId: string }>;
+    }): Promise<{
+      id: string;
+      status: string;
+      connectionId: string;
+      error: string | null;
+    }>;
     markQueued(key: string): Promise<boolean>;
   };
 };
@@ -396,7 +405,14 @@ export async function prepareShoplineDelivery(
   if (job.status === "queued" || job.status === "running") {
     return { kind: "queued", jobId: job.id, versionId: plan.versionId };
   }
-  if (job.status !== "pending_enqueue") {
+  if (
+    job.status !== "pending_enqueue" &&
+    !(
+      job.status === "failed" &&
+      isRetryablePublishJobError(job.error) &&
+      job.connectionId === plan.connectionId
+    )
+  ) {
     return { kind: "retry_required", jobId: job.id, versionId: plan.versionId };
   }
   const auditFacts = { ...plan.auditFacts, connectionId: job.connectionId };
