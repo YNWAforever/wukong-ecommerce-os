@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import {
   canonicalListingSchema,
@@ -1306,9 +1306,17 @@ export function createListingRepository(
           activeVersionId: result.versionId,
           updatedAt: new Date(),
         })
-        .where(and(byId(id), eq(listingDrafts.status, listing.status)))
+        .where(
+          and(
+            byId(id),
+            eq(listingDrafts.status, listing.status),
+            listing.activeVersionId === null
+              ? isNull(listingDrafts.activeVersionId)
+              : eq(listingDrafts.activeVersionId, listing.activeVersionId),
+          ),
+        )
         .returning({ id: listingDrafts.id });
-      if (updated.length !== 1 && listing.status !== result.status)
+      if (updated.length !== 1)
         throw new Error("listing status changed while completing pipeline");
       await audit.write({
         ...context,
