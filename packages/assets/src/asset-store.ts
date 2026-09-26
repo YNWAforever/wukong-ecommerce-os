@@ -4,7 +4,7 @@ import {
   type WineImageSnapshotInput,
   type WineImageSnapshot,
 } from "./wine-image-snapshot.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const ASSET_UPLOAD_TTL_MS = 10 * 60 * 1000;
 // Seven days is the SigV4 ceiling for a presigned URL. An exported CSV is carried
@@ -128,6 +128,54 @@ export function assertAssetKey(workspaceId: string, key: string): void {
   }
 }
 
+/** Only presign-issued UUIDv4 keys may be finalized from browser uploads. */
+export function assertUploadAssetKey(workspaceId: string, key: string): void {
+  assertAssetKey(workspaceId, key);
+  const uploadId = key.split("/")[3];
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      uploadId ?? "",
+    )
+  )
+    throw new AssetInputError("Invalid upload asset key");
+}
+
+/**
+ * A deterministic server-written key for verified bytes. Browser uploads use
+ * random UUIDv4 directories; this hash-derived UUIDv5-shaped directory can
+ * never be issued by createUpload for the same key.
+ */
+export function verifiedSourceAssetKey(
+  workspaceId: string,
+  uploadKey: string,
+  mimeType: string,
+): string {
+  assertUploadAssetKey(workspaceId, uploadKey);
+  const suffix = (
+    {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "application/pdf": "pdf",
+    } as Record<string, string>
+  )[mimeType];
+  if (!suffix) throw new AssetInputError("Unsupported MIME type");
+  const digest = createHash("sha256")
+    .update("verified-source-v1:")
+    .update(uploadKey)
+    .digest("hex");
+  const id =
+    digest.slice(0, 8) +
+    "-" +
+    digest.slice(8, 12) +
+    "-5" +
+    digest.slice(13, 16) +
+    "-8" +
+    digest.slice(17, 20) +
+    "-" +
+    digest.slice(20, 32);
+  return "ws/" + workspaceId + "/sources/" + id + "/original." + suffix;
+}
 export function safeFileName(fileName: string): string {
   const trimmed = fileName.trim();
   if (

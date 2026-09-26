@@ -4,7 +4,10 @@ import {
   assertAnyAssetKey,
   assertAssetKey,
   assertExportAssetKey,
+  assertUploadAssetKey,
+  createAssetKey,
   createExportAssetKey,
+  verifiedSourceAssetKey,
 } from "./asset-store.js";
 
 it("rejects an owned key whose source segment is not a UUID", () => {
@@ -13,6 +16,26 @@ it("rejects an owned key whose source segment is not a UUID", () => {
   ).toThrow(/asset key/i);
 });
 
+it("separates browser upload keys from verified server-owned source keys", () => {
+  const uploadKey = createAssetKey({
+    workspaceId: "ws_1",
+    fileName: "source.pdf",
+    mimeType: "application/pdf",
+    size: 100,
+  });
+  const verifiedKey = verifiedSourceAssetKey(
+    "ws_1",
+    uploadKey,
+    "application/pdf",
+  );
+  expect(verifiedKey).not.toBe(uploadKey);
+  expect(verifiedKey).toBe(
+    verifiedSourceAssetKey("ws_1", uploadKey, "application/pdf"),
+  );
+  expect(() => assertAssetKey("ws_1", verifiedKey)).not.toThrow();
+  expect(() => assertUploadAssetKey("ws_1", uploadKey)).not.toThrow();
+  expect(() => assertUploadAssetKey("ws_1", verifiedKey)).toThrow();
+});
 describe("createExportAssetKey / assertExportAssetKey", () => {
   it("creates a key scoped to the workspace and export attempt id", () => {
     const key = createExportAssetKey({
