@@ -176,6 +176,40 @@ describe("ShoplineConnector", () => {
     ).rejects.toMatchObject({ code: "remote_unavailable" });
   });
 
+  it.each([".", ".."])(
+    "rejects dot-segment remote product ID %s before a network request",
+    async (id) => {
+      const requestFetch = vi.fn(async () =>
+        response(200, { product: { _id: id, status: true } }),
+      );
+      const connector = new ShoplineConnector("token", { fetch: requestFetch });
+      await expect(
+        connector.updateProduct(id, payload, "key"),
+      ).rejects.toMatchObject({
+        code: "validation_failed",
+      });
+      await expect(connector.getProductStatus(id)).rejects.toMatchObject({
+        code: "validation_failed",
+      });
+      expect(requestFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([".", "..", "remote/id"])(
+    "rejects an unsafe create response remote ID %s",
+    async (id) => {
+      const requestFetch = vi.fn(async () =>
+        response(201, { product: { _id: id } }),
+      );
+      const connector = new ShoplineConnector("token", { fetch: requestFetch });
+      await expect(
+        connector.createProduct(payload, "key"),
+      ).rejects.toMatchObject({
+        code: "remote_unavailable",
+      });
+    },
+  );
+
   it("constructs ShoplineError without exposing response bodies", () => {
     const error = new ShoplineError("remote_unavailable", 503);
     expect(error.code).toBe("remote_unavailable");
