@@ -1042,6 +1042,172 @@ describe("workspace isolation", () => {
     expect(fetched).toEqual([]);
   });
 
+  it("rejects completion after concurrent status or active-version changes", async () => {
+    const workspaceId = "ws_completion_race";
+    const content = {
+      sku: "RACE-001",
+      producer: "Race",
+      productType: "wine" as const,
+      country: "Germany",
+      region: "Mosel",
+      vintage: 2024,
+      grapeVarieties: ["Riesling"],
+      volumeMl: 750,
+      abvPercent: 12.5,
+      packQuantity: 1,
+      priceHkd: 288,
+      stockQuantity: null,
+      criticScores: [],
+      awards: [],
+      title: { en: "Race Riesling", "zh-Hant": "Race 雷司令" },
+      description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+      seo: {
+        title: { en: "Race Riesling", "zh-Hant": "Race 雷司令" },
+        description: { en: "Dry wine", "zh-Hant": "乾身葡萄酒" },
+      },
+      tags: ["wine"],
+      imageAssetIds: [],
+    };
+    const { listingId, firstVersionId, nextVersionId } = await forWorkspace(
+      database,
+      workspaceId,
+      async (repos) => {
+        const listing = await repos.listings.create({ target: "shopline" });
+        const context = {
+          workspaceId,
+          actorId: "race-test",
+          entityId: listing.id,
+        };
+        await repos.listings.startProcessing(listing.id, context, repos.audit);
+        const first = await repos.listings.appendVersion(
+          listing.id,
+          content,
+          context,
+          repos.audit,
+        );
+        await repos.listings.complete(
+          listing.id,
+          { status: "in_review", versionId: first.id, idempotencyKey: "first" },
+          context,
+          repos.audit,
+        );
+        const next = await repos.listings.appendVersion(
+          listing.id,
+          content,
+          context,
+          repos.audit,
+        );
+        return {
+          listingId: listing.id,
+          firstVersionId: first.id,
+          nextVersionId: next.id,
+        };
+      },
+    );
+    await expect(
+      forWorkspace(database, workspaceId, async (repos) => {
+        const requireById = repos.listings.requireById.bind(repos.listings);
+        repos.listings.requireById = async (id) => {
+          const listing = await requireById(id);
+          await forWorkspace(database, workspaceId, (other) =>
+            other.listings.approve(
+              id,
+              firstVersionId,
+              { workspaceId, actorId: "another-reviewer", entityId: id },
+              other.audit,
+            ),
+          );
+          return listing;
+        };
+        await repos.listings.complete(
+          listingId,
+          {
+            status: "in_review",
+            versionId: nextVersionId,
+            idempotencyKey: "next",
+          },
+          { workspaceId, actorId: "race-test", entityId: listingId },
+          repos.audit,
+        );
+      }),
+    ).rejects.toThrow(/listing status changed while completing pipeline/i);
+
+    const second = await forWorkspace(database, workspaceId, async (repos) => {
+      const listing = await repos.listings.create({ target: "shopline" });
+      const context = {
+        workspaceId,
+        actorId: "race-test",
+        entityId: listing.id,
+      };
+      await repos.listings.startProcessing(listing.id, context, repos.audit);
+      const first = await repos.listings.appendVersion(
+        listing.id,
+        content,
+        context,
+        repos.audit,
+      );
+      await repos.listings.complete(
+        listing.id,
+        {
+          status: "in_review",
+          versionId: first.id,
+          idempotencyKey: "second-first",
+        },
+        context,
+        repos.audit,
+      );
+      const next = await repos.listings.appendVersion(
+        listing.id,
+        content,
+        context,
+        repos.audit,
+      );
+      return {
+        listingId: listing.id,
+        firstVersionId: first.id,
+        nextVersionId: next.id,
+      };
+    });
+    let editedVersionId: string | undefined;
+    await expect(
+      forWorkspace(database, workspaceId, async (repos) => {
+        const requireById = repos.listings.requireById.bind(repos.listings);
+        repos.listings.requireById = async (id) => {
+          const listing = await requireById(id);
+          const edit = await forWorkspace(database, workspaceId, (other) =>
+            other.listings.editReview(
+              id,
+              second.firstVersionId,
+              {
+                ...content,
+                title: { ...content.title, en: "Edited Riesling" },
+              },
+              ["title"],
+              { workspaceId, actorId: "another-reviewer", entityId: id },
+              other.audit,
+            ),
+          );
+          editedVersionId = edit.id;
+          return listing;
+        };
+        await repos.listings.complete(
+          second.listingId,
+          {
+            status: "in_review",
+            versionId: second.nextVersionId,
+            idempotencyKey: "second-next",
+          },
+          { workspaceId, actorId: "race-test", entityId: second.listingId },
+          repos.audit,
+        );
+      }),
+    ).rejects.toThrow(/listing status changed while completing pipeline/i);
+    const current = await forWorkspace(database, workspaceId, (repos) =>
+      repos.listings.getById(second.listingId),
+    );
+    expect(current?.activeVersionId).toBe(editedVersionId);
+  });
+
   it("fails migration clearly when the required app role is absent", async () => {
     const probe = createDatabase(appUrl, { migrationUrl: adminUrl });
     await admin.unsafe(
