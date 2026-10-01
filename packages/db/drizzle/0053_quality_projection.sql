@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS listing_quality_assessments (
  CONSTRAINT listing_quality_live_identity_check CHECK(live_listing_id IS NULL OR live_listing_id=listing_id)
 );
 CREATE INDEX IF NOT EXISTS listing_quality_pending_idx ON listing_quality_assessments(workspace_id,assessment_version,listing_id) WHERE state<>'ready' OR requested_generation<>applied_generation;
+-- Support child FK lookup for every live listing, including ready projections.
+CREATE INDEX IF NOT EXISTS listing_quality_live_listing_idx ON listing_quality_assessments(workspace_id,live_listing_id);
 ALTER TABLE workspace_quality_summaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_quality_summaries FORCE ROW LEVEL SECURITY;
 ALTER TABLE listing_quality_assessments ENABLE ROW LEVEL SECURITY;
