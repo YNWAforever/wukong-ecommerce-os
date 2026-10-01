@@ -23,7 +23,7 @@ const admin = postgres(adminUrl, {
   onnotice: () => {},
   prepare: false,
 });
-const db = createDatabase(appUrl);
+const db = createDatabase(appUrl, { migrationUrl: adminUrl });
 /**
  * Stands in for a digest the operator was shown.
  *
@@ -34,6 +34,7 @@ const db = createDatabase(appUrl);
 const SYNTHETIC_DIGEST = "synthetic-digest-not-compared";
 describe("full workspace read boundaries", () => {
   beforeAll(async () => {
+    await db.migrate();
     await admin`insert into workspaces(id,name,profile) values (${workspaceId},'synthetic','{}'),(${otherId},'synthetic','{}')`;
     await admin`insert into workspaces(id,name,profile) values (${currentWorkspace},'synthetic current input','{}')`;
     await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${connection},${workspaceId},'synthetic.invalid','fixture'),(${foreignConnection},${otherId},'foreign.invalid','fixture')`;
