@@ -84,6 +84,8 @@ export const TENANT_TABLES = [
   "import_results",
   "enrichment_batches",
   "enrichment_batch_items",
+  "enrichment_batch_previews",
+  "enrichment_batch_create_receipts",
   "listing_dispatch_outbox",
   "publish_jobs",
   "review_events",

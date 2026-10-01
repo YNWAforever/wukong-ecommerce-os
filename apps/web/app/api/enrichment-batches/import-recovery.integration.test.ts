@@ -115,7 +115,9 @@ it.each([false, true])(
       workspaceId: ws,
       actorId: ws,
       label: "Imported recovery",
-      gap: "untranslatedName",
+      // Saved human name corrections remove that gap; missing summary still
+      // selects both cases from the current content authority.
+      gap: "summaryMissing",
       budgetUsd: 1,
       waveSize: 1,
     });
