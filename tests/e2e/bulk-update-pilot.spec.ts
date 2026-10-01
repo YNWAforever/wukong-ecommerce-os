@@ -1172,9 +1172,26 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   // Saving after checking the current row creates a version bound to this
   // import. Reconfirm and approve that version before testing a later
   // confirmation change.
+  const reboundReview = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/review`) &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.getByText(/Draft saved/)).toBeVisible();
+  expect((await reboundReview).status()).toBe(200);
   await page.reload();
+  const reboundSnapshot = await (
+    await page.request.get(`/api/listings/${listingIds[0]}`)
+  ).json();
+  expect(reboundSnapshot.activeVersion.sourceImportId).toBe(
+    reboundSnapshot.sourceReadiness.sourceImportId,
+  );
+  await expect(
+    page.getByText(
+      "The imported source changed after this version was created.",
+      { exact: false },
+    ),
+  ).toHaveCount(0);
   await expect(page.locator(".review-status")).toHaveText(
     stateLabel("reopened", "en"),
   );
