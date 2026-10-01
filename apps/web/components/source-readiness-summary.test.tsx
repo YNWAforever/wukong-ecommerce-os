@@ -37,6 +37,7 @@ describe("SourceReadinessSummary", () => {
     );
     expect(html).toContain("商品版本尚未建立");
     expect(html).toContain("手動儲存草稿");
+    expect(html).toContain("import-1");
     expect(html).not.toContain("來源可供資格檢查");
   });
   it("shows eligible-after-attestation as advisory and 未經核實", () => {

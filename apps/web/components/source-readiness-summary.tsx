@@ -24,13 +24,29 @@ export function SourceReadinessSummary({
     );
   if (readiness.currentVersionId === null)
     return (
-      <p className="helper-copy">
-        {localized(
-          locale,
-          "商品版本尚未建立。請先完成商品處理或手動儲存草稿，再審核及檢查匯出資格。",
-          "No listing version exists yet. Complete processing or save a draft manually before review and export eligibility checks.",
-        )}
-      </p>
+      <div
+        className={compact ? "source-readiness compact" : "source-readiness"}
+      >
+        <p className="helper-copy">
+          {localized(
+            locale,
+            "商品版本尚未建立。請先完成商品處理或手動儲存草稿，再審核及檢查匯出資格。",
+            "No listing version exists yet. Complete processing or save a draft manually before review and export eligibility checks.",
+          )}
+        </p>
+        <span>
+          {localized(locale, "匯入", "Import")}:{" "}
+          {readiness.sourceImportId ?? c.unavailable}
+        </span>
+        <span>
+          {localized(
+            locale,
+            "商戶確認的匯出時間",
+            "Merchant-attested export time",
+          )}
+          : {formatHkDate(readiness.merchantAttestedExportAt, locale)}
+        </span>
+      </div>
     );
   const reviewed = readiness.reviewedBinding;
   return (
