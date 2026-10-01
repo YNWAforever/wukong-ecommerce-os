@@ -1,9 +1,15 @@
-/** Only bounded dashboard filters may survive a contextual return. */
+import {
+  parseCatalogQuery,
+  catalogQuery,
+  parseJobsQuery,
+  jobsQuery,
+} from "./catalog-query-state";
+/** Only bounded work filters may survive a contextual return. */
 export function normalizeWorkbenchReturn(input: string | null): string {
   if (
     !input ||
     input.length > 1024 ||
-    !input.startsWith("/dashboard") ||
+    !input.startsWith("/") ||
     /[\\\x00-\x20]/.test(input)
   )
     return "/dashboard";
@@ -11,9 +17,17 @@ export function normalizeWorkbenchReturn(input: string | null): string {
     const url = new URL(input, "http://workbench.invalid");
     if (
       url.origin !== "http://workbench.invalid" ||
-      url.pathname !== "/dashboard"
+      !["/dashboard", "/catalog", "/jobs"].includes(url.pathname)
     )
       return "/dashboard";
+    if (url.pathname === "/catalog") {
+      const query = catalogQuery(parseCatalogQuery(url.searchParams));
+      return "/catalog" + (query ? "?" + query : "");
+    }
+    if (url.pathname === "/jobs") {
+      const query = jobsQuery(parseJobsQuery(url.searchParams));
+      return "/jobs" + (query ? "?" + query : "");
+    }
     const out = new URLSearchParams();
     const state = url.searchParams.get("state"),
       kind = url.searchParams.get("kind"),

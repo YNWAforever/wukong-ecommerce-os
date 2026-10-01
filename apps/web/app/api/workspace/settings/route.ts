@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { workspaceProfileSchema, type WorkspaceProfile } from "@wukong/core";
 import { z } from "zod";
 
 import { getDatabase } from "../../../../lib/intake-runtime";
@@ -15,6 +17,7 @@ import type { SessionContextPort } from "../../../../lib/session-context-port";
 
 const bodySchema = z
   .object({
+    expectedDigest: z.string().regex(/^[a-f0-9]{64}$/),
     brandBackgroundColor: z
       .string()
       .regex(/^#[0-9a-f]{6}$/i)
@@ -44,23 +47,38 @@ export function createSettingsHandler(deps: SettingsRouteDeps) {
       if (!parsed.success) {
         throw new ApiError(400, "invalid_body", "Invalid settings payload.");
       }
-      await deps
-        .getDatabase()
-        .forWorkspace(session.workspaceId, async (repositories) => {
-          await repositories.workspaces.updateSettings({
-            brandBackgroundColor: parsed.data.brandBackgroundColor,
+      let profile: WorkspaceProfile;
+      try {
+        profile = await deps
+          .getDatabase()
+          .forWorkspace(session.workspaceId, async (repositories) => {
+            const next = await repositories.workspaces.updateSettings(
+              {
+                brandBackgroundColor: parsed.data.brandBackgroundColor,
+              },
+              parsed.data.expectedDigest,
+            );
+            await repositories.audit.write({
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: session.workspaceId,
+              action: "workspace.settings_updated",
+              metadata: {
+                brandBackgroundColor: parsed.data.brandBackgroundColor,
+              },
+            });
+            return next;
           });
-          await repositories.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: session.workspaceId,
-            action: "workspace.settings_updated",
-            metadata: {
-              brandBackgroundColor: parsed.data.brandBackgroundColor,
-            },
-          });
-        });
-      return jsonResponse(200, { ok: true });
+      } catch (error) {
+        if ((error as { code?: string }).code === "workspace_policy_conflict")
+          throw new ApiError(
+            409,
+            "workspace_policy_conflict",
+            "Settings changed. Compare or reload before saving.",
+          );
+        throw error;
+      }
+      return jsonResponse(200, { ok: true, ...settingsView(profile) });
     });
   };
 }
@@ -93,9 +111,7 @@ export function createSettingsGetHandler(deps: SettingsGetRouteDeps) {
         .forWorkspace(session.workspaceId, (repositories) =>
           repositories.workspaces.requireProfile(),
         );
-      return jsonResponse(200, {
-        brandBackgroundColor: profile.brandBackgroundColor,
-      });
+      return jsonResponse(200, settingsView(profile));
     });
   };
 }
@@ -104,3 +120,12 @@ export const GET = createSettingsGetHandler({
   sessionContext: authSessionContext,
   getDatabase,
 });
+
+function settingsView(profile: WorkspaceProfile) {
+  return {
+    brandBackgroundColor: profile.brandBackgroundColor,
+    digest: createHash("sha256")
+      .update(JSON.stringify(workspaceProfileSchema.parse(profile)))
+      .digest("hex"),
+  };
+}

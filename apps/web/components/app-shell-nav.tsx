@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { AccountMenu } from "./account-menu";
+import { clearWorkSession } from "../lib/catalog-session-state";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
 
@@ -34,6 +36,7 @@ type AppShellNavProps = {
   roleLabelZh: string;
   roleLabelEn: string;
   initialLocale: Locale;
+  accountUser?: { userId: string; email: string; name: string | null };
   onLocaleChange?: (locale: Locale) => void;
 };
 
@@ -55,6 +58,7 @@ export function AppShellNav({
   roleLabelZh,
   roleLabelEn,
   initialLocale,
+  accountUser,
   onLocaleChange,
 }: AppShellNavProps) {
   const preference = useLocalePreference();
@@ -140,6 +144,7 @@ export function AppShellNav({
         body: JSON.stringify({ workspaceId }),
       });
       if (!response.ok) throw new Error("workspace switch failed");
+      clearWorkSession();
       window.location.assign("/dashboard");
     } catch {
       setWorkspaceSwitchError(true);
@@ -340,9 +345,18 @@ export function AppShellNav({
           <span className="pilot-badge">
             {localized(locale, "試行", "PILOT")}
           </span>
-          <span className="operator-name">
-            {localized(locale, roleLabelZh, roleLabelEn)}
-          </span>
+          {accountUser ? (
+            <AccountMenu
+              user={accountUser}
+              workspaceName={workspaceName}
+              roleLabel={localized(locale, roleLabelZh, roleLabelEn)}
+              locale={locale}
+            />
+          ) : (
+            <span className="operator-name">
+              {localized(locale, roleLabelZh, roleLabelEn)}
+            </span>
+          )}
         </div>
       </div>
 

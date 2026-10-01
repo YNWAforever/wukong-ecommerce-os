@@ -2442,3 +2442,131 @@ export const wineEvidenceCache = pgTable(
     index("wine_cache_run_idx").on(t.workspaceId, t.runId),
   ],
 );
+
+export const listingAssignments = pgTable(
+  "listing_assignments",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    assigneeUserId: text("assignee_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignmentRevision: integer("assignment_revision").default(0).notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.listingId] }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+    index("listing_assignments_assignee_idx").on(
+      table.workspaceId,
+      table.assigneeUserId,
+      table.listingId,
+    ),
+    check(
+      "listing_assignments_assignment_revision_check",
+      sql`${table.assignmentRevision} >= 0`,
+    ),
+  ],
+);
+export const listingAssignmentRequests = pgTable(
+  "listing_assignment_requests",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.actorId,
+        table.requestKey,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const enrichmentBatchPreviews = pgTable(
+  "enrichment_batch_previews",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    id: uuid("id").notNull(),
+    actorId: text("actor_id").notNull(),
+    digest: text("digest").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    options: jsonb("options").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    check(
+      "enrichment_batch_previews_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_previews_options_check",
+      sql`jsonb_typeof(${table.options})='object'`,
+    ),
+  ],
+);
+export const enrichmentBatchCreateReceipts = pgTable(
+  "enrichment_batch_create_receipts",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    requestKey: uuid("request_key").notNull(),
+    previewId: uuid("preview_id").notNull(),
+    digest: text("digest").notNull(),
+    batchId: uuid("batch_id").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestKey] }),
+    uniqueIndex(
+      "enrichment_batch_create_receipts_workspace_id_preview_id_key",
+    ).on(table.workspaceId, table.previewId),
+    index("enrichment_batch_create_receipts_batch_idx").on(
+      table.workspaceId,
+      table.batchId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.previewId],
+      foreignColumns: [
+        enrichmentBatchPreviews.workspaceId,
+        enrichmentBatchPreviews.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.batchId],
+      foreignColumns: [enrichmentBatches.workspaceId, enrichmentBatches.id],
+    }),
+    check(
+      "enrichment_batch_create_receipts_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_create_receipts_response_check",
+      sql`jsonb_typeof(${table.response})='object'`,
+    ),
+  ],
+);

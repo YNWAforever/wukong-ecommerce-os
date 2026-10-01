@@ -125,11 +125,13 @@ export function createWorkspaceReadRepository(
   from website_products w where w.workspace_id=${workspaceId}
   union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
   from workbook_products w where w.workspace_id=${workspaceId}
-  union all select 'draft',null,null,d.id,null,null,v.content->>'sku',d.id,null,
-   coalesce(v.content->'title'->>'zh-Hant',v.content->'title'->>'en',nullif(left(d.note,120),''),d.id::text),
+  union all select 'draft',null,null,d.id,null,null,case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end,d.id,null,
+   coalesce(nullif(case when i.id is null then v.content->'title'->>'zh-Hant' when v.id is null or i.field_states->'title.zh-Hant'->>'owner'='operator' or i.field_states->'title.zh-Hant'->>'locked'='true' then i.working_content->'title'->>'zh-Hant' else v.content->'title'->>'zh-Hant' end,''),
+    nullif(case when i.id is null then v.content->'title'->>'en' when v.id is null or i.field_states->'title.en'->>'owner'='operator' or i.field_states->'title.en'->>'locked'='true' then i.working_content->'title'->>'en' else v.content->'title'->>'en' end,''),nullif(left(d.note,120),''),d.id::text),
    d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
    (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null
   from listing_drafts d
+  left join listing_input_revisions i on i.workspace_id=${workspaceId} and i.listing_id=d.id and i.revision=d.input_revision
   left join listing_versions v on v.workspace_id=${workspaceId} and v.listing_id=d.id and v.id=d.active_version_id
   left join (select listing_version_id,count(*)::int n from compliance_flags where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
   where d.workspace_id=${workspaceId} and not exists(select 1 from platform_products p where p.workspace_id=${workspaceId} and p.listing_id=d.id)`;
@@ -154,6 +156,8 @@ export function createWorkspaceReadRepository(
         q?: string;
         filter: CatalogFilter;
         importId?: string;
+        work?: "all" | "mine" | "unassigned" | "review";
+        actorId?: string;
       },
     ) {
       scope.assertOpen();
@@ -173,11 +177,27 @@ export function createWorkspaceReadRepository(
       )
         throw new Error("invalid catalog filter");
       const q = (input.q ?? "").trim().toLocaleLowerCase();
+      const work = input.work ?? "all";
+      if (
+        !["all", "mine", "unassigned", "review"].includes(work) ||
+        (work === "mine" && !input.actorId)
+      )
+        throw new Error("invalid responsibility filter");
+      const responsibilityMatch =
+        work === "all"
+          ? sql`true`
+          : work === "review"
+            ? sql`"listingStatus"='in_review'`
+            : sql`"listingId" is not null and ${
+                work === "mine"
+                  ? sql`exists(select 1 from listing_assignments a join memberships m on m.workspace_id=a.workspace_id and m.user_id=a.assignee_user_id and m.role in ('operator','reviewer','admin','owner') where a.workspace_id=${workspaceId} and a.listing_id="listingId" and a.assignee_user_id=${input.actorId})`
+                  : sql`not exists(select 1 from listing_assignments a join memberships m on m.workspace_id=a.workspace_id and m.user_id=a.assignee_user_id and m.role in ('operator','reviewer','admin','owner') where a.workspace_id=${workspaceId} and a.listing_id="listingId")`
+              }`;
       const importMatch = input.importId
         ? sql`("sourceType"='workbook' and id in (select id from workbook_products where workspace_id=${workspaceId} and import_id=${input.importId}::uuid))`
         : sql`true`;
       const match = sql`${importMatch} and (${input.filter}='all' or (${input.filter}='bound' and "sourceType"='platform' and "listingId" is not null) or (${input.filter}='drafts' and "listingId" is not null) or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
-    and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
+    and ${responsibilityMatch} and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
       // One statement gives counts and page a common MVCC snapshot, including empty pages.
       const rows =
         await transaction.execute(sql`with catalog as materialized (${catalog}), matching as (select * from catalog where ${match}),

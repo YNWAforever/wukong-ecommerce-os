@@ -5,6 +5,7 @@ import {
   hashBulkFormHeaderContract,
 } from "@wukong/shopline";
 import { randomUUID } from "node:crypto";
+import { emptyWorkingListing } from "@wukong/core";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { createDatabase, type WorkspaceRepositories } from "../client.js";
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL!;
@@ -13,6 +14,8 @@ if (!adminUrl || !appUrl)
   throw new Error("Explicit isolated database URLs required");
 const workspaceId = "task7a-" + randomUUID(),
   otherId = "task7a-" + randomUUID();
+// Immutable current-input fixtures are retained in this dedicated synthetic workspace.
+const currentWorkspace = "task7a-input-" + randomUUID();
 const connection = randomUUID(),
   foreignConnection = randomUUID();
 const admin = postgres(adminUrl, {
@@ -32,6 +35,7 @@ const SYNTHETIC_DIGEST = "synthetic-digest-not-compared";
 describe("full workspace read boundaries", () => {
   beforeAll(async () => {
     await admin`insert into workspaces(id,name,profile) values (${workspaceId},'synthetic','{}'),(${otherId},'synthetic','{}')`;
+    await admin`insert into workspaces(id,name,profile) values (${currentWorkspace},'synthetic current input','{}')`;
     await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${connection},${workspaceId},'synthetic.invalid','fixture'),(${foreignConnection},${otherId},'foreign.invalid','fixture')`;
     await admin`insert into platform_products(workspace_id,connection_id,remote_product_id,origin,created_at,updated_at) select ${workspaceId},${connection},'product-'||i,'created','2026-01-01','2026-01-01' from generate_series(1,5007) i`;
     await admin`insert into platform_products(workspace_id,connection_id,remote_product_id,origin) values (${otherId},${foreignConnection},'foreign-only','created')`;
@@ -754,5 +758,173 @@ describe("full workspace read boundaries", () => {
         ).totalMatching,
       ).toBe(30);
     });
+  });
+  it("projects active AI titles while preserving operator titles and deliberately cleared SKU", async () => {
+    let id: string;
+    await db.forWorkspace(currentWorkspace, async (repos) => {
+      const draft = await repos.listings.create({ target: "shopline" });
+      id = draft.id;
+      await repos.listingInputs.initialize(
+        {
+          listingId: id,
+          actorId: "synthetic",
+          workingContent: {
+            ...emptyWorkingListing(),
+            sku: null,
+            title: { en: "Original English source", "zh-Hant": "" },
+          },
+        },
+        { workspaceId: currentWorkspace, actorId: "synthetic", entityId: id },
+        repos.audit,
+      );
+    });
+    const [version] =
+      await admin`insert into listing_versions(workspace_id,listing_id,sequence,content,created_by) values (${currentWorkspace},${id!},1,${admin.json({ ...emptyWorkingListing(), sku: "OLD-CLEARED-SKU", title: { en: "Generated English", "zh-Hant": "新的中文標題" } })},'synthetic') returning id`;
+    await admin`update listing_drafts set active_version_id=${version!.id} where workspace_id=${currentWorkspace} and id=${id!}`;
+    const read = (q: string) =>
+      db.forWorkspace(currentWorkspace, (repos) =>
+        repos.reads.catalogPage({ page: 1, pageSize: 25, filter: "drafts", q }),
+      );
+    expect((await read("新的中文標題")).items).toEqual([
+      expect.objectContaining({
+        listingId: id!,
+        title: "新的中文標題",
+        sku: null,
+      }),
+    ]);
+    expect((await read("OLD-CLEARED-SKU")).totalMatching).toBe(0);
+    await db.forWorkspace(currentWorkspace, (repos) =>
+      repos.listingInputs.save(
+        {
+          listingId: id!,
+          actorId: "synthetic",
+          expectedInputRevision: 1,
+          baseVersionId: version!.id,
+          operationKey: randomUUID(),
+          requestDigest: "d".repeat(64),
+          changes: [
+            { field: "title.zh-Hant", value: "人工保留名稱", locked: true },
+          ],
+        },
+        { workspaceId: currentWorkspace, actorId: "synthetic", entityId: id! },
+        repos.audit,
+      ),
+    );
+    expect((await read("人工保留名稱")).items).toEqual([
+      expect.objectContaining({
+        listingId: id!,
+        title: "人工保留名稱",
+        sku: null,
+      }),
+    ]);
+    expect((await read("新的中文標題")).totalMatching).toBe(0);
+  });
+  it("paginates current responsibility in SQL and treats removed or demoted assignees as unassigned", async () => {
+    const actorId = randomUUID(),
+      manager = randomUUID();
+    for (const id of [actorId, manager])
+      await admin`insert into users(id,email,auth_email_verified) values (${id},${id + "@local.invalid"},true)`;
+    await admin`insert into memberships(workspace_id,user_id,role) values (${currentWorkspace},${actorId},'operator'),(${currentWorkspace},${manager},'admin')`;
+    const ids = await db.forWorkspace(currentWorkspace, async (repos) => {
+      const drafts = [];
+      for (let index = 0; index < 3; index++)
+        drafts.push(
+          await repos.listings.create({
+            target: "shopline",
+            note: "Responsibility-only fixture",
+          }),
+        );
+      await repos.assignments.apply({
+        actorId: manager,
+        listingId: drafts[0]!.id,
+        assigneeUserId: actorId,
+        expectedRevision: 0,
+        idempotencyKey: randomUUID(),
+        action: "assign",
+      });
+      return drafts.map((draft) => draft.id);
+    });
+    const read = (work: "mine" | "unassigned", page = 1) =>
+      db.forWorkspace(currentWorkspace, (repos) =>
+        repos.reads.catalogPage({
+          page,
+          pageSize: 1,
+          filter: "drafts",
+          work,
+          actorId,
+          q: "Responsibility-only",
+        }),
+      );
+    expect((await read("mine")).items.map((item) => item.id)).toEqual([ids[0]]);
+    expect((await read("unassigned")).totalMatching).toBe(2);
+    expect((await read("unassigned", 2)).items).toHaveLength(1);
+    await admin`update memberships set role='viewer' where workspace_id=${currentWorkspace} and user_id=${actorId}`;
+    expect((await read("mine")).totalMatching).toBe(0);
+    expect((await read("unassigned")).totalMatching).toBe(3);
+    expect(
+      (
+        await db.forWorkspace(otherId, (repos) =>
+          repos.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "drafts",
+            work: "mine",
+            actorId,
+          }),
+        )
+      ).totalMatching,
+    ).toBe(0);
+  });
+  it("reads current draft SKU and title before an active version, preserving leading zeros", async () => {
+    await db.forWorkspace(currentWorkspace, async (repos) => {
+      const draft = await repos.listings.create({ target: "shopline" });
+      await repos.listingInputs.initialize(
+        {
+          listingId: draft.id,
+          actorId: "synthetic",
+          workingContent: {
+            ...emptyWorkingListing(),
+            sku: "000674",
+            title: { en: "Synthetic current identity", "zh-Hant": "" },
+          },
+        },
+        {
+          workspaceId: currentWorkspace,
+          actorId: "synthetic",
+          entityId: draft.id,
+        },
+        repos.audit,
+      );
+      const page = await repos.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "drafts",
+        q: "000674",
+      });
+      expect(page.items).toEqual([
+        expect.objectContaining({
+          sourceType: "draft",
+          listingId: draft.id,
+          sku: "000674",
+          title: "Synthetic current identity",
+          canExport: false,
+        }),
+      ]);
+      expect(
+        (await repos.listings.getById(draft.id))?.activeVersionId,
+      ).toBeNull();
+    });
+    expect(
+      (
+        await db.forWorkspace(otherId, (repos) =>
+          repos.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "drafts",
+            q: "000674",
+          }),
+        )
+      ).totalMatching,
+    ).toBe(0);
   });
 });

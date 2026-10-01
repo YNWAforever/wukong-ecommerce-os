@@ -9,8 +9,21 @@ import {
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { workspaces } from "../schema.js";
 
+export type WorkspaceReadinessObservations = {
+  reviewerCount: number;
+  connectionPresent: boolean;
+  latestAi: {
+    provider: string;
+    model: string;
+    status: string;
+    checkedAt: Date;
+  } | null;
+  latestQueueStep: { state: string; checkedAt: Date } | null;
+};
+
 export type WorkspaceRepository = {
   requireProfile(): Promise<WorkspaceProfile>;
+  readinessObservations(): Promise<WorkspaceReadinessObservations>;
   updateProfile(profile: WorkspaceProfile): Promise<void>;
   updateSettings(
     patch: Partial<WorkspacePolicy> & { brandBackgroundColor?: string | null },
@@ -40,6 +53,36 @@ export function createWorkspaceRepository(
         .limit(1);
       if (!workspace) throw new Error("workspace not found");
       return workspaceProfileSchema.parse(workspace.profile);
+    },
+    async readinessObservations() {
+      scope.assertOpen();
+      // Only status, time and counts leave the repository. Never select tokens,
+      // provider errors, prompts, job payloads, or member identities here.
+      const [row] = await transaction.execute(sql`
+        select
+          (select count(*)::int from memberships where workspace_id=${workspaceId} and role in ('reviewer','admin','owner')) as reviewer_count,
+          exists(select 1 from shopline_connections where workspace_id=${workspaceId}) as connection_present,
+          (select jsonb_build_object('provider',provider,'model',model,'status',status,'checkedAt',completed_at) from ai_runs where workspace_id=${workspaceId} and completed_at is not null order by completed_at desc,id desc limit 1) as latest_ai,
+          (select jsonb_build_object('state',state,'checkedAt',updated_at) from listing_pipeline_steps where workspace_id=${workspaceId} order by updated_at desc,id desc limit 1) as latest_queue_step
+      `);
+      const ai = row?.latest_ai as {
+        provider: string;
+        model: string;
+        status: string;
+        checkedAt: string;
+      } | null;
+      const queue = row?.latest_queue_step as {
+        state: string;
+        checkedAt: string;
+      } | null;
+      return {
+        reviewerCount: Number(row?.reviewer_count ?? 0),
+        connectionPresent: row?.connection_present === true,
+        latestAi: ai ? { ...ai, checkedAt: new Date(ai.checkedAt) } : null,
+        latestQueueStep: queue
+          ? { ...queue, checkedAt: new Date(queue.checkedAt) }
+          : null,
+      };
     },
     async updateSettings(patch, expectedDigest) {
       scope.assertOpen();

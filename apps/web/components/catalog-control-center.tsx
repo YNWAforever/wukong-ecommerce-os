@@ -1,9 +1,18 @@
 "use client";
+import { withWorkbenchReturn } from "../lib/workbench-navigation";
 import {
-  exactQueryId,
-  initialDestinationSearch,
-  withWorkbenchReturn,
-} from "../lib/workbench-navigation";
+  parseCatalogQuery,
+  catalogQuery,
+  catalogContextKey,
+} from "../lib/catalog-query-state";
+import { AssignmentPanel, AssignmentWorkFilter } from "./assignment-panel";
+import { useWorkQuery } from "../lib/use-work-query";
+import { CatalogDetailDrawer } from "./catalog-detail-drawer";
+import {
+  clearWorkSession,
+  readCatalogSelection,
+  writeCatalogSelection,
+} from "../lib/catalog-session-state";
 import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
@@ -63,46 +72,72 @@ const EMPTY_RESPONSE: CatalogPage = {
 export function CatalogControlCenter({
   initialSearch,
 }: { initialSearch?: string } = {}) {
+  const workQuery = useWorkQuery(initialSearch);
   const params = useMemo(
-    () => initialDestinationSearch(initialSearch),
-    [initialSearch],
+    () => new URLSearchParams(workQuery.search),
+    [workQuery.search],
   );
-  const [workspaceScope, setWorkspaceScope] = useState(false);
-  const importId = workspaceScope ? null : exactQueryId(params.get("importId"));
-  const invalidImport = !workspaceScope && params.has("importId") && !importId;
+  const queryState = parseCatalogQuery(params);
+  const { importId, invalidImport } = queryState;
   const returnTo = params.get("returnTo");
   const locale = useLocale();
   const c = commonCopy[locale];
   const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
-  const destinationQuery = params.get("q") ?? "";
-  const destinationFilter =
-    CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
-      ?.value ?? "all";
-  const pageValue = params.get("page");
-  const destinationPage =
-    pageValue &&
-    /^[1-9][0-9]*$/.test(pageValue) &&
-    Number(pageValue) <= 21474836
-      ? Number(pageValue)
-      : 1;
+  const destinationQuery = queryState.q;
+  const destinationFilter = queryState.filter;
+  const destinationPage = queryState.page;
   const destination = JSON.stringify([
     params.get("importId"),
     destinationQuery,
     destinationFilter,
     destinationPage,
+    queryState.work,
   ]);
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [query, setQuery] = useState(destinationQuery);
+  const [settledQuery, setSettledQuery] = useState(destinationQuery);
   const [filter, setFilter] = useState<CatalogFilter>(destinationFilter);
   const [page, setPage] = useState(destinationPage);
   // Synchronize URL-owned controls without remounting detail or export forms.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
-    setWorkspaceScope(false);
     setQuery(destinationQuery);
+    setSettledQuery(destinationQuery);
     setFilter(destinationFilter);
     setPage(destinationPage);
+  }
+  useEffect(() => {
+    if (query === settledQuery) return;
+    const timeout = setTimeout(() => {
+      setSettledQuery(query);
+      setPage(1);
+      workQuery.navigate(catalogQuery({ ...queryState, q: query, page: 1 }));
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [query, settledQuery, destination, workQuery.navigate]);
+  const closeDetails = useCallback(() => {
+    setWorkbookDetailId(null);
+    setWebsiteDetailId(null);
+  }, []);
+  function changePage(value: number) {
+    setPage(value);
+    workQuery.navigate(catalogQuery({ ...queryState, page: value }), "push");
+  }
+  function rememberPosition() {
+    if (selectionScope) {
+      try {
+        sessionStorage.setItem(
+          "wukong:catalog:scroll:" + selectionScope,
+          JSON.stringify({
+            href: catalogContextKey(window.location.search),
+            y: window.scrollY,
+          }),
+        );
+      } catch {
+        /* Optional same-session position. */
+      }
+    }
   }
   // Keyed by listingId, valued by the `contentDigest` the operator was
   // actually shown at the moment they ticked the row -- not re-derived later
@@ -118,14 +153,24 @@ export function CatalogControlCenter({
     ReadonlySet<string>
   >(new Set());
   const [selectionScope, setSelectionScope] = useState<string | null>(null);
+  const [accessRevoked, setAccessRevoked] = useState(false);
+  useEffect(() => {
+    if (!accessRevoked) return;
+    clearWorkSession();
+    setSelectionScope(null);
+    setSelectedListings(new Map());
+    setMaintenanceSelection(new Set());
+    closeDetails();
+  }, [accessRevoked, closeDetails]);
 
   const loadCatalog = useCallback(
     async (signal: AbortSignal) => {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(PAGE_SIZE),
-        q: query,
+        q: settledQuery,
         filter,
+        work: queryState.work,
       });
       if (invalidImport) throw new Error("Invalid import link");
       if (importId) params.set("importId", importId);
@@ -133,30 +178,80 @@ export function CatalogControlCenter({
         cache: "no-store",
         signal,
       });
+      if (
+        !signal.aborted &&
+        (response.status === 401 || response.status === 403)
+      )
+        setAccessRevoked(true);
       if (!response.ok)
         throw new Error(`Unable to load catalog (${response.status})`);
-      return { importId, page: (await response.json()) as CatalogPage };
+      const pageData = (await response.json()) as CatalogPage;
+      if (!signal.aborted) setAccessRevoked(false);
+      return { importId, page: pageData };
     },
-    [page, query, filter, importId, invalidImport],
+    [page, settledQuery, filter, importId, invalidImport, queryState.work],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     loadCatalog,
     "Unable to load catalog",
   );
+  useEffect(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [reload]);
 
   // Retain same-import refresh results, but never relabel another import's rows.
   // Keep the surrounding detail/export forms mounted during scope changes.
   const response =
-    data && !invalidImport && data.importId === importId
+    data && !accessRevoked && !invalidImport && data.importId === importId
       ? data.page
       : EMPTY_RESPONSE;
   useEffect(() => {
     if (response.selectionScope && response.selectionScope !== selectionScope) {
+      if (selectionScope) clearWorkSession();
+      closeDetails();
       setSelectionScope(response.selectionScope);
-      setSelectedListings(new Map());
-      setMaintenanceSelection(new Set());
+      const saved = selectionScope
+        ? { ids: [], exports: [] }
+        : readCatalogSelection(response.selectionScope);
+      setSelectedListings(
+        new Map(saved.exports as Array<[string, string | null]>),
+      );
+      setMaintenanceSelection(new Set(saved.ids));
     }
-  }, [response.selectionScope, selectionScope]);
+  }, [response.selectionScope, selectionScope, closeDetails]);
+  useEffect(() => {
+    if (selectionScope)
+      writeCatalogSelection(
+        selectionScope,
+        maintenanceSelection,
+        selectedListings,
+      );
+  }, [selectionScope, maintenanceSelection, selectedListings]);
+  useEffect(() => {
+    if (!selectionScope || loading) return;
+    try {
+      const key = "wukong:catalog:scroll:" + selectionScope;
+      const saved = JSON.parse(sessionStorage.getItem(key) ?? "null");
+      if (
+        saved?.href === catalogContextKey(window.location.search) &&
+        Number.isFinite(saved.y) &&
+        saved.y >= 0
+      ) {
+        sessionStorage.removeItem(key);
+        requestAnimationFrame(() => window.scrollTo(0, saved.y));
+      }
+    } catch {
+      /* Optional same-session position. */
+    }
+  }, [selectionScope, loading]);
   const canMaintain =
     response.capabilities.canMaintainProducts ??
     response.capabilities.canGenerateBulkUpdate;
@@ -227,19 +322,30 @@ export function CatalogControlCenter({
 
   function handleQueryChange(value: string) {
     setQuery(value);
-    setPage(1);
   }
 
   function handleFilterChange(value: CatalogFilter) {
+    setSettledQuery(query);
     setFilter(value);
     setPage(1);
+    workQuery.navigate(
+      catalogQuery({ ...queryState, q: query, filter: value, page: 1 }),
+    );
   }
   function handleMetricChange(value: CatalogFilter) {
-    setWorkspaceScope(true);
-    handleFilterChange(value);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("importId");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    setSettledQuery(query);
+    setFilter(value);
+    setPage(1);
+    workQuery.navigate(
+      catalogQuery({
+        ...queryState,
+        q: query,
+        filter: value,
+        page: 1,
+        importId: null,
+        invalidImport: false,
+      }),
+    );
   }
 
   const returnLink = returnTo ? (
@@ -298,20 +404,24 @@ export function CatalogControlCenter({
         </p>
       ) : null}
       {websiteDetailId ? (
-        <div>
-          <button type="button" onClick={() => setWebsiteDetailId(null)}>
-            {localized(locale, "關閉資料", "Close details")}
-          </button>
+        <CatalogDetailDrawer
+          title={localized(locale, "網站商品資料", "Website product details")}
+          onClose={closeDetails}
+        >
           <WebsiteProductDetail key={websiteDetailId} id={websiteDetailId} />
-        </div>
+        </CatalogDetailDrawer>
       ) : null}
       {workbookDetailId ? (
-        <div>
-          <button type="button" onClick={() => setWorkbookDetailId(null)}>
-            {localized(locale, "關閉資料", "Close details")}
-          </button>
+        <CatalogDetailDrawer
+          title={localized(
+            locale,
+            "試算表商品資料",
+            "Workbook product details",
+          )}
+          onClose={closeDetails}
+        >
           <WorkbookProductDetail key={workbookDetailId} id={workbookDetailId} />
-        </div>
+        </CatalogDetailDrawer>
       ) : null}
       <div className={styles.metrics}>
         <Metric
@@ -374,26 +484,37 @@ export function CatalogControlCenter({
       </div>
 
       <div className={styles.controlPanel}>
-        <div className={styles.selectionBar} aria-live="polite">
-          <strong>
+        {canMaintain && !response.capabilities.canGenerateBulkUpdate ? (
+          <p className={styles.roleHint}>
             {localized(
               locale,
-              `已選取 ${maintenanceSelection.size} 個商品作批量更新`,
-              `${maintenanceSelection.size} selected for Bulk Update`,
+              "你可以維護商品；批准與匯出由審核員完成。",
+              "You can maintain products. A reviewer completes approval and export.",
             )}
-          </strong>
-          <button
-            type="button"
-            className={styles.pageButton}
-            disabled={maintenanceSelection.size === 0}
-            onClick={() => {
-              setSelectedListings(new Map());
-              setMaintenanceSelection(new Set());
-            }}
-          >
-            {localized(locale, "清除選取", "Clear selection")}
-          </button>
-        </div>
+          </p>
+        ) : null}
+        {maintenanceSelection.size > 0 ? (
+          <div className={styles.selectionBar} aria-live="polite">
+            <strong>
+              {localized(
+                locale,
+                `已選取 ${maintenanceSelection.size} 個商品作批量更新`,
+                `${maintenanceSelection.size} selected for Bulk Update`,
+              )}
+            </strong>
+            <button
+              type="button"
+              className={styles.pageButton}
+              disabled={maintenanceSelection.size === 0}
+              onClick={() => {
+                setSelectedListings(new Map());
+                setMaintenanceSelection(new Set());
+              }}
+            >
+              {localized(locale, "清除選取", "Clear selection")}
+            </button>
+          </div>
+        ) : null}
         {offPageCount > 0 ? (
           <p>
             {localized(
@@ -406,15 +527,32 @@ export function CatalogControlCenter({
         {canMaintain && maintenanceSelection.size > 0 ? (
           <CreateBatchForm listingIds={[...maintenanceSelection]} />
         ) : null}
-        <BulkExportPanel
-          listings={exportListings}
-          canGenerate={response.capabilities.canGenerateBulkUpdate}
-        />
+        {canMaintain && maintenanceSelection.size > 0 ? (
+          <AssignmentPanel
+            listingIds={[...maintenanceSelection]}
+            locale={locale}
+            onUpdated={reload}
+          />
+        ) : null}
+        {exportListings.length > 0 ? (
+          <BulkExportPanel
+            listings={exportListings}
+            canGenerate={response.capabilities.canGenerateBulkUpdate}
+          />
+        ) : null}
         <div className={styles.toolbar}>
+          <AssignmentWorkFilter
+            value={queryState.work}
+            locale={locale}
+            onChange={(work) =>
+              workQuery.navigate(catalogQuery({ ...queryState, work, page: 1 }))
+            }
+          />
           <label className={styles.searchField}>
             <span>{localized(locale, "搜尋商品", "Search catalog")}</span>
             <input
               type="search"
+              maxLength={200}
               value={query}
               onChange={(event) => handleQueryChange(event.target.value)}
               placeholder={localized(
@@ -630,9 +768,13 @@ export function CatalogControlCenter({
                         <td>{item.openBlockingFlagCount}</td>
                         <td>
                           <Link
+                            onClick={rememberPosition}
                             href={withWorkbenchReturn(
                               `/listings/${item.listingId}`,
-                              returnTo,
+                              "/catalog" +
+                                (catalogQuery(queryState)
+                                  ? "?" + catalogQuery(queryState)
+                                  : ""),
                             )}
                           >
                             {localized(locale, "開啟草稿", "Open draft")}
@@ -750,9 +892,13 @@ export function CatalogControlCenter({
                         {item.listingId ? (
                           <Link
                             className={styles.actionLink}
+                            onClick={rememberPosition}
                             href={withWorkbenchReturn(
                               `/listings/${item.listingId}`,
-                              returnTo,
+                              "/catalog" +
+                                (catalogQuery(queryState)
+                                  ? "?" + catalogQuery(queryState)
+                                  : ""),
                             )}
                           >
                             {localized(locale, "開啟流程", "Open")}
@@ -781,7 +927,7 @@ export function CatalogControlCenter({
           <button
             type="button"
             className={styles.pageButton}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            onClick={() => changePage(Math.max(1, page - 1))}
             disabled={loading || page === 1}
           >
             {localized(locale, "上一頁", "Previous")}
@@ -792,7 +938,7 @@ export function CatalogControlCenter({
           <button
             type="button"
             className={styles.pageButton}
-            onClick={() => setPage((current) => current + 1)}
+            onClick={() => changePage(page + 1)}
             disabled={loading || response.totalMatching <= page * PAGE_SIZE}
           >
             {localized(locale, "下一頁", "Next")}

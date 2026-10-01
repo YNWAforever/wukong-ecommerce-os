@@ -175,7 +175,10 @@ describe("JobsLedgerClient", () => {
     );
     const hrefs = links.map((link) => link.getAttribute("href")).sort();
     // Only pr1 (l2) and p1 (l1) have a listingId; e1 and b1 have null.
-    expect(hrefs).toEqual(["/listings/l1", "/listings/l2"]);
+    expect(hrefs).toEqual([
+      "/listings/l1?returnTo=%2Fjobs",
+      "/listings/l2?returnTo=%2Fjobs",
+    ]);
   });
 
   it("narrows visible rows to the selected kind via the filter toggle, and back to All", async () => {
