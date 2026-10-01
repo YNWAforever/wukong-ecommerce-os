@@ -4,11 +4,11 @@
 
 ## 三個互相獨立的結果
 
-| 結果                     | 現況                                                                                        | 放行所需證據                                                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| code-ready               | A–D 的 draft PR、完整 CI 與 exact-head READY preview 已完成；E/F 最終整合與 PR 證據仍在驗證 | 全套來源、型別、unit、實際隔離 DB、production-built fake/mock browser、audit、release gate 及對應 commit 的 CI                   |
-| production-read-verified | blocked                                                                                     | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
-| merchant-pilot-accepted  | blocked                                                                                     | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
+| 結果                     | 現況                                                                                                                         | 放行所需證據                                                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| code-ready               | A–E source完整 CI／READY preview已有證據；F full24＋workbook6、本地PG-worker及最終indexed rollback通過；最終PR head CI另核對 | 全套來源、型別、unit、實際隔離 DB、production-built fake/mock browser、audit、release gate 及對應 commit 的 CI                   |
+| production-read-verified | blocked                                                                                                                      | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
+| merchant-pilot-accepted  | blocked                                                                                                                      | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
 
 READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；下載成功不等於 SHOPLINE 已接受。不得將部分結果合併成「全通過」。每個 UC 的歷史結果與本輪結果見 [30-case 結果表](./opak-uat-results-2026-10-01.md)。
 
@@ -26,7 +26,7 @@ READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；�
 | D                        | [PR #124](https://github.com/YNWAforever/wukong-ecommerce-os/pull/124)；`b8fe92a3273841dd2a7857905f9ac796cc5200fa` | 完整 CI `36874983297` SUCCESS；exact-head preview `dpl_BcBsVsiHuuW6D8kgEkhKxXH5Szo4` READY    |
 | E／F                     | 最終候選與 CI／preview 更新於 [fix-status](../superpowers/plans/2026-10-01-wukong-fix-status.md)                   | 本表不以中途 source checkpoint 冒充最終候選                                                   |
 
-production metadata 是本輪已核對到的快照，正式 release 前必須刷新。缺 0046 已在隔離 DB 重現兩條 route 的 500，補回後正常；這不證明所有正式 500 都只有同一原因，也不證明 PR #120 已修好。全 DB／權限故障仍回錯誤，不回空列表。
+production metadata 是本輪已核對到的快照，正式 release 前必須刷新。最新read-only inventory是54張public regular tables，其中44張RLS全44張FORCE RLS，零張RLS未FORCE；54不是FORCE-RLS數量。缺 0046 已在隔離 DB 重現兩條 route 的 500，補回後正常；這不證明所有正式 500 都只有同一原因，也不證明未合併的PR #120 已修正式環境。全 DB／權限故障仍回錯誤，不回空列表。
 
 ## 配置差異：只記名稱與狀態
 
@@ -49,7 +49,7 @@ E/F 不新增必要的 production secret。模型 eval 的 live flags、授權�
 
 1. 先記錄目標 web/worker SHA、DB branch/schema inventory、app role、backup/restore owner。取得當時 release 所需授權；本輪不自行在 production 執行 migration。
 2. 在乾淨隔離 DB 及舊 schema 升級 DB 執行正常 migration runner；重播必須安全。核對 composite workspace FK、FORCE RLS、non-bypass app role、exact tenant-table inventory。沒有欄位時停止，不能靠 catch 消除錯誤。
-3. 先套用 additive schema，再部署相容 code。本輪實際舊 D `b8fe92a3273841dd2a7857905f9ac796cc5200fa` web／worker 對已升級 0053 schema 的隔離相容性 gate 3／3通過（58.21秒）；詳見下節。這個特定 rollback candidate 的證據不代表任何更舊 SHA 都能處理新的 Queue／preview 契約。
+3. 先套用 additive schema，再部署相容 code。本輪實際舊 D `b8fe92a3273841dd2a7857905f9ac796cc5200fa` web／worker 對初版0053的隔離相容性 gate 3／3通過（58.21秒）；最終indexed schema的獨立gate亦3／3通過（47.46秒），保留中途timeout及其未確認原因，詳見下節。這個特定 rollback candidate 的證據不代表任何更舊 SHA 都能處理新的 Queue／preview 契約。
 4. 對 quality 投影執行有界 reconciliation。CLI `quality:backfill` 目前只接受明確 loopback、專用 `opak_fixes_*`、app-role 及 workspace；每 batch 最多 25，總 batches／時間有上限，部分完成 exit 2，可續跑。不可用修改 guard 的方式把本地 CLI 指向 production。staging／production backfill 需要另有授權的受控 runner。
 5. 保留每個 workspace 的 assessment version、pending/failed、asOf、generation progress 與 known/unknown cost 校驗。pending/failed 不算 clean；成本包含 retained runs，archive 不抹帳。批准／匯出仍查當前權威資料，不能用投影判斷。
 6. 切讀取後做 operator/reviewer 非破壞 smoke，再按 exact scope 跑 `audit:verify`；missing actions 必須 0、accessible foreign records 必須 0。未做的目標環境 audit 不能借用本地結果代填。
@@ -60,13 +60,21 @@ E/F 不新增必要的 production secret。模型 eval 的 live flags、授權�
 
 Private 相容性 fixture 沿用已提交 F100 的實際 importer／batch/control／Cloudflare runtime／worker 流程；只替換 guard 的新專用 DB 名稱及兩個 E-only cost 方法，以 scoped non-bypass SQL 保留同一 known／NULL／lineage 斷言。先驗證 upgraded schema 後，舊 migration loader 只指向私人空目錄，沒有重播／降級舊 DDL，也沒有把 E runtime 混入舊 code。新增舊 HTTP detail owned200／human locked current title與description、foreign404，並驗证舊 worker 寫入會推進新 quality generation。
 
-實際 3／3通過：三個 worker 成功檢查的 generation 至少增加4；保留99 versions、101 pipeline runs、201 AI ledger observations、996 audit events、101 batch attempts及一筆 unknown cost；archive／restore後 retained known／unknown仍完整。Postflight 的完整 table inventory、schema／FK／FORCE RLS／七 triggers與既有 ready sample fingerprint不變，沒有 active／idle-in-transaction app session。本證據及 private fixture／source/dist hashes 留在 ignored evidence，沒有 production mutation。這是特定 code／schema 的可執行相容性，沒有聲稱未完成階段滿足完整 publish audit。
+初版0053實際3／3通過：三個 worker 成功檢查的 generation 至少增加4；保留99 versions、101 pipeline runs、201 AI ledger observations、996 audit events、101 batch attempts及一筆 unknown cost；archive／restore後 retained known／unknown仍完整。Postflight 的完整 table inventory、schema／FK／FORCE RLS／七 triggers與既有 ready sample fingerprint不變，沒有 active／idle-in-transaction app session。本證據及 private fixture／source/dist hashes 留在 ignored evidence，沒有 production mutation。這是特定 code／schema 的可執行相容性，沒有聲稱未完成階段滿足完整 publish audit。
+
+最終0053另用正常migration runner加入workspace/live-listing FK支持index。第一輪indexed gate保留1／3通過、196.72秒與原180000ms lifecycle timeout；當時已成功86個pipeline，但未達manual-summary階段，不能以該輪證明完整相容。原因未確認，不將其歸咎於index、pool或主機負載。
+
+停止所有本輪其他build/test/browser服務後，使用同一舊D、同一indexed schema、原三個case／100件／每wave5件／20個人工編輯及原180000ms上限，單次被動診斷v3實際3／3通過：47.46秒total、42.02秒tests、exit0。只加stage時間、原生driver debug/application_name及有界readonly backend samples；沒有替換Query/then/transaction/serializer，沒有reset、down migration、reconcile、盲重試unknown或產品修改。19個forward waves及20個manual summaries完成，owned detail200、foreign404；99versions／101pipelines／201AI rows／996audit events／101attempts完整，known0、unknown run1與其actual pipeline/batch及unknown reservation1保留。
+
+42個app backend samples沒有觀察到Lock wait，最大sampled active query age5.1ms；worker execute p95/max332/403ms、advance p95/max758ms。Sparse samples沒有量到pool wait或完整SQL end，不能解釋前一輪timeout的唯一原因。indexed DDL/schema／FORCE RLS／七invoker triggers／ready sample全部保持，app active/idle-in-transaction最後0。還原exact E `ea827e081ba3c98797c6f468818051e9540fbdf7`，fresh worker closure7／7退出0、tracked clean、原四個local logs保留，所有owned commands已結束。Private `old-d-compatibility-v3/final-note.json` SHA256 `a4230252f3c82a850d2de8b9f847fd135cee30eaefc73a7885ddab5d2352917e`；retained v2 timeout原因仍未確認。
 
 ## 本輪 evidence 與尚未完成的放行條件
 
-本地 fake/mock 已有 source/version/manual lock、跨頁 5,001 項、10 件並發、unknown outcome／reservation、pause／failed-only retry、XLSX 71 cells、5 行 3 接受／2 拒絕修復 lineage、actual RLS PG 的獨立證據。F 的 100 件 actual worker/service 測試已通過；20 件及 5 行 real-stack browser 在最終候選上仍待 parent 執行。確切命令、結果、SHA、失敗紀錄及最新狀態以 fix-status 為準。
+本地 fake/mock 已有 source/version/manual lock、跨頁 5,001 項、10 件並發、unknown outcome／reservation、pause／failed-only retry、XLSX 71 cells、5 行 3 接受／2 拒絕修復 lineage、actual RLS PG 的獨立證據。source候選F `d70e1a4d05ff2b5922ae9fd12e3c6f6c2241b6b4`的production-built full24 browser通過（4.3分鐘），包含20件actual Queue／審批audit19→20、5行A／B拒絕修復及100件四頁純preview。100件actual service／worker recovery另外PG2／2，不能把preview當100件AI執行。既有workbook browser consumer的舊export及單件bulk_form requests缺新fields／preview hash；test-only補齊同actor兩步preview／generate後，整份workbook6／6通過（50.8秒），原readonly拒絕及零audit/artifact/attempt副作用斷言不變。先前400及cold signin失敗證據保留，沒有以它們冒充runtime權限缺陷。確切命令、結果、SHA、失敗紀錄及最新狀態以 fix-status 為準。
 
-效能 baseline 與 after 必須同 500／5,000／20,000 fixture IDs、samples/concurrency/host 配置；只報實測瓶頸與達標情況。route-factory 時間不等於 HTTP／browser field metrics。20 件員工人工分鐘、一次商業接受率、每件修改欄數沒有可比較的人工 baseline，因此不能報節省百分比。fake 已知成本 0 與刻意注入 unknown 分開記。
+E source `ea827e081ba3c98797c6f468818051e9540fbdf7`完整CI `36906156935` SUCCESS，對應READY preview `dpl_58Auk7p8hoMsCbZMFQ4fdkg1pySY`；F上述source READY preview `dpl_8XsQR9Yo4RLRexoHNcjy7Ky69HAh`。READY只證明bundle部署完成；本輪沒有確認cloud preview的effective DB／worker／provider flags，也沒有以READY替代authenticated acceptance。本地CI fake/mock配置不推定為cloud配置。
+
+效能 baseline 與 after 使用同 500／5,000／20,000 fixture IDs、samples/concurrency/host 配置。保留v2 cursor未達800ms的1,272.35ms；修正無搜尋寬CTE後單次controlled v3 504samples／135EXPLAIN、0errors、21 configured warm targets通過，20k cursor81.07ms。Quality沒有配置p95門檻，三項小規模baseline回歸及約114秒首次backfill仍記錄。route-factory時間不等於HTTP／browser field metrics。20件員工人工分鐘、一次商業接受率、每件修改欄數沒有可比較的人工baseline，因此不能報節省百分比。fake已知成本0與刻意注入unknown分開記。
 
 仍 blocked：authenticated cloud／production smoke、effective production DB connection、worker BUILD_SHA、production migration/deployment authorization、受控 paid/live AI 與人工評分、已授權低清圖片、真商戶最新 export／origin、首次真寫入及 merchant 5 → 20 → 100 sign-off。這些 gate 不妨礙完成可審閱 source／PR／preview；也不能由 synthetic 通過推定已放行。
 

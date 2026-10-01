@@ -401,17 +401,35 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     ).toHaveLength(23);
     assertBaseRequests(requests);
     const id = products[22]!.id;
+    // Both requests use the same authenticated reviewer and exact selection.
+    // This saved reference is not a listing: its digest is never compared,
+    // and preview/generation must reach the scoped listing_not_found outcome.
+    const exportSelection = {
+      listingIds: [id],
+      fields: ["nameZh"],
+      attestation: {
+        listings: [{ listingId: id, contentDigest: SYNTHETIC_DIGEST }],
+      },
+    };
+    const exportPreviewResponse = await page.request.post(
+      "/api/listings/export/preview",
+      { data: exportSelection },
+    );
+    expect(exportPreviewResponse.status()).toBe(200);
+    const exportPreview = await exportPreviewResponse.json();
+    expect(exportPreview).toMatchObject({
+      fields: ["nameZh"],
+      rowCount: 0,
+      changes: [],
+      manifest: [
+        { listingId: id, versionId: null, outcome: "listing_not_found" },
+      ],
+    });
+    expect(exportPreview.previewSha256).toMatch(/^[a-f0-9]{64}$/);
     const exported = await page.request.post("/api/listings/export", {
-      // Well-formed attestation for a listing this workspace cannot see. The
-      // digest is never compared -- the listing resolves to
-      // `listing_not_found` first -- but it has to cover exactly `listingIds`,
-      // or the refusal would come from schema validation rather than from the
-      // workspace boundary this case exists to prove.
       data: {
-        listingIds: [id],
-        attestation: {
-          listings: [{ listingId: id, contentDigest: SYNTHETIC_DIGEST }],
-        },
+        ...exportSelection,
+        previewSha256: exportPreview.previewSha256,
       },
     });
     expect(exported.status()).toBe(200);
@@ -422,9 +440,19 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     });
     for (const method of ["csv", "bulk_form", "shopline_api"]) {
       const response = await page.request.post(`/api/listings/${id}/deliver`, {
-        // `bulk_form` refuses outright without an attestation, so send one for
-        // every method: the status must come from the boundary, not the schema.
-        data: { method, attestedContentDigest: SYNTHETIC_DIGEST },
+        // Only bulk_form requires explicit fields and the actual preview hash.
+        // Keep CSV/API payloads unchanged and reach the scoped missing-listing
+        // boundary with the same reviewer, selection, and preview evidence.
+        data: {
+          method,
+          attestedContentDigest: SYNTHETIC_DIGEST,
+          ...(method === "bulk_form"
+            ? {
+                fields: exportSelection.fields,
+                previewSha256: exportPreview.previewSha256,
+              }
+            : {}),
+        },
       });
       expect([404, 409]).toContain(response.status());
       expect(await response.json()).toMatchObject({

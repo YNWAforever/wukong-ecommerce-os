@@ -212,7 +212,7 @@
 - [x] 穩定排序＋PG microsecond＋sourceType／ID tie-break scoped cursor支援catalog/listing/jobs forward/reverse；保留legacy OFFSET bookmarks與current-input名稱／精確SKU。EXPLAIN未證實缺index，沒有新增推測性index。
 - [x] 0053 revision-aware投影＋bounded 25項reconciliation；pending／failed不算clean，完整retained known／unknown cost保留；投影不作approval權威。CLI具partial resume及實際command deadline／rollback。
 - [x] 真app-role／FORCE RLS DB測current edit／source import／delete／archive／replay／concurrent generation／cost與失敗傳播；quality 20／20通過，批准／匯出保留即時權威查詢。
-- [x] exact original500／5,000／20,000 dataset、20warm samples／concurrency2已比較；441相同operations＋63獨立cursor samples，0error／blocked／cardinality failure。20k warm catalog25／deep／SKU／name／detail／ready quality為183／270／157／137／36／89ms；route-factory目標全達，HTTP／browser／field INP仍分開。cold quality只25assessed，實際bounded backfill约114秒／一次resume後才量warm-ready，沒有隱藏setup成本。
+- [x] exact original500／5,000／20,000 dataset、20warm samples／concurrency2已比較；441相同operations＋63獨立cursor samples。保留v1初始backfill约114秒／一次resume及v2 cursor 1,272.35ms超出800ms的失敗。修正寬CTE後只跑一次controlled v3：504samples／135EXPLAIN，0error／blocked／cardinality failure，21個已配置warm目標通過；quality沒有配置p95目標。20k warm catalog25／deep／SKU／name／detail／ready quality／cursor為126.47／151.26／195.08／150.18／37.10／118.74／81.07ms。source1121／compiled711 hashes與原cohort/input/import/generation指紋不變。保留500 detail、5k catalog1／SKU三項相對D回歸；READY空bounded setup與首次backfill分開。HTTP／browser／field INP分開，見performance-quality runbook。
 
 **完成：** 量測證明改善，資料一致性與readiness安全性沒有交換掉。若目標未達，交數據和具體bottleneck，不編寫達標結論。
 
@@ -237,12 +237,12 @@
 
 **Interfaces:** 沿用既有receipt/freshness型別；UI三個不同語義「檔案已生成」「商戶回報接受/拒絕」「新資料核對完成」。export artifact hash與逐行identity連結，人工回報不能變成independently verified。
 
-- [ ] 顯示舊值→新值→來源及選中欄；低風險批量確認仍是逐件合法確認，不提供「忽略全部警告」。
-- [ ] 檢查PR120相關bulk response contract；部分成功回逐件狀態，失敗不能當成功；一次操作只寫應有audit。
-- [ ] 測內容、來源、confirmation revision任何改變使舊批准失效；operator直接API不可批准/匯出；publish中較新import不被舊completion覆寫。
-- [ ] 用合成XLSX逐cell compare：只8欄允許差異，SKU`000674`、IDs、price、stock、欄位次序保持；未選中欄與inventory delta不重放。
-- [ ] 5行結果3接受2拒絕：只修2拒絕項，保留artifact/attempt lineage；再用最新merchant export獨立核對，不用自己生成的原export證明已上線。
-- [ ] 執行export/source-binding integration與`tests/e2e/bulk-update-pilot.spec.ts`；真SHOPLINE需商戶參與及已授權gate。
+- [x] 顯示舊值→新值→來源及選中欄；低風險批量確認仍是逐件合法確認，不提供「忽略全部警告」。actual F20／F5及最新整合候選full24 browser已通過。
+- [x] 檢查PR120相關bulk response contract；部分成功回逐件狀態，失敗不能當成功。actual browser重現19項審批產生38個audit；core純驗證＋repository成功CAS後單一writer修正後，actual F20先19後20個審批audit及bindings符合契約，focused110／110、獨立source review通過。PR120仍未合併，沒有假稱它已修正式環境。
+- [x] 測內容、來源、confirmation revision任何改變使舊批准失效；operator直接API不可批准/匯出；publish中較新import不被舊completion覆寫。actual F20及source-binding PG通過。
+- [x] 用合成XLSX逐cell compare：只8欄允許差異，SKU`000674`、IDs、price、stock、欄位次序保持；未選中欄與inventory delta不重放。actual F5 browser與PG均通過，71cells／name-only mask／blank保留及非blank delta `+0`逐項核對。
+- [x] 合成5行結果3接受2拒絕：只修2拒絕項，保留immutable A／B artifact/attempt lineage；actual PG及browser用獨立新合成snapshot核對，不用自己生成的原export證明已上線。最新真merchant export／authenticated origin及商戶sign-off仍blocked。
+- [x] 執行export/source-binding actual PG（最終actor-bound候選2／2，63.46秒）與`tests/e2e/bulk-update-pilot.spec.ts`；整合後full24 browser全通過。真SHOPLINE仍需商戶參與及首次真寫入明確確認。
 
 **完成：** 內容交付可追溯，沒有把下載檔案等同網站已更新。
 
@@ -250,10 +250,10 @@
 
 **Create:** `tests/e2e/opak-maintenance.spec.ts`、`docs/runbooks/opak-daily-operations.md`、`docs/runbooks/opak-support.md`。輸入原30-case UAT，新增結果表，不覆蓋原審核狀態。
 
-- [ ] 執行operator、reviewer、admin角色矩陣：登入/登出、商品查看、手動編輯、AI、交審、批准、匯出、assignment、成員/connection/policy。只測允許的role設計；不假定admin帳戶已可用。
-- [ ] 跑真DB/worker的20件合成既有商品流程及100件批次pause/retry；含重複、無版本、錯身份、人工lock、unknown成本、stale批准與跨workspace拒絕。
-- [ ] 記錄各UC的expected/actual、環境、commit、角色、證據、pass/fail/blocked/not-run；unit、mock E2E、real-stack、live provider、merchant acceptance分欄。
-- [ ] 作業手冊用員工動作說明每天匯入、選欄、審核、交接、回填；支援手冊按可重試/補資料/unknown/支援分類，不要求員工懂queue或DB。
+- [x] 執行隔離Better Auth的operator、reviewer、admin角色矩陣：登入/登出、商品查看、手動編輯、fake AI、交審、批准、匯出、assignment、成員/connection/policy；full24 browser通過。帳戶由本地fixture授權，未推定正式admin已可用。
+- [x] 跑真DB/worker的20件合成既有商品流程及100件批次pause/retry；含重複、無版本、錯身份、人工lock、unknown成本、stale批准與跨workspace拒絕。20件actual Queue/browser及100件actual service/worker PG2／2分開；另100件四頁純預覽browser通過，沒有把它當100件AI執行。
+- [x] 記錄原UC01–30的expected/actual、環境、source commit、角色、證據、pass/fail/blocked/not-run；历史狀態完整保留，unit／actual PG-worker／real-stack／live provider／merchant-human分欄，不報30／30全部正式通過。
+- [x] 作業／支援手冊已交，按員工動作、known retry／補資料／unknown／支援說明每天匯入、選欄、審核、交接、回填。
 - [ ] 20件before/after同難度樣本量測人工分鐘、一次接受率、每件已知成本與unknown、需人工修正欄數。没有baseline只報本次值，不捏造節省百分比。
 
 **完成：** 每個原UC有結果或具體blocker；沒有「30/30通過」卻跳過liveAI/admin的情況。
@@ -262,9 +262,9 @@
 
 **Create:** `docs/runbooks/opak-release-acceptance.md`；每PR附test/evidence/rollback summary。
 
-- [ ] 全量跑下面矩陣；資料schema改動在乾淨DB及舊schema升級DB驗證，舊web/worker與additive schema相容；先migration再相容code，再bounded backfill/校驗，最後才切讀取。
-- [ ] preview用fake/mock或已授權測試adapter；release pack列web/worker/DB版本、配置差異（只列名稱及狀態）、backfill progress、audit核對與未解決問題。
-- [ ] rollback以回復code/feature gate及停止新enqueue為主；保留immutable sources、events、versions、已完成外部結果。不可直接down migration刪新資料；running外部請求仍需reconcile。
+- [x] 本地全量package/root/types/build/actual PG-worker/full24 browser及既有workbook6／6矩陣通過；乾淨DB及舊schema升級、migration replay、最終indexed0053配exact舊D web/worker3／3已驗證。保留中途失敗，最終PR head遠端CI另列狀態，不能用本地代填。順序為migration→相容code→bounded backfill/校驗→切讀取；正式migration未執行。
+- [x] 本地production-built preview用fake/mock；release pack列web/worker/DB版本、配置差異（只列名稱及狀態）、backfill progress、audit核對與未解問題。Cloud READY只證明bundle部署，effective DB／worker／provider flags與authenticated smoke另記blocked，不推定cloud為fake/mock。
+- [x] rollback以回復code/feature gate及停止新enqueue為主；保留immutable sources、events、versions、已完成外部結果。最終indexed0053配exact舊D gate3／3通過47.46秒，原180000ms上限與人工／unknown斷言不變；中途timeout原因未確認並保留。不可直接down migration刪新資料；running外部請求仍需reconcile。
 - [ ] 在已有正式部署授權時，部署後用operator/reviewer開原問題商品與queue、查500、做非破壞smoke。沒有授權則先把PR、preview及證據做齊，提出具體release決定，不能停在只列計劃。
 - [ ] 真商戶pilot按5→20→100件，以每階段hard-fail=0、結果核對完成、無未解成本/身份問題為擴量條件；首次SHOPLINE真寫入遵守repo明確確認gate。
 
