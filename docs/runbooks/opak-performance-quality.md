@@ -105,6 +105,45 @@ V2 cold quality was already READY at every scale. The unchanged harness's empty 
 
 The v2 command uses the earlier exact command with output `node_modules/.opak-evidence/t10-after-e-v2.json`. Source/dist manifests, migration/physical preservation proofs, complete cold/warm/query/wait/bytes tables and cursor digest comparisons stay in ignored evidence. Acceptance includes the explicit cursor miss; it must not be summarized as all performance targets passing.
 
+## Measured cursor work and controlled v3
+
+At source `ea827e081ba3c98797c6f468818051e9540fbdf7`, empty-query catalog counts/cursors materialize seven identity/policy scalars. Selected source identities hydrate scalar response fields only after the bounded page keys, in the same SQL statement snapshot. Nonempty current-input/manual-title search is unchanged. The existing bounded per-page current-title/SKU refresh remains a separate statement; this does not add an all-fields snapshot guarantee. Readonly sources remain non-deliverable.
+
+The valid original20k full plans show catalog width343→78 and matching378→78, temporary read/write1090/1090→0/0 blocks at4MB work_mem. The page sort was already an in-memory31KB quicksort. The invalid first raw-observer probe remains retained: it serialized microseconds differently from the real Drizzle adapter and selected zero rows. Corrected probes require the original ordered25 cursor identities. The new actual PostgreSQL regression first failed width361>100, then passed; cursor/workspace suites passed16/16 with complete mixed-source values, same UUID across source arms, duplicate listing links, microseconds, reverse pages, app-role/RLS and exact empty-page totals. Independent source review found no actionable defect.
+
+One controlled v3 run reused the exact original cohorts without reseed/reset. The DB dependency closure was rebuilt; the unused, unchanged compiled worker packages are not claimed as a new worker deployment. All1121 source/config/test hashes and711 compiled hashes, plus original product/draft/input/import/generation/projection fingerprints, remained unchanged throughout measurement. Exactly504 samples (441 original plus63 cursor),135 sampled EXPLAIN records, zero errors/blocked/cardinality/expectation failures and all21 configured warm targets passed (18 original plus three cursor). Quality has no configured p95 target. Private report SHA256 `c8f604f9cc571021e6bfcbed95921770b9fd3d1e34b356f7cf0e3d9aa145bee1`; full comparison `cde1dfcf2543178418ebaa254befa7bd3f2fa10e8740d795d6d6704c5ae2ba53`.
+
+Cells below are cold / warm-p95 milliseconds. Cold is a fresh client pool with shared PostgreSQL caches, not a flushed database.
+
+| Operation                    | 500 cold / warm | 5,000 cold / warm | 20,000 cold / warm | SQL per sample |
+| ---------------------------- | --------------: | ----------------: | -----------------: | -------------: |
+| Catalog, one row             |  100.71 / 25.02 |    125.43 / 48.59 |     155.69 / 98.69 |              5 |
+| Catalog, 25 rows             |   65.45 / 38.32 |     78.60 / 44.19 |    162.51 / 126.47 |              5 |
+| Legacy deep catalog, 25 rows |   77.79 / 60.02 |     97.85 / 73.56 |    156.69 / 151.26 |              5 |
+| Exact SKU                    |  130.95 / 98.21 |     96.71 / 72.68 |    194.14 / 195.08 |              4 |
+| Name search                  |  111.96 / 72.67 |     90.08 / 64.58 |    142.99 / 150.18 |              4 |
+| Detail                       |  154.43 / 52.31 |     75.02 / 49.28 |      78.03 / 37.10 |             19 |
+| Ready quality                |   63.58 / 22.48 |    112.68 / 49.56 |    121.54 / 118.74 |              6 |
+| Separate deep cursor         |   95.35 / 48.10 |     79.34 / 56.20 |     105.02 / 81.07 |              5 |
+
+| 20k operation                 | Warm client-wait p95 ms | Response bytes |
+| ----------------------------- | ----------------------: | -------------: |
+| Catalog1                      |                   93.41 |          1,723 |
+| Catalog25                     |                  120.47 |         24,640 |
+| Legacy deep / separate cursor |          144.05 / 73.05 |         24,647 |
+| Exact SKU                     |                  190.35 |          1,427 |
+| Name                          |                  133.10 |         24,777 |
+| Detail                        |                   36.26 |          2,950 |
+| Ready quality                 |                  109.43 |          1,456 |
+
+Client wait includes pool/queue/network/decoding and is not pure DB time. The sampled20k cursor catalog statement took51.068ms; its five sampled statements totalled54.616ms with zero shared-read blocks. This sampled plan and the measured width/spill correction do not identify the unique cause of the retained v2 tail. Other operations changed even where their SQL is unchanged; there is no blanket causal or every-metric-improved claim.
+
+Against D, three regressions remain:500 detail39.97→52.31ms;5k catalog1 46.90→48.59ms;5k exactSKU50.98→72.68ms. At20k catalog25/deep/SKU/name/detail/readyquality changed from8679.50/92310.14/9170.49/35628.84/129.10/9090.67ms to126.47/151.26/195.08/150.18/37.10/118.74ms. Separate cursor81.07ms meets800ms; v2's1272.35ms miss is still retained above.
+
+V3 began fully READY. The unchanged empty bounded reconcile/cost snapshot took60.54/84.25/110.73ms:11 SQL/one batch/no resume/no new assessments per scale. Pending work, actual AI runs and synthetic known/unknown costs stayed zero. This does not replace v1's113.956-second initial bootstrap/resume evidence. An initial comparison mistakenly included nondeterministic setupWallMs in cursor equality; it is retained. The final comparison checks every identity/count/digest/request/SQL-count field unchanged without rerunning metrics or weakening acceptance.
+
+Exact v3 command is the retained command above with output `node_modules/.opak-evidence/t10-after-e-v3.json`. The full cold/warm/wait/query/bytes/EXPLAIN comparison and source/dist/physical proofs remain ignored. These laboratory in-process route/RLS results are distinct from deployed HTTP, browser/field INP, merchant throughput and production SLO validation.
+
 ## Quality semantics
 
 Copy-gap signals, factual source evidence, current human confirmation and live delivery readiness are separate. Equal bilingual proper names are advisory wording checks. Absence of copy-gap signals does not establish factual correctness, approval, export eligibility or a store update.
@@ -113,6 +152,6 @@ Revision-aware quality counts exclude pending, failed and outdated contributions
 
 Known AI cost and unknown-cost references use the same current owned-run snapshot across retained listing history. A null cost remains unknown for started, failed and successful runs. Displayed references are bounded while the total remains complete; an exact batch binding links to batch reconciliation. A legacy run without that binding retains its real run ID and listing link for support. The listing may have a newer version. Batch archive does not erase historical costs.
 
-Actual quality PG 20/20 and E read PG 25/25 cover bounded backfill/resume/deadline rollback, migration replay, real app-role isolation, generation concurrency, malformed rows and whole DB/permission failure propagation. The same-dataset comparison proves bounded-query improvements and retains the final cursor target miss. Authorized staging/production validation remains separate. Rollback retains projection metadata, audit, source/version history, accepted work and cost reservations.
+Actual quality PG 20/20 and E read PG 25/25 cover bounded backfill/resume/deadline rollback, migration replay, real app-role isolation, generation concurrency, malformed rows and whole DB/permission failure propagation. The new cursor/workspace gate passed16/16. The same-dataset reports retain the v2 miss and the subsequent single controlled v3's21 configured target passes, including three measured baseline regressions. Authorized staging/production validation remains separate. Rollback retains projection metadata, audit, source/version history, accepted work and cost reservations.
 
 See [AI acceptance](opak-ai-acceptance.md) for the explicit `audit-fixtures-v1` adapter and controlled human grading. Dry mode makes zero provider requests and reports `not_evaluated`; it is not AI accuracy evidence. Live AI, low-resolution image acceptance and real merchant comparison remain separately authorized gates.
