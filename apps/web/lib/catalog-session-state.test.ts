@@ -32,9 +32,14 @@ it("clears old selection and scroll across workspace/role remount A to B to A", 
   const id = "11111111-1111-4111-8111-111111111111";
   readCatalogSelection("actor-A-role-operator");
   writeCatalogSelection("actor-A-role-operator", new Set([id]), new Map());
-  sessionStorage.setItem("wukong:catalog:scroll:actor-A-role-operator", '{"y":500}');
+  sessionStorage.setItem(
+    "wukong:catalog:scroll:actor-A-role-operator",
+    '{"y":500}',
+  );
   expect(readCatalogSelection("actor-A-role-operator").ids).toEqual([id]);
   expect(readCatalogSelection("actor-B-role-reviewer").ids).toEqual([]);
-  expect(sessionStorage.getItem("wukong:catalog:scroll:actor-A-role-operator")).toBeNull();
+  expect(
+    sessionStorage.getItem("wukong:catalog:scroll:actor-A-role-operator"),
+  ).toBeNull();
   expect(readCatalogSelection("actor-A-role-operator").ids).toEqual([]);
 });
