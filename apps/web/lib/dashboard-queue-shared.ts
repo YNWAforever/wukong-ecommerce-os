@@ -2,6 +2,7 @@ import { localized } from "./ui-copy";
 import { DEFAULT_LOCALE, type Locale } from "./locale";
 import type { ListingStatus } from "@wukong/core";
 import type { SourceReadiness } from "./source-readiness";
+import type { ListingReadFailure } from "./listing-read-resilience";
 
 import type { QueueItem, QueueStatus } from "../components/listing-view-models";
 
@@ -13,7 +14,9 @@ export type ListingReviewContext = {
 };
 
 export type ListingCollectionItem = {
-  sourceReadiness?: SourceReadiness;
+  readState?: "ready" | "blocked";
+  readFailure?: ListingReadFailure;
+  sourceReadiness?: SourceReadiness | null;
   id: string;
   status: ListingStatus;
   target: "shopline";
@@ -49,23 +52,28 @@ export function mapDashboardItems(
     const status = queueStatus(item.status);
     return {
       id: item.id,
+      ...(item.readState === "blocked"
+        ? { readFailure: item.readFailure, readBlocked: true }
+        : {}),
       title: item.title,
       subtitle: `${item.sku ?? localized(locale, "未有 SKU", "No SKU")} · SHOPLINE`,
       status,
       updatedAt: item.updatedAt,
       nextAction:
-        locale === "zh-Hant"
-          ? nextActions[status]
-          : {
-              received: "View draft",
-              processing: "View processing status",
-              needs_info: "Add information",
-              in_review: "Continue review",
-              approved: "Prepare delivery",
-              publishing: "View delivery status",
-              published: "View product",
-              failed: "View error",
-            }[status],
+        item.readState === "blocked"
+          ? localized(locale, "查看支援資料", "View support details")
+          : locale === "zh-Hant"
+            ? nextActions[status]
+            : {
+                received: "View draft",
+                processing: "View processing status",
+                needs_info: "Add information",
+                in_review: "Continue review",
+                approved: "Prepare delivery",
+                publishing: "View delivery status",
+                published: "View product",
+                failed: "View error",
+              }[status],
       openBlockingFlagCount: item.openBlockingFlagCount,
       reopened: item.status === "reopened",
     };

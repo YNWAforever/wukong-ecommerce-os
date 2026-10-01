@@ -26,7 +26,7 @@ export type PipelineRunStateLike = {
   status: "started" | "succeeded" | "failed";
   resultStatus: "in_review" | "needs_info" | null;
   errorCode: string | null;
-  steps: Map<
+  steps: ReadonlyMap<
     string,
     { state: "running" | "completed" | "failed"; output: unknown }
   >;

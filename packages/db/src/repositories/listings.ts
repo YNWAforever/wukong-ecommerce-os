@@ -19,6 +19,10 @@ import type {
 import { APPROVAL_INVALIDATED_ACTION, transitionListing } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import {
+  ListingDataError,
+  type ListingDataFailureReason,
+} from "../listing-data-error.js";
+import {
   complianceFlags,
   fieldEvidence,
   listingDrafts,
@@ -34,6 +38,7 @@ export type CreateListingInput = { target: "shopline"; note?: string | null };
 export type ListingVersion = { id: string; sequence: number };
 export type ListingSummary = Listing & {
   activeVersion: { id: string; content: ReviewableListing } | null;
+  readFailure?: ListingDataFailureReason;
   /**
    * Open, blocking-severity compliance flags on the active version. A listing
    * is bulk-approvable exactly when this is 0 and status is `in_review` — the
@@ -487,6 +492,13 @@ export function createListingRepository(
           : null;
         return {
           ...listing,
+          ...(listing.activeVersionId && !parsed?.success
+            ? {
+                readFailure: activeVersion?.id
+                  ? ("invalid_active_version" as const)
+                  : ("missing_active_version" as const),
+              }
+            : {}),
           activeVersion: parsed?.success
             ? { id: activeVersion!.id, content: parsed.data }
             : null,
@@ -562,6 +574,13 @@ export function createListingRepository(
           : null;
         return {
           ...listing,
+          ...(listing.activeVersionId && !parsed?.success
+            ? {
+                readFailure: activeVersion?.id
+                  ? ("invalid_active_version" as const)
+                  : ("missing_active_version" as const),
+              }
+            : {}),
           activeVersion: parsed?.success
             ? { id: activeVersion!.id, content: parsed.data }
             : null,
@@ -648,6 +667,8 @@ export function createListingRepository(
       const listing = await this.getById(id);
       if (!listing) return null;
       const { activeVersion, flags } = await loadListingWithFlags(id);
+      if (listing.activeVersionId && !activeVersion)
+        throw new ListingDataError("missing_active_version");
       const evidenceRows = activeVersion
         ? await transaction
             .select({
@@ -690,7 +711,7 @@ export function createListingRepository(
         ? reviewableListingSchema.safeParse(activeVersion.content)
         : null;
       if (activeVersion && !parsedContent?.success)
-        throw new Error("active listing version content is invalid");
+        throw new ListingDataError("invalid_active_version");
       return {
         listing,
         activeVersion:

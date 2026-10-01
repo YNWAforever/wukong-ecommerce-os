@@ -5,7 +5,7 @@ import { localized, commonCopy, safeUiError } from "../lib/ui-copy";
 import { approvalErrorLabel } from "../lib/approval-ui-copy";
 import { MAX_BULK_APPROVE_ITEMS } from "../lib/bulk-approve-limit";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   ListingCollectionItem,
@@ -14,6 +14,8 @@ import type {
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { ListingQueue } from "./listing-queue";
+import { SupportRequestId } from "./support-request-id";
+import { safeResponseError } from "../lib/support-request-id";
 
 type BulkApproveResultItem =
   | { listingId: string; ok: true; versionId: string }
@@ -35,6 +37,29 @@ function bulkErrorMessage(body: unknown): string {
     return (body as { message: string }).message;
   }
   return "Bulk approve failed -- try again.";
+}
+
+// Preserve PR #120's response guard: a malformed success must not discard
+// the operator's observed selection or trigger an approval retry silently.
+function isBulkApproveResponse(body: unknown): body is BulkApproveResponse {
+  if (typeof body !== "object" || body === null) return false;
+  const candidate = body as Partial<BulkApproveResponse>;
+  return (
+    Array.isArray(candidate.results) &&
+    typeof candidate.approved === "number" &&
+    typeof candidate.failed === "number" &&
+    candidate.results.every(
+      (result) =>
+        typeof result === "object" &&
+        result !== null &&
+        typeof result.listingId === "string" &&
+        (result.ok === true
+          ? typeof result.versionId === "string"
+          : result.ok === false &&
+            typeof result.code === "string" &&
+            typeof result.message === "string"),
+    )
+  );
 }
 
 export function QueueClient() {
@@ -63,8 +88,7 @@ export function QueueClient() {
         cache: "no-store",
         signal,
       });
-      if (!response.ok)
-        throw new Error(`Unable to load listings (${response.status})`);
+      if (!response.ok) throw await safeResponseError(response);
       return (await response.json()) as {
         items: ListingCollectionItem[];
         totalMatching: number;
@@ -74,11 +98,24 @@ export function QueueClient() {
     },
     [page],
   );
-  const { data, error, loading, stale, reload } = useLatestRequest(
+  const { data, error, supportId, loading, stale, reload } = useLatestRequest(
     load,
     "Unable to load listings",
   );
   const items = data?.items ?? null;
+  useEffect(() => {
+    const blocked =
+      items
+        ?.filter((item) => item.readState === "blocked")
+        .map((item) => item.id) ?? [];
+    if (!blocked.length) return;
+    setSelection((current) => {
+      if (!blocked.some((id) => current.has(id))) return current;
+      const next = new Map(current);
+      for (const id of blocked) next.delete(id);
+      return next;
+    });
+  }, [items]);
 
   const toggleSelected = (id: string) => {
     if (selection.has(id)) {
@@ -90,7 +127,7 @@ export function QueueClient() {
       return;
     }
     const item = items?.find((candidate) => candidate.id === id);
-    if (!item?.reviewContext) return;
+    if (!item?.reviewContext || item.readState === "blocked") return;
     if (selection.size >= MAX_BULK_APPROVE_ITEMS) {
       setSelectionCapped(true);
       return;
@@ -111,7 +148,9 @@ export function QueueClient() {
         refused = true;
         break;
       }
-      const context = selection.get(id) ?? itemsById.get(id)?.reviewContext;
+      const currentItem = itemsById.get(id);
+      if (currentItem?.readState === "blocked") continue;
+      const context = selection.get(id) ?? currentItem?.reviewContext;
       if (context) next.set(id, { ...context });
     }
     setSelection(next);
@@ -124,6 +163,13 @@ export function QueueClient() {
   };
 
   const runBulkApprove = async () => {
+    const blocked = new Set(
+      items
+        ?.filter((item) => item.readState === "blocked")
+        .map((item) => item.id),
+    );
+    const submitted = [...selection].filter(([id]) => !blocked.has(id));
+    if (!submitted.length) return;
     setBulkPending(true);
     setBulkResult(null);
     setBulkError(null);
@@ -132,7 +178,7 @@ export function QueueClient() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          items: [...selection].map(([listingId, context]) => ({
+          items: submitted.map(([listingId, context]) => ({
             listingId,
             ...context,
           })),
@@ -147,7 +193,11 @@ export function QueueClient() {
         );
         return;
       }
-      const result = body as BulkApproveResponse;
+      if (!isBulkApproveResponse(body)) {
+        setBulkError("Bulk approve failed -- try again.");
+        return;
+      }
+      const result = body;
       const approvedIds = new Set(
         result.results.filter((item) => item.ok).map((item) => item.listingId),
       );
@@ -173,6 +223,7 @@ export function QueueClient() {
     return (
       <div className="load-error" role="alert">
         <p>{safeUiError(error, locale)}</p>
+        <SupportRequestId value={supportId} />
         <button type="button" onClick={reload}>
           {c.retry}
         </button>
@@ -191,7 +242,8 @@ export function QueueClient() {
       (item) =>
         item.status === "in_review" &&
         item.openBlockingFlagCount === 0 &&
-        item.reviewContext != null,
+        item.reviewContext != null &&
+        item.readState !== "blocked",
     )
     .map((item) => item.id);
 
@@ -203,6 +255,7 @@ export function QueueClient() {
       {error ? (
         <div className="load-error" role="alert">
           <span>{safeUiError(error, locale)}</span>
+          <SupportRequestId value={supportId} />
           <button type="button" onClick={reload} disabled={loading}>
             {c.retry}
           </button>

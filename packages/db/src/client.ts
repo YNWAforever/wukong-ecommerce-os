@@ -1,4 +1,5 @@
 import { inspectWineRuntimeCompatibility } from "./wine-runtime-compatibility.js";
+import { inspectListingReadCompatibility } from "./listing-read-compatibility.js";
 import { createWineGoInvocationRepository } from "./repositories/wine-go-invocations.js";
 import {
   createWineAcquisitionRepository,
@@ -191,6 +192,11 @@ export type DatabaseOptions = {
 };
 
 export type Database = {
+  inspectListingReadCompatibility?(): Promise<{
+    version: string;
+    ready: boolean;
+    missing: string[];
+  }>;
   inspectWineRuntimeCompatibility?(): Promise<{
     version: string;
     ready: boolean;
@@ -454,6 +460,10 @@ export function createDatabase(
   };
 
   return {
+    inspectListingReadCompatibility: () =>
+      inspectListingReadCompatibility(async (statement) => [
+        ...(await client.unsafe(statement)),
+      ]),
     inspectWineEnrichmentCompatibility: () =>
       inspectWineEnrichmentCompatibility(async (statement) => [
         ...(await client.unsafe(statement)),

@@ -74,6 +74,22 @@ function fixture() {
   return { deps, state };
 }
 describe("advisory source readiness", () => {
+  it("classifies invalid source time without substituting fresh export evidence", async () => {
+    const { deps } = fixture();
+    deps.getSourceImport = async () => ({
+      merchantAttestedExportAt: new Date("invalid"),
+      headerContractSha256: "header",
+    });
+    await expect(
+      evaluateSourceReadiness(
+        { workspaceId: "workspace", listingId: "listing" },
+        deps as never,
+      ),
+    ).rejects.toMatchObject({
+      name: "ListingDataError",
+      reason: "invalid_source_time",
+    });
+  });
   it("shows bindings without granting freshness or downstream verification", async () => {
     const { deps } = fixture();
     const result = await evaluateSourceReadiness(

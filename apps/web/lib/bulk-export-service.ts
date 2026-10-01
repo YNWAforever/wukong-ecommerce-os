@@ -410,10 +410,12 @@ export function createBulkExportDeps(repositories: {
     getPlatformProductLink: (listingId) =>
       repositories.platformProducts.getByListingId(listingId),
     async getSourceImportHeaderContractSha256(sourceImportId) {
-      return (
-        (await repositories.sourceImports.getById(sourceImportId))
-          ?.headerContractSha256 ?? null
-      );
+      const source = await repositories.sourceImports.getById(sourceImportId);
+      return source &&
+        source.merchantAttestedExportAt instanceof Date &&
+        Number.isFinite(source.merchantAttestedExportAt.getTime())
+        ? source.headerContractSha256
+        : null;
     },
     currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
   };
