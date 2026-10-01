@@ -11,6 +11,8 @@ export default defineConfig({
       // integration tests live next to the route under `app/api/**` instead.
       "apps/web/app/**/*.integration.test.ts",
       "apps/web/lib/website/**/*.integration.test.ts",
+      // F13 has an exact disposable-database guard and no provider calls.
+      "apps/web/lib/opak-maintenance-acceptance.integration.test.ts",
     ],
     // Integration suites share one PostgreSQL database and mutate shared tables;
     // serialize files to avoid relation-lock deadlocks in local and CI runs.

@@ -352,7 +352,7 @@ describe("GET /api/jobs", () => {
     });
   });
 
-  it("counts an unknown invalidation cause in no tile and logs only its value", async () => {
+  it.each(["some_future_cause", "SYNTHETIC_PRIVATE_CAUSE_NEVER_LOG\nprivate contents"])("counts unknown invalidation %s in no tile and omits its raw diagnostic value", async (unknownCause) => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const noRows = {
       async getByIds() {
@@ -405,7 +405,7 @@ describe("GET /api/jobs", () => {
                     return action === "listing.approval_invalidated"
                       ? [
                           { value: "confirmation_changed", count: 1 },
-                          { value: "some_future_cause", count: 9 },
+                          { value: unknownCause, count: 9 },
                         ]
                       : [];
                   },
@@ -442,9 +442,11 @@ describe("GET /api/jobs", () => {
       expect(logged).toEqual([
         {
           event: "jobs.unknown_invalidation_cause",
-          cause: "some_future_cause",
+          category: "unrecognized",
+          count: 9,
         },
       ]);
+      expect(JSON.stringify(info.mock.calls)).not.toContain(unknownCause);
     } finally {
       info.mockRestore();
     }

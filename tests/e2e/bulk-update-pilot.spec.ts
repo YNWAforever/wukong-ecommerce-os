@@ -399,17 +399,47 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   await page.goto("/catalog");
   await page.getByLabel("Select 0001 for Bulk Update", { exact: true }).check();
   await page.getByLabel("Select 0002 for Bulk Update", { exact: true }).check();
-  const generate = page.getByRole("button", {
-    name: "Generate Bulk Update XLSX",
+  const exportPreview = page.getByRole("button", {
+    name: "Preview Bulk Update XLSX",
     exact: true,
   });
-  await expect(generate).toBeDisabled();
+  await expect(exportPreview).toBeDisabled();
   await page
     .getByLabel("I confirm this SHOPLINE source export is still current.", {
       exact: true,
     })
     .check();
 
+  await expect(exportPreview).toBeDisabled();
+  const exportRegion = page.getByRole("region", {
+    name: "Bulk Update XLSX export",
+    exact: true,
+  });
+  for (const field of [
+    "Chinese name",
+    "English summary",
+    "Chinese summary",
+    "English SEO title",
+    "Chinese SEO title",
+    "English SEO description",
+    "Chinese SEO description",
+    "SEO keywords",
+  ])
+    await exportRegion.getByLabel(field, { exact: true }).check();
+  const exportPreviewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/export/preview" &&
+      r.request().method() === "POST",
+  );
+  await exportPreview.click();
+  expect((await exportPreviewResponse).status()).toBe(200);
+  await expect(
+    exportRegion.getByRole("region", { name: "XLSX update preview" }),
+  ).toBeVisible();
+  const generate = exportRegion.getByRole("button", {
+    name: "Generate Bulk Update XLSX",
+    exact: true,
+  });
   await expect(generate).toBeEnabled();
   const exportedResponse = page.waitForResponse(
     (r) =>

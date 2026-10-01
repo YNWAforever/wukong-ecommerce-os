@@ -1,0 +1,85 @@
+# Opak 維護修復 release／rollback pack
+
+日期：2026-10-01。此文件記錄可審閱的候選版本與放行條件；首次 SHOPLINE 真寫入仍須另有明確確認。原商戶附件、workbooks、screenshots、模型輸出及 connection strings 留在 repo 外的私人證據位置。
+
+## 三個互相獨立的結果
+
+| 結果                     | 現況                                                                                        | 放行所需證據                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| code-ready               | A–D 的 draft PR、完整 CI 與 exact-head READY preview 已完成；E/F 最終整合與 PR 證據仍在驗證 | 全套來源、型別、unit、實際隔離 DB、production-built fake/mock browser、audit、release gate 及對應 commit 的 CI                   |
+| production-read-verified | blocked                                                                                     | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
+| merchant-pilot-accepted  | blocked                                                                                     | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
+
+READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；下載成功不等於 SHOPLINE 已接受。不得將部分結果合併成「全通過」。每個 UC 的歷史結果與本輪結果見 [30-case 結果表](./opak-uat-results-2026-10-01.md)。
+
+## 版本與部署識別
+
+| 部件                     | 核對到的識別                                                                                                       | 限制                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| 審核 baseline／當時 main | `dde9e178d9e1f9ca8880618c63104f41fe2fa3be`                                                                         | 用作比較，不要求退回                                                                          |
+| production web           | Vercel `dpl_4UtLTAFZmKDsyPgPKtvHMBBBbDxm`；上述 main SHA                                                           | 未完成 authenticated 原問題 smoke；release 前需重查 alias 與 SHA                              |
+| production worker        | deployment `af414db8-9b1a-4c18-ab86-0abd65454601`；version `fa79610e-eb8d-4362-90d2-3791023945f1`，100%            | provider metadata 未給出可確認的 BUILD_SHA；不能推定與 web 相同                               |
+| production DB            | Neon project `weathered-lake-51694428`；main/default branch `br-twilight-meadow-at9qky4q`；`neondb`，PG 17.11      | read-only metadata 顯示缺少既有 0046 source-binding 欄／FK；effective web connection 尚未確認 |
+| A                        | [PR #121](https://github.com/YNWAforever/wukong-ecommerce-os/pull/121)；`1707ab17c8527973ec4047b55a008ffd1863998a` | draft，未合併                                                                                 |
+| B                        | [PR #122](https://github.com/YNWAforever/wukong-ecommerce-os/pull/122)；`a181cda3d163b2f8825bef1582839a99aca96429` | draft，stacked on A                                                                           |
+| C                        | [PR #123](https://github.com/YNWAforever/wukong-ecommerce-os/pull/123)；`ee26897fdd2728b685ec224c82e50ce4699353db` | draft，stacked on B                                                                           |
+| D                        | [PR #124](https://github.com/YNWAforever/wukong-ecommerce-os/pull/124)；`b8fe92a3273841dd2a7857905f9ac796cc5200fa` | 完整 CI `36874983297` SUCCESS；exact-head preview `dpl_BcBsVsiHuuW6D8kgEkhKxXH5Szo4` READY    |
+| E／F                     | 最終候選與 CI／preview 更新於 [fix-status](../superpowers/plans/2026-10-01-wukong-fix-status.md)                   | 本表不以中途 source checkpoint 冒充最終候選                                                   |
+
+production metadata 是本輪已核對到的快照，正式 release 前必須刷新。缺 0046 已在隔離 DB 重現兩條 route 的 500，補回後正常；這不證明所有正式 500 都只有同一原因，也不證明 PR #120 已修好。全 DB／權限故障仍回錯誤，不回空列表。
+
+## 配置差異：只記名稱與狀態
+
+| 名稱                                                                              | 本地／CI evidence                                                   | 正式 release 要求                                                                           |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`／Hyperdrive runtime connection                                     | 專用 loopback `opak_fixes_*` DB；non-superuser、non-bypass app role | runtime role 與 migration role 分離；確認 RLS workspace 設定；禁止 admin role 進 web/worker |
+| `DATABASE_ADMIN_URL`                                                              | 只用於本地／CI 隔離 migration fixture                               | 只給受控 migration job；不複製值到 logs／PR                                                 |
+| `AI_PROVIDER`                                                                     | `fake`                                                              | 已批准的現有 provider 配置；本輪沒有 paid/live 預算授權                                     |
+| `SHOPLINE_ADAPTER`                                                                | `mock`                                                              | 未過首次真寫入 gate 時保持 `disabled`                                                       |
+| `SHOPLINE_PUBLISH_ENABLED`                                                        | `false`                                                             | 首次真寫入另有明確確認；此 pack 不切換                                                      |
+| `AUTH_SECRET`、`QUEUE_INGRESS_SECRET`、`SHOPLINE_TOKEN_ENCRYPTION_KEY`            | synthetic local 值；安全日誌會遮蔽                                  | 保留現有 custody／rotation owner；不新增或公開 secret                                       |
+| `S3_*`                                                                            | 私人 MinIO fixture；runtime HTTPS TLS proxy                         | 確認 private bucket 與 scoped credentials；保留 artifacts                                   |
+| `WUKONG_OPAK_E2E`、`WUKONG_OPAK_INTEGRATION`、`PLAYWRIGHT_E2E`、`TEST_DATABASE_*` | 顯式 local/CI opt-in，exact DB guard                                | 不用作 production 開關、不注入正式 runtime                                                  |
+
+E/F 不新增必要的 production secret。模型 eval 的 live flags、授權資料、budget、dated pricing/model 證據見 [AI acceptance](./opak-ai-acceptance.md)；dry-run `not_evaluated` 不可填成品質 pass。
+
+## Migration、投影與 read cutover
+
+新增 schema 是 additive：C `0049_batch_current_content_fences.sql`、`0050_batch_selection_previews.sql`、`0051_batch_operational_archive.sql`；D `0052_listing_assignments.sql`；E `0053_quality_projection.sql`。A 修復核對既有 `0046_listing_version_source_binding.sql` 的實際應用狀態；`0047/0048` 是 baseline 已存在的 auth migrations。F 沒有新 migration。
+
+1. 先記錄目標 web/worker SHA、DB branch/schema inventory、app role、backup/restore owner。取得當時 release 所需授權；本輪不自行在 production 執行 migration。
+2. 在乾淨隔離 DB 及舊 schema 升級 DB 執行正常 migration runner；重播必須安全。核對 composite workspace FK、FORCE RLS、non-bypass app role、exact tenant-table inventory。沒有欄位時停止，不能靠 catch 消除錯誤。
+3. 先套用 additive schema，再部署相容 code。本輪實際舊 D `b8fe92a3273841dd2a7857905f9ac796cc5200fa` web／worker 對已升級 0053 schema 的隔離相容性 gate 3／3通過（58.21秒）；詳見下節。這個特定 rollback candidate 的證據不代表任何更舊 SHA 都能處理新的 Queue／preview 契約。
+4. 對 quality 投影執行有界 reconciliation。CLI `quality:backfill` 目前只接受明確 loopback、專用 `opak_fixes_*`、app-role 及 workspace；每 batch 最多 25，總 batches／時間有上限，部分完成 exit 2，可續跑。不可用修改 guard 的方式把本地 CLI 指向 production。staging／production backfill 需要另有授權的受控 runner。
+5. 保留每個 workspace 的 assessment version、pending/failed、asOf、generation progress 與 known/unknown cost 校驗。pending/failed 不算 clean；成本包含 retained runs，archive 不抹帳。批准／匯出仍查當前權威資料，不能用投影判斷。
+6. 切讀取後做 operator/reviewer 非破壞 smoke，再按 exact scope 跑 `audit:verify`；missing actions 必須 0、accessible foreign records 必須 0。未做的目標環境 audit 不能借用本地結果代填。
+
+## 舊 code 對 additive schema 的實際相容性
+
+專用 loopback DB `opak_fixes_compatibility_20261002` 先以正常現行 E migration runner 套至 0053。獨立 preflight 確認新兩張 quality tables、七個 triggers、FORCE RLS 及既有 ready assessment。隔離 checkout 切至 exact D SHA，重新 build 舊 DB／worker dependency closure；13個實際 source 檔與 Git blob（Windows CRLF正規化後）相同，六個 runtime package realpaths 留在該 checkout，舊 DB 不含 E quality/cost API。
+
+Private 相容性 fixture 沿用已提交 F100 的實際 importer／batch/control／Cloudflare runtime／worker 流程；只替換 guard 的新專用 DB 名稱及兩個 E-only cost 方法，以 scoped non-bypass SQL 保留同一 known／NULL／lineage 斷言。先驗證 upgraded schema 後，舊 migration loader 只指向私人空目錄，沒有重播／降級舊 DDL，也沒有把 E runtime 混入舊 code。新增舊 HTTP detail owned200／human locked current title與description、foreign404，並驗证舊 worker 寫入會推進新 quality generation。
+
+實際 3／3通過：三個 worker 成功檢查的 generation 至少增加4；保留99 versions、101 pipeline runs、201 AI ledger observations、996 audit events、101 batch attempts及一筆 unknown cost；archive／restore後 retained known／unknown仍完整。Postflight 的完整 table inventory、schema／FK／FORCE RLS／七 triggers與既有 ready sample fingerprint不變，沒有 active／idle-in-transaction app session。本證據及 private fixture／source/dist hashes 留在 ignored evidence，沒有 production mutation。這是特定 code／schema 的可執行相容性，沒有聲稱未完成階段滿足完整 publish audit。
+
+## 本輪 evidence 與尚未完成的放行條件
+
+本地 fake/mock 已有 source/version/manual lock、跨頁 5,001 項、10 件並發、unknown outcome／reservation、pause／failed-only retry、XLSX 71 cells、5 行 3 接受／2 拒絕修復 lineage、actual RLS PG 的獨立證據。F 的 100 件 actual worker/service 測試已通過；20 件及 5 行 real-stack browser 在最終候選上仍待 parent 執行。確切命令、結果、SHA、失敗紀錄及最新狀態以 fix-status 為準。
+
+效能 baseline 與 after 必須同 500／5,000／20,000 fixture IDs、samples/concurrency/host 配置；只報實測瓶頸與達標情況。route-factory 時間不等於 HTTP／browser field metrics。20 件員工人工分鐘、一次商業接受率、每件修改欄數沒有可比較的人工 baseline，因此不能報節省百分比。fake 已知成本 0 與刻意注入 unknown 分開記。
+
+仍 blocked：authenticated cloud／production smoke、effective production DB connection、worker BUILD_SHA、production migration/deployment authorization、受控 paid/live AI 與人工評分、已授權低清圖片、真商戶最新 export／origin、首次真寫入及 merchant 5 → 20 → 100 sign-off。這些 gate 不妨礙完成可審閱 source／PR／preview；也不能由 synthetic 通過推定已放行。
+
+## 回復與停止擴量
+
+先停止新 enqueue／advance，暫停受影響批次及外部寫入。記錄已開始或 unknown 的外部請求及 reservation；先對帳，不能盲目重試。web/worker 回復必須選相容的一組 SHA，front-end XLSX preview 與兩個 bulk_form API consumer 一起回復；舊 client 缺 fields/hash 會 fail closed 400，重新整理後再操作。
+
+保留新 tables、immutable sources、input revisions、versions、audit、Queue/DLQ、artifacts、A/B attempts、receipt corrections、accepted 結果與成本帳。禁止 destructive down migration、purge 或重寫歷史來模擬回復。停用投影讀取／回復相容 code 不會回復商戶內容。
+
+商戶內容回復按 [UAT rollout 的 restoration procedure](./opak-uat-rollout.md)：用保留的原始 source 與新的已授權 merchant export 核對，製作只回復目標內容而保留當前 protected fields 的 exact artifact，另取得商戶對該 bytes／scope／differences 的明確授權，再逐件 reconcile。
+
+## 真商戶 5 → 20 → 100
+
+每階段須 hard-fail = 0、完整結果核對、無未解 cost／identity、無 stale approval、無 protected-field drift，並保留商戶 written advance/stop decision。3 接受／2 拒絕時先只修 2 件；unreported／unknown 不能當成功。supplied fresh snapshot 的獨立逐欄比較仍只證明 supplied data，相同 artifact 不能當 fresh export；operator attestation 也不等於 authenticated merchant origin。
+
+首次真 SHOPLINE 寫入必須遵守 [production readiness 的明確確認 gate](./production-readiness.md)。完成 100 件只完成該階段，不能自行擴至全 catalog。每次 release 決定應附 exact PR/SHA/preview、DB/worker 識別、未解 gate、migration/backfill progress、audit 結果、rollback owner 與當時授權。

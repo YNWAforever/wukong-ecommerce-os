@@ -1245,10 +1245,29 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
   // perfectly current listing from the export. The fix captures the digest
   // the operator was actually shown at the moment they selected the row, so
   // it survives regardless of which page is loaded when they hit Generate.
+  const previewSha256 = "a".repeat(64);
   const calls: { url: string; init?: RequestInit }[] = [];
   const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
     const url = typeof input === "string" ? input : input.toString();
     calls.push({ url, init });
+    if (url === "/api/listings/export/preview") {
+      return Promise.resolve(
+        Response.json({
+          previewSha256,
+          fields: ["nameZh"],
+          rowCount: 1,
+          manifest: [
+            {
+              listingId: "listing-kept",
+              versionId: "version-kept",
+              outcome: "included",
+            },
+          ],
+          changes: [],
+          neutralizedQuantityDeltas: [],
+        }),
+      );
+    }
     if (url === "/api/listings/export") {
       return Promise.resolve(
         Response.json({ exportAttemptId: null, rowCount: 0, manifest: [] }),
@@ -1303,10 +1322,37 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     });
     expect(container.textContent).not.toContain("listing-kept");
     // The digest captured at selection survived the page change, so the
-    // attestation is still valid and Generate is still enabled.
+    // attestation remains valid through field selection and server preview.
     expect(attestation.checked).toBe(true);
+    const field = container.querySelector(
+      '[data-export-fields] input[value="nameZh"]',
+    ) as HTMLInputElement;
+    await act(async () => field.click());
+    expect(field.checked).toBe(true);
 
-    const generateButton = findButtonByText(container, "產生批量更新 XLSX")!;
+    const previewButton = findButtonByText(container, "預覽批量更新 XLSX")!;
+    expect(previewButton.disabled).toBe(false);
+    await act(async () => {
+      previewButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const previewCall = calls.find(
+      (call) => call.url === "/api/listings/export/preview",
+    );
+    expect(previewCall).toBeDefined();
+    expect(JSON.parse(String(previewCall!.init!.body))).toEqual({
+      listingIds: ["listing-kept"],
+      fields: ["nameZh"],
+      attestation: {
+        listings: [{ listingId: "listing-kept", contentDigest: "digest-real" }],
+      },
+    });
+    expect(calls.some((call) => call.url === "/api/listings/export")).toBe(
+      false,
+    );
+
+    const generateButton = findButtonByText(container, "確認預覽並產生 XLSX")!;
     expect(generateButton.disabled).toBe(false);
     await act(async () => {
       generateButton.click();
@@ -1319,6 +1365,8 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     );
     expect(exportCall).toBeDefined();
     const body = JSON.parse(String(exportCall!.init!.body));
+    expect(body.fields).toEqual(["nameZh"]);
+    expect(body.previewSha256).toBe(previewSha256);
     expect(body.attestation.listings).toEqual([
       { listingId: "listing-kept", contentDigest: "digest-real" },
     ]);

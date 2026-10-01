@@ -1,3 +1,4 @@
+import { EXPORT_CONTENT_FIELDS } from "./bulk-export-contract";
 import {
   CONFIRMATION_FIELD_KEYS,
   CONFIRMATION_NEGATIVE_KEYS,
@@ -12,7 +13,13 @@ import {
 } from "@wukong/shopline";
 import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 
-import { createBulkExport, sheetsMatch } from "./bulk-export-service.js";
+import {
+  createBulkExport,
+  sheetsMatch,
+  bulkExportPreview,
+  requireBulkExportPreview,
+  assertBulkRepairTargets,
+} from "./bulk-export-service.js";
 
 describe("sheetsMatch", () => {
   it("treats a reparsed null cell and an intended empty-string cell as equivalent", () => {
@@ -339,6 +346,7 @@ describe("createBulkExport", () => {
     ]);
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop", "listing_stale"],
@@ -375,6 +383,7 @@ describe("createBulkExport", () => {
     ]);
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_noop"],
@@ -435,6 +444,7 @@ describe("createBulkExport", () => {
     ]);
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_blank_trailing_column"],
@@ -461,6 +471,7 @@ describe("createBulkExport", () => {
   it("excludes every import-origin listing with not_attested when no digest was attested for it", async () => {
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed"],
@@ -497,6 +508,7 @@ describe("createBulkExport", () => {
     });
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_created"],
@@ -521,6 +533,7 @@ describe("createBulkExport", () => {
     const deps = depsWith();
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_noop"],
@@ -537,6 +550,7 @@ describe("createBulkExport", () => {
   it("excludes an unknown listing id with listing_not_found", async () => {
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_missing"],
@@ -585,6 +599,7 @@ describe("createBulkExport", () => {
     });
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_invalid_row"],
@@ -655,6 +670,7 @@ describe("createBulkExport", () => {
     await expect(
       createBulkExport(
         {
+          fields: [...EXPORT_CONTENT_FIELDS],
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_dup_a", "listing_dup_b"],
@@ -700,6 +716,7 @@ describe("createBulkExport", () => {
     await expect(
       createBulkExport(
         {
+          fields: [...EXPORT_CONTENT_FIELDS],
           workspaceId: "ws_1",
           requestedBy: "user_1",
           listingIds: ["listing_changed", "listing_other_store"],
@@ -753,6 +770,7 @@ describe("createBulkExport", () => {
     ]);
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed", "listing_other_import"],
@@ -768,6 +786,7 @@ describe("per-listing attestation", () => {
   it("excludes a listing whose attested digest no longer matches", async () => {
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed"],
@@ -785,6 +804,7 @@ describe("per-listing attestation", () => {
   it("treats a listing with no attestation as unattested", async () => {
     const result = await createBulkExport(
       {
+        fields: [...EXPORT_CONTENT_FIELDS],
         workspaceId: "ws_1",
         requestedBy: "user_1",
         listingIds: ["listing_changed"],
@@ -800,6 +820,7 @@ describe("per-listing attestation", () => {
 describe("immutable export ordering", () => {
   it("uses identical workbook bytes, evidence and manifest when listing IDs are reordered", async () => {
     const input = {
+      fields: [...EXPORT_CONTENT_FIELDS],
       workspaceId: "ws_1",
       requestedBy: "reviewer",
       attestedDigests: new Map([
@@ -819,4 +840,118 @@ describe("immutable export ordering", () => {
     expect(reverse.evidence).toEqual(forward.evidence);
     expect(reverse.manifest).toEqual(forward.manifest);
   });
+});
+
+describe("explicit export field selection", () => {
+  it("changes only the selected field and preserves every other content cell", async () => {
+    const deps = depsWith();
+    const result = await createBulkExport(
+      {
+        workspaceId: "ws_1",
+        requestedBy: "reviewer",
+        listingIds: ["listing_changed"],
+        attestedDigests: new Map([
+          ["listing_changed", await digestFor(deps, "listing_changed")],
+        ]),
+        fields: ["nameZh"],
+      } as Parameters<typeof createBulkExport>[0],
+      deps,
+    );
+    const cells = readBulkFormSheet(result.body)[2]!;
+    const raw = (await deps.getPlatformProductLink("listing_changed"))!.rawRow!;
+    for (const [index, column] of BULK_FORM_COLUMNS.entries()) {
+      if (column.key === "nameZh") expect(cells[index]).toBe("新標題");
+      else if (
+        column.key === "updateQuantity" ||
+        column.key === "updateVariantQuantity"
+      )
+        expect(cells[index]).toBe("+0");
+      else expect(cells[index] ?? "", column.key).toBe(raw[column.key] ?? "");
+    }
+  });
+  it.each(
+    [undefined, [], ["sku"], ["nameZh", "nameZh"]].map((fields) => [fields]),
+  )(
+    "refuses a missing, empty, forbidden or duplicate mask %j",
+    async (fields) => {
+      const deps = depsWith();
+      await expect(
+        createBulkExport(
+          {
+            workspaceId: "ws_1",
+            requestedBy: "reviewer",
+            listingIds: ["listing_changed"],
+            attestedDigests: new Map([
+              ["listing_changed", await digestFor(deps, "listing_changed")],
+            ]),
+            fields,
+          } as Parameters<typeof createBulkExport>[0],
+          deps,
+        ),
+      ).rejects.toThrow();
+    },
+  );
+});
+
+it("binds preview to server actor, input revision, workspace, source attestation and repair receipt", async () => {
+  const input = {
+    workspaceId: "workspace-1",
+    requestedBy: "reviewer",
+    listingIds: ["listing_changed"],
+    fields: ["nameZh"] as const,
+    attestedDigests: new Map([
+      ["listing_changed", await digestFor(depsWith(), "listing_changed")],
+    ]),
+  };
+  const exported = await createBulkExport(input, depsWith());
+  const original = bulkExportPreview(input, exported).previewSha256;
+  const otherActor = { ...input, requestedBy: "another-reviewer" };
+  expect(bulkExportPreview(otherActor, exported).previewSha256).not.toBe(
+    original,
+  );
+  expect(() =>
+    requireBulkExportPreview(original, otherActor, exported),
+  ).toThrow();
+  const changed = {
+    ...exported,
+    inputRevisions: [{ listingId: "listing_changed", inputRevision: 99 }],
+  };
+  expect(() => requireBulkExportPreview(original, input, changed)).toThrow();
+  expect(
+    bulkExportPreview({ ...input, workspaceId: "foreign" }, exported)
+      .previewSha256,
+  ).not.toBe(original);
+  expect(
+    bulkExportPreview(
+      {
+        ...input,
+        attestedDigests: new Map([["listing_changed", "new-digest"]]),
+      },
+      exported,
+    ).previewSha256,
+  ).not.toBe(original);
+  const repair = {
+    exportAttemptId: "A",
+    members: [
+      { listingId: "listing_changed", resultId: "rejected", revision: 1 },
+    ],
+  };
+  expect(
+    bulkExportPreview({ ...input, repair }, exported).previewSha256,
+  ).not.toBe(original);
+  expect(() =>
+    assertBulkRepairTargets(repair, exported, {
+      provenance: { evidence: exported.evidence },
+    }),
+  ).not.toThrow();
+  expect(() =>
+    assertBulkRepairTargets(repair, exported, {
+      provenance: {
+        evidence: exported.evidence.map((item) => ({
+          ...item,
+          remoteProductId: "different-target",
+        })),
+      },
+    }),
+  ).toThrow();
 });

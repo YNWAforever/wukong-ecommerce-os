@@ -687,3 +687,289 @@ it("clears previous exact attempt during navigation and failure, retries the new
     vi.unstubAllGlobals();
   }
 });
+
+describe("trusted jobs authorization refresh", () => {
+  afterEach(async () => {
+    for (const root of mountedRoots.splice(0))
+      await act(async () => root.unmount());
+    document.body.innerHTML = "";
+    window.history.replaceState(null, "", "/jobs");
+    vi.unstubAllGlobals();
+  });
+  const attemptId = "33333333-3333-4333-8333-333333333333";
+  function ownedDetail() {
+    return {
+      attempt: {
+        id: attemptId,
+        artifactStatus: "ready",
+        rowCount: 1,
+        specVersion: "synthetic",
+        createdAt: "2026-10-01T00:00:00Z",
+      },
+      reconciliation: {
+        counts: {
+          requested: 1,
+          included: 1,
+          excluded: 0,
+          noOp: 0,
+          accepted: 0,
+          rejected: 0,
+          unreported: 1,
+        },
+        verificationStatus: "unverified",
+        members: [
+          {
+            listingId: "synthetic-listing",
+            versionId: "synthetic-version",
+            outcome: "included",
+            latestResult: null,
+            history: [],
+          },
+        ],
+      },
+      capabilities: {
+        canGenerateBulkUpdate: false,
+        canRecordImportResult: true,
+      },
+    };
+  }
+  function ownedLedger() {
+    const detail = ownedDetail();
+    return {
+      entries: [
+        {
+          ...SAMPLE_ENTRIES[3],
+          id: "private-synthetic-batch",
+          summary: "Private synthetic jobs evidence",
+        },
+      ],
+      metrics: SAMPLE_METRICS,
+      page: 2,
+      pageSize: 50,
+      totalMatching: 150,
+      total: 150,
+      nextCursor: "next-owned-position",
+      previousCursor: "previous-owned-position",
+      counts: {
+        batch: 150,
+        publish_job: 0,
+        pipeline_run: 0,
+        export: 0,
+        import_result: 0,
+      },
+      capabilities: detail.capabilities,
+      exportReconciliations: [
+        { attempt: detail.attempt, reconciliation: detail.reconciliation },
+      ],
+    };
+  }
+  it.each([401, 403])(
+    "hides cached jobs and record capabilities, resets scoped context, and retries fresh after %s",
+    async (status) => {
+      let denied = false;
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (input) => {
+          if (!String(input).startsWith("/api/jobs?"))
+            throw new Error("Unexpected synthetic endpoint");
+          return denied
+            ? Response.json({}, { status })
+            : Response.json(ownedLedger());
+        });
+      vi.stubGlobal("fetch", fetcher);
+      window.history.replaceState(
+        null,
+        "",
+        "/jobs?kind=batch&page=2&cursor=old-owned&returnTo=%2Fcatalog%3Fpage%3D2",
+      );
+      const { container, root } = await mountLedger(
+        "kind=batch&page=2&cursor=old-owned&returnTo=%2Fcatalog%3Fpage%3D2",
+      );
+      expect(container.textContent).toContain(
+        "Private synthetic jobs evidence",
+      );
+      expect(container.querySelector("select")).not.toBeNull();
+      denied = true;
+      await act(async () =>
+        root.render(
+          <JobsLedgerClient initialSearch="kind=batch&page=3&cursor=next-owned-position&returnTo=%2Fcatalog%3Fpage%3D2" />,
+        ),
+      );
+      await settleEffects();
+      expect(fetcher.mock.calls.length).toBeGreaterThan(1);
+      expect(container.textContent).not.toContain(
+        "Private synthetic jobs evidence",
+      );
+      expect(container.querySelector("select")).toBeNull();
+      expect(container.querySelector(".jobs-metric-strip")).toBeNull();
+      expect(window.location.search).toBe("");
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+      denied = false;
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[role="alert"] button')!
+          .click(),
+      );
+      await settleEffects();
+      expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+        "/api/jobs?page=1&pageSize=50",
+      );
+      expect(container.textContent).toContain(
+        "Private synthetic jobs evidence",
+      );
+    },
+  );
+  it.each([401, 403])(
+    "removes an open exact attempt and ledger capabilities together after its trusted refresh %s",
+    async (status) => {
+      let denied = false;
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (input) => {
+          if (String(input).startsWith("/api/jobs?"))
+            return Response.json(ownedLedger());
+          if (String(input) === `/api/listings/export/${attemptId}`)
+            return denied
+              ? Response.json({}, { status })
+              : Response.json(ownedDetail());
+          throw new Error("Unexpected synthetic endpoint");
+        });
+      vi.stubGlobal("fetch", fetcher);
+      window.history.replaceState(
+        null,
+        "",
+        `/jobs?attempt=${attemptId}&page=2&cursor=old-owned`,
+      );
+      const { container } = await mountLedger(
+        `attempt=${attemptId}&page=2&cursor=old-owned`,
+      );
+      expect(
+        container.querySelector(`[data-export-attempt-id="${attemptId}"]`),
+      ).not.toBeNull();
+      expect(container.querySelector("select")).not.toBeNull();
+      denied = true;
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+        await Promise.resolve();
+      });
+      await settleEffects();
+      expect(
+        fetcher.mock.calls.filter(
+          ([input]) => String(input) === `/api/listings/export/${attemptId}`,
+        ).length,
+      ).toBeGreaterThan(1);
+      expect(
+        container.querySelector(`[data-export-attempt-id="${attemptId}"]`),
+      ).toBeNull();
+      expect(container.querySelector("select")).toBeNull();
+      expect(container.textContent).not.toContain(
+        "Private synthetic jobs evidence",
+      );
+      expect(window.location.search).toBe("");
+    },
+  );
+  it("retains authorized cached jobs with an explicit stale label for a 503 refresh", async () => {
+    let unavailable = false;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () =>
+          unavailable
+            ? Response.json({}, { status: 503 })
+            : Response.json(ownedLedger()),
+        ),
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/jobs?kind=batch&page=2&cursor=old-owned",
+    );
+    const { container, root } = await mountLedger(
+      "kind=batch&page=2&cursor=old-owned",
+    );
+    unavailable = true;
+    await act(async () =>
+      root.render(
+        <JobsLedgerClient initialSearch="kind=batch&page=3&cursor=next-owned-position" />,
+      ),
+    );
+    await settleEffects();
+    expect(container.textContent).toContain("Private synthetic jobs evidence");
+    expect(container.querySelector("select")).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toMatch(
+      /上次載入|previously loaded/,
+    );
+    expect(window.location.search).toContain("cursor=old-owned");
+  });
+  it("retains an authorized exact attempt with an explicit stale label after its 503 refresh", async () => {
+    let unavailable = false;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (input) =>
+          String(input).startsWith("/api/jobs?")
+            ? Response.json(ownedLedger())
+            : unavailable
+              ? Response.json({}, { status: 503 })
+              : Response.json(ownedDetail()),
+        ),
+    );
+    window.history.replaceState(null, "", `/jobs?attempt=${attemptId}`);
+    const { container } = await mountLedger(`attempt=${attemptId}`);
+    unavailable = true;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    await settleEffects();
+    const inspector = container.querySelector(".export-attempt-detail")!;
+    expect(
+      inspector.querySelector(`[data-export-attempt-id="${attemptId}"]`),
+    ).not.toBeNull();
+    expect(inspector.querySelector("select")).not.toBeNull();
+    expect(inspector.querySelector('[role="alert"]')).not.toBeNull();
+    expect(inspector.querySelector('[role="status"]')?.textContent).toMatch(
+      /上次載入|previously loaded/,
+    );
+    expect(window.location.search).toContain(`attempt=${attemptId}`);
+  });
+  it.each([401, 403])(
+    "ignores an obsolete authorization rejection %s after a newer owned ledger succeeds",
+    async (status) => {
+      let finishOld!: (response: Response) => void;
+      const pending = new Promise<Response>((resolve) => {
+        finishOld = resolve;
+      });
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockImplementation(async (input) =>
+          String(input).includes("page=2")
+            ? pending
+            : Response.json(ownedLedger()),
+        );
+      vi.stubGlobal("fetch", fetcher);
+      window.history.replaceState(null, "", "/jobs?page=2");
+      const { container, root } = await mountLedger("page=2");
+      await act(async () =>
+        root.render(<JobsLedgerClient initialSearch="page=3" />),
+      );
+      await settleEffects();
+      expect(container.textContent).toContain(
+        "Private synthetic jobs evidence",
+      );
+      const oldSignal = fetcher.mock.calls[0]![1]!.signal!;
+      expect(oldSignal.aborted).toBe(true);
+      await act(async () => finishOld(Response.json({}, { status })));
+      await settleEffects();
+      expect(container.textContent).toContain(
+        "Private synthetic jobs evidence",
+      );
+      expect(container.querySelector("select")).not.toBeNull();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(window.location.search).toBe("?page=2");
+    },
+  );
+});

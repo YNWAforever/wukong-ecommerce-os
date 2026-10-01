@@ -582,6 +582,42 @@ describe("full workspace read boundaries", () => {
           role: "reviewer" as const,
         }),
       };
+      const { createExportPreviewHandler } =
+        await import("../../../../apps/web/app/api/listings/export/preview/route.js");
+      async function reviewedExportBody(
+        listingId: string,
+        exportSession: typeof sessionContext,
+      ) {
+        const selection = {
+          listingIds: [listingId],
+          fields: ["nameZh"],
+          // A well-formed attestation for a listing this workspace cannot
+          // see. The digest is never compared -- the listing resolves to
+          // `listing_not_found` first -- but the explicit producer contract
+          // must reach that boundary rather than fail schema validation.
+          attestation: {
+            listings: [{ listingId, contentDigest: SYNTHETIC_DIGEST }],
+          },
+        };
+        const reviewed = await createExportPreviewHandler({
+          sessionContext: exportSession,
+          getDatabase: () => db,
+        })(
+          new Request("http://localhost/api/listings/export/preview", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(selection),
+          }),
+        );
+        expect(reviewed.status).toBe(200);
+        const preview = await reviewed.json();
+        expect(preview.previewSha256).toMatch(/^[a-f0-9]{64}$/);
+        return { ...selection, previewSha256: preview.previewSha256 };
+      }
+      const workbookExportBody = await reviewedExportBody(
+        workbookId,
+        sessionContext,
+      );
       let sideEffects = 0;
       const forbidden = async () => {
         sideEffects++;
@@ -595,20 +631,7 @@ describe("full workspace read boundaries", () => {
         new Request("http://localhost/api/listings/export", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            listingIds: [workbookId],
-            // A well-formed attestation for a listing this workspace cannot
-            // see. The digest is never compared -- the listing resolves to
-            // `listing_not_found` first -- but it has to be present and cover
-            // exactly `listingIds`, or the refusal below would come from
-            // schema validation rather than from the workspace boundary this
-            // case exists to prove.
-            attestation: {
-              listings: [
-                { listingId: workbookId, contentDigest: SYNTHETIC_DIGEST },
-              ],
-            },
-          }),
+          body: JSON.stringify(workbookExportBody),
         }),
       );
       expect(await refused.json()).toMatchObject({
@@ -650,6 +673,12 @@ describe("full workspace read boundaries", () => {
               body: JSON.stringify({
                 method,
                 attestedContentDigest: SYNTHETIC_DIGEST,
+                ...(method === "bulk_form"
+                  ? {
+                      fields: workbookExportBody.fields,
+                      previewSha256: workbookExportBody.previewSha256,
+                    }
+                  : {}),
               }),
             },
           ),
@@ -781,15 +810,20 @@ describe("full workspace read boundaries", () => {
       ).toBeNull();
       const { createExportListingsHandler } =
         await import("../../../../apps/web/app/api/listings/export/route.js");
+      const websiteExportSession = {
+        resolve: async () => ({
+          workspaceId: mixed,
+          actorId: "synthetic",
+          role: "reviewer" as const,
+        }),
+      };
+      const websiteExportBody = await reviewedExportBody(
+        websiteId,
+        websiteExportSession,
+      );
       let artifactWrites = 0;
       const exportResponse = await createExportListingsHandler({
-        sessionContext: {
-          resolve: async () => ({
-            workspaceId: mixed,
-            actorId: "synthetic",
-            role: "reviewer",
-          }),
-        },
+        sessionContext: websiteExportSession,
         getDatabase: () => db,
         getAssetStore: () =>
           ({
@@ -802,14 +836,7 @@ describe("full workspace read boundaries", () => {
         new Request("http://localhost/api/listings/export", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            listingIds: [websiteId],
-            attestation: {
-              listings: [
-                { listingId: websiteId, contentDigest: SYNTHETIC_DIGEST },
-              ],
-            },
-          }),
+          body: JSON.stringify(websiteExportBody),
         }),
       );
       expect(exportResponse.status).toBe(200);
