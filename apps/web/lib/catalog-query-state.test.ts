@@ -60,3 +60,18 @@ it("allows bounded catalog/jobs returns without unrelated query data or redirect
   ).toBe("/jobs?kind=export&page=2");
   expect(normalizeWorkbenchReturn("//evil.test/catalog")).toBe("/dashboard");
 });
+it("retains opaque cursors in canonical/back links and explicitly clears them on a new search", () => {
+  const old = parseCatalogQuery(
+    "q=000674&page=8&filter=review&cursor=opaque-position",
+  );
+  expect(
+    catalogContextKey("filter=review&cursor=opaque-position&page=8&q=000674"),
+  ).toBe("/catalog?q=000674&filter=review&page=8&cursor=opaque-position");
+  expect(catalogQuery({ ...old, q: "new", page: 1, cursor: undefined })).toBe(
+    "q=new&filter=review",
+  );
+  expect(
+    normalizeWorkbenchReturn("/jobs?kind=export&page=3&cursor=opaque-job"),
+  ).toBe("/jobs?kind=export&page=3&cursor=opaque-job");
+  expect(parseCatalogQuery("cursor=../../foreign").cursor).toBe("invalid");
+});

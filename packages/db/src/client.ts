@@ -1,4 +1,8 @@
 import {
+  createQualityProjectionRepository,
+  type QualityProjectionRepository,
+} from "./repositories/quality-projection.js";
+import {
   createListingAssignmentRepository,
   type ListingAssignmentRepository,
 } from "./repositories/listing-assignments.js";
@@ -152,6 +156,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  qualityProjection: QualityProjectionRepository;
   assignments: ListingAssignmentRepository;
   wineAcquisition: WineAcquisitionRepository;
   wineEnrichment: WineEnrichmentRepository;
@@ -318,6 +323,11 @@ export function createDatabase(
         },
       };
       const repositories: WorkspaceRepositories = {
+        qualityProjection: createQualityProjectionRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
         productShots: createProductShotRepository(
           transaction,
           workspaceId,

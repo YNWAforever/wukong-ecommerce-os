@@ -60,6 +60,8 @@ type JobsResponse = {
   page: number;
   pageSize: number;
   totalMatching: number;
+  nextCursor?: string | null;
+  previousCursor?: string | null;
   total: number;
   counts: Record<LedgerKind, number>;
   scope: "workspace_all_history";
@@ -141,6 +143,7 @@ export function JobsLedgerClient({
       <JobsLedger
         initialKind={params.get("kind")}
         initialPage={params.get("page")}
+        initialCursor={params.get("cursor")}
         returnTo={returnTo}
         navigate={workQuery.navigate}
       />
@@ -150,11 +153,13 @@ export function JobsLedgerClient({
 function JobsLedger({
   initialKind,
   initialPage,
+  initialCursor,
   returnTo,
   navigate,
 }: {
   initialKind: string | null;
   initialPage: string | null;
+  initialCursor: string | null;
   returnTo: string | null;
   navigate(query: string, mode?: "replace" | "push"): void;
 }) {
@@ -164,20 +169,23 @@ function JobsLedger({
     new URLSearchParams({
       kind: initialKind ?? "all",
       page: initialPage ?? "1",
+      ...(initialCursor ? { cursor: initialCursor } : {}),
     }),
   );
   const destinationKind = parsed.kind,
     destinationPage = parsed.page;
-  const destination = `${destinationKind}:${destinationPage}`;
+  const destination = `${destinationKind}:${destinationPage}:${parsed.cursor ?? ""}`;
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [kindFilter, setKindFilter] = useState<KindFilter>(destinationKind);
   const [page, setPage] = useState(destinationPage);
+  const [cursor, setCursor] = useState(parsed.cursor);
   // Apply navigation before committing a fetch with the previous URL's filters.
   // Other stateful panels stay mounted and retain their local form state.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
     setKindFilter(destinationKind);
     setPage(destinationPage);
+    setCursor(parsed.cursor);
   }
 
   const load = useCallback(
@@ -187,15 +195,24 @@ function JobsLedger({
         pageSize: "50",
       });
       if (kindFilter !== "all") params.set("kind", kindFilter);
+      if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/jobs?${params.toString()}`, {
         cache: "no-store",
         signal,
       });
+      if (response.status === 400 && cursor) {
+        const failure = await response.json();
+        if (!signal.aborted && failure.code === "invalid_cursor") {
+          setCursor(undefined);
+          setPage(1);
+          navigate(jobsQuery({ kind: kindFilter, page: 1 }));
+        }
+      }
       if (!response.ok)
         throw new Error(`Unable to load jobs (${response.status})`);
       return (await response.json()) as JobsResponse;
     },
-    [page, kindFilter],
+    [page, cursor, kindFilter],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     load,
@@ -341,6 +358,7 @@ function JobsLedger({
             onClick={() => {
               setKindFilter(option.value);
               setPage(1);
+              setCursor(undefined);
               navigate(jobsQuery({ kind: option.value, page: 1 }));
             }}
           >
@@ -389,9 +407,22 @@ function JobsLedger({
           onClick={() => {
             const next = Math.max(1, page - 1);
             setPage(next);
-            navigate(jobsQuery({ kind: kindFilter, page: next }), "push");
+            setCursor(response.previousCursor ?? undefined);
+            navigate(
+              jobsQuery({
+                kind: kindFilter,
+                page: next,
+                cursor: response.previousCursor ?? undefined,
+              }),
+              "push",
+            );
           }}
-          disabled={page === 1 || loading}
+          disabled={
+            loading ||
+            (response.previousCursor !== undefined
+              ? response.previousCursor === null
+              : page === 1)
+          }
         >
           {c.previous}
         </button>
@@ -409,12 +440,22 @@ function JobsLedger({
           type="button"
           onClick={() => {
             setPage(page + 1);
-            navigate(jobsQuery({ kind: kindFilter, page: page + 1 }), "push");
+            setCursor(response.nextCursor ?? undefined);
+            navigate(
+              jobsQuery({
+                kind: kindFilter,
+                page: page + 1,
+                cursor: response.nextCursor ?? undefined,
+              }),
+              "push",
+            );
           }}
           disabled={
             loading ||
             response.pageSize === undefined ||
-            page * response.pageSize >= response.totalMatching
+            (response.nextCursor !== undefined
+              ? response.nextCursor === null
+              : page * response.pageSize >= response.totalMatching)
           }
         >
           {c.next}
@@ -480,8 +521,9 @@ function JobsLedger({
                       href={withWorkbenchReturn(
                         `/listings/${entry.listingId}`,
                         "/jobs" +
-                          (jobsQuery({ kind: kindFilter, page })
-                            ? "?" + jobsQuery({ kind: kindFilter, page })
+                          (jobsQuery({ kind: kindFilter, page, cursor })
+                            ? "?" +
+                              jobsQuery({ kind: kindFilter, page, cursor })
                             : ""),
                       )}
                     >

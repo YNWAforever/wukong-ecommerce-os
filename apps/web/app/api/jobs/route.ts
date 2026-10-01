@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decodeReadCursor, encodeReadCursor } from "../../../lib/read-cursor";
 import {
   buildExportReconciliation,
   resultCapabilities,
@@ -22,6 +23,7 @@ import type { SessionContextPort } from "../../../lib/session-context-port";
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).max(1024).optional(),
   kind: z
     .enum(["batch", "publish_job", "pipeline_run", "export", "import_result"])
     .optional(),
@@ -60,10 +62,23 @@ export function createJobsHandler(deps: JobsRouteDeps) {
         ),
       );
       const since = new Date(Date.now() - METRICS_WINDOW_MS);
+      const cursorScope = {
+        workspaceId: context.workspaceId,
+        actorId: context.actorId,
+        role: context.role,
+        view: "jobs",
+        pageSize: query.pageSize,
+        kind: query.kind ?? null,
+      };
+      const { cursor: token, ...pageQuery } = query;
+      const cursor = decodeReadCursor(token, cursorScope);
       const { entries, metrics, exportReconciliations, page } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const page = await repositories.reads.jobsPage(query);
+          const page = await repositories.reads.jobsPage({
+            ...pageQuery,
+            ...(cursor ? { cursor } : {}),
+          });
           const ids = (kind: string) =>
             page.items
               .filter((item) => item.kind === kind)
@@ -177,6 +192,8 @@ export function createJobsHandler(deps: JobsRouteDeps) {
         page: query.page,
         pageSize: query.pageSize,
         totalMatching: page.totalMatching,
+        nextCursor: encodeReadCursor(page.nextCursor, cursorScope),
+        previousCursor: encodeReadCursor(page.previousCursor, cursorScope),
         total: page.total,
         counts: page.counts,
         scope: "workspace_all_history",

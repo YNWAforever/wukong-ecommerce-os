@@ -23,7 +23,7 @@ const admin = postgres(adminUrl, {
   onnotice: () => {},
   prepare: false,
 });
-const db = createDatabase(appUrl);
+const db = createDatabase(appUrl, { migrationUrl: adminUrl });
 /**
  * Stands in for a digest the operator was shown.
  *
@@ -34,6 +34,7 @@ const db = createDatabase(appUrl);
 const SYNTHETIC_DIGEST = "synthetic-digest-not-compared";
 describe("full workspace read boundaries", () => {
   beforeAll(async () => {
+    await db.migrate();
     await admin`insert into workspaces(id,name,profile) values (${workspaceId},'synthetic','{}'),(${otherId},'synthetic','{}')`;
     await admin`insert into workspaces(id,name,profile) values (${currentWorkspace},'synthetic current input','{}')`;
     await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${connection},${workspaceId},'synthetic.invalid','fixture'),(${foreignConnection},${otherId},'foreign.invalid','fixture')`;
@@ -303,7 +304,7 @@ describe("full workspace read boundaries", () => {
       select workspace_id,id,'synthetic','cost-'||id,'fake','fake','succeeded','{}',1,0.25,'2025-01-01' from listing_drafts where workspace_id in (${workspaceId},${otherId})`;
     const { createQualityHandler } =
       await import("../../../../apps/web/app/api/quality/route.js");
-    const response = await createQualityHandler({
+    const handler = createQualityHandler({
       sessionContext: {
         resolve: async () => ({
           workspaceId,
@@ -312,7 +313,33 @@ describe("full workspace read boundaries", () => {
         }),
       },
       getDatabase: () => db,
-    })();
+    });
+    const first = await handler();
+    expect(first.status).toBe(200);
+    const initial = await first.json();
+    expect(initial).toMatchObject({
+      totalListings: 137,
+      noActiveVersion: 6,
+      totalCostUsd: 34.25,
+      consistency: "revision_aware_projection",
+      projection: { state: "pending", stale: true },
+    });
+    expect(initial.totalAssessed).toBeLessThanOrEqual(25);
+    expect(initial.projection.pendingCount).toBeGreaterThan(0);
+    const { computeCurrentContentGaps } =
+      await import("../quality-content-assessor.js");
+    let settled = false;
+    for (let batch = 0; batch < 6; batch++) {
+      const summary = await db.forWorkspace(workspaceId, (r) =>
+        r.qualityProjection.reconcile(computeCurrentContentGaps, { limit: 25 }),
+      );
+      if (!summary.projection.stale) {
+        settled = true;
+        break;
+      }
+    }
+    expect(settled).toBe(true);
+    const response = await handler();
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       totalListings: 137,
@@ -320,7 +347,13 @@ describe("full workspace read boundaries", () => {
       noActiveVersion: 6,
       unassessableActiveVersion: 0,
       scope: "workspace_current_content",
-      consistency: "bounded_scan",
+      consistency: "revision_aware_projection",
+      projection: {
+        state: "ready",
+        stale: false,
+        pendingCount: 0,
+        failedCount: 0,
+      },
       totalCostUsd: 34.25,
     });
   });

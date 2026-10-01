@@ -1,5 +1,6 @@
-import { readSourceReadiness } from "../../../lib/source-readiness";
+import { loadSourceReadinessBatch } from "../../../lib/source-readiness";
 import { resultCapabilities } from "../../../lib/export-reconciliation";
+import { decodeReadCursor, encodeReadCursor } from "../../../lib/read-cursor";
 import { z } from "zod";
 
 import {
@@ -23,6 +24,7 @@ import type { SessionContextPort } from "../../../lib/session-context-port";
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  cursor: z.string().min(1).max(1024).optional(),
   q: z.string().trim().optional(),
   work: z.enum(["all", "mine", "unassigned", "review"]).default("all"),
   importId: z.uuid().optional(),
@@ -55,13 +57,27 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
       );
       const url = new URL(request.url);
       const query = querySchema.parse(Object.fromEntries(url.searchParams));
+      const cursorScope = {
+        workspaceId: context.workspaceId,
+        actorId: context.actorId,
+        role: context.role,
+        view: "catalog",
+        pageSize: query.pageSize,
+        q: (query.q ?? "").trim().toLocaleLowerCase(),
+        filter: query.filter,
+        work: query.work,
+        importId: query.importId ?? null,
+      };
+      const { cursor: token, ...pageQuery } = query;
+      const cursor = decodeReadCursor(token, cursorScope);
 
       const result = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
           const page = await atRouteStage("listing", () =>
             repositories.reads.catalogPage({
-              ...query,
+              ...pageQuery,
+              ...(cursor ? { cursor } : {}),
               actorId: context.actorId,
             }),
           );
@@ -74,6 +90,20 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           );
           const byId = new Map(
             products.map((product) => [product.id, product]),
+          );
+          const reader = await atRouteStage("sources", () =>
+            loadSourceReadinessBatch(
+              repositories,
+              context.workspaceId,
+              page.items.flatMap((item) =>
+                (item.sourceType === "platform" ||
+                  item.sourceType === "draft") &&
+                item.listingId
+                  ? [item.listingId]
+                  : [],
+              ),
+              products.flatMap((item) => (item.product ? [item.product] : [])),
+            ),
           );
           const items = await Promise.all(
             page.items.map(async (item) => {
@@ -92,9 +122,7 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
                       hydrated?.error ??
                       new ListingDataError("invalid_platform_product")
                     );
-                  return readSourceReadiness(
-                    repositories,
-                    context.workspaceId,
+                  return reader.read(
                     item.listingId,
                     item.sourceType === "platform"
                       ? (hydrated?.product ?? null)
@@ -130,6 +158,8 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
           role: context.role,
         }),
         ...result,
+        nextCursor: encodeReadCursor(result.nextCursor, cursorScope),
+        previousCursor: encodeReadCursor(result.previousCursor, cursorScope),
         scope: "workspace",
         page: query.page,
         pageSize: query.pageSize,
