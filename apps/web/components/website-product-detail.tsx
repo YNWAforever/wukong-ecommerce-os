@@ -1,5 +1,6 @@
 "use client";
 import { useCallback } from "react";
+import Link from "next/link";
 import { normalizeWebsiteUrl, type WebsiteProduct } from "@wukong/core";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { useLocale } from "../lib/locale-context";
@@ -34,7 +35,15 @@ export function WebsiteProductDetail({ id }: { id: string }) {
         </div>
       ) : null}
       {data ? (
-        <WebsiteProductObservation observation={data.observation} />
+        <>
+          <Link
+            className="secondary-button"
+            href={`/listings/import?intent=maintain-existing&referenceKind=website&referenceId=${encodeURIComponent(id)}`}
+          >
+            {localized(locale, "開始維護", "Start maintenance")}
+          </Link>
+          <WebsiteProductObservation observation={data.observation} />
+        </>
       ) : !error ? (
         <p role="status">{localized(locale, "載入中…", "Loading…")}</p>
       ) : null}

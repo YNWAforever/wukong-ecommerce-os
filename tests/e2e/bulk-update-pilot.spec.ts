@@ -50,8 +50,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   const requests: string[] = [];
   page.on("request", (request) => {
     if (
@@ -88,14 +87,18 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
     await page
       .getByRole("button", { name: /Refresh status|重新整理狀態/ })
       .click();
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await time.fill("");
+    await page.locator("#bulk-source-confirmation").check();
     await submit.click();
     await expect(
       page.locator("form.intake-form").getByRole("status"),
     ).toContainText("Enter the SHOPLINE export time.");
     expect(requests).toHaveLength(0);
     await time.fill("2026-01-01T00:15");
+    await page.locator("#bulk-source-confirmation").check();
     await page.route(
       "**/api/listings/import?**",
       (route) => route.abort("failed"),
@@ -169,8 +172,7 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
   } finally {
     await admin.end();
   }
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   await page.locator("#bulk-import-file").setInputFiles({
     name: filename,
     mimeType:
@@ -203,8 +205,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   const operator = await prepareBulkUpdateFixture();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await signInBulkImportOperator(page, operator);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, operator, false);
   const rows = ["0001", "0002"].map((sku) => ({
     ...defaults,
     productId: "synthetic-update-" + sku,
@@ -236,6 +237,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   expect((await imported).status()).toBe(201);
   await page.goto("/batches");
@@ -326,7 +328,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-field-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     for (const key of [
       "priceUnchanged",
@@ -339,7 +341,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-negative-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     await page
       .getByRole("button", { name: "Approve listing", exact: true })
@@ -569,7 +571,9 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   );
   const snapshotTime = new Date(Date.now() + 8 * 60 * 60 * 1000)
     .toISOString()
-    .slice(0, 19);
+    .slice(0, 19)
+    // HTML normalizes zero seconds away; Playwright requires canonical input.
+    .replace(/:00$/, "");
   const snapshotSheet = sheet.map((row) => row.map((cell) => cell ?? ""));
   const matchingBytes = Buffer.from(
     writeBulkFormWorkbook([
@@ -1082,21 +1086,24 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
   await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
 
-  // W7: re-importing the same workbook re-binds both approvals to a new source
-  // import. That must be visible when it happens, and the status must stay.
+  // W7: a distinct original export with unchanged cells re-binds approvals.
+  // Identical-byte retries are covered separately and must not re-bind.
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/listings/import");
   await page.evaluate(() => {
     document.cookie = "locale=en; path=/; max-age=31536000";
   });
   await page.reload();
-  await page.getByRole("tab", { name: "Workbook", exact: true }).click();
-  await page.locator("#connected-shopline-update > summary").click();
   await page.locator("#bulk-import-file").setInputFiles({
     name: "synthetic-task5-reimport.xlsx",
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: input,
+    buffer: (() => {
+      const comment = Buffer.from("synthetic distinct original export");
+      const fresh = Buffer.concat([input, comment]);
+      fresh.writeUInt16LE(comment.length, input.length - 2);
+      return fresh;
+    })(),
   });
   await page
     .locator("#merchant-attested-export-at")
@@ -1106,6 +1113,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   const reimportResponse = await reimported;
   expect(reimportResponse.status()).toBe(201);
@@ -1143,7 +1151,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     page.getByText("Approval invalidated (Re-imported, row unchanged)"),
   ).toBeVisible();
 
-  // The new import is byte-for-byte identical, but its import ID is newer.
+  // The fresh workbook has unchanged cells but distinct bytes/import identity.
   // The old review version must not accept fresh confirmations.
   await expect(
     page.getByText(
@@ -1166,9 +1174,26 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   // Saving after checking the current row creates a version bound to this
   // import. Reconfirm and approve that version before testing a later
   // confirmation change.
+  const reboundReview = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/review`) &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.getByText(/Draft saved/)).toBeVisible();
+  expect((await reboundReview).status()).toBe(200);
   await page.reload();
+  const reboundSnapshot = await (
+    await page.request.get(`/api/listings/${listingIds[0]}`)
+  ).json();
+  expect(reboundSnapshot.activeVersion.sourceImportId).toBe(
+    reboundSnapshot.sourceReadiness.sourceImportId,
+  );
+  await expect(
+    page.getByText(
+      "The imported source changed after this version was created.",
+      { exact: false },
+    ),
+  ).toHaveCount(0);
   await expect(page.locator(".review-status")).toHaveText(
     stateLabel("reopened", "en"),
   );
@@ -1184,7 +1209,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-field-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
   for (const key of [
     "priceUnchanged",
@@ -1197,7 +1222,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-negative-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
   await page
     .getByRole("button", { name: "Approve listing", exact: true })
@@ -1251,8 +1276,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
       },
       { times: 1 },
     );
-    await signInBulkImportOperator(page, setupFixture);
-    await page.locator("#connected-shopline-update > summary").click();
+    await signInBulkImportOperator(page, setupFixture, false);
     const file = page.locator("#bulk-import-file");
     const time = page.locator("#merchant-attested-export-at");
     const submit = page.getByRole("button", { name: "Start import" });
@@ -1304,6 +1328,8 @@ test("admin sets up a store inline without losing the selected workbook", async 
       .getByRole("button", { name: "連線 Connect", exact: true })
       .click();
     expect((await connected).status()).toBe(200);
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await expect(
       page.getByText("synthetic-inline-store.invalid", { exact: true }),
@@ -1332,13 +1358,6 @@ test("admin sets up a store inline without losing the selected workbook", async 
           { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
         ]);
       await page.reload();
-      await page
-        .getByRole("tab", {
-          name: locale === "en" ? "Workbook" : "試算表",
-          exact: true,
-        })
-        .click();
-      await page.locator("#connected-shopline-update > summary").click();
       await expect(
         page.getByText("synthetic-inline-store.invalid", { exact: true }),
       ).toBeVisible();

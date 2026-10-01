@@ -33,7 +33,9 @@ export function createImportSetupHandler(deps: ImportSetupDeps) {
         // Only the capability is public. Never serialize key validation errors.
       }
       return jsonResponse(200, {
-        connection: connection ? { shopDomain: connection.shopDomain } : null,
+        connection: connection
+          ? { id: connection.id, shopDomain: connection.shopDomain }
+          : null,
         canManageConnection: requireWorkspaceRole("admin", session.role),
         canImport: requireWorkspaceRole("operator", session.role),
         credentialStorageConfigured,

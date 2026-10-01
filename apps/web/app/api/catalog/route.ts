@@ -2,14 +2,17 @@ import { readSourceReadiness } from "../../../lib/source-readiness";
 import { resultCapabilities } from "../../../lib/export-reconciliation";
 import { z } from "zod";
 
-import type { Database } from "@wukong/db";
+import { ListingDataError, type Database } from "@wukong/db";
 
 import { getDatabase } from "../../../lib/intake-runtime";
 import {
+  atRouteStage,
+  createRouteDiagnostics,
   jsonResponse,
   requireSessionContext,
   withRouteErrors,
 } from "../../../lib/route-support";
+import { readIsolatedListing } from "../../../lib/listing-read-resilience";
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 
@@ -23,6 +26,8 @@ const querySchema = z.object({
       "workbook",
       "website",
       "all",
+      "drafts",
+      "bound",
       "attention",
       "review",
       "unlinked",
@@ -38,37 +43,70 @@ type CatalogRouteDeps = {
 
 export function createCatalogHandler(deps: CatalogRouteDeps) {
   return async function catalog(request: Request): Promise<Response> {
+    const diagnostics = createRouteDiagnostics();
     return withRouteErrors(async () => {
-      const context = await requireSessionContext(deps.sessionContext);
+      const context = await atRouteStage("session", () =>
+        requireSessionContext(deps.sessionContext),
+      );
       const url = new URL(request.url);
       const query = querySchema.parse(Object.fromEntries(url.searchParams));
 
       const result = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const page = await repositories.reads.catalogPage(query);
-          const products = await repositories.platformProducts.getByIds(
-            page.items
-              .filter((item) => item.sourceType === "platform")
-              .map((item) => item.id),
+          const page = await atRouteStage("listing", () =>
+            repositories.reads.catalogPage(query),
+          );
+          const products = await atRouteStage("sources", () =>
+            repositories.platformProducts.getByIdsIsolated(
+              page.items
+                .filter((item) => item.sourceType === "platform")
+                .map((item) => item.id),
+            ),
           );
           const byId = new Map(
             products.map((product) => [product.id, product]),
           );
           const items = await Promise.all(
-            page.items.map(async (item) =>
-              item.sourceType !== "platform"
-                ? item
+            page.items.map(async (item) => {
+              if (item.sourceType !== "platform" && item.sourceType !== "draft")
+                return item;
+              const readiness = await readIsolatedListing(
+                diagnostics,
+                "sources",
+                () => {
+                  const hydrated = byId.get(item.id);
+                  if (
+                    item.sourceType === "platform" &&
+                    (!hydrated || hydrated.error)
+                  )
+                    throw (
+                      hydrated?.error ??
+                      new ListingDataError("invalid_platform_product")
+                    );
+                  return readSourceReadiness(
+                    repositories,
+                    context.workspaceId,
+                    item.listingId,
+                    item.sourceType === "platform"
+                      ? (hydrated?.product ?? null)
+                      : null,
+                  );
+                },
+              );
+              return readiness.state === "ready"
+                ? {
+                    ...item,
+                    readState: "ready" as const,
+                    sourceReadiness: readiness.value,
+                  }
                 : {
                     ...item,
-                    sourceReadiness: await readSourceReadiness(
-                      repositories,
-                      context.workspaceId,
-                      item.listingId,
-                      byId.get(item.id) ?? null,
-                    ),
-                  },
-            ),
+                    readState: "blocked" as const,
+                    sourceReadiness: null,
+                    supportRequestId: readiness.failure.requestId,
+                  };
+            }),
           );
           return { ...page, items };
         });
@@ -80,7 +118,7 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
         page: query.page,
         pageSize: query.pageSize,
       });
-    });
+    }, diagnostics);
   };
 }
 

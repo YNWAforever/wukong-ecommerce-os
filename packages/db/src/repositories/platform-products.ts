@@ -5,6 +5,7 @@ import { listingFactsSchema, type ListingFacts } from "@wukong/core";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { platformProducts } from "../schema.js";
+import { ListingDataError } from "../listing-data-error.js";
 
 export type PlatformProductOrigin = "import" | "created";
 
@@ -70,6 +71,14 @@ export type PlatformProductRepository = {
     remoteProductIds: readonly string[],
   ): Promise<PlatformProduct[]>;
   getByIds(ids: readonly string[]): Promise<PlatformProduct[]>;
+  getByIdsIsolated(
+    ids: readonly string[],
+  ): Promise<
+    Array<
+      | { id: string; product: PlatformProduct; error: null }
+      | { id: string; product: null; error: ListingDataError }
+    >
+  >;
   listRecent(limit?: number): Promise<PlatformProduct[]>;
   /**
    * The link the exporter reads: does this listing have a known remote
@@ -118,14 +127,16 @@ type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
  * so a malformed prefill would flow straight through the boundary. Parse it at
  * the seam, the way the workspace repository parses its profile jsonb.
  */
-const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => ({
-  ...row,
-  origin: platformProductOriginSchema.parse(row.origin),
-  factsPrefill:
+const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
+  const origin = platformProductOriginSchema.safeParse(row.origin);
+  const facts =
     row.factsPrefill === null
       ? null
-      : listingFactsSchema.parse(row.factsPrefill),
-});
+      : listingFactsSchema.safeParse(row.factsPrefill);
+  if (!origin.success || (facts && !facts.success))
+    throw new ListingDataError("invalid_platform_product");
+  return { ...row, origin: origin.data, factsPrefill: facts?.data ?? null };
+};
 
 const validatedValues = (
   input: UpsertPlatformProductInput,
@@ -269,6 +280,30 @@ export function createPlatformProductRepository(
         .orderBy(desc(platformProducts.updatedAt))
         .limit(100);
       return rows.map(toPlatformProduct);
+    },
+    async getByIdsIsolated(ids) {
+      scope.assertOpen();
+      if (!ids.length) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(platformProducts)
+        .where(
+          and(
+            eq(platformProducts.workspaceId, workspaceId),
+            inArray(platformProducts.id, [...ids]),
+          ),
+        )
+        .orderBy(desc(platformProducts.updatedAt))
+        .limit(100);
+      return rows.map((row) => {
+        try {
+          return { id: row.id, product: toPlatformProduct(row), error: null };
+        } catch (error) {
+          if (!(error instanceof ListingDataError)) throw error;
+          return { id: row.id, product: null, error };
+        }
+      });
     },
 
     async listRecent(limit = 100) {

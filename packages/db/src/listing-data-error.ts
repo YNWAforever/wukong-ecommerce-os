@@ -4,6 +4,7 @@ export type ListingDataFailureReason =
   | "invalid_active_version"
   | "missing_active_version"
   | "invalid_source_time"
+  | "invalid_platform_product"
   | "invalid_activity";
 
 export class ListingDataError extends Error {

@@ -8,6 +8,8 @@ export type CatalogFilter =
   | "workbook"
   | "website"
   | "all"
+  | "drafts"
+  | "bound"
   | "attention"
   | "review"
   | "unlinked"
@@ -52,7 +54,24 @@ export type WorkbookCatalogReadItem = {
   canExport: false;
 };
 export type CatalogReadItem =
-  PlatformCatalogReadItem | WebsiteCatalogReadItem | WorkbookCatalogReadItem;
+  | PlatformCatalogReadItem
+  | WebsiteCatalogReadItem
+  | WorkbookCatalogReadItem
+  | DraftCatalogReadItem;
+export type DraftCatalogReadItem = {
+  sourceType: "draft";
+  id: string;
+  listingId: string;
+  title: string;
+  sku: string | null;
+  listingStatus: ListingStatus;
+  openBlockingFlagCount: number;
+  needsReview: boolean;
+  needsAttention: boolean;
+  createdAt: string;
+  updatedAt: string;
+  canExport: false;
+};
 export type CatalogReadSummary = {
   website: number;
   workbook: number;
@@ -62,6 +81,9 @@ export type CatalogReadSummary = {
   needsReview: number;
   needsAttention: number;
   published: number;
+  referenceRows: number;
+  drafts: number;
+  boundProducts: number;
 };
 export type WorkspaceReadRepository = ReturnType<
   typeof createWorkspaceReadRepository
@@ -102,7 +124,15 @@ export function createWorkspaceReadRepository(
   union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null
   from website_products w where w.workspace_id=${workspaceId}
   union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
-  from workbook_products w where w.workspace_id=${workspaceId}`;
+  from workbook_products w where w.workspace_id=${workspaceId}
+  union all select 'draft',null,null,d.id,null,null,v.content->>'sku',d.id,null,
+   coalesce(v.content->'title'->>'zh-Hant',v.content->'title'->>'en',nullif(left(d.note,120),''),d.id::text),
+   d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
+   (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null
+  from listing_drafts d
+  left join listing_versions v on v.workspace_id=${workspaceId} and v.listing_id=d.id and v.id=d.active_version_id
+  left join (select listing_version_id,count(*)::int n from compliance_flags where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
+  where d.workspace_id=${workspaceId} and not exists(select 1 from platform_products p where p.workspace_id=${workspaceId} and p.listing_id=d.id)`;
   const ledger = sql`
   select id,'batch'::text kind,created_at from enrichment_batches where workspace_id=${workspaceId}
   union all select id,'publish_job',created_at from publish_jobs where workspace_id=${workspaceId}
@@ -131,6 +161,8 @@ export function createWorkspaceReadRepository(
       if (
         ![
           "all",
+          "drafts",
+          "bound",
           "website",
           "workbook",
           "attention",
@@ -144,7 +176,7 @@ export function createWorkspaceReadRepository(
       const importMatch = input.importId
         ? sql`("sourceType"='workbook' and id in (select id from workbook_products where workspace_id=${workspaceId} and import_id=${input.importId}::uuid))`
         : sql`true`;
-      const match = sql`${importMatch} and (${input.filter}='all' or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
+      const match = sql`${importMatch} and (${input.filter}='all' or (${input.filter}='bound' and "sourceType"='platform' and "listingId" is not null) or (${input.filter}='drafts' and "listingId" is not null) or (${input.filter}='website' and "sourceType"='website') or (${input.filter}='workbook' and "sourceType"='workbook') or (${input.filter}='attention' and "needsAttention") or (${input.filter}='review' and "needsReview") or (${input.filter}='unlinked' and "sourceType"='platform' and "listingId" is null) or (${input.filter}='published' and "listingStatus"='published'))
     and (${q}='' or strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0)`;
       // One statement gives counts and page a common MVCC snapshot, including empty pages.
       const rows =
@@ -152,12 +184,30 @@ export function createWorkspaceReadRepository(
     page as (select * from matching order by "createdAt" desc,"sourceType",id limit ${input.pageSize} offset ${skip})
     select (select coalesce(jsonb_agg(to_jsonb(page) order by "createdAt" desc,"sourceType",id),'[]') from page) items,
      (select count(*)::int from matching) as "totalMatching",
-     jsonb_build_object('total',count(*)::int,'linked',count(*) filter(where "listingId" is not null)::int,
+     jsonb_build_object('total',count(*)::int,'linked',count(*) filter(where "sourceType"='platform' and "listingId" is not null)::int,
+      'referenceRows',count(*) filter(where "sourceType" in ('website','workbook'))::int,
+      'drafts',(select count(*)::int from listing_drafts where workspace_id=${workspaceId}),
+      'boundProducts',count(*) filter(where "sourceType"='platform' and "listingId" is not null)::int,
       'workbook',count(*) filter(where "sourceType"='workbook')::int,'website',count(*) filter(where "sourceType"='website')::int,'unlinked',count(*) filter(where "sourceType"='platform' and "listingId" is null)::int,'needsReview',count(*) filter(where "needsReview")::int,
       'needsAttention',count(*) filter(where "needsAttention")::int,'published',count(*) filter(where "listingStatus"='published')::int) summary from catalog`);
       const row = rows[0]!;
       return {
         items: (row.items as CatalogReadItem[]).map((item) => {
+          if (item.sourceType === "draft")
+            return {
+              sourceType: "draft" as const,
+              id: item.id,
+              listingId: item.listingId,
+              title: item.title,
+              sku: item.sku,
+              listingStatus: item.listingStatus,
+              openBlockingFlagCount: item.openBlockingFlagCount,
+              needsReview: item.needsReview,
+              needsAttention: item.needsAttention,
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+              canExport: false as const,
+            };
           if (item.sourceType === "workbook")
             return {
               sourceType: "workbook" as const,

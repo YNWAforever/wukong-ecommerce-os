@@ -39,7 +39,7 @@ describe("full read route contracts", () => {
     const handler = createCatalogHandler(
       deps({
         reads: { catalogPage },
-        platformProducts: { getByIds: async () => [] },
+        platformProducts: { getByIdsIsolated: async () => [] },
       }),
     );
     const response = await handler(

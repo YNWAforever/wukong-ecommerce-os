@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { sourceImports } from "../schema.js";
@@ -32,6 +32,12 @@ export type SourceImport = {
 export type SourceImportRepository = {
   create(input: CreateSourceImportInput): Promise<SourceImport>;
   getById(id: string): Promise<SourceImport | null>;
+  findByWorkbookIdentity(
+    input: Pick<
+      CreateSourceImportInput,
+      "connectionId" | "workbookSha256" | "headerContractSha256" | "specVersion"
+    >,
+  ): Promise<SourceImport | null>;
 };
 
 const COLUMNS = {
@@ -54,6 +60,24 @@ export function createSourceImportRepository(
   scope: WorkspaceScope,
 ): SourceImportRepository {
   return {
+    async findByWorkbookIdentity(input) {
+      scope.assertOpen();
+      const [row] = await transaction
+        .select(COLUMNS)
+        .from(sourceImports)
+        .where(
+          and(
+            eq(sourceImports.workspaceId, workspaceId),
+            eq(sourceImports.connectionId, input.connectionId),
+            eq(sourceImports.workbookSha256, input.workbookSha256),
+            eq(sourceImports.headerContractSha256, input.headerContractSha256),
+            eq(sourceImports.specVersion, input.specVersion),
+          ),
+        )
+        .orderBy(asc(sourceImports.createdAt), asc(sourceImports.id))
+        .limit(1);
+      return row ?? null;
+    },
     async create(input) {
       scope.assertOpen();
       const [row] = await transaction

@@ -349,7 +349,7 @@ describe("CatalogControlCenter", () => {
     expect(container.textContent).toContain("Attention item");
     // Result count line reflects the paginated response, not a client-side
     // filtered count.
-    expect(container.textContent).toContain("符合 60 / 60 個商品");
+    expect(container.textContent).toContain("符合 60 / 60 筆目錄紀錄");
 
     await unmount(root);
   });
@@ -408,22 +408,25 @@ describe("CatalogControlCenter", () => {
     await unmount(root);
   });
 
-  it('exposes each metric tile as a role="group" tied to its visible label', async () => {
+  it("exposes metric filters as accessible buttons tied to visible scope labels", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json(pageResponse([])));
 
     const { container, root } = await mount(fetcher);
 
-    const tiles = container.querySelectorAll('[role="group"]');
-    expect(tiles.length).toBe(8);
+    const tiles = container.querySelectorAll(
+      '[aria-labelledby]:is(button,[role="group"])',
+    );
+    expect(tiles.length).toBe(9);
 
     const expectedLabels = [
+      "商品草稿流程",
       "試算表商品",
       "網站商品",
       "未連結的平台商品",
-      "商品",
-      "已連結",
+      "目錄紀錄（包含參考資料）",
+      "已綁定 SHOPLINE 商品",
       "待審核",
       "需處理",
       "已發佈",
@@ -436,6 +439,27 @@ describe("CatalogControlCenter", () => {
       expect(labelElement?.textContent).toBe(expectedLabels[index]);
     });
 
+    await unmount(root);
+  });
+  it("clears an imported-reference scope when opening a workspace bound metric", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(pageResponse([])));
+    const { container, root } = await mount(
+      fetcher,
+      `importId=${id}&filter=workbook`,
+    );
+    expect(String(fetcher.mock.calls[0]![0])).toContain(`importId=${id}`);
+    await act(async () =>
+      findButtonByText(container, "已綁定 SHOPLINE 商品")!.click(),
+    );
+    const request = new URL(
+      String(fetcher.mock.calls.at(-1)![0]),
+      "http://local",
+    );
+    expect(request.searchParams.get("filter")).toBe("bound");
+    expect(request.searchParams.has("importId")).toBe(false);
     await unmount(root);
   });
   it("selects only reviewer-authorized imported linked listings for Bulk Update", async () => {

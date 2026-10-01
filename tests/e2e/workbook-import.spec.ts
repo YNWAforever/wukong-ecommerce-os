@@ -278,10 +278,8 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1440, height: 1000 });
     await signInBulkImportOperator(page, fixture);
-    await expect(page.locator("#merchant-attested-export-at")).toHaveCount(0);
-    await expect(
-      page.locator("#connected-shopline-update"),
-    ).not.toHaveAttribute("open", "");
+    await expect(page.locator("#merchant-attested-export-at")).toBeHidden();
+    await expect(page.locator("#connected-shopline-update")).toHaveCount(0);
     const preview = await choose(page);
     await expect(
       page.getByText("24 rows · 23 eligible · 1 excluded · 1 issues", {
@@ -383,7 +381,7 @@ test("automatic sample imports all eligible products, retains excluded evidence,
       path: resolve(evidenceDir, "catalog-detail-en-1440.png"),
       fullPage: true,
     });
-    await page.goto("/listings/import");
+    await page.goto("/listings/import?intent=reference-only");
     await page.getByRole("tab", { name: "Workbook", exact: true }).click();
     await choose(page, renamedName);
     const replay = await save(page);
@@ -699,7 +697,14 @@ for (const locale of ["en", "zh-Hant"] as const) {
         path: resolve(evidenceDir, `catalog-${locale}-${width}.png`),
         fullPage: true,
       });
+      const selectedResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.startsWith(
+            "/api/workbook-products/",
+          ) && response.request().method() === "GET",
+      );
       await detailButtons.first().click();
+      const selected = await (await selectedResponse).json();
       const detail = page.getByRole("region", {
         name: locale === "en" ? "Workbook product details" : "試算表商品資料",
         exact: true,
@@ -710,7 +715,15 @@ for (const locale of ["en", "zh-Hant"] as const) {
           ? "unavailable for export or publication"
           : "不能匯出或發佈",
       );
-      await expect(detail.locator("img, a")).toHaveCount(0);
+      await expect(detail.locator("img")).toHaveCount(0);
+      const maintenance = detail.getByRole("link", {
+        name: locale === "en" ? "Start maintenance" : "開始維護",
+        exact: true,
+      });
+      await expect(maintenance).toHaveAttribute(
+        "href",
+        `/listings/import?intent=maintain-existing&referenceKind=workbook&referenceId=${selected.id}`,
+      );
       await assertNoHorizontalOverflow(page);
       await page.screenshot({
         path: resolve(evidenceDir, `detail-${locale}-${width}.png`),

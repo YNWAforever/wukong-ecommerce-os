@@ -379,8 +379,12 @@ export async function signInBulkImportOperator(
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in with password" }).click();
   await expect(page).toHaveURL(/\/listings\/import$/);
-  if (openWorkbook)
+  if (openWorkbook) {
+    await page
+      .getByRole("button", { name: "Reference only", exact: true })
+      .click();
     await page.getByRole("tab", { name: "Workbook", exact: true }).click();
+  }
 }
 
 /** Unique local reviewer workspace for the attended Bulk Update journey. */

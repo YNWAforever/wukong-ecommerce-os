@@ -154,6 +154,8 @@ describe("submitBulkImport", () => {
     );
     expect(inEnglish(result)).toEqual({
       kind: "success",
+      replayed: false,
+      alreadyImportedProducts: 0,
       specVersion: "opak-2026-05",
       parsedRows: 2,
       createdDrafts: 2,
@@ -230,7 +232,7 @@ describe("submitBulkImport", () => {
     expect(inEnglish(result)).toEqual({ kind: "api_error", code, message });
   });
 
-  it("falls back to the server's message for an unrecognized error code", async () => {
+  it("uses safe bilingual copy for an unrecognized error code", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -249,7 +251,7 @@ describe("submitBulkImport", () => {
     expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "some_future_code",
-      message: "server-provided detail",
+      message: "The import failed.",
     });
   });
 
@@ -269,7 +271,7 @@ describe("submitBulkImport", () => {
     expect(inEnglish(result)).toEqual({
       kind: "api_error",
       code: "unknown_error",
-      message: "server-provided detail",
+      message: "The import failed.",
     });
   });
 
@@ -322,7 +324,7 @@ describe("bilingual failure copy", () => {
     expect(en).not.toMatch(/[一-鿿]/);
   });
 
-  it("repeats a server-written message rather than inventing a translation", async () => {
+  it("does not echo untrusted server error messages", async () => {
     // batch-list.tsx:87 takes the same position: text we did not write is
     // shown as it stands, because translating it here would be invention.
     const fetcher = vi
@@ -340,10 +342,7 @@ describe("bilingual failure copy", () => {
     );
 
     const [zh, en] = (result as { message: BilingualMessage }).message;
-    expect([zh, en]).toEqual([
-      "server-provided detail",
-      "server-provided detail",
-    ]);
+    expect([zh, en]).toEqual(["匯入失敗。", "The import failed."]);
   });
 });
 
@@ -363,7 +362,10 @@ describe("BulkImportPanel", () => {
     );
     fetcher.mockResolvedValueOnce(
       Response.json({
-        connection: { shopDomain: "synthetic.myshopline.com" },
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          shopDomain: "synthetic.myshopline.com",
+        },
         canImport: true,
         canManageConnection: false,
         credentialStorageConfigured: true,
@@ -399,6 +401,11 @@ describe("BulkImportPanel", () => {
       timeInput.dispatchEvent(new Event("input", { bubbles: true }));
       timeInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>("#bulk-source-confirmation")!
+        .click(),
+    );
     await act(async () => {
       container
         .querySelector("form")!
@@ -434,7 +441,10 @@ describe("BulkImportPanel", () => {
     );
     fetcher.mockResolvedValueOnce(
       Response.json({
-        connection: { shopDomain: "synthetic.myshopline.com" },
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          shopDomain: "synthetic.myshopline.com",
+        },
         canImport: true,
         canManageConnection: false,
         credentialStorageConfigured: true,
@@ -470,6 +480,11 @@ describe("BulkImportPanel", () => {
       timeInput.dispatchEvent(new Event("input", { bubbles: true }));
       timeInput.dispatchEvent(new Event("change", { bubbles: true }));
     });
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>("#bulk-source-confirmation")!
+        .click(),
+    );
     await act(async () => {
       container
         .querySelector("form")!
