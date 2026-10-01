@@ -33,7 +33,52 @@ These are actual in-process route factories and RLS repositories, without HTTP t
 
 All 441 route samples returned without HTTP errors, blocked rows or cardinality failures. There were 126 sampled EXPLAIN records covering every operation. One-row catalog used six app queries versus 78 for 25 rows, reproducing per-row readiness growth. Quality used 13/103/403 queries as the cohort grew, reproducing per-request content scanning. The 20,000-row first catalog sample took 407,082ms. Sampled custom EXPLAIN catalog executions were only 268–369ms while route waits were much longer; N+1 alone does not establish the cause of every tail. The actual client uses `prepare:false`, disproving the prepared-plan hypothesis. Subsequent read-only diagnostic plans showed current-title hydration and legacy sorting costs, without demonstrating a missing-index bottleneck. They ran under shared host load and are not the controlled post-change result.
 
-Targets remain warm catalog p95 <800ms, detail <1,500ms and search <1,000ms; 300ms client debounce and HTTP/browser overhead are separate. No target pass is claimed for an unmeasured post-change build. Use the exact existing fixture IDs through `--reuse` for the comparison; implicit reseeding or changed sample counts cannot substitute for the recorded cohort.
+Targets are warm catalog p95 <800ms, detail <1,500ms and search <1,000ms; 300ms client debounce and HTTP/browser overhead are separate. The controlled post-change route-factory measurements below meet these targets at every scale. This does not establish HTTP/browser latency or field INP.
+
+## Same-cohort post-change result
+
+Measured source: `6ccfd0ecc2b1e09269e7a41abe64f9ffd10d4805`; compiled runtime is from `9b5c7d19bae024d08c58c0e8ce2007ba7e1a0208`, with subsequent commits changing only benchmark/tests. All 425 captured source and 130 compiled hashes remained unchanged from start to end. The original baseline report copy hash was `c3d28877835da4aad7eab843314d32d10823b3a7d22666435b82f84819511bf6`; after report hash was `dba8e484b1b1f8a9c8c9586baa2490da31a49418e47d58a29545644fe67ad656`.
+
+The exact original fixture objects and IDs were reused without seeding or truncation. Hardware, PG configuration, pool limits, one cold sample, 20 warm samples and concurrency two are unchanged. Owned browser/build/test processes and listening runtime services were stopped. The seven original operations produced 441 comparable route samples; a separately labelled deep-cursor operation added 63. All 504 samples had zero errors, blocked rows and cardinality failures. All 135 sampled EXPLAIN records were available. Unrelated host workloads remained; this is a local lab comparison, not a production SLO.
+
+| Products | Operation                    | Cold ms | Warm p95 ms | App queries per response | JSON bytes p95 |
+| -------: | ---------------------------- | ------: | ----------: | -----------------------: | -------------: |
+|      500 | Catalog, 1 row               |     107 |          26 |                        5 |          1,717 |
+|      500 | Catalog, 25 rows             |      85 |          45 |                        5 |         24,597 |
+|      500 | Legacy deep catalog, 25 rows |      66 |          33 |                        5 |         24,586 |
+|      500 | Exact SKU search             |      71 |          38 |                        4 |          1,419 |
+|      500 | Name search                  |      66 |          38 |                        4 |         24,731 |
+|      500 | Detail                       |      83 |          60 |                       19 |          2,950 |
+|      500 | Ready quality                |     198 |          23 |                        6 |          1,445 |
+|      500 | Separate deep cursor         |      57 |          38 |                        5 |         24,586 |
+|    5,000 | Catalog, 1 row               |     367 |          57 |                        5 |          1,724 |
+|    5,000 | Catalog, 25 rows             |      78 |          47 |                        5 |         24,599 |
+|    5,000 | Legacy deep catalog, 25 rows |      77 |          49 |                        5 |         24,608 |
+|    5,000 | Exact SKU search             |     339 |          58 |                        4 |          1,423 |
+|    5,000 | Name search                  |      90 |          55 |                        4 |         24,763 |
+|    5,000 | Detail                       |      64 |          53 |                       19 |          2,950 |
+|    5,000 | Ready quality                |     161 |          41 |                        6 |          1,451 |
+|    5,000 | Separate deep cursor         |      68 |          46 |                        5 |         24,608 |
+|   20,000 | Catalog, 1 row               |     146 |         136 |                        5 |          1,723 |
+|   20,000 | Catalog, 25 rows             |     188 |         183 |                        5 |         24,640 |
+|   20,000 | Legacy deep catalog, 25 rows |     144 |         270 |                        5 |         24,647 |
+|   20,000 | Exact SKU search             |     147 |         157 |                        4 |          1,427 |
+|   20,000 | Name search                  |     166 |         137 |                        4 |         24,777 |
+|   20,000 | Detail                       |      77 |          36 |                       19 |          2,950 |
+|   20,000 | Ready quality                |     220 |          89 |                        6 |          1,456 |
+|   20,000 | Separate deep cursor         |     173 |         123 |                        5 |         24,647 |
+
+Catalog query count is now five for both one and 25 rows, versus six/78 before. Searches use four, versus six/78. The separate source-readiness PG contract observes four statements at 1/25/100 rows including BEGIN, workspace set_config, one owned snapshot SELECT and COMMIT; route app-query counts above exclude transaction controls. Cursor results matched the exact 25 ordered legacy-deep identities at every scale; cursor preparation and identity comparison ran outside sampled timings and their actual SQL/wall costs remain in the private report.
+
+Quality cold timing in the table is the actual first response, not a completed whole-population assessment. It assessed 25 and reported 475/4,975/19,975 pending. Before warm sampling, the guarded bounded CLI performed real reconciliation for approximately 1.427s/18.614s/113.956s. The 20,000 cohort required one partial-command resume. Every warm sample subsequently observed the complete 500/5,000/20,000 assessed population with pending=0, failed=0 and unchanged actual known/unknown cost totals (zero in this synthetic cohort). These setup costs are not free, are not hidden in the steady-state p95, and must be budgeted before a production read cutover. Generation changes can create new pending work again. The report distinguishes reported callback batches from durable assessed progress at a cancellation boundary; final complete counters, not callback count alone, prove coverage.
+
+Run command (explicit synthetic loopback app/admin URLs supplied by the private test environment):
+
+```powershell
+node scripts/benchmark-opak-maintenance.mjs --run --allow-local-db opak_fixes_perf_20261001 --sizes 500,5000,20000 --samples 20 --concurrency 2 --reuse node_modules/.opak-evidence/t10-baseline-full-for-e-v1.json --output node_modules/.opak-evidence/t10-after-e-v1.json
+```
+
+The private report retains query fingerprints, client wait, server EXPLAIN timing/node aggregates, cursor setup and backfill progress. It contains no SQL parameters, response contents or merchant data. Client wait includes pooling/network/decoding and is not pure DB execution time. A detail result at 500 items changed from 40ms to 60ms, still within target; the evidence does not claim every metric improved.
 
 ## Quality semantics
 
@@ -43,6 +88,6 @@ Revision-aware quality counts exclude pending, failed and outdated contributions
 
 Known AI cost and unknown-cost references use the same current owned-run snapshot across retained listing history. A null cost remains unknown for started, failed and successful runs. Displayed references are bounded while the total remains complete; an exact batch binding links to batch reconciliation. A legacy run without that binding retains its real run ID and listing link for support. The listing may have a newer version. Batch archive does not erase historical costs.
 
-Backfill, migration replay, real app-role isolation, concurrency, malformed rows, whole DB/permission failures and the same-dataset post-change measurements remain acceptance gates until explicitly recorded in the fix ledger. Rollback retains projection metadata, audit, source/version history, accepted work and cost reservations.
+Actual quality PG 20/20 and E read PG 25/25 cover bounded backfill/resume/deadline rollback, migration replay, real app-role isolation, generation concurrency, malformed rows and whole DB/permission failure propagation. The same-dataset comparison above closes the local performance gate. Authorized staging/production validation remains separate. Rollback retains projection metadata, audit, source/version history, accepted work and cost reservations.
 
 See [AI acceptance](opak-ai-acceptance.md) for the explicit `audit-fixtures-v1` adapter and controlled human grading. Dry mode makes zero provider requests and reports `not_evaluated`; it is not AI accuracy evidence. Live AI, low-resolution image acceptance and real merchant comparison remain separately authorized gates.

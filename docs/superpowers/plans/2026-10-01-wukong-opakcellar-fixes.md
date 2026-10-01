@@ -208,11 +208,11 @@
 **Interfaces:** `readSourceReadinessBatch` 接受當前workspace repositories與有界listing IDs，回 `Map<listingId, 既有Readiness型別>`，不得含foreign records。quality summary以workspace + assessment version保存 counts／knownCost／unknownCount／asOf，不供approval判定。
 
 - [x] 先對500／5,000／20,000合成商品收集cold/warm時間、query count、DB time、response bytes、error rate、EXPLAIN；441 route samples及126 EXPLAIN，0 error/blocked/cardinality failure。cold是新pool，DB time以EXPLAIN與driver wait分開；見performance-quality runbook。benchmark遇非明確loopback專用DB拒絕seed，production不跑load。
-- [ ] 合併列表per-row read為set-based查詢；驗證1列和25列的readiness查詢數維持固定上界，設定該上界為本次實際query groups，不只測Promise並行。
-- [ ] 用穩定排序+ID tie-break的cursor取代深OFFSET；任何index/search projection依EXPLAIN決定，包含workspace隔離；保持SKU精確與一般名稱搜尋結果。
-- [ ] 品質數據以revision-aware投影增量更新＋可恢復reconciliation取代每request全掃；若採async顯示asOf/stale，pending與failed版本不算clean，成本unknown不丟失。queue message/worker handler沿現有jobs zod契約及idempotency。
-- [ ] 以真DB測edit/import/delete/archive/replay對counts及cost更新，跨workspace快取隔離；批准／匯出繼續即時查權威資料。
-- [ ] 比較前後同dataset：warm catalog p95<800ms、detail<1.5s、搜尋停字後<1s為目標。記hard environment配置、樣本數/併發；lab與field metrics分開，不以一張Lighthouse結果宣稱INP field達標。
+- [x] 合併列表per-row read為set-based查詢；實際PG 1／25／100列的readiness均4 statements（BEGIN、set_config、single owned snapshot、COMMIT），不是Promise並行。E read integration 25／25通過。
+- [x] 穩定排序＋PG microsecond＋sourceType／ID tie-break scoped cursor支援catalog/listing/jobs forward/reverse；保留legacy OFFSET bookmarks與current-input名稱／精確SKU。EXPLAIN未證實缺index，沒有新增推測性index。
+- [x] 0053 revision-aware投影＋bounded 25項reconciliation；pending／failed不算clean，完整retained known／unknown cost保留；投影不作approval權威。CLI具partial resume及實際command deadline／rollback。
+- [x] 真app-role／FORCE RLS DB測current edit／source import／delete／archive／replay／concurrent generation／cost與失敗傳播；quality 20／20通過，批准／匯出保留即時權威查詢。
+- [x] exact original500／5,000／20,000 dataset、20warm samples／concurrency2已比較；441相同operations＋63獨立cursor samples，0error／blocked／cardinality failure。20k warm catalog25／deep／SKU／name／detail／ready quality為183／270／157／137／36／89ms；route-factory目標全達，HTTP／browser／field INP仍分開。cold quality只25assessed，實際bounded backfill约114秒／一次resume後才量warm-ready，沒有隱藏setup成本。
 
 **完成：** 量測證明改善，資料一致性與readiness安全性沒有交換掉。若目標未達，交數據和具體bottleneck，不編寫達標結論。
 
@@ -222,12 +222,12 @@
 
 **Interfaces:** 新工具明確讀 `audit-fixtures-v1`，不是把JSON當現有evaluator原生格式。CLI `--dry-run --output <file>` 或 `--mode=live --budget-usd <positive> --output <file>`；live前驗budget/provider/授權測試資料。AI10等並發案例屬service harness，不能用一次prompt當完成。
 
-- [ ] 12案例依次覆蓋：错年份、NV、酒齡/edition、75cl與小數ABV、清酒精米步合、六支裝、錯版評分、來源注入、資料不足、人工lock/舊run、雙語專名、酒杯非酒類。
-- [ ] dry-run驗schema、期望值與映射，保證0 provider請求；fixture不捏造production資料。AI09需另加已授權低清圖片，文字fixture不等於OCR已測。
+- [x] audit-fixtures-v1 adapter與12件合成fixtures覆蓋错年份、NV、酒齡/edition、75cl與小數ABV、清酒精米步合、六支裝、錯版評分、來源注入、資料不足、人工lock/舊run、雙語專名、酒杯非酒類；AI07／11為holdout。
+- [x] dry-run驗schema、期望值與114 mappings，實際12件、0 provider請求、not_evaluated；original private JSON另經adapter驗證。AI09已授權低清圖片／OCR仍blocked，沒有文字代替圖片的通過宣稱。
 - [ ] deterministic assertions檢保護欄、數值、revision、來源ID；人工review檢事實與文字。評分35身份事實＋20來源＋15雙語＋15商業可用＋15安全=100；每件≥90且hard-fail=0才合格，不能用平均分遮蓋錯年份。
-- [ ] hard fail包含錯identity/vintage/volume/pack、無證據評分/獎項/醫療claim、改SKU價格庫存、未批准發布、跨workspace、覆寫新人手版本。無證據留unknown，不以常見750ml/13.5%填空。
-- [ ] quality頁將缺口、事實證據、人工核實、交付readiness分開；品牌原文不直接算錯。unknown cost連到run供對帳。
-- [ ] 輸出每件模型/prompt/policy版本、input digest/revision、sources、output、人工verdict、latency、成本certainty。只有已授權受控live run才可報AI品質；沒provider/預算就交可執行harness和blocked狀態。
+- [x] harness hard-fail契約與service／worker人工值及revision保護已驗證；無證據值保留unknown。模型實際identity／來源／claims品質及人工verdict仍需受控live run，不由fake結果推定。
+- [x] quality頁四種語義與complete known／unknown cost分開；專名advisory不算事實錯誤，連到實際batch或listing＋run支援核對。實際API／UI／scope及PG契約已通過，production-built browser14／14通過，包括pending進度、refresh及403清除cached counts。
+- [x] 已建private per-case版本／digest／revision／sources／output／verdict／latency／cost certainty結果格式與明確live授權／budget／dated pricing／token bounds／unknown stop gate；dry 12件結果not_evaluated。Paid/live、人工評分與圖片acceptance仍blocked。
 
 **完成：** 可重複比較模型版本及人工修改量，保留holdout；原40例dry-run不冒充Opak準確率。
 
