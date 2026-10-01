@@ -17,6 +17,27 @@ const workflow = readFileSync(
   new URL(".github/workflows/ci.yml", new URL("../", import.meta.url)),
   "utf8",
 );
+test("runs opt-in Opak browser regressions against their own loopback database", () => {
+  const step = workflow
+    .split("- name: Opak isolated maintenance and read browser acceptance")[1]
+    ?.split("- name: Upload synthetic Opak browser screenshots")[0];
+  assert.ok(step, "opt-in Opak browser cases need a dedicated CI gate");
+  assert.match(step, /WUKONG_OPAK_E2E: "1"/);
+  assert.match(
+    step,
+    /TEST_DATABASE_URL: postgres:\/\/wukong_app:[^\n]+@127\.0\.0\.1:54329\/opak_fixes_browser_ci/,
+  );
+  assert.match(step, /PLAYWRIGHT_BASE_URL: http:\/\/127\.0\.0\.1:49219/);
+  assert.match(step, /AI_PROVIDER: fake/);
+  assert.match(step, /SHOPLINE_ADAPTER: mock/);
+  assert.match(step, /SHOPLINE_PUBLISH_ENABLED: "false"/);
+  assert.match(
+    step,
+    /tests\/e2e\/opak-maintenance-intake\.spec\.ts tests\/e2e\/opak-runtime-read\.spec\.ts/,
+  );
+  assert.match(step, /--workers=1 --retries=0/);
+  assert.doesNotMatch(step, /continue-on-error|\|\| true.*playwright/);
+});
 const turbo = JSON.parse(
   readFileSync(new URL("turbo.json", new URL("../", import.meta.url)), "utf8"),
 );

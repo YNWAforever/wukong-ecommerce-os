@@ -236,3 +236,4 @@ export {
 
 export * from "./wine-display.js";
 export * from "./wine-proposal-diff.js";
+export type { DraftCatalogReadItem } from "./repositories/workspace-reads.js";

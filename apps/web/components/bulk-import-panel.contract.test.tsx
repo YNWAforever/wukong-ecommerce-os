@@ -62,6 +62,10 @@ describe("browser import contract", () => {
       "香港 +新品?#.xlsx",
     );
     const imported = vi.fn(async (_input: BulkFormImportInput) => ({
+      sourceImportId: "source_1",
+      replayed: false,
+      alreadyImportedProducts: 0,
+      merchantAttestedExportAt: _input.merchantAttestedExportAt.toISOString(),
       specVersion: "opak-2026-05" as const,
       parsedRows: 1,
       createdDrafts: 1,
@@ -108,7 +112,10 @@ describe("browser import contract", () => {
     );
     fetcher.mockResolvedValueOnce(
       Response.json({
-        connection: { shopDomain: "synthetic.myshopline.com" },
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          shopDomain: "synthetic.myshopline.com",
+        },
         canImport: true,
         canManageConnection: false,
         credentialStorageConfigured: true,
@@ -151,6 +158,11 @@ describe("browser import contract", () => {
     });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0]![0]).toBe("/api/workspace/import-setup");
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>("#bulk-source-confirmation")!
+        .click(),
+    );
     await act(async () => {
       form.dispatchEvent(
         new Event("submit", { bubbles: true, cancelable: true }),

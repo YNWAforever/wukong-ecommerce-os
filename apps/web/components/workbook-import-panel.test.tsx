@@ -93,7 +93,7 @@ it("automatically previews retained bytes, then explicitly imports the full elig
     .mockReturnValueOnce(pending.promise)
     .mockResolvedValueOnce(
       json({
-        importId: "i",
+        importId: "11111111-1111-4111-8111-111111111111",
         importedProducts: 21,
         alreadyImportedProducts: 0,
         excludedRows: 1,
@@ -117,7 +117,11 @@ it("automatically previews retained bytes, then explicitly imports the full elig
     "x-workbook-header-sha256": "b".repeat(64),
   });
   expect(container.textContent).toContain("21 imported");
-  expect(container.querySelector('a[href="/catalog"]')).not.toBeNull();
+  expect(
+    container.querySelector(
+      'a[href="/catalog?filter=workbook&importId=11111111-1111-4111-8111-111111111111"]',
+    ),
+  ).not.toBeNull();
 });
 it("retains preview and file on save failure; retry saves once and shows replay counts", async () => {
   const pending = deferred();
@@ -386,12 +390,16 @@ it.each([
       vi
         .fn()
         .mockResolvedValueOnce(json(preview()))
-        .mockResolvedValueOnce(json(result)),
+        .mockResolvedValueOnce(
+          json({ importId: "11111111-1111-4111-8111-111111111111", ...result }),
+        ),
     );
     await select();
     await click("Import 21 products");
     const summary = container
-      .querySelector('a[href="/catalog"]')!
+      .querySelector(
+        'a[href="/catalog?filter=workbook&importId=11111111-1111-4111-8111-111111111111"]',
+      )!
       .closest('[role="status"]')!;
     expect(
       summary.compareDocumentPosition(container.querySelector("table")!) &

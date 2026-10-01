@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { createDatabase } from "@wukong/db";
-import { emptyWorkingListing } from "@wukong/core";
+import { emptyWorkingListing, mergeWorkingCandidate } from "@wukong/core";
 import { BULK_FORM_COLUMNS } from "@wukong/shopline";
 import { createBulkFormImporter } from "../../../lib/bulk-form-import";
 import { createEnrichmentBatchService } from "../../../lib/enrichment-batch-service";
@@ -49,7 +49,7 @@ it.each([false, true])(
     const row: Record<string, string> = {
       productId: "remote-synthetic",
       nameEn: "Demo Estate Riesling wine 2024 Germany 750ml 12.5% ABV",
-      nameZh: "",
+      nameZh: "Demo Estate Riesling wine 2024 Germany 750ml 12.5% ABV",
       sku: "001",
       regularPrice: "100",
       quantity: "6",
@@ -75,17 +75,25 @@ it.each([false, true])(
     );
     if (corrected)
       await db.forWorkspace(ws, (r) =>
-        r.listingInputs.initialize(
+        r.listingInputs.save(
           {
             listingId,
             actorId: ws,
             note: "Saved correction",
-            workingContent: {
-              ...emptyWorkingListing(),
-              sku: "CORRECTED",
-              priceHkd: 123,
-              stockQuantity: 9,
-            },
+            expectedInputRevision: 1,
+            baseVersionId: null,
+            operationKey: randomUUID(),
+            requestDigest: "synthetic-correction",
+            changes: [
+              { field: "sku", value: "CORRECTED" },
+              { field: "priceHkd", value: 123 },
+              { field: "stockQuantity", value: 9 },
+              {
+                field: "title.zh-Hant",
+                value: "Synthetic human title",
+                locked: true,
+              },
+            ],
           },
           { workspaceId: ws, actorId: ws, entityId: listingId },
           r.audit,
@@ -94,7 +102,10 @@ it.each([false, true])(
     else
       expect(
         await db.forWorkspace(ws, (r) => r.listingInputs.getCurrent(listingId)),
-      ).toBeNull();
+      ).toMatchObject({
+        revision: 1,
+        workingContent: { sku: "001", priceHkd: 100, stockQuantity: 6 },
+      });
     const enqueue = vi.fn(async () => ({ id: randomUUID() }));
     const service = createEnrichmentBatchService({
       getDatabase: () => db,
@@ -124,7 +135,7 @@ it.each([false, true])(
     const snapshot = await db.forWorkspace(ws, (r) =>
       r.listingInputs.getCurrent(listingId),
     );
-    expect(snapshot?.revision).toBe(1);
+    expect(snapshot?.revision).toBe(corrected ? 2 : 1);
     expect(snapshot?.workingContent).toMatchObject(
       corrected
         ? { sku: "CORRECTED", priceHkd: 123, stockQuantity: 9 }
@@ -134,6 +145,34 @@ it.each([false, true])(
       owner: "operator",
       state: "manual",
     });
+    expect(snapshot?.workingContent.packQuantity).toBeNull();
+    expect(snapshot?.fieldStates["title.zh-Hant"]).toMatchObject(
+      corrected
+        ? { owner: "operator", state: "manual", locked: true }
+        : {
+            owner: "ai",
+            state: "proposed",
+            locked: false,
+            evidenceRefs: [expect.stringMatching(/^source-import:/)],
+          },
+    );
+    const proposed = {
+      ...snapshot!.workingContent,
+      sku: "AI-NOT-ALLOWED",
+      title: {
+        ...snapshot!.workingContent.title,
+        "zh-Hant": "Synthetic proposed title",
+      },
+    };
+    const merged = mergeWorkingCandidate(
+      snapshot!.workingContent,
+      snapshot!.fieldStates,
+      proposed,
+    );
+    expect(merged.sku).toBe(corrected ? "CORRECTED" : "001");
+    expect(merged.title["zh-Hant"]).toBe(
+      corrected ? "Synthetic human title" : "Synthetic proposed title",
+    );
     if (corrected) expect(snapshot?.note).toBe("Saved correction");
     else
       expect(snapshot?.note).toContain(

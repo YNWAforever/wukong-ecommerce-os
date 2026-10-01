@@ -108,12 +108,12 @@
 
 **Interfaces:** `MaintenanceIntent = "maintain-existing" | "reference-only" | "new-draft"`；既有 importer 是唯一 source-binding 寫入途徑。catalog 以 source row ID、listing ID、platform identity 表達關係，三者不可互相代替。
 
-- [ ] 入口固定三選項：「維護已有 SHOPLINE 商品」「整理參考資料」「建立新商品草稿」；第三項連 `/listings/new`。維護入口先顯示商店／連線 readiness。
-- [ ] 參考列的「開始維護」帶入候選身份，要求已連商店及最新合法模板；透過既有 importer 建立 binding。缺原始檔／來源太舊時要求重上載，保留 reference，不複製 rawRow 假造新來源。
-- [ ] 匹配依 store + remote product/variant identity；SKU／名稱只作提示。錯店、不一致年份／容量／pack、重複 ID、歧義變體阻擋或待人工確認；缺少未知資料不預設一致。
-- [ ] 測同檔重播／回應中断不重複；新來源使舊 approval 失效，source digest 不被覆寫；跨 workspace ID 一律拒絕。
-- [ ] catalog 顯示來源筆數、草稿數、已綁定商品數及可點擊範圍；提供草稿視圖讓未連結草稿可找到，不把多来源累加為唯一商品。
-- [ ] 執行 `bulk-form-import`／intake tests、`workspace-reads.integration.test.ts`、`tests/e2e/workbook-import.spec.ts`，完成 20 件合成商品的 import→draft→review。
+- [x] 入口固定三選項：「維護已有 SHOPLINE 商品」「整理參考資料」「建立新商品草稿」；第三項連 `/listings/new`。維護入口先顯示商店／連線 readiness。
+- [x] 參考列的「開始維護」帶入候選身份，要求已連商店及最新合法模板；透過既有 importer 建立 binding。缺原始檔／來源太舊時要求重上載，保留 reference，不複製 rawRow 假造新來源。
+- [x] 匹配依 store + remote product/variant identity；SKU／名稱只作提示。錯店、不一致年份／容量／pack、重複 ID、歧義變體阻擋或待人工確認；缺少未知資料不預設一致。
+- [x] 測同檔重播／回應中断不重複；新來源使舊 approval 失效，source digest 不被覆寫；跨 workspace ID 一律拒絕。
+- [x] catalog 顯示來源筆數、草稿數、已綁定商品數及可點擊範圍；提供草稿視圖讓未連結草稿可找到，不把多来源累加為唯一商品。
+- [x] 執行 `bulk-form-import`／intake tests、`workspace-reads.integration.test.ts`、`tests/e2e/workbook-import.spec.ts`，完成 20 件合成商品的 import→draft→review。
 
 **完成：** 參考來源仍可追溯；有明確動作可接通維護，沒有名稱自動綁定或直接解除 readonly。
 

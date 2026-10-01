@@ -169,6 +169,42 @@ jobs:
         run: node --test tests/sharp-native-bundling.test.mjs tests/pdf-worker-bundling.test.mjs
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+      - name: Opak isolated maintenance and read browser acceptance
+        env:
+          DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_browser_ci
+          DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_browser_ci
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_browser_ci
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_browser_ci
+          WUKONG_OPAK_E2E: "1"
+          PLAYWRIGHT_E2E: "1"
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:49219
+          AI_PROVIDER: fake
+          SHOPLINE_ADAPTER: mock
+          SHOPLINE_PUBLISH_ENABLED: "false"
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          BETTER_AUTH_URL: http://127.0.0.1:49219
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
+        run: |
+          psql postgres://wukong:wukong@127.0.0.1:54329/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE opak_fixes_browser_ci'
+          pnpm --filter @wukong/db db:migrate
+          mkdir -p node_modules/.opak-evidence
+          node apps/web/node_modules/next/dist/bin/next start apps/web --hostname 127.0.0.1 --port 49219 > node_modules/.opak-evidence/browser-server.log 2>&1 &
+          task_server_pid=$!
+          trap 'kill "$task_server_pid" 2>/dev/null || true' EXIT
+          for task_attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:49219/signin > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:49219/signin > /dev/null
+          pnpm exec playwright test tests/e2e/opak-maintenance-intake.spec.ts tests/e2e/opak-runtime-read.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+      - name: Upload synthetic Opak browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opak-synthetic-browser-screenshots
+          path: node_modules/.opak-evidence/*.png
+          if-no-files-found: ignore
       - name: Playwright product-shot acceptance (synthetic images)
         env:
           PLAYWRIGHT_E2E: "1"

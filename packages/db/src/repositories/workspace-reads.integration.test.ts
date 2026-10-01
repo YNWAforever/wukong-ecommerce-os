@@ -50,22 +50,32 @@ describe("full workspace read boundaries", () => {
       const first = await r.reads.catalogPage({
         page: 1,
         pageSize: 100,
-        filter: "all",
+        filter: "unlinked",
       });
       const last = await r.reads.catalogPage({
         page: 51,
         pageSize: 100,
-        filter: "all",
+        filter: "unlinked",
       });
-      expect(first.summary.total).toBe(5007);
+      expect(first.summary.total).toBe(5144);
+      expect(first.summary).toMatchObject({
+        drafts: 137,
+        referenceRows: 0,
+        boundProducts: 0,
+      });
       expect(first.summary.unlinked).toBe(5007);
       expect(last.totalMatching).toBe(5007);
       expect(last.items).toHaveLength(7);
       const ids = [...first.items, ...last.items].map((i) => i.id);
       expect(new Set(ids).size).toBe(107);
       expect(
-        (await r.reads.catalogPage({ page: 51, pageSize: 100, filter: "all" }))
-          .items,
+        (
+          await r.reads.catalogPage({
+            page: 51,
+            pageSize: 100,
+            filter: "unlinked",
+          })
+        ).items,
       ).toEqual(last.items);
       expect(
         (
@@ -106,6 +116,42 @@ describe("full workspace read boundaries", () => {
           })
         ).items,
       ).toEqual([]);
+    });
+  });
+  it("finds standalone editable drafts without inventing a remote product binding", async () => {
+    await db.forWorkspace(workspaceId, async (r) => {
+      const page = await r.reads.catalogPage({
+        page: 2,
+        pageSize: 100,
+        filter: "drafts",
+      });
+      expect(page.totalMatching).toBe(137);
+      expect(page.items).toHaveLength(37);
+      expect(page.items.every((item) => item.sourceType === "draft")).toBe(
+        true,
+      );
+      expect(page.items[0]).not.toHaveProperty("remoteProductId");
+      const searched = await r.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "drafts",
+        q: "listing-137",
+      });
+      expect(searched.totalMatching).toBe(1);
+      expect(searched.items[0]).toMatchObject({
+        sourceType: "draft",
+        title: "listing-137",
+      });
+      expect(
+        (
+          await r.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "drafts",
+            q: "foreign-only",
+          })
+        ).totalMatching,
+      ).toBe(0);
     });
   });
   it("listing and merged ledger navigate all history beyond 100 without tenant leakage", async () => {
@@ -219,8 +265,15 @@ describe("full workspace read boundaries", () => {
         filter: "review",
         q: "測試葡萄酒",
       });
-      expect(page.totalMatching).toBe(1);
-      expect(page.items[0]).toMatchObject({
+      expect(page.totalMatching).toBe(131);
+      const bound = await r.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "review",
+        q: "product-5007",
+      });
+      expect(bound.totalMatching).toBe(1);
+      expect(bound.items[0]).toMatchObject({
         remoteProductId: "product-5007",
         title: "測試葡萄酒",
         openBlockingFlagCount: 1,
@@ -228,10 +281,10 @@ describe("full workspace read boundaries", () => {
         needsAttention: true,
       });
       expect(page.summary).toMatchObject({
-        total: 5007,
+        total: 5143,
         linked: 1,
         unlinked: 5006,
-        needsReview: 1,
+        needsReview: 131,
       });
       const listing = await r.reads.listingPage({
         page: 2,

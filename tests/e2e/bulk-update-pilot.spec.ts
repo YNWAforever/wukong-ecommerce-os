@@ -50,8 +50,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   const requests: string[] = [];
   page.on("request", (request) => {
     if (
@@ -88,14 +87,18 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
     await page
       .getByRole("button", { name: /Refresh status|重新整理狀態/ })
       .click();
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await time.fill("");
+    await page.locator("#bulk-source-confirmation").check();
     await submit.click();
     await expect(
       page.locator("form.intake-form").getByRole("status"),
     ).toContainText("Enter the SHOPLINE export time.");
     expect(requests).toHaveLength(0);
     await time.fill("2026-01-01T00:15");
+    await page.locator("#bulk-source-confirmation").check();
     await page.route(
       "**/api/listings/import?**",
       (route) => route.abort("failed"),
@@ -169,8 +172,7 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
   } finally {
     await admin.end();
   }
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   await page.locator("#bulk-import-file").setInputFiles({
     name: filename,
     mimeType:
@@ -203,8 +205,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   const operator = await prepareBulkUpdateFixture();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await signInBulkImportOperator(page, operator);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, operator, false);
   const rows = ["0001", "0002"].map((sku) => ({
     ...defaults,
     productId: "synthetic-update-" + sku,
@@ -236,6 +237,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   expect((await imported).status()).toBe(201);
   await page.goto("/batches");
@@ -1082,21 +1084,24 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
   await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
 
-  // W7: re-importing the same workbook re-binds both approvals to a new source
-  // import. That must be visible when it happens, and the status must stay.
+  // W7: a distinct original export with unchanged cells re-binds approvals.
+  // Identical-byte retries are covered separately and must not re-bind.
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/listings/import");
   await page.evaluate(() => {
     document.cookie = "locale=en; path=/; max-age=31536000";
   });
   await page.reload();
-  await page.getByRole("tab", { name: "Workbook", exact: true }).click();
-  await page.locator("#connected-shopline-update > summary").click();
   await page.locator("#bulk-import-file").setInputFiles({
     name: "synthetic-task5-reimport.xlsx",
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: input,
+    buffer: (() => {
+      const comment = Buffer.from("synthetic distinct original export");
+      const fresh = Buffer.concat([input, comment]);
+      fresh.writeUInt16LE(comment.length, input.length - 2);
+      return fresh;
+    })(),
   });
   await page
     .locator("#merchant-attested-export-at")
@@ -1106,6 +1111,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   const reimportResponse = await reimported;
   expect(reimportResponse.status()).toBe(201);
@@ -1143,7 +1149,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     page.getByText("Approval invalidated (Re-imported, row unchanged)"),
   ).toBeVisible();
 
-  // The new import is byte-for-byte identical, but its import ID is newer.
+  // The fresh workbook has unchanged cells but distinct bytes/import identity.
   // The old review version must not accept fresh confirmations.
   await expect(
     page.getByText(
@@ -1251,8 +1257,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
       },
       { times: 1 },
     );
-    await signInBulkImportOperator(page, setupFixture);
-    await page.locator("#connected-shopline-update > summary").click();
+    await signInBulkImportOperator(page, setupFixture, false);
     const file = page.locator("#bulk-import-file");
     const time = page.locator("#merchant-attested-export-at");
     const submit = page.getByRole("button", { name: "Start import" });
@@ -1304,6 +1309,8 @@ test("admin sets up a store inline without losing the selected workbook", async 
       .getByRole("button", { name: "連線 Connect", exact: true })
       .click();
     expect((await connected).status()).toBe(200);
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await expect(
       page.getByText("synthetic-inline-store.invalid", { exact: true }),
@@ -1332,13 +1339,6 @@ test("admin sets up a store inline without losing the selected workbook", async 
           { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
         ]);
       await page.reload();
-      await page
-        .getByRole("tab", {
-          name: locale === "en" ? "Workbook" : "試算表",
-          exact: true,
-        })
-        .click();
-      await page.locator("#connected-shopline-update > summary").click();
       await expect(
         page.getByText("synthetic-inline-store.invalid", { exact: true }),
       ).toBeVisible();

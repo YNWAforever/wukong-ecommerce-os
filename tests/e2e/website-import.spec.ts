@@ -23,6 +23,9 @@ test("signed website scan saves immutable evidence without a connection across l
   try {
     await admin`update memberships set role='reviewer' where workspace_id=${fixture.workspaceId}`;
     await signInBulkImportOperator(page, fixture, false);
+    await page
+      .getByRole("button", { name: "Reference only", exact: true })
+      .click();
     await expect(
       page.getByRole("heading", { name: "Catalog import", exact: true }),
     ).toBeVisible();
@@ -164,6 +167,9 @@ test("partial preview and retry retain evidence until the replacement completes"
 }, testInfo) => {
   const fixture = await prepareBulkImportFixture();
   await signInBulkImportOperator(page, fixture, false);
+  await page
+    .getByRole("button", { name: "Reference only", exact: true })
+    .click();
   await page
     .getByLabel("Website URL", { exact: true })
     .fill("https://website.synthetic.example/partial");

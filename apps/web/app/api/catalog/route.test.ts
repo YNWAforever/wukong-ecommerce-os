@@ -2,10 +2,15 @@ import {
   filterCatalogItemsServer,
   summarizeCatalog,
 } from "../../../lib/catalog-contract";
+const readiness = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/source-readiness", () => ({
-  readSourceReadiness: async () => null,
+  readSourceReadiness: readiness,
 }));
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ListingDataError } from "@wukong/db";
+beforeEach(() => {
+  readiness.mockReset().mockResolvedValue(null);
+});
 
 import { createCatalogHandler } from "./route.js";
 
@@ -135,8 +140,10 @@ function makeHandler({
               },
             },
             platformProducts: {
-              async getByIds(ids: string[]) {
-                return products.filter((p) => ids.includes(p.id));
+              async getByIdsIsolated(ids: string[]) {
+                return products
+                  .filter((p) => ids.includes(p.id))
+                  .map((product) => ({ id: product.id, product, error: null }));
               },
             },
           });
@@ -147,6 +154,45 @@ function makeHandler({
 }
 
 describe("GET /api/catalog", () => {
+  it("keeps a malformed record visible and blocked without breaking healthy rows", async () => {
+    readiness.mockImplementation(
+      async (_repositories, _workspace, listingId) => {
+        if (listingId === "bad")
+          throw new ListingDataError("invalid_active_version");
+        return null;
+      },
+    );
+    const { handler } = makeHandler({
+      products: [
+        product({ id: "bad_product", listingId: "bad" }),
+        product({ id: "healthy_product", listingId: "healthy" }),
+      ],
+    });
+    const response = await handler(buildRequest());
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.items).toHaveLength(2);
+    expect(
+      body.items.find((item: { id: string }) => item.id === "bad_product"),
+    ).toMatchObject({
+      readState: "blocked",
+      sourceReadiness: null,
+      supportRequestId: response.headers.get("x-request-id"),
+    });
+    expect(
+      body.items.find((item: { id: string }) => item.id === "healthy_product"),
+    ).toMatchObject({ readState: "ready" });
+  });
+  it("does not disguise a global source permission fault as an empty catalog", async () => {
+    readiness.mockRejectedValue(
+      Object.assign(new Error("synthetic database fault"), { code: "42501" }),
+    );
+    const { handler } = makeHandler({ products: [product({ id: "one" })] });
+    const response = await handler(buildRequest());
+    expect(response.status).toBe(500);
+    expect(await response.json()).not.toHaveProperty("items");
+    expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9-]{36}$/);
+  });
   it("requires an authenticated workspace session", async () => {
     const handler = createCatalogHandler({
       sessionContext: {
@@ -399,7 +445,7 @@ it("website source pages skip platform hydration and readiness", async () => {
                 };
               },
             },
-            platformProducts: { getByIds: hydrate },
+            platformProducts: { getByIdsIsolated: hydrate },
           }),
       }) as never,
   });
@@ -443,7 +489,7 @@ it("accepts workbook filter and enriches source readiness only for platform IDs"
                 };
               },
             },
-            platformProducts: { getByIds: hydrate },
+            platformProducts: { getByIdsIsolated: hydrate },
           }),
       }) as never,
   });

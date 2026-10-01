@@ -161,6 +161,38 @@ describe("platform product repository", () => {
       expect(found).toEqual([]);
     });
   });
+  it("classifies malformed facts after the SQL read and isolates that product only", async () => {
+    const [bad] =
+      await admin`update platform_products set facts_prefill='{"volumeMl":"bad"}'::jsonb where workspace_id=${workspaceId} and remote_product_id='aaaaaaaaaaaaaaaaaaaaaa01' returning id`;
+    const [good] =
+      await admin`select id from platform_products where workspace_id=${workspaceId} and remote_product_id='aaaaaaaaaaaaaaaaaaaaaa02'`;
+    try {
+      await expect(
+        database.forWorkspace(workspaceId, (r) =>
+          r.platformProducts.getByIds([bad!.id]),
+        ),
+      ).rejects.toMatchObject({
+        name: "ListingDataError",
+        reason: "invalid_platform_product",
+      });
+      const reads = await database.forWorkspace(workspaceId, (r) =>
+        r.platformProducts.getByIdsIsolated([bad!.id, good!.id]),
+      );
+      expect(reads.find((r) => r.id === bad!.id)).toMatchObject({
+        error: { reason: "invalid_platform_product" },
+      });
+      expect(reads.find((r) => r.id === good!.id)).toMatchObject({
+        product: { id: good!.id },
+      });
+      expect(
+        await database.forWorkspace(otherWorkspaceId, (r) =>
+          r.platformProducts.getByIdsIsolated([bad!.id, good!.id]),
+        ),
+      ).toEqual([]);
+    } finally {
+      await admin`update platform_products set facts_prefill=${admin.json(factsFixture)} where id=${bad!.id}`;
+    }
+  });
 
   it("writes a whole batch in one statement", async () => {
     const written = await database.forWorkspace(

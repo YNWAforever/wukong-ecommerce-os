@@ -6,7 +6,9 @@ import { useLocale } from "../lib/locale-context";
 import { AdminConnectionPanel } from "./admin-connection-panel";
 
 const summarySchema = z.object({
-  connection: z.object({ shopDomain: z.string().min(1) }).nullable(),
+  connection: z
+    .object({ id: z.string().min(1), shopDomain: z.string().min(1) })
+    .nullable(),
   canManageConnection: z.boolean(),
   canImport: z.boolean(),
   credentialStorageConfigured: z.boolean(),
@@ -16,7 +18,7 @@ type Summary = z.infer<typeof summarySchema>;
 export function ImportStoreSetupPanel({
   onImportReadyChange,
 }: {
-  onImportReadyChange: (ready: boolean) => void;
+  onImportReadyChange: (ready: boolean, connectionId?: string) => void;
 }) {
   const locale = useLocale();
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -52,7 +54,10 @@ export function ImportStoreSetupPanel({
       const next = summarySchema.parse(await response.json());
       if (controller.signal.aborted) return;
       setSummary(next);
-      onImportReadyChange(Boolean(next.connection && next.canImport));
+      onImportReadyChange(
+        Boolean(next.connection && next.canImport),
+        next.connection?.id,
+      );
     } catch {
       if (!controller.signal.aborted) {
         setSummary(null);
@@ -99,6 +104,14 @@ export function ImportStoreSetupPanel({
           )
         )}
       </p>
+      {summary?.connection ? (
+        <p className="helper-copy">
+          {copy(
+            "此處只核對已儲存的商店設定；即時 API 狀態及首次真寫入仍待確認。",
+            "This checks the saved store configuration. Live API health and first real write remain unverified.",
+          )}
+        </p>
+      ) : null}
       {!loading && !failure && summary && (
         <>
           {!summary.canImport && (

@@ -18,11 +18,12 @@ import {
 import Link from "next/link";
 import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type { CatalogPage, PlatformCatalogItem } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { SourceReadinessSummary } from "./source-readiness-summary";
+import { SupportRequestId } from "./support-request-id";
 import {
   CATALOG_FILTERS,
   type CatalogFilter,
@@ -65,8 +66,9 @@ export function CatalogControlCenter({
     () => initialDestinationSearch(initialSearch),
     [initialSearch],
   );
-  const importId = exactQueryId(params.get("importId"));
-  const invalidImport = params.has("importId") && !importId;
+  const [workspaceScope, setWorkspaceScope] = useState(false);
+  const importId = workspaceScope ? null : exactQueryId(params.get("importId"));
+  const invalidImport = !workspaceScope && params.has("importId") && !importId;
   const returnTo = params.get("returnTo");
   const locale = useLocale();
   const c = commonCopy[locale];
@@ -96,6 +98,7 @@ export function CatalogControlCenter({
   // Synchronize URL-owned controls without remounting detail or export forms.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
+    setWorkspaceScope(false);
     setQuery(destinationQuery);
     setFilter(destinationFilter);
     setPage(destinationPage);
@@ -142,6 +145,21 @@ export function CatalogControlCenter({
     data && !invalidImport && data.importId === importId
       ? data.page
       : EMPTY_RESPONSE;
+  useEffect(() => {
+    const blocked = new Set(
+      response.items
+        .filter(
+          (item) =>
+            item.sourceType === "platform" && item.readState === "blocked",
+        )
+        .map((item) => (item as PlatformCatalogItem).listingId),
+    );
+    if (blocked.size)
+      setSelectedListings((current) => {
+        const next = new Map([...current].filter(([id]) => !blocked.has(id)));
+        return next.size === current.size ? current : next;
+      });
+  }, [response.items]);
 
   // What actually gets attested: prefer the digest on the row as it appears
   // on the current page, and only fall back to the digest captured at the
@@ -163,7 +181,15 @@ export function CatalogControlCenter({
         );
         const digest = visibleRow ? visibleRow.contentDigest : capturedDigest;
         return { listingId, contentDigest: digest ?? NO_CONTENT_DIGEST };
-      }),
+      }).filter(
+        (item) =>
+          !response.items.some(
+            (row) =>
+              row.sourceType === "platform" &&
+              row.listingId === item.listingId &&
+              row.readState === "blocked",
+          ),
+      ),
     [selectedListings, response.items],
   );
 
@@ -175,6 +201,13 @@ export function CatalogControlCenter({
   function handleFilterChange(value: CatalogFilter) {
     setFilter(value);
     setPage(1);
+  }
+  function handleMetricChange(value: CatalogFilter) {
+    setWorkspaceScope(true);
+    handleFilterChange(value);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("importId");
+    window.history.replaceState(null, "", url.pathname + url.search);
   }
 
   const returnLink = returnTo ? (
@@ -250,12 +283,19 @@ export function CatalogControlCenter({
       ) : null}
       <div className={styles.metrics}>
         <Metric
+          value={response.summary.drafts}
+          label={localized(locale, "商品草稿流程", "Listing workflows")}
+          onClick={() => handleMetricChange("drafts")}
+        />
+        <Metric
           value={response.summary.workbook}
           label={localized(locale, "試算表商品", "Workbook products")}
+          onClick={() => handleMetricChange("workbook")}
         />
         <Metric
           value={response.summary.website}
           label={localized(locale, "網站商品", "Website products")}
+          onClick={() => handleMetricChange("website")}
         />
         <Metric
           value={response.summary.unlinked}
@@ -264,26 +304,40 @@ export function CatalogControlCenter({
             "未連結的平台商品",
             "Unlinked platform products",
           )}
+          onClick={() => handleMetricChange("unlinked")}
         />
         <Metric
           value={response.summary.total}
-          label={localized(locale, "商品", "Products")}
+          label={localized(
+            locale,
+            "目錄紀錄（包含參考資料）",
+            "Catalog records (including references)",
+          )}
+          onClick={() => handleMetricChange("all")}
         />
         <Metric
           value={response.summary.linked}
-          label={localized(locale, "已連結", "Linked")}
+          label={localized(
+            locale,
+            "已綁定 SHOPLINE 商品",
+            "Bound SHOPLINE products",
+          )}
+          onClick={() => handleMetricChange("bound")}
         />
         <Metric
           value={response.summary.needsReview}
           label={localized(locale, "待審核", "Needs review")}
+          onClick={() => handleMetricChange("review")}
         />
         <Metric
           value={response.summary.needsAttention}
           label={localized(locale, "需處理", "Attention")}
+          onClick={() => handleMetricChange("attention")}
         />
         <Metric
           value={response.summary.published}
           label={localized(locale, "已發佈", "Published")}
+          onClick={() => handleMetricChange("published")}
         />
       </div>
 
@@ -326,8 +380,8 @@ export function CatalogControlCenter({
           <p className={styles.resultCount} aria-live="polite">
             {localized(
               locale,
-              `顯示第 ${page} 頁 · 符合 ${response.totalMatching} / ${response.summary.total} 個商品`,
-              `Page ${page} · ${response.totalMatching} matching / ${response.summary.total} products`,
+              `顯示第 ${page} 頁 · 符合 ${response.totalMatching} / ${response.summary.total} 筆目錄紀錄；${response.summary.referenceRows ?? response.summary.website + response.summary.workbook} 筆為參考資料`,
+              `Page ${page} · ${response.totalMatching} matching / ${response.summary.total} catalog records; ${response.summary.referenceRows ?? response.summary.website + response.summary.workbook} are references`,
             )}
           </p>
         </div>
@@ -478,12 +532,53 @@ export function CatalogControlCenter({
                         </td>
                       </tr>
                     );
+                  if (item.sourceType === "draft")
+                    return (
+                      <tr key={`draft:${item.id}`}>
+                        <td />
+                        <td>
+                          <strong className={styles.productTitle}>
+                            {item.title}
+                          </strong>
+                          <span className={styles.productMeta}>
+                            {item.sku ??
+                              localized(locale, "未有 SKU", "No SKU")}
+                          </span>
+                        </td>
+                        <td>
+                          {localized(locale, "獨立草稿", "Standalone draft")}
+                        </td>
+                        <td>{stateLabel(item.listingStatus, locale)}</td>
+                        <td>
+                          {item.readState === "blocked" ? (
+                            <SupportRequestId value={item.supportRequestId} />
+                          ) : (
+                            <SourceReadinessSummary
+                              readiness={item.sourceReadiness}
+                              compact
+                            />
+                          )}
+                        </td>
+                        <td>{item.openBlockingFlagCount}</td>
+                        <td>
+                          <Link
+                            href={withWorkbenchReturn(
+                              `/listings/${item.listingId}`,
+                              returnTo,
+                            )}
+                          >
+                            {localized(locale, "開啟草稿", "Open draft")}
+                          </Link>
+                        </td>
+                      </tr>
+                    );
                   const tone = catalogStatusTone(item.listingStatus);
                   return (
                     <tr key={`platform:${item.id}`}>
                       <td>
                         {item.origin === "import" &&
                         item.listingId &&
+                        item.readState !== "blocked" &&
                         response.capabilities.canGenerateBulkUpdate ? (
                           <input
                             type="checkbox"
@@ -538,10 +633,21 @@ export function CatalogControlCenter({
                         </span>
                       </td>
                       <td>
-                        <SourceReadinessSummary
-                          readiness={item.sourceReadiness}
-                          compact
-                        />
+                        {item.readState === "blocked" ? (
+                          <div>
+                            {localized(
+                              locale,
+                              "此列暫不可用",
+                              "This row is unavailable",
+                            )}
+                            <SupportRequestId value={item.supportRequestId} />
+                          </div>
+                        ) : (
+                          <SourceReadinessSummary
+                            readiness={item.sourceReadiness}
+                            compact
+                          />
+                        )}
                       </td>
                       <td>
                         {item.openBlockingFlagCount === null ? (
@@ -617,15 +723,39 @@ export function CatalogControlCenter({
   );
 }
 
-function Metric({ value, label }: { value: number; label: string }) {
+function Metric({
+  value,
+  label,
+  onClick,
+}: {
+  value: number | undefined;
+  label: string;
+  onClick?: () => void;
+}) {
   const locale = useLocale();
   const labelId = useId();
-  return (
-    <div className={styles.metric} role="group" aria-labelledby={labelId}>
-      <span className={styles.metricValue}>{formatNumber(value, locale)}</span>
+  const content = (
+    <>
+      <span className={styles.metricValue}>
+        {value === undefined ? "—" : formatNumber(value, locale)}
+      </span>
       <span className={styles.metricLabel} id={labelId}>
         {label}
       </span>
+    </>
+  );
+  return onClick ? (
+    <button
+      type="button"
+      className={styles.metric}
+      aria-labelledby={labelId}
+      onClick={onClick}
+    >
+      {content}
+    </button>
+  ) : (
+    <div className={styles.metric} role="group" aria-labelledby={labelId}>
+      {content}
     </div>
   );
 }
