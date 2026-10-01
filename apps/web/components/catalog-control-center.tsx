@@ -100,12 +100,14 @@ export function CatalogControlCenter({
     destinationFilter,
     destinationPage,
     queryState.work,
+    queryState.cursor,
   ]);
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [query, setQuery] = useState(destinationQuery);
   const [settledQuery, setSettledQuery] = useState(destinationQuery);
   const [filter, setFilter] = useState<CatalogFilter>(destinationFilter);
   const [page, setPage] = useState(destinationPage);
+  const [cursor, setCursor] = useState(queryState.cursor);
   // Synchronize URL-owned controls without remounting detail or export forms.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
@@ -113,13 +115,17 @@ export function CatalogControlCenter({
     setSettledQuery(destinationQuery);
     setFilter(destinationFilter);
     setPage(destinationPage);
+    setCursor(queryState.cursor);
   }
   useEffect(() => {
     if (query === settledQuery) return;
     const timeout = setTimeout(() => {
       setSettledQuery(query);
       setPage(1);
-      workQuery.navigate(catalogQuery({ ...queryState, q: query, page: 1 }));
+      setCursor(undefined);
+      workQuery.navigate(
+        catalogQuery({ ...queryState, q: query, page: 1, cursor: undefined }),
+      );
     }, 300);
     return () => clearTimeout(timeout);
   }, [query, settledQuery, destination, workQuery.navigate]);
@@ -128,8 +134,13 @@ export function CatalogControlCenter({
     setWebsiteDetailId(null);
   }, []);
   function changePage(value: number) {
+    const cursor = value > page ? response.nextCursor : response.previousCursor;
     setPage(value);
-    workQuery.navigate(catalogQuery({ ...queryState, page: value }), "push");
+    setCursor(cursor ?? undefined);
+    workQuery.navigate(
+      catalogQuery({ ...queryState, page: value, cursor: cursor ?? undefined }),
+      "push",
+    );
   }
   const departing = useRef(false);
   const restoreFrame = useRef<number | null>(null);
@@ -189,10 +200,22 @@ export function CatalogControlCenter({
       });
       if (invalidImport) throw new Error("Invalid import link");
       if (importId) params.set("importId", importId);
+      if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/catalog?${params.toString()}`, {
         cache: "no-store",
         signal,
       });
+      if (response.status === 400 && cursor) {
+        const failure = await response.json();
+        if (!signal.aborted && failure.code === "invalid_cursor") {
+          setAccessRevoked(true);
+          setCursor(undefined);
+          setPage(1);
+          workQuery.navigate(
+            catalogQuery({ ...queryState, page: 1, cursor: undefined }),
+          );
+        }
+      }
       if (
         !signal.aborted &&
         (response.status === 401 || response.status === 403)
@@ -204,7 +227,15 @@ export function CatalogControlCenter({
       if (!signal.aborted) setAccessRevoked(false);
       return { importId, page: pageData };
     },
-    [page, settledQuery, filter, importId, invalidImport, queryState.work],
+    [
+      page,
+      cursor,
+      settledQuery,
+      filter,
+      importId,
+      invalidImport,
+      queryState.work,
+    ],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     loadCatalog,
@@ -410,20 +441,29 @@ export function CatalogControlCenter({
     setSettledQuery(query);
     setFilter(value);
     setPage(1);
-    workQuery.navigate(
-      catalogQuery({ ...queryState, q: query, filter: value, page: 1 }),
-    );
-  }
-  function handleMetricChange(value: CatalogFilter) {
-    setSettledQuery(query);
-    setFilter(value);
-    setPage(1);
+    setCursor(undefined);
     workQuery.navigate(
       catalogQuery({
         ...queryState,
         q: query,
         filter: value,
         page: 1,
+        cursor: undefined,
+      }),
+    );
+  }
+  function handleMetricChange(value: CatalogFilter) {
+    setSettledQuery(query);
+    setFilter(value);
+    setPage(1);
+    setCursor(undefined);
+    workQuery.navigate(
+      catalogQuery({
+        ...queryState,
+        q: query,
+        filter: value,
+        page: 1,
+        cursor: undefined,
         importId: null,
         invalidImport: false,
       }),
@@ -628,7 +668,14 @@ export function CatalogControlCenter({
             value={queryState.work}
             locale={locale}
             onChange={(work) =>
-              workQuery.navigate(catalogQuery({ ...queryState, work, page: 1 }))
+              workQuery.navigate(
+                catalogQuery({
+                  ...queryState,
+                  work,
+                  page: 1,
+                  cursor: undefined,
+                }),
+              )
             }
           />
           <label className={styles.searchField}>
@@ -1011,7 +1058,12 @@ export function CatalogControlCenter({
             type="button"
             className={styles.pageButton}
             onClick={() => changePage(Math.max(1, page - 1))}
-            disabled={loading || page === 1}
+            disabled={
+              loading ||
+              (response.previousCursor !== undefined
+                ? response.previousCursor === null
+                : page === 1)
+            }
           >
             {localized(locale, "上一頁", "Previous")}
           </button>
@@ -1022,7 +1074,12 @@ export function CatalogControlCenter({
             type="button"
             className={styles.pageButton}
             onClick={() => changePage(page + 1)}
-            disabled={loading || response.totalMatching <= page * PAGE_SIZE}
+            disabled={
+              loading ||
+              (response.nextCursor !== undefined
+                ? response.nextCursor === null
+                : response.totalMatching <= page * PAGE_SIZE)
+            }
           >
             {localized(locale, "下一頁", "Next")}
           </button>

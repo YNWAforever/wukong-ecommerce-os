@@ -305,6 +305,109 @@ it("debounces rapid zero-prefixed SKU typing, then restores a prior page on pops
     await unmount(root);
   }
 });
+it("keeps cursor pagination in URL/back navigation and clears it before a debounced search fetch", async () => {
+  const calls: URL[] = [];
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    calls.push(url);
+    return Response.json(
+      pageResponse([makeItem({ id: "cursor-row" })], {
+        page: Number(url.searchParams.get("page")),
+        nextCursor: "opaque-next",
+        previousCursor: "opaque-previous",
+      }),
+    );
+  });
+  const { container, root } = await mount(
+    fetcher,
+    "q=000674&page=2&cursor=opaque-start",
+  );
+  try {
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(calls.at(-1)!.searchParams.get("cursor")).toBe("opaque-next");
+    expect(window.location.search).toContain("cursor=opaque-next");
+    await act(async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/catalog?q=000674&page=2&cursor=opaque-start",
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(calls.at(-1)!.searchParams.get("cursor")).toBe("opaque-start");
+    await act(async () =>
+      nativeSet(
+        container.querySelector<HTMLInputElement>('input[type="search"]')!,
+        "000675",
+      ),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 330));
+    });
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("000675");
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("1");
+    expect(calls.at(-1)!.searchParams.has("cursor")).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});
+it("clears old scoped selections when a trusted cursor refresh reports a changed role scope", async () => {
+  let changed = false;
+  const calls: URL[] = [];
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    calls.push(url);
+    if (changed && url.searchParams.has("cursor"))
+      return Response.json({ code: "invalid_cursor" }, { status: 400 });
+    return Response.json(
+      pageResponse(
+        [
+          makeItem({
+            id: "scoped",
+            listingId: "00000000-0000-4000-8000-000000000001",
+          }),
+        ],
+        {
+          selectionScope: changed ? "new-role" : "old-role",
+          capabilities: {
+            canMaintainProducts: true,
+            canGenerateBulkUpdate: false,
+            canRecordImportResult: false,
+          },
+        },
+      ),
+    );
+  });
+  const { container, root } = await mount(fetcher, "page=2&cursor=old-scope");
+  try {
+    await act(async () =>
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    changed = true;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(calls.at(-1)!.searchParams.has("cursor")).toBe(false);
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("1");
+    expect(
+      sessionStorage.getItem("wukong:catalog:selection:old-role"),
+    ).toBeNull();
+    expect(
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});
 
 /**
  * Fetcher used by the tests that page/paginate: always echoes back a

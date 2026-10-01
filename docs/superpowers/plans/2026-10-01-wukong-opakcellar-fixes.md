@@ -207,7 +207,7 @@
 
 **Interfaces:** `readSourceReadinessBatch` 接受當前workspace repositories與有界listing IDs，回 `Map<listingId, 既有Readiness型別>`，不得含foreign records。quality summary以workspace + assessment version保存 counts／knownCost／unknownCount／asOf，不供approval判定。
 
-- [ ] 先對500／5,000／20,000合成商品收集cold/warm時間、query count、DB time、response bytes、error rate、EXPLAIN；benchmark腳本遇非local/明確allowlisted staging即拒絕seed，production不跑load。
+- [x] 先對500／5,000／20,000合成商品收集cold/warm時間、query count、DB time、response bytes、error rate、EXPLAIN；441 route samples及126 EXPLAIN，0 error/blocked/cardinality failure。cold是新pool，DB time以EXPLAIN與driver wait分開；見performance-quality runbook。benchmark遇非明確loopback專用DB拒絕seed，production不跑load。
 - [ ] 合併列表per-row read為set-based查詢；驗證1列和25列的readiness查詢數維持固定上界，設定該上界為本次實際query groups，不只測Promise並行。
 - [ ] 用穩定排序+ID tie-break的cursor取代深OFFSET；任何index/search projection依EXPLAIN決定，包含workspace隔離；保持SKU精確與一般名稱搜尋結果。
 - [ ] 品質數據以revision-aware投影增量更新＋可恢復reconciliation取代每request全掃；若採async顯示asOf/stale，pending與failed版本不算clean，成本unknown不丟失。queue message/worker handler沿現有jobs zod契約及idempotency。

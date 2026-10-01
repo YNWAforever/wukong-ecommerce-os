@@ -59,13 +59,13 @@ export const readPageCopy = {
       eyebrow: "內容品質",
       title: "內容品質總覽，誠實反映目前內容。",
       description:
-        "六項內容缺口訊號與 AI 總成本，皆根據商品目前的實際內容計算，而非匯入當下的舊快照。",
+        "查看目前文案缺口、事實證據、人工核實與交付條件，並核對保留的 AI 成本。未完成更新的統計會清楚標示。",
     },
     en: {
       eyebrow: "Quality",
       title: "Content quality based on current evidence.",
       description:
-        "Six content gap signals reflect current product content. AI cost covers retained workspace history.",
+        "Inspect current copy gaps, fact evidence, human verification and delivery readiness alongside retained AI costs. Incomplete counts remain explicit.",
     },
   },
 } satisfies Record<

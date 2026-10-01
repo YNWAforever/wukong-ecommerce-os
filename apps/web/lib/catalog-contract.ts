@@ -82,6 +82,8 @@ export type CatalogPage = {
   page: number;
   pageSize: number;
   totalMatching: number;
+  nextCursor?: string | null;
+  previousCursor?: string | null;
 };
 
 export function summarizeCatalog(

@@ -303,7 +303,7 @@ describe("full workspace read boundaries", () => {
       select workspace_id,id,'synthetic','cost-'||id,'fake','fake','succeeded','{}',1,0.25,'2025-01-01' from listing_drafts where workspace_id in (${workspaceId},${otherId})`;
     const { createQualityHandler } =
       await import("../../../../apps/web/app/api/quality/route.js");
-    const response = await createQualityHandler({
+    const handler = createQualityHandler({
       sessionContext: {
         resolve: async () => ({
           workspaceId,
@@ -312,7 +312,33 @@ describe("full workspace read boundaries", () => {
         }),
       },
       getDatabase: () => db,
-    })();
+    });
+    const first = await handler();
+    expect(first.status).toBe(200);
+    const initial = await first.json();
+    expect(initial).toMatchObject({
+      totalListings: 137,
+      noActiveVersion: 6,
+      totalCostUsd: 34.25,
+      consistency: "revision_aware_projection",
+      projection: { state: "pending", stale: true },
+    });
+    expect(initial.totalAssessed).toBeLessThanOrEqual(25);
+    expect(initial.projection.pendingCount).toBeGreaterThan(0);
+    const { computeCurrentContentGaps } =
+      await import("../quality-content-assessor.js");
+    let settled = false;
+    for (let batch = 0; batch < 6; batch++) {
+      const summary = await db.forWorkspace(workspaceId, (r) =>
+        r.qualityProjection.reconcile(computeCurrentContentGaps, { limit: 25 }),
+      );
+      if (!summary.projection.stale) {
+        settled = true;
+        break;
+      }
+    }
+    expect(settled).toBe(true);
+    const response = await handler();
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       totalListings: 137,
@@ -320,7 +346,13 @@ describe("full workspace read boundaries", () => {
       noActiveVersion: 6,
       unassessableActiveVersion: 0,
       scope: "workspace_current_content",
-      consistency: "bounded_scan",
+      consistency: "revision_aware_projection",
+      projection: {
+        state: "ready",
+        stale: false,
+        pendingCount: 0,
+        failedCount: 0,
+      },
       totalCostUsd: 34.25,
     });
   });

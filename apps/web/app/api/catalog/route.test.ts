@@ -5,6 +5,13 @@ import {
 const readiness = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/source-readiness", () => ({
   readSourceReadiness: readiness,
+  loadSourceReadinessBatch: async (
+    repositories: unknown,
+    workspaceId: string,
+  ) => ({
+    read: (id: string | null, link: unknown) =>
+      readiness(repositories, workspaceId, id, link),
+  }),
 }));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ListingDataError } from "@wukong/db";

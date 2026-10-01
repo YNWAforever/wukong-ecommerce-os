@@ -2,7 +2,13 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { it, expect, vi } from "vitest";
-const current = vi.hoisted(() => ({ locale: "zh-Hant", authenticated: true }));
+const current = vi.hoisted(() => ({
+  locale: "zh-Hant",
+  authenticated: true,
+  workspaceId: "wrapper-workspace",
+  actorId: "wrapper-actor",
+  role: "viewer",
+}));
 const workspaceRead = vi.hoisted(() => vi.fn());
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: current.locale }) }),
@@ -20,9 +26,9 @@ vi.mock("../lib/session-context", () => ({
     resolve: async () =>
       current.authenticated
         ? {
-            workspaceId: "wrapper-workspace",
-            actorId: "wrapper-actor",
-            role: "viewer",
+            workspaceId: current.workspaceId,
+            actorId: current.actorId,
+            role: current.role,
           }
         : null,
   },
@@ -130,6 +136,34 @@ it("redirects an absent server session before reading workspace account data", a
       "redirect:/signin",
     );
     expect(workspaceRead.mock.calls).toHaveLength(readsBefore);
+  } finally {
+    current.authenticated = true;
+  }
+});
+
+it("remounts quality work when the server workspace, actor or role changes", async () => {
+  const clientKey = async () => (await QualityPage()).props.children.at(-1).key;
+  const initial = await clientKey();
+  try {
+    current.workspaceId = "wrapper-other";
+    const switched = await clientKey();
+    expect(switched).not.toBe(initial);
+    current.actorId = "wrapper-other-actor";
+    const otherActor = await clientKey();
+    expect(otherActor).not.toBe(switched);
+    current.role = "operator";
+    expect(await clientKey()).not.toBe(otherActor);
+  } finally {
+    current.workspaceId = "wrapper-workspace";
+    current.actorId = "wrapper-actor";
+    current.role = "viewer";
+  }
+});
+
+it("redirects quality when the current server membership is absent", async () => {
+  current.authenticated = false;
+  try {
+    await expect(QualityPage()).rejects.toThrow("redirect:/signin");
   } finally {
     current.authenticated = true;
   }

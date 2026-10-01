@@ -130,7 +130,7 @@ type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
  * so a malformed prefill would flow straight through the boundary. Parse it at
  * the seam, the way the workspace repository parses its profile jsonb.
  */
-const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
+export const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
   const origin = platformProductOriginSchema.safeParse(row.origin);
   const facts =
     row.factsPrefill === null
@@ -232,7 +232,7 @@ export function createPlatformProductRepository(
             eq(platformProducts.listingId, listingId),
           ),
         )
-        .orderBy(desc(platformProducts.updatedAt))
+        .orderBy(desc(platformProducts.updatedAt), desc(platformProducts.id))
         .limit(1);
       return row ? toPlatformProduct(row) : null;
     },
