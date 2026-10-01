@@ -571,7 +571,9 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   );
   const snapshotTime = new Date(Date.now() + 8 * 60 * 60 * 1000)
     .toISOString()
-    .slice(0, 19);
+    .slice(0, 19)
+    // HTML normalizes zero seconds away; Playwright requires canonical input.
+    .replace(/:00$/, "");
   const snapshotSheet = sheet.map((row) => row.map((cell) => cell ?? ""));
   const matchingBytes = Buffer.from(
     writeBulkFormWorkbook([
