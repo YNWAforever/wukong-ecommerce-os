@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -590,6 +591,12 @@ describe.skipIf(!enabled)(
       const entry = fileURLToPath(
         new URL("../cli/quality-backfill.ts", import.meta.url),
       );
+      // Resolve the DB package's declared loader, independent of incidental root hoisting.
+      const loader = pathToFileURL(
+        createRequire(new URL("../../package.json", import.meta.url)).resolve(
+          "tsx",
+        ),
+      ).href;
       return new Promise<{
         code: number | string;
         body: Record<string, unknown>;
@@ -598,7 +605,7 @@ describe.skipIf(!enabled)(
           process.execPath,
           [
             "--import",
-            "tsx",
+            loader,
             entry,
             "--workspace-id",
             ws,
