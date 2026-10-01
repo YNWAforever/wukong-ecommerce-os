@@ -85,10 +85,12 @@ export function AssignmentPanel({
   listingIds,
   locale,
   onUpdated,
+  onSettled,
 }: {
   listingIds: string[];
   locale: Locale;
   onUpdated?(): void;
+  onSettled?(selectionKey: string): void;
 }) {
   const key = [...new Set(listingIds)].sort().join(",");
   const ids = key ? key.split(",") : [];
@@ -106,9 +108,11 @@ export function AssignmentPanel({
     mutation: object | null;
   } | null>(null);
   const updated = useRef(onUpdated);
+  const settled = useRef(onSettled);
   useEffect(() => {
     updated.current = onUpdated;
-  }, [onUpdated]);
+    settled.current = onSettled;
+  }, [onUpdated, onSettled]);
   useEffect(() => {
     const abort = new AbortController();
     const scope = {
@@ -131,6 +135,7 @@ export function AssignmentPanel({
     setSnapshot(null);
     if (!key || ids.length > 100) {
       setLoading(false);
+      settled.current?.(key);
       return dispose;
     }
     void (async () => {
@@ -152,7 +157,10 @@ export function AssignmentPanel({
       } catch {
         if (current()) setError(true);
       } finally {
-        if (current()) setLoading(false);
+        if (current()) {
+          setLoading(false);
+          settled.current?.(key);
+        }
       }
     })();
     return dispose;

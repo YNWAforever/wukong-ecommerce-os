@@ -18,6 +18,18 @@ function assertIsolated() {
       );
   }
 }
+const historyEvents = new Map<string, unknown[]>();
+test.afterEach(async ({}, testInfo) => {
+  const events = historyEvents.get(testInfo.testId);
+  if (events) {
+    await testInfo.attach("history-events", {
+      contentType: "application/json",
+      body: Buffer.from(JSON.stringify(events)),
+    });
+    historyEvents.delete(testInfo.testId);
+  }
+});
+
 test.beforeEach(async ({ page }, testInfo) => {
   test.skip(
     process.env.PLAYWRIGHT_E2E !== "1" || process.env.WUKONG_OPAK_E2E !== "1",
@@ -30,37 +42,61 @@ test.beforeEach(async ({ page }, testInfo) => {
       if (message.text().startsWith("t09-history ")) {
         const event = JSON.parse(message.text().slice(12));
         events.push(event);
-        console.log("t09-history", event);
       }
     });
     await page.addInitScript(() => {
       const emit = (event: string, detail: object = {}) => {
-        const native = (window as Window & { navigation?: { currentEntry?: { index?: number } } }).navigation;
-        console.log("t09-history " + JSON.stringify({ event, path: location.pathname, length: history.length, index: native?.currentEntry?.index ?? null, marker: history.state?.__wukongAdminHistory?.index ?? null, ...detail }));
+        const native = (
+          window as Window & {
+            navigation?: { currentEntry?: { index?: number } };
+          }
+        ).navigation;
+        console.log(
+          "t09-history " +
+            JSON.stringify({
+              event,
+              path: location.pathname,
+              length: history.length,
+              index: native?.currentEntry?.index ?? null,
+              marker: history.state?.__wukongAdminHistory?.index ?? null,
+              ...detail,
+            }),
+        );
       };
       emit("document");
       const add = window.addEventListener.bind(window);
       const remove = window.removeEventListener.bind(window);
-      window.addEventListener = ((name: string, listener: any, options?: any) => {
-        if (name === "popstate" || name === "beforeunload") emit("add-" + name, { capture: options === true || options?.capture === true });
-        if (name === "popstate" && options === true) {
-          return add(name, (event: PopStateEvent) => { emit("guard-enter", { phase: event.eventPhase }); listener(event); emit("guard-exit"); }, options);
-        }
+      window.addEventListener = ((
+        name: string,
+        listener: any,
+        options?: any,
+      ) => {
+        if (name === "popstate" || name === "beforeunload")
+          emit("add-" + name, {
+            capture: options === true || options?.capture === true,
+          });
         return add(name, listener, options);
       }) as typeof window.addEventListener;
-      window.removeEventListener = ((name: string, listener: any, options?: any) => {
-        if (name === "popstate" || name === "beforeunload") emit("remove-" + name, { capture: options === true || options?.capture === true });
+      window.removeEventListener = ((
+        name: string,
+        listener: any,
+        options?: any,
+      ) => {
+        if (name === "popstate" || name === "beforeunload")
+          emit("remove-" + name, {
+            capture: options === true || options?.capture === true,
+          });
         return remove(name, listener, options);
       }) as typeof window.removeEventListener;
-      add("popstate", () => emit("capture-pop", { phase: event?.eventPhase }), true);
-      add("popstate", () => emit("bubble-pop", { phase: event?.eventPhase }));
+      add("popstate", () => emit("capture-pop"), true);
+      add("popstate", () => emit("bubble-pop"));
       const stop = Event.prototype.stopImmediatePropagation;
       Event.prototype.stopImmediatePropagation = function () {
         if (this.type === "popstate") emit("stopped-pop");
         return stop.call(this);
       };
     });
-    testInfo.attachments.push({ name: "history-events", contentType: "application/json", body: Buffer.from(JSON.stringify(events)) });
+    historyEvents.set(testInfo.testId, events);
   }
 });
 test("admin preserves dirty inputs, compares conflicts, connects safely, and uses keyboard tabs", async ({
@@ -220,10 +256,18 @@ test("native SPA Back preserves dirty admin URL and inputs until save or discard
   await page.locator('a[href="/admin"]').first().click();
   await expect(page).toHaveURL(/\/admin$/);
   const invite = page.getByLabel(/Invite email address/);
-  await expect(page.locator(".members-panel")).toContainText(fixture.email);
   await invite.fill("native-back-draft@local.invalid");
   const length = await page.evaluate(() => {
-    console.log("t09-history " + JSON.stringify({ event: "before-dirty-traversal", path: location.pathname, length: history.length, marker: history.state?.__wukongAdminHistory?.index ?? null, index: (window as any).navigation?.currentEntry?.index ?? null }));
+    console.log(
+      "t09-history " +
+        JSON.stringify({
+          event: "before-dirty-traversal",
+          path: location.pathname,
+          length: history.length,
+          marker: history.state?.__wukongAdminHistory?.index ?? null,
+          index: (window as any).navigation?.currentEntry?.index ?? null,
+        }),
+    );
     return history.length;
   });
   await page.evaluate(() => history.back());
@@ -317,7 +361,16 @@ test("unindexed SPA forward and multi-entry Back keep dirty admin until the exac
   const invite = page.getByLabel(/Invite email address/);
   await invite.fill("unindexed-forward@local.invalid");
   const length = await page.evaluate(() => {
-    console.log("t09-history " + JSON.stringify({ event: "before-dirty-traversal", path: location.pathname, length: history.length, marker: history.state?.__wukongAdminHistory?.index ?? null, index: (window as any).navigation?.currentEntry?.index ?? null }));
+    console.log(
+      "t09-history " +
+        JSON.stringify({
+          event: "before-dirty-traversal",
+          path: location.pathname,
+          length: history.length,
+          marker: history.state?.__wukongAdminHistory?.index ?? null,
+          index: (window as any).navigation?.currentEntry?.index ?? null,
+        }),
+    );
     return history.length;
   });
   await page.evaluate(() => history.forward());

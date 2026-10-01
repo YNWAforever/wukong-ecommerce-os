@@ -27,7 +27,14 @@ import {
 import Link from "next/link";
 import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { CatalogPage, PlatformCatalogItem } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -124,7 +131,15 @@ export function CatalogControlCenter({
     setPage(value);
     workQuery.navigate(catalogQuery({ ...queryState, page: value }), "push");
   }
+  const departing = useRef(false);
+  const restoreFrame = useRef<number | null>(null);
   function rememberPosition() {
+    // Retire this mounted catalog before saving a position for its next arrival.
+    departing.current = true;
+    if (restoreFrame.current !== null) {
+      cancelAnimationFrame(restoreFrame.current);
+      restoreFrame.current = null;
+    }
     if (selectionScope) {
       try {
         sessionStorage.setItem(
@@ -235,26 +250,93 @@ export function CatalogControlCenter({
         selectedListings,
       );
   }, [selectionScope, maintenanceSelection, selectedListings]);
+  const canMaintain =
+    response.capabilities.canMaintainProducts ??
+    response.capabilities.canGenerateBulkUpdate;
+  const assignmentKey = useMemo(
+    () => [...maintenanceSelection].sort().join(","),
+    [maintenanceSelection],
+  );
+  const assignmentLayoutKey = JSON.stringify([
+    selectionScope,
+    canMaintain ? assignmentKey : "",
+  ]);
+  const [assignmentLayout, setAssignmentLayout] = useState({
+    key: assignmentLayoutKey,
+    settled: false,
+  });
+  // Each selection needs its own completed read, including A -> B -> A.
+  if (assignmentLayout.key !== assignmentLayoutKey) {
+    setAssignmentLayout({ key: assignmentLayoutKey, settled: false });
+  }
+  const assignmentSettled = useCallback(
+    (key: string) => {
+      if (key !== assignmentKey) return;
+      setAssignmentLayout((current) =>
+        current.key === assignmentLayoutKey
+          ? { ...current, settled: true }
+          : current,
+      );
+    },
+    [assignmentKey, assignmentLayoutKey],
+  );
+  const assignmentLayoutReady =
+    !canMaintain ||
+    !assignmentKey ||
+    (assignmentLayout.key === assignmentLayoutKey && assignmentLayout.settled);
   useEffect(() => {
-    if (!selectionScope || loading) return;
+    if (
+      departing.current ||
+      !selectionScope ||
+      selectionScope !== response.selectionScope ||
+      loading ||
+      !assignmentLayoutReady
+    )
+      return;
     try {
       const key = "wukong:catalog:scroll:" + selectionScope;
-      const saved = JSON.parse(sessionStorage.getItem(key) ?? "null");
+      const stored = sessionStorage.getItem(key);
+      const saved = JSON.parse(stored ?? "null");
       if (
         saved?.href === catalogContextKey(window.location.search) &&
         Number.isFinite(saved.y) &&
         saved.y >= 0
       ) {
-        sessionStorage.removeItem(key);
-        requestAnimationFrame(() => window.scrollTo(0, saved.y));
+        // Assignment actions change the document height. Restore only after
+        // their current read has rendered; an earlier frame can clamp the Y.
+        const frame = requestAnimationFrame(() => {
+          restoreFrame.current = null;
+          try {
+            if (
+              departing.current ||
+              window.location.pathname !== "/catalog" ||
+              saved.href !== catalogContextKey(window.location.search) ||
+              sessionStorage.getItem(key) !== stored
+            )
+              return;
+            window.scrollTo(0, saved.y);
+            sessionStorage.removeItem(key);
+          } catch {
+            /* Optional same-session position. */
+          }
+        });
+        restoreFrame.current = frame;
+        return () => {
+          cancelAnimationFrame(frame);
+          if (restoreFrame.current === frame) restoreFrame.current = null;
+        };
       }
     } catch {
       /* Optional same-session position. */
     }
-  }, [selectionScope, loading]);
-  const canMaintain =
-    response.capabilities.canMaintainProducts ??
-    response.capabilities.canGenerateBulkUpdate;
+  }, [
+    selectionScope,
+    response.selectionScope,
+    loading,
+    assignmentLayoutReady,
+    assignmentLayoutKey,
+    destination,
+  ]);
   const visibleSelected = new Set(
     response.items.flatMap((item) =>
       item.sourceType === "platform" || item.sourceType === "draft"
@@ -532,6 +614,7 @@ export function CatalogControlCenter({
             listingIds={[...maintenanceSelection]}
             locale={locale}
             onUpdated={reload}
+            onSettled={assignmentSettled}
           />
         ) : null}
         {exportListings.length > 0 ? (

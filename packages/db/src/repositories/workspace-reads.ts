@@ -108,16 +108,21 @@ export function createWorkspaceReadRepository(
   workspaceId: string,
   scope: WorkspaceScope,
 ) {
+  // Human-owned or locked current input takes precedence over an older AI version.
+  // Both projections join the same workspace/listing/revision before using it.
+  const currentTitleZh = sql`case when i.id is null then v.content->'title'->>'zh-Hant' when v.id is null or i.field_states->'title.zh-Hant'->>'owner'='operator' or i.field_states->'title.zh-Hant'->>'locked'='true' then i.working_content->'title'->>'zh-Hant' else v.content->'title'->>'zh-Hant' end`;
+  const currentTitleEn = sql`case when i.id is null then v.content->'title'->>'en' when v.id is null or i.field_states->'title.en'->>'owner'='operator' or i.field_states->'title.en'->>'locked'='true' then i.working_content->'title'->>'en' else v.content->'title'->>'en' end`;
   const catalog = sql`
   select 'platform'::text as "sourceType",null::text as "sourceUrl",null::text as "capturedAt", p.id, p.remote_product_id as "remoteProductId",p.origin,p.sku,p.listing_id as "listingId",
-   p.spec_version as "specVersion",coalesce(v.content->'title'->>'zh-Hant',v.content->'title'->>'en',p.sku,p.remote_product_id) as title,
+   p.spec_version as "specVersion",coalesce(nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),p.sku,p.remote_product_id) as title,
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
    coalesce(d.status in ('in_review','reopened'),false) as "needsReview",
    (p.listing_id is null or d.id is null or d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0) as "needsAttention",
    p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId"
   from platform_products p
   left join listing_drafts d on d.id=p.listing_id and d.workspace_id=${workspaceId}
-  left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId}
+  left join listing_input_revisions i on i.workspace_id=${workspaceId} and i.listing_id=d.id and i.revision=d.input_revision
+  left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId} and v.listing_id=d.id
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
   where p.workspace_id=${workspaceId}
@@ -126,8 +131,7 @@ export function createWorkspaceReadRepository(
   union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
   from workbook_products w where w.workspace_id=${workspaceId}
   union all select 'draft',null,null,d.id,null,null,case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end,d.id,null,
-   coalesce(nullif(case when i.id is null then v.content->'title'->>'zh-Hant' when v.id is null or i.field_states->'title.zh-Hant'->>'owner'='operator' or i.field_states->'title.zh-Hant'->>'locked'='true' then i.working_content->'title'->>'zh-Hant' else v.content->'title'->>'zh-Hant' end,''),
-    nullif(case when i.id is null then v.content->'title'->>'en' when v.id is null or i.field_states->'title.en'->>'owner'='operator' or i.field_states->'title.en'->>'locked'='true' then i.working_content->'title'->>'en' else v.content->'title'->>'en' end,''),nullif(left(d.note,120),''),d.id::text),
+   coalesce(nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),nullif(left(d.note,120),''),d.id::text),
    d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
    (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null
   from listing_drafts d

@@ -145,9 +145,28 @@ test("two authenticated operators racing to claim have one winner and one audite
     await admin`insert into listing_drafts(id,workspace_id,target,note) values (${listingId},${first.workspaceId},'shopline','Synthetic claim race')`;
     await signInBulkImportOperator(page, first, false);
     await signInBulkImportOperator(secondPage, second, false);
-    const switchResponse = secondPage.waitForResponse(response => response.url().endsWith("/api/workspace/select"));
-    await secondPage.getByRole("combobox", {name: "Select workspace", exact: true}).selectOption(first.workspaceId);
-    expect((await switchResponse).status()).toBe(200);
+    const runtime = postgres(RUNTIME_URL, { max: 1, prepare: false });
+    try {
+      const rows =
+        await runtime`select exists(select 1 from auth_get_active_membership(${second.userId},${first.workspaceId}) where workspace_id=${first.workspaceId} and actor_id=${second.userId} and role='operator') as allowed`;
+      expect(rows[0]?.allowed).toBe(true);
+    } finally {
+      await runtime.end();
+    }
+    const identity = await secondPage.request.get("/api/account");
+    expect(identity.status()).toBe(200);
+    expect((await identity.json()).user.userId).toBe(second.userId);
+    const switchResponse = secondPage.waitForResponse((response) =>
+      response.url().endsWith("/api/workspace/select"),
+    );
+    await secondPage
+      .getByRole("combobox", { name: "Select workspace", exact: true })
+      .selectOption(first.workspaceId);
+    const switched = await switchResponse;
+    expect(await switched.request().headerValue("origin")).toBe(
+      new URL(String(testInfo.project.use.baseURL)).origin,
+    );
+    expect(switched.status()).toBe(200);
     await expect(secondPage).toHaveURL(/\/dashboard$/);
     const claim = (userId: string) => ({
       items: [

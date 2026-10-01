@@ -858,6 +858,63 @@ describe("full workspace read boundaries", () => {
     ]);
     expect((await read("新的中文標題")).totalMatching).toBe(0);
   });
+  it("searches current human names on bound products while retaining source SKU identity", async () => {
+    const listingId = await db.forWorkspace(currentWorkspace, async (repos) => {
+      const draft = await repos.listings.create({ target: "shopline" });
+      await repos.listingInputs.initialize(
+        {
+          listingId: draft.id,
+          actorId: "synthetic",
+          workingContent: {
+            ...emptyWorkingListing(),
+            sku: "LOCAL-CURRENT",
+            title: {
+              en: "Current bound name fixture",
+              "zh-Hant": "目前人工商品名稱",
+            },
+          },
+        },
+        {
+          workspaceId: currentWorkspace,
+          actorId: "synthetic",
+          entityId: draft.id,
+        },
+        repos.audit,
+      );
+      return draft.id;
+    });
+    const ownConnection = randomUUID();
+    await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${ownConnection},${currentWorkspace},'synthetic-current.invalid','fixture')`;
+    await admin`insert into platform_products(workspace_id,connection_id,remote_product_id,listing_id,sku,origin) values (${currentWorkspace},${ownConnection},'synthetic-bound-current',${listingId},'000888','created')`;
+    const result = await db.forWorkspace(currentWorkspace, (repos) =>
+      repos.reads.catalogPage({
+        page: 1,
+        pageSize: 25,
+        filter: "bound",
+        q: "目前人工商品名稱",
+      }),
+    );
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        sourceType: "platform",
+        listingId,
+        title: "目前人工商品名稱",
+        sku: "000888",
+      }),
+    ]);
+    expect(
+      (
+        await db.forWorkspace(currentWorkspace, (repos) =>
+          repos.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "bound",
+            q: "000888",
+          }),
+        )
+      ).totalMatching,
+    ).toBe(1);
+  });
   it("paginates current responsibility in SQL and treats removed or demoted assignees as unassigned", async () => {
     const actorId = randomUUID(),
       manager = randomUUID();

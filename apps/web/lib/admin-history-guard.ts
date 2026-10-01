@@ -15,7 +15,8 @@ export type AdminHistoryHost = {
 const MARKER = "__wukongAdminHistory";
 /** Restore a refused traversal, then replay it only after the form guard agrees.
  * No sentinel/push entries are created, so repeated Stay never grows history.
- * Next's popstate handler is a bubble listener; our host installs capture first.
+ * The browser host uses the beforeInteractive bridge: Window popstate runs at
+ * the target in registration order, so a late capture listener is insufficient.
  */
 export function installAdminHistoryGuard(
   host: AdminHistoryHost,

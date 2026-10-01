@@ -12,11 +12,19 @@ import { AdminSettingsPanel } from "./admin-settings-panel";
 import { CapabilityRegistryPanel } from "./capability-registry-panel";
 import { WorkspaceReadinessPanel } from "./workspace-readiness-panel";
 import { installAdminHistoryGuard } from "../lib/admin-history-guard";
+import type { AdminPopstateBridge } from "../lib/admin-popstate-bridge";
 import styles from "./admin-tabs.module.css";
+import {
+  subscribeClientContextChangeGuard,
+  type ClientContextChangeRequest,
+} from "../lib/client-context-change-guard";
 type AdminTab = "members" | "connection" | "settings" | "capabilities";
 const TABS: AdminTab[] = ["members", "connection", "settings", "capabilities"];
 type Destination =
-  { tab: AdminTab } | { href: string } | { historyDelta: number };
+  | { tab: AdminTab }
+  | { href: string }
+  | { historyDelta: number }
+  | { contextChange: ClientContextChangeRequest };
 export function AdminTabs() {
   return (
     <AdminDirtyProvider>
@@ -31,6 +39,19 @@ function GuardedAdminTabs() {
   const [focused, setFocused] = useState<AdminTab>("members");
   const [pending, setPending] = useState<Destination | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const pendingRef = useRef<Destination | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const updatePending = (destination: Destination | null) => {
+    pendingRef.current = destination;
+    if (mounted.current) setPending(destination);
+  };
   const { hasDirty, saveAll, discardAll } = useAdminDirtyNavigation();
   const dialog = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -41,30 +62,47 @@ function GuardedAdminTabs() {
   const dirtyRef = useRef(hasDirty);
   dirtyRef.current = hasDirty;
   const commit = (destination: Destination) => {
-    setPending(null);
+    if (!mounted.current) return;
+    if ("contextChange" in destination && !destination.contextChange.pending) {
+      updatePending(null);
+      return;
+    }
+    updatePending(null);
     if ("tab" in destination) {
       setActive(destination.tab);
       setFocused(destination.tab);
       document.getElementById(`admin-tab-${destination.tab}`)?.focus();
     } else {
       navigating.current = true;
-      if ("historyDelta" in destination)
+      if ("contextChange" in destination) {
+        destination.contextChange.onSettled((outcome) => {
+          if (outcome !== "completed") navigating.current = false;
+        });
+        destination.contextChange.approve();
+      } else if ("historyDelta" in destination)
         historyGuard.current?.leave(destination.historyDelta);
       else window.location.assign(destination.href);
     }
   };
   const request = (destination: Destination) => {
-    if (pending || saving) return;
+    if (pendingRef.current || savingRef.current || navigating.current) {
+      if ("contextChange" in destination) destination.contextChange.cancel();
+      return;
+    }
     if (!hasDirty) {
       commit(destination);
       return;
     }
     previousFocus.current = document.activeElement as HTMLElement | null;
-    setPending(destination);
+    updatePending(destination);
   };
   const requestRef = useRef(request);
   requestRef.current = request;
   useEffect(() => {
+    const bridge = (
+      window as Window & { __wukongAdminPopstateBridge?: AdminPopstateBridge }
+    ).__wukongAdminPopstateBridge;
+    let unsubscribe: (() => void) | undefined;
     const guard = installAdminHistoryGuard(
       {
         history: window.history,
@@ -80,13 +118,21 @@ function GuardedAdminTabs() {
           window.dispatchEvent(new PopStateEvent("popstate", { state }));
         },
         addEventListener(name, listener) {
-          window.addEventListener(name, listener, true);
+          if (bridge) unsubscribe = bridge.subscribe(listener);
+          else window.addEventListener(name, listener, true);
         },
         removeEventListener(name, listener) {
-          window.removeEventListener(name, listener, true);
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = undefined;
+          } else window.removeEventListener(name, listener, true);
         },
       },
-      () => dirtyRef.current,
+      () =>
+        dirtyRef.current ||
+        savingRef.current ||
+        pendingRef.current !== null ||
+        navigating.current,
       (delta) => requestRef.current({ historyDelta: delta }),
     );
     historyGuard.current = guard;
@@ -95,9 +141,34 @@ function GuardedAdminTabs() {
       if (historyGuard.current === guard) historyGuard.current = null;
     };
   }, []);
+  useEffect(
+    () =>
+      subscribeClientContextChangeGuard(
+        () =>
+          dirtyRef.current ||
+          savingRef.current ||
+          pendingRef.current !== null ||
+          navigating.current,
+        (change) => {
+          change.onSettled(() => {
+            const current = pendingRef.current;
+            if (
+              current &&
+              "contextChange" in current &&
+              current.contextChange === change
+            )
+              updatePending(null);
+          });
+          requestRef.current({ contextChange: change });
+        },
+      ),
+    [],
+  );
   const stay = () => {
-    if (saving) return;
-    setPending(null);
+    if (savingRef.current) return;
+    const current = pendingRef.current;
+    if (current && "contextChange" in current) current.contextChange.cancel();
+    updatePending(null);
     previousFocus.current?.focus();
   };
   useEffect(() => {
@@ -111,8 +182,14 @@ function GuardedAdminTabs() {
     return () => window.removeEventListener("beforeunload", unload);
   }, [hasDirty]);
   useEffect(() => {
-    if (!hasDirty) return;
     const click = (event: MouseEvent) => {
+      if (
+        !dirtyRef.current &&
+        !savingRef.current &&
+        !pendingRef.current &&
+        !navigating.current
+      )
+        return;
       if (
         event.defaultPrevented ||
         event.button !== 0 ||
@@ -140,11 +217,11 @@ function GuardedAdminTabs() {
         return;
       event.preventDefault();
       event.stopPropagation();
-      request({ href: url.href });
+      requestRef.current({ href: url.href });
     };
     document.addEventListener("click", click, true);
     return () => document.removeEventListener("click", click, true);
-  });
+  }, []);
   useEffect(() => {
     if (pending)
       dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -270,12 +347,14 @@ function GuardedAdminTabs() {
                 className="primary-button"
                 disabled={saving}
                 onClick={async () => {
-                  if (saving) return;
+                  if (savingRef.current) return;
+                  savingRef.current = true;
                   setSaving(true);
                   try {
                     if (await saveAll()) commit(pending);
                   } finally {
-                    setSaving(false);
+                    savingRef.current = false;
+                    if (mounted.current) setSaving(false);
                   }
                 }}
               >

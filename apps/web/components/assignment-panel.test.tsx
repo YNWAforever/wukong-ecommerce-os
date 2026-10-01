@@ -394,3 +394,91 @@ it("keeps the latest read when GET responses finish in reverse order", async () 
     "Viewer access cannot claim or assign work",
   );
 });
+
+it.each([200, 403])(
+  "reports current assignment layout completion after success or failure (%s)",
+  async (status) => {
+    const read = deferred<Response>();
+    const settled = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => read.promise),
+    );
+    await act(async () =>
+      root.render(
+        <AssignmentPanel
+          listingIds={[ids[0]]}
+          locale="en"
+          onSettled={settled}
+        />,
+      ),
+    );
+    expect(settled).not.toHaveBeenCalled();
+    await act(async () =>
+      read.resolve(
+        Response.json(status === 200 ? selectedSnapshot(ids[0]) : {}, {
+          status,
+        }),
+      ),
+    );
+    expect(settled).toHaveBeenCalledExactlyOnceWith(ids[0]);
+    expect(container.textContent).not.toContain("Loading assignments");
+  },
+);
+
+it("never reports retired selection or unmounted assignment reads as settled", async () => {
+  const oldRead = deferred<Response>(),
+    newRead = deferred<Response>();
+  const settled = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockReturnValueOnce(oldRead.promise)
+      .mockReturnValueOnce(newRead.promise),
+  );
+  await act(async () =>
+    root.render(
+      <AssignmentPanel listingIds={[ids[0]]} locale="en" onSettled={settled} />,
+    ),
+  );
+  await act(async () =>
+    root.render(
+      <AssignmentPanel listingIds={[ids[1]]} locale="en" onSettled={settled} />,
+    ),
+  );
+  await act(async () =>
+    oldRead.resolve(Response.json(selectedSnapshot(ids[0]))),
+  );
+  expect(settled).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  await act(async () =>
+    newRead.resolve(Response.json(selectedSnapshot(ids[1]))),
+  );
+  expect(settled).not.toHaveBeenCalled();
+});
+
+it("reports the static selection limit layout without starting an assignment read", async () => {
+  const settled = vi.fn(),
+    fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  const selection = Array.from(
+    { length: 101 },
+    (_, index) =>
+      `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  );
+  await act(async () =>
+    root.render(
+      <AssignmentPanel
+        listingIds={selection}
+        locale="en"
+        onSettled={settled}
+      />,
+    ),
+  );
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Assign up to 100 listings");
+  expect(settled).toHaveBeenCalledExactlyOnceWith(
+    [...selection].sort().join(","),
+  );
+});

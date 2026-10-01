@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+import { requestClientContextChange } from "../lib/client-context-change-guard";
 import { AdminTabs } from "./admin-tabs";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: Root[] = [];
@@ -300,5 +301,95 @@ describe("AdminTabs", () => {
     await act(async () => link.dispatchEvent(event));
     expect(event.defaultPrevented).toBe(true);
     expect(c.querySelector('[role="alertdialog"]')).not.toBeNull();
+  });
+
+  it("workspace Stay/failed save retain inputs and approve context work only after a successful save", async () => {
+    let rejectSave = true;
+    vi.stubGlobal(
+      "fetch",
+      fixtureFetch(async () =>
+        Response.json(
+          { message: "Synthetic conflict" },
+          { status: rejectSave ? 409 : 200 },
+        ),
+      ),
+    );
+    const c = await mount();
+    await type(
+      c.querySelector('input[type="email"]')!,
+      "guard@example.invalid",
+    );
+    const work = vi.fn().mockResolvedValue(undefined);
+    let result!: Promise<boolean>;
+    await act(async () => {
+      result = requestClientContextChange(
+        { kind: "workspace", workspaceId: "second" },
+        work,
+      );
+    });
+    expect(work).not.toHaveBeenCalled();
+    await click(choice(c, "Stay"));
+    expect(await result).toBe(false);
+    expect(
+      (c.querySelector('input[type="email"]') as HTMLInputElement).value,
+    ).toBe("guard@example.invalid");
+    await act(async () => {
+      result = requestClientContextChange(
+        { kind: "workspace", workspaceId: "second" },
+        work,
+      );
+    });
+    await click(choice(c, "Save"));
+    expect(work).not.toHaveBeenCalled();
+    expect(c.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(
+      (c.querySelector('input[type="email"]') as HTMLInputElement).value,
+    ).toBe("guard@example.invalid");
+    rejectSave = false;
+    await click(choice(c, "Save"));
+    expect(await result).toBe(true);
+    expect(work).toHaveBeenCalledOnce();
+    expect(c.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+  it("workspace Discard executes once without saving a draft, and unmount cancels a held request", async () => {
+    const fetcher = fixtureFetch();
+    vi.stubGlobal("fetch", fetcher);
+    const c = await mount();
+    await type(
+      c.querySelector('input[type="email"]')!,
+      "discard@example.invalid",
+    );
+    const work = vi.fn().mockResolvedValue(undefined);
+    let result!: Promise<boolean>;
+    await act(async () => {
+      result = requestClientContextChange(
+        { kind: "workspace", workspaceId: "second" },
+        work,
+      );
+    });
+    await click(choice(c, "Discard"));
+    expect(await result).toBe(true);
+    expect(work).toHaveBeenCalledOnce();
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(0);
+    const finished = roots.pop()!;
+    await act(async () => finished.unmount());
+    const fresh = await mount();
+    await type(
+      fresh.querySelector('input[type="email"]')!,
+      "held@example.invalid",
+    );
+    await act(async () => {
+      result = requestClientContextChange(
+        { kind: "workspace", workspaceId: "third" },
+        work,
+      );
+    });
+    expect(fresh.querySelector('[role="alertdialog"]')).not.toBeNull();
+    const current = roots.pop()!;
+    await act(async () => current.unmount());
+    expect(await result).toBe(false);
+    expect(work).toHaveBeenCalledOnce();
   });
 });

@@ -165,11 +165,11 @@
 
 **Interfaces:** URL 僅存非敏感 q、status/source scope、page/cursor、kind；保留現有 route keys。query parser 統一 server initial state與client navigation；debounce 定為300ms。selection 與 return-scroll 保留在同 session，按workspace/role清空，不把大批 IDs 塞進URL。
 
-- [ ] SKU字串保留前置零；300ms 停止輸入後才送 request；保留既有 AbortController及latest-response保護。刷新、back/forward、jobs kind都還原正確篩選。
-- [ ] 搜尋 replace URL，明確頁面切換可 push；切換 query 重設頁碼/cursor，避免先發舊page請求；登入角色/工作區變更清除selection。
-- [ ] 短頁首＋一列統計＋選中後才出現bulk bar；無export權限者仍可選品／交審，但看到清楚權限說明。
-- [ ] 詳情改有標題的側欄：開啟移focus、Esc關閉、關閉還原原按鈕、長內容scroll，手機全屏。避免詳情插在表格上方卻無反應。
-- [ ] 擴充 `tests/e2e/catalog-usability.spec.ts`：桌面1348×926看見搜尋及至少5行；手機390×844完成搜尋→查看→返回；不只靠截圖測試，要點實際操作。
+- [x] SKU字串保留前置零；300ms 停止輸入後才送 request；保留既有 AbortController及latest-response保護。刷新、back/forward、jobs kind都還原正確篩選。
+- [x] 搜尋 replace URL，明確頁面切換可 push；切換 query 重設頁碼/cursor，避免先發舊page請求；登入角色/工作區變更清除selection。
+- [x] 短頁首＋一列統計＋選中後才出現bulk bar；無export權限者仍可選品／交審，但看到清楚權限說明。
+- [x] 詳情改有標題的側欄：開啟移focus、Esc關閉、關閉還原原按鈕、長內容scroll，手機全屏。避免詳情插在表格上方卻無反應。
+- [x] 擴充 `tests/e2e/catalog-usability.spec.ts` 的驗收範圍，以新增隔離 `tests/e2e/opak-catalog-context.spec.ts` 執行：桌面1348×926看見搜尋及至少5行；手機390×844完成搜尋→查看→返回；不只靠截圖測試，要點實際操作。
 
 **完成：** 同事分享URL能進相同範圍，返回不丟工作位置，主畫面服務日常維護。
 
@@ -179,11 +179,11 @@
 
 **Interfaces:** assignment 僅記工作責任 `{listingId, assigneeUserId, assignmentRevision}`，不代表 approval；bulk assign接受每件expectedRevision及idempotencyKey，回逐件結果。admin/reviewer可分派；operator可認領自己或提交reviewer交審，不可任意改他人工作。目標user必須是active同workspace且角色符合。
 
-- [ ] 帳戶選單顯示本人、工作區、角色、登出及支援；用現有Better Auth登出能力，server session失效後受保護API拒絕，清理client快取，不另造token邏輯。
-- [ ] operator訪問admin看清楚權限說明及返回操作；server admin endpoints仍403。不要只藏link或讓所有人變admin。
-- [ ] 增加「我的工作／未指派／待審」和批量交接；每件檢查scope、revision、合法角色，audit不重複；部分失敗不可顯示全部成功。
-- [ ] 支援頁/卡顯示如何複製safe request ID；管理員聯絡方式用真實workspace成員/已設渠道，不能硬編不存在電郵。缺渠道時明示未設定。
-- [ ] 測登出後back、撤銷member／role、跨workspace assignment、同時兩人認領、operator直接呼叫admin/approve/export API。
+- [x] 帳戶選單顯示本人、工作區、角色、登出及支援；用現有Better Auth登出能力，server session失效後受保護API拒絕，清理client快取，不另造token邏輯。
+- [x] operator訪問admin看清楚權限說明及返回操作；server admin endpoints仍403。不要只藏link或讓所有人變admin。
+- [x] 增加「我的工作／未指派／待審」和批量交接；每件檢查scope、revision、合法角色，audit不重複；部分失敗不可顯示全部成功。
+- [x] 支援頁/卡顯示如何複製safe request ID；管理員聯絡方式用真實workspace成員/已設渠道，不能硬編不存在電郵。缺渠道時明示未設定。
+- [x] 測登出後back、撤銷member／role、跨workspace assignment、同時兩人認領、operator直接呼叫admin/approve/export API。
 
 **完成：** 權限說得明，工作交得出；assignment不削弱reviewer批准要求。
 
@@ -193,11 +193,11 @@
 
 **Interfaces:** panel向tab層登記 `{dirty, save():Promise<boolean>, discard():void}`，save失敗不得離開。readiness項 `{key, state:"ready"|"blocked"|"unknown", checkedAt, safeReason, nextAction}`；靜態capability成熟度與runtime readiness分開。
 
-- [ ] tab切換先出「保存／捨棄／留在此頁」；保存完成才切，validation失敗保持原輸入；reload用beforeunload防意外，不能依賴它保證mobile資料保留。
-- [ ] 保留expectedDigest/CAS；另一admin先保存，舊表單收到conflict並提供重新載入／比較，不能默默覆蓋。
-- [ ] tabs有方向鍵、Home/End、roving tabindex及panel標籤；用鍵盤完成修改與離開。
-- [ ] readiness分AI、queue、storage、SHOPLINE、reviewer。無法安全觀察某項就unknown；不以「有env變數」假稱健康、不在每頁載入發付費probe、不把secret送client。
-- [ ] 用admin staging帳戶實測dirty/conflict/connection；operator endpoint與payload保持最小必要狀態。
+- [x] tab切換先出「保存／捨棄／留在此頁」；保存完成才切，validation失敗保持原輸入；reload用beforeunload防意外，不能依賴它保證mobile資料保留。
+- [x] 保留expectedDigest/CAS；另一admin先保存，舊表單收到conflict並提供重新載入／比較，不能默默覆蓋。
+- [x] tabs有方向鍵、Home/End、roving tabindex及panel標籤；用鍵盤完成修改與離開。
+- [x] readiness分AI、queue、storage、SHOPLINE、reviewer。無法安全觀察某項就unknown；不以「有env變數」假稱健康、不在每頁載入發付費probe、不把secret送client。
+- [x] 用本地隔離fake/mock admin帳戶實測dirty/conflict/connection；operator endpoint與payload保持最小必要狀態。authenticated cloud preview／production另記blocked，不能以本地結果當正式驗收。
 
 **完成：** 管理員不會誤失未存設定；正常、阻塞、未驗證各有明確含義。
 

@@ -61,6 +61,8 @@ describe("full read route contracts", () => {
       pageSize: 100,
       q: "wine",
       filter: "review",
+      work: "all",
+      actorId: "actor",
     });
   });
   it("filters queue pagination in SQL and exposes full totals separately from page", async () => {

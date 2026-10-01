@@ -226,7 +226,7 @@ jobs:
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
-        run: pnpm exec playwright test tests/e2e/opak-current-content-batches.spec.ts tests/e2e/opak-catalog-context.spec.ts tests/e2e/opak-account-assignment.spec.ts tests/e2e/opak-admin-dirty.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+        run: pnpm exec playwright test tests/e2e/opak-current-content-batches.spec.ts tests/e2e/opak-catalog-context.spec.ts tests/e2e/opak-account-assignment.spec.ts tests/e2e/opak-admin-dirty.spec.ts tests/e2e/opak-admin-workspace-switch.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Upload synthetic Opak browser screenshots
         if: always()
         uses: actions/upload-artifact@v4

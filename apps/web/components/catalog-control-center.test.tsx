@@ -22,10 +22,13 @@ beforeEach(() => {
 async function mount(
   fetcher: ReturnType<typeof vi.fn>,
   initialSearch?: string,
+  assignmentFetcher?: ReturnType<typeof vi.fn>,
 ) {
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
     String(input).startsWith("/api/listings/assign")
-      ? Promise.resolve(Response.json({}, { status: 403 }))
+      ? assignmentFetcher
+        ? Reflect.apply(assignmentFetcher, undefined, [input, init])
+        : Promise.resolve(Response.json({}, { status: 403 }))
       : Reflect.apply(fetcher, undefined, [input, init]),
   );
   const container = document.createElement("div");
@@ -1221,5 +1224,288 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     );
   } finally {
     await unmount(root);
+  }
+});
+
+it.each([200, 403])(
+  "restores saved scroll after the selected assignment layout settles (%s)",
+  async (status) => {
+    const listingId = "00000000-0000-4000-8000-000000000001";
+    const scrollKey = "wukong:catalog:scroll:scope-scroll";
+    sessionStorage.setItem(
+      "wukong:catalog:selection:scope-scroll",
+      JSON.stringify({ ids: [listingId], exports: [] }),
+    );
+    sessionStorage.setItem(
+      scrollKey,
+      JSON.stringify({ href: "/catalog", y: 385 }),
+    );
+    let resolveAssignment!: (response: Response) => void;
+    const assignmentFetcher = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveAssignment = resolve;
+        }),
+    );
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0,
+      availableY = 223,
+      actualY = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = ++nextFrame;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    const scroll = vi
+      .spyOn(window, "scrollTo")
+      .mockImplementation((x: number | ScrollToOptions, y?: number) => {
+        actualY = Math.min(
+          availableY,
+          typeof x === "number" ? (y ?? 0) : (x.top ?? 0),
+        );
+      });
+    const flushFrames = () => {
+      const current = [...frames.values()];
+      frames.clear();
+      current.forEach((callback) => callback(0));
+    };
+    const fetcher = vi.fn(async () =>
+      Response.json(
+        pageResponse([makeItem({ id: "selected", listingId })], {
+          selectionScope: "scope-scroll",
+          capabilities: {
+            canMaintainProducts: true,
+            canGenerateBulkUpdate: false,
+            canRecordImportResult: false,
+          },
+        }),
+      ),
+    );
+    const { root, container } = await mount(
+      fetcher,
+      undefined,
+      assignmentFetcher,
+    );
+    try {
+      expect(assignmentFetcher).toHaveBeenCalledTimes(1);
+      expect(container.textContent).toContain("正在載入工作責任");
+      await act(async () => flushFrames());
+      expect(scroll).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(scrollKey)).not.toBeNull();
+      availableY = 385;
+      await act(async () =>
+        resolveAssignment(
+          Response.json(
+            status === 200
+              ? {
+                  assignments: [
+                    {
+                      listingId,
+                      assigneeUserId: null,
+                      assignmentRevision: 0,
+                      assigneeActive: false,
+                      assigneeEmail: null,
+                    },
+                  ],
+                  members: [],
+                  actorId: "actor",
+                  role: "operator",
+                }
+              : {},
+            { status },
+          ),
+        ),
+      );
+      expect(container.textContent).not.toContain("正在載入工作責任");
+      await act(async () => flushFrames());
+      expect(scroll).toHaveBeenCalledExactlyOnceWith(0, 385);
+      expect(actualY).toBe(385);
+      expect(sessionStorage.getItem(scrollKey)).toBeNull();
+    } finally {
+      await unmount(root);
+      scroll.mockRestore();
+    }
+  },
+);
+
+it("cancels queued scroll restoration on unmount without consuming the saved position", async () => {
+  const scrollKey = "wukong:catalog:scroll:scope-scroll";
+  sessionStorage.setItem(
+    scrollKey,
+    JSON.stringify({ href: "/catalog", y: 385 }),
+  );
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    const id = ++nextFrame;
+    frames.set(id, callback);
+    return id;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const fetcher = vi.fn(async () =>
+    Response.json(pageResponse([], { selectionScope: "scope-scroll" })),
+  );
+  const { root } = await mount(fetcher);
+  try {
+    expect(frames.size).toBe(1);
+    await unmount(root);
+    frames.forEach((callback) => callback(0));
+    expect(scroll).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(scrollKey)).not.toBeNull();
+  } finally {
+    scroll.mockRestore();
+  }
+});
+
+it("preserves a departure position when assignments settle before catalog unmount, then restores on return", async () => {
+  const listingId = "00000000-0000-4000-8000-000000000001";
+  const scrollKey = "wukong:catalog:scroll:scope-scroll";
+  sessionStorage.setItem(
+    "wukong:catalog:selection:scope-scroll",
+    JSON.stringify({ ids: [listingId], exports: [] }),
+  );
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  const installFrames = () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = ++nextFrame;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  };
+  const flushFrames = () => {
+    const current = [...frames.values()];
+    frames.clear();
+    current.forEach((callback) => callback(0));
+  };
+  installFrames();
+  const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(385);
+  const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const fetcher = vi.fn(async () =>
+    Response.json(
+      pageResponse([makeItem({ id: "selected", listingId })], {
+        selectionScope: "scope-scroll",
+        capabilities: {
+          canMaintainProducts: true,
+          canGenerateBulkUpdate: false,
+          canRecordImportResult: false,
+        },
+      }),
+    ),
+  );
+  const assignmentResponse = () =>
+    Response.json({
+      assignments: [
+        {
+          listingId,
+          assigneeUserId: null,
+          assignmentRevision: 0,
+          assigneeActive: false,
+          assigneeEmail: null,
+        },
+      ],
+      members: [],
+      actorId: "actor",
+      role: "operator",
+    });
+  let resolveAssignment!: (response: Response) => void;
+  const assignmentFetcher = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        resolveAssignment = resolve;
+      }),
+  );
+  let { root, container } = await mount(fetcher, undefined, assignmentFetcher);
+  try {
+    expect(container.textContent).toContain("正在載入工作責任");
+    expect(sessionStorage.getItem(scrollKey)).toBeNull();
+    const link = container.querySelector<HTMLAnchorElement>(
+      'a[href^="/listings/"]',
+    )!;
+    // Keep the outgoing catalog mounted while the router is committing the destination.
+    link.addEventListener("click", (event) => event.preventDefault());
+    await act(async () =>
+      link.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      ),
+    );
+    const saved = sessionStorage.getItem(scrollKey);
+    expect(JSON.parse(saved!)).toEqual({ href: "/catalog", y: 385 });
+    await act(async () => resolveAssignment(assignmentResponse()));
+    await act(async () => flushFrames());
+    expect(scroll).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(scrollKey)).toBe(saved);
+
+    await unmount(root);
+    installFrames();
+    ({ root, container } = await mount(
+      fetcher,
+      undefined,
+      vi.fn(async () => assignmentResponse()),
+    ));
+    expect(container.textContent).not.toContain("正在載入工作責任");
+    await act(async () => flushFrames());
+    expect(scroll).toHaveBeenCalledExactlyOnceWith(0, 385);
+    expect(sessionStorage.getItem(scrollKey)).toBeNull();
+  } finally {
+    await unmount(root);
+    scroll.mockRestore();
+    scrollY.mockRestore();
+  }
+});
+
+it("retires a queued incoming restore before saving an identical departure position", async () => {
+  const scrollKey = "wukong:catalog:scroll:scope-scroll";
+  const saved = JSON.stringify({ href: "/catalog", y: 385 });
+  sessionStorage.setItem(scrollKey, saved);
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    const id = ++nextFrame;
+    frames.set(id, callback);
+    return id;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(385);
+  const scroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const fetcher = vi.fn(async () =>
+    Response.json(
+      pageResponse(
+        [
+          makeItem({
+            id: "selected",
+            listingId: "00000000-0000-4000-8000-000000000001",
+          }),
+        ],
+        { selectionScope: "scope-scroll" },
+      ),
+    ),
+  );
+  const { root, container } = await mount(fetcher);
+  try {
+    expect(frames.size).toBe(1);
+    const queued = [...frames.values()];
+    const link = container.querySelector<HTMLAnchorElement>(
+      'a[href^="/listings/"]',
+    )!;
+    link.addEventListener("click", (event) => event.preventDefault());
+    await act(async () =>
+      link.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(sessionStorage.getItem(scrollKey)).toBe(saved);
+    expect(frames.size).toBe(0);
+    // A callback already handed to the browser must also observe the departure fence.
+    await act(async () => queued.forEach((callback) => callback(0)));
+    expect(scroll).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(scrollKey)).toBe(saved);
+  } finally {
+    await unmount(root);
+    scroll.mockRestore();
+    scrollY.mockRestore();
   }
 });
