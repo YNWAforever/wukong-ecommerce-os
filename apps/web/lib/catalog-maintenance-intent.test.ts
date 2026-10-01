@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  initialMaintenanceIntent,
   maintenanceDestination,
   matchMaintenanceCandidate,
 } from "./catalog-maintenance-intent";
@@ -16,6 +17,21 @@ const input = {
   currentRaw: raw,
 };
 describe("catalog maintenance intent and candidate identity", () => {
+  it("restores a workbench scan into its reference preview without enabling maintenance", () => {
+    expect(initialMaintenanceIntent({ scan: "synthetic-scan" })).toBe(
+      "reference-only",
+    );
+    expect(
+      initialMaintenanceIntent({
+        scan: "synthetic-scan",
+        intent: "maintain-existing",
+      }),
+    ).toBe("maintain-existing");
+    expect(initialMaintenanceIntent({})).toBe("maintain-existing");
+    expect(initialMaintenanceIntent({ intent: "reference-only" })).toBe(
+      "reference-only",
+    );
+  });
   it("routes a new draft to the existing editable intake and keeps reference intent explicit", () => {
     expect(maintenanceDestination("new-draft")).toBe("/listings/new");
     expect(maintenanceDestination("reference-only")).toBe(

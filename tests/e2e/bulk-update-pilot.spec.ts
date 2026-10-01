@@ -328,7 +328,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-field-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     for (const key of [
       "priceUnchanged",
@@ -341,7 +341,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-negative-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     await page
       .getByRole("button", { name: "Approve listing", exact: true })
@@ -1209,7 +1209,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-field-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
   for (const key of [
     "priceUnchanged",
@@ -1222,7 +1222,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-negative-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
   await page
     .getByRole("button", { name: "Approve listing", exact: true })

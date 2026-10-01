@@ -7,6 +7,7 @@ import { LOCALE_COOKIE_NAME, resolveLocale } from "../../../../lib/locale";
 import { localized } from "../../../../lib/ui-copy";
 import { authSessionContext } from "../../../../lib/session-context";
 import { ListingIntakeChoices } from "../../../../components/listing-intake-choices";
+import { initialMaintenanceIntent } from "../../../../lib/catalog-maintenance-intent";
 export default async function ListingImportPage({
   searchParams,
 }: {
@@ -15,6 +16,7 @@ export default async function ListingImportPage({
     intent?: string;
     referenceKind?: string;
     referenceId?: string;
+    scan?: string;
   }>;
 } = {}) {
   const query = (await searchParams) ?? {};
@@ -57,11 +59,7 @@ export default async function ListingImportPage({
       </div>
       <ListingIntakeChoices
         canScan={Boolean(session && session.role !== "viewer")}
-        initialIntent={
-          query.intent === "reference-only"
-            ? "reference-only"
-            : "maintain-existing"
-        }
+        initialIntent={initialMaintenanceIntent(query)}
         reference={candidate?.success ? candidate.data : undefined}
         invalidReference={Boolean(candidate && !candidate.success)}
       />

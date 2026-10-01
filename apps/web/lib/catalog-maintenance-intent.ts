@@ -1,6 +1,16 @@
 export type MaintenanceIntent =
   "maintain-existing" | "reference-only" | "new-draft";
 
+/** Existing scan links resume readonly evidence; explicit maintenance wins. */
+export function initialMaintenanceIntent(query: {
+  intent?: string;
+  scan?: string;
+}): Exclude<MaintenanceIntent, "new-draft"> {
+  if (query.intent === "maintain-existing") return "maintain-existing";
+  if (query.intent === "reference-only" || query.scan) return "reference-only";
+  return "maintain-existing";
+}
+
 export function maintenanceDestination(intent: MaintenanceIntent): string {
   return intent === "new-draft"
     ? "/listings/new"
