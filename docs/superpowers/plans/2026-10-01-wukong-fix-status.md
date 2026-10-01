@@ -44,7 +44,7 @@ Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan
 - [x] T03 existing maintenance intake / identity binding implemented and locally verified; full remote CI and preview acceptance tracked separately below.
 - [x] T04 current-content gaps / cursor cohort / fences locally verified; remote/release acceptance separately tracked.
 - [x] T05 explicit cross-page selection / immutable preview / selected fields locally verified.
-- [x] T06 pause / retry-failed / unknown-cost recovery locally verified; local legacy 50-item timeout remains unclassified.
+- [x] T06 pause / retry-failed / unknown-cost recovery locally verified, including the original 50-item control regression.
 - [ ] T07 catalog / URL / return context.
 - [ ] T08 account / role / assignment / support.
 - [ ] T09 dirty guard / actual readiness.
@@ -155,3 +155,5 @@ Final fresh checks after review: bounded package unit suite passed 3,734 tests (
 Complete fake-AI/mock-SHOPLINE real-stack browser rerun passed 6/6 in 1.2 minutes: import timestamp/retry, viewer refusal, attended reviewer approval/XLSX/mixed merchant report/independent reconciliation, admin connection setup, five products selected across two pages and filters, partial masked candidate adoption/manual review. Exactly five fake generations, zero extraction transport and zero USD were recorded for the selected cohort; unselected/manual values were unchanged. A signed preview screenshot is retained only in ignored local evidence.
 
 B preview for `a181cda3d163b2f8825bef1582839a99aca96429` is READY at `wukong-ecommerce-gdxgc2339-ynwaforevers-projects.vercel.app`. This is deployment metadata, not authenticated preview or production acceptance. C PR/remote CI/preview remain pending.
+
+The unchanged 60-second timeout limit was retained. Final isolated 50-item control rerun passed 1/1 in 9.19 seconds (test execution 6.01 seconds) after other runtime checks stopped, on the same local integration container. Prior broad Windows timeouts remain historical failed observations, not a verified product cause. Commit-relative format checked 66 runtime files, forbidden-runtime checked 488 source files with zero violations, and the repository's automated release gate passed; external sign-off remains open.
