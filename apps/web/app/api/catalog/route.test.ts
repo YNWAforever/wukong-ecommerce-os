@@ -397,7 +397,7 @@ describe("GET /api/catalog", () => {
     expect(body.items[0]?.title).not.toBe("shopline-fallback-1");
     expect(calls).toContainEqual([
       "reads.catalogPage",
-      { page: 1, pageSize: 25, filter: "all" },
+      { page: 1, pageSize: 25, filter: "all", work: "all", actorId: "user_1" },
     ]);
   });
 });
@@ -510,4 +510,14 @@ it("validates and passes the exact import ID to the scoped repository", async ()
   const before = calls.length;
   expect((await handler(buildRequest("importId=../foreign"))).status).toBe(400);
   expect(calls.length).toBe(before);
+});
+it("uses the server actor for responsibility filters even when an actor query is supplied", async () => {
+  const { handler, calls } = makeHandler({ products: [] });
+  expect(
+    (await handler(buildRequest("work=mine&actorId=foreign-actor"))).status,
+  ).toBe(200);
+  expect(calls).toContainEqual([
+    "reads.catalogPage",
+    expect.objectContaining({ work: "mine", actorId: "user_1" }),
+  ]);
 });

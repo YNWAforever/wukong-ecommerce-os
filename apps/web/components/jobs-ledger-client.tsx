@@ -1,9 +1,5 @@
 "use client";
-import {
-  exactQueryId,
-  initialDestinationSearch,
-  withWorkbenchReturn,
-} from "../lib/workbench-navigation";
+import { exactQueryId, withWorkbenchReturn } from "../lib/workbench-navigation";
 import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
@@ -17,6 +13,8 @@ import {
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
+import { useWorkQuery } from "../lib/use-work-query";
+import { parseJobsQuery, jobsQuery } from "../lib/catalog-query-state";
 
 import type { LedgerKind, NormalizedStatus } from "../lib/jobs-ledger";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -94,10 +92,11 @@ const KIND_FILTERS: ReadonlyArray<{
 export function JobsLedgerClient({
   initialSearch,
 }: { initialSearch?: string } = {}) {
+  const workQuery = useWorkQuery(initialSearch);
   const locale = useLocale();
   const params = useMemo(
-    () => initialDestinationSearch(initialSearch),
-    [initialSearch],
+    () => new URLSearchParams(workQuery.search),
+    [workQuery.search],
   );
   const attempt = params.get("attempt");
   const attemptId = exactQueryId(attempt);
@@ -143,6 +142,7 @@ export function JobsLedgerClient({
         initialKind={params.get("kind")}
         initialPage={params.get("page")}
         returnTo={returnTo}
+        navigate={workQuery.navigate}
       />
     </>
   );
@@ -151,21 +151,23 @@ function JobsLedger({
   initialKind,
   initialPage,
   returnTo,
+  navigate,
 }: {
   initialKind: string | null;
   initialPage: string | null;
   returnTo: string | null;
+  navigate(query: string, mode?: "replace" | "push"): void;
 }) {
   const locale = useLocale();
   const c = commonCopy[locale];
-  const destinationKind =
-    KIND_FILTERS.find((option) => option.value === initialKind)?.value ?? "all";
-  const destinationPage =
-    initialPage &&
-    /^[1-9][0-9]*$/.test(initialPage) &&
-    Number(initialPage) <= 21474836
-      ? Number(initialPage)
-      : 1;
+  const parsed = parseJobsQuery(
+    new URLSearchParams({
+      kind: initialKind ?? "all",
+      page: initialPage ?? "1",
+    }),
+  );
+  const destinationKind = parsed.kind,
+    destinationPage = parsed.page;
   const destination = `${destinationKind}:${destinationPage}`;
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [kindFilter, setKindFilter] = useState<KindFilter>(destinationKind);
@@ -339,6 +341,7 @@ function JobsLedger({
             onClick={() => {
               setKindFilter(option.value);
               setPage(1);
+              navigate(jobsQuery({ kind: option.value, page: 1 }));
             }}
           >
             {localized(locale, option.labelZh, option.labelEn)}
@@ -383,7 +386,11 @@ function JobsLedger({
       >
         <button
           type="button"
-          onClick={() => setPage((value) => Math.max(1, value - 1))}
+          onClick={() => {
+            const next = Math.max(1, page - 1);
+            setPage(next);
+            navigate(jobsQuery({ kind: kindFilter, page: next }), "push");
+          }}
           disabled={page === 1 || loading}
         >
           {c.previous}
@@ -400,7 +407,10 @@ function JobsLedger({
         </span>
         <button
           type="button"
-          onClick={() => setPage((value) => value + 1)}
+          onClick={() => {
+            setPage(page + 1);
+            navigate(jobsQuery({ kind: kindFilter, page: page + 1 }), "push");
+          }}
           disabled={
             loading ||
             response.pageSize === undefined ||
@@ -469,7 +479,10 @@ function JobsLedger({
                       className="jobs-row-link"
                       href={withWorkbenchReturn(
                         `/listings/${entry.listingId}`,
-                        returnTo,
+                        "/jobs" +
+                          (jobsQuery({ kind: kindFilter, page })
+                            ? "?" + jobsQuery({ kind: kindFilter, page })
+                            : ""),
                       )}
                     >
                       {localized(locale, "查看上架流程", "View listing")}

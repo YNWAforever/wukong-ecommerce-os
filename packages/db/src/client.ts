@@ -1,3 +1,7 @@
+import {
+  createListingAssignmentRepository,
+  type ListingAssignmentRepository,
+} from "./repositories/listing-assignments.js";
 import { inspectWineRuntimeCompatibility } from "./wine-runtime-compatibility.js";
 import { inspectListingReadCompatibility } from "./listing-read-compatibility.js";
 import { createWineGoInvocationRepository } from "./repositories/wine-go-invocations.js";
@@ -148,6 +152,7 @@ export type WorkspaceScope = {
 };
 
 export type WorkspaceRepositories = {
+  assignments: ListingAssignmentRepository;
   wineAcquisition: WineAcquisitionRepository;
   wineEnrichment: WineEnrichmentRepository;
   searchBudgetReservations: SearchBudgetReservationRepository;
@@ -439,6 +444,11 @@ export function createDatabase(
         ),
         aiRuns: createAiRunRepository(transaction, workspaceId, scope),
         aiBudgetReservations: createAiBudgetReservationRepository(
+          transaction,
+          workspaceId,
+          scope,
+        ),
+        assignments: createListingAssignmentRepository(
           transaction,
           workspaceId,
           scope,

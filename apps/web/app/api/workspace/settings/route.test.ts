@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { workspaceProfileSchema } from "@wukong/core";
 import { describe, expect, it, vi } from "vitest";
 
 import { createSettingsGetHandler, createSettingsHandler } from "./route.js";
@@ -45,7 +47,10 @@ describe("POST /api/workspace/settings", () => {
         }) as any,
     });
     const response = await handler(
-      makeRequest({ brandBackgroundColor: "#112233" }),
+      makeRequest({
+        brandBackgroundColor: "#112233",
+        expectedDigest: "a".repeat(64),
+      }),
     );
     expect(response.status).toBe(403);
     expect(updateSettings).not.toHaveBeenCalled();
@@ -53,7 +58,10 @@ describe("POST /api/workspace/settings", () => {
   });
 
   it("updates the brand background color for admin and above", async () => {
-    const updateSettings = vi.fn(async () => {});
+    const updateSettings = vi.fn(async () => ({
+      ...baseProfile,
+      brandBackgroundColor: "#112233",
+    }));
     const requireProfile = vi.fn(async () => baseProfile);
     const auditWrite = vi.fn(async () => {});
     const handler = createSettingsHandler({
@@ -76,11 +84,20 @@ describe("POST /api/workspace/settings", () => {
         }) as any,
     });
     const response = await handler(
-      makeRequest({ brandBackgroundColor: "#112233" }),
+      makeRequest({
+        brandBackgroundColor: "#112233",
+        expectedDigest: "a".repeat(64),
+      }),
     );
     expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      brandBackgroundColor: "#112233",
+      digest: expect.any(String),
+    });
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ brandBackgroundColor: "#112233" }),
+      "a".repeat(64),
     );
     expect(auditWrite).toHaveBeenCalledWith({
       workspaceId: "ws_opak",
@@ -89,6 +106,44 @@ describe("POST /api/workspace/settings", () => {
       action: "workspace.settings_updated",
       metadata: { brandBackgroundColor: "#112233" },
     });
+  });
+
+  it("requires a fence and exposes concurrent settings as 409 without an audit", async () => {
+    const auditWrite = vi.fn();
+    const updateSettings = async () => {
+      throw Object.assign(new Error("conflict"), {
+        code: "workspace_policy_conflict",
+      });
+    };
+    const handler = createSettingsHandler({
+      sessionContext: {
+        async resolve() {
+          return { workspaceId: "ws1", actorId: "u1", role: "admin" };
+        },
+      },
+      getDatabase: () =>
+        ({
+          forWorkspace: async (_: string, work: any) =>
+            work({
+              workspaces: { updateSettings },
+              audit: { write: auditWrite },
+            }),
+        }) as any,
+    });
+    expect(
+      (await handler(makeRequest({ brandBackgroundColor: "#112233" }))).status,
+    ).toBe(400);
+    expect(
+      (
+        await handler(
+          makeRequest({
+            brandBackgroundColor: "#112233",
+            expectedDigest: "a".repeat(64),
+          }),
+        )
+      ).status,
+    ).toBe(409);
+    expect(auditWrite).not.toHaveBeenCalled();
   });
 
   it("rejects a malformed color with 400", async () => {
@@ -154,6 +209,13 @@ describe("GET /api/workspace/settings", () => {
     });
     const response = await handler(new Request("http://localhost"));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ brandBackgroundColor: "#112233" });
+    expect(await response.json()).toEqual({
+      brandBackgroundColor: "#112233",
+      digest: createHash("sha256")
+        .update(
+          JSON.stringify(workspaceProfileSchema.parse(await requireProfile())),
+        )
+        .digest("hex"),
+    });
   });
 });

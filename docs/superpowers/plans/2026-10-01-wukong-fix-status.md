@@ -2,6 +2,8 @@
 
 Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan](2026-10-01-wukong-opakcellar-fixes.md).
 
+Current local checkpoint: A-C source and remote CI are verified on their recorded heads. D's final authenticated fake/mock browser passed 11/11; the final package unit gate passed 3,865 tests with one skip (14/14 tasks, zero cached, 7m34.243s), typecheck passed 14/14, production build passed 8/8, and root release/CI contracts passed 117/117. T07-T09 behavior checkboxes refer to this isolated local stack; remote D CI, authenticated cloud preview, production read/repair, live AI and real merchant acceptance remain separate gates. E/F implementation and acceptance are still in progress. Baseline finding classifications below are retained as first observations; later task evidence records their changes.
+
 ## Baseline and custody (T00)
 
 - Repository remote: `https://github.com/YNWAforever/wukong-ecommerce-os.git`.
@@ -45,9 +47,9 @@ Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan
 - [x] T04 current-content gaps / cursor cohort / fences locally verified; remote/release acceptance separately tracked.
 - [x] T05 explicit cross-page selection / immutable preview / selected fields locally verified.
 - [x] T06 pause / retry-failed / unknown-cost recovery locally verified, including the original 50-item control regression.
-- [ ] T07 catalog / URL / return context.
-- [ ] T08 account / role / assignment / support.
-- [ ] T09 dirty guard / actual readiness.
+- [x] T07 catalog / URL / return context locally verified, including original <=2px return-position and desktop/mobile behavior; remote/release gates separate.
+- [x] T08 account / role / assignment / support locally verified, including real Better Auth invalidation and cross-tenant dirty-workspace safety.
+- [x] T09 dirty guard / actual readiness locally verified with admin/revoked operator, native history and CAS; cloud readiness remains unverified.
 - [ ] T10 measured DB performance.
 - [ ] T11 audit-fixtures-v1 adapter / quality / cost harness.
 - [ ] T12 bulk approval / XLSX cell protection / independent results.
@@ -163,3 +165,37 @@ The unchanged 60-second timeout limit was retained. Final isolated 50-item contr
 Draft PR #123 initial remote run 36847660394 failed four assertions across three integration suites. Two assertions still expected the replaced pre-preview API/quality scope. The corrected-source fixture still selected the now-human-filled Chinese-name gap; it now selects its genuinely missing summary. The tenant-table auditor omitted the two preview/receipt tables from migration 0050; matching Drizzle declarations and the inventory now include both, retaining all composite workspace fences. Reference-only IDs are additionally rejected by the actual preview route with no queue or listing side effects.
 
 Fresh isolated checks: package audit inventory 14/14, the three failing real-PostgreSQL suites 14/14, and DB typecheck passed. An earlier concurrent rerun hit a 30-second timeout and is retained as a failed observation; the serial rerun completed in 16.50 seconds without changing timeouts. Full remote CI and authenticated preview acceptance remain pending. No new migration, environment variable, production change or merchant data in this repair. Source rollback is the prior C head; retain the additive preview/receipt schema and existing costs/audits.
+
+### D integration in progress (2026-10-01)
+
+The D source checkpoint is stacked on the now-green C head ee26897fdd2728b685ec224c82e50ce4699353db. C complete CI run 36852074456 passed all gates; preview deployment dpl_5K4oSAL4AZxdpqkRC2VJuB3FPWD1 is READY. Authenticated cloud preview and production acceptance remain blocked separately.
+
+D local verification before final browser acceptance: T07 context/revocation/drawer/jobs six suites 57/57; current-input title/manual-lock/cleared-SKU real DB 2/2; current membership responsibility SQL 1/1; catalog route/server-actor 14/14; account/assignment 153 targeted tests plus 11 final logout tests; real assignment/audit 29 tests; admin/assignment final review suites 59 tests; settings CAS/RLS 2/2. Full typecheck 14/14 and full build 8/8 passed. These checks do not establish the complete runtime flow.
+
+First actual production-built D browser run: 4 passed, 4 failed in 37.8 seconds. Desktop density reproduced only two visible rows because compact readiness still expanded the entire explanation; collapsed details plus a shorter heading are implemented, with the new regression RED then 29/29 focused GREEN. The real workspace switch rejected a current second membership even with the actual browser UI; Origin versus server membership cause is being traced, without relaxing either check. Two dirty-history cases reached Catalog without a dialog despite passing unit tests. Actual event evidence identifies Window AT_TARGET listener registration order: Next handles popstate before the later guard. An early pre-hydration bridge is being implemented and requires a new production build and actual-browser rerun. T07/T08/T09 completion checkboxes remain open until those behaviors pass.
+
+Migration is additive 0052_listing_assignments.sql; no new production environment variables. Local fake/mock only, zero real SHOPLINE or paid AI. Retain assignment receipts/audit and existing versions/sources/costs on rollback; stop new assignment admission and revert web code. See docs/runbooks/opak-work-context.md. Safe synthetic screenshots/traces are ignored local evidence; no merchant contents are staged.
+
+#### D actual runtime follow-up
+
+The rebuilt stack passed 7/8 unchanged browser cases in 45.3 seconds. Actual logout/session refusal, role removal, two-operator claim race, admin conflicts/keyboard actions, indexed Back and unknown forward/multi-entry Back passed. Workspace switching now compares the same server-configured public origin as Better Auth; the earlier rejection was public 127.0.0.1 versus Next's reconstructed localhost, with authenticated actor and active target membership independently confirmed. The static early popstate bridge executes before hydration; its three focused files passed 17 tests and web typecheck. Origin route tests passed 8/8. No Host/forwarded-header trust or membership exception was added.
+
+The remaining catalog failure preserves its <=2px expectation: returning restored 223px rather than the remembered 385px (162px difference). Desktop five-row density now passed; return-scroll timing is being reproduced separately. Independent review also identified workspace selection changing the server preference cookie before dirty-admin unload could be cancelled. That context change must be guarded before POST; its correction and browser regression are pending. T07-T09 remain incomplete.
+
+Current bound-product name search separately reproduced an empty result for a saved human name before an active version. Bound and draft title projections now share owned current input/version precedence, preserving human/locked values and stable source SKU identity. The complete real PostgreSQL workspace-read suite passed 12/12, and the original 500-item benchmark fixture returned the expected 25 name matches and one exact-SKU match. No raw source row became the current content authority.
+
+#### T10 measured baseline preparation
+
+#### D final real-stack acceptance
+
+Safe actual-browser tracing confirmed a departure race: `rememberPosition` saved Y=385 correctly, then the still-mounted outgoing catalog consumed it when assignment loading settled. A synchronous departure fence and owned-frame cancellation now retain that entry for the incoming catalog; both new deterministic regressions failed before repair, then catalog/assignment passed 41/41. The original browser spec was restored byte-for-byte and its <=2px assertion remained unchanged. The final production-built, authenticated fake-AI/mock-SHOPLINE stack passed all 11 D cases in 45.4 seconds, including native indexed/unknown history, desktop/mobile density/drawer, zero-prefixed search/page/selection/return position, server logout/revocation, claim race, dirty CAS, Save/Stay/failed Save/Discard tenant isolation and accepted delayed-switch exclusivity. Paid AI and real SHOPLINE calls remain zero.
+
+Complete typecheck passed 14/14 and build 8/8 after the departure fix. A subsequent complete unit run passed 2,173 web tests but timed out the unchanged vocabulary file scan under concurrent build load. Its source snapshot is now read/stripped once for the four unchanged term assertions; no timeout/coverage assertion is relaxed. Full one-worker package rerun is in progress. Root CI/runtime/release contracts passed 117/117; complete remote D CI and authenticated cloud acceptance remain pending.
+
+Final D ownership review reproduced four deterministic failures: ordinary guard cleanup released an accepted workspace request before its POST finished, permitting a second switch or navigation. Pending-only cancellation now retains accepted work through completion; explicit owner abort remains separate. Navigation/history includes saving/pending/navigating admission. The final focused guard suite passed 57/57. Fresh complete typecheck passed 14/14 and build 8/8. The complete unit gate exposed duplicate tenant inventory entries after the C merge and obsolete unauthenticated-layout/server-actor fixtures; corrections passed audit 14/14 and wrapper/read contracts 10/10, including a new absent-session redirect before any workspace read.
+
+Final D package validation completed at 21:30 HKT: `pnpm exec turbo run test --concurrency=1 -- --maxWorkers=1` passed 3,865 tests with one existing skip (14/14 tasks, zero cached, 7m34.243s). This supersedes the earlier pending rerun notes. The final four-spec authenticated browser run passed 11/11 in 45.4s; the original return-position tolerance remains <=2px. Root release/CI contracts passed 117/117, full typecheck 14/14 and production build 8/8. Safe local logs remain outside tracked source. Remote D CI and authenticated cloud/production acceptance remain pending.
+
+The next actual D browser gate passed 9/11 in 3.9 minutes. Stay and failed Save retained original server workspace; approved Save wrote only the original tenant before one switch, and Discard created no invitation in either tenant. The delayed-switch case timed out on an absent navigation selector before its admission step; the selector now follows actual accessible links and requires rerun. Catalog still returned 223px rather than 385px after assignment-settled restoration (162px), so that cause remains under active diagnosis and T07-T09 are not marked complete. No acceptance assertion or timeout was relaxed.
+
+The loopback-only synthetic benchmark harness and refusal/report contracts passed 16 focused and 133 complete root Node tests. Actual 500-item route-factory/RLS smoke observed catalog application SQL grow from 6 for one row to 78 for 25 rows (driver statement counts 8 to 80). This reproduces F09 query amplification. Three warm samples collected alongside D runtime work are smoke evidence only; no full-scale, isolated p95, field-INP or optimization acceptance is claimed. Full 500/5000/20000 comparison is pending. Private reports retain opaque query fingerprints and sampled EXPLAIN timing/node aggregates; they omit SQL text, parameters, responses and merchant contents.

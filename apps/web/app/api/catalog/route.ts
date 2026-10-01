@@ -24,6 +24,7 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   q: z.string().trim().optional(),
+  work: z.enum(["all", "mine", "unassigned", "review"]).default("all"),
   importId: z.uuid().optional(),
   filter: z
     .enum([
@@ -59,7 +60,10 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
           const page = await atRouteStage("listing", () =>
-            repositories.reads.catalogPage(query),
+            repositories.reads.catalogPage({
+              ...query,
+              actorId: context.actorId,
+            }),
           );
           const products = await atRouteStage("sources", () =>
             repositories.platformProducts.getByIdsIsolated(

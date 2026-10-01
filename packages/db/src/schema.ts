@@ -2443,6 +2443,65 @@ export const wineEvidenceCache = pgTable(
   ],
 );
 
+export const listingAssignments = pgTable(
+  "listing_assignments",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    assigneeUserId: text("assignee_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignmentRevision: integer("assignment_revision").default(0).notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.listingId] }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+    index("listing_assignments_assignee_idx").on(
+      table.workspaceId,
+      table.assigneeUserId,
+      table.listingId,
+    ),
+    check(
+      "listing_assignments_assignment_revision_check",
+      sql`${table.assignmentRevision} >= 0`,
+    ),
+  ],
+);
+export const listingAssignmentRequests = pgTable(
+  "listing_assignment_requests",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.actorId,
+        table.requestKey,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+  ],
+);
+
 export const enrichmentBatchPreviews = pgTable(
   "enrichment_batch_previews",
   {

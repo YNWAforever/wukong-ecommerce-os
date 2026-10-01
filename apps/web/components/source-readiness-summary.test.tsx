@@ -23,6 +23,20 @@ const base = {
   scope: "advisory_current_read" as const,
 };
 describe("SourceReadinessSummary", () => {
+  it("keeps compact catalog diagnostics collapsed while retaining the complete advisory explanation", () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceReadinessSummary, {
+        readiness: { ...base, currentVersionId: null },
+        compact: true,
+      }),
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const detail = document.querySelector("details");
+    expect(detail?.hasAttribute("open")).toBe(false);
+    expect(detail?.querySelector("summary")?.textContent).toBe("尚未建立版本");
+    expect(detail?.textContent).toContain("手動儲存草稿");
+    expect(detail?.textContent).toContain("import-1");
+  });
   it("explains legitimate missing versions without suggesting a stale approval", () => {
     const html = renderToStaticMarkup(
       createElement(SourceReadinessSummary, {
