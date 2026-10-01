@@ -149,7 +149,9 @@ test("quality shows actual bounded progress, four distinct checks and revokes ca
       .getByRole("button", { name: "Refresh counts", exact: true })
       .click();
     expect([401, 403]).toContain((await revoked).status());
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Unable to load data" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("group", { name: "Quality metrics", exact: true }),
     ).toHaveCount(0);
