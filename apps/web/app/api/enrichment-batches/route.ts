@@ -1,11 +1,10 @@
-import { z } from "zod";
-
-import { MAX_ENRICHMENT_WAVE_SIZE } from "../../../lib/enrichment-wave-limit";
+import {
+  batchCreateInputSchema,
+  createBatchSelectionService,
+} from "../../../lib/batch-selection";
 
 import {
   createEnrichmentBatchService,
-  type CreateBatchInput,
-  type CreateBatchResult,
   type EnrichmentBatch,
 } from "../../../lib/enrichment-batch-service";
 import { getDatabase } from "../../../lib/intake-runtime";
@@ -22,25 +21,15 @@ import {
 } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
 
-const bodySchema = z
-  .object({
-    label: z.string().trim().min(1).max(200),
-    gap: z.enum([
-      "untranslatedName",
-      "untranslatedSeoTitle",
-      "seoTitleMirrorsName",
-      "seoDescriptionMirrorsSeoTitle",
-      "keywordsMirrorName",
-      "summaryMissing",
-    ]),
-    budgetUsd: z.number().positive().max(10_000),
-    waveSize: z.number().int().min(1).max(MAX_ENRICHMENT_WAVE_SIZE),
-  })
-  .strict();
-
 export type EnrichmentBatchRouteDeps = {
   sessionContext: SessionContextPort;
-  createBatch(input: CreateBatchInput): Promise<CreateBatchResult>;
+  createBatch(input: {
+    workspaceId: string;
+    actorId: string;
+    previewId: string;
+    digest: string;
+    idempotencyKey: string;
+  }): Promise<Record<string, unknown>>;
 };
 
 export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
@@ -57,7 +46,7 @@ export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
         );
       }
 
-      const body = bodySchema.parse(await request.json());
+      const body = batchCreateInputSchema.parse(await request.json());
       const result = await deps.createBatch({
         ...body,
         // Session identity last: the tenancy boundary must not depend on the
@@ -74,13 +63,18 @@ export function createEnrichmentBatchHandler(deps: EnrichmentBatchRouteDeps) {
 
 export type ListEnrichmentBatchesRouteDeps = {
   sessionContext: SessionContextPort;
-  listBatches(input: { workspaceId: string }): Promise<EnrichmentBatch[]>;
+  listBatches(input: {
+    workspaceId: string;
+    includeArchived?: boolean;
+  }): Promise<EnrichmentBatch[]>;
 };
 
 export function createListEnrichmentBatchesHandler(
   deps: ListEnrichmentBatchesRouteDeps,
 ) {
-  return async function listEnrichmentBatches(): Promise<Response> {
+  return async function listEnrichmentBatches(
+    request?: Request,
+  ): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
       if (!requireWorkspaceRole("operator", context.role)) {
@@ -93,6 +87,10 @@ export function createListEnrichmentBatchesHandler(
 
       const batches = await deps.listBatches({
         workspaceId: context.workspaceId,
+        ...(request &&
+        new URL(request.url).searchParams.get("includeArchived") === "true"
+          ? { includeArchived: true }
+          : {}),
       });
 
       return jsonResponse(200, {
@@ -112,7 +110,7 @@ const service = createEnrichmentBatchService({
 
 export const POST = createEnrichmentBatchHandler({
   sessionContext: authSessionContext,
-  createBatch: service.createBatch,
+  createBatch: createBatchSelectionService({ getDatabase }).create,
 });
 
 export const GET = createListEnrichmentBatchesHandler({

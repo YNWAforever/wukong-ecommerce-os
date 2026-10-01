@@ -105,6 +105,61 @@ function pageResponse(
   };
 }
 
+it("allows operator 2 plus 3 cross-page selections and retains all five through a filter", async () => {
+  const items = [1, 2, 3, 4, 5].map((n) =>
+    makeItem({
+      id: String(n),
+      sku: `00${n}`,
+      listingId: `10000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+      listingStatus: "received",
+    }),
+  );
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    const page = Number(url.searchParams.get("page") ?? "1");
+    const visible =
+      url.searchParams.get("filter") === "website"
+        ? []
+        : page === 1
+          ? items.slice(0, 2)
+          : items.slice(2);
+    return Response.json(
+      pageResponse(visible, {
+        page,
+        totalMatching: 30,
+        capabilities: {
+          canGenerateBulkUpdate: false,
+          canRecordImportResult: true,
+          canMaintainProducts: true,
+        },
+      }),
+    );
+  });
+  const { container, root } = await mount(fetcher);
+  try {
+    await act(async () => {
+      container
+        .querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')
+        .forEach((box) => box.click());
+    });
+    expect(container.textContent).toContain("已選取 2 個商品");
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    await act(async () => {
+      container
+        .querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]')
+        .forEach((box) => box.click());
+    });
+    expect(container.textContent).toContain("已選取 5 個商品");
+    await act(async () => findButtonByText(container, "網站")!.click());
+    expect(container.textContent).toContain("另有 5 項不在目前篩選");
+    expect(container.textContent).toContain("這次只處理明確選中的 5 件商品");
+    await act(async () => findButtonByText(container, "清除選取")!.click());
+    expect(container.textContent).toContain("已選取 0 個商品");
+  } finally {
+    await unmount(root);
+  }
+});
+
 /**
  * Fetcher used by the tests that page/paginate: always echoes back a
  * `Page {n} item` for whatever `page` was requested, with 60 total matches

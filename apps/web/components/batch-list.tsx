@@ -54,6 +54,7 @@ export function BatchList() {
   const locale = useLocale();
   const [batches, setBatches] = useState<BatchSummary[] | null>(null);
   const [error, setError] = useState<BilingualMessage | null>(null);
+  const [includeArchived, setIncludeArchived] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +62,9 @@ export function BatchList() {
     async function load() {
       let response: Response;
       try {
-        response = await fetch("/api/enrichment-batches");
+        response = await fetch(
+          `/api/enrichment-batches${includeArchived ? "?includeArchived=true" : ""}`,
+        );
       } catch {
         if (!cancelled) setError(sharedMessages.unreachable);
         return;
@@ -99,43 +102,69 @@ export function BatchList() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [includeArchived]);
+  const archiveFilter = (
+    <label>
+      <input
+        type="checkbox"
+        checked={includeArchived}
+        onChange={(event) => {
+          setBatches(null);
+          setError(null);
+          setIncludeArchived(event.target.checked);
+        }}
+      />
+      {localized(locale, "顯示已歸檔批次", "Show archived batches")}
+    </label>
+  );
 
   if (error) {
     return (
-      <p className="inline-warning" role="alert">
-        {localized(locale, ...error)}
-      </p>
+      <>
+        {archiveFilter}
+        <p className="inline-warning" role="alert">
+          {localized(locale, ...error)}
+        </p>
+      </>
     );
   }
   if (batches === null) {
     return (
-      <p className="intake-message">
-        {localized(locale, "載入中…", "Loading…")}
-      </p>
+      <>
+        {archiveFilter}
+        <p className="intake-message">
+          {localized(locale, "載入中…", "Loading…")}
+        </p>
+      </>
     );
   }
   if (batches.length === 0) {
     return (
-      <p className="intake-message">
-        {localized(locale, "尚無批次紀錄。", "No batches yet.")}
-      </p>
+      <>
+        {archiveFilter}
+        <p className="intake-message">
+          {localized(locale, "尚無批次紀錄。", "No batches yet.")}
+        </p>
+      </>
     );
   }
 
   return (
-    <ul className="file-list">
-      {batches.map((batch) => (
-        <li key={batch.id}>
-          <Link href={`/batches/${batch.id}`}>{batch.label}</Link>{" "}
-          <span className={`batch-status ${STATUS_TONES[batch.status]}`}>
-            <span aria-hidden="true" />
-            {stateLabel(batch.status, locale)}
-          </span>{" "}
-          · {localized(locale, "每波", "Wave size")} {batch.waveSize} ·{" "}
-          {localized(locale, "預算", "Budget")} ${batch.budgetUsd}
-        </li>
-      ))}
-    </ul>
+    <>
+      {archiveFilter}
+      <ul className="file-list">
+        {batches.map((batch) => (
+          <li key={batch.id}>
+            <Link href={`/batches/${batch.id}`}>{batch.label}</Link>{" "}
+            <span className={`batch-status ${STATUS_TONES[batch.status]}`}>
+              <span aria-hidden="true" />
+              {stateLabel(batch.status, locale)}
+            </span>{" "}
+            · {localized(locale, "每波", "Wave size")} {batch.waveSize} ·{" "}
+            {localized(locale, "預算", "Budget")} ${batch.budgetUsd}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

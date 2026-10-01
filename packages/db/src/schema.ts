@@ -1113,6 +1113,9 @@ export const enrichmentBatches = pgTable(
     budgetUsd: numeric("budget_usd", { precision: 12, scale: 6 }).notNull(),
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
+    contentFields:
+      jsonb("content_fields").$type<import("@wukong/core").ContentField[]>(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     status: enrichmentBatchStatus("status").default("open").notNull(),
     controlRevision: integer("control_revision").default(0).notNull(),
     createdBy: text("created_by").notNull(),
@@ -1195,6 +1198,7 @@ export const enrichmentBatchItems = pgTable(
     isCurrent: boolean("is_current").default(true).notNull(),
     pipelineRunId: uuid("pipeline_run_id"),
     inputRevision: integer("input_revision"),
+    contentFence: jsonb("content_fence"),
     outcome: text("outcome"),
     reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
     createdAt: timestamps.createdAt,
@@ -2436,5 +2440,74 @@ export const wineEvidenceCache = pgTable(
       t.capturedAt.desc(),
     ),
     index("wine_cache_run_idx").on(t.workspaceId, t.runId),
+  ],
+);
+
+export const enrichmentBatchPreviews = pgTable(
+  "enrichment_batch_previews",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    id: uuid("id").notNull(),
+    actorId: text("actor_id").notNull(),
+    digest: text("digest").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    options: jsonb("options").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    check(
+      "enrichment_batch_previews_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_previews_options_check",
+      sql`jsonb_typeof(${table.options})='object'`,
+    ),
+  ],
+);
+export const enrichmentBatchCreateReceipts = pgTable(
+  "enrichment_batch_create_receipts",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    requestKey: uuid("request_key").notNull(),
+    previewId: uuid("preview_id").notNull(),
+    digest: text("digest").notNull(),
+    batchId: uuid("batch_id").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestKey] }),
+    uniqueIndex(
+      "enrichment_batch_create_receipts_workspace_id_preview_id_key",
+    ).on(table.workspaceId, table.previewId),
+    index("enrichment_batch_create_receipts_batch_idx").on(
+      table.workspaceId,
+      table.batchId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.previewId],
+      foreignColumns: [
+        enrichmentBatchPreviews.workspaceId,
+        enrichmentBatchPreviews.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.batchId],
+      foreignColumns: [enrichmentBatches.workspaceId, enrichmentBatches.id],
+    }),
+    check(
+      "enrichment_batch_create_receipts_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_create_receipts_response_check",
+      sql`jsonb_typeof(${table.response})='object'`,
+    ),
   ],
 );

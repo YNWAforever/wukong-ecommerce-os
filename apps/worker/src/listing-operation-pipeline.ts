@@ -5,6 +5,8 @@ import {
   mergeWorkingCandidate,
   emptyWorkingListing,
   type WorkingFieldStates,
+  contentFieldSelectionSchema,
+  mergeMaintenanceCopy,
 } from "@wukong/core";
 import { PipelineStepBusyError } from "./listing-pipeline.js";
 import type { ListingOperation } from "@wukong/db";
@@ -61,6 +63,12 @@ export async function runPersistedListingOperation(
     fieldStates: WorkingFieldStates;
   };
   const working = workingListingSchema.parse(snapshot.workingContent);
+  const fields =
+    run.execution.contentFields === undefined
+      ? null
+      : contentFieldSelectionSchema.parse(run.execution.contentFields);
+  if (JSON.stringify(input.contentFields ?? null) !== JSON.stringify(fields))
+    throw new Error("operation content selection mismatch");
   let candidate: unknown;
   let stale = false;
   let ownedFailure = false;
@@ -78,6 +86,29 @@ export async function runPersistedListingOperation(
     ai: {
       ...deps.ai,
       async extract(request) {
+        if (fields) {
+          await deps.withWorkspace(input.workspaceId, guard);
+          // No model extraction may change the merchant's saved identity/facts.
+          const facts = listingFactsSchema.parse({
+            ...working,
+            packQuantity: working.packQuantity ?? 1,
+            ...(working.packQuantity === null ? { producer: null } : {}),
+          });
+          return {
+            facts,
+            evidence: [],
+            missingFields:
+              working.packQuantity === null ? ["packQuantity"] : [],
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              estimatedCostUsd: 0,
+              latencyMs: 0,
+              model: "maintenance-snapshot",
+              promptVersion: "maintenance-snapshot-v1",
+            },
+          };
+        }
         const result = await getAI().extract({
           ...request,
           note: snapshot.note,
@@ -113,6 +144,7 @@ export async function runPersistedListingOperation(
           >
         ).filter(
           (field) =>
+            fields !== null ||
             snapshot.fieldStates[field]?.owner === "operator" ||
             snapshot.fieldStates[field]?.locked,
         );
@@ -120,12 +152,22 @@ export async function runPersistedListingOperation(
           ...request,
           operatorProvidedFields,
         });
-        const merged = mergeWorkingCandidate(
-          working,
-          snapshot.fieldStates,
-          result.listing,
-        );
-        candidate = { content: result.listing, evidence: request.evidence };
+        const merged = fields
+          ? mergeMaintenanceCopy(
+              working,
+              snapshot.fieldStates,
+              result.listing,
+              fields,
+            )
+          : mergeWorkingCandidate(
+              working,
+              snapshot.fieldStates,
+              result.listing,
+            );
+        candidate = {
+          content: fields ? merged : result.listing,
+          evidence: request.evidence,
+        };
         await deps.withWorkspace(input.workspaceId, async (repos) =>
           repos.operations!.retainCandidate?.(run.id, candidate),
         );
@@ -133,7 +175,9 @@ export async function runPersistedListingOperation(
           ...result,
           listing: {
             ...merged,
-            packQuantity: merged.packQuantity ?? result.listing.packQuantity,
+            packQuantity: fields
+              ? working.packQuantity!
+              : (merged.packQuantity ?? result.listing.packQuantity),
           },
         };
       },
@@ -180,8 +224,9 @@ export async function runPersistedListingOperation(
                 claim.claimed &&
                 claim.leaseToken
               ) {
-                const cached =
-                  await repos.operations!.reusableExtraction?.(run);
+                const cached = fields
+                  ? null
+                  : await repos.operations!.reusableExtraction?.(run);
                 if (cached) {
                   const cachedFacts = listingFactsSchema.safeParse(
                     (cached as { facts?: unknown }).facts,
@@ -287,6 +332,14 @@ export async function runPersistedListingOperation(
       repos.operations!.get(run.id),
     );
     if (
+      !stale &&
+      !ownedFailure &&
+      !(await deps.withWorkspace(input.workspaceId, (repos) =>
+        repos.operations!.matches(run),
+      ))
+    )
+      stale = true;
+    if (
       stale ||
       stored?.executionState === "superseded" ||
       error instanceof SupersededOperation
@@ -303,7 +356,7 @@ export async function runPersistedListingOperation(
       return { status: "needs_info", versionId: null };
     }
     const terminal = !(error instanceof PipelineStepBusyError);
-    if (terminal)
+    if (terminal && !ownedFailure)
       await deps.withWorkspace(input.workspaceId, (repos) =>
         repos.operations!.mark(run.id, "failed", "pipeline_failure", candidate),
       );

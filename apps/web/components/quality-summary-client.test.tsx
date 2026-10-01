@@ -65,7 +65,7 @@ describe("QualitySummaryClient", () => {
     stubFetch(SAMPLE_SUMMARY);
     const { container } = await mountClient();
     expect(container.textContent).toContain(
-      "共 未有資料 個商品，已評估 42 個；未有資料 個未有目前版本；未有資料 個無法評估",
+      "共 未有資料 個商品，已評估 42 個；未有資料 個未有內容；未有資料 個內容無法評估",
     );
   });
 

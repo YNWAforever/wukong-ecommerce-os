@@ -69,6 +69,11 @@ export type {
   UpsertPlatformProductInput,
 } from "./repositories/platform-products.js";
 export type {
+  MaintenanceContent,
+  MaintenanceContentFence,
+} from "./repositories/maintenance-content.js";
+export { maintenanceContentFenceSchema } from "./repositories/maintenance-content.js";
+export type {
   CreateSourceImportInput,
   SourceImport,
   SourceImportRepository,

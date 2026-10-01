@@ -2,7 +2,11 @@ import { readSourceReadiness } from "../../../lib/source-readiness";
 import { resultCapabilities } from "../../../lib/export-reconciliation";
 import { z } from "zod";
 
-import { ListingDataError, type Database } from "@wukong/db";
+import {
+  ListingDataError,
+  listingInputDigest,
+  type Database,
+} from "@wukong/db";
 
 import { getDatabase } from "../../../lib/intake-runtime";
 import {
@@ -112,7 +116,15 @@ export function createCatalogHandler(deps: CatalogRouteDeps) {
         });
 
       return jsonResponse(200, {
-        capabilities: resultCapabilities(context.role),
+        capabilities: {
+          ...resultCapabilities(context.role),
+          canMaintainProducts: context.role !== "viewer",
+        },
+        selectionScope: listingInputDigest({
+          workspaceId: context.workspaceId,
+          actorId: context.actorId,
+          role: context.role,
+        }),
         ...result,
         scope: "workspace",
         page: query.page,

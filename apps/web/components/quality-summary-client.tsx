@@ -111,8 +111,8 @@ export function QualitySummaryClient() {
       <p className="helper-copy">
         {localized(
           locale,
-          `工作區目前版本：共 ${data.totalListings ?? c.unavailable} 個商品，已評估 ${formatNumber(data.totalAssessed, locale)} 個；${data.noActiveVersion ?? c.unavailable} 個未有目前版本；${data.unassessableActiveVersion ?? c.unavailable} 個無法評估。統計於有界掃描期間觀察，AI 成本涵蓋工作區完整歷史。`,
-          `Workspace active versions: ${formatNumber(data.totalAssessed, locale)} assessed of ${data.totalListings ?? "unavailable"}; ${data.noActiveVersion ?? "unavailable"} without an active version; ${data.unassessableActiveVersion ?? "unavailable"} unassessable. Counts were observed during a bounded scan. AI cost covers all history for workspace listings.`,
+          `工作區目前已儲存內容：共 ${data.totalListings ?? c.unavailable} 個商品，已評估 ${formatNumber(data.totalAssessed, locale)} 個；${data.missingCurrentContent ?? c.unavailable} 個未有內容；${data.invalidCurrentContent ?? c.unavailable} 個內容無法評估。統計於有界掃描期間觀察，AI 成本涵蓋工作區完整歷史。`,
+          `Workspace current saved content: ${formatNumber(data.totalAssessed, locale)} assessed of ${data.totalListings ?? "unavailable"}; ${data.missingCurrentContent ?? "unavailable"} missing content; ${data.invalidCurrentContent ?? "unavailable"} invalid content. Counts were observed during a bounded scan. AI cost covers all history for workspace listings.`,
         )}
         {data.scanStartedAt && data.scanCompletedAt ? (
           <span>

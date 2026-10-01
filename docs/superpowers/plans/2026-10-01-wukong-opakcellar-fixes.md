@@ -123,11 +123,11 @@
 
 **Interfaces:** 新 `computeCurrentContentGaps({content, assessmentState})` 接收既有 content 型別的已解析可編輯內容，回傳 `{gaps: BulkFormContentGaps | null, assessmentState: "assessed" | "missing" | "invalid"}`。用既有 working/active version resolution；歷史 rawRow 不再作最新缺口的權威。新增 batch item fence 儲存現有 input revision、active version、source binding revision，沿用其真實型別。
 
-- [ ] 測舊 rawRow 欠中文但現內容已補好：不入欠中文 cohort；專名相同可標「需檢查」，不等於事實錯誤。
-- [ ] 無目前內容者分類 missing，malformed 者分類 invalid；不能返回「0 缺口／完成」。quality 和 cohort 使用同一缺口計算。
-- [ ] cohort 掃描用 workspace-scoped cursor 分頁取代最近 5,000 筆截斷。單批執行最多仍可設 5,000，但超額要回報總範圍、截斷與 continuation，不提高匯入檔案限制來掩蓋問題。
-- [ ] preview→create→enqueue 三處核對 fence；內容變動回 409／標 stale，要求重預覽。已審批／已發布商品只透過既有合法 reopen/operation 流程，不能擴大 runnable statuses 繞過 state machine。
-- [ ] 測 5,001 件中最舊合資格商品可被掃到，以及 human revision 5 不被 run revision 4 覆寫；執行 service unit + 真 DB cohort integration。
+- [x] 測舊 rawRow 欠中文但現內容已補好：不入欠中文 cohort；專名相同可標「需檢查」，不等於事實錯誤。
+- [x] 無目前內容者分類 missing，malformed 者分類 invalid；不能返回「0 缺口／完成」。quality 和 cohort 使用同一缺口計算。
+- [x] cohort 掃描用 workspace-scoped cursor 分頁取代最近 5,000 筆截斷。單批執行最多仍可設 5,000，但超額要回報總範圍、截斷與 continuation，不提高匯入檔案限制來掩蓋問題。
+- [x] preview→create→enqueue 三處核對 fence；內容變動回 409／標 stale，要求重預覽。已審批／已發布商品只透過既有合法 reopen/operation 流程，不能擴大 runnable statuses 繞過 state machine。
+- [x] 測 5,001 件中最舊合資格商品可被掃到，以及 human revision 5 不被 run revision 4 覆寫；執行 service unit + 真 DB cohort integration。
 
 **完成：** 缺口來自現在可維護內容；rawRow 保持不可變；預览不是可永久沿用的批准。
 
@@ -137,11 +137,11 @@
 
 **Interfaces:** `ContentField` 只能是 Global Constraints 的8欄；`BatchSelection = {mode:"explicit"; listingIds:string[]; fields:ContentField[]}`。preview 回 `{previewId, digest, expiresAt, eligibleCount, skippedByReason, maxCostUsd}`；create 引用 previewId/digest/idempotencyKey，server 讀不可變選項並再驗權限/fence。最大成本無法估時明示 unknown，不承諾數字。preview 不 enqueue、不收費。
 
-- [ ] 跨頁選2＋3=5；改 filter 保留這5項並顯示「另有X項不在目前篩選」，提供清除；不暗中擴為全部結果。初版明確不提供「選全部符合」，待 snapshot selector 契約另行實作。
-- [ ] 預覽顯示選中、合資格、略過原因、修改欄位、波次1–5、預算、身份衝突；過期或有任何 fence 改變，拒絕整個 create 並重預覽，不能默默少做／換品。
-- [ ] 欄位限制經 service→queue→worker→apply 全程傳遞；provider 多回欄位不能被採用。已有人手 lock／更新 revision 優先保留。
-- [ ] 測 submitted IDs 混入他 workspace、隱藏非白名單欄、篡改 digest、重播 create；均不能越權或重複 enqueue。
-- [ ] 跑 preview route、selection、batch service、worker operation tests，加 real-stack 5件跨頁＋選中文名/SEO流程。
+- [x] 跨頁選2＋3=5；改 filter 保留這5項並顯示「另有X項不在目前篩選」，提供清除；不暗中擴為全部結果。初版明確不提供「選全部符合」，待 snapshot selector 契約另行實作。
+- [x] 預覽顯示選中、合資格、略過原因、修改欄位、波次1–5、預算、身份衝突；過期或有任何 fence 改變，拒絕整個 create 並重預覽，不能默默少做／換品。
+- [x] 欄位限制經 service→queue→worker→apply 全程傳遞；provider 多回欄位不能被採用。已有人手 lock／更新 revision 優先保留。
+- [x] 測 submitted IDs 混入他 workspace、隱藏非白名單欄、篡改 digest、重播 create；均不能越權或重複 enqueue。
+- [x] 跑 preview route、selection、batch service、worker operation tests，加 real-stack 5件跨頁＋選中文名/SEO流程。
 
 **完成：** 員工知道對哪幾件、改甚麼、花費上限；真正執行項目與確認內容一致。
 
@@ -151,11 +151,11 @@
 
 **Interfaces:** 安全恢復分類 `retryable | needs-input | needs-review | outcome-unknown | support-required`；派生自 server狀態／run receipts，不能由 browser 指定。每次 attempt 保留 lineage、成本 certainty、request/run ID。
 
-- [ ] 用 3 成功＋1失敗＋1待處理 case 測 pause/resume/retry-failed；成功不重跑，pause 不發新任務，running 任務不假稱已撤銷。
-- [ ] 模擬 provider 已接受但回應 timeout：保留 unknown reservation，先 reconciliation，重點擊不可再扣費；budget 上限不容許新 enqueue。
-- [ ] 呈現 SKU／安全來源名或短ID、縮圖、失敗階段、最後更新、下一步；同名商品可分辨。手動補資料、重試與工程支援分開。
-- [ ] 增加歸檔舊工作能力時，只變 operational visibility，不刪 audit／source／version；未核對成本仍可在 reconciliation 找到。使用既有狀態合法操作，沒有此能力就新增獨立 audited metadata，勿直接改 workflow status。
-- [ ] 跑 batch control／service／worker regression，記錄實際 provider fake call count 和reservation證據。
+- [x] 用 3 成功＋1失敗＋1待處理 case 測 pause/resume/retry-failed；成功不重跑，pause 不發新任務，running 任務不假稱已撤銷。
+- [x] 模擬 provider 已接受但回應 timeout：保留 unknown reservation，先 reconciliation，重點擊不可再扣費；budget 上限不容許新 enqueue。
+- [x] 呈現 SKU／安全來源名或短ID、縮圖、失敗階段、最後更新、下一步；同名商品可分辨。手動補資料、重試與工程支援分開。
+- [x] 增加歸檔舊工作能力時，只變 operational visibility，不刪 audit／source／version；未核對成本仍可在 reconciliation 找到。使用既有狀態合法操作，沒有此能力就新增獨立 audited metadata，勿直接改 workflow status。
+- [x] 跑 batch control／service／worker regression，記錄實際 provider fake call count 和reservation證據。
 
 **完成：** 失敗可安全恢復，未知成本可追查；不把9個歷史失敗一鍵盲目重跑。
 

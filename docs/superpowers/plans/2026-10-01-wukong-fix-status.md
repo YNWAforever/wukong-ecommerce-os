@@ -42,9 +42,9 @@ Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan
 - [ ] T01 local root cause, safe diagnostics, read-only preflight and true schema-repair regression complete; production repair/fresh authenticated acceptance remain blocked. See [recovery/release pack](../../runbooks/opak-runtime-recovery.md).
 - [x] T02 classified row isolation and explicit section degradation verified by route/component/real DB and operator/reviewer local production-build browser cases. Cloud production acceptance remains separate.
 - [x] T03 existing maintenance intake / identity binding implemented and locally verified; full remote CI and preview acceptance tracked separately below.
-- [ ] T04 current-content gaps / cursor cohort / fences.
-- [ ] T05 explicit cross-page selection / immutable preview / selected fields.
-- [ ] T06 pause / retry-failed / unknown-cost recovery.
+- [x] T04 current-content gaps / cursor cohort / fences locally verified; remote/release acceptance separately tracked.
+- [x] T05 explicit cross-page selection / immutable preview / selected fields locally verified.
+- [x] T06 pause / retry-failed / unknown-cost recovery locally verified, including the original 50-item control regression.
 - [ ] T07 catalog / URL / return context.
 - [ ] T08 account / role / assignment / support.
 - [ ] T09 dirty guard / actual readiness.
@@ -133,3 +133,33 @@ Pilot rerun exposed an existing zero-second datetime input flake: Chromium norma
 Remote CI for `15eaf49a` passed full integration, unit/build/typecheck, the dedicated Opak maintenance/read browser gate and Product Shot. Queue browser failed `workbench.spec.ts:193`: an existing `?scan=` link reopened the maintenance intent and hid its partial readonly preview. Regression added for scan-context intent restoration; page now resumes readonly references unless maintenance intent was explicit. The original browser assertion stays intact. Local broad integration ended 975 passed / 11 failed / 16 skipped; readonly review found no concrete T03 cause, but same-host baseline comparison is still needed. No production acceptance inferred.
 
 The scan-context regression passed its RED/GREEN unit run (17 targeted intent/choice tests), followed by a fresh web typecheck and production build. The latest complete local runtime passed both original acceptance cases: workbench partial-scan preview and attended reviewer Bulk Update/result reconciliation (2/2, 53.9s). The pilot checkbox assertion waits 10 seconds for the actual persisted response/reload; trace had measured PATCH 200 at 4.2 seconds plus GET 200 at 0.9 seconds, exceeding the former 5-second UI assertion. API, binding, approval and export assertions remain intact. This is local fake/mock evidence; the complete remote CI rerun is still required.
+
+Latest B commit `a181cda3d163b2f8825bef1582839a99aca96429` completed [CI 36834114292](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/36834114292) successfully. All required gates, full integration, isolated Opak browser, Product Shot, Queue acceptance, audit verification and wine acceptance passed on that commit. Local Windows broad-integration failures remain separately recorded and unclassified.
+
+### Batch C / T04-T06 local implementation and verification
+
+Branch `codex/opak-current-content-batches` starts at B's verified commit. Current content comes from the owned current input revision merged with the owned active version while retaining human ownership, rather than immutable source raw rows. Invalid active/input data is classified per row after SQL; whole SQL/auth failures remain errors. Workspace UUID cursor pages scan beyond 5,000; an execution cap reports total matches and a continuation.
+
+Creation requires an actor/workspace-scoped immutable 10-minute preview, digest and replay key. Preview does not admit jobs or model calls. Creation rechecks all selected input/version/source/status fences under locks and cannot silently replace or omit changed identities. Every pending item is checked before wave admission, including items outside the next wave. A reproduced scan-to-preview race now rejects the whole cohort if a current gap changes between observations.
+
+The eight-field mask travels through stored batch, accepted run, strict Queue envelope, worker merge and candidate adoption. Unknown pack quantities stop before a provider call. Selected content never changes facts, images, English name or unselected fields. Partial masked copy stays as an editable candidate with `needs_info`; it does not create a version that the normal review reader cannot parse. Paid physical-call admission checks current source fences before invocation accounting or transport.
+
+Known failures may retry with the original mask, content fence and immutable attempt lineage; successes, superseded/input-required results and uncertain provider outcomes cannot be blindly retried. Archive/restore changes separately audited visibility metadata and retains runs, sources, versions, costs and workflow status.
+
+Fresh targeted evidence: preview race RED 1 failure / 7 passes then GREEN 20/20 including HTTP authorization, protected hidden fields, foreign IDs, expiry/digest and whole permission/DB failures. Worker review regressions RED two failures, then GREEN 23/23, including 10 concurrent fake generations, five superseded human corrections, zero extraction calls for maintenance, source-only physical-admission refusal and incomplete copy. Recovery UI/API passed 27/27. Required typecheck passed 14/14 tasks (13 cached, web fresh); production web build passed 6/6 (5 cached, web fresh).
+
+Actual PostgreSQL recovery + schema regression passed 28 tests, including duplicate creation, revision changes outside the first wave, 3 success / 1 failed / 1 pending, unknown USD 0.250000 held until independent synthetic USD 0.125000 reconciliation, failed-only replay, archive/restore retention and new composite FK indexes. The existing 50-item control test timed out at 60 seconds on this Windows host; no passed/baseline claim.
+
+Final fresh checks after review: bounded package unit suite passed 3,734 tests (one existing opt-in asset test skipped), all 14 typecheck tasks and all 8 build tasks passed. Current-content/recovery actual DB rerun passed 10/10, including source-only changes rejecting retry/adoption. Root Node CI contracts passed 117/117. Asset signing now follows its actual `{url, expiresAt}` contract; owned asset SQL/permissions remain outside optional signing degradation. Reviewer confirmed no remaining Critical/Important issue in the corrected scope.
+
+Complete fake-AI/mock-SHOPLINE real-stack browser rerun passed 6/6 in 1.2 minutes: import timestamp/retry, viewer refusal, attended reviewer approval/XLSX/mixed merchant report/independent reconciliation, admin connection setup, five products selected across two pages and filters, partial masked candidate adoption/manual review. Exactly five fake generations, zero extraction transport and zero USD were recorded for the selected cohort; unselected/manual values were unchanged. A signed preview screenshot is retained only in ignored local evidence.
+
+B preview for `a181cda3d163b2f8825bef1582839a99aca96429` is READY at `wukong-ecommerce-gdxgc2339-ynwaforevers-projects.vercel.app`. This is deployment metadata, not authenticated preview or production acceptance. C PR/remote CI/preview remain pending.
+
+The unchanged 60-second timeout limit was retained. Final isolated 50-item control rerun passed 1/1 in 9.19 seconds (test execution 6.01 seconds) after other runtime checks stopped, on the same local integration container. Prior broad Windows timeouts remain historical failed observations, not a verified product cause. Commit-relative format checked 66 runtime files, forbidden-runtime checked 488 source files with zero violations, and the repository's automated release gate passed; external sign-off remains open.
+
+### C CI repair follow-up (2026-10-01)
+
+Draft PR #123 initial remote run 36847660394 failed four assertions across three integration suites. Two assertions still expected the replaced pre-preview API/quality scope. The corrected-source fixture still selected the now-human-filled Chinese-name gap; it now selects its genuinely missing summary. The tenant-table auditor omitted the two preview/receipt tables from migration 0050; matching Drizzle declarations and the inventory now include both, retaining all composite workspace fences. Reference-only IDs are additionally rejected by the actual preview route with no queue or listing side effects.
+
+Fresh isolated checks: package audit inventory 14/14, the three failing real-PostgreSQL suites 14/14, and DB typecheck passed. An earlier concurrent rerun hit a 30-second timeout and is retained as a failed observation; the serial rerun completed in 16.50 seconds without changing timeouts. Full remote CI and authenticated preview acceptance remain pending. No new migration, environment variable, production change or merchant data in this repair. Source rollback is the prior C head; retain the additive preview/receipt schema and existing costs/audits.

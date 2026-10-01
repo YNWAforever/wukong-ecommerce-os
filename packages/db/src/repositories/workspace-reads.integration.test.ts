@@ -315,7 +315,7 @@ describe("full workspace read boundaries", () => {
       totalAssessed: 131,
       noActiveVersion: 6,
       unassessableActiveVersion: 0,
-      scope: "workspace_active_versions",
+      scope: "workspace_current_content",
       consistency: "bounded_scan",
       totalCostUsd: 34.25,
     });
@@ -632,6 +632,43 @@ describe("full workspace read boundaries", () => {
         sessionContext,
         createBatch: enrichment.createBatch,
       });
+      const { createBatchSelectionService } =
+        await import("../../../../apps/web/lib/batch-selection.js");
+      const { createBatchPreviewHandler } =
+        await import("../../../../apps/web/app/api/enrichment-batches/preview/route.js");
+      const selections = createBatchSelectionService({
+        getDatabase: () => db,
+        provider: "fake",
+      });
+      const preview = createBatchPreviewHandler({
+        sessionContext,
+        preview: selections.preview,
+      });
+      const websiteReferenceId = (
+        await r.reads.catalogPage({ page: 1, pageSize: 1, filter: "website" })
+      ).items[0]!.id;
+      for (const referenceId of [workbookId, websiteReferenceId]) {
+        const denied = await preview(
+          new Request("http://localhost/api/enrichment-batches/preview", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              label: "Readonly reference refusal",
+              budgetUsd: 1,
+              waveSize: 1,
+              selection: {
+                mode: "explicit",
+                listingIds: [referenceId],
+                fields: ["nameZh"],
+              },
+            }),
+          }),
+        );
+        expect(denied.status).toBe(403);
+        expect(await denied.json()).toMatchObject({
+          code: "selection_not_authorized",
+        });
+      }
       for (const gap of [
         "untranslatedName",
         "untranslatedSeoTitle",
@@ -652,8 +689,10 @@ describe("full workspace read boundaries", () => {
             }),
           }),
         );
-        expect(response.status).toBe(422);
-        expect(await response.json()).toMatchObject({ code: "empty_cohort" });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({
+          code: "invalid_request",
+        });
       }
       expect(
         (await r.reads.listingPage({ page: 1, pageSize: 25 })).totalMatching,

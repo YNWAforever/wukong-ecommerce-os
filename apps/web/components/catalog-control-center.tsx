@@ -31,6 +31,7 @@ import {
 } from "./catalog-view-models";
 import styles from "./catalog-control-center.module.css";
 import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
+import { CreateBatchForm } from "./create-batch-form";
 
 const STATUS_TONE_CLASSES = {
   neutral: styles.statusNeutral,
@@ -113,6 +114,10 @@ export function CatalogControlCenter({
   const [selectedListings, setSelectedListings] = useState<
     ReadonlyMap<string, string | null>
   >(new Map());
+  const [maintenanceSelection, setMaintenanceSelection] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [selectionScope, setSelectionScope] = useState<string | null>(null);
 
   const loadCatalog = useCallback(
     async (signal: AbortSignal) => {
@@ -146,14 +151,41 @@ export function CatalogControlCenter({
       ? data.page
       : EMPTY_RESPONSE;
   useEffect(() => {
+    if (response.selectionScope && response.selectionScope !== selectionScope) {
+      setSelectionScope(response.selectionScope);
+      setSelectedListings(new Map());
+      setMaintenanceSelection(new Set());
+    }
+  }, [response.selectionScope, selectionScope]);
+  const canMaintain =
+    response.capabilities.canMaintainProducts ??
+    response.capabilities.canGenerateBulkUpdate;
+  const visibleSelected = new Set(
+    response.items.flatMap((item) =>
+      item.sourceType === "platform" || item.sourceType === "draft"
+        ? item.listingId
+          ? [item.listingId]
+          : []
+        : [],
+    ),
+  );
+  const offPageCount = [...maintenanceSelection].filter(
+    (id) => !visibleSelected.has(id),
+  ).length;
+  useEffect(() => {
     const blocked = new Set(
       response.items
         .filter(
           (item) =>
-            item.sourceType === "platform" && item.readState === "blocked",
+            (item.sourceType === "platform" || item.sourceType === "draft") &&
+            item.readState === "blocked",
         )
         .map((item) => (item as PlatformCatalogItem).listingId),
     );
+    if (blocked.size)
+      setMaintenanceSelection(
+        (current) => new Set([...current].filter((id) => !blocked.has(id))),
+      );
     if (blocked.size)
       setSelectedListings((current) => {
         const next = new Map([...current].filter(([id]) => !blocked.has(id)));
@@ -346,19 +378,34 @@ export function CatalogControlCenter({
           <strong>
             {localized(
               locale,
-              `已選取 ${selectedListings.size} 個商品作批量更新`,
-              `${selectedListings.size} selected for Bulk Update`,
+              `已選取 ${maintenanceSelection.size} 個商品作批量更新`,
+              `${maintenanceSelection.size} selected for Bulk Update`,
             )}
           </strong>
           <button
             type="button"
             className={styles.pageButton}
-            disabled={selectedListings.size === 0}
-            onClick={() => setSelectedListings(new Map())}
+            disabled={maintenanceSelection.size === 0}
+            onClick={() => {
+              setSelectedListings(new Map());
+              setMaintenanceSelection(new Set());
+            }}
           >
             {localized(locale, "清除選取", "Clear selection")}
           </button>
         </div>
+        {offPageCount > 0 ? (
+          <p>
+            {localized(
+              locale,
+              `另有 ${offPageCount} 項不在目前篩選`,
+              `${offPageCount} selected products are outside this filter`,
+            )}
+          </p>
+        ) : null}
+        {canMaintain && maintenanceSelection.size > 0 ? (
+          <CreateBatchForm listingIds={[...maintenanceSelection]} />
+        ) : null}
         <BulkExportPanel
           listings={exportListings}
           canGenerate={response.capabilities.canGenerateBulkUpdate}
@@ -535,7 +582,28 @@ export function CatalogControlCenter({
                   if (item.sourceType === "draft")
                     return (
                       <tr key={`draft:${item.id}`}>
-                        <td />
+                        <td>
+                          {canMaintain && item.readState !== "blocked" ? (
+                            <input
+                              type="checkbox"
+                              aria-label={localized(
+                                locale,
+                                `選取 ${item.sku ?? item.id} 作批量更新`,
+                                `Select ${item.sku ?? item.id} for Bulk Update`,
+                              )}
+                              checked={maintenanceSelection.has(item.listingId)}
+                              onChange={(event) =>
+                                setMaintenanceSelection((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked)
+                                    next.add(item.listingId);
+                                  else next.delete(item.listingId);
+                                  return next;
+                                })
+                              }
+                            />
+                          ) : null}
+                        </td>
                         <td>
                           <strong className={styles.productTitle}>
                             {item.title}
@@ -576,10 +644,11 @@ export function CatalogControlCenter({
                   return (
                     <tr key={`platform:${item.id}`}>
                       <td>
-                        {item.origin === "import" &&
+                        {(item.origin === "import" ||
+                          response.capabilities.canMaintainProducts === true) &&
                         item.listingId &&
                         item.readState !== "blocked" &&
-                        response.capabilities.canGenerateBulkUpdate ? (
+                        canMaintain ? (
                           <input
                             type="checkbox"
                             aria-label={localized(
@@ -587,22 +656,33 @@ export function CatalogControlCenter({
                               `選取 ${item.sku ?? item.remoteProductId} 作批量更新`,
                               `Select ${item.sku ?? item.remoteProductId} for Bulk Update`,
                             )}
-                            checked={selectedListings.has(item.listingId)}
-                            onChange={(event) =>
-                              setSelectedListings((current) => {
-                                const next = new Map(current);
-                                if (event.target.checked) {
-                                  // Capture the digest as shown right now --
-                                  // this is what the operator is attesting
-                                  // to, not whatever a later page happens to
-                                  // find under this id.
-                                  next.set(item.listingId!, item.contentDigest);
-                                } else {
-                                  next.delete(item.listingId!);
-                                }
+                            checked={maintenanceSelection.has(item.listingId)}
+                            onChange={(event) => {
+                              const checked = event.target.checked;
+                              setMaintenanceSelection((current) => {
+                                const next = new Set(current);
+                                if (checked) next.add(item.listingId!);
+                                else next.delete(item.listingId!);
                                 return next;
-                              })
-                            }
+                              });
+                              if (item.origin === "import")
+                                setSelectedListings((current) => {
+                                  const next = new Map(current);
+                                  if (checked) {
+                                    // Capture the digest as shown right now --
+                                    // this is what the operator is attesting
+                                    // to, not whatever a later page happens to
+                                    // find under this id.
+                                    next.set(
+                                      item.listingId!,
+                                      item.contentDigest,
+                                    );
+                                  } else {
+                                    next.delete(item.listingId!);
+                                  }
+                                  return next;
+                                });
+                            }}
                           />
                         ) : null}
                       </td>

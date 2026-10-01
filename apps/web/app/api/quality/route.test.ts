@@ -73,19 +73,28 @@ describe("GET /api/quality", () => {
                   return ["l1", "l2", "l3"];
                 },
               },
-              listings: {
-                async getByIds() {
-                  calls.push(["listings.getByIds"]);
+              platformProducts: {
+                async scanMaintenancePage() {
+                  calls.push(["platformProducts.scanMaintenancePage"]);
                   return [
                     {
-                      id: "l1",
-                      activeVersion: { id: "v1", content: cleanContent },
+                      listingId: "l1",
+                      content: cleanContent,
+                      assessmentState: "assessed",
+                      fence: { activeVersionId: "v1" },
                     },
                     {
-                      id: "l2",
-                      activeVersion: { id: "v2", content: gappyContent },
+                      listingId: "l2",
+                      content: gappyContent,
+                      assessmentState: "assessed",
+                      fence: { activeVersionId: "v2" },
                     },
-                    { id: "l3", activeVersion: null },
+                    {
+                      listingId: "l3",
+                      content: null,
+                      assessmentState: "missing",
+                      fence: { activeVersionId: null },
+                    },
                   ];
                 },
               },
@@ -112,7 +121,9 @@ describe("GET /api/quality", () => {
       totalListings: 3,
       noActiveVersion: 1,
       unassessableActiveVersion: 0,
-      scope: "workspace_active_versions",
+      scope: "workspace_current_content",
+      missingCurrentContent: 1,
+      invalidCurrentContent: 0,
       costScope: "all_history_for_workspace_listings",
       totalAssessed: 2,
       cleanCount: 1,
@@ -131,7 +142,7 @@ describe("GET /api/quality", () => {
 
     expect(calls).toEqual([
       ["forWorkspace", "ws_opak"],
-      ["listings.getByIds"],
+      ["platformProducts.scanMaintenancePage"],
       ["aiRuns.summarizeCostForListings", ["l1", "l2", "l3"]],
     ]);
   });
