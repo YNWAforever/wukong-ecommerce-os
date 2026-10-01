@@ -207,7 +207,7 @@ export function createWorkspaceReadRepository(
   const currentTitleEn = sql`case when i.id is null then v.content->'title'->>'en' when v.id is null or i.field_states->'title.en'->>'owner'='operator' or i.field_states->'title.en'->>'locked'='true' then i.working_content->'title'->>'en' else v.content->'title'->>'en' end`;
   const titleJoins = sql`left join listing_input_revisions i on i.workspace_id=${workspaceId} and i.listing_id=d.id and i.revision=d.input_revision
     left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId} and v.listing_id=d.id`;
-  const catalog = (withTitles: boolean) => sql`
+  const catalog = (withTitles: boolean, fromPage = false) => sql`
   select 'platform'::text as "sourceType",null::text as "sourceUrl",null::text as "capturedAt", p.id, p.remote_product_id as "remoteProductId",p.origin,p.sku,p.listing_id as "listingId",
    p.spec_version as "specVersion",coalesce(${withTitles ? sql`nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),` : sql``}p.sku,p.remote_product_id) as title,
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
@@ -219,11 +219,11 @@ export function createWorkspaceReadRepository(
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
-  where p.workspace_id=${workspaceId}
+  where p.workspace_id=${workspaceId}${fromPage ? sql` and p.id in (select id from page_keys where "sourceType"='platform')` : sql``}
   union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null
-  from website_products w where w.workspace_id=${workspaceId}
+  from website_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='website')` : sql``}
   union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
-  from workbook_products w where w.workspace_id=${workspaceId}
+  from workbook_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='workbook')` : sql``}
   union all select 'draft',null,null,d.id,null,null,${withTitles ? sql`case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end` : sql`null::text`},d.id,null,
    coalesce(${withTitles ? sql`nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),` : sql``}nullif(left(d.note,120),''),d.id::text),
    d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
@@ -231,7 +231,7 @@ export function createWorkspaceReadRepository(
   from listing_drafts d
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
-  where d.workspace_id=${workspaceId} and not exists(select 1 from platform_products p where p.workspace_id=${workspaceId} and p.listing_id=d.id)`;
+  where d.workspace_id=${workspaceId}${fromPage ? sql` and d.id in (select id from page_keys where "sourceType"='draft')` : sql``} and not exists(select 1 from platform_products p where p.workspace_id=${workspaceId} and p.listing_id=d.id)`;
   const ledger = sql`
   select id,'batch'::text kind,created_at from enrichment_batches where workspace_id=${workspaceId}
   union all select id,'publish_job',created_at from publish_jobs where workspace_id=${workspaceId}
@@ -458,10 +458,19 @@ export function createWorkspaceReadRepository(
       const ordering = backward
         ? sql`"createdAt" asc,"sourceType" desc,id desc`
         : sql`"createdAt" desc,"sourceType",id`;
-      // One statement gives counts and page a common MVCC snapshot, including empty pages.
+      // Empty-query counts and cursors materialize only identity/policy scalars.
+      // Hydrate the selected source identities in the same MVCC snapshot; searches
+      // keep their current title/field projection and matching authority.
+      const population = q
+        ? catalog(true)
+        : sql`select "sourceType",id,"listingId","listingStatus","needsReview","needsAttention","createdAt" from (${catalog(false)}) catalog_identity`;
+      const page = q
+        ? sql`page as (select * from matching where ${boundary} order by ${ordering} limit ${input.pageSize + 1} offset ${position ? 0 : skip})`
+        : sql`page_keys as materialized (select * from matching where ${boundary} order by ${ordering} limit ${input.pageSize + 1} offset ${position ? 0 : skip}), page as (${catalog(false, true)})`;
+      // Counts and page share one snapshot, including empty pages.
       const rows =
-        await transaction.execute(sql`with catalog as materialized (${catalog(!!q)}), matching as (select * from catalog where ${match}),
-    page as (select * from matching where ${boundary} order by ${ordering} limit ${input.pageSize + 1} offset ${position ? 0 : skip})
+        await transaction.execute(sql`with catalog as materialized (${population}), matching as (select * from catalog where ${match}),
+    ${page}
     select (select coalesce(jsonb_agg(to_jsonb(page) order by ${ordering}),'[]') from page) items,
      (select count(*)::int from matching) as "totalMatching",
      jsonb_build_object('total',count(*)::int,'linked',count(*) filter(where "sourceType"='platform' and "listingId" is not null)::int,
