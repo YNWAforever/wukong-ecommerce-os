@@ -8,6 +8,14 @@ export {
   type WorkspaceRepositories,
 } from "./client.js";
 export { loadSqlMigrations, type SqlMigration } from "./migrations.js";
+export {
+  ListingDataError,
+  type ListingDataFailureReason,
+} from "./listing-data-error.js";
+export {
+  inspectListingReadCompatibility,
+  LISTING_READ_COMPATIBILITY_SQL,
+} from "./listing-read-compatibility.js";
 export type {
   CreateListingInput,
   Listing,

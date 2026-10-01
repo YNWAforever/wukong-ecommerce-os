@@ -1,3 +1,5 @@
+import { ListingDataError } from "@wukong/db";
+
 export type ListingActivityAuditEntry = {
   kind: "audit";
   id: string;
@@ -106,6 +108,14 @@ export async function getListingActivity(
     })),
   ];
 
+  if (
+    entries.some(
+      (entry) =>
+        !(entry.createdAt instanceof Date) ||
+        !Number.isFinite(entry.createdAt.getTime()),
+    )
+  )
+    throw new ListingDataError("invalid_activity");
   entries.sort((a, b) => {
     const byCreatedAt = b.createdAt.getTime() - a.createdAt.getTime();
     if (byCreatedAt !== 0) return byCreatedAt;

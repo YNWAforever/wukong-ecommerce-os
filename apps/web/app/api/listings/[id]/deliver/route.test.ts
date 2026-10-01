@@ -799,7 +799,10 @@ describe("POST /api/listings/[id]/deliver", () => {
             },
             sourceImports: {
               async getById() {
-                return { headerContractSha256: hashBulkFormHeaderContract() };
+                return {
+                  headerContractSha256: hashBulkFormHeaderContract(),
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                };
               },
             },
             sourceAssets: { listForListing: async () => [] },
@@ -913,7 +916,10 @@ describe("POST /api/listings/[id]/deliver", () => {
             },
             sourceImports: {
               async getById() {
-                return { headerContractSha256: hashBulkFormHeaderContract() };
+                return {
+                  headerContractSha256: hashBulkFormHeaderContract(),
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                };
               },
             },
             sourceAssets: { listForListing: async () => [] },

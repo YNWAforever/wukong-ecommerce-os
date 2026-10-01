@@ -1,5 +1,10 @@
-import type { PlatformProduct, WorkspaceRepositories } from "@wukong/db";
+import {
+  ListingDataError,
+  type PlatformProduct,
+  type WorkspaceRepositories,
+} from "@wukong/db";
 import { hashBulkFormHeaderContract } from "@wukong/shopline";
+import { sourceImportHasValidTime } from "./source-import-time";
 import {
   checkBulkUpdateEligibility,
   type BulkUpdateEligibilityDeps,
@@ -33,6 +38,8 @@ export async function evaluateSourceReadiness(
   const source = link?.sourceImportId
     ? await deps.getSourceImport(link.sourceImportId)
     : null;
+  if (source && !sourceImportHasValidTime(source))
+    throw new ListingDataError("invalid_source_time");
   const receipt = versionId ? await deps.getApprovalReceipt(versionId) : null;
   const currentConfirmation = versionId
     ? await deps.getReviewConfirmation(versionId)

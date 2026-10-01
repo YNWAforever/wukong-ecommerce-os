@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 
 import { queueGroups, type QueueItem } from "./listing-view-models";
+import { SupportRequestId } from "./support-request-id";
 
 type ListingQueueProps = {
   items: QueueItem[];
@@ -87,7 +88,8 @@ export function ListingQueue({
               {groupItems.length > 0 ? (
                 <ul className="queue-list">
                   {groupItems.map((item) => {
-                    const eligible = eligibleSet.has(item.id);
+                    const eligible =
+                      !item.readBlocked && eligibleSet.has(item.id);
                     return (
                       <li key={item.id} className="queue-item">
                         {item.status === "in_review" ? (
@@ -150,6 +152,18 @@ export function ListingQueue({
                               </>
                             ) : null}
                           </p>
+                          {item.readBlocked ? (
+                            <div className="inline-warning" role="status">
+                              {localized(
+                                locale,
+                                "資料讀取受阻，暫不可批准或交付。",
+                                "Record unavailable; approval and delivery blocked.",
+                              )}{" "}
+                              <SupportRequestId
+                                value={item.readFailure?.requestId}
+                              />
+                            </div>
+                          ) : null}
                           <time dateTime={item.updatedAt}>
                             {formatHkDate(item.updatedAt, locale)}
                           </time>

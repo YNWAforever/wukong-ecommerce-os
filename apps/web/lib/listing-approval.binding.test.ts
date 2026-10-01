@@ -100,6 +100,11 @@ function fixture() {
         return link;
       },
     },
+    sourceImports: {
+      getById: async () => ({
+        merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+      }),
+    },
     sourceRows: {
       async getForProduct(): Promise<typeof sourceRow | null> {
         return sourceRow;
@@ -139,6 +144,22 @@ function fixture() {
 }
 
 describe("durable Bulk Update approval binding", () => {
+  it.each([null, { merchantAttestedExportAt: new Date(NaN) }])(
+    "refuses unknown or malformed imported source time in the approval transaction",
+    async (source) => {
+      const { repos, context, deps, calls } = fixture();
+      await expect(
+        approveOne(
+          "listing-1",
+          context,
+          { ...repos, sourceImports: { getById: async () => source } } as never,
+          deps,
+        ),
+      ).rejects.toMatchObject({ code: "source_snapshot_required" });
+      expect(calls).not.toContain("approve");
+      expect(calls).not.toContain("receipt");
+    },
+  );
   it("enforces tenant-required fields before approval or receipt mutation", async () => {
     const { repos, context, deps, calls } = fixture();
     const withPolicy = {

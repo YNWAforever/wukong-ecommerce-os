@@ -112,6 +112,7 @@ describe("GET /api/listings", () => {
       items: [
         {
           id: "00000000-0000-4000-8000-000000000101",
+          readState: "ready",
           status: "in_review",
           target: "shopline",
           title: "Opak \u96f7\u53f8\u4ee4",

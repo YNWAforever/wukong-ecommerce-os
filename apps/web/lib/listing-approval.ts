@@ -1,4 +1,5 @@
 import { readCopyClaimSupports } from "./listing-claim-support";
+import { sourceImportHasValidTime } from "./source-import-time";
 import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
   missingWorkspaceFields,
@@ -13,6 +14,7 @@ import type {
   ProductShotRepository,
   AuditWriter,
   SourceRowRepository,
+  SourceImportRepository,
   SourceRowSnapshot,
   ApprovalReceiptRepository,
   ListingRepository,
@@ -67,6 +69,7 @@ export type ApproveOneRepositories = {
   reviewConfirmations: Pick<ReviewConfirmationRepository, "getByVersionId">;
   platformProducts: Pick<PlatformProductRepository, "getByListingId">;
   sourceRows: Pick<SourceRowRepository, "getForProduct">;
+  sourceImports: Pick<SourceImportRepository, "getById">;
   approvalReceipts: Pick<ApprovalReceiptRepository, "record">;
   audit: AuditWriter;
 };
@@ -168,7 +171,7 @@ export async function readApprovalSourceSnapshot(
     contentDigest: string | null;
     rawRow: Record<string, string | null> | null;
   },
-  repositories: Pick<ApproveOneRepositories, "sourceRows">,
+  repositories: Pick<ApproveOneRepositories, "sourceRows" | "sourceImports">,
 ): Promise<SourceRowSnapshot | null> {
   if (
     !link.sourceImportId ||
@@ -177,6 +180,8 @@ export async function readApprovalSourceSnapshot(
     !isBulkFormRawRow(link.rawRow)
   )
     return null;
+  const source = await repositories.sourceImports.getById(link.sourceImportId);
+  if (!sourceImportHasValidTime(source)) return null;
   const row = await repositories.sourceRows.getForProduct({
     sourceImportId: link.sourceImportId,
     connectionId: link.connectionId,

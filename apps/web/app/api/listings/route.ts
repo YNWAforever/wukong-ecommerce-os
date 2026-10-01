@@ -20,6 +20,10 @@ import type { WorkspaceRepositories } from "@wukong/db";
 
 import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
 import { allConfirmed } from "../../../lib/review-confirmation-keys";
+import {
+  readIsolatedListing,
+  recordListingReadFailure,
+} from "../../../lib/listing-read-resilience";
 
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
@@ -32,6 +36,8 @@ import {
 } from "../../../lib/product-shot-request";
 import {
   ApiError,
+  atRouteStage,
+  createRouteDiagnostics,
   jsonResponse,
   queueIngressReason,
   requireSessionContext,
@@ -438,8 +444,11 @@ const listQuerySchema = z.object({
 });
 export function createListListingsHandler(deps: ListListingsDeps) {
   return async function listListings(request?: Request): Promise<Response> {
+    const diagnostics = createRouteDiagnostics();
     return withRouteErrors(async () => {
-      const context = await requireSessionContext(deps.sessionContext);
+      const context = await atRouteStage("session", () =>
+        requireSessionContext(deps.sessionContext),
+      );
       const query = listQuerySchema.parse(
         Object.fromEntries(
           new URL(request?.url ?? "http://local/api/listings").searchParams,
@@ -448,23 +457,72 @@ export function createListListingsHandler(deps: ListListingsDeps) {
       const { items, counts, totalMatching } = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const page = await repositories.reads.listingPage(query);
-          const hydrated = await repositories.listings.getByIds(page.ids);
+          const page = await atRouteStage("listing", () =>
+            repositories.reads.listingPage(query),
+          );
+          const hydrated = await atRouteStage("listing", () =>
+            repositories.listings.getByIds(page.ids),
+          );
           const byId = new Map(hydrated.map((item) => [item.id, item]));
           const items = page.ids.flatMap((id) =>
             byId.has(id) ? [byId.get(id)!] : [],
           );
-          const counts = await repositories.listings.countByStatus();
+          const counts = await atRouteStage("listing", () =>
+            repositories.listings.countByStatus(),
+          );
           const reviewedItems = await Promise.all(
-            items.map(async (item) => ({
-              ...item,
-              reviewContext: await readQueueReviewContext(item, repositories),
-              sourceReadiness: await readSourceReadiness(
-                repositories,
-                context.workspaceId,
-                item.id,
-              ),
-            })),
+            items.map(async (item) => {
+              if (item.readFailure)
+                return {
+                  ...item,
+                  readState: "blocked" as const,
+                  readFailure: recordListingReadFailure(
+                    diagnostics,
+                    "listing",
+                    item.readFailure,
+                  ),
+                  reviewContext: null,
+                  sourceReadiness: null,
+                };
+              const review = await readIsolatedListing(
+                diagnostics,
+                "review",
+                () => readQueueReviewContext(item, repositories),
+              );
+              const source = await readIsolatedListing(
+                diagnostics,
+                "sources",
+                () =>
+                  readSourceReadiness(
+                    repositories,
+                    context.workspaceId,
+                    item.id,
+                  ),
+              );
+              if (
+                review.state === "unavailable" ||
+                source.state === "unavailable"
+              )
+                return {
+                  ...item,
+                  readState: "blocked" as const,
+                  readFailure:
+                    review.state === "unavailable"
+                      ? review.failure
+                      : source.state === "unavailable"
+                        ? source.failure
+                        : undefined,
+                  reviewContext: null,
+                  sourceReadiness: null,
+                };
+              return {
+                ...item,
+                readState: "ready" as const,
+                readFailure: undefined,
+                reviewContext: review.value,
+                sourceReadiness: source.value,
+              };
+            }),
           );
           return {
             items: reviewedItems,
@@ -497,6 +555,8 @@ export function createListListingsHandler(deps: ListListingsDeps) {
               : new Date(item.updatedAt).toISOString();
           return {
             id: item.id,
+            readState: item.readState,
+            ...(item.readFailure ? { readFailure: item.readFailure } : {}),
             status: item.status,
             target: item.target,
             title,
@@ -508,7 +568,7 @@ export function createListListingsHandler(deps: ListListingsDeps) {
           };
         }),
       });
-    });
+    }, diagnostics);
   };
 }
 

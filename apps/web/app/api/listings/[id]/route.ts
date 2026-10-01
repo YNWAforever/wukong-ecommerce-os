@@ -3,11 +3,19 @@ import { readWineProgress } from "../../../../lib/wine-progress";
 import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
 import { usesProductShotWorkflow } from "../../../../lib/product-shot-workflow";
 import { readSourceReadiness } from "../../../../lib/source-readiness";
+import {
+  readIsolatedListing,
+  recordListingReadFailure,
+  type ListingReadFailure,
+} from "../../../../lib/listing-read-resilience";
 import type { AssetStore } from "@wukong/assets";
+import type { WorkspaceRepositories } from "@wukong/db";
 
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
+  atRouteStage,
+  createRouteDiagnostics,
   jsonResponse,
   requireSessionContext,
   withRouteErrors,
@@ -24,7 +32,7 @@ type ListingRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   getAssetStore: () => Pick<AssetStore, "createReadUrl">;
@@ -59,20 +67,54 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
     _request: Request,
     context: RouteContext,
   ): Promise<Response> {
+    const diagnostics = createRouteDiagnostics();
     return withRouteErrors(async () => {
-      const session = await requireSessionContext(deps.sessionContext);
+      const session = await atRouteStage("session", () =>
+        requireSessionContext(deps.sessionContext),
+      );
       const { id } = await context.params;
       if (!z.uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
       const result = await deps
         .getDatabase()
         .forWorkspace(session.workspaceId, async (repositories) => {
-          const snapshot = await repositories.listings.getReviewSnapshot(id);
+          const read = await readIsolatedListing(diagnostics, "listing", () =>
+            repositories.listings.getReviewSnapshot(id),
+          );
+          if (read.state === "unavailable") {
+            // Re-read identity under the same server workspace/RLS scope. No
+            // corrupt content, inferred version or mutation capability escapes.
+            const identity = await atRouteStage("listing", () =>
+              repositories.listings.getById(id),
+            );
+            if (!identity)
+              throw new ApiError(
+                404,
+                "listing_not_found",
+                "Listing not found.",
+              );
+            return {
+              listingId: id,
+              workspaceId: session.workspaceId,
+              status: identity.status,
+              readState: "blocked" as const,
+              readFailure: read.failure,
+              activeVersion: null,
+              permissions: Object.fromEntries(
+                Object.keys(listingPermissions(session.role)).map((key) => [
+                  key,
+                  false,
+                ]),
+              ),
+            };
+          }
+          const snapshot = read.value;
           if (!snapshot)
             throw new ApiError(404, "listing_not_found", "Listing not found.");
           const versionId = snapshot.activeVersion?.id ?? null;
-          const platformProductLink =
-            await repositories.platformProducts.getByListingId(id);
+          const platformProductLink = await atRouteStage("sources", () =>
+            repositories.platformProducts.getByListingId(id),
+          );
           // Looked up by versionId, not by reconstructing the job's
           // idempotency key from current state: that key was "create" or
           // "update" depending on whether platformProductLink existed *at
@@ -82,10 +124,14 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           // job whose result this is trying to read, and the lookup misses
           // right when the job finishes.
           const job = versionId
-            ? await repositories.publishJobs.getByVersionId(versionId)
+            ? await atRouteStage("review", () =>
+                repositories.publishJobs.getByVersionId(versionId),
+              )
             : null;
           const reviewConfirmation = versionId
-            ? await repositories.reviewConfirmations.getByVersionId(versionId)
+            ? await atRouteStage("review", () =>
+                repositories.reviewConfirmations.getByVersionId(versionId),
+              )
             : null;
           let connection: "connected" | "disconnected" | "error";
           try {
@@ -96,13 +142,24 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
                 await repositories.shoplineConnections.getDefault();
               connection = configured ? "connected" : "disconnected";
             }
-          } catch {
+          } catch (error) {
+            // An injected remote connection probe may be unavailable. A DB
+            // query error aborts the workspace transaction and must propagate.
+            if (!deps.connectionStatus)
+              await atRouteStage("sources", async () => {
+                throw error;
+              });
             connection = "error";
           }
 
-          const listingAssets =
-            await repositories.sourceAssets.listForListing(id);
-          const activity = await getListingActivity(repositories, id);
+          const listingAssets = await atRouteStage("assets", () =>
+            repositories.sourceAssets.listForListing(id),
+          );
+          const activity = await readIsolatedListing(
+            diagnostics,
+            "activity",
+            () => getListingActivity(repositories, id),
+          );
           const cutout = listingAssets.find(
             (asset: { kind: string; metadata: unknown }) =>
               asset.kind === "image/png" &&
@@ -111,7 +168,9 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
           );
           const productShotWorkflow = usesProductShotWorkflow({
             hasSelection: Boolean(
-              await repositories.productShots?.currentForListing(id),
+              await atRouteStage("assets", async () =>
+                repositories.productShots?.currentForListing(id),
+              ),
             ),
             hasLegacyCutout: Boolean(cutout),
           });
@@ -119,17 +178,41 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             previewUrl: string;
             brandBackgroundColor: string | null;
           } | null = null;
+          const previewFailures: ListingReadFailure[] = [];
+          // This boundary contains only signed-URL creation, never a DB query.
+          // Missing previews leave immutable source identity/content intact.
+          const preview = async (storageKey: string) => {
+            try {
+              return (
+                await deps
+                  .getAssetStore()
+                  .createReadUrl(session.workspaceId, storageKey, {
+                    expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
+                  })
+              ).url;
+            } catch {
+              if (previewFailures.length === 0)
+                previewFailures.push(
+                  recordListingReadFailure(
+                    diagnostics,
+                    "assets",
+                    "preview_unavailable",
+                  ),
+                );
+              return null;
+            }
+          };
           if (cutout && !productShotWorkflow) {
-            const profile = await repositories.workspaces.requireProfile();
-            const read = await deps
-              .getAssetStore()
-              .createReadUrl(session.workspaceId, cutout.storageKey, {
-                expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
-              });
-            productShot = {
-              previewUrl: read.url,
-              brandBackgroundColor: profile.brandBackgroundColor,
-            };
+            const profile = await atRouteStage("assets", () =>
+              repositories.workspaces.requireProfile(),
+            );
+            const url = await preview(cutout.storageKey);
+            productShot = url
+              ? {
+                  previewUrl: url,
+                  brandBackgroundColor: profile.brandBackgroundColor,
+                }
+              : null;
           }
 
           // A run that ended in `needs_info` wrote no version, so without this
@@ -167,39 +250,43 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             })),
           };
           const workingInput =
-            (await repositories.listingInputs?.getCurrent(id)) ?? null;
+            (await atRouteStage("listing", async () =>
+              repositories.listingInputs?.getCurrent(id),
+            )) ?? null;
           const currentRun =
-            (await repositories.pipelineRuns.getCurrentOperation?.(id)) ?? null;
+            (await atRouteStage("listing", async () =>
+              repositories.pipelineRuns.getCurrentOperation?.(id),
+            )) ?? null;
           const processing = readProcessingSummary(
-            currentRun
-              ? await repositories.pipelineRuns.getState(
-                  currentRun.idempotencyKey,
-                )
-              : await repositories.pipelineRuns.getLatestState?.(id),
+            await atRouteStage("listing", async () =>
+              currentRun
+                ? await repositories.pipelineRuns.getState(
+                    currentRun.idempotencyKey,
+                  )
+                : await repositories.pipelineRuns.getLatestState?.(id),
+            ),
           );
           const sources = await Promise.all(
             originalAssets.map(async (asset: any) => {
-              const read = await deps
-                .getAssetStore()
-                .createReadUrl(session.workspaceId, asset.storageKey, {
-                  expiresInMs: PRODUCT_SHOT_PREVIEW_TTL_MS,
-                });
               return {
                 assetId: asset.id,
                 mimeType: asset.kind,
                 name:
                   asset.metadata?.fileName ?? asset.storageKey.split("/").pop(),
-                previewUrl: read.url,
+                previewUrl: await preview(asset.storageKey),
               };
             }),
           );
+          const sourceReadiness = await readIsolatedListing(
+            diagnostics,
+            "sources",
+            () => readSourceReadiness(repositories, session.workspaceId, id),
+          );
 
           return {
-            sourceReadiness: await readSourceReadiness(
-              repositories,
-              session.workspaceId,
-              id,
-            ),
+            readState: "ready" as const,
+            sourceReadiness:
+              sourceReadiness.state === "ready" ? sourceReadiness.value : null,
             listingId: id,
             workspaceId: session.workspaceId,
             status: snapshot.listing.status,
@@ -270,16 +357,44 @@ export function createListingViewHandler(deps: ListingRouteDeps) {
             reviewedRowDigest: snapshot.activeVersion?.sourceRowDigest ?? null,
             reviewedSourceImportId:
               snapshot.activeVersion?.sourceImportId ?? null,
-            permissions: listingPermissions(session.role),
-            activity,
-            historicalImportResults:
-              await repositories.importResults.listHistoricalForListing(id),
+            permissions: {
+              ...listingPermissions(session.role),
+              ...(sourceReadiness.state === "unavailable"
+                ? {
+                    canApprove: false,
+                    canDeliver: false,
+                  }
+                : {}),
+            },
+            activity: activity.state === "ready" ? activity.value : [],
+            sections: {
+              activity:
+                activity.state === "ready"
+                  ? { state: "ready" }
+                  : {
+                      state: "unavailable",
+                      ...activity.failure,
+                    },
+              previews: previewFailures[0]
+                ? { state: "unavailable", ...previewFailures[0] }
+                : { state: "ready" },
+              sources:
+                sourceReadiness.state === "ready"
+                  ? { state: "ready" }
+                  : {
+                      state: "unavailable",
+                      ...sourceReadiness.failure,
+                    },
+            },
+            historicalImportResults: await atRouteStage("activity", () =>
+              repositories.importResults.listHistoricalForListing(id),
+            ),
           };
         });
       const response = jsonResponse(200, result);
       response.headers.set("Cache-Control", "no-store");
       return response;
-    });
+    }, diagnostics);
   };
 }
 

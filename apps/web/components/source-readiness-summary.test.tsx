@@ -23,6 +23,23 @@ const base = {
   scope: "advisory_current_read" as const,
 };
 describe("SourceReadinessSummary", () => {
+  it("explains legitimate missing versions without suggesting a stale approval", () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceReadinessSummary, {
+        readiness: {
+          ...base,
+          currentVersionId: null,
+          reviewedBinding: null,
+          eligibleAfterAttestation: false,
+          reason: "version_mismatch",
+        },
+      }),
+    );
+    expect(html).toContain("商品版本尚未建立");
+    expect(html).toContain("手動儲存草稿");
+    expect(html).toContain("import-1");
+    expect(html).not.toContain("來源可供資格檢查");
+  });
   it("shows eligible-after-attestation as advisory and 未經核實", () => {
     const html = renderToStaticMarkup(
       createElement(SourceReadinessSummary, { readiness: base }),

@@ -18,6 +18,8 @@ import type { ListingCollectionItem } from "../lib/dashboard-queue-shared";
 import { mapDashboardItems } from "../lib/dashboard-queue-shared";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { SourceReadinessSummary } from "./source-readiness-summary";
+import { SupportRequestId } from "./support-request-id";
+import { safeResponseError } from "../lib/support-request-id";
 import {
   queueGroups,
   type QueueItem,
@@ -91,11 +93,10 @@ export function DashboardListingsClient() {
       cache: "no-store",
       signal,
     });
-    if (!response.ok)
-      throw new Error(`Unable to load listings (${response.status})`);
+    if (!response.ok) throw await safeResponseError(response);
     return (await response.json()) as ListListingsResponse;
   }, []);
-  const { data, error, loading, stale, reload } = useLatestRequest(
+  const { data, error, supportId, loading, stale, reload } = useLatestRequest(
     load,
     "Unable to load listings",
   );
@@ -104,6 +105,7 @@ export function DashboardListingsClient() {
     return (
       <div className="load-error" role="alert">
         <p>{safeUiError(error, locale)}</p>
+        <SupportRequestId value={supportId} />
         <button type="button" onClick={reload}>
           {c.retry}
         </button>
@@ -181,6 +183,7 @@ export function DashboardListingsClient() {
         {error ? (
           <div role="alert">
             {safeUiError(error, locale)}
+            <SupportRequestId value={supportId} />
             <button type="button" onClick={reload}>
               {c.retry}
             </button>
@@ -217,13 +220,24 @@ export function DashboardListingsClient() {
                       </>
                     ) : null}
                   </p>
-                  <SourceReadinessSummary
-                    readiness={
-                      data.items.find((source) => source.id === item.id)
-                        ?.sourceReadiness
-                    }
-                    compact
-                  />
+                  {item.readBlocked ? (
+                    <div className="inline-warning" role="status">
+                      {localized(
+                        locale,
+                        "資料讀取受阻，暫不可批准或交付。",
+                        "Record unavailable; approval and delivery blocked.",
+                      )}{" "}
+                      <SupportRequestId value={item.readFailure?.requestId} />
+                    </div>
+                  ) : (
+                    <SourceReadinessSummary
+                      readiness={
+                        data.items.find((source) => source.id === item.id)
+                          ?.sourceReadiness
+                      }
+                      compact
+                    />
+                  )}
                   <time dateTime={item.updatedAt}>
                     {formatHkDate(item.updatedAt, locale)}
                   </time>

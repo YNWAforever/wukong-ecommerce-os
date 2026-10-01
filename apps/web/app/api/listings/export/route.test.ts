@@ -405,7 +405,10 @@ function makeRepositories(
     sourceImports: {
       async getById(id: string) {
         if (id === "import_1" || id === "import_2")
-          return { headerContractSha256 };
+          return {
+            headerContractSha256,
+            merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+          };
         return null;
       },
     },
@@ -760,6 +763,7 @@ describe("POST /api/listings/export", () => {
           if (change === "header")
             repositories.sourceImports.getById = async () => ({
               headerContractSha256: "changed",
+              merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
             });
         },
       });
