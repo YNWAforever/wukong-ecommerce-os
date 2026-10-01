@@ -1316,9 +1316,37 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     if (!(await box.isChecked())) await box.click();
     await expect(box).toBeChecked({ timeout: 10_000 });
   }
+  // Approval publishes its success message after the authoritative detail
+  // refresh. Observe both requests before asserting that message.
+  const reboundApproval = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/approve`) &&
+      response.request().method() === "POST",
+  );
+  const approvedDetail = page.waitForResponse(async (response) => {
+    if (
+      !response.url().endsWith(`/api/listings/${listingIds[0]}`) ||
+      response.request().method() !== "GET" ||
+      response.status() !== 200
+    )
+      return false;
+    return (await response.json()).status === "approved";
+  });
   await page
     .getByRole("button", { name: "Approve listing", exact: true })
     .click();
+  const approvalResponse = await reboundApproval;
+  expect(approvalResponse.status()).toBe(200);
+  const approvalResult = await approvalResponse.json();
+  expect(approvalResult).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+  });
+  expect(await (await approvedDetail).json()).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+    activeVersion: { id: approvalResult.versionId },
+  });
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   // A later confirmation change now reopens the newly approved version.

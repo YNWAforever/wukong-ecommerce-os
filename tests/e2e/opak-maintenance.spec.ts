@@ -478,6 +478,7 @@ test("20 merchant XLSX products preserve human facts and title through four real
       .fill("Synthetic F13 twenty maintained products");
     await page.getByLabel("Budget (USD)", { exact: true }).fill("1");
     await page.getByLabel("Wave size (1-5)", { exact: true }).fill("5");
+    await page.getByRole("checkbox", { name: "nameZh", exact: true }).uncheck();
     for (const field of generatedFields)
       await page.getByRole("checkbox", { name: field, exact: true }).check();
     await expect(

@@ -1,4 +1,10 @@
-import { claimIdentitySnapshot } from "@wukong/core";
+import {
+  claimIdentitySnapshot,
+  scanCompliance,
+  type AuditContext,
+  type AuditWriter,
+  type DomainAuditEvent,
+} from "@wukong/core";
 import { describe, expect, it } from "vitest";
 import {
   BULK_FORM_COLUMNS,
@@ -142,6 +148,183 @@ function fixture() {
   };
   return { repos, context, deps, calls, receipts, sourceRow, link };
 }
+
+function repositoryAuditFixture(failure?: "cas" | "audit") {
+  const f = fixture();
+  const events: DomainAuditEvent[] = [];
+  const attempts: DomainAuditEvent[] = [];
+  const auditError = new Error("repository audit unavailable");
+  const audit: AuditWriter = {
+    async write(event) {
+      attempts.push(event);
+      if (failure === "audit" && event.action === "listing.approved")
+        throw auditError;
+      events.push(event);
+    },
+  };
+  async function approveVersion(
+    versionId: string,
+    context: AuditContext,
+    writer: AuditWriter,
+  ) {
+    f.calls.push("repository.approve");
+    if (failure === "cas") throw new Error("active listing version changed");
+    await writer.write({
+      ...context,
+      action: "listing.approved",
+      metadata: { versionId },
+    });
+  }
+  const repos = {
+    ...f.repos,
+    audit,
+    listings: {
+      ...f.repos.listings,
+      async approve(
+        _id: string,
+        versionId: string,
+        context: AuditContext,
+        writer: AuditWriter,
+      ) {
+        await approveVersion(versionId, context, writer);
+      },
+      async promoteAndApprove(
+        _id: string,
+        _baseVersionId: string,
+        versionId: string,
+        context: AuditContext,
+        writer: AuditWriter,
+      ) {
+        await approveVersion(versionId, context, writer);
+      },
+    },
+  };
+  return { ...f, repos, events, attempts, auditError };
+}
+
+function approvalDeps(
+  f: Pick<ReturnType<typeof fixture>, "deps">,
+  promoted: boolean,
+) {
+  return {
+    ...f.deps,
+    ...(promoted
+      ? {
+          precomputedFinalAsset: {
+            storageKey: "synthetic-key",
+            priorFinalAssetIds: [],
+          },
+        }
+      : {}),
+  };
+}
+
+describe("default approval audit ownership", () => {
+  it.each([false, true])(
+    "writes one repository approval audit after real domain validation (promoted=%s)",
+    async (promoted) => {
+      const f = repositoryAuditFixture();
+      const result = await approveOne(
+        "listing-1",
+        f.context,
+        f.repos as never,
+        approvalDeps(f, promoted),
+      );
+      expect(result).toEqual({
+        listingId: "listing-1",
+        versionId: promoted ? "version-final" : "version-1",
+        status: "approved",
+      });
+      expect(
+        f.events.filter((event) => event.action === "listing.approved"),
+      ).toEqual([
+        {
+          ...f.context,
+          action: "listing.approved",
+          metadata: { versionId: result.versionId },
+        },
+      ]);
+      expect(f.calls.indexOf("receipt")).toBeGreaterThan(
+        f.calls.indexOf("repository.approve"),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "does not emit a phantom approval or receipt when repository CAS fails (promoted=%s)",
+    async (promoted) => {
+      const f = repositoryAuditFixture("cas");
+      await expect(
+        approveOne(
+          "listing-1",
+          f.context,
+          f.repos as never,
+          approvalDeps(f, promoted),
+        ),
+      ).rejects.toThrow("active listing version changed");
+      expect(
+        f.events.filter((event) => event.action === "listing.approved"),
+      ).toEqual([]);
+      expect(f.receipts).toEqual([]);
+    },
+  );
+
+  it.each([false, true])(
+    "propagates the repository audit failure without success or a receipt (promoted=%s)",
+    async (promoted) => {
+      const f = repositoryAuditFixture("audit");
+      await expect(
+        approveOne(
+          "listing-1",
+          f.context,
+          f.repos as never,
+          approvalDeps(f, promoted),
+        ),
+      ).rejects.toBe(f.auditError);
+      expect(f.calls).toContain("repository.approve");
+      expect(
+        f.attempts.filter((event) => event.action === "listing.approved"),
+      ).toHaveLength(1);
+      expect(
+        f.events.filter((event) => event.action === "listing.approved"),
+      ).toEqual([]);
+      expect(f.receipts).toEqual([]);
+    },
+  );
+
+  it.each(["open", "resolved"] as const)(
+    "rejects a blocking %s flag before repository approval or audit",
+    async (status) => {
+      const f = repositoryAuditFixture();
+      const scanned = scanCompliance({ description: "Guaranteed quality" })[0]!;
+      const flag =
+        status === "open"
+          ? scanned
+          : {
+              ...scanned,
+              status,
+              resolutionReason: " short ",
+            };
+      const readSnapshot = f.repos.listings.getReviewSnapshot;
+      const repos = {
+        ...f.repos,
+        listings: {
+          ...f.repos.listings,
+          getReviewSnapshot: async () => ({
+            ...(await readSnapshot()),
+            flags: [flag],
+          }),
+        },
+      };
+      await expect(
+        approveOne("listing-1", f.context, repos as never, f.deps),
+      ).rejects.toMatchObject({ status: 422, code: "blocking_flags" });
+      expect(f.calls).not.toContain("repository.approve");
+      expect(f.events).toEqual([]);
+      expect(f.receipts).toEqual([]);
+    },
+  );
+});
 
 describe("durable Bulk Update approval binding", () => {
   it.each([null, { merchantAttestedExportAt: new Date(NaN) }])(
