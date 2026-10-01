@@ -134,15 +134,20 @@ describe("full read route contracts", () => {
       kind: "batch",
     });
   });
-  it("quality scans every listing in bounded pages, accounting for missing versions and all-history costs", async () => {
+  it("quality scans every current listing in bounded pages, accounting for missing content and all-history costs", async () => {
     const ids = Array.from({ length: 237 }, (_, i) =>
       String(i).padStart(4, "0"),
     );
-    const scanListingIds = vi.fn(async (after?: string) =>
-      ids.filter((id) => after === undefined || id > after).slice(0, 100),
-    );
-    const getByIds = vi.fn(async (ids: string[]) =>
-      ids.map((id) => ({ id, activeVersion: null })),
+    const scanMaintenancePage = vi.fn(async (after?: string, limit = 100) =>
+      ids
+        .filter((id) => after === undefined || id > after)
+        .slice(0, limit)
+        .map((id) => ({
+          listingId: id,
+          content: null,
+          assessmentState: "missing",
+          fence: { activeVersionId: null },
+        })),
     );
     const summarizeCostForListings = vi.fn(async (ids: string[]) => ({
       knownCostUsd: ids.length,
@@ -151,7 +156,6 @@ describe("full read route contracts", () => {
     const response = await createQualityHandler(
       deps({
         reads: {
-          scanListingIds,
           reviewQualityEvidence: async () => ({
             versions: 0,
             approved: 0,
@@ -161,22 +165,30 @@ describe("full read route contracts", () => {
             edits: [],
           }),
         },
-        listings: { getByIds },
+        platformProducts: { scanMaintenancePage },
         aiRuns: { summarizeCostForListings },
       }),
     )();
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      scope: "workspace_active_versions",
+      scope: "workspace_current_content",
       totalListings: 237,
       totalAssessed: 0,
       noActiveVersion: 237,
+      missingCurrentContent: 237,
+      invalidCurrentContent: 0,
       totalCostUsd: 237,
       unknownCostRunCount: 237,
       costScope: "all_history_for_workspace_listings",
     });
-    expect(scanListingIds).toHaveBeenCalledTimes(3);
-    expect(getByIds.mock.calls.every(([ids]) => ids.length <= 100)).toBe(true);
+    expect(scanMaintenancePage.mock.calls).toEqual([
+      [undefined, 100],
+      ["0099", 100],
+      ["0199", 100],
+    ]);
+    expect(
+      summarizeCostForListings.mock.calls.every(([ids]) => ids.length <= 100),
+    ).toBe(true);
   });
   it.each(["catalog", "listings", "jobs"])(
     "rejects invalid %s page before database reads",

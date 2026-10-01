@@ -1113,6 +1113,9 @@ export const enrichmentBatches = pgTable(
     budgetUsd: numeric("budget_usd", { precision: 12, scale: 6 }).notNull(),
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
+    contentFields:
+      jsonb("content_fields").$type<import("@wukong/core").ContentField[]>(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     status: enrichmentBatchStatus("status").default("open").notNull(),
     controlRevision: integer("control_revision").default(0).notNull(),
     createdBy: text("created_by").notNull(),
@@ -1195,6 +1198,7 @@ export const enrichmentBatchItems = pgTable(
     isCurrent: boolean("is_current").default(true).notNull(),
     pipelineRunId: uuid("pipeline_run_id"),
     inputRevision: integer("input_revision"),
+    contentFence: jsonb("content_fence"),
     outcome: text("outcome"),
     reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
     createdAt: timestamps.createdAt,

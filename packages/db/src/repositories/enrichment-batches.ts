@@ -1,8 +1,14 @@
 import { createBatchControlRepository } from "./enrichment-batch-controls.js";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { contentFieldSelectionSchema, type ContentField } from "@wukong/core";
+import { createBatchSelectionPreviewRepository } from "./batch-selection-previews.js";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { enrichmentBatchItems, enrichmentBatches } from "../schema.js";
+import {
+  maintenanceContentFenceSchema,
+  type MaintenanceContentFence,
+} from "./maintenance-content.js";
 
 export type EnrichmentBatchStatus =
   | "paused"
@@ -24,6 +30,8 @@ export type EnrichmentBatch = {
   controlRevision?: number;
   createdBy: string;
   createdAt: Date;
+  fields?: ContentField[] | null;
+  archivedAt?: Date | null;
 };
 
 export type CreateEnrichmentBatchInput = {
@@ -32,56 +40,70 @@ export type CreateEnrichmentBatchInput = {
   waveSize: number;
   createdBy: string;
   listingIds: readonly string[];
+  contentFences?: Record<string, MaintenanceContentFence>;
+  fields?: ContentField[];
 };
 
 export type EnrichmentBatchCounts = Record<EnrichmentBatchItemStatus, number>;
 
 export type EnrichmentBatchRepository = ReturnType<
   typeof createBatchControlRepository
-> & {
-  create(input: CreateEnrichmentBatchInput): Promise<EnrichmentBatch>;
-  getById(id: string): Promise<EnrichmentBatch | null>;
-  listItemIds(batchId: string): Promise<string[]>;
-  listItemsByStatus(
-    batchId: string,
-    status: EnrichmentBatchItemStatus,
-  ): Promise<string[]>;
-  /** Newest-first, this workspace's batches this listing belongs to only.
-   * `limit` defaults to 100 and must be between 1 and 100, matching every
-   * sibling repository's own bound. */
-  listBatchesForListing(
-    listingId: string,
-    limit?: number,
-  ): Promise<
-    Array<{
+> &
+  ReturnType<typeof createBatchSelectionPreviewRepository> & {
+    create(input: CreateEnrichmentBatchInput): Promise<EnrichmentBatch>;
+    getById(id: string): Promise<EnrichmentBatch | null>;
+    listItemIds(batchId: string): Promise<string[]>;
+    getContentFence(
+      batchId: string,
+      listingId: string,
+    ): Promise<MaintenanceContentFence | null>;
+    getContentFences(
+      batchId: string,
+      listingIds: readonly string[],
+    ): Promise<Record<string, MaintenanceContentFence>>;
+    listItemsByStatus(
+      batchId: string,
+      status: EnrichmentBatchItemStatus,
+    ): Promise<string[]>;
+    /** Newest-first, this workspace's batches this listing belongs to only.
+     * `limit` defaults to 100 and must be between 1 and 100, matching every
+     * sibling repository's own bound. */
+    listBatchesForListing(
+      listingId: string,
+      limit?: number,
+    ): Promise<
+      Array<{
+        batchId: string;
+        label: string;
+        status: EnrichmentBatchStatus;
+        createdAt: Date;
+      }>
+    >;
+    countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
+    /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
+     * must be between 1 and 100. */
+    getByIds(ids: readonly string[]): Promise<EnrichmentBatch[]>;
+    listForWorkspace(
+      limit?: number,
+      includeArchived?: boolean,
+    ): Promise<EnrichmentBatch[]>;
+    /** Moves up to `limit` pending items to `queued` and returns their draft IDs. */
+    claimWave(batchId: string, limit: number): Promise<string[]>;
+    markItems(
+      batchId: string,
+      listingIds: readonly string[],
+      status: EnrichmentBatchItemStatus,
+    ): Promise<void>;
+    bindRun(input: {
       batchId: string;
-      label: string;
-      status: EnrichmentBatchStatus;
-      createdAt: Date;
-    }>
-  >;
-  countByStatus(batchId: string): Promise<EnrichmentBatchCounts>;
-  /** Newest-first, this workspace's batches only. `limit` defaults to 100 and
-   * must be between 1 and 100. */
-  getByIds(ids: readonly string[]): Promise<EnrichmentBatch[]>;
-  listForWorkspace(limit?: number): Promise<EnrichmentBatch[]>;
-  /** Moves up to `limit` pending items to `queued` and returns their draft IDs. */
-  claimWave(batchId: string, limit: number): Promise<string[]>;
-  markItems(
-    batchId: string,
-    listingIds: readonly string[],
-    status: EnrichmentBatchItemStatus,
-  ): Promise<void>;
-  bindRun(input: {
-    batchId: string;
-    listingId: string;
-    pipelineRunId: string;
-    inputRevision: number;
-  }): Promise<boolean>;
-  reconcileBoundRuns(batchId: string): Promise<void>;
-  sumBoundRunCost(batchId: string): Promise<number>;
-  setStatus(batchId: string, status: EnrichmentBatchStatus): Promise<void>;
-};
+      listingId: string;
+      pipelineRunId: string;
+      inputRevision: number;
+    }): Promise<boolean>;
+    reconcileBoundRuns(batchId: string): Promise<void>;
+    sumBoundRunCost(batchId: string): Promise<number>;
+    setStatus(batchId: string, status: EnrichmentBatchStatus): Promise<void>;
+  };
 
 const COLUMNS = {
   controlRevision: enrichmentBatches.controlRevision,
@@ -92,6 +114,8 @@ const COLUMNS = {
   status: enrichmentBatches.status,
   createdBy: enrichmentBatches.createdBy,
   createdAt: enrichmentBatches.createdAt,
+  fields: enrichmentBatches.contentFields,
+  archivedAt: enrichmentBatches.archivedAt,
 };
 
 type EnrichmentBatchRow = Omit<EnrichmentBatch, "budgetUsd"> & {
@@ -130,6 +154,7 @@ export function createEnrichmentBatchRepository(
 
   return {
     ...createBatchControlRepository(transaction, workspaceId, scope),
+    ...createBatchSelectionPreviewRepository(transaction, workspaceId, scope),
     async create(input) {
       scope.assertOpen();
       const [row] = await transaction
@@ -139,6 +164,9 @@ export function createEnrichmentBatchRepository(
           budgetUsd: input.budgetUsd.toFixed(6),
           waveSize: input.waveSize,
           createdBy: input.createdBy,
+          contentFields: input.fields
+            ? contentFieldSelectionSchema.parse(input.fields)
+            : null,
           // Last, so the scoped ID wins over anything a caller supplied.
           workspaceId,
         })
@@ -152,6 +180,11 @@ export function createEnrichmentBatchRepository(
             workspaceId,
             batchId: row.id,
             listingId,
+            contentFence: input.contentFences?.[listingId]
+              ? maintenanceContentFenceSchema.parse(
+                  input.contentFences[listingId],
+                )
+              : null,
           })),
         );
       }
@@ -171,6 +204,49 @@ export function createEnrichmentBatchRepository(
         )
         .limit(1);
       return row ? toEnrichmentBatch(row) : null;
+    },
+
+    async getContentFence(batchId, listingId) {
+      scope.assertOpen();
+      const [item] = await transaction
+        .select({ fence: enrichmentBatchItems.contentFence })
+        .from(enrichmentBatchItems)
+        .where(
+          and(
+            itemsOfBatch(batchId),
+            eq(enrichmentBatchItems.listingId, listingId),
+            eq(enrichmentBatchItems.isCurrent, true),
+          ),
+        )
+        .limit(1);
+      return item?.fence
+        ? maintenanceContentFenceSchema.parse(item.fence)
+        : null;
+    },
+    async getContentFences(batchId, ids) {
+      scope.assertOpen();
+      if (!ids.length) return {};
+      if (ids.length > 100) throw new Error("batch fence page exceeds limit");
+      const rows = await transaction
+        .select({
+          listingId: enrichmentBatchItems.listingId,
+          fence: enrichmentBatchItems.contentFence,
+        })
+        .from(enrichmentBatchItems)
+        .where(
+          and(
+            itemsOfBatch(batchId),
+            inArray(enrichmentBatchItems.listingId, [...ids]),
+          ),
+        );
+      return Object.fromEntries(
+        rows
+          .filter((row) => row.fence !== null)
+          .map((row) => [
+            row.listingId,
+            maintenanceContentFenceSchema.parse(row.fence),
+          ]),
+      );
     },
 
     async listItemIds(batchId) {
@@ -270,7 +346,7 @@ export function createEnrichmentBatchRepository(
       return rows.map(toEnrichmentBatch);
     },
 
-    async listForWorkspace(limit = 100) {
+    async listForWorkspace(limit = 100, includeArchived = false) {
       scope.assertOpen();
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
         throw new Error("enrichment batch limit must be between 1 and 100");
@@ -278,7 +354,12 @@ export function createEnrichmentBatchRepository(
       const rows = await transaction
         .select(COLUMNS)
         .from(enrichmentBatches)
-        .where(eq(enrichmentBatches.workspaceId, workspaceId))
+        .where(
+          and(
+            eq(enrichmentBatches.workspaceId, workspaceId),
+            ...(includeArchived ? [] : [isNull(enrichmentBatches.archivedAt)]),
+          ),
+        )
         // Rows created within one shared `db.forWorkspace` transaction share
         // Postgres's per-transaction `now()`, so `created_at` alone can tie --
         // `id` breaks the tie deterministically instead of leaving same-instant

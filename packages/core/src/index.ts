@@ -94,6 +94,7 @@ export type {
 
 export { usesProductShotWorkflow } from "./product-shot.js";
 export * from "./working-listing.js";
+export * from "./maintenance-content-fields.js";
 export { calculateConservativeRunCeiling } from "./provider-cost-bound.js";
 
 export { paidListingReservation } from "./paid-listing-policy.js";

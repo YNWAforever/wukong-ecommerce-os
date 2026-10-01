@@ -451,6 +451,16 @@ describe("workspace isolation", () => {
         "listing_pipeline_runs",
       ],
       [
+        "enrichment_batch_create_receipts",
+        ["workspace_id", "batch_id"],
+        "enrichment_batches",
+      ],
+      [
+        "enrichment_batch_create_receipts",
+        ["workspace_id", "preview_id"],
+        "enrichment_batch_previews",
+      ],
+      [
         "enrichment_batch_items",
         ["workspace_id", "pipeline_run_id"],
         "listing_pipeline_runs",

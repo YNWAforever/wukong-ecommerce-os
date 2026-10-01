@@ -139,6 +139,14 @@ jobs:
           TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_ci
           TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_ci
         run: pnpm exec vitest run --config vitest.integration.config.ts apps/web/app/api/listings/runtime-read.integration.test.ts
+      - name: Opak current-content preview and recovery regression
+        env:
+          WUKONG_OPAK_INTEGRATION: "1"
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_batches_ci
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_batches_ci
+        run: |
+          psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE opak_fixes_batches_ci'
+          pnpm exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/maintenance-content.integration.test.ts packages/db/src/repositories/maintenance-recovery.integration.test.ts
       - name: Prepare isolated wine acceptance database
         run: |
           psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE wukong_wine_sdd'
@@ -198,6 +206,19 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:49219/signin > /dev/null
           pnpm exec playwright test tests/e2e/opak-maintenance-intake.spec.ts tests/e2e/opak-runtime-read.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+      - name: Opak selected current-content Queue acceptance
+        env:
+          DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_browser_ci
+          DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_browser_ci
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_browser_ci
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_browser_ci
+          WUKONG_OPAK_E2E: "1"
+          PLAYWRIGHT_E2E: "1"
+          AUTH_SECRET: ci-test-secret-at-least-32-characters-long
+          SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          AUTH_EMAIL_FROM: ci@example.com
+          AUTH_SMTP_URL: smtp://127.0.0.1:1026
+        run: pnpm exec playwright test tests/e2e/opak-current-content-batches.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Upload synthetic Opak browser screenshots
         if: always()
         uses: actions/upload-artifact@v4

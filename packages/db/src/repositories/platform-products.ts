@@ -6,6 +6,7 @@ import { listingFactsSchema, type ListingFacts } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { platformProducts } from "../schema.js";
 import { ListingDataError } from "../listing-data-error.js";
+import { createMaintenanceContentReader } from "./maintenance-content.js";
 
 export type PlatformProductOrigin = "import" | "created";
 
@@ -61,7 +62,9 @@ export type UpsertPlatformProductInput = {
   sourceImportId: string | null;
 };
 
-export type PlatformProductRepository = {
+export type PlatformProductRepository = ReturnType<
+  typeof createMaintenanceContentReader
+> & {
   upsert(input: UpsertPlatformProductInput): Promise<PlatformProduct>;
   upsertMany(
     inputs: readonly UpsertPlatformProductInput[],
@@ -156,6 +159,7 @@ export function createPlatformProductRepository(
   scope: WorkspaceScope,
 ): PlatformProductRepository {
   return {
+    ...createMaintenanceContentReader(transaction, workspaceId, scope),
     async upsert(input) {
       scope.assertOpen();
       const [row] = await transaction

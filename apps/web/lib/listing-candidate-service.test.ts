@@ -73,6 +73,29 @@ describe("candidate compatibility", () => {
       )?.eligible,
     ).toBe(false);
   });
+  it("maintenance recovery cannot offer unselected fields or overwrite manual ownership", () => {
+    const value = run();
+    value.execution.contentFields = ["nameZh"];
+    value.execution.candidate.title["zh-Hant"] = "AI 中文";
+    const current = {
+      ...snapshot,
+      fieldStates: {
+        "title.zh-Hant": {
+          owner: "operator",
+          state: "manual",
+          locked: false,
+          evidenceRefs: [],
+        },
+      },
+    };
+    const diff = candidateDifferences(value, current as any);
+    expect(
+      diff?.fields.find((field) => field.field === "title.en"),
+    ).toMatchObject({ eligible: false, reason: "not_in_selection" });
+    expect(
+      diff?.fields.find((field) => field.field === "title.zh-Hant"),
+    ).toMatchObject({ eligible: false, reason: "manual_ownership" });
+  });
 });
 it("offers only populated extraction facts and preserves human copy", () => {
   const value = run();

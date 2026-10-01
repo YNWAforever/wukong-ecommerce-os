@@ -144,6 +144,22 @@ function mapRepositories(
         const current = await repositories.pipelineRuns.getCurrentOperation(
           run.listingId,
         );
+        if (run.execution.maintenanceFence) {
+          await repositories.platformProducts.lockMaintenanceBindings([
+            run.listingId,
+          ]);
+          const [content] =
+            await repositories.platformProducts.getMaintenanceByIds([
+              run.listingId,
+            ]);
+          const { listingInputDigest } = await import("@wukong/db");
+          if (
+            !content ||
+            listingInputDigest(content.fence) !==
+              listingInputDigest(run.execution.maintenanceFence)
+          )
+            return false;
+        }
         return Boolean(
           listing &&
           listing.inputRevision === run.inputRevision &&

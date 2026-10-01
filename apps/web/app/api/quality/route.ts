@@ -33,12 +33,24 @@ export function createQualityHandler(deps: QualityRouteDeps) {
           const summary = computeQualitySummary([], 0);
           let totalListings = 0,
             noActiveVersion = 0,
-            unassessableActiveVersion = 0;
+            unassessableActiveVersion = 0,
+            missingCurrentContent = 0,
+            invalidCurrentContent = 0;
           let afterId: string | undefined;
           for (;;) {
-            const ids = await repositories.reads.scanListingIds(afterId, 100);
-            if (ids.length === 0) break;
-            const listings = await repositories.listings.getByIds(ids);
+            const current =
+              await repositories.platformProducts.scanMaintenancePage(
+                afterId,
+                100,
+              );
+            if (!current.length) break;
+            const ids = current.map((item) => item.listingId);
+            const listings = current.map((item) => ({
+              id: item.listingId,
+              activeVersion: null,
+              currentContent: item.content,
+              assessmentState: item.assessmentState,
+            }));
             const cost =
               await repositories.aiRuns.summarizeCostForListings(ids);
             const chunk = computeQualitySummary(
@@ -47,11 +59,19 @@ export function createQualityHandler(deps: QualityRouteDeps) {
               cost.unknownCostRunCount,
             );
             totalListings += listings.length;
-            noActiveVersion += listings.filter(
-              (item) => !(item.activeVersionId ?? item.activeVersion?.id),
+            noActiveVersion += current.filter(
+              (item) => !item.fence.activeVersionId,
             ).length;
-            unassessableActiveVersion += listings.filter(
-              (item) => item.activeVersionId && !item.activeVersion,
+            unassessableActiveVersion += current.filter(
+              (item) =>
+                item.fence.activeVersionId &&
+                item.assessmentState === "invalid",
+            ).length;
+            missingCurrentContent += current.filter(
+              (item) => item.assessmentState === "missing",
+            ).length;
+            invalidCurrentContent += current.filter(
+              (item) => item.assessmentState === "invalid",
             ).length;
             summary.totalAssessed += chunk.totalAssessed;
             summary.cleanCount += chunk.cleanCount;
@@ -77,7 +97,9 @@ export function createQualityHandler(deps: QualityRouteDeps) {
             totalListings,
             noActiveVersion,
             unassessableActiveVersion,
-            scope: "workspace_active_versions",
+            missingCurrentContent,
+            invalidCurrentContent,
+            scope: "workspace_current_content",
             consistency: "bounded_scan",
             scanStartedAt,
             scanCompletedAt: new Date().toISOString(),

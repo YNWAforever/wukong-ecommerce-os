@@ -408,6 +408,7 @@ it("returns viewer reporting/generation capabilities from the server context", a
   expect(body.capabilities).toEqual({
     canGenerateBulkUpdate: false,
     canRecordImportResult: false,
+    canMaintainProducts: false,
   });
 });
 

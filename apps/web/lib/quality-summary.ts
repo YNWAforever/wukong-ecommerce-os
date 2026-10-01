@@ -1,12 +1,17 @@
 import type { ReviewQualityMetrics } from "./review-quality-metrics";
-import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
-import type { ReviewableListing } from "@wukong/core";
+import type { BulkFormContentGaps } from "@wukong/shopline";
+import type { ReviewableListing, WorkingListing } from "@wukong/core";
 
-import { canonicalListingToGapsInput } from "./canonical-listing-gaps";
+import {
+  computeCurrentContentGaps,
+  type ContentAssessmentState,
+} from "./current-content-gaps";
 
 export type QualityAssessedListing = {
   id: string;
   activeVersion: { id: string; content: ReviewableListing } | null;
+  currentContent?: WorkingListing | ReviewableListing | null;
+  assessmentState?: ContentAssessmentState;
 };
 
 export type QualitySummary = {
@@ -20,7 +25,9 @@ export type QualitySummary = {
   totalListings?: number;
   noActiveVersion?: number;
   unassessableActiveVersion?: number;
-  scope?: "workspace_active_versions";
+  missingCurrentContent?: number;
+  invalidCurrentContent?: number;
+  scope?: "workspace_active_versions" | "workspace_current_content";
   costScope?: "all_history_for_workspace_listings";
   consistency?: "bounded_scan";
   scanStartedAt?: string;
@@ -47,11 +54,18 @@ export function computeQualitySummary(
   let totalAssessed = 0;
 
   for (const listing of listings) {
-    if (!listing.activeVersion) continue;
+    const assessment = computeCurrentContentGaps({
+      content:
+        listing.currentContent !== undefined
+          ? listing.currentContent
+          : (listing.activeVersion?.content ?? null),
+      assessmentState:
+        listing.assessmentState ??
+        (listing.activeVersion ? "assessed" : "missing"),
+    });
+    if (!assessment.gaps) continue;
     totalAssessed += 1;
-    const gaps = bulkFormGaps(
-      canonicalListingToGapsInput(listing.activeVersion.content),
-    );
+    const gaps = assessment.gaps;
     const gapKeys = Object.keys(gaps) as (keyof BulkFormContentGaps)[];
     const hasAnyGap = gapKeys.some((key) => gaps[key]);
     if (hasAnyGap) {

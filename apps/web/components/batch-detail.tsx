@@ -22,6 +22,7 @@ type BatchDetailData = {
     controlRevision?: number;
     createdBy: string;
     createdAt: string;
+    archivedAt?: string | null;
   };
   spentUsd?: number;
   items?: Array<{
@@ -32,6 +33,19 @@ type BatchDetailData = {
     status: string;
     isCurrent: boolean;
     retryOfItemId: string | null;
+    recovery?:
+      | "retryable"
+      | "needs-input"
+      | "needs-review"
+      | "outcome-unknown"
+      | "support-required";
+    canRetry?: boolean;
+    sku?: string | null;
+    sourceRef?: string | null;
+    lastStage?: string;
+    updatedAt?: string;
+    thumbnailUrl?: string | null;
+    thumbnailState?: "ready" | "unavailable";
   }>;
   counts: {
     pending: number;
@@ -198,6 +212,7 @@ export function BatchDetail({ batchId }: { batchId: string }) {
           batchId={batchId}
           revision={data.batch.controlRevision}
           status={data.batch.status}
+          archived={Boolean(data.batch.archivedAt)}
           items={data.items ?? []}
           onChanged={() => void reload()}
         />

@@ -74,7 +74,9 @@ export type CatalogPage = {
   capabilities: {
     canGenerateBulkUpdate: boolean;
     canRecordImportResult: boolean;
+    canMaintainProducts?: boolean;
   };
+  selectionScope?: string;
   items: CatalogItem[];
   summary: CatalogSummary;
   page: number;
