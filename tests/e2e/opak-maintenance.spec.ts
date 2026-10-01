@@ -1207,9 +1207,11 @@ test("100 independently imported products keep all cross-page UI selections in a
       repos.platformProducts.getMaintenanceByIds(ids),
     );
     expect(current).toHaveLength(100);
+    // Import creates received drafts; saving their inputs does not start
+    // processing. Preview must retain this observed lifecycle state.
     for (const row of current) {
       expect(row).toMatchObject({
-        status: "needs_info",
+        status: "received",
         assessmentState: "assessed",
         fence: {
           inputRevision: 2,
@@ -1383,7 +1385,7 @@ test("100 independently imported products keep all cross-page UI selections in a
       Object.fromEntries(current.map((row) => [row.listingId, row.fence])),
     );
     expect(stored.options.statuses).toEqual(
-      Object.fromEntries(ids.map((id) => [id, "needs_info"])),
+      Object.fromEntries(current.map((row) => [row.listingId, row.status])),
     );
     expect(
       listingInputDigest({
