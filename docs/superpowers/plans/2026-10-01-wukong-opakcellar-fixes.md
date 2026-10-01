@@ -38,14 +38,14 @@
 
 建議 6 個依次可審閱 PR：
 
-| PR | 任務 | 交付及依賴 |
-|---|---|---|
-| A Runtime recovery | T00–T02 | 根因、可讀詳情／佇列、安全診斷；先恢復基本操作 |
-| B Product intake | T03 | 接通 SHOPLINE 匯入／匹配，清楚產品範圍；依賴 A |
-| C Current-content batches | T04–T06 | 現況缺口、選欄位、預覽、跨頁及恢復；依賴 B |
-| D Operator/admin UX | T07–T09 | 操作效率、URL、帳戶、交接、dirty guard；使用 B/C 的契約 |
-| E Performance + quality | T10–T11 | 有量測的 DB 改善及 Opak AI 驗收工具；依賴 A–D |
-| F Delivery + release | T12–T14 | 交付 freshness、角色矩陣、完整 UAT、release pack；依賴全部 |
+| PR                        | 任務    | 交付及依賴                                                 |
+| ------------------------- | ------- | ---------------------------------------------------------- |
+| A Runtime recovery        | T00–T02 | 根因、可讀詳情／佇列、安全診斷；先恢復基本操作             |
+| B Product intake          | T03     | 接通 SHOPLINE 匯入／匹配，清楚產品範圍；依賴 A             |
+| C Current-content batches | T04–T06 | 現況缺口、選欄位、預覽、跨頁及恢復；依賴 B                 |
+| D Operator/admin UX       | T07–T09 | 操作效率、URL、帳戶、交接、dirty guard；使用 B/C 的契約    |
+| E Performance + quality   | T10–T11 | 有量測的 DB 改善及 Opak AI 驗收工具；依賴 A–D              |
+| F Delivery + release      | T12–T14 | 交付 freshness、角色矩陣、完整 UAT、release pack；依賴全部 |
 
 不要把 A 的緊急修復綁在全部功能完工才交付。每 PR 有自己的風險、測試及 rollback；不要為湊數拆出不可工作的 scaffold PR。
 
@@ -293,22 +293,22 @@ integration/e2e/runtime命令需要相應runbook環境；不可拿production cre
 
 ## 4. Finding 與 UAT 覆蓋
 
-| Finding | 任務 | 核心驗收 |
-|---|---|---|
-| F01 500 | T01/T02 | UC03/04/29 |
-| F02 參考來源斷路 | T03 | UC06/07 |
-| F03 舊cohort/5000截斷 | T04/T05 | UC18/21/22/30 |
-| F04 統計範圍 | T03/T07 | source/draft/linked各有範圍及入口 |
-| F05 角色/登出 | T08 | UC01/02；API越權拒絕 |
-| F06 支援及恢復 | T02/T06/T08 | UC23/24/29 |
-| F07 版面/詳情 | T05/T07 | UC05/22；桌面/手機任務 |
-| F08 URL | T07 | UC27 |
-| F09 效能 | T10 | UC30 |
-| F10 品質與成本 | T04/T06/T11 | UC09–20/24 |
-| F11 管理員dirty | T09 | UC28 |
-| F12 新商品/readiness | T03/T09 | draft link＋真實runtime狀態 |
-| 交付保護 | T12 | UC08/22/25/26 |
-| 全流程/效益 | T13/T14 | UC01–30逐項結果，不冒稱全通過 |
+| Finding               | 任務        | 核心驗收                          |
+| --------------------- | ----------- | --------------------------------- |
+| F01 500               | T01/T02     | UC03/04/29                        |
+| F02 參考來源斷路      | T03         | UC06/07                           |
+| F03 舊cohort/5000截斷 | T04/T05     | UC18/21/22/30                     |
+| F04 統計範圍          | T03/T07     | source/draft/linked各有範圍及入口 |
+| F05 角色/登出         | T08         | UC01/02；API越權拒絕              |
+| F06 支援及恢復        | T02/T06/T08 | UC23/24/29                        |
+| F07 版面/詳情         | T05/T07     | UC05/22；桌面/手機任務            |
+| F08 URL               | T07         | UC27                              |
+| F09 效能              | T10         | UC30                              |
+| F10 品質與成本        | T04/T06/T11 | UC09–20/24                        |
+| F11 管理員dirty       | T09         | UC28                              |
+| F12 新商品/readiness  | T03/T09     | draft link＋真實runtime狀態       |
+| 交付保護              | T12         | UC08/22/25/26                     |
+| 全流程/效益           | T13/T14     | UC01–30逐項結果，不冒稱全通過     |
 
 ## 5. Codex 每批交付格式
 

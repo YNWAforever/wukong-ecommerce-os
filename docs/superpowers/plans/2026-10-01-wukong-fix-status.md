@@ -21,20 +21,20 @@ Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan
 
 ## Finding register
 
-| Finding | Initial classification | Evidence / next verification |
-| --- | --- | --- |
-| F01 detail/queue 500 | reproduced | Production schema lacks two columns read by `getReviewSnapshot`; zero-row projection fails 42703. Actual local missing-column regression reproduces both routes and existing 0046 restores them without content changes. Fresh authenticated production reads and repair are blocked; historical minified logs cannot prove this is the only cause. |
-| F02 reference intake dead end | reproduced | Same main and inspected reference-only importer; T03 must preserve immutable source binding. |
-| F03 old rawRow cohort / 5000 cap | reproduced | Same audit source baseline; T04 current-content/fence regression pending. |
-| F04 source/draft statistics scope | reproduced | Audit UI and unchanged baseline; distinguish records from unique products. |
-| F05 account/logout/role guidance | reproduced | Audit UI and unchanged shell; T08 role/API tests pending. |
-| F06 recovery/support | changed | T01/T02 add validated support IDs, explicit blocked rows/sections and retry. Batch/cost recovery remains T06/T08. |
-| F07 catalog/detail layout | reproduced | Audit screenshots; new browser behavior still unverified. |
-| F08 URL state | reproduced | Audit snapshots and unchanged source; T07 regression pending. |
-| F09 performance | blocked | Source risks confirmed; no latency/query-plan measurements yet. |
-| F10 quality/cost | reproduced | Existing signals are advisory; AI fixtures have no live verdicts. |
-| F11 admin dirty guard | reproduced | Source unmount behavior; authenticated admin runtime test pending. |
-| F12 draft/readiness guidance | changed | No-active-version manual guidance and operator/reviewer browser read verified locally. Intake/readiness integration remains T03/T09; cloud runtime readiness not certified. |
+| Finding                           | Initial classification | Evidence / next verification                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F01 detail/queue 500              | reproduced             | Production schema lacks two columns read by `getReviewSnapshot`; zero-row projection fails 42703. Actual local missing-column regression reproduces both routes and existing 0046 restores them without content changes. Fresh authenticated production reads and repair are blocked; historical minified logs cannot prove this is the only cause. |
+| F02 reference intake dead end     | reproduced             | Same main and inspected reference-only importer; T03 must preserve immutable source binding.                                                                                                                                                                                                                                                        |
+| F03 old rawRow cohort / 5000 cap  | reproduced             | Same audit source baseline; T04 current-content/fence regression pending.                                                                                                                                                                                                                                                                           |
+| F04 source/draft statistics scope | reproduced             | Audit UI and unchanged baseline; distinguish records from unique products.                                                                                                                                                                                                                                                                          |
+| F05 account/logout/role guidance  | reproduced             | Audit UI and unchanged shell; T08 role/API tests pending.                                                                                                                                                                                                                                                                                           |
+| F06 recovery/support              | changed                | T01/T02 add validated support IDs, explicit blocked rows/sections and retry. Batch/cost recovery remains T06/T08.                                                                                                                                                                                                                                   |
+| F07 catalog/detail layout         | reproduced             | Audit screenshots; new browser behavior still unverified.                                                                                                                                                                                                                                                                                           |
+| F08 URL state                     | reproduced             | Audit snapshots and unchanged source; T07 regression pending.                                                                                                                                                                                                                                                                                       |
+| F09 performance                   | blocked                | Source risks confirmed; no latency/query-plan measurements yet.                                                                                                                                                                                                                                                                                     |
+| F10 quality/cost                  | reproduced             | Existing signals are advisory; AI fixtures have no live verdicts.                                                                                                                                                                                                                                                                                   |
+| F11 admin dirty guard             | reproduced             | Source unmount behavior; authenticated admin runtime test pending.                                                                                                                                                                                                                                                                                  |
+| F12 draft/readiness guidance      | changed                | No-active-version manual guidance and operator/reviewer browser read verified locally. Intake/readiness integration remains T03/T09; cloud runtime readiness not certified.                                                                                                                                                                         |
 
 ## Task ledger
 
@@ -56,15 +56,15 @@ Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan
 
 ## Dependency preflight
 
-| Producer -> consumer | Shared contract / decision |
-| --- | --- |
-| T01/T02 -> all | Opaque request ID + allowlisted stage; global DB/session failures remain HTTP errors. |
-| T03 -> T04/T05/T12 | Store/remote identity + immutable source digest; reference rows never become exportable by toggling a flag. |
-| T04 -> T05/T06/T12 | Current working/active content and input/version/source fences; preview must reject stale create/enqueue. |
-| T05 -> worker/T11/T12 | Exactly eight content fields; merchant IDs/SKU/price/stock/manual locks preserved at apply. |
-| T06 -> T10/T11/T14 | Unknown provider outcome retains reservation and reconciliation lineage. |
-| T08/T09 -> T13/T14 | Server membership/role and readiness observation; assignment is not approval. |
-| T12 -> T13/T14 | Artifact generated / merchant reported / independently verified remain distinct. |
+| Producer -> consumer  | Shared contract / decision                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| T01/T02 -> all        | Opaque request ID + allowlisted stage; global DB/session failures remain HTTP errors.                       |
+| T03 -> T04/T05/T12    | Store/remote identity + immutable source digest; reference rows never become exportable by toggling a flag. |
+| T04 -> T05/T06/T12    | Current working/active content and input/version/source fences; preview must reject stale create/enqueue.   |
+| T05 -> worker/T11/T12 | Exactly eight content fields; merchant IDs/SKU/price/stock/manual locks preserved at apply.                 |
+| T06 -> T10/T11/T14    | Unknown provider outcome retains reservation and reconciliation lineage.                                    |
+| T08/T09 -> T13/T14    | Server membership/role and readiness observation; assignment is not approval.                               |
+| T12 -> T13/T14        | Artifact generated / merchant reported / independently verified remain distinct.                            |
 
 Ruling: Execute the supplied T00-T14 plan inline, retaining this ledger and per-task checkboxes. The supplied plan is the approved implementation scope; do not re-open already authorized implementation decisions. Production migration/merge/deploy/first SHOPLINE write remain subject to actual authorization and repository release gates.
 
@@ -82,17 +82,17 @@ Baseline: frozen install passed; `pnpm test` root 116 passed, unrestricted web s
 
 Fresh commands/results after implementation and review:
 
-| Verification | Result / scope |
-| --- | --- |
-| Targeted route/component/authority tests after review | 163 passed across 6 files; preserves original approval/export source/version/CAS tests |
-| `pnpm exec vitest run --config vitest.integration.config.ts apps/web/app/api/listings/runtime-read.integration.test.ts` | 7 passed with explicit `WUKONG_OPAK_INTEGRATION=1`, dedicated loopback DB; no migration-dir override, actual role/permissions/schema repair |
-| `pnpm exec playwright test tests/e2e/opak-runtime-read.spec.ts --project=chromium --workers=1 --retries=0` | 2/2 operator/reviewer through local production build, Better Auth and RLS; fake/mock, zero listing writes, synthetic screenshots inspected |
-| Root Node suites | 116/116 passed, fresh execution |
-| `pnpm exec turbo run test --concurrency=1 -- --maxWorkers=4` | 3,665 package tests passed, 1 existing asset-provider opt-in skip; 14/14 tasks (13 cached, web fresh 2,006 tests). DB/worker and other cached results originate from the immediately preceding successful unchanged checks |
-| `pnpm typecheck` | 14/14 tasks, 11 cached and 3 fresh, exit 0 |
-| `pnpm build --filter=@wukong/web` | 6/6 tasks, 4 cached and 2 fresh, exit 0; actual compiled server used for latest browser acceptance |
-| `pnpm exec prettier --check <explicit changed/new runtime files>` | all matched files passed; commit-relative runtime format gate is also required after committing |
-| Production/preview authenticated acceptance | blocked: no authorized schema mutation or accessible browser session; desktop browser startup fails before page access |
+| Verification                                                                                                            | Result / scope                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Targeted route/component/authority tests after review                                                                   | 163 passed across 6 files; preserves original approval/export source/version/CAS tests                                                                                                                                     |
+| `pnpm exec vitest run --config vitest.integration.config.ts apps/web/app/api/listings/runtime-read.integration.test.ts` | 7 passed with explicit `WUKONG_OPAK_INTEGRATION=1`, dedicated loopback DB; no migration-dir override, actual role/permissions/schema repair                                                                                |
+| `pnpm exec playwright test tests/e2e/opak-runtime-read.spec.ts --project=chromium --workers=1 --retries=0`              | 2/2 operator/reviewer through local production build, Better Auth and RLS; fake/mock, zero listing writes, synthetic screenshots inspected                                                                                 |
+| Root Node suites                                                                                                        | 116/116 passed, fresh execution                                                                                                                                                                                            |
+| `pnpm exec turbo run test --concurrency=1 -- --maxWorkers=4`                                                            | 3,665 package tests passed, 1 existing asset-provider opt-in skip; 14/14 tasks (13 cached, web fresh 2,006 tests). DB/worker and other cached results originate from the immediately preceding successful unchanged checks |
+| `pnpm typecheck`                                                                                                        | 14/14 tasks, 11 cached and 3 fresh, exit 0                                                                                                                                                                                 |
+| `pnpm build --filter=@wukong/web`                                                                                       | 6/6 tasks, 4 cached and 2 fresh, exit 0; actual compiled server used for latest browser acceptance                                                                                                                         |
+| `pnpm exec prettier --check <explicit changed/new runtime files>`                                                       | all matched files passed; commit-relative runtime format gate is also required after committing                                                                                                                            |
+| Production/preview authenticated acceptance                                                                             | blocked: no authorized schema mutation or accessible browser session; desktop browser startup fails before page access                                                                                                     |
 
 Review found and fixed four Important issues: explicit opt-in/dedicated CI DB plus migration-loader fallback; revoke observed blocked selections and repeat source validation at mutation; no arbitrary exception content in instrumented logs; preflight requires the effective runtime role. Independent re-review found no remaining Critical/Important defect within those fixes. Root env regression also caught missing diagnostic metadata names; manifest corrected and root 116/116 passed on rerun. Full package checks caught one old delivery fixture lacking source time; fixture made valid and full suite rerun passed. No failed assertion was removed. Normal integration skips the destructive suite; CI separately provisions and runs `opak_fixes_ci`, so the regression is not silently omitted from CI.
 
