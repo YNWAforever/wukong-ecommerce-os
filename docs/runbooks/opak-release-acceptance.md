@@ -4,11 +4,11 @@
 
 ## 三個互相獨立的結果
 
-| 結果                     | 現況                                                                                                                         | 放行所需證據                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| code-ready               | A–E source完整 CI／READY preview已有證據；F full24＋workbook6、本地PG-worker及最終indexed rollback通過；最終PR head CI另核對 | 全套來源、型別、unit、實際隔離 DB、production-built fake/mock browser、audit、release gate 及對應 commit 的 CI                   |
-| production-read-verified | blocked                                                                                                                      | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
-| merchant-pilot-accepted  | blocked                                                                                                                      | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
+| 結果                     | 現況                                                                                                            | 放行所需證據                                                                                                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| code-ready               | A–F tested heads完整 CI SUCCESS／exact-head READY；F full24＋workbook6、本地PG-worker及最終indexed rollback通過 | 終態候選SHA／CI／preview及其後docs-only checks見fix-status與PR；與下列外部驗收分開                                               |
+| production-read-verified | blocked                                                                                                         | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
+| merchant-pilot-accepted  | blocked                                                                                                         | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
 
 READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；下載成功不等於 SHOPLINE 已接受。不得將部分結果合併成「全通過」。每個 UC 的歷史結果與本輪結果見 [30-case 結果表](./opak-uat-results-2026-10-01.md)。
 
@@ -73,6 +73,8 @@ Private 相容性 fixture 沿用已提交 F100 的實際 importer／batch/contro
 本地 fake/mock 已有 source/version/manual lock、跨頁 5,001 項、10 件並發、unknown outcome／reservation、pause／failed-only retry、XLSX 71 cells、5 行 3 接受／2 拒絕修復 lineage、actual RLS PG 的獨立證據。source候選F `d70e1a4d05ff2b5922ae9fd12e3c6f6c2241b6b4`的production-built full24 browser通過（4.3分鐘），包含20件actual Queue／審批audit19→20、5行A／B拒絕修復及100件四頁純preview。100件actual service／worker recovery另外PG2／2，不能把preview當100件AI執行。既有workbook browser consumer的舊export及單件bulk_form requests缺新fields／preview hash；test-only補齊同actor兩步preview／generate後，整份workbook6／6通過（50.8秒），原readonly拒絕及零audit/artifact/attempt副作用斷言不變。先前400及cold signin失敗證據保留，沒有以它們冒充runtime權限缺陷。確切命令、結果、SHA、失敗紀錄及最新狀態以 fix-status 為準。
 
 E source `ea827e081ba3c98797c6f468818051e9540fbdf7`完整CI `36906156935` SUCCESS，對應READY preview `dpl_58Auk7p8hoMsCbZMFQ4fdkg1pySY`；F上述source READY preview `dpl_8XsQR9Yo4RLRexoHNcjy7Ky69HAh`。READY只證明bundle部署完成；本輪沒有確認cloud preview的effective DB／worker／provider flags，也沒有以READY替代authenticated acceptance。本地CI fake/mock配置不推定為cloud配置。
+
+2026-10-01 20:12 UTC終態收據：E `a3c1109faa9384c9fa5d15af0be488dfdb6ce5d0` [完整CI36914479048 SUCCESS](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/36914479048)／[exact-head READY](https://wukong-ecommerce-qouahym2p-ynwaforevers-projects.vercel.app)；F `9540a0bf354a5233e0e9ee84e54e28b641c8b5ae` [完整CI36916917375 SUCCESS](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/36916917375)／[exact-head READY](https://wukong-ecommerce-3nf1uuto9-ynwaforevers-projects.vercel.app)。F包含3950unit passes／1existing asset skip、root140、types14／build8、generic PG990passes／69gated skips（專用F5／F100已另外實跑）、browser3／17／product-shot4／combined31passes30skips／wine9；audit verifier成功且accessible foreign0。這些終態取代較早CI pending checkpoint；local full24、workbook6與100件worker的scope仍分開。後續收據／UAT metadata提交只有文件差異，當前docs-only head checks見PR，不把未命名的未來head算已驗證。
 
 效能 baseline 與 after 使用同 500／5,000／20,000 fixture IDs、samples/concurrency/host 配置。保留v2 cursor未達800ms的1,272.35ms；修正無搜尋寬CTE後單次controlled v3 504samples／135EXPLAIN、0errors、21 configured warm targets通過，20k cursor81.07ms。Quality沒有配置p95門檻，三項小規模baseline回歸及約114秒首次backfill仍記錄。route-factory時間不等於HTTP／browser field metrics。20件員工人工分鐘、一次商業接受率、每件修改欄數沒有可比較的人工baseline，因此不能報節省百分比。fake已知成本0與刻意注入unknown分開記。
 
