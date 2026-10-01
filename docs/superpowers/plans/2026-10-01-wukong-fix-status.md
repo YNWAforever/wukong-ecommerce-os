@@ -98,6 +98,6 @@ Review found and fixed four Important issues: explicit opt-in/dedicated CI DB pl
 
 Local screenshots: ignored `node_modules/.opak-evidence/{operator,reviewer}-{queue,blocked-mobile}.png` contain synthetic values only. Customer evidence remains outside the repo. Production repair uses existing `0046_listing_version_source_binding.sql`; no new migration or backfill. Configuration and additive-schema rollback are documented in the recovery pack.
 
-PR/preview: not yet created; publish this batch after final checks and review follow-up. Next independent implementation: T03 maintenance intake and immutable source matching, retaining reference-only eligibility.
+PR: [draft #121](https://github.com/YNWAforever/wukong-ecommerce-os/pull/121), based on current main; implementation commit `5d62a597526d45fa1fe009648e68ecd33e1a8143`. Commit-relative format gate passed across all 48 changed files. Initial preview `dpl_HQx2crZqxgJfv9827pXaNSDmGPbS` for `f12668232ef360cd56d182e06e0e5dd742657f38` was BUILDING; GitHub CI run `36819041037` in progress at 2026-10-01T05:17Z. These are observed pending states, not preview/CI acceptance. Next independent implementation: T03 maintenance intake and immutable source matching, retaining reference-only eligibility.
 
 No paid provider call, production mutation, merge, deployment command or SHOPLINE write performed.
