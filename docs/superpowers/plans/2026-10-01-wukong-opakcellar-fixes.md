@@ -321,3 +321,13 @@ integration/e2e/runtime命令需要相應runbook環境；不可拿production cre
 5. 下一個依賴任務；如需外部帳戶／預算／正式release確認，交具體可審閱結果及其來源限制。
 
 最終交付repo PR、preview、30-case結果、12-case AI結果（或清楚blocked）、操作與支援runbook、效能前後數據、release/rollback pack。不能只改文案/按鈕，亦不能把未測正式流程寫成已完成。
+
+## 6. 2026-10-02 已授權 staging checkpoint
+
+T00–T14 的 source/local 交付沿用前面的已完成紀錄；production/merchant gates 與下列雲端 rehearsal 分開。使用者已明確授權隔離 synthetic staging/deployment、fake AI/mock SHOPLINE、付費AI呼叫0、雲端預算上限US$5及 production不變。詳見 [staging receipt](../../runbooks/opak-staging-rehearsal-2026-10-02.md) 與 [fix-status](./2026-10-01-wukong-fix-status.md)。
+
+- [x] 新空白 DB/app role/migrations/replay/preflight/FORCE RLS、獨立 cache-disabled Hyperdrive、private R2、preview queues。
+- [x] 合成帳戶/tenant隔離、renderer isolation/dry-build；pending credential期間 compute disabled/idle。
+- [ ] 兩組獨立 bucket-scoped R2 credential files、safe mock SMTP、branch-specific preview及 Worker部署、authenticated synthetic UAT與audit。
+- [ ] 最新 docs-only eaa39b4 CI browser失敗：Admin SPA main空白、invite wait超時、workspace POST尚未開始；本地原case1/1，確切渲染根因未確認，不能報修好。
+- [ ] Production read驗收、paid/human AI品質、首次真SHOPLINE寫入及商戶5→20→100核對／sign-off仍blocked，不由synthetic通過推定。

@@ -310,3 +310,25 @@ Source code-ready is verified for these candidate heads. READY still establishes
 ## 2026-10-02 cloud metadata continuation
 
 Read-only refresh found C01 changed metadata selection, C02 reproduced configured BYPASSRLS origin, C03 reproduced enabled Hyperdrive caching, and C04 blocked authenticated cloud smoke. Full evidence, limitations and the concrete authorized-release proposal are in [cloud refresh](../../runbooks/opak-cloud-readonly-refresh-2026-10-02.md). Existing 0046 columns/FK remain missing; valid referenced composite unique index and app SELECT are confirmed. No production mutation or provider call. Worker BUILD_SHA is now known; earlier unknown snapshots are historical. Source code and prior CI evidence are unchanged; this documentation correction requires its own checks.
+
+## 2026-10-02 authorized isolated staging continuation
+
+User explicitly approved metadata publication in PR126 and isolated synthetic cloud staging/deployment: fake AI/mock SHOPLINE, zero paid AI calls, maximum US$5 cloud cost, production unchanged. The publication rejection is resolved by that explicit authorization. [Staging receipt](../../runbooks/opak-staging-rehearsal-2026-10-02.md) contains exact resources, failed setup evidence, command outcomes, hold and rollback.
+
+- [x] New empty Neon project/DB; no merchant or production clone.
+- [x] New non-bypass app role owns0 tables; normal migrations through0053 and replay exit0; runtime listing-read preflight exit0.
+- [x] Postflight69 public tables/59 RLS/all59 FORCE/0 unforced;0046 source columns/composite FK and0053 quality tables present.
+- [x] Separate preview Hyperdrive cache-disabled, limit5, TLS require, new staging origin/app role; four preview Queues/DLQs and private R2 with r2.dev disabled.
+- [x] Existing-service synthetic auth fixture: two workspaces/three roles, own-visible1/foreign-visible0, no email or provider call.
+- [x] Reviewed renderer fake/mock/paid=false isolation guards and Worker dry-build pass; prior local config restored.
+- [x] Staging endpoint disabled/idle while awaiting credentials; provider denied interval modification, no upgrade or cost claim.
+- [ ] Distinct web ObjectRW/Worker ObjectR bucket-scoped credential files: pending information request. No production keys copied.
+- [ ] Branch-specific cloud web/Worker deployment, authenticated synthetic UAT/scoped audit and exact release evidence. No deployment/acceptance claimed.
+- [ ] SMTP-dependent cloud flow: safe mock endpoint still unidentified; no real email authorized.
+- [ ] CI36951974507 Admin SPA empty-main cause: reproduced CI timeout before workspace POST; unchanged local single test1/1 in12.6s, mechanism unconfirmed. No product/test assertion/timeout change or blind remote rerun.
+
+ST01 reproduced fresh-Neon migration role-transfer prerequisite, fixed only in staging admin setup and temporary CREATE revoked. ST02 reproduced Windows cmd URI separator truncating create flags; returned resource ID verified/updated without duplicate, final cache disabled confirmed. ST03 reproduced account suspend-interval412; bounded disabled/idle hold used. ST04 blocked scoped R2 credentials. CI01 latest eaa39b4 selected browser16/17: invite fill line243 waits119,420.147ms, RSC200/17.9ms, main empty, zero workspace-select POSTs; cleanup masked primary timeout. Prior full-green d49/source heads stay dated evidence, not latest-head success.
+
+CI01 bounded navigation-only reproduction20/20 passed/0 setup errors in65.46s, heading/tabs/invite visible198.26–625.17ms, workspace POST0. Fresh contexts with warm Windows compiled server/reused actor; no timing comparison applied without a failure. Server stopped/3300 listener0. This is negative local reproduction evidence, not proof against the retained Ubuntu CI failure. Five-document Prettier/diff/public controlled-value scan55checks/0matches passed; source release gate6automated pass/14human outstanding, no environment sign-off.
+
+Automatic review rejected extracting Wrangler OAuth credentials into direct HTTP. That command did not run; no token was read. Normal CLI auth and controlled staging S3 credential files are the accepted path; this rejection remains unresolved by design. Private credentials, trace/screenshots/logs/setup scripts and model/customer content are excluded from Git/public receipts. No migration SQL, app/test runtime source, production configuration or provider was changed in this continuation.

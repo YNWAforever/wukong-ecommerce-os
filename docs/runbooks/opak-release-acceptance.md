@@ -4,11 +4,11 @@
 
 ## 三個互相獨立的結果
 
-| 結果                     | 現況                                                                                                            | 放行所需證據                                                                                                                     |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| code-ready               | A–F tested heads完整 CI SUCCESS／exact-head READY；F full24＋workbook6、本地PG-worker及最終indexed rollback通過 | 終態候選SHA／CI／preview及其後docs-only checks見fix-status與PR；與下列外部驗收分開                                               |
-| production-read-verified | blocked                                                                                                         | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
-| merchant-pilot-accepted  | blocked                                                                                                         | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
+| 結果                     | 現況                                                                                                                 | 放行所需證據                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| code-ready               | A–F historical tested heads完整 CI SUCCESS／READY；最新docs-only eaa39b4 CI browser16/17，Admin SPA blank-render未解 | 終態候選SHA／CI／preview及其後docs-only checks見fix-status與PR；歷史通過不代替最新check                                          |
+| production-read-verified | blocked                                                                                                              | 正式 web 實際使用的 DB/schema 識別、部署一致性、已授權 operator/reviewer 對原詳情／queue 的非破壞 smoke、安全 request/stage 證據 |
+| merchant-pilot-accepted  | blocked                                                                                                              | 首次真寫入的獨立確認、5 → 20 → 100 各階段結果核對、最新已授權 merchant export 的獨立逐欄核對、商戶簽署                           |
 
 READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；下載成功不等於 SHOPLINE 已接受。不得將部分結果合併成「全通過」。每個 UC 的歷史結果與本輪結果見 [30-case 結果表](./opak-uat-results-2026-10-01.md)。
 
@@ -96,4 +96,12 @@ E source `ea827e081ba3c98797c6f468818051e9540fbdf7`完整CI `36906156935` SUCCES
 
 ## 2026-10-02 provider refresh correction
 
-The earlier Worker receipt selected a historical deployment; current status and BUILD_SHA are corrected above. [Cloud read-only refresh](./opak-cloud-readonly-refresh-2026-10-02.md) confirms production Hyperdrive origin matches the identified Neon branch but uses a BYPASSRLS owner role and enabled query caching. These are independent failed readiness gates. No cross-tenant exposure or cache-related 500 cause is asserted. Production schema still lacks existing0046, authenticated cloud smoke remains blocked, and no live change was made. The original review evidence ZIP is a dated receipt; use this supplement for current provider metadata.
+The earlier Worker receipt selected a historical deployment; current status and BUILD_SHA are corrected above. [Cloud read-only refresh](./opak-cloud-readonly-refresh-2026-10-02.md) confirms production Hyperdrive origin matches the identified Neon branch but uses a BYPASSRLS owner role and enabled query caching. These are independent failed readiness gates. No cross-tenant exposure or cache-related 500 cause is asserted. Production schema still lacks existing0046, authenticated cloud smoke remains blocked, and no production change was made. The original review evidence ZIP is a dated receipt; use this supplement for current provider metadata.
+
+## 2026-10-02 authorized staging checkpoint
+
+The user explicitly authorized isolated synthetic cloud staging/deployment, fake AI/mock SHOPLINE, zero paid AI calls, maximum US$5 cloud cost and no production changes. [Staging rehearsal receipt](./opak-staging-rehearsal-2026-10-02.md) records a new empty Neon project, normal migrations through0053/replay/preflight, non-bypass app role, all59 tenant tables FORCE RLS, cache-disabled separate Hyperdrive, private R2 and four preview Queues. Two synthetic workspaces/three roles are seeded; own-visible1/foreign-visible0. Renderer/dry-build pass; existing local config restored.
+
+Cloud Worker/web deployment and authenticated staging UAT remain blocked on two distinct bucket-scoped R2 credential files; no cloud acceptance is inferred. SMTP-dependent cloud flows also need a safe mock endpoint. Compute is disabled/idle during this hold; auto-suspend interval modification was denied by the provider. Production and real SHOPLINE gates are unchanged.
+
+Latest documentation-head CI36951974507 at eaa39b4 failed on a119,420.147ms invite-field wait after Admin SPA return. The RSC/modules returned200, main was empty, and no workspace-select POST occurred. The unchanged single local case passed1/1 in12.6s;20/20 bounded navigation-only trials also passed in65.46s on a warm Windows server/reused synthetic actor. No timing comparison or source/test change was made; this does not reproduce Ubuntu CI or prove a fix/rendering mechanism. Retain the original failure and earlier full-green source/receipt evidence separately.
