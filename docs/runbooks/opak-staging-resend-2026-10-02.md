@@ -1,6 +1,6 @@
 # Isolated staging Resend test mode — 2026-10-02
 
-This is source/local safety verification and branch configuration, not SMTP delivery, cloud Web UAT or merchant acceptance. The user selected Resend within the existing isolated synthetic staging authorization; no real recipient or production change is authorized by this phase.
+This runbook retains source/local safety verification and its earlier configuration checkpoint. The later [cloud Web/SMTP receipt](opak-staging-cloud-web-2026-10-02.md) supersedes pending Save/deployment/SMTP statements below; complete UAT and merchant acceptance remain unverified. The user selected Resend within the existing isolated synthetic staging authorization; no real recipient or production change is authorized by this phase.
 
 ## Behavior and configuration
 
@@ -29,13 +29,13 @@ Resend is a delivery service with event simulators, not a catch-only mailbox. It
 
 Commands: pnpm --filter @wukong/web exec vitest run lib/auth-mailer.test.ts; pnpm --filter @wukong/web test; node --test tests/*.test.mjs; pnpm --filter @wukong/web typecheck; pnpm --filter @wukong/web build. All logs, retained failing attempts and private configuration are outside Git.
 
-Normal Vercel readback reports36 branch fields, including the updated sender and new mode. SMTP createdAt/updatedAt remains unchanged despite the earlier user update claim. Provider identity is now Resend; the Sensitive field Save, actual authentication, sender acceptance, quota, deployed flag and SMTP behavior remain unverified. Existing R2/SMTP secrets were not read or replaced. Shared production/Preview settings were not changed.
+Earlier pre-Save readback reported36 branch fields and unchanged SMTP metadata. After the user confirmed Save, exact source CI37007885607 passed and the guard-compatible candidate was deployed. The later cloud receipt verifies normalized branch configuration, the deployed rejection event, one accepted official simulator SMTP request and Web R2/server-auth/Queue behavior. Remaining quota, inbox/token completion and full UAT stay unverified. User SMTP/R2 values were never read or replaced; shared production/Preview settings were not changed.
 
 ## Deployment, stop and rollback
 
 Use the newly reviewed guard-compatible Web source with branch-only runtime values; do not deploy the old6d8 candidate with the new mode, because old code ignores it. Explicitly verify effective AUTH_EMAIL_DELIVERY_MODE=resend-test and platform Preview placement in the actual candidate before any email test. A provider name or field timestamp does not establish SMTP behavior.
 
-Web remains undeployed and its intended alias unassigned. Worker remains held, new staging compute disabled/idle; Queue/R2/Web-to-Worker/authenticated UAT/scoped audit are separate gates. No production500 root cause is asserted.
+The earlier undeployed/unassigned checkpoint is superseded by the exact READY deployment and alias in the cloud receipt. After the bounded tests Worker is held and staging compute disabled/idle. Full lifecycle audit and remaining UAT/resource gates are listed separately; no production500 root cause is asserted.
 
 There is no migration. Rollback stops new admission and staging compute/consumers/cron/ingress while retaining data, sources, versions, reservations, artifacts, receipts, audit and DLQs. Preserve the test-mode field and use only a guard-compatible Web version with a compatible reviewed Worker. Removing the mode or reverting to a version that ignores it is not a safe SMTP rollback. Do not purge evidence, perform destructive down migrations or restore unsafe roles/cache.
 

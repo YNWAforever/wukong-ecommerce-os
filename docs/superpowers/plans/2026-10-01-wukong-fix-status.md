@@ -365,3 +365,19 @@ Changed env names: `AUTH_EMAIL_DELIVERY_MODE` (optional Web/name-only example; b
 [Resend staging runbook](../../runbooks/opak-staging-resend-2026-10-02.md) records setup, tests, quota limits and stop/rollback. Preserve the test-mode field; compatible rollback must retain a Web version that implements the guard, never silently revert to old6d8 with a live Resend configuration. Stop admission/compute/consumers/cron/ingress and retain data/evidence/audit/DLQs. The old6d8 staging candidate is not the new guarded Web candidate.
 
 Staging Web remains undeployed and alias unassigned. Compute disabled/idle and Worker held; actual Queue/R2/Web-to-Worker/server-auth/UAT/audit and SMTP behavior remain separate gates. No paid AI, actual mail, production mutation or first real SHOPLINE write. Public output contains only safe counts/metadata/docs; raw logs and controlled configuration remain outside Git.
+
+## 2026-10-02 guarded cloud Web/SMTP and five-item Queue checkpoint
+
+Source30866ea1 exact full CI37007885607 SUCCESS. Dedicated candidatead3b24a1 differs only in disabled Git auto-deploy config. Final Preview dpl_B7uKKjWjV9vRf1rqb8Bmkgd7bZUt READY/67s, exact isolated auth alias assigned; Worker versione4c393cd/deployment3c186113/BUILDad3. Detailed [cloud receipt](../../runbooks/opak-staging-cloud-web-2026-10-02.md) distinguishes superseded failures, final passes, resource versions, env correction, commands, hold and rollback.
+
+- [x] User Sensitive SMTP Save metadata,29 exact nonsecret configuration reads, isolated aliases; user SMTP/R2 values untouched.
+- [x] Three password/server-session roles, Secure/HttpOnly cookies, admin200/other403, anonymous401/foreign404, logout/revoked401.
+- [x] Deployed simulator guard actual rejected event via provider logs; one official simulator SMTP accepted and auth audit success. No real recipient.
+- [x] Web R2 exact key/endpoint; own204/foreign403 CORS, PUT200, finalize201/read-inspection-copy, foreign-key403; private public URL disabled.
+- [x] Actual Web-Worker signed admission5, remote Queue versions5, current unselected values preserved5/manual lock1, fake calls10/nonfake0/recorded estimated cost0; preview calls0; audit foreign accessible0.
+- [x] Bounded252/47/216/69s windows stopped; fresh compute disabled/idle, Worker HEAD404, Queue pause/cron-ingress commands exit0; data/audit/DLQs retained. Actual billing unmeasured; remote paused/cron exact readback unknown.
+- [ ] Full lifecycle audit: approval and terminal delivery actions missing2. Synthetic approval/source-bound export/result reconciliation/full30-case cloud UAT still pending; no code or gate waiver.
+- [ ] Worker R2 read/write-denied/scope proof; cloud browser/screenshots blocked by supported tool startup failure; no fabricated pass.
+- [ ] Production/merchant/paid-human-AI/employee-minute/first-real-write gates remain separate. No production change, merge or actual merchant scale-up.
+
+ST14 configuration trailing CRLF reproduced in public mode and corrected with exact scoped inputs; ST15 absent CORS reproduced/limited to isolated origin. Virtual-host/204 and fixture dependency/log selection were private harness assumptions, corrected while retaining failed attempts. No new application, migration or dependency change. This evidence commit is documentation only; its own current CI must not be confused with source308's completed CI.

@@ -348,3 +348,16 @@ Ruling: 使用者指定 Resend；採官方 simulator address＋隔離分支明�
 - [ ] AUTH_SMTP_URL Save紀錄、SMTP authentication/sender/quota、實際部署mode／alias／Web-Worker/R2／Queue/UAT/audit；provider名稱及unit不能代替。
 
 Build與新head CI另記fix-status；先前b115 CI成功保留為dated evidence，不推定本次改動已過CI。
+
+## 8. Guarded cloud runtime checkpoint — 2026-10-02
+
+Earlier pending Web/Save/SMTP statements are dated checkpoints, superseded by [cloud Web receipt](../../runbooks/opak-staging-cloud-web-2026-10-02.md). Reviewed source308 fullCI SUCCESS; candidatead3 sole config delta; final READY Preview/auth alias and paired Worker verified.
+
+- [x] User Save, exact branch configuration, server-password/session/role/RLS/logout acceptance with synthetic actors.
+- [x] Actual deployed Resend guard plus1 accepted official simulator request; Web R2 read/write/inspection/copy and exact-origin/foreign-key refusal.
+- [x] Actual signed Web→Worker→remote Queue5; fake AI10/cost0; current values5 and manual lock1 preserved; scoped audit accessible foreign0.
+- [x] Bounded testing/independent watchdogs; paused/cron-ingress command acknowledgements, HEAD404, fresh DB disabled/idle; all failed and successful evidence retained outside Git.
+- [ ] Full synthetic approval/source-bound export/result reconciliation/30-case cloud UAT and complete lifecycle audit (missing2 actions); actual Worker R2 read/write-denied/scope proof.
+- [ ] Supported cloud browser tool startup failed; no cloud screenshot/browser pass. Production/merchant/paid-human-AI/first-real-write/scale-up gates unchanged.
+
+No new migration/env name. Exact env normalization and isolated CORS correction are reversible configuration actions. Hold/rollback preserves guarded mail mode, data, versions, reservations, audit, artifacts and DLQs; no destructive rollback or production change. Actual cloud billing is unmeasured; zero paid AI and bounded resource windows are separate facts.
