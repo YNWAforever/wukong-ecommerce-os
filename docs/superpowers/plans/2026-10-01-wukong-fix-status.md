@@ -332,3 +332,18 @@ ST01 reproduced fresh-Neon migration role-transfer prerequisite, fixed only in s
 CI01 bounded navigation-only reproduction20/20 passed/0 setup errors in65.46s, heading/tabs/invite visible198.26–625.17ms, workspace POST0. Fresh contexts with warm Windows compiled server/reused actor; no timing comparison applied without a failure. Server stopped/3300 listener0. This is negative local reproduction evidence, not proof against the retained Ubuntu CI failure. Five-document Prettier/diff/public controlled-value scan55checks/0matches passed; source release gate6automated pass/14human outstanding, no environment sign-off.
 
 Automatic review rejected extracting Wrangler OAuth credentials into direct HTTP. That command did not run; no token was read. Normal CLI auth and controlled staging S3 credential files are the accepted path; this rejection remains unresolved by design. Private credentials, trace/screenshots/logs/setup scripts and model/customer content are excluded from Git/public receipts. No migration SQL, app/test runtime source, production configuration or provider was changed in this continuation.
+
+## 2026-10-02 isolated Worker partial acceptance
+
+This checkpoint supersedes the earlier preparation-only deployment state above. Detailed commands, retained runner/probe failures, exact source/version and limitations are in [Worker health receipt](../../runbooks/opak-staging-worker-health-2026-10-02.md). Application source remains reviewed ce4cfc9; staging6d8f8ff differs only in web automatic-Git-deployment configuration.
+
+- [x] Normal gated Worker preview deployment succeeded: version575c6814-179e-4a5d-816b-5529b2c3e871, active100%, BUILD_SHA6d8f8ff. Five exact secret names preserved; user R2 values were not read or re-uploaded.
+- [x] Deployed GET metadata matches fake AI/mock SHOPLINE/disabled shots/wine=false; unsigned and invalid signatures401, checked-in signer200, Hyperdrive and listing recovery true.
+- [x] Staging runtime readcheck: wukong_app non-superuser/non-bypass,0 owned tables,69 public tables/59 RLS/all59 FORCE, own-visible1/foreign-visible0. No DB domain writes.
+- [x] Normal stop commands acknowledged both Queue pauses and crons=[]/workers_dev=false/preview_urls=false. Fresh public HEAD404 and Neon disabled/idle. Queues,DLQs,sources,audit and data preserved.
+- [ ] Normal CLI cannot independently read remote cron schedule or queue-paused flag; Queue info confirms attached producer/consumer only. Do not replace unknown with passed.
+- [ ] Web R2 Access Key ID has no update timestamp; safe SMTP mock unidentified. R2 permission/scope, Queue execution, cloud app auth/UAT and scoped audit not verified. No web staging deployment claimed.
+
+Private rehearsal failures are retained: accidental global CLOUDFLARE_ENV selected nonexistent preview-preview; immediate route404 resolved by bounded same-version polling; private HMAC probe used hex until replaced with the checked-in base64url signer. An independent direct read raced compute hold and returned28000; the in-window role/scoping check passed. These are runner/probe findings, not application fixes or proof of the production500 cause. No source/test/migration change or guard bypass.
+
+Final verification window82seconds; authorized budget remainsUS$5 and billing is unmeasured. Queue messages submitted0, R2 operations0, paid AI calls0, outgoing emails0, production changes0. Correct HMAC proves the local generated ingress value agrees with Worker; it does not prove Vercel runtime agreement. ce4cfc9 full CI36956816510 is SUCCESS; this new documentation checkpoint needs its own remote status. CI01 rendering cause remains unconfirmed.

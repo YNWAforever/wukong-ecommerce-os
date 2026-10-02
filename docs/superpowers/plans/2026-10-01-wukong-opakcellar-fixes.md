@@ -328,6 +328,11 @@ T00–T14 的 source/local 交付沿用前面的已完成紀錄；production/mer
 
 - [x] 新空白 DB/app role/migrations/replay/preflight/FORCE RLS、獨立 cache-disabled Hyperdrive、private R2、preview queues。
 - [x] 合成帳戶/tenant隔離、renderer isolation/dry-build；pending credential期間 compute disabled/idle。
-- [ ] 兩組獨立 bucket-scoped R2 credential files、safe mock SMTP、branch-specific preview及 Worker部署、authenticated synthetic UAT與audit。
-- [ ] 最新 docs-only eaa39b4 CI browser失敗：Admin SPA main空白、invite wait超時、workspace POST尚未開始；本地原case1/1，確切渲染根因未確認，不能報修好。
+- [x] 專用 Preview branch 設定及 Worker 五個必要 Secret 名稱；使用者在 provider dashboard 填 Worker R2 pair，未讀取 secret 值。
+- [x] Worker 候選6d8f8ff／version575c6814 實際部署；GET metadata、未簽名/錯誤401、正確HMAC200、Hyperdrive及listing recovery通過；runtime non-bypass/0 ownership/59 FORCE/own1 foreign0。
+- [x] 正常 Queue pause、crons=[]及關閉公開入口指令exit0；fresh HEAD404、Neon disabled/idle。remote cron GET及paused flag讀回仍unknown。
+- [ ] Web/Worker R2功能及bucket scope、安全mock SMTP、Web部署、authenticated synthetic UAT／Queue消費／scoped audit；Worker health不可代替完整驗收。
+- [ ] 保留eaa39b4 CI browser失敗：Admin SPA main空白、invite wait超時、workspace POST尚未開始；本地原case1/1，確切渲染根因未確認。後續ce4cfc9完整CI36956816510成功不構成根因修復證據。
 - [ ] Production read驗收、paid/human AI品質、首次真SHOPLINE寫入及商戶5→20→100核對／sign-off仍blocked，不由synthetic通過推定。
+
+Worker 部分 cloud 驗證及停止證據見 [2026-10-02 Worker health receipt](../../runbooks/opak-staging-worker-health-2026-10-02.md)。本次沒有變更app／tests／migration；source與當前文件head的CI須分開記錄。

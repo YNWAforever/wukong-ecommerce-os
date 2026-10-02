@@ -59,3 +59,7 @@ Budget hold disables only new staging compute; data/resources and all failure ev
 On any hard failure stop new admission, retain accepted/unknown requests, reservations, sources, versions, receipts, artifacts, audit and Queue/DLQs. Keep additive schema and safe runtime role/cache settings. Roll back only a compatible reviewed web/Worker pair; no destructive down migration or unsafe role restoration. Retain new staging resources for review; deletion is a separate decision.
 
 Production main/web/Worker/Hyperdrive/schema/secrets/queues are unchanged. Public metadata publication previously rejected by automatic review was explicitly authorized and completed in PR126; the manual OAuth extraction rejection remains unresolved by design.
+
+## Later partial Worker verification
+
+The preparation-only deployment/credential state above is historical. [Worker health receipt](./opak-staging-worker-health-2026-10-02.md) records the subsequent real reviewed Worker deployment, exact fake/mock/HMAC/Hyperdrive/runtime-role checks and final disabled/idle/HEAD404 hold. R2 functional scope, Web/SMTP, Queue execution, full authenticated UAT and scoped audit remain outstanding. ce4cfc9 full CI36956816510 subsequently succeeded; the earlier CI01 rendering cause remains unconfirmed. No production or real SHOPLINE operation was authorized or performed.
