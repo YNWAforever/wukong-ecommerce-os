@@ -336,3 +336,15 @@ T00–T14 的 source/local 交付沿用前面的已完成紀錄；production/mer
 - [ ] Production read驗收、paid/human AI品質、首次真SHOPLINE寫入及商戶5→20→100核對／sign-off仍blocked，不由synthetic通過推定。
 
 Worker 部分 cloud 驗證及停止證據見 [2026-10-02 Worker health receipt](../../runbooks/opak-staging-worker-health-2026-10-02.md)。本次沒有變更app／tests／migration；source與當前文件head的CI須分開記錄。
+
+## 7. Resend staging mail safety — 2026-10-02
+
+Ruling: 使用者指定 Resend；採官方 simulator address＋隔離分支明確 test mode，保留原本 production／一般 Preview 行為。模式若誤放 production 會拒絕連線；不為通過 preflight 填 dummy SMTP 或放寬權限。
+
+- [x] 識別 Preview 繼承的17個非必要 Neon DB/auth alias；只在專用 staging 分支遮蔽，配置明確 auth origin；尚未部署。
+- [x] Resend recipient／模式位置／hostname及service preset繞過／URL logging-TLS選項的 RED→GREEN service tests40/40；獨立 review P1已修，final review無剩餘finding。
+- [x] Final Web units2274/2274、root143 passed/2 skipped/0 failed、typecheck通過；production/Sensitive secrets未修改，沒有寄信。
+- [x] 分支 sender及AUTH_EMAIL_DELIVERY_MODE欄位、manifest／names-only example／[staging runbook](../../runbooks/opak-staging-resend-2026-10-02.md)。
+- [ ] AUTH_SMTP_URL Save紀錄、SMTP authentication/sender/quota、實際部署mode／alias／Web-Worker/R2／Queue/UAT/audit；provider名稱及unit不能代替。
+
+Build與新head CI另記fix-status；先前b115 CI成功保留為dated evidence，不推定本次改動已過CI。
