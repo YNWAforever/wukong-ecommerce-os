@@ -361,3 +361,12 @@ Earlier pending Web/Save/SMTP statements are dated checkpoints, superseded by [c
 - [ ] Supported cloud browser tool startup failed; no cloud screenshot/browser pass. Production/merchant/paid-human-AI/first-real-write/scale-up gates unchanged.
 
 No new migration/env name. Exact env normalization and isolated CORS correction are reversible configuration actions. Hold/rollback preserves guarded mail mode, data, versions, reservations, audit, artifacts and DLQs; no destructive rollback or production change. Actual cloud billing is unmeasured; zero paid AI and bounded resource windows are separate facts.
+
+## 9. Source-bound cloud delivery — 2026-10-03 HKT
+
+- [x] Five source-import maintained drafts, actual remote fake Queue, masked current values/manual lock preserved.
+- [x] Bulk reviewer4+1/failed-only retry, operator403, source/version freshness; A5/Brejected2 and independent497cells; immutableA and independent comparison results.
+- [x] ST16 terminal audit missing1 reproduced; atomic per-member ready audit repair with realPG RED→GREEN44/44 and route67/67, release verifier unchanged.
+- [ ] Repaired-source cloud scoped lifecycle audit; originalv2 failed receipt retained without backfill. Worker R2 proof/cloud browser/full30-case and production/merchant/human gates remain open.
+
+See [delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) and [cloud case matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv). Exact source/build/CI/stop state and remaining limitations are maintained in fix-status; synthetic evidence does not authorize production or true SHOPLINE writes.

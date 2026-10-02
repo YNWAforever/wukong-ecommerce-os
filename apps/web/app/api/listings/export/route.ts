@@ -291,10 +291,14 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
           ready = await database.forWorkspace<ExportAttempt>(
             session.workspaceId,
             (repositories) =>
-              repositories.exportAttempts.markReady({
-                id: attempt.id,
-                artifactSha256,
-              }),
+              repositories.exportAttempts.markReady(
+                {
+                  id: attempt.id,
+                  artifactSha256,
+                  actorId: session.actorId,
+                },
+                repositories.audit,
+              ),
           );
         } catch (error) {
           const code =

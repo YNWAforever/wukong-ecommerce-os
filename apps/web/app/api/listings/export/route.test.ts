@@ -229,6 +229,7 @@ function makeExportAttempts() {
 
   return {
     ensureCalls: [] as any[],
+    readyCalls: [] as any[],
     async ensure(input: any) {
       this.ensureCalls.push(input);
       const existing = store.get(input.idempotencyKey);
@@ -268,7 +269,8 @@ function makeExportAttempts() {
       store.set(input.idempotencyKey, created);
       return { ...created, wasCreated: true };
     },
-    async markReady(input: any) {
+    async markReady(input: any, audit: unknown) {
+      this.readyCalls.push({ input, audit });
       const row = [...store.values()].find(
         (row) =>
           row.id === input.id && row.artifactSha256 === input.artifactSha256,
@@ -1743,4 +1745,23 @@ it("locks the entire selected set in sorted order before any final included-memb
     "lock:a_missing",
     "lock:listing_changed",
   ]);
+});
+
+it("passes the server actor and scoped audit port to atomic artifact readiness", async () => {
+  const fixture = makeHandler();
+  const response = await fixture.handler(
+    request({
+      listingIds: ["listing_changed"],
+      fields: ["nameZh"],
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(fixture.exportAttempts.readyCalls).toHaveLength(1);
+  expect(fixture.exportAttempts.readyCalls[0].input.actorId).toBe(
+    context.actorId,
+  );
+  expect(fixture.exportAttempts.readyCalls[0].audit).toBe(
+    fixture.repositories.audit,
+  );
 });

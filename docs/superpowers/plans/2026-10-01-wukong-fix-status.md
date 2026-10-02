@@ -381,3 +381,22 @@ Source30866ea1 exact full CI37007885607 SUCCESS. Dedicated candidatead3b24a1 dif
 - [ ] Production/merchant/paid-human-AI/employee-minute/first-real-write gates remain separate. No production change, merge or actual merchant scale-up.
 
 ST14 configuration trailing CRLF reproduced in public mode and corrected with exact scoped inputs; ST15 absent CORS reproduced/limited to isolated origin. Virtual-host/204 and fixture dependency/log selection were private harness assumptions, corrected while retaining failed attempts. No new application, migration or dependency change. This evidence commit is documentation only; its own current CI must not be confused with source308's completed CI.
+
+## 2026-10-03 source-bound cloud delivery and audit repair
+
+[Delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) / [30-case cloud scope matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv).
+
+- [x] Source import5 and actual Queue5; fake10/cost0; current/unselected values5 and manual title1 preserved.
+- [x] Reviewer bulk4approved/1stale; failed-only1; operator403; exact5approval events.
+- [x] A5/Brepair2, independent497cell checks;3accepted/2rejected; immutableA; independentA3match2diff/B2match.
+- [x] ST16 reproduced: batch attempt audit lacks per-draft terminal event. Two realPG regressions RED; atomic ready/member audit fix GREEN; affectedPG44/44, route67/67, typecheck14tasks, full Web2275/2275.
+- [ ] Unchanged release gate on newly deployed repaired source; originalv2 remains failed with missing1/foreign0. No manual backfill or waived audit.
+- [ ] Actual Worker R2 scope test; complete cloud30cases/browser, production/merchant/paid-human-AI gates remain separate.
+
+T12/T14 Ruling: terminal file-delivery audit is written once when immutable artifact readiness commits; excluded members and upload/DB/audit failures receive no successful terminal event. Previously ready attempts are preserved without synthetic backfill; a legitimate new reviewed export is required for a repaired-cloud gate. Cost if wrong: a later retry of an old attempt remains audibly incomplete and must not be treated as released.
+
+No schema migration or application env name. Existing guarded mail compatibility, tenant/session/transition/idempotency/freshness/cost protections retained. Local dedicated database only; cloud windows117s/496s stopped with watchdog. Current endpoint disabled/idle. Actual dollar billing unmeasured, zero paidAI; no production change or PR merge.
+
+Full local build8/8 tasks; fresh-context review (audit delta and corrected probe plus targeted branch risk paths): no remaining Critical/Important findings. Delayed-body expiry/timestamp review concern reproduced2RED then corrected; final private probe contracts11/11. Review does not replace actual cloud permission, restoration or lifecycle evidence.
+
+Final: Ruling: historical audit backfill remains excluded; actual permissions/restoration/latest cloud and production/merchant acceptance require execution within their own authority. No evidence claim is relaxed. Cost if wrong: an unexecuted gate stays blocked and release cannot proceed.
