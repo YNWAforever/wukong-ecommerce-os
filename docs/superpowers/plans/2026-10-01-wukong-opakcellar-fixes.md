@@ -370,3 +370,12 @@ No new migration/env name. Exact env normalization and isolated CORS correction 
 - [ ] Repaired-source cloud scoped lifecycle audit; originalv2 failed receipt retained without backfill. Worker R2 proof/cloud browser/full30-case and production/merchant/human gates remain open.
 
 See [delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) and [cloud case matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv). Exact source/build/CI/stop state and remaining limitations are maintained in fix-status; synthetic evidence does not authorize production or true SHOPLINE writes.
+
+## 10. Repaired cloud gate and Worker credential scope — 2026-10-03
+
+- [x] Repaired exact reviewed Preview/current alias; new legitimate export5 and repeat;5 terminal audits once; unchanged release verifier5/5 missing0/foreign0; no AI rerun, watchdog stop144s.
+- [x] Actual Worker own R2 read200/exact94-byte hash and foreign bucket HEAD403; original version/hold restored, fresh DB disabled/idle.
+- [ ] Worker ObjectRO is **failed**, own canary PUT200. Replace only Worker pair with distinct bucket-limited read-only credentials; re-test must preserve new secret-bound version. No merge/release until denied write proven.
+- [ ] Remaining cloud30-case/browser/production/merchant/paid-human gates per [precise matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv);3passed/10partial/15blocked/2not-run. Actual billing unmeasured, zero paidAI.
+
+All failed receipts and original A/B audit remain preserved. No migration or production action; exact source e9 CI and later documentation-only head checks are recorded separately in fix-status.

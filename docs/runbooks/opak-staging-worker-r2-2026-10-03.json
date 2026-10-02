@@ -1,0 +1,67 @@
+{
+  "stage": "deployed-worker-r2-scope-probe",
+  "startedAt": "2026-10-02T17:05:41.396Z",
+  "steps": [
+    {
+      "label": "probe-deploy",
+      "exit": 0
+    }
+  ],
+  "checks": [
+    {
+      "id": "deployed-signature-refused",
+      "pass": true,
+      "status": 401
+    },
+    {
+      "id": "actual-worker-readonly-bucket-scope",
+      "pass": false
+    }
+  ],
+  "userKeyRead": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "productionChanged": false,
+  "routingObservations": [
+    {
+      "status": 401,
+      "live": true
+    }
+  ],
+  "status": 200,
+  "permissionResult": {
+    "readStatus": 200,
+    "readMatched": true,
+    "writeChecked": true,
+    "writeStatus": 200,
+    "writeDenied": false,
+    "foreignBucketChecked": true,
+    "foreignBucketStatus": 403,
+    "foreignBucketDenied": true,
+    "canaryWritten": true
+  },
+  "outcome": "failed",
+  "stops": [
+    {
+      "label": "normal-restore",
+      "exit": 0
+    },
+    {
+      "label": "normal-wukong-listing-preview",
+      "exit": 0
+    },
+    {
+      "label": "normal-wukong-shopline-preview",
+      "exit": 0
+    },
+    {
+      "label": "normal-hold",
+      "exit": 0
+    }
+  ],
+  "finishedAt": "2026-10-02T17:06:29.933Z",
+  "actualBilling": "not-measured",
+  "userCredentialValueRead": false,
+  "ownedIngressSecretUsedForSigning": true,
+  "custody": "Derived safe metadata; original private receipt and source retained outside Git"
+}

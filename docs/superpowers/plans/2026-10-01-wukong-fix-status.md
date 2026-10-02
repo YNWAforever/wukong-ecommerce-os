@@ -400,3 +400,19 @@ No schema migration or application env name. Existing guarded mail compatibility
 Full local build8/8 tasks; fresh-context review (audit delta and corrected probe plus targeted branch risk paths): no remaining Critical/Important findings. Delayed-body expiry/timestamp review concern reproduced2RED then corrected; final private probe contracts11/11. Review does not replace actual cloud permission, restoration or lifecycle evidence.
 
 Final: Ruling: historical audit backfill remains excluded; actual permissions/restoration/latest cloud and production/merchant acceptance require execution within their own authority. No evidence claim is relaxed. Cost if wrong: an unexecuted gate stays blocked and release cannot proceed.
+
+## 2026-10-03 repaired cloud lifecycle terminal checkpoint
+
+Source e9d0d4ce / isolated candidate9dd64bf1 (sole vercel.json guard delta); READY dpl_4cZXFy8epug84HxvW9npgJEq2YDf/54s, isolated alias readback exact. Worker original e4 restored100%, fresh public HEAD404; fresh Neon disabled/idle. Exact source CI37036970244 status is recorded separately, not inferred from old green receipts.
+
+- [x] Actual new reviewed export and repeat share attempt/hash;5 exact terminal member events, no duplicate/backfill; unchanged lifecycle audit5/5 missing0/foreign0; AI10→10,144s, independent10-minute normal stop.
+- [x] Actual Worker own R2 GET200/hash94 and foreign production-bucket metadata HEAD403; no foreign content/write.
+- [ ] ST17 hard failure: own canary PUT200 proves Worker pair has write permission. User correction requested: distinct bucket-limited ObjectRO pair in the two existing Worker S3 secrets. Web key untouched; canary/evidence retained; no release/merge.
+- [x] Precise30-case cloud matrix3PASS/10PARTIAL/15BLOCKED/2NOT_RUN; no unsupported browser/quality/production/merchant success claimed.
+- [x] All local source gates root140/packages3987+1skip/Web2275/type14/build8/affectedPG44/route67 and fresh review; exact head CI remains a separate remote gate.
+
+H05 private SDK import reproduced local Worker CJS failure→ESM success and final cloud GET200; H06 failed28s relative path/curl23 retained (main stop actual, no watcher success claim), corrected absolute144s normalStopObserved=true; H07 immediate404 causeunconfirmed, final live signed marker401 proves tested probe. See [delivery follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md).
+
+Final: Ruling: ST17 never becomes a passed readonly gate on the strength of own GET/foreign HEAD. Requires actual denied PUT with a freshly corrected Worker version. Restore that fresh version after re-test; never restore stale e4 binding over a user's corrected secret. Cost if wrong: write-capable Worker credentials could be released, so this gate stays blocking.
+
+Source e9d0d4ce exact full CI37036970244 COMPLETED SUCCESS, verified 2026-10-02T17:18:35.5650532Z. All verify job steps finished; later documentation-only head is outside this receipt. ST17 remains a hard external gate.

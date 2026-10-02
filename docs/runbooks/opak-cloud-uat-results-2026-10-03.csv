@@ -1,6 +1,6 @@
 case_id,cloud_status,evidence_or_limit
 "UC01","partial","Three synthetic password/session identities; previous guarded roles/logout checks; full role-handoff browser flow pending"
-"UC02","passed","Operator approval/export403; previous admin-readiness authorization and revoked401"
+"UC02","partial","Operator approval/export403 and admin-readiness403; admin-write and useful-role-guidance cloud browser criteria not fully exercised"
 "UC03","partial","Five source-bound detail reads200; production500 repro remains blocked"
 "UC04","not_run","No corrupted-cloud-row fixture in this batch; local real-schema fault tests retained"
 "UC05","partial","Leading-zero SKU lexicals preserved; cloud search/URL user interaction not run"
