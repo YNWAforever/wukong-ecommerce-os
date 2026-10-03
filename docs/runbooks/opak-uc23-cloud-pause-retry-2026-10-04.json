@@ -586,5 +586,14 @@
   "secretValuesRead": false,
   "paidAiCalls": 0,
   "realShoplineCalls": 0,
-  "productionChanged": false
+  "productionChanged": false,
+  "labelCandidateCi": {
+    "rootCause": "new batch-detail test was unformatted; precommit local gate selected base..HEAD and omitted its then-uncommitted file",
+    "correction": "Prettier applied; exact CI base format check102 passed; focused17 passed; current follow-up CI pending",
+    "attempt": 1,
+    "run": 37156444960,
+    "conclusion": "failure",
+    "failingStep": "Check runtime formatting",
+    "head": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc"
+  }
 }

@@ -24,3 +24,7 @@ Only three distinct five-item synthetic imports were made across preparation tri
 - No migration, app env, dependency or credential change. Restore the reviewedfcf Worker and guarded compatible Web; retain sources, versions, run lineage, audit, ledger, artifacts and all failed receipts. Do not restore the prior broad R2 credential or older native-GET authentication source; do not purge or reset statuses.
 
 Cloud matrix now13PASS/4PARTIAL/13BLOCKED/all30; only UC23 changes in this checkpoint. UC03/06/24/29 remain partial. Paid/human UC09–20 and cloud load/employee UC30 remain blocked. Production additive0046 authority, safe runtime role/cache, effective Web DB/original authenticated500 and named recovery owner/confirmed recoverable point remain open. Main auto-deploy merge is held; first real SHOPLINE write and5→20→100 merchant pilot need their separate gates.
+
+## Exact-head format correction
+
+Source5f9eddba CI37156444960 attempt1 failed at runtime formatting: the new batch-detail test required Prettier. The prior local check selected committed base..HEAD and omitted that then-uncommitted test. The test was formatted without changing its assertions; exact CI base a3c1109f check102 files and focused17/17 passed. The first failure stays retained. The follow-up head requires its own full CI; no merge or production pass follows from local checks.
