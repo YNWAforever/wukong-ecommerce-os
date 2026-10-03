@@ -27,5 +27,5 @@ case_id,cloud_status,evidence_or_limit
 "UC26","passed","A3accepted2rejected; repairB2only; immutableA; independentA3match2diff/B2match"
 "UC27","blocked","Existing headless Chromium launches; direct staging redirected to Vercel provider login; Wukong authenticated navigation/screenshot not reached"
 "UC28","blocked","Headless runtime works but deployment protection prevents app UI; local admin CAS/dirty tests retained"
-"UC29","partial","Cloud malformed-row support ID/header correlation verified for both roles; whole DB/permission fault injection remains unrun"
+"UC29","partial","Both-role malformed-row support correlation; listing_versions/platform_products permission faults return500/noitems; originalACL restored then200; wholeDB-outage/UI criteria remain pending"
 "UC30","blocked","Local benchmarks retained; no500/5k/20k cloud load or human employee-minute result"

@@ -445,3 +445,9 @@ Source8dfef1d0 exact CI37094533417 SUCCESS/current main unchanged; subsequent do
 Final: Ruling: source import invalidates approval freshness, while immutable approval receipt and historical status remain. Delivery authority follows current source/version/confirmation fences, never the historical status alone. Cost if wrong: old approval could authorize changed source, so stale service retry and advisory/permission checks must fail.
 
 Final: Ruling: validate seeded JSONB object type and the existing reviewable schema before fault acceptance. Preserve original failures and the readonly ledger helper's inherited-counter correction. Cost if wrong: malformed fixture strings could be misreported as application regressions or silently turned into false passes.
+
+### Controlled global permission faults after54837392
+
+- [x]14offline guards/16actual cloud assertions/72s: original SELECT withdrawal on owned `listing_versions` makes queue500; owned `platform_products` makes catalog500. Correlated IDs/noitems/non-empty-success contract holds. Each exact original ACL restores then route200; FORCE RLS/policies/other grants unchanged. RetainedAI20 stays20, newrows0.
+- [x] Independent watchdog normal stop; originalACL restore and staging compute disabled acknowledgements0. Corrected Workerf061 and queues remain held. [Safe receipt](../../runbooks/opak-staging-permission-fault-2026-10-03.json) preserves the original hash and explicitly corrects the predecessor helper's inherited pending text.
+- [ ] UC29 remains partial for whole DB outage/UI; matrix4/11/15 unchanged. Current54837392 fullCI37101837145 was still running at this supplement; subsequent docs-only head needs its own check. No production mutation, migration, secret change, merge, paidAI or trueSHOPLINE call.
