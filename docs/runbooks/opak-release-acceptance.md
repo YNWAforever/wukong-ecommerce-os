@@ -160,3 +160,14 @@ Current source593 full CI is separate from the latest evidence-only commit. Exac
 - [ ] Exact production authority/recovery/role/schema/cache/effective Web/original500; paid-human quality, employee minutes and first realSHOPLINE/merchant gates. Conditional merge still held; PR120 is not green.
 
 [Executed behavior, roots, commands, receipt and compatible hold/rollback](./opak-reviewed-worker-cloud-gates-2026-10-04.md). Source593 and prior docs d86 exact CIs passed; this new docs-only head needs its own checks. No product code fix, migration, app env, provider secret or production change inferred from evidence-helper failures.
+
+## 2026-10-04 HKT original UC22 reviewer checkpoint
+
+- [x] Original UC22 on100 synthetic approved current fixture: reviewer2+3 across pages, changed filter, exact5 preview; actual digest movement revokes attestation/preview without reload; server old-preview409; explicit current five re-review/confirmation yields new preview5.20/20/132.811s, AI/publish/artifacts unchanged.
+- [x] Normal manual review/confirmation/bulk approval fixture100; operator403. Qualification helper status/listingStatus failure preserved; independent readback8/8/7,100cells/prior5inputs-candidates/AI30/publish0. No duplicate approval or missing byte-hash claim.
+- [x] Original old batch95 unstarted cancelled through service; only5 re-reviewed on fresh source. Other95 approvals historical after refresh; no100 Queue/merchant success claim. Sessions/queues/ingress/compute held; currentfcf100/source593/HEAD404/idle0.25 independently read back.
+- [x] Cloud matrix updated only UC22:12PASS/5PARTIAL/13BLOCKED/all30.
+- [ ] Latest docs head ownCI; c3 attempt1 website dispatch failure retained, unchanged-head reproduction pending; no unique underlying ingress cause or source fix claimed.
+- [ ] UC03/06/23/24/29 partial; paid-human UC09–20 and load/employee UC30 blocked. Production authority/recovery/role/schema/cache/effective Web/original500 and separate merchant first-write gates remain open. Conditional merge held.
+
+[Commands, exact criteria, failure disposition, safe receipt and hold/rollback](./opak-uc22-reviewer-cloud-2026-10-04.md). Prior checkpoints remain dated; this supersedes only the old UC22 pending criterion, not other release gates.

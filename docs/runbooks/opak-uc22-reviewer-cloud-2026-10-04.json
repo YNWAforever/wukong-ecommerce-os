@@ -1,0 +1,380 @@
+{
+  "recordedAt": "2026-10-03T19:55:02.557Z",
+  "applicationSourceHead": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+  "guardedWebHead": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+  "scope": "isolated owned synthetic fixtures, paid AI zero, no production mutation",
+  "qualificationFailure": {
+    "stage": "synthetic-uc22-manual-review-qualification",
+    "startedAt": "2026-10-03T19:25:41.132Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "webSha": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+    "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "checks": [
+      {
+        "id": "reviewed-preview-only",
+        "pass": true
+      },
+      {
+        "id": "reviewed-worker-held",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-runtime",
+        "pass": true
+      },
+      {
+        "id": "operator-server-workspace-identity",
+        "pass": true
+      },
+      {
+        "id": "reviewer-server-workspace-identity",
+        "pass": true
+      },
+      {
+        "id": "original-five-terminal-no-live-queued-work",
+        "pass": true
+      },
+      {
+        "id": "old-unstarted-batch-cancelled-through-service",
+        "pass": true
+      },
+      {
+        "id": "hundred-manual-review-source-bound-and-confirmed",
+        "pass": true
+      },
+      {
+        "id": "exact-hundred-approved-through-reviewer-service",
+        "pass": true,
+        "approved": 100
+      },
+      {
+        "id": "hundred-exact-current-approved-catalog-members",
+        "pass": false
+      }
+    ],
+    "stops": [
+      {
+        "id": "operator-session",
+        "acknowledged": true
+      },
+      {
+        "id": "reviewer-session",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      }
+    ],
+    "newImports": 0,
+    "newAiCalls": 0,
+    "newQueueAdmissions": 0,
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "productionChanged": false,
+    "actualBilling": "not-measured",
+    "outcome": "failed",
+    "errorCode": "CHECK_FAILED:hundred-exact-current-approved-catalog-members",
+    "finishedAt": "2026-10-03T19:28:35.972Z",
+    "elapsedMs": 174840
+  },
+  "qualificationReadback": {
+    "stage": "synthetic-uc22-qualified-cohort-readback",
+    "startedAt": "2026-10-03T19:35:21.171Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "checks": [
+      {
+        "id": "exact-reviewed-worker-held",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-role",
+        "pass": true
+      },
+      {
+        "id": "reviewer-authenticated",
+        "pass": true
+      },
+      {
+        "id": "reviewer-server-workspace",
+        "pass": true
+      },
+      {
+        "id": "actual-contract-hundred-approved-members",
+        "pass": true,
+        "approved": 100
+      },
+      {
+        "id": "independent-original-raw-cells-match-synthetic-workbook",
+        "pass": true,
+        "cellsCompared": 7100,
+        "rawRowKeys": 71
+      },
+      {
+        "id": "five-original-identities-inputs-and-candidates-retained",
+        "pass": true,
+        "originalRuns": 5
+      },
+      {
+        "id": "zero-extra-ai-and-publish-records",
+        "pass": true,
+        "aiRecords": 30,
+        "publishJobs": 0
+      }
+    ],
+    "stops": [
+      {
+        "id": "reviewer-session",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      }
+    ],
+    "newApprovals": 0,
+    "newImports": 0,
+    "newAiCalls": 0,
+    "newQueueAdmissions": 0,
+    "paidAiCalls": 0,
+    "productionChanged": false,
+    "actualBilling": "not-measured",
+    "outcome": "synthetic-hundred-qualification-readback-passed",
+    "limit": "Only readback; first phase had already created100manual source-bound review versions/confirmations and approved100. No duplicate approval, AI, Queue admission or real merchant data. Before/after full-run JSON hash was not persisted by failedv1, so immutable byte-level metadata is not claimed; identities/frozen inputs/candidates/raw cells are independently verified.",
+    "finishedAt": "2026-10-03T19:36:37.080Z",
+    "elapsedMs": 75909
+  },
+  "uc22": {
+    "stage": "original-uc22-reviewer-five-of-hundred",
+    "startedAt": "2026-10-03T19:49:07.243Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "webSha": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+    "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "checks": [
+      {
+        "id": "exact-reviewed-preview-alias",
+        "pass": true
+      },
+      {
+        "id": "exact-reviewed-worker",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-runtime",
+        "pass": true
+      },
+      {
+        "id": "real-native-reviewer-login",
+        "pass": true
+      },
+      {
+        "id": "reviewer-server-workspace",
+        "pass": true
+      },
+      {
+        "id": "at-least-hundred-exact-approved-fixture",
+        "pass": true,
+        "eligible": 100
+      },
+      {
+        "id": "reviewer-two-first-page-three-second-page",
+        "pass": true,
+        "firstPage": 2,
+        "secondPage": 3,
+        "selected": 5
+      },
+      {
+        "id": "changed-filter-retains-five-selection",
+        "pass": true
+      },
+      {
+        "id": "five-exact-export-preview-no-expansion",
+        "pass": true,
+        "rowCount": 5,
+        "selected": 5
+      },
+      {
+        "id": "operator-server-workspace",
+        "pass": true
+      },
+      {
+        "id": "source-refresh-only-one-allowed-copy-cell",
+        "pass": true,
+        "changedCells": 1,
+        "unchangedPriceSkuStockId": true
+      },
+      {
+        "id": "normal-source-reimport-no-new-drafts",
+        "pass": true,
+        "createdDrafts": 0
+      },
+      {
+        "id": "row-digest-actually-moved",
+        "pass": true
+      },
+      {
+        "id": "current-digest-observed-without-page-reload",
+        "pass": true
+      },
+      {
+        "id": "digest-movement-revokes-attestation-and-old-preview",
+        "pass": true,
+        "selectedStill": 5,
+        "pageReloads": 0
+      },
+      {
+        "id": "only-five-current-source-versions-reconfirmed",
+        "pass": true,
+        "approved": 5
+      },
+      {
+        "id": "server-old-preview-rejected-before-export",
+        "pass": true,
+        "status": 409,
+        "code": "export_preview_changed"
+      },
+      {
+        "id": "fresh-five-after-explicit-reconfirmation",
+        "pass": true,
+        "rowCount": 5,
+        "digestChanged": true
+      },
+      {
+        "id": "zero-new-ai-publish-or-export-artifact",
+        "pass": true,
+        "aiRecords": 30,
+        "publishJobs": 0,
+        "exports": 3
+      },
+      {
+        "id": "no-page-errors",
+        "pass": true,
+        "pageErrors": 0
+      }
+    ],
+    "stops": [
+      {
+        "id": "reviewer-session",
+        "acknowledged": true
+      },
+      {
+        "id": "operator-session",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-listing-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-shopline-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "ingress-cron-held",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      }
+    ],
+    "paidAiCalls": 0,
+    "newAiCalls": 0,
+    "newQueueAdmissions": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "productionChanged": false,
+    "actualBilling": "not-measured",
+    "outcome": "original-uc22-synthetic-reviewer-passed",
+    "limit": "Original reviewer criterion on 100 eligible synthetic manual-approved fixtures; two page-one plus three page-two, changed filter, exact five export preview, actual source digest movement, revoked attestation and 409 old preview, explicit fresh five re-review/confirmation. No generated artifact, real SHOPLINE write, paid AI or human accuracy claim.",
+    "finishedAt": "2026-10-03T19:51:20.054Z",
+    "elapsedMs": 132811
+  },
+  "proof": {
+    "caseId": "UC22",
+    "synthetic": true,
+    "eligibleBefore": 100,
+    "selectedCount": 5,
+    "firstPage": 2,
+    "secondPage": 3,
+    "selectedListingIds": [
+      "aace7a80-df69-4034-b22e-678f037972c4",
+      "2d3b3524-8dca-4788-8c5e-5f544f4c6c23",
+      "0c718df2-149a-47fd-aacb-e7699bda12f1",
+      "268aea0f-4eff-473c-9fe4-53de696ecd6f",
+      "7f9afdc4-c33f-4e27-be50-8c3ed8b6f0c2"
+    ],
+    "changedListingId": "7f9afdc4-c33f-4e27-be50-8c3ed8b6f0c2",
+    "sourceImportBefore": "5a7b3696-7921-4afc-9612-c03e42ef3fae",
+    "sourceImportAfter": "b15edc36-67f2-4e8c-b6a1-41baddbce9e4",
+    "oldPreviewSha256": "d012063a848d5284eb131a2b032739a41289ff68a24148ae13bca5a344aa4226",
+    "newPreviewSha256": "5ab721f813c014233d60288c60a0ded7ee48f66a67679fefaaed3c244cfdd4bc",
+    "rowCountBefore": 5,
+    "rowCountAfter": 5,
+    "fields": ["summaryEn"],
+    "confirmationRevoked": true,
+    "staleGenerationStatus": 409,
+    "staleGenerationCode": "export_preview_changed",
+    "pageReloadsDuringFreshnessCheck": 0,
+    "newAiCalls": 0,
+    "newQueueAdmissions": 0,
+    "newArtifacts": 0,
+    "retainedOriginalFixture": true
+  },
+  "finalHold": {
+    "recordedAt": "2026-10-03T19:52:32.167Z",
+    "readOnly": true,
+    "productionChanged": false,
+    "outcome": "candidate-restored-and-held",
+    "activeDeployment": {
+      "id": "4d8cc930-bd1d-4bfe-8418-6b78170f1e3a",
+      "versions": [
+        {
+          "version_id": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidate": {
+      "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+      "secretNames": [
+        "OPENAI_API_KEY",
+        "QUEUE_INGRESS_SECRET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+      ],
+      "secretValuesRead": false,
+      "temporaryProbeBindingsAbsent": true
+    },
+    "compute": {
+      "disabled": true,
+      "state": "idle",
+      "maxComputeUnits": 0.25
+    },
+    "publicHeadStatus": 404,
+    "queuePauseMetadata": "command acknowledgements only; independently unavailable"
+  },
+  "matrix": {
+    "total": 30,
+    "passed": 12,
+    "partial": 5,
+    "blocked": 13
+  },
+  "ci": {
+    "head": "c3af12e4f51bc0379f987a01dad0315506ff136a",
+    "run": 37147137761,
+    "attempt": 1,
+    "conclusion": "failure",
+    "failingStep": "Playwright Wrangler Queue acceptance (fake AI/mock SHOPLINE)",
+    "failingTest": "website-import.spec.ts partial preview and retry retain evidence until the replacement completes",
+    "error": "second scan POST202 reports website_scan_unavailable; repeated reads200 remain queued; Partial preview locator timed out90000ms",
+    "rootCause": "enqueue/dispatch failure observed; underlying ingress exception not available in original safe logs, no unique root cause or source fix claimed",
+    "sameHeadReproduction": "one rerun requested; pending at this document checkpoint"
+  },
+  "migration": null,
+  "newApplicationEnv": [],
+  "secretValuesRead": false,
+  "productionChanged": false
+}
