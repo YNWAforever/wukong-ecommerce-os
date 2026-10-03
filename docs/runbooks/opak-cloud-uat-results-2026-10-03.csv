@@ -1,6 +1,6 @@
 case_id,cloud_status,evidence_or_limit
 "UC01","partial","Three synthetic password/session identities; previous guarded roles/logout checks; full role-handoff browser flow pending"
-"UC02","partial","Operator approval/export403 and admin-readiness403; admin-write and useful-role-guidance cloud browser criteria not fully exercised"
+"UC02","partial","Operator/reviewer settingsGET/POST and readinessGET403; admin settings/readiness200; freshCAS audit1/stale409 audit0; useful-role-guidance browser criteria pending"
 "UC03","partial","Five source-bound detail reads200; production500 repro remains blocked"
 "UC04","partial","Operator/reviewer cloud API: healthy+malformed+no-version reads; blocked actions/support correlation passed; authenticated UI remains pending"
 "UC05","partial","Actual API leading-zero SKU found exact reference; cloud search/URL interaction and English multi-word reference search remain unverified"
@@ -26,6 +26,6 @@ case_id,cloud_status,evidence_or_limit
 "UC25","passed","Stale confirmation refused; changed preview409; role403; fresh source-bound reviewer export"
 "UC26","passed","A3accepted2rejected; repairB2only; immutableA; independentA3match2diff/B2match"
 "UC27","blocked","Existing headless Chromium launches; direct staging redirected to Vercel provider login; Wukong authenticated navigation/screenshot not reached"
-"UC28","blocked","Headless runtime works but deployment protection prevents app UI; local admin CAS/dirty tests retained"
-"UC29","partial","Both-role malformed-row support correlation; listing_versions/platform_products permission faults return500/noitems; originalACL restored then200; wholeDB-outage/UI criteria remain pending"
+"UC28","blocked","Cloud admin CAS/readiness API29checks passed and profile restored; headless runtime works but deployment protection prevents dirty-form/navigation app UI"
+"UC29","partial","Both-role row+permission faults500/noitems/correlation and ACLrestore200; disabledwholeDB fourAPI failures15checks passed; supportUI/originalproduction500 remain pending"
 "UC30","blocked","Local benchmarks retained; no500/5k/20k cloud load or human employee-minute result"
