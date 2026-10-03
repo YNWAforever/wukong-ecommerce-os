@@ -1,0 +1,590 @@
+{
+  "recordedAt": "2026-10-03T21:48:45.829Z",
+  "scope": "isolated owned synthetic cloud; fake AI/mock SHOPLINE; no production mutation",
+  "executionSource": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+  "executionWeb": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+  "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+  "pause": {
+    "stage": "uc23-actual-remote-queue-scoped-fake-failure",
+    "startedAt": "2026-10-03T21:24:54.877Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "webSha": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+    "restoreVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "checks": [
+      {
+        "id": "reviewed-web-alias",
+        "pass": true
+      },
+      {
+        "id": "reviewed-worker-preflight",
+        "pass": true
+      },
+      {
+        "id": "compute-held-before",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-runtime",
+        "pass": true
+      },
+      {
+        "id": "server-operator-workspace",
+        "pass": true
+      },
+      {
+        "id": "prior-support-failure-retained-unstarted-cancelled",
+        "pass": true
+      },
+      {
+        "id": "exact-five-fresh-one-field-preview",
+        "pass": true
+      },
+      {
+        "id": "four-admitted-one-still-pending",
+        "pass": true,
+        "enqueuedAcknowledged": 4,
+        "dispatchPending": 0
+      },
+      {
+        "id": "only-four-owned-queued-runs",
+        "pass": true
+      },
+      {
+        "id": "fault-config-only-owned-preview",
+        "pass": true
+      },
+      {
+        "id": "fault-active-one-version",
+        "pass": true
+      },
+      {
+        "id": "recover-first-wave-same-existing-operation-identities",
+        "pass": true,
+        "resentOwnedOutbox": 0,
+        "newAdmissions": 0
+      },
+      {
+        "id": "actual-queue-three-success-one-known-failure-one-pending",
+        "pass": true,
+        "counts": {
+          "pending": 1,
+          "queued": 0,
+          "succeeded": 3,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "only-failed-is-retryable",
+        "pass": true
+      },
+      {
+        "id": "real-ui-pause",
+        "pass": true
+      },
+      {
+        "id": "paused-advance-zero-admission",
+        "pass": true
+      },
+      {
+        "id": "paused-retry-rejected",
+        "pass": true
+      },
+      {
+        "id": "real-ui-resume",
+        "pass": false
+      }
+    ],
+    "stops": [
+      {
+        "id": "owned-session",
+        "acknowledged": true
+      },
+      {
+        "id": "reviewed-worker-restored",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-listing-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-shopline-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "ingress-cron-held",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      },
+      {
+        "id": "reviewed-worker-final-readback",
+        "acknowledged": true
+      },
+      {
+        "id": "public-ingress-closed",
+        "acknowledged": true,
+        "status": 404
+      }
+    ],
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "productionChanged": false,
+    "actualBilling": "not-measured",
+    "faultVersion": "cb228887-77b2-4eff-8fc1-a7bda9d8743a",
+    "restoreAfterFault": {
+      "acknowledged": true,
+      "restoredVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466"
+    },
+    "outcome": "failed",
+    "errorCode": "CHECK_FAILED:real-ui-resume",
+    "errorName": "Error",
+    "finishedAt": "2026-10-03T21:28:38.97Z",
+    "elapsedMs": 224093
+  },
+  "complete": {
+    "stage": "uc23-actual-remote-queue-scoped-fake-failure",
+    "startedAt": "2026-10-03T21:30:40.223Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "webSha": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+    "restoreVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "checks": [
+      {
+        "id": "reviewed-web-alias",
+        "pass": true
+      },
+      {
+        "id": "reviewed-worker-preflight",
+        "pass": true
+      },
+      {
+        "id": "compute-held-before",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-runtime",
+        "pass": true
+      },
+      {
+        "id": "server-operator-workspace",
+        "pass": true
+      },
+      {
+        "id": "same-paused-batch-three-success-one-failed-one-pending",
+        "pass": true,
+        "counts": {
+          "pending": 1,
+          "queued": 0,
+          "succeeded": 3,
+          "failed": 1,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "same-known-failure-only-retryable",
+        "pass": true
+      },
+      {
+        "id": "real-ui-resume",
+        "pass": true
+      },
+      {
+        "id": "successful-attempt-cannot-retry",
+        "pass": true
+      },
+      {
+        "id": "real-ui-retries-only-one-failed-attempt",
+        "pass": true
+      },
+      {
+        "id": "retry-key-replay-no-duplicate-identities",
+        "pass": true
+      },
+      {
+        "id": "retry-lineage-attempt-two-current-frozen-input",
+        "pass": true
+      },
+      {
+        "id": "three-successful-runs-byte-preserved-before-dispatch",
+        "pass": true
+      },
+      {
+        "id": "recover-only-failed-same-existing-operation-identities",
+        "pass": true,
+        "resentOwnedOutbox": 1,
+        "newAdmissions": 0
+      },
+      {
+        "id": "failed-only-finished-pending-still-unadmitted",
+        "pass": true,
+        "counts": {
+          "pending": 1,
+          "queued": 0,
+          "succeeded": 4,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "pending-admitted-once-separately",
+        "pass": true
+      },
+      {
+        "id": "recover-only-pending-same-existing-operation-identities",
+        "pass": true,
+        "resentOwnedOutbox": 0,
+        "newAdmissions": 0
+      },
+      {
+        "id": "five-current-success-plus-prior-failure-retained",
+        "pass": true,
+        "counts": {
+          "pending": 0,
+          "queued": 0,
+          "succeeded": 5,
+          "failed": 0,
+          "skipped": 0
+        }
+      },
+      {
+        "id": "batch-completed-with-no-more-admission",
+        "pass": true
+      },
+      {
+        "id": "six-total-runs-five-success-one-historical-failure",
+        "pass": true
+      },
+      {
+        "id": "successful-original-runs-and-ledgers-never-reran",
+        "pass": true
+      },
+      {
+        "id": "manual-locked-and-unselected-preserved-f1439ea0-3c8e-4094-9a4a-7842c9354110",
+        "pass": true
+      },
+      {
+        "id": "manual-locked-and-unselected-preserved-881c1648-a057-4dc4-bae8-b750b5fe06db",
+        "pass": true
+      },
+      {
+        "id": "manual-locked-and-unselected-preserved-3305e4c7-4ef8-40c2-b44c-9f31ea72e88b",
+        "pass": true
+      },
+      {
+        "id": "manual-locked-and-unselected-preserved-4c154211-a68f-45b5-82de-9ec14c66dbac",
+        "pass": true
+      },
+      {
+        "id": "manual-locked-and-unselected-preserved-2fd9369e-c298-4619-868b-d90a552b06bc",
+        "pass": true
+      },
+      {
+        "id": "original-source-cells-immutable",
+        "pass": true
+      },
+      {
+        "id": "all-prior-workspace-runs-and-ai-ledgers-immutable",
+        "pass": true
+      },
+      {
+        "id": "fake-ledgers-known-zero-cost",
+        "pass": true,
+        "records": 11,
+        "unknownCost": 0,
+        "costUsd": 0
+      },
+      {
+        "id": "zero-publish-jobs",
+        "pass": true
+      }
+    ],
+    "stops": [
+      {
+        "id": "owned-session",
+        "acknowledged": true
+      },
+      {
+        "id": "reviewed-worker-restored",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-listing-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-shopline-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "ingress-cron-held",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      },
+      {
+        "id": "reviewed-worker-final-readback",
+        "acknowledged": true
+      },
+      {
+        "id": "public-ingress-closed",
+        "acknowledged": true,
+        "status": 404
+      }
+    ],
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "productionChanged": false,
+    "actualBilling": "not-measured",
+    "finalDispatch": {
+      "enqueued": 1,
+      "newAcceptedRunIds": 1
+    },
+    "cost": {
+      "records": 11,
+      "non_fake": 0,
+      "unknown_cost": 0,
+      "cost": "0.000000"
+    },
+    "outcome": "uc23-cloud-pause-failed-only-passed",
+    "limit": "Actual remote Queue and normal browser/API controls with one exact-run temporary fake-provider terminal fault. No paid response-loss/cost-cap, natural Cloudflare retry-exhaustion, merchant or production acceptance claim.",
+    "finishedAt": "2026-10-03T21:33:49.281Z",
+    "elapsedMs": 189058
+  },
+  "windows": [
+    {
+      "phase": "uc23-prepare-v2",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:manual-lock-0",
+      "startedAt": "2026-10-03T20:47:53.19Z",
+      "finishedAt": "2026-10-03T20:49:11.195Z",
+      "stopsAcknowledged": 5,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-prepare-v3",
+      "outcome": "five-uc23-normal-fixtures-ready",
+      "errorCode": null,
+      "startedAt": "2026-10-03T20:51:26.786Z",
+      "finishedAt": "2026-10-03T20:52:57.019Z",
+      "stopsAcknowledged": 5,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-prepare-v4",
+      "outcome": "five-uc23-normal-fixtures-ready",
+      "errorCode": null,
+      "startedAt": "2026-10-03T21:16:12.47Z",
+      "finishedAt": "2026-10-03T21:17:26.156Z",
+      "stopsAcknowledged": 5,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-prepare-v5",
+      "outcome": "five-uc23-normal-fixtures-ready",
+      "errorCode": null,
+      "startedAt": "2026-10-03T21:22:54.84Z",
+      "finishedAt": "2026-10-03T21:24:17.959Z",
+      "stopsAcknowledged": 5,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v1",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:four-admitted-one-still-pending",
+      "startedAt": "2026-10-03T20:56:22.184Z",
+      "finishedAt": "2026-10-03T20:57:57.854Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v2",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:actual-queue-three-success-one-known-failure-one-pending",
+      "startedAt": "2026-10-03T21:01:20.423Z",
+      "finishedAt": "2026-10-03T21:04:45.011Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v3",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:exact-five-fresh-current-field-preview",
+      "startedAt": "2026-10-03T21:12:47.098Z",
+      "finishedAt": "2026-10-03T21:14:27.29Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v4",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:only-failed-is-retryable",
+      "startedAt": "2026-10-03T21:17:43.37Z",
+      "finishedAt": "2026-10-03T21:20:56.563Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v5",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:real-ui-resume",
+      "startedAt": "2026-10-03T21:24:54.877Z",
+      "finishedAt": "2026-10-03T21:28:38.97Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-execute-v6",
+      "outcome": "uc23-cloud-pause-failed-only-passed",
+      "errorCode": null,
+      "startedAt": "2026-10-03T21:30:40.223Z",
+      "finishedAt": "2026-10-03T21:33:49.281Z",
+      "stopsAcknowledged": 8,
+      "watchdogNormal": true,
+      "ceilingMinutes": 8
+    },
+    {
+      "phase": "uc23-diagnostic-v1",
+      "outcome": "diagnostic-observed",
+      "errorCode": null,
+      "startedAt": "2026-10-03T21:08:47.364Z",
+      "finishedAt": "2026-10-03T21:09:45.902Z",
+      "stopsAcknowledged": 1,
+      "watchdogNormal": true,
+      "ceilingMinutes": 5
+    }
+  ],
+  "finalHold": {
+    "recordedAt": "2026-10-03T21:35:34.063Z",
+    "readOnly": true,
+    "productionChanged": false,
+    "outcome": "candidate-restored-and-held",
+    "activeDeployment": {
+      "id": "3e009322-33ce-476c-8160-0d3ce8e0e50a",
+      "versions": [
+        {
+          "version_id": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidate": {
+      "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+      "secretNames": [
+        "OPENAI_API_KEY",
+        "QUEUE_INGRESS_SECRET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+      ],
+      "secretValuesRead": false,
+      "temporaryProbeBindingsAbsent": true
+    },
+    "compute": {
+      "disabled": true,
+      "state": "idle",
+      "maxComputeUnits": 0.25
+    },
+    "publicHeadStatus": 404,
+    "queuePauseMetadata": "command acknowledgements only; independently unavailable"
+  },
+  "localChecks": {
+    "recordedAt": "2026-10-03T21:33:30.3323126Z",
+    "sourceApplicationHead": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "commands": [
+      {
+        "command": "node --test uc23-execute-v5/fault-scope.test.mjs",
+        "red": "actual Hyperdrive proxy shape first failed 1 of 15",
+        "passed": 15,
+        "failed": 0
+      },
+      {
+        "command": "pnpm.cmd --filter @wukong/worker exec vitest run src/listing-operation-pipeline.test.ts src/listing-consumer.test.ts src/queue-consumer.test.ts",
+        "passed": 34,
+        "files": 3,
+        "failed": 0
+      },
+      {
+        "command": "pnpm.cmd --filter @wukong/web exec vitest run lib/enrichment-batch-service.test.ts app/api/enrichment-batches/[id]/control/route.test.ts components/batch-controls.test.tsx",
+        "passed": 38,
+        "files": 3,
+        "failed": 0
+      },
+      {
+        "command": "pnpm.cmd --filter @wukong/web exec vitest run app/api/enrichment-batches/[id]/control/route.test.ts app/api/enrichment-batches/[id]/advance/route.test.ts components/batch-controls.test.tsx",
+        "passed": 7,
+        "note": "overlaps previous Web selection",
+        "files": 3,
+        "failed": 0
+      },
+      {
+        "command": "pnpm.cmd --filter @wukong/db exec vitest run src/repositories/batch-item-recovery.test.ts",
+        "passed": 1,
+        "files": 1,
+        "failed": 0
+      }
+    ],
+    "applicationChange": false,
+    "productionChanged": false
+  },
+  "pausedLabel": {
+    "finding": "ST27",
+    "classification": "reproduced then fixed",
+    "rootCause": "shared stateLabel dictionary omitted paused",
+    "red": {
+      "command": "pnpm --filter @wukong/web exec vitest run components/batch-detail.test.tsx",
+      "failed": 2,
+      "passed": 9
+    },
+    "green": {
+      "command": "pnpm --filter @wukong/web exec vitest run components/batch-detail.test.tsx lib/ui-copy.test.ts components/batch-controls.test.tsx",
+      "files": 3,
+      "passed": 17
+    },
+    "fullTests": {
+      "command": "pnpm test",
+      "tasks": 14,
+      "webFiles": 230,
+      "webTests": 2285,
+      "cachedTasks": 13
+    },
+    "preview": "pending new Web-only candidate; execution receipts above remain tied to593/c23",
+    "verification": {
+      "forbiddenRuntime": 0,
+      "lintTasks": 14,
+      "humanSignoff": "pending",
+      "formatFiles": 329,
+      "buildTasks": 8,
+      "typecheckTasks": 14,
+      "automatedReleaseChecks": 6
+    }
+  },
+  "matrix": {
+    "total": 30,
+    "passed": 13,
+    "partial": 4,
+    "blocked": 13
+  },
+  "migration": null,
+  "newApplicationEnv": [],
+  "secretValuesRead": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "productionChanged": false
+}

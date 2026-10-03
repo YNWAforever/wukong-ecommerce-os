@@ -486,3 +486,14 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 - [ ] UC03/06/23/24/29 partial; paid-human UC09–20 and load/employee UC30 blocked. Production authority/recovery/role/schema/cache/effective Web/original500 and separate merchant first-write gates remain open. Conditional merge held.
 
 [Commands, exact criteria, failure disposition, safe receipt and hold/rollback](../../runbooks/opak-uc22-reviewer-cloud-2026-10-04.md). Prior checkpoints remain dated; this supersedes only the old UC22 pending criterion, not other release gates.
+
+## 2026-10-04 HKT UC23 remote failure checkpoint
+
+- [x] Real isolated Queue3success/1knownfailure/1pending; normalUI pause202, paused advance0 and retry409 with unchanged runs. Same-batch refresh resolves expected stale-control409; Resume202 and failed-only one attempt2/idempotent replay; final5success/6total including old failure.30/30 completion; original3success ledger/run values, older workspace records, manual locks and source cells retained;11fake ledger records cost0/publish0.
+- [x] All11 windows normal watchdog stops/cleanup acknowledgements; reviewedfcf restored100%/no probe vars/public404/compute disabled-idle0.25. No paidAI/realSHOPLINE/production change; billing unmeasured; remote paused/cron flags independently unavailable.
+- [x] ST27/T06 reproduced paused label omitted from shared state mapper; bilingual rendered regression RED2→GREEN17/17, fulltest14tasks/Web2285.
+- [x] Cloud matrix changes only UC23 to passed:13PASS/4PARTIAL/13BLOCKED/all30. Earlier failed dispatch/proxy-shape/invalid-output/support/stale-CAS receipts remain dated evidence.
+- [ ] New label candidate lint14/typecheck14/build8 and automated static checks passed; exact CI/protected preview and final release pack pending at this precommit checkpoint.
+- [ ] UC03/06/24/29 partial; paid-human UC09–20/load-employee UC30 blocked. Production exact authority/recovery/schema/role/cache/effective Web/original500 and merchant first-write/pilot gates remain open. Conditional main merge held.
+
+[Behavior, root classifications, commands, safe receipts and rollback](../../runbooks/opak-uc23-cloud-pause-retry-2026-10-04.md). Historical checkpoints remain unchanged.

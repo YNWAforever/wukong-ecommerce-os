@@ -21,7 +21,7 @@ case_id,cloud_status,evidence_or_limit
 "UC20","blocked","Local deterministic12-fixture adapter/harness retained; fake cloud generation is not paid-model accuracy or human assessment"
 "UC21","passed","Exact guardedc23/source593 v31:all six current-field gap browser decisions; owned cohort equality; selected fields actor digest and current input/source/version fences; approved excluded; changed fields invalidate preview; zero-cohort422 for three mirror fixtures; preview-only no admission or AI execution"
 "UC22","passed","Exactc23/source593 cloud reviewer20/20:100eligible synthetic manual-approved products;2page1+3page2/filter/exact5summary preview; actual source digest revokes attestation and preview without reload; old preview409 before artifact; explicit fresh5source-version-confirmation yields new preview5; AI30/publish0/artifacts3 unchanged. No100Queue/paid-human/merchant pass"
-"UC23","partial","Approval4+1stale then failed-only1; bothqueues held; injected worker-failure pause/retry sequence not run here"
+"UC23","passed","Actual source593/c23 cloud Queue:3success1known-failed1pending; UIpause202/advance0/retry409; same-batch refresh-resume202/failed-only1/idempotent attempt2/frozen lineage; final5success6total-runs, old3runs-ledgers/manual-locks/source immutable, fake11cost0/publish0; completion30/30. Paid unknown/natural retry exhaustion not claimed"
 "UC24","partial","10fake ledger calls cost0; paid reservation/unknown fault cloud cases not run"
 "UC25","passed","Stale confirmation refused; changed preview409; role403; fresh source-bound reviewer export"
 "UC26","passed","A3accepted2rejected; repairB2only; immutableA; independentA3match2diff/B2match"
