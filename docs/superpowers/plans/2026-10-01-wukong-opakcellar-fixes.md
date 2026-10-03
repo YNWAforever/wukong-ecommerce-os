@@ -379,3 +379,13 @@ See [delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) and [
 - [ ] Remaining cloud30-case/browser/production/merchant/paid-human gates per [precise matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv);3passed/10partial/15blocked/2not-run. Actual billing unmeasured, zero paidAI.
 
 All failed receipts and original A/B audit remain preserved. No migration or production action; exact source e9 CI and later documentation-only head checks are recorded separately in fix-status.
+
+## 11. Corrected Worker Object Read-only verification — 2026-10-03
+
+- [x] User-entered distinct Worker pair uploaded with masked local Wrangler bulk stdin; existing two field names, no key values read/recorded by agent, Web pair unchanged.
+- [x] Sixteen offline CLI guards and21 probe contracts; clean normal Worker and probe dry-builds exit0; active/latest precondition verified before upload.
+- [x] Actual signed remote proof: invalid signature401; exact94-byte own GET200/hash matched; own PUT403; foreign-bucket metadata HEAD403; no new canary write.
+- [x] Preserve corrected versionf0614b8e at100%, both queues paused, cron/ingress disabled, no probe bindings, public HEAD404, independent watchdog normal stop; staging Neon disabled/idle.
+- [ ] Production 0046 columns and Hyperdrive BYPASSRLS/cache gates; effective Web DB/authenticated original500 smoke, complete cloud30/browser, paid/human quality, employee-minute and merchant/first-write gates remain open.
+
+ST17 is fixed and verified in isolated staging; prior failed evidence stays unchanged. See [executed follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md) and [safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json). No migration, new application env, paidAI, realSHOPLINE or production mutation. PR checks and release gates remain distinct; no conditional merge until the required gates pass.

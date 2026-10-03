@@ -416,3 +416,17 @@ H05 private SDK import reproduced local Worker CJS failure→ESM success and fin
 Final: Ruling: ST17 never becomes a passed readonly gate on the strength of own GET/foreign HEAD. Requires actual denied PUT with a freshly corrected Worker version. Restore that fresh version after re-test; never restore stale e4 binding over a user's corrected secret. Cost if wrong: write-capable Worker credentials could be released, so this gate stays blocking.
 
 Source e9d0d4ce exact full CI37036970244 COMPLETED SUCCESS, verified 2026-10-02T17:18:35.5650532Z. All verify job steps finished; later documentation-only head is outside this receipt. ST17 remains a hard external gate.
+
+## 2026-10-03 corrected Worker key and release-gate refresh
+
+Finding ST17: reproduced → fixed and verified in isolated staging. Source checkpoint9281f545 full CI37040041259 SUCCESS and PR121–126 inspected heads green/CLEAN; this subsequent docs-only commit needs its own checks. Production/merchant acceptance is still blocked.
+
+- [x] Initial failed CLI upload retained (exit1, no new active binding). Latest uploaded temporary probe differed from active normal version; this matches the CLI precondition, but discarded original error text prevents asserting the exact API error. Clean held9281f545 Worker prepared, required secret names preserved and fake/mock scope verified before upload.
+- [x] User masked-input bulk upload of the two existing Worker S3 fields succeeded0; new secret-bound versionf0614b8e-8628-4cc0-82f5-e318c6565be2. Agent never read keys; no credential file or key in arguments/chat/logs; Web keys unchanged.
+- [x] Private CLI16/16, probe21/21, clean/probe dry-build0. Retest denies both earlier old-key versions and preserves unknown/later external secret saves.
+- [x] Actual remote52s test: signed live marker, invalid-signature401, own94-byte GET200/hash match, unique own PUT403, foreign-bucket metadata-only HEAD403, no canary written. [Safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json).
+- [x] Correctedf061 version restored100%; four cleanup commands0, probe bindings0, public HEAD404,9-minute watchdog normalStopObserved=true, staging Neon disabled/idle. Keep this binding in hold/rollback; never revert to old key versions.
+- [ ] Production read-only refresh still lacks source_import_id/source_row_digest. Hyperdrive eef464 uses neondb_owner/BYPASSRLS and caching.disabled=false. Production READY Web dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d/main dde9e178 and Worker6842b51c remain unchanged.
+- [ ] Effective production Web DB/authenticated original500 cause, cloud browser/full30cases, paid/human AI quality, employee-minute baseline and first realSHOPLINE/merchant5→20→100 remain open. Cloud matrix remains3PASS/10PARTIAL/15BLOCKED/2NOT_RUN; the storage retest does not satisfy unrelated criteria.
+
+No migration or application env name added. Temporarily deployed probe fields removed; hold keeps corrected key, guarded Resend, data/versions/audit/reservations/artifacts/DLQs. Preserve all prior failure receipts and synthetic canaries. PaidAI0, trueSHOPLINE0, production changes0, dollar billing unmeasured under US$5 cap. Conditional merge remains held while these release gates are incomplete; evidence/doc changes are committed separately from tested source.
