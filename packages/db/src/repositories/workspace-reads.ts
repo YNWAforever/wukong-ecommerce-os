@@ -213,21 +213,21 @@ export function createWorkspaceReadRepository(
    d.status as "listingStatus",case when d.id is null then null else coalesce(f.n,0) end as "openBlockingFlagCount",
    coalesce(d.status in ('in_review','reopened'),false) as "needsReview",
    (p.listing_id is null or d.id is null or d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0) as "needsAttention",
-   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId"
+   p.created_at as "createdAt",p.updated_at as "updatedAt",p.content_digest as "contentDigest",null::text as "sourceProductId",${withTitles ? currentTitleEn : sql`null::text`} as "searchTitleEn"
   from platform_products p
   left join listing_drafts d on d.id=p.listing_id and d.workspace_id=${workspaceId}
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags
     where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
   where p.workspace_id=${workspaceId}${fromPage ? sql` and p.id in (select id from page_keys where "sourceType"='platform')` : sql``}
-  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null
+  union all select 'website',w.canonical_source_url,w.observation->>'capturedAt',w.id,null,null,null,null,null,w.observation->>'title',null,null,false,false,w.created_at,w.created_at,null,null,null::text
   from website_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='website')` : sql``}
-  union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId'
+  union all select 'workbook',null,null,w.id,null,null,w.product->>'sku',null,null,coalesce(w.product->'title'->>'zh-Hant',w.product->'title'->>'en',w.product->>'sku'),null,null,false,false,w.created_at,w.created_at,null,w.product->>'productId',${withTitles ? sql`w.product->'title'->>'en'` : sql`null::text`}
   from workbook_products w where w.workspace_id=${workspaceId}${fromPage ? sql` and w.id in (select id from page_keys where "sourceType"='workbook')` : sql``}
   union all select 'draft',null,null,d.id,null,null,${withTitles ? sql`case when i.id is not null then i.working_content->>'sku' else v.content->>'sku' end` : sql`null::text`},d.id,null,
    coalesce(${withTitles ? sql`nullif(${currentTitleZh},''),nullif(${currentTitleEn},''),` : sql``}nullif(left(d.note,120),''),d.id::text),
    d.status,coalesce(f.n,0),d.status in ('in_review','reopened'),
-   (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null
+   (d.status in ('needs_info','publish_failed','failed') or coalesce(f.n,0)>0),d.created_at,d.updated_at,null,null,${withTitles ? currentTitleEn : sql`null::text`}
   from listing_drafts d
   ${withTitles ? titleJoins : sql``}
   left join (select listing_version_id,count(*)::int n from compliance_flags where workspace_id=${workspaceId} and status='open' and severity='blocking' group by listing_version_id) f on f.listing_version_id=d.active_version_id
@@ -446,7 +446,7 @@ export function createWorkspaceReadRepository(
         published: sql`"listingStatus"='published'`,
       }[input.filter];
       const searchMatch = q
-        ? sql`strpos(lower(title),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0`
+        ? sql`strpos(lower(title),${q})>0 or strpos(lower("searchTitleEn"),${q})>0 or strpos(lower("sourceUrl"),${q})>0 or strpos(lower("sourceProductId"),${q})>0 or strpos(lower(sku),${q})>0 or strpos(lower("remoteProductId"),${q})>0 or strpos(lower("specVersion"),${q})>0`
         : sql`true`;
       const match = sql`${importMatch} and (${filterMatch}) and ${responsibilityMatch} and (${searchMatch})`;
       const backward = position?.direction === "previous";
@@ -564,11 +564,13 @@ export function createWorkspaceReadRepository(
             sourceUrl: _url,
             capturedAt: _capture,
             sourceProductId: _source,
+            searchTitleEn: _searchTitleEn,
             ...platform
           } = item as PlatformCatalogReadItem & {
             sourceUrl: null;
             capturedAt: null;
             sourceProductId: null;
+            searchTitleEn: string | null;
           };
           return platform;
         }),

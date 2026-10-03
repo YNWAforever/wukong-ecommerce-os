@@ -441,3 +441,14 @@ Ruling: POST is a safe native fallback, not a no-JavaScript authentication imple
 | Conditional merge             | held: main auto-deploys while actual production gates fail; PR120 is not green; new safeguard checkpoint must finish its own exact-head checks                                                                                                              |
 
 Rulings: retain the native POST security fix on compatible rollback; correct malformed415/private pagination synchronization instead of rewriting product behavior or relaxing assertions; job filter clicks keep existing replace-history semantics. Cost if wrong: a helper artifact could be treated as a diagnosed product failure or a synthetic result as production/merchant acceptance. Original no-JavaScript scope, failure receipts,2px tolerance and all release boundaries remain explicit. No migration/new env/Worker deployment/production change/paidAI/realSHOPLINE.
+
+## 2026-10-03 bilingual catalog search follow-up
+
+- [x] ST26/T03–T07/UC05 reproduced: Chinese-first display title hides current English from catalog search; cloud733/v27 and actual repository query return0.
+- [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
+- [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
+- [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
+- [ ] New source-head CI and guarded latest preview/cloud UC05/current-gap acceptance pending. Preserve failedv27 session-stop/watchdog receipts and separate exact owned cleanup2revoked/0remain/0otherusers/compute disabled.
+- [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
+
+[Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.

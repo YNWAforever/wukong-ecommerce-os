@@ -499,3 +499,14 @@ Final: Ruling: exact-source successful cloud context checks validate synthetic b
 - [ ] Production readiness/authority/recovery and original authenticated500; paid-model/human quality/employee benefit; merchant first-write/5→20→100 gates remain incomplete. Main unchanged; conditional auto-deploy merge held. PR120 historical draft checks remain FAIL even though useful source safeguards are now represented.
 
 [Safe evidence, exact commands, all review scope rulings and rollback](../../runbooks/opak-retained-safeguards-and-role-handoff-2026-10-03.md). Current source fixes have local proof; cloud733 is the preceding native-auth candidate and is not evidence of deploying this new Queue/publish delta.
+
+## 2026-10-03 bilingual catalog search follow-up
+
+- [x] ST26/T03–T07/UC05 reproduced: Chinese-first display title hides current English from catalog search; cloud733/v27 and actual repository query return0.
+- [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
+- [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
+- [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
+- [ ] New source-head CI and guarded latest preview/cloud UC05/current-gap acceptance pending. Preserve failedv27 session-stop/watchdog receipts and separate exact owned cleanup2revoked/0remain/0otherusers/compute disabled.
+- [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
+
+[Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.
