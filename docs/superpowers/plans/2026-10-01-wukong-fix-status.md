@@ -506,7 +506,18 @@ Final: Ruling: exact-source successful cloud context checks validate synthetic b
 - [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
 - [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
 - [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
-- [ ] New source-head CI and guarded latest preview/cloud UC05/current-gap acceptance pending. Preserve failedv27 session-stop/watchdog receipts and separate exact owned cleanup2revoked/0remain/0otherusers/compute disabled.
+- [x] Source593 exact CI and guardedc23/cloud UC05/current-gap acceptance completed; see2026-10-04 supplement. Original failedv27 and cleanup receipts remain unchanged.
 - [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
 
 [Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.
+
+## 2026-10-04 HKT verified release supplement
+
+- [x] Source593c5283 exact fullCI37132320997 SUCCESS; source/local checks and independent catalog review remain valid. Subsequent docs-only commit must complete its own checks. PR121–126 green/CLEAN at16:22:43Z; PR120 draft/failed remains distinct.
+- [x] Guardedc23 exact593 tree except branch deployment guard; READYdpl_8eC5Xw5yU1zTZ8mXPF1HWvjbvYg8/alias verified. Cloudv31 behavior39/39 proves UC05 source-qualified bilingual search and UC21 all six current-gap decisions; no batch creation or AI execution. Current matrix11PASS/6PARTIAL/13BLOCKED/all30 IDs.
+- [x] Required preview audit+2/prior252 hashes preserved; other ten domain snapshots unchanged/AI20/publish0/batches2. Logout200/401; first compute-disable timeout retained, separate cleanup disabled/idle0.25CU verified and8-minute watchdog normal stop. Screenshot visually reviewed outside Git.
+- [x] Worker candidatefcf96cda inactive0% from593 artifact/config,11/11 upload checks. Active correctedf061 stays100%/same deployment; secrets/queues/cron/ingress unchanged. No candidate runtime/R2/Queue pass inferred. All failed upload/browser/cleanup receipts retained.
+- [ ] Production0046/owner-BYPASSRLS/cache readiness, effective Web/original500, exact production repair authority and named recovery owner/confirmed recoverable point remain incomplete. Conditional main auto-deploy merge held.
+- [ ] Paid/human12-case quality, matched20-item employee benefit, fuller cloud execution/fault/load/new-invite criteria and first realSHOPLINE/5→20→100 merchant gates remain open; synthetic passes do not satisfy them.
+
+[Executed behavior, commands, safe receipt, review scope and compatible rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). No migration/new app env/dependency/provider key/paidAI/realSHOPLINE/production mutation. Actual cloud billing remains unmeasured. Earlier pending lines are dated evidence superseded only within these explicitly executed scopes.
