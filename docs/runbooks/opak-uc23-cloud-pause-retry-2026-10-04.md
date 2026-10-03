@@ -28,3 +28,11 @@ Cloud matrix now13PASS/4PARTIAL/13BLOCKED/all30; only UC23 changes in this check
 ## Exact-head format correction
 
 Source5f9eddba CI37156444960 attempt1 failed at runtime formatting: the new batch-detail test required Prettier. The prior local check selected committed base..HEAD and omitted that then-uncommitted test. The test was formatted without changing its assertions; exact CI base a3c1109f check102 files and focused17/17 passed. The first failure stays retained. The follow-up head requires its own full CI; no merge or production pass follows from local checks.
+
+## Verified candidate and bilingual Preview
+
+Validation5b900e6a fullCI37156825749 SUCCESS (43 successful steps) supersedes the retained5f9 formatter failure; only test formatting/documentation differ from runtime source5f9. Protected Web2b8d77be / READYdpl_J3hvtmygPraTyp2XakUM9k2TXXH6 is exactly5f9 plus the existing Vercel guard. Worker artifact/packages/scripts/.github remain byte-identical to593; reviewedfcf100% retains its actual593 BUILD_SHA. Web and Worker are recorded separately, not assigned a fabricated common build.
+
+Actual native operator/login/server-workspace14/14 in92.247s verifies Paused/Resume and 已暫停/繼續, then cancels only its one unstarted item. No new import, advance, Queue admission, AI or publish; eight domain hashes unchanged. One normal batch/preview was created in the earlier locator attempt, then reused in successfulv2. Earlier full-text locator error remains retained: status and label share one element, so getByText exact Paused incorrectly timed out; asserting the complete status phrase fixed only the helper. Both eight-minute windows stopped normally; screenshots inspected outside Git. Deployment response parser failure was recovered from the already-created deployment; no duplicate creation.
+
+Fresh final hold2026-10-03T22:05:04.532Z: reviewedfcf100%/deployment3e009322-33ce-476c-8160-0d3ce8e0e50a, no probe bindings, public404, compute disabled-idle0.25. All prior11 UC23 windows plus two label windows stopped normally; no production mutation, migration, new app env or provider credential. Exact validation CI is separate from this follow-up documentation head; its terminal CI/PR/archive receipt will stay outside Git to avoid self-referential commit claims.

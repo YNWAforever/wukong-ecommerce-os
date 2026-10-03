@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-10-03T21:48:45.829Z",
+  "recordedAt": "2026-10-03T22:19:01.838Z",
   "scope": "isolated owned synthetic cloud; fake AI/mock SHOPLINE; no production mutation",
   "executionSource": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
   "executionWeb": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
@@ -470,7 +470,7 @@
     }
   ],
   "finalHold": {
-    "recordedAt": "2026-10-03T21:35:34.063Z",
+    "recordedAt": "2026-10-03T22:05:04.532Z",
     "readOnly": true,
     "productionChanged": false,
     "outcome": "candidate-restored-and-held",
@@ -564,7 +564,199 @@
       "webTests": 2285,
       "cachedTasks": 13
     },
-    "preview": "pending new Web-only candidate; execution receipts above remain tied to593/c23",
+    "preview": {
+      "browser": {
+        "stage": "paused-label-real-bilingual-preview",
+        "startedAt": "2026-10-03T22:02:43.475Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "one-retained-owned-unstarted-listing",
+            "pass": true
+          },
+          {
+            "id": "same-normal-paused-single-unstarted",
+            "pass": true
+          },
+          {
+            "id": "english-paused-and-resume-known",
+            "pass": true
+          },
+          {
+            "id": "chinese-paused-and-resume-known",
+            "pass": true
+          },
+          {
+            "id": "paused-with-zero-queued-work",
+            "pass": true
+          },
+          {
+            "id": "normal-cancel-retains-fixture-with-no-admission",
+            "pass": true
+          },
+          {
+            "id": "eight-domain-values-unchanged-no-ai-or-publish",
+            "pass": true,
+            "domains": 8
+          },
+          {
+            "id": "no-page-errors",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "batchId": "ecb221b6-06fa-4dd3-8beb-5565be7f77f8",
+        "newBatches": 0,
+        "newPreviews": 0,
+        "outcome": "bilingual-paused-label-cloud-passed",
+        "limit": "Real protected Preview with normal synthetic one-item batch create/pause/cancel; no advance, AI, new source import or Worker redeploy. Reviewed Worker stays source593 while Web-only label source5f9 is tested.",
+        "finishedAt": "2026-10-03T22:04:15.722Z",
+        "elapsedMs": 92247
+      },
+      "priorLocatorFailure": {
+        "stage": "paused-label-real-bilingual-preview",
+        "startedAt": "2026-10-03T21:59:08.732Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "one-retained-owned-unstarted-listing",
+            "pass": true
+          },
+          {
+            "id": "one-exact-normal-preview-zero-cost",
+            "pass": true
+          },
+          {
+            "id": "real-normal-pause202",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "batchId": "ecb221b6-06fa-4dd3-8beb-5565be7f77f8",
+        "outcome": "failed",
+        "errorCode": "CONTROLLED_FAILURE",
+        "errorName": "Error",
+        "finishedAt": "2026-10-03T22:00:53.435Z",
+        "elapsedMs": 104703
+      },
+      "watchdog": {
+        "startedAt": "2026-10-03T22:02:58.988Z",
+        "finishedAt": "2026-10-03T22:04:15.869Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      },
+      "screenshotsVisuallyReviewed": 2
+    },
     "verification": {
       "forbiddenRuntime": 0,
       "lintTasks": 14,
@@ -595,5 +787,31 @@
     "conclusion": "failure",
     "failingStep": "Check runtime formatting",
     "head": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc"
-  }
+  },
+  "applicationSourceHead": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+  "validationHead": "5b900e6af457c0fa7773c1ead6b59a9d6a3e19e2",
+  "validationCi": {
+    "head": "5b900e6af457c0fa7773c1ead6b59a9d6a3e19e2",
+    "run": 37156825749,
+    "conclusion": "success",
+    "steps": 43
+  },
+  "guardedWeb": {
+    "recordedAt": "2026-10-03T21:54:28.716Z",
+    "stage": "paused-label-preview-response-recovery",
+    "reviewedSource": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+    "candidateSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+    "branch": "codex/opak-isolated-staging-20261002",
+    "id": "dpl_J3hvtmygPraTyp2XakUM9k2TXXH6",
+    "url": "wukong-ecommerce-22cxa7ar6-ynwaforevers-projects.vercel.app",
+    "readyState": "READY",
+    "target": null,
+    "productionChanged": false,
+    "paidAiCalls": 0,
+    "duplicateDeployment": false,
+    "initialParserFailure": "CLI notice prefixed JSON response; recovered existing deployment, no second create",
+    "aliasDeployment": "dpl_J3hvtmygPraTyp2XakUM9k2TXXH6",
+    "alias": "https://wukong-opak-staging-20261002.vercel.app"
+  },
+  "latestEvidenceHeadCi": "This dated document checkpoint records validation head5b; its new docs-only commit must receive its own CI. Terminal receipt and PR readback are retained outside Git."
 }

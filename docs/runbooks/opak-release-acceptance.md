@@ -182,3 +182,14 @@ Current source593 full CI is separate from the latest evidence-only commit. Exac
 - [ ] UC03/06/24/29 partial; paid-human UC09–20/load-employee UC30 blocked. Production exact authority/recovery/schema/role/cache/effective Web/original500 and merchant first-write/pilot gates remain open. Conditional main merge held.
 
 [Behavior, root classifications, commands, safe receipts and rollback](./opak-uc23-cloud-pause-retry-2026-10-04.md). Historical checkpoints remain unchanged.
+
+## 2026-10-04 HKT UC23 verified candidate supplement
+
+- [x] ST27 paused label fixed; full test14tasks/Web2285, lint14/typecheck14/build8. Exact validation5b900e6a CI37156825749 SUCCESS/43 steps; prior5f9 format failure retained and corrected without assertion/gate relaxation.
+- [x] Protected Web2b8d77be/dpl_J3hvtmygPraTyp2XakUM9k2TXXH6 actual bilingual14/14/92.247s; one zero-admission normal batch reused after helper locator failure, then cancelled; eight domain hashes unchanged. Screenshots reviewed. Workerfcf/source593 unchanged and separately versioned; sourceWeb5f9 contains only label runtime delta.
+- [x] All13 resource windows normal stops; fresh2026-10-03T22:05:04.532Z candidatefcf100/no probes/public404/compute disabled-idle0.25. Queue pause/cron flags remain acknowledgement-only and billing unmeasured. No paidAI/realSHOPLINE/production mutation.
+- [x] Current UAT13PASS/4PARTIAL/13BLOCKED/all30; only UC23 advanced. Source/current-input/manual-lock/frozen retry/idempotency/cost/approval/RLS safeguards retained.
+- [ ] This new docs-only head needs its own exact CI; final PR metadata/readback and immutable archive remain to be recorded outside Git.
+- [ ] Production exact first-operation authority/named recovery owner/confirmed recoverable point/schema/role/cache/effective Web/original500 remain open; paid-human quality, full20-item journey/employee benefit/cloudload, first trueSHOPLINE/merchant5→20→100 gates remain distinct. Conditional main auto-deploy merge held; PR120 remains an overlapping non-green draft.
+
+[Executed UC23 and compatible hold/rollback](./opak-uc23-cloud-pause-retry-2026-10-04.md). Earlier pending lines are dated; this supplement supersedes only the verified label candidate/cloud scope.
