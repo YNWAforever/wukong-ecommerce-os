@@ -388,4 +388,13 @@ All failed receipts and original A/B audit remain preserved. No migration or pro
 - [x] Preserve corrected versionf0614b8e at100%, both queues paused, cron/ingress disabled, no probe bindings, public HEAD404, independent watchdog normal stop; staging Neon disabled/idle.
 - [ ] Production 0046 columns and Hyperdrive BYPASSRLS/cache gates; effective Web DB/authenticated original500 smoke, complete cloud30/browser, paid/human quality, employee-minute and merchant/first-write gates remain open.
 
+## 12. 2026-10-03 synthetic cloud intake/read follow-up
+
+- [x]20exact readonly references,20source-bound maintained drafts and20current editable inputs/SKUs; source-owned AI/pipeline/publish0. Only1manual review version tested. [Receipt](../../runbooks/opak-staging-intake-read-2026-10-03.md).
+- [x] Same-byte replay creates0 and does not renew freshness; new source invalidates1approval, stale retry approves0; old source/rows/version/receipt immutable. Historical `approved` remains while authoritative source freshness denies delivery. Existing service verified; no rewrite.
+- [x] Operator/reviewer cloud row-only follow-up27/27: healthy incomplete review and no-version inputs remain usable; malformed row blocked/actions denied/support ID correlated. Retain original double-encoded JSON helper failures; `tx.json` fix changes only tooling.
+- [x]8unique offline scope guards,13selected source assertions,5owned-ledger assertions; seven watchdog normal stops. Final Neon disabled/idle; correctedWorkerf061/probe0/public404; queues never resumed; paidAI0/realSHOPLINE0.
+- [x] Concrete production0046/cache-disable proposal, exact migration hash/CLI flag/rollback and6-hour history metadata prepared. [Proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md) remains unexecuted.
+- [ ] Cloud UI still blocked at Vercel deployment protection despite working headless runtime; cloud matrix4passed/11partial/15blocked/0not-run is not full UAT. Production authority/backup owner, compatible safe-role cutover and remaining human/merchant gates are pending.
+
 ST17 is fixed and verified in isolated staging; prior failed evidence stays unchanged. See [executed follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md) and [safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json). No migration, new application env, paidAI, realSHOPLINE or production mutation. PR checks and release gates remain distinct; no conditional merge until the required gates pass.

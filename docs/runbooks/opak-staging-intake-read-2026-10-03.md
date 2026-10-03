@@ -1,0 +1,46 @@
+# Opak synthetic cloud intake and row-read follow-up — 2026-10-03
+
+The isolated API follow-up verifies source replay/freshness and single-row read resilience. It adds no application change, migration or env name. Production, merchant and authenticated browser acceptance remain open. [Safe receipt](./opak-staging-intake-read-2026-10-03.json) records45 selected assertions and the seven preserved windows; [30-case cloud matrix](./opak-cloud-uat-results-2026-10-03.csv) now has4passed/11partial/15blocked/0not-run. These are synthetic cloud dimensions, not full merchant UAT.
+
+## Verified behavior
+
+- Twenty exact readonly workbook references keep `canExport=false`; twenty maintained drafts retain source/remote-ID/SKU bindings and current editable input. A separate owned-ledger query confirms20/20 inputs and AI/pipeline/publish counts0. Only one draft was promoted to a manual review version; twenty manual reviews are not claimed.
+- The same XLSX bytes replay with0new drafts and20already imported products. The complete original source receipt is unchanged, so replay does not renew freshness. A new source invalidates one prior approval; stale approval retry approves0. Original source rows, version and approval receipt hashes remain unchanged.
+- Historical `approved` status stays in the state machine. Current source readiness reports `source_import_mismatch`, `eligibleAfterAttestation=false` and delivery denied. The historical label does not authorize delivery from an old receipt.
+- Operator and reviewer each read a valid incomplete review version and a no-version manual draft. A malformed version remains visible but blocked, with a correlated support/header request ID and edit/process/approve/deliver permissions false. Healthy rows remain available. Row-read AI ledger stays20→20 and publish0→0; the20new intake drafts separately have no AI/pipeline/publish admission.
+- Actual leading-zero SKU API search finds the exact reference. URL/navigation, the earlier English multi-word reference search and full browser interaction remain separate.
+
+Web is exact READY deployment `dpl_4cZXFy8epug84HxvW9npgJEq2YDf`, branch source `9dd64bf1e71dfabd8968d99434b6c80fdc44202e`, application source `e9d0d4ce0f1c7c471d9aa595c3fd11852a4cd466`. Runtime DB is the isolated `opak_stage`, non-superuser/non-bypass `wukong_app`. The Worker keeps corrected key version `f0614b8e-8628-4cc0-82f5-e318c6565be2`; no Worker upload, queue resume or public ingress was needed.
+
+## Findings and preserved failed attempts
+
+| Finding                               | Disposition                                   | Evidence and implication                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ST18 source replay/approval freshness | already-fixed; verified cloud API             | The existing source service satisfies the scoped synthetic criteria; do not rewrite it or force a status transition during import.                                                                                                                                                                                                                                                                                                                                                               |
+| ST19 malformed-row containment        | already-fixed; verified cloud API, UI blocked | 27actual assertions pass across both roles; malformed and legitimate no-version records remain distinct.                                                                                                                                                                                                                                                                                                                                                                                         |
+| ST20 new helper failures              | reproduced and corrected in test tooling      | Raw BetterAuth password POST is intentionally404; use the public password wrapper. English search did not identify displayed readonly titles, so exact20product IDs and a separate SKU query establish membership. A speculative assertion that import must remove historical `approved` was wrong. Finally, unsafe JSON string parameters were double encoded: DB metadata proved `string/string`; the existing regression's `tx.json` writes `object/object`. No application fix was required. |
+| ST21 authenticated browser evidence   | changed; blocked at provider protection       | Existing Playwright Chromium launches, but direct staging opens Vercel `/login`. Wukong UI and authenticated screenshots were not reached. Do not disable protection or invent UI passes.                                                                                                                                                                                                                                                                                                        |
+
+All failures and their fixtures remain private. The fourth window completed the13source assertions, then failed its independently faulty row fixture; it is not described as an overall passing window. The row-only113-second follow-up passes27assertions and the read-only43-second ledger follow-up passes5. The latter helper inherited a `faultRows=3` label despite seeding no rows; the public receipt explicitly corrects that metadata and preserves the original hash. Whole DB/permission fault cloud injection was not run; existing actual-PG regression evidence remains separate.
+
+## Commands and evidence
+
+Private, task-owned harnesses are under the ACL-restricted evidence directory outside Git: `acceptance-20261003/cloud-intake-read-v4`, `cloud-row-read-v6` and `cloud-intake-ledger-v7`. Run only their reviewed guarded entrypoints in a fresh evidence directory. Never replay the original fixed-path runner blindly; it writes immutable receipts and seeds fixtures.
+
+```text
+node --test <private-harness>/guard.test.mjs     # 8 unique offline scope guards passed; zero provider calls
+node --check <private-harness>/run.mjs          # syntax checks passed
+node <private-intake>/run.mjs                   # 13 source checks passed; later fixture failure preserved
+node <private-row-followup>/run.mjs             # 27/27 cloud assertions,113s, exit0
+node <private-ledger-followup>/run.mjs          # 5/5 cloud assertions,43s, exit0; no new seed
+```
+
+The public JSON contains only safe metadata, booleans, counts, codes and hashes. Cookies, own synthetic credentials, response bodies and fixture content remain private. No authenticated screenshot is claimed. The evidence bundle contains only an explicit allowlist; no merchant attachment, credential or model output is included.
+
+## Hold, production gate and rollback
+
+All seven windows' independent watchdogs observed normal stop. Final staging compute is disabled/idle at0.25CU limits; Worker is still correctedf061, probe bindings0, public HEAD404, fake AI/paid-disabled. Queues were never resumed in this follow-up. Keep synthetic sources/versions/receipts and all failed evidence. Cloud billing is unmeasured under the original US$5 authorization; paid AI calls and real SHOPLINE calls remain0.
+
+Read-only production refresh still finds0/2source-binding columns,0FK, valid unique reference key1,44RLS/all44FORCE, app role non-bypass/owner0. Production Hyperdrive still uses BYPASSRLS owner and caching enabled. Six-hour Neon history retention is configuration metadata, not a restore drill. [The concrete production repair proposal](./opak-production-repair-proposal-2026-10-03.md) prepares additive0046 and cache-disable review; explicit authority and backup/rollback ownership remain pending. Safe-role cutover needs an accepted compatible artifact and controlled credential custody.
+
+The task source checkpoint8dfef1d0 and [CI37094533417](https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/37094533417) passed before this documentation-only follow-up. Its new exact-head CI must be checked separately. Conditional merge remains held because full release gates, original authenticated production500 diagnosis, paid/human quality and merchant5→20→100/first-write confirmation are incomplete.

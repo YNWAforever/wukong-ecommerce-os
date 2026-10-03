@@ -12,6 +12,8 @@
 
 READY preview 不等於已登入驗收；fake AI 成功不等於模型準確；下載成功不等於 SHOPLINE 已接受。不得將部分結果合併成「全通過」。每個 UC 的歷史結果與本輪結果見 [30-case 結果表](./opak-uat-results-2026-10-01.md)。
 
+2026-10-03 follow-up: [synthetic cloud intake/read evidence](./opak-staging-intake-read-2026-10-03.md) verifies20reference/draft/current-input bindings, source replay/freshness and both-role row resilience. The current cloud matrix is4passed/11partial/15blocked/0not-run. Headless runtime works but direct app UI remains behind Vercel deployment protection. [The first production repair proposal](./opak-production-repair-proposal-2026-10-03.md) is prepared for explicit authority and backup/rollback ownership; no production change or release sign-off occurred.
+
 ## 版本與部署識別
 
 | 部件                     | 核對到的識別                                                                                                                                                          | 限制                                                                                                                                                              |

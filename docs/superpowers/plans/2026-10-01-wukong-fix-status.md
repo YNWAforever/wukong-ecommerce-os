@@ -430,3 +430,18 @@ Finding ST17: reproduced → fixed and verified in isolated staging. Source chec
 - [ ] Effective production Web DB/authenticated original500 cause, cloud browser/full30cases, paid/human AI quality, employee-minute baseline and first realSHOPLINE/merchant5→20→100 remain open. Cloud matrix remains3PASS/10PARTIAL/15BLOCKED/2NOT_RUN; the storage retest does not satisfy unrelated criteria.
 
 No migration or application env name added. Temporarily deployed probe fields removed; hold keeps corrected key, guarded Resend, data/versions/audit/reservations/artifacts/DLQs. Preserve all prior failure receipts and synthetic canaries. PaidAI0, trueSHOPLINE0, production changes0, dollar billing unmeasured under US$5 cap. Conditional merge remains held while these release gates are incomplete; evidence/doc changes are committed separately from tested source.
+
+## 2026-10-03 synthetic cloud intake/read follow-up
+
+Source8dfef1d0 exact CI37094533417 SUCCESS/current main unchanged; subsequent documentation-only commit needs its own checks. No application code, migration or app env name changed. [Safe behavior/failure/hold evidence](../../runbooks/opak-staging-intake-read-2026-10-03.md).
+
+- [x] ST18 already-fixed, cloud verified:20readonly references/20source-bound drafts/20current editable inputs, leading-zero SKU match; owned AI/pipeline/publish0. Same-byte replay creates0/no freshness renewal; new source invalidates1approval, stale retry0, immutable source/rows/version/receipt.
+- [x] ST19 already-fixed, API verified: operator/reviewer healthy and no-version details usable; malformed row blocked/actions denied/support correlation. Row-only27/27,113s; separate readonly-ledger5/5,43s. UI remains pending.
+- [x] Preserve five earlier failing windows: wrong raw auth route, English title search assumption, historical-status assertion, and double-encoded JSON fixtures. Real DB `jsonb_typeof` proved the latter; `tx.json` preserves schema-valid objects. These are helper fixes, not application defects or fabricated passes. The fourth window's13independent source assertions passed before its faulty row check failed.
+- [x]8unique scope guards/0provider offline; all seven watchdog normal stops. Final stage disabled/idle, active correctedf061, fake/paid-disabled, probe0/public404; no Worker deployment or queue resume. Retain all fixtures/evidence and previous20AI ledger entries; row window adds0AI/0publish.
+- [ ] ST21 changed: headless Chromium starts, direct staging redirects to Vercel `/login`; no authenticated app screenshot/navigation claim. Cloud matrix4PASS/11PARTIAL/15BLOCKED/0NOT_RUN remains distinct from full UAT/merchant acceptance.
+- [ ] Production columns/FK missing, Hyperdrive BYPASSRLS/cache-enabled; valid reference key1/appSELECTtrue/appowner0. Six-hour history retention does not prove restore. [Concrete first-stage proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md) awaits explicit production authorization and backup/rollback ownership; compatible safe-role cutover/release/human gates separate.
+
+Final: Ruling: source import invalidates approval freshness, while immutable approval receipt and historical status remain. Delivery authority follows current source/version/confirmation fences, never the historical status alone. Cost if wrong: old approval could authorize changed source, so stale service retry and advisory/permission checks must fail.
+
+Final: Ruling: validate seeded JSONB object type and the existing reviewable schema before fault acceptance. Preserve original failures and the readonly ledger helper's inherited-counter correction. Cost if wrong: malformed fixture strings could be misreported as application regressions or silently turned into false passes.
