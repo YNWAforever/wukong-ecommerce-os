@@ -506,7 +506,52 @@ Final: Ruling: exact-source successful cloud context checks validate synthetic b
 - [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
 - [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
 - [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
-- [ ] New source-head CI and guarded latest preview/cloud UC05/current-gap acceptance pending. Preserve failedv27 session-stop/watchdog receipts and separate exact owned cleanup2revoked/0remain/0otherusers/compute disabled.
+- [x] Source593 exact CI and guardedc23/cloud UC05/current-gap acceptance completed; see2026-10-04 supplement. Original failedv27 and cleanup receipts remain unchanged.
 - [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
 
 [Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.
+
+## 2026-10-04 HKT verified release supplement
+
+- [x] Source593c5283 exact fullCI37132320997 SUCCESS; source/local checks and independent catalog review remain valid. Subsequent docs-only commit must complete its own checks. PR121–126 green/CLEAN at16:22:43Z; PR120 draft/failed remains distinct.
+- [x] Guardedc23 exact593 tree except branch deployment guard; READYdpl_8eC5Xw5yU1zTZ8mXPF1HWvjbvYg8/alias verified. Cloudv31 behavior39/39 proves UC05 source-qualified bilingual search and UC21 all six current-gap decisions; no batch creation or AI execution. Current matrix11PASS/6PARTIAL/13BLOCKED/all30 IDs.
+- [x] Required preview audit+2/prior252 hashes preserved; other ten domain snapshots unchanged/AI20/publish0/batches2. Logout200/401; first compute-disable timeout retained, separate cleanup disabled/idle0.25CU verified and8-minute watchdog normal stop. Screenshot visually reviewed outside Git.
+- [x] Worker candidatefcf96cda inactive0% from593 artifact/config,11/11 upload checks. Active correctedf061 stays100%/same deployment; secrets/queues/cron/ingress unchanged. No candidate runtime/R2/Queue pass inferred. All failed upload/browser/cleanup receipts retained.
+- [ ] Production0046/owner-BYPASSRLS/cache readiness, effective Web/original500, exact production repair authority and named recovery owner/confirmed recoverable point remain incomplete. Conditional main auto-deploy merge held.
+- [ ] Paid/human12-case quality, matched20-item employee benefit, fuller cloud execution/fault/load/new-invite criteria and first realSHOPLINE/5→20→100 merchant gates remain open; synthetic passes do not satisfy them.
+
+[Executed behavior, commands, safe receipt, review scope and compatible rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). No migration/new app env/dependency/provider key/paidAI/realSHOPLINE/production mutation. Actual cloud billing remains unmeasured. Earlier pending lines are dated evidence superseded only within these explicitly executed scopes.
+
+## 2026-10-04 HKT reviewed Worker and hundred-selection checkpoint
+
+- [x] Exact reviewed593 Workerfcf now100% in isolated staging; signed health12/12/142.695s, domain11 unchanged, non-bypass role/FORCE59/59/foreign0. Earlier inactive/f061 checkpoint is historical.
+- [x] Temporary current-config R2 probe ownGET200/hash/PUT403/foreign metadata403; exactfcf restored with corrected five secret names/no probe vars. First placement-marker failure preserved; generated-config4 and probe11+cleanup10 guards pass. No secret/migration/app source change.
+- [x] One normal source import100/current manual facts and locks100; actual four-page/refresh/one-field exact preview17/17. Header adapter RED1→GREEN1 and invalid filter corrected only in tooling; no duplicate import or relaxed gate.
+- [x] Exactly first5 durable admissions and same-key replay; original expectation failure retained. Existing partial-copy protection correctly retains5needs-info candidates; current Worker16/16 and scoped cloud reconciliation9/9/current100 unchanged. Only original5 resumed;95remain unstarted/0queued/failed; no100 Queue pass claimed.
+- [x] Real logout/queue+cron-ingress hold acknowledgements, normal independent watchdogs and fresh public404/compute disabled-idle0.25 readback; actual billing unmeasured, paidAI0/realSHOPLINE0.
+- [ ] Original reviewer UC22 five-item export/filter/digest criterion on qualified100, injected cloud pause/failed-only/unknown/load/new invitation criteria; matrix remains11PASS/6PARTIAL/13BLOCKED.
+- [ ] Exact production authority/recovery/role/schema/cache/effective Web/original500; paid-human quality, employee minutes and first realSHOPLINE/merchant gates. Conditional merge still held; PR120 is not green.
+
+[Executed behavior, roots, commands, receipt and compatible hold/rollback](../../runbooks/opak-reviewed-worker-cloud-gates-2026-10-04.md). Source593 and prior docs d86 exact CIs passed; this new docs-only head needs its own checks. No product code fix, migration, app env, provider secret or production change inferred from evidence-helper failures.
+
+## 2026-10-04 HKT original UC22 reviewer checkpoint
+
+- [x] Original UC22 on100 synthetic approved current fixture: reviewer2+3 across pages, changed filter, exact5 preview; actual digest movement revokes attestation/preview without reload; server old-preview409; explicit current five re-review/confirmation yields new preview5.20/20/132.811s, AI/publish/artifacts unchanged.
+- [x] Normal manual review/confirmation/bulk approval fixture100; operator403. Qualification helper status/listingStatus failure preserved; independent readback8/8/7,100cells/prior5inputs-candidates/AI30/publish0. No duplicate approval or missing byte-hash claim.
+- [x] Original old batch95 unstarted cancelled through service; only5 re-reviewed on fresh source. Other95 approvals historical after refresh; no100 Queue/merchant success claim. Sessions/queues/ingress/compute held; currentfcf100/source593/HEAD404/idle0.25 independently read back.
+- [x] Cloud matrix updated only UC22:12PASS/5PARTIAL/13BLOCKED/all30.
+- [ ] Latest docs head ownCI; c3 attempt1 website dispatch failure retained, unchanged-head reproduction pending; no unique underlying ingress cause or source fix claimed.
+- [ ] UC03/06/23/24/29 partial; paid-human UC09–20 and load/employee UC30 blocked. Production authority/recovery/role/schema/cache/effective Web/original500 and separate merchant first-write gates remain open. Conditional merge held.
+
+[Commands, exact criteria, failure disposition, safe receipt and hold/rollback](../../runbooks/opak-uc22-reviewer-cloud-2026-10-04.md). Prior checkpoints remain dated; this supersedes only the old UC22 pending criterion, not other release gates.
+
+## 2026-10-04 HKT UC23 remote failure checkpoint
+
+- [x] Real isolated Queue3success/1knownfailure/1pending; normalUI pause202, paused advance0 and retry409 with unchanged runs. Same-batch refresh resolves expected stale-control409; Resume202 and failed-only one attempt2/idempotent replay; final5success/6total including old failure.30/30 completion; original3success ledger/run values, older workspace records, manual locks and source cells retained;11fake ledger records cost0/publish0.
+- [x] All11 windows normal watchdog stops/cleanup acknowledgements; reviewedfcf restored100%/no probe vars/public404/compute disabled-idle0.25. No paidAI/realSHOPLINE/production change; billing unmeasured; remote paused/cron flags independently unavailable.
+- [x] ST27/T06 reproduced paused label omitted from shared state mapper; bilingual rendered regression RED2→GREEN17/17, fulltest14tasks/Web2285.
+- [x] Cloud matrix changes only UC23 to passed:13PASS/4PARTIAL/13BLOCKED/all30. Earlier failed dispatch/proxy-shape/invalid-output/support/stale-CAS receipts remain dated evidence.
+- [ ] New label candidate lint14/typecheck14/build8 and automated static checks passed; exact CI/protected preview and final release pack pending at this precommit checkpoint.
+- [ ] UC03/06/24/29 partial; paid-human UC09–20/load-employee UC30 blocked. Production exact authority/recovery/schema/role/cache/effective Web/original500 and merchant first-write/pilot gates remain open. Conditional main merge held.
+
+[Behavior, root classifications, commands, safe receipts and rollback](../../runbooks/opak-uc23-cloud-pause-retry-2026-10-04.md). Historical checkpoints remain unchanged.

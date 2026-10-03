@@ -64,6 +64,39 @@ async function unmount(root: Root) {
 }
 
 describe("BatchDetail", () => {
+  it.each([
+    ["en", "Paused", "Resume"],
+    ["zh-Hant", "已暫停", "繼續"],
+  ] as const)(
+    "shows a known paused state and its resume control in %s",
+    async (locale, pausedLabel, resumeLabel) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          batch: {
+            id: "batch_1",
+            label: "Synthetic paused batch",
+            budgetUsd: 1,
+            waveSize: 4,
+            status: "paused",
+            controlRevision: 3,
+          },
+          counts: { pending: 1, queued: 0, succeeded: 3, failed: 1, skipped: 0 },
+          items: [],
+        }),
+      );
+      const { container, root } = await mountWithLocale(fetcher, locale);
+      try {
+        expect(container.textContent).toContain(pausedLabel);
+        expect(container.textContent).not.toContain("Unknown status");
+        expect(container.textContent).not.toContain("狀態未明");
+        expect(
+          Array.from(container.querySelectorAll("button"), (b) => b.textContent),
+        ).toContain(resumeLabel);
+      } finally {
+        await unmount(root);
+      }
+    },
+  );
   it("renders the batch's status and item counts after fetching", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
