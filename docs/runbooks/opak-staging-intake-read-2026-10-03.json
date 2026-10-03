@@ -1,0 +1,367 @@
+{
+  "stage": "synthetic-cloud-intake-read-followup",
+  "recordedAt": "2026-10-03T05:58:48.115Z",
+  "reviewedTaskHead": "8dfef1d0ac968af368198a10a6625599db50450e",
+  "stagingWeb": {
+    "deployment": "dpl_4cZXFy8epug84HxvW9npgJEq2YDf",
+    "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+    "applicationSource": "e9d0d4ce0f1c7c471d9aa595c3fd11852a4cd466"
+  },
+  "sourceIntake": {
+    "status": "passed-independent-api-scope",
+    "originalWindowOutcome": "failed",
+    "originalWindowFailure": "CHECK_FAILED:queue-single-row-isolated-operator",
+    "referenceRows": 20,
+    "maintainedDrafts": 20,
+    "currentEditableInputs": 20,
+    "manualReviewVersions": 1,
+    "checks": [
+      {
+        "id": "twenty-readonly-references",
+        "pass": true,
+        "references": 20
+      },
+      {
+        "id": "leading-zero-sku-found",
+        "pass": true
+      },
+      {
+        "id": "twenty-source-drafts",
+        "pass": true,
+        "createdDrafts": 20
+      },
+      {
+        "id": "twenty-exact-source-bindings",
+        "pass": true,
+        "bindings": 20
+      },
+      {
+        "id": "replay-without-duplicates",
+        "pass": true
+      },
+      {
+        "id": "replay-does-not-renew-freshness",
+        "pass": true
+      },
+      {
+        "id": "manual-version-source-bound",
+        "pass": true
+      },
+      {
+        "id": "old-source-approval-established",
+        "pass": true
+      },
+      {
+        "id": "single-original-approval-receipt",
+        "pass": true
+      },
+      {
+        "id": "new-source-invalidates-approval",
+        "pass": true,
+        "invalidatedApprovals": 1
+      },
+      {
+        "id": "fresh-source-denies-old-approval",
+        "pass": true,
+        "historicalStatusRetained": true
+      },
+      {
+        "id": "stale-approval-refused",
+        "pass": true
+      },
+      {
+        "id": "old-source-rows-version-receipt-immutable",
+        "pass": true
+      }
+    ]
+  },
+  "rowRead": {
+    "status": "passed-api-scope-ui-pending",
+    "durationSeconds": 113,
+    "checks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "corrected-worker-retained-before",
+        "pass": true
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "signin-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "session-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "server-session-operator",
+        "pass": true
+      },
+      {
+        "id": "signin-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "session-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "server-session-reviewer",
+        "pass": true
+      },
+      {
+        "id": "fault-fixture-json-objects",
+        "pass": true
+      },
+      {
+        "id": "queue-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "queue-single-row-isolated-operator",
+        "pass": true,
+        "healthyFound": true,
+        "blockedFound": true
+      },
+      {
+        "id": "healthy-detail-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "healthy-detail-usable-operator",
+        "pass": true
+      },
+      {
+        "id": "blocked-detail-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "blocked-detail-denies-actions-operator",
+        "pass": true
+      },
+      {
+        "id": "no-version-detail-operator",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "no-version-input-available-operator",
+        "pass": true
+      },
+      {
+        "id": "queue-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "queue-single-row-isolated-reviewer",
+        "pass": true,
+        "healthyFound": true,
+        "blockedFound": true
+      },
+      {
+        "id": "healthy-detail-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "healthy-detail-usable-reviewer",
+        "pass": true
+      },
+      {
+        "id": "blocked-detail-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "blocked-detail-denies-actions-reviewer",
+        "pass": true
+      },
+      {
+        "id": "no-version-detail-reviewer",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "no-version-input-available-reviewer",
+        "pass": true
+      },
+      {
+        "id": "zero-ai-publish-admission",
+        "pass": true,
+        "aiBefore": 20,
+        "aiAfter": 20,
+        "publishBefore": 0,
+        "publishAfter": 0
+      }
+    ],
+    "fixtureSerializationRootCause": "Prior test helper double-encoded JSON; DB jsonb_typeof confirmed string/string. tx.json stores object/object. Application decoder unchanged."
+  },
+  "ownedSourceLedger": {
+    "checks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "corrected-worker-retained-before",
+        "pass": true
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "twenty-bound-editable-current-inputs",
+        "pass": true,
+        "bound": 20,
+        "editable": 20
+      },
+      {
+        "id": "intake-zero-ai-pipeline-publish",
+        "pass": true,
+        "ai": 0,
+        "publish": 0,
+        "pipeline": 0
+      }
+    ],
+    "counts": {
+      "bound": 20,
+      "editable": 20,
+      "ai": 0,
+      "publish": 0,
+      "pipeline": 0
+    },
+    "newSeededRows": 0,
+    "receiptMetadataCorrection": "The readonly ledger helper inherited faultRows=3 from its predecessor; this label is omitted here because this window seeded no rows. Original receipt is retained privately."
+  },
+  "offlineGuards": {
+    "uniqueTests": 8,
+    "passed": 8,
+    "providerCalls": 0
+  },
+  "browser": {
+    "runtime": "existing Playwright Chromium",
+    "launched": true,
+    "directStatus": 200,
+    "directHost": "vercel.com",
+    "directPath": "/login",
+    "applicationUiReached": false,
+    "authenticatedScreenshotProduced": false,
+    "boundary": "Vercel Deployment Protection"
+  },
+  "preservedWindows": [
+    {
+      "directory": "cloud-intake-read",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:signin-operator",
+      "durationSeconds": 58,
+      "normalStopObserved": true,
+      "receiptSha256": "37f9ccd4aea8f7417a9bd0d5bc8d27a8c47ba699076b9be5e06cc80ce511d565"
+    },
+    {
+      "directory": "cloud-intake-read-v2",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:twenty-readonly-references",
+      "durationSeconds": 59,
+      "normalStopObserved": true,
+      "receiptSha256": "0524f6e091cd0c15a11331aba981838060524d15eb2ad12a2ad2ed9efcc4c00d"
+    },
+    {
+      "directory": "cloud-intake-read-v3",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:fresh-source-no-old-approval",
+      "durationSeconds": 117,
+      "normalStopObserved": true,
+      "receiptSha256": "63ba4b47f22ba6435f564ac954191e54d5b8ae2c3872e752c937b44c5b2f58f1"
+    },
+    {
+      "directory": "cloud-intake-read-v4",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:queue-single-row-isolated-operator",
+      "durationSeconds": 155,
+      "normalStopObserved": true,
+      "receiptSha256": "41e41744d91e4a9ee8413489cacbf57607abc4b251dd674e98f26308d6c0ddac"
+    },
+    {
+      "directory": "cloud-row-read-v5",
+      "outcome": "failed",
+      "errorCode": "CHECK_FAILED:queue-single-row-isolated-operator",
+      "durationSeconds": 50,
+      "normalStopObserved": true,
+      "receiptSha256": "60f689ab3275463df2d7164bc5524bc32598d27f878f6546f1fa3e61a221b53b"
+    },
+    {
+      "directory": "cloud-row-read-v6",
+      "outcome": "cloud-row-read-passed",
+      "errorCode": null,
+      "durationSeconds": 113,
+      "normalStopObserved": true,
+      "receiptSha256": "93bad1a872b609cafd52bfd65db41fd04a524e9fb5947e311246ed78023d8526"
+    },
+    {
+      "directory": "cloud-intake-ledger-v7",
+      "outcome": "cloud-intake-ledger-passed",
+      "errorCode": null,
+      "durationSeconds": 43,
+      "normalStopObserved": true,
+      "receiptSha256": "4e07af7b4d2e2b6ed40795f07c130ff61fd15055b6c9d07cea45224e9834ca5f"
+    }
+  ],
+  "productionRefresh": {
+    "project": "weathered-lake-51694428",
+    "branch": "br-twilight-meadow-at9qky4q",
+    "bindingColumnsPresent": 0,
+    "bindingFksPresent": 0,
+    "validUniqueReferenceKeys": 1,
+    "regularTables": 54,
+    "rlsTables": 44,
+    "unforcedRlsTables": 0,
+    "appSuperuser": false,
+    "appBypass": false,
+    "appOwnedTables": 0,
+    "originUser": "neondb_owner",
+    "originBypass": true,
+    "hyperdrive": "eef464f2d3c0480b94d22eaca060b209",
+    "cacheDisabled": false,
+    "webDeployment": "dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d",
+    "webSource": "dde9e178d9e1f9ca8880618c63104f41fe2fa3be",
+    "historyRetentionSeconds": 21600,
+    "restoreDrillVerified": false
+  },
+  "finalHold": {
+    "workerVersion": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+    "probeBindings": 0,
+    "workerPublicStatus": 404,
+    "dbDisabled": true,
+    "dbState": "idle",
+    "queuesResumed": false,
+    "workerChanged": false,
+    "normalStopsVerified": 7
+  },
+  "applicationChanged": false,
+  "migrationApplied": false,
+  "appEnvNameAdded": false,
+  "productionChanged": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "ownedIntakeAiRuns": 0,
+  "ownedIntakePipelineRuns": 0,
+  "ownedIntakePublishJobs": 0,
+  "actualCloudBilling": "not-measured; original US$5 cap retained",
+  "releaseAccepted": false,
+  "merged": false
+}

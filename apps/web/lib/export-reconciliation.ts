@@ -1,3 +1,4 @@
+import { exportRepairSchema } from "./bulk-export-contract";
 import type { ExportAttempt, ImportResult } from "@wukong/db";
 export type ResultCapabilities = {
   canGenerateBulkUpdate: boolean;
@@ -38,7 +39,9 @@ export function buildExportReconciliation(
     (m) => m.latestResult?.outcome === "rejected",
   ).length;
   const noOp = members.filter((m) => m.outcome === "excluded_no_op").length;
+  const repair = exportRepairSchema.safeParse(attempt.provenance?.repairOf);
   return {
+    repairOf: repair.success ? repair.data : null,
     counts: {
       requested: members.length,
       included: included.length,

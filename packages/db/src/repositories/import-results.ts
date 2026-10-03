@@ -46,7 +46,25 @@ export type ImportResult = {
   correctionReason: string | null;
   revision: number;
 };
+export type RejectedExportMembers = {
+  exportAttemptId: string;
+  members: Array<{ listingId: string; resultId: string; revision: number }>;
+};
+export function assertLatestRejectedMember(
+  expected: RejectedExportMembers["members"][number],
+  latest: ImportResult | null,
+): void {
+  if (
+    !latest ||
+    latest.outcome !== "rejected" ||
+    latest.id !== expected.resultId ||
+    latest.revision !== expected.revision ||
+    latest.listingId !== expected.listingId
+  )
+    throw new ImportResultConflict("repair_result_changed");
+}
 export type ImportResultRepository = {
+  assertRejectedForRepair(input: RejectedExportMembers): Promise<void>;
   create(
     input: CreateImportResultInput,
   ): Promise<ImportResult & { wasCreated: boolean }>;
@@ -296,6 +314,64 @@ export function createImportResultRepository(
         .returning(columns);
       if (!row) throw new Error("import result insert did not return a row");
       return { ...parse(row), wasCreated: true };
+    },
+    async assertRejectedForRepair(input) {
+      scope.assertOpen();
+      if (
+        !input.members.length ||
+        input.members.length > 100 ||
+        new Set(input.members.map((member) => member.listingId)).size !==
+          input.members.length
+      )
+        throw new ImportResultConflict("repair_context_invalid", 400);
+      const ids = input.members.map((member) => member.listingId).sort();
+      const locked = await transaction
+        .select({ id: listingDrafts.id })
+        .from(listingDrafts)
+        .where(
+          and(
+            eq(listingDrafts.workspaceId, workspaceId),
+            inArray(listingDrafts.id, ids),
+          ),
+        )
+        .orderBy(listingDrafts.id)
+        .for("update");
+      if (locked.length !== ids.length)
+        throw new ImportResultConflict("listing_not_found", 404);
+      const attempt = await createExportAttemptRepository(
+        transaction,
+        workspaceId,
+        scope,
+      ).getById(input.exportAttemptId);
+      for (const member of [...input.members].sort((a, b) =>
+        a.listingId.localeCompare(b.listingId),
+      )) {
+        const included = attempt?.manifest.find(
+          (entry) =>
+            entry.listingId === member.listingId &&
+            entry.outcome === "included",
+        );
+        validateExportResultBinding(
+          attempt,
+          workspaceId,
+          member.listingId,
+          included?.versionId ?? "",
+        );
+        const [latest] = await transaction
+          .select(columns)
+          .from(importResults)
+          .where(
+            and(
+              workspace,
+              eq(importResults.mode, "export"),
+              eq(importResults.exportAttemptId, input.exportAttemptId),
+              eq(importResults.listingId, member.listingId),
+            ),
+          )
+          .orderBy(desc(importResults.revision))
+          .limit(1);
+        assertLatestRejectedMember(member, latest ? parse(latest) : null);
+      }
     },
     async getByIds(ids) {
       scope.assertOpen();

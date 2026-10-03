@@ -1,3 +1,9 @@
+import { EXPORT_CONTENT_FIELDS } from "../../../../../lib/bulk-export-contract";
+import {
+  createBulkExport,
+  createBulkExportDeps,
+  bulkExportPreview,
+} from "../../../../../lib/bulk-export-service";
 import {
   CONFIRMATION_FIELD_KEYS,
   CONFIRMATION_NEGATIVE_KEYS,
@@ -19,6 +25,26 @@ const runtimeMocks = vi.hoisted(() => ({
 vi.mock("../../../../../lib/intake-runtime", () => runtimeMocks);
 
 import { createDeliverListingHandler, defaultDelivery } from "./route.js";
+
+async function reviewedBulkBody(database: any) {
+  const input = {
+    workspaceId: context.workspaceId,
+    requestedBy: context.actorId,
+    listingIds: [listingId],
+    fields: [...EXPORT_CONTENT_FIELDS],
+    attestedDigests: new Map([[listingId, bulkDigest]]),
+  };
+  const exported = await database.forWorkspace(
+    context.workspaceId,
+    (repos: any) => createBulkExport(input, createBulkExportDeps(repos)),
+  );
+  return {
+    method: "bulk_form",
+    attestedContentDigest: bulkDigest,
+    fields: input.fields,
+    previewSha256: bulkExportPreview(input, exported).previewSha256,
+  };
+}
 
 const listingId = "00000000-0000-4000-8000-000000000101";
 const versionId = "00000000-0000-4000-8000-000000000201";
@@ -842,10 +868,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({
-          method: "bulk_form",
-          attestedContentDigest: bulkDigest,
-        }),
+        body: JSON.stringify(await reviewedBulkBody(database)),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -947,10 +970,7 @@ describe("POST /api/listings/[id]/deliver", () => {
     const response = await handler(
       new Request(`https://wukong.test/api/listings/${listingId}/deliver`, {
         method: "POST",
-        body: JSON.stringify({
-          method: "bulk_form",
-          attestedContentDigest: bulkDigest,
-        }),
+        body: JSON.stringify(await reviewedBulkBody(database)),
       }),
       { params: Promise.resolve({ id: listingId }) },
     );
@@ -981,7 +1001,16 @@ it.each(["csv", "bulk_form", "shopline_api"] as const)(
       new Request("http://localhost/api/listings/website/deliver", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ method, attestedContentDigest: bulkDigest }),
+        body: JSON.stringify({
+          method,
+          attestedContentDigest: bulkDigest,
+          ...(method === "bulk_form"
+            ? {
+                fields: [...EXPORT_CONTENT_FIELDS],
+                previewSha256: "a".repeat(64),
+              }
+            : {}),
+        }),
       }),
       {
         params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000901" }),
@@ -1097,3 +1126,40 @@ it("refuses a bulk_form delivery that carries no attestation", async () => {
     code: "attestation_incomplete",
   });
 });
+
+it.each([
+  { method: "bulk_form", attestedContentDigest: bulkDigest },
+  {
+    method: "bulk_form",
+    attestedContentDigest: bulkDigest,
+    fields: [],
+    previewSha256: "a".repeat(64),
+  },
+  {
+    method: "bulk_form",
+    attestedContentDigest: bulkDigest,
+    fields: ["regularPrice"],
+    previewSha256: "a".repeat(64),
+  },
+  {
+    method: "bulk_form",
+    attestedContentDigest: bulkDigest,
+    fields: ["nameZh"],
+    previewSha256: "invalid",
+  },
+])(
+  "single bulk_form rejects a missing or invalid explicit preview contract",
+  async (body) => {
+    const { handler, calls } = makeHandler("approved");
+    const response = await handler(
+      new Request("http://localhost/api/listings/" + listingId + "/deliver", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      routeContext(),
+    );
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  },
+);
