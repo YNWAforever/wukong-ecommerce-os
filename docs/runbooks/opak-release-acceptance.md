@@ -90,6 +90,12 @@ E source `ea827e081ba3c98797c6f468818051e9540fbdf7`完整CI `36906156935` SUCCES
 
 商戶內容回復按 [UAT rollout 的 restoration procedure](./opak-uat-rollout.md)：用保留的原始 source 與新的已授權 merchant export 核對，製作只回復目標內容而保留當前 protected fields 的 exact artifact，另取得商戶對該 bytes／scope／differences 的明確授權，再逐件 reconcile。
 
+## 2026-10-03 remaining-contract follow-up
+
+[Executed safeguard/handoff receipt](./opak-retained-safeguards-and-role-handoff-2026-10-03.md): PR120's five retained contracts compared; three already present, safe Queue diagnostics and publish/import update race reproduced then fixed. Local target suites19/19+32/32; full tests Web2283/Worker408/fourteen tasks, lint/typecheck/build passed, independent review0Critical/0Important/one comment minor deferred. The preceding e094 exact fullCI37113613076 succeeded; this new source checkpoint needs its own checks.
+
+Cloud733 v26 separately passed33/33/116.58s for same-context accepted-invite role handoff and admin dirty workspace Stay/failed Save/Discard/Save, original-only tenant update/full second-profile preservation/restore/audit+2 and three realUI logout200/401. Failed helper windows and corrected double-encoded synthetic JSON fixture remain recorded; no product endpoint relaxation. Matrix9PASS/8PARTIAL/13BLOCKED. No new migration/env/dependency/provider key/deployment or production mutation; AI20/publish0 retained, paidAI/email/realSHOPLINE0, compute stopped. Source fixes are not asserted deployed by this older cloud candidate. All original production/recovery/paid/human/merchant release gates remain.
+
 ## 真商戶 5 → 20 → 100
 
 每階段須 hard-fail = 0、完整結果核對、無未解 cost／identity、無 stale approval、無 protected-field drift，並保留商戶 written advance/stop decision。3 接受／2 拒絕時先只修 2 件；unreported／unknown 不能當成功。supplied fresh snapshot 的獨立逐欄比較仍只證明 supplied data，相同 artifact 不能當 fresh export；operator attestation 也不等於 authenticated merchant origin。
