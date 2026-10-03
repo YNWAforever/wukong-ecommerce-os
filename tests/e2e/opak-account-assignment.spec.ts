@@ -11,6 +11,7 @@ import {
   localBrowserUrl,
   assertNoHorizontalOverflow,
 } from "./catalog-usability-checks.js";
+import { assertNativeCredentialsInBody } from "./auth-native-submit-checks.js";
 
 test.skip(
   process.env.WUKONG_OPAK_E2E !== "1",
@@ -29,6 +30,16 @@ function guard(baseURL: string | undefined) {
       throw Error("Task-owned loopback database required");
   }
 }
+
+test("native sign-in keeps credentials out of navigation URLs before hydration", async ({
+  browser,
+}, testInfo) => {
+  guard(testInfo.project.use.baseURL);
+  await assertNativeCredentialsInBody(
+    browser,
+    String(testInfo.project.use.baseURL),
+  );
+});
 
 test("real Better Auth logout revokes session, clears stored work and keeps back protected", async ({
   page,

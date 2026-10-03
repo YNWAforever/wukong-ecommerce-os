@@ -410,3 +410,13 @@ ST17 is fixed and verified in isolated staging; prior failed evidence stays unch
 - [ ] New follow-up head's own CI, authenticated cloud UI, original production500/repair authority/backup owner, paid-human quality, employee-minute and merchant gates remain separate. Cloud matrix4PASS/11PARTIAL/15BLOCKED unchanged. [Behavior/commands/rollback/review evidence](../../runbooks/opak-staging-admin-outage-ci-2026-10-03.md).
 
 Review rulings: leave original conflicting owner unconfirmed; apply actual cloud/production gates independently; retain prior A–F review because no application files changed. Cost if wrong: an unsupported diagnosis or unexecuted gate could be treated as release proof, so no gate is relaxed. Deferred minor: Windows OpenSSL discovery currently assumes the existing Git installation path. No migration/new application env, production mutation, paidAI, trueSHOPLINE or merge.
+
+## 14. 2026-10-03 native auth submission follow-up
+
+- [x] Predecessor8773 exact full CI37106290279 SUCCESS; PR121–126 marked ready for review after their green checkpoints. Conditional merge is still held by production readiness failures.
+- [x] ST25/T08 reproduced → fixed locally: pre-hydration native GET puts credential fields in URL. Explicit POST plus real SSR/JavaScript-disabled regression RED→GREEN, five assertions, provider dispatch intercepted.
+- [x] Owned synthetic operator credential rotated, old hash rejected, replacement verified, twelve sessions revoked; eight assertions, independent watchdog normal stop, staging DB disabled/idle. Original error retained privately; no production/provider credential changed.
+- [x] Auth56/56, full Web2275/2275, root/package command exit0, lint/typecheck14tasks, build8tasks, format/forbidden/machine release checks passed; independent three-file review has no actionable findings. [Receipt and scope limits](../../runbooks/opak-auth-native-submit-2026-10-03.md).
+- [ ] This application delta's own exact-head CI and guarded isolated Preview smoke; production0046/cache/runtime-role/recovery ownership/original500 and paid-human/employee-minute/merchant gates remain separate.
+
+Ruling: POST is a safe native fallback, not a no-JavaScript authentication implementation. Cost if wrong: an intercepted security test could be mistaken for successful provider authentication. Keep the existing hydrated APIs and verify actual password sessions independently; no permission or release gate is relaxed.

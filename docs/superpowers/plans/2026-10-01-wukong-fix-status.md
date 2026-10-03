@@ -465,3 +465,13 @@ Final: Ruling: original port owner remains unconfirmed; actual bind/readiness de
 Final: Ruling: cloud/production readiness uses its independent actual gates; broader A–F application review remains the prior e9 review because no application files changed. Cost if wrong: unexecuted provider/human criteria could be silently promoted to passed, so no release boundary is relaxed.
 
 Final: minor (deferred): Windows OpenSSL executable discovery follows the existing `C:/Program Files/Git` convention; portable/per-user installs can fail this local test dependency. [Safe receipt, commands and rollback](../../runbooks/opak-staging-admin-outage-ci-2026-10-03.md).
+
+## 2026-10-03 native auth submission repair
+
+- [x] Exact8773 CI37106290279 completed SUCCESS; PR121–126 green checkpoints confirmed and drafts made review-ready. No merge or production mutation.
+- [x] ST25/T08 reproduced before code change: unhydrated native password form GET exposes fields in navigation URL. Explicit form POST preserves the existing hydrated server APIs. Actual SSR/no-JavaScript helper RED→GREEN; five safe assertions; owned loopback server stopped.
+- [x] An error excerpt incorrectly exposed the synthetic operator password. Only the owned isolated account was rotated: eight assertions, old hash refused/replacement valid, twelve sessions revoked, private fixture updated, staging disabled/idle and watchdog normal stop. No raw failure URL or credentials published.
+- [x] Auth56/56, full `pnpm test` exit0/Web2275/2275, lint/typecheck14tasks, build8tasks and runtime/format/machine gates passed. Fresh review of the three-file delta reports no Critical/Important/Minor finding. [Evidence and rollback](../../runbooks/opak-auth-native-submit-2026-10-03.md).
+- [ ] New application head requires its own CI and guarded Preview smoke. Prior e9 application review/8773 CI are dated receipts, not proof of this delta. Remaining production and human/merchant gates stay open.
+
+Final: Ruling: intercepting native POST proves credentials stay out of the URL, not no-JavaScript authentication success. Preserve the hydrated session endpoints and test actual sessions separately. Cost if wrong: a security regression pass could be misreported as provider/authentication acceptance.
