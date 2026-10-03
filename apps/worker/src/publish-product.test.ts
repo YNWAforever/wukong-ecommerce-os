@@ -926,6 +926,7 @@ describe("publishApprovedProduct", () => {
       criticScores: [],
       awards: [],
     };
+    const existingSourceImportId = "00000000-0000-4000-8000-000000000099";
     await harness.repos.platformProducts.upsert({
       connectionId: VALID_CONNECTION_ID,
       remoteProductId: "remote_existing_1",
@@ -936,13 +937,8 @@ describe("publishApprovedProduct", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: existingFactsPrefill,
       contentDigest: "d".repeat(64),
-      sourceImportId: null,
+      sourceImportId: existingSourceImportId,
     });
-    // A real, non-null source import id -- distinct from the seed upsert's
-    // `sourceImportId: null` above -- so the final assertion can tell
-    // "correctly preserved from `existingLink`" apart from "accidentally
-    // read back from the seeded row" or "defaulted to null".
-    const existingSourceImportId = "00000000-0000-4000-8000-000000000099";
     const existingLink = {
       remoteProductId: "remote_existing_1",
       origin: "import" as const,
@@ -979,6 +975,59 @@ describe("publishApprovedProduct", () => {
       contentDigest: "d".repeat(64),
       sourceImportId: existingSourceImportId,
     });
+  });
+
+  it("preserves a newer imported snapshot while an update is in flight", async () => {
+    const key = [workspaceId, versionId, "shopline", "update"].join(":");
+    const harness = makeHarness(
+      "approved",
+      [],
+      [
+        {
+          id: "job_1",
+          idempotencyKey: key,
+          status: "running",
+          remoteProductId: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
+          error: null,
+        },
+      ],
+    );
+    const oldLink = {
+      connectionId: VALID_CONNECTION_ID,
+      remoteProductId: "remote_existing_1",
+      origin: "import" as const,
+      listingId: draftId,
+      sku: "OLD",
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "OLD" },
+      factsPrefill: null,
+      contentDigest: "a".repeat(64),
+      sourceImportId: "00000000-0000-4000-8000-000000000001",
+    };
+    await harness.repos.platformProducts.upsert(oldLink);
+    const refreshedLink = {
+      ...oldLink,
+      sku: "NEW",
+      rawRow: { productId: "remote_existing_1", sku: "NEW" },
+      contentDigest: "b".repeat(64),
+      sourceImportId: "00000000-0000-4000-8000-000000000002",
+    };
+    const connector = makeConnector({
+      updateProduct: vi.fn(async () => {
+        await harness.repos.platformProducts.upsert(refreshedLink);
+      }),
+    });
+
+    const result = await publishApprovedProduct(
+      publishInput({ existingLink: oldLink }),
+      { ...harness, connector },
+    );
+
+    expect(result.status).toBe("published");
+    expect(
+      await harness.repos.platformProducts.getByListingId(draftId),
+    ).toMatchObject(refreshedLink);
   });
 });
 

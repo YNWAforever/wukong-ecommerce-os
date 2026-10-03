@@ -90,6 +90,12 @@ E source `ea827e081ba3c98797c6f468818051e9540fbdf7`完整CI `36906156935` SUCCES
 
 商戶內容回復按 [UAT rollout 的 restoration procedure](./opak-uat-rollout.md)：用保留的原始 source 與新的已授權 merchant export 核對，製作只回復目標內容而保留當前 protected fields 的 exact artifact，另取得商戶對該 bytes／scope／differences 的明確授權，再逐件 reconcile。
 
+## 2026-10-03 remaining-contract follow-up
+
+[Executed safeguard/handoff receipt](./opak-retained-safeguards-and-role-handoff-2026-10-03.md): PR120's five retained contracts compared; three already present, safe Queue diagnostics and publish/import update race reproduced then fixed. Local target suites19/19+32/32; full tests Web2283/Worker408/fourteen tasks, lint/typecheck/build passed, independent review0Critical/0Important/one comment minor deferred. The preceding e094 exact fullCI37113613076 succeeded; this new source checkpoint needs its own checks.
+
+Cloud733 v26 separately passed33/33/116.58s for same-context accepted-invite role handoff and admin dirty workspace Stay/failed Save/Discard/Save, original-only tenant update/full second-profile preservation/restore/audit+2 and three realUI logout200/401. Failed helper windows and corrected double-encoded synthetic JSON fixture remain recorded; no product endpoint relaxation. Matrix9PASS/8PARTIAL/13BLOCKED. No new migration/env/dependency/provider key/deployment or production mutation; AI20/publish0 retained, paidAI/email/realSHOPLINE0, compute stopped. Source fixes are not asserted deployed by this older cloud candidate. All original production/recovery/paid/human/merchant release gates remain.
+
 ## 真商戶 5 → 20 → 100
 
 每階段須 hard-fail = 0、完整結果核對、無未解 cost／identity、無 stale approval、無 protected-field drift，並保留商戶 written advance/stop decision。3 接受／2 拒絕時先只修 2 件；unreported／unknown 不能當成功。supplied fresh snapshot 的獨立逐欄比較仍只證明 supplied data，相同 artifact 不能當 fresh export；operator attestation 也不等於 authenticated merchant origin。
@@ -121,3 +127,11 @@ The historical storage blocker above was subsequently corrected and tested: Work
 [Admin/outage/CI follow-up](./opak-staging-admin-outage-ci-2026-10-03.md) adds15/15 actual disabled-DB queue/catalog error/correlation checks and29/29 settings role/CAS/readiness checks, with original profile restored, AI20/publish0 retained, watchdog normal stop and DB disabled/idle. Cloud4PASS/11PARTIAL/15BLOCKED remains partial UAT. Head548 and unchanged-a8 retry2 fullCI passed; a8 attempt1 image TLS bind failure and unconfirmed owner remain dated evidence. The subsequent early-TLS harness/deadline cleanup change has2/2 behavioral regressions and full root142/142+14 cached app tasks, and needs its own exact-head CI.
 
 No new migration/application env or application runtime delta. Holding retains corrected Worker credentials, primary queues, source/version/approval/audit/ledger/history and artifacts. Original production500, production repair authority/backup ownership, authenticated cloud UI, paid/human quality, employee-minute and merchant5→20→100 gates remain incomplete. No merge or production deployment based only on these synthetic/API/CI results.
+
+## 2026-10-03 current authenticated browser/auth checkpoint
+
+Earlier cloud-UI blockers are superseded by [actual synthetic browser acceptance](./opak-staging-browser-auth-2026-10-03.md):31/31 on preceding9dd and32/32 on reviewed733 Preview, three password roles, logout/401, both-role row support, desktop/mobile/readonly identity, admin dirty/CAS/history and catalog2448px return±2px/two-page/refresh selection/job history. Cloud matrix is7PASS/10PARTIAL/13BLOCKED; workspace-switch/invited same-context handoff and broader paid/human/merchant criteria remain partial or blocked.
+
+The newly found pre-hydration native GET defect is repaired by explicitPOST with actual SSR RED→GREEN and scoped synthetic operator rotation/twelve session revocations. Auth source0b398a7b fullCI37111215982 SUCCESS/Vercel pass; isolated733/dpl_3uQ7X4n3rQVAkXENSFCWyfxiubCW READY/exact alias, complete tree differs only by original deployment guard. This follow-up evidence-only commit needs its own checks. No new migration/env/dependency/Worker deployment. Preserve POST and simulator-mail compatibility in any rollback; older e9 auth Web restores the native credential-URL risk.
+
+Both actual windows stop, profile restored/AI20/publish0 retained, current staging DB disabled/idle and watchdog normal stop. Workerf061 ObjectRO proof remains valid/held. Production missing0046/BYPASSRLS/cache/recovery/effectiveDB/original500 gates remain unresolved. PR120 is an overlapping draft with failed historical Queue-browser CI; PR121–126 are review-ready, but conditional merge-to-main remains held by production readiness. Pending authority/recovery ownership, paid/human scores, employee metrics and merchant first-write/pilot gates are indexed in master-plan section15. No merge or production mutation; no synthetic proof substitutes for those gates.

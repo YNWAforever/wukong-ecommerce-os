@@ -1,0 +1,448 @@
+{
+  "stage": "synthetic-cloud-browser-and-native-auth",
+  "sourceCandidate": "0b398a7b4ff3b5b8f9c3dccde8aae91a2eef192b",
+  "sourceCi": {
+    "run": 37111215982,
+    "result": "SUCCESS",
+    "exactHead": true
+  },
+  "preview": {
+    "id": "dpl_3uQ7X4n3rQVAkXENSFCWyfxiubCW",
+    "url": "wukong-ecommerce-3gejisj35-ynwaforevers-projects.vercel.app",
+    "sourceSha": "7333d9496d43723cbb9fe0cef7517a8f8058b214",
+    "readyState": "READY",
+    "target": null,
+    "aliasDeployment": "dpl_3uQ7X4n3rQVAkXENSFCWyfxiubCW"
+  },
+  "catalogAdmin": {
+    "stage": "isolated-cloud-browser",
+    "startedAt": "2026-10-03T07:54:22.087Z",
+    "finishedAt": "2026-10-03T07:56:32.941Z",
+    "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+    "outcome": "cloud-browser-passed",
+    "elapsedMs": 130866,
+    "productionChanged": false,
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "syntheticRowsCreated": 0,
+    "actualBilling": "not-measured",
+    "checks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "endpoint-held-before",
+        "pass": true
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "operator-password-server-session",
+        "pass": true
+      },
+      {
+        "id": "desktop-search-and-five-visible-rows",
+        "pass": true,
+        "visibleRows": 5
+      },
+      {
+        "id": "leading-zero-distinct-reference-identities",
+        "pass": true
+      },
+      {
+        "id": "search-url-refresh",
+        "pass": true
+      },
+      {
+        "id": "desktop-drawer-escape-restores-focus",
+        "pass": true
+      },
+      {
+        "id": "mobile-drawer-full-width",
+        "pass": true
+      },
+      {
+        "id": "mobile-no-overflow",
+        "pass": true
+      },
+      {
+        "id": "operator-useful-admin-denial",
+        "pass": true
+      },
+      {
+        "id": "operator-admin-api-denied",
+        "pass": true
+      },
+      {
+        "id": "logout-clears-stored-work",
+        "pass": true
+      },
+      {
+        "id": "logout-server-api-denied",
+        "pass": true
+      },
+      {
+        "id": "logout-back-protected",
+        "pass": true
+      },
+      {
+        "id": "reviewer-password-server-session",
+        "pass": true
+      },
+      {
+        "id": "reviewer-admin-api-denied",
+        "pass": true
+      },
+      {
+        "id": "admin-password-server-session",
+        "pass": true
+      },
+      {
+        "id": "admin-dirty-stay-preserves-input",
+        "pass": true
+      },
+      {
+        "id": "admin-dirty-discard-switches-tab",
+        "pass": true
+      },
+      {
+        "id": "admin-current-settings-read",
+        "pass": true
+      },
+      {
+        "id": "admin-concurrent-fresh-save",
+        "pass": true
+      },
+      {
+        "id": "admin-stale-ui-save-keeps-panel-and-input",
+        "pass": true
+      },
+      {
+        "id": "admin-conflict-compare-preserves-draft",
+        "pass": true
+      },
+      {
+        "id": "admin-reload-explicit-discard",
+        "pass": true
+      },
+      {
+        "id": "admin-keyboard-tabs-and-unknown-readiness",
+        "pass": true
+      },
+      {
+        "id": "admin-native-back-stay-preserves-url-input",
+        "pass": true
+      },
+      {
+        "id": "admin-native-back-explicit-discard",
+        "pass": true
+      },
+      {
+        "id": "original-canonical-profile-restored",
+        "pass": true
+      },
+      {
+        "id": "two-settings-audits-no-ai-publish",
+        "pass": true,
+        "retainedAiRuns": 20,
+        "retainedPublishJobs": 0
+      },
+      {
+        "id": "no-unexpected-app-write",
+        "pass": true
+      }
+    ],
+    "stops": [
+      {
+        "id": "profile-restored",
+        "acknowledged": true
+      },
+      {
+        "id": "staging-compute",
+        "acknowledged": true
+      }
+    ]
+  },
+  "contextRowAuth": {
+    "stage": "isolated-cloud-context-row-ui",
+    "startedAt": "2026-10-03T09:19:26.753Z",
+    "finishedAt": "2026-10-03T09:21:10.149Z",
+    "sourceSha": "7333d9496d43723cbb9fe0cef7517a8f8058b214",
+    "outcome": "cloud-context-row-ui-passed",
+    "elapsedMs": 103400,
+    "productionChanged": false,
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "syntheticRowsCreated": 0,
+    "actualBilling": "not-measured",
+    "checks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "endpoint-held-before",
+        "pass": true
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "cloud-native-post-credentials-not-in-url",
+        "pass": true
+      },
+      {
+        "id": "reviewer-hydrated-password-post",
+        "pass": true
+      },
+      {
+        "id": "reviewer-password-server-session",
+        "pass": true
+      },
+      {
+        "id": "reviewer-queue-blocked-row-support-actions",
+        "pass": true
+      },
+      {
+        "id": "reviewer-blocked-detail-no-edit-support",
+        "pass": true
+      },
+      {
+        "id": "reviewer-no-version-manual-input",
+        "pass": true
+      },
+      {
+        "id": "reviewer-healthy-version-manual-input",
+        "pass": true
+      },
+      {
+        "id": "reviewer-no-page-runtime-errors",
+        "pass": true,
+        "pageErrorCount": 0
+      },
+      {
+        "id": "reviewer-session-cleanup-logout",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "reviewer-session-cleanup-anonymous",
+        "pass": true
+      },
+      {
+        "id": "operator-hydrated-password-post",
+        "pass": true
+      },
+      {
+        "id": "operator-password-server-session",
+        "pass": true
+      },
+      {
+        "id": "operator-queue-blocked-row-support-actions",
+        "pass": true
+      },
+      {
+        "id": "operator-blocked-detail-no-edit-support",
+        "pass": true
+      },
+      {
+        "id": "operator-no-version-manual-input",
+        "pass": true
+      },
+      {
+        "id": "operator-healthy-version-manual-input",
+        "pass": true
+      },
+      {
+        "id": "catalog-return-nonzero-scroll-precondition",
+        "pass": true,
+        "rememberedScroll": 2448
+      },
+      {
+        "id": "catalog-return-preserves-filter-selection-scroll",
+        "pass": true
+      },
+      {
+        "id": "catalog-two-page-selection-retained",
+        "pass": true
+      },
+      {
+        "id": "page2-reload-api-same-selected-id",
+        "pass": true
+      },
+      {
+        "id": "catalog-page-url-refresh-selection",
+        "pass": true
+      },
+      {
+        "id": "catalog-selection-cleared-without-enqueue",
+        "pass": true
+      },
+      {
+        "id": "jobs-kind-url-refresh",
+        "pass": true
+      },
+      {
+        "id": "jobs-kind-native-back-forward",
+        "pass": true
+      },
+      {
+        "id": "operator-no-page-runtime-errors",
+        "pass": true,
+        "pageErrorCount": 0
+      },
+      {
+        "id": "operator-session-cleanup-logout",
+        "pass": true,
+        "status": 200
+      },
+      {
+        "id": "operator-session-cleanup-anonymous",
+        "pass": true
+      },
+      {
+        "id": "no-settings-ai-publish-mutation",
+        "pass": true,
+        "retainedAiRuns": 20,
+        "retainedPublishJobs": 0
+      },
+      {
+        "id": "no-domain-writes",
+        "pass": true
+      }
+    ],
+    "stops": [
+      {
+        "id": "profile-restored",
+        "acknowledged": true
+      },
+      {
+        "id": "staging-compute",
+        "acknowledged": true
+      }
+    ]
+  },
+  "nativeLoopback": {
+    "outcome": "passed",
+    "assertions": 5,
+    "method": "POST",
+    "emailInURL": false,
+    "passwordInURL": false,
+    "credentialsInBody": true,
+    "externalProviderRequests": 0,
+    "databaseConnectionAvailable": false,
+    "fixtureIsAccount": false,
+    "ownedServerExited": true
+  },
+  "syntheticRotation": {
+    "outcome": "synthetic-operator-rotated",
+    "assertions": 8,
+    "sessionsRevoked": 12,
+    "oldHashRejected": true,
+    "fixtureUpdated": true,
+    "productionChanged": false
+  },
+  "watchdog": {
+    "ceilingMinutes": 8,
+    "normalStopObserved": true,
+    "emergencyDisableExit": null,
+    "productionChanged": false
+  },
+  "retainedFailures": [
+    {
+      "window": "v11",
+      "outcome": "failed",
+      "passedAssertions": 3,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v12",
+      "outcome": "failed",
+      "passedAssertions": 5,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v14",
+      "outcome": "failed",
+      "passedAssertions": 8,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v15",
+      "outcome": "failed",
+      "passedAssertions": 10,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v16",
+      "outcome": "failed",
+      "passedAssertions": 11,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v17",
+      "outcome": "failed",
+      "passedAssertions": 11,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v18",
+      "outcome": "failed",
+      "passedAssertions": 9,
+      "failedAssertion": "browser-assertion",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v19",
+      "outcome": "failed",
+      "passedAssertions": 11,
+      "failedAssertion": "reviewer-session-cleanup-logout",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v20",
+      "outcome": "failed",
+      "passedAssertions": 11,
+      "failedAssertion": "direct-no-origin-logout-refused",
+      "httpStatus": 415,
+      "stopAcknowledged": true
+    },
+    {
+      "window": "v21",
+      "outcome": "failed",
+      "passedAssertions": 22,
+      "failedAssertion": "page2-reload-api-same-selected-id",
+      "httpStatus": null,
+      "stopAcknowledged": true
+    }
+  ],
+  "limitations": [
+    "synthetic actors and data only",
+    "no original production500 causal acceptance",
+    "cloud admin workspace-switch not executed",
+    "no paid-model accuracy or independent human verdict",
+    "no employee-minute baseline or merchant pilot",
+    "actual billing unmeasured"
+  ],
+  "productionChanged": false
+}

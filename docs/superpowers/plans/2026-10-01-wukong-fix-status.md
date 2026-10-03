@@ -475,3 +475,38 @@ Final: minor (deferred): Windows OpenSSL executable discovery follows the existi
 - [ ] New application head requires its own CI and guarded Preview smoke. Prior e9 application review/8773 CI are dated receipts, not proof of this delta. Remaining production and human/merchant gates stay open.
 
 Final: Ruling: intercepting native POST proves credentials stay out of the URL, not no-JavaScript authentication success. Preserve the hydrated session endpoints and test actual sessions separately. Cost if wrong: a security regression pass could be misreported as provider/authentication acceptance.
+
+## 2026-10-03 current browser and merge checkpoint
+
+- [x] Auth source0b398a7b fullCI37111215982 SUCCESS, Vercel checks pass. Current evidence-only head must finish its own CI. Isolated733/dpl_3uQ7X4n3rQVAkXENSFCWyfxiubCW READY/exact alias/sole deployment-guard tree difference verified.
+- [x] v13 cloud31/31/130.87s and v22 cloud32/32/103.40s, actual credentials/session/role/logout and nativePOST, both-role row support and healthy/no-version, leading-zero/reference identities, desktop/mobile/admin dirty/CAS/history,2448px return±2px, two-page and refresh identity/selection, job kind refresh/Back/Forward. [Safe JSON and behavior](../../runbooks/opak-staging-browser-auth-2026-10-03.md).
+- [x] Actual profile restored, v13 settings audits2; v22 zero settings/AI/publish/domain mutation, retainedAI20/publish0, realUIlogout200/401; compute disabled/idle and independent watchdog normal stop. Corrected Workerf061/queues/cron/ingress remain held. No new migration/env/dependency/Worker deployment/paidAI/realSHOPLINE/production change.
+- [x] Ten original browser failures retained. NativeGET is the application defect repaired; invalid logout helper415 and old-cohort selection before response completion are tooling findings. v22 waits for completed API/rendered identities and passes original refresh/checked/2px assertions; actual history entries respect existing replace semantics.
+- [x] Cloud matrix7PASS/10PARTIAL/13BLOCKED; UC02/04/27 now pass within synthetic scope. UC01 invited handoff and UC28 workspace-switch remain partial; original production500, paid/human quality, employee minutes and merchant acceptance not inferred.
+- [x] All openPR120–126 inventoried.121–126 ready; auth126 source green.120 exact8206 is overlapping draft with failed CI36253428550/step24 Wrangler Queue browser; no blind merge/rewrite. Remote main remainsdde9. Pending production authority/recovery ownership and observed schema/role/cache failures hold auto-deployment/conditional merge.
+
+Final: Ruling: exact-source successful cloud context checks validate synthetic behavior only. Keep nativePOST/mail guard/WorkerRO compatibility on rollback and immutable sources/versions/audits/cost/artifacts/DLQs. Cost if wrong: old checkpoints, malformed helpers or provider metadata could be promoted to a release sign-off. Current remaining items are indexed in master-plan section15; dated unchecked history remains preserved.
+
+## 2026-10-03 remaining-contract and cloud handoff completion
+
+- [x] e094bf39 exact fullCI37113613076 SUCCESS; all six repair PRs had exact-head CI/Vercel SUCCESS in the fresh inventory. PR126 terminal body published after secret comparison0. A new source checkpoint below needs its own CI.
+- [x] PR120 five useful contracts classified: response validation, no-version guidance and pure approval/audit already-fixed/strengthened; safe ingress diagnostics and update/import snapshot preservation reproduced on e094 and fixed in the current stack.
+- [x] RED: Web7failed/12passed; Worker1failed/31passed. GREEN: same Web19/19 and Worker32/32. Full pnpm test exit0/Web2283/Worker408/fourteen tasks; formatting/whitespace, lint, typecheck and build/eight tasks pass. No migration/env/dependency.
+- [x] Independent four-file read-only review0Critical/0Important. Final: minor (deferred): existing Worker link comment still describes refreshing on success; specific completion behavior/comment now preserves updates.
+- [x] Cloudv26 33/33/116.58s: existing accepted-invite roles in one context, stored-work/back/logout, admin workspace Stay/failed Save/Discard/Save, old-tenant-only CAS and all second-tenant profile values preserved, canonical restore/audit+2 and three realUI logout200/401. AI20/publish0; no valid invite/email/paidAI/realSHOPLINE. Watchdog normal stop and DB disabled/idle.
+- [x] Retain v23 aborted-navigation and v24/v25 malformed JSONB-string fixture failures. Read-only diagnosis found the fixture string; correct postgres.sql.json adapter plus shape/full-value checks pass, three owned synthetic profiles corrected with original hashes retained. No application endpoint/CSRF/role/assertion relaxation.
+- [x] Cloud matrix now9PASS/8PARTIAL/13BLOCKED; all30 IDs retained. UC01/UC28 now passed; fuller cohorts/fault/load/new invitation delivery, paid/human/production/merchant scope remain separate.
+- [ ] Production readiness/authority/recovery and original authenticated500; paid-model/human quality/employee benefit; merchant first-write/5→20→100 gates remain incomplete. Main unchanged; conditional auto-deploy merge held. PR120 historical draft checks remain FAIL even though useful source safeguards are now represented.
+
+[Safe evidence, exact commands, all review scope rulings and rollback](../../runbooks/opak-retained-safeguards-and-role-handoff-2026-10-03.md). Current source fixes have local proof; cloud733 is the preceding native-auth candidate and is not evidence of deploying this new Queue/publish delta.
+
+## 2026-10-03 bilingual catalog search follow-up
+
+- [x] ST26/T03–T07/UC05 reproduced: Chinese-first display title hides current English from catalog search; cloud733/v27 and actual repository query return0.
+- [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
+- [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
+- [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
+- [ ] New source-head CI and guarded latest preview/cloud UC05/current-gap acceptance pending. Preserve failedv27 session-stop/watchdog receipts and separate exact owned cleanup2revoked/0remain/0otherusers/compute disabled.
+- [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
+
+[Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.
