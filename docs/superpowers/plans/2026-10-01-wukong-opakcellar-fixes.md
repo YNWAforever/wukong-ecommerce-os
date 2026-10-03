@@ -370,3 +370,53 @@ No new migration/env name. Exact env normalization and isolated CORS correction 
 - [ ] Repaired-source cloud scoped lifecycle audit; originalv2 failed receipt retained without backfill. Worker R2 proof/cloud browser/full30-case and production/merchant/human gates remain open.
 
 See [delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) and [cloud case matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv). Exact source/build/CI/stop state and remaining limitations are maintained in fix-status; synthetic evidence does not authorize production or true SHOPLINE writes.
+
+## 10. Repaired cloud gate and Worker credential scope — 2026-10-03
+
+- [x] Repaired exact reviewed Preview/current alias; new legitimate export5 and repeat;5 terminal audits once; unchanged release verifier5/5 missing0/foreign0; no AI rerun, watchdog stop144s.
+- [x] Actual Worker own R2 read200/exact94-byte hash and foreign bucket HEAD403; original version/hold restored, fresh DB disabled/idle.
+- [ ] Worker ObjectRO is **failed**, own canary PUT200. Replace only Worker pair with distinct bucket-limited read-only credentials; re-test must preserve new secret-bound version. No merge/release until denied write proven.
+- [ ] Remaining cloud30-case/browser/production/merchant/paid-human gates per [precise matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv);3passed/10partial/15blocked/2not-run. Actual billing unmeasured, zero paidAI.
+
+All failed receipts and original A/B audit remain preserved. No migration or production action; exact source e9 CI and later documentation-only head checks are recorded separately in fix-status.
+
+## 11. Corrected Worker Object Read-only verification — 2026-10-03
+
+- [x] User-entered distinct Worker pair uploaded with masked local Wrangler bulk stdin; existing two field names, no key values read/recorded by agent, Web pair unchanged.
+- [x] Sixteen offline CLI guards and21 probe contracts; clean normal Worker and probe dry-builds exit0; active/latest precondition verified before upload.
+- [x] Actual signed remote proof: invalid signature401; exact94-byte own GET200/hash matched; own PUT403; foreign-bucket metadata HEAD403; no new canary write.
+- [x] Preserve corrected versionf0614b8e at100%, both queues paused, cron/ingress disabled, no probe bindings, public HEAD404, independent watchdog normal stop; staging Neon disabled/idle.
+- [ ] Production 0046 columns and Hyperdrive BYPASSRLS/cache gates; effective Web DB/authenticated original500 smoke, complete cloud30/browser, paid/human quality, employee-minute and merchant/first-write gates remain open.
+
+## 12. 2026-10-03 synthetic cloud intake/read follow-up
+
+- [x]20exact readonly references,20source-bound maintained drafts and20current editable inputs/SKUs; source-owned AI/pipeline/publish0. Only1manual review version tested. [Receipt](../../runbooks/opak-staging-intake-read-2026-10-03.md).
+- [x] Same-byte replay creates0 and does not renew freshness; new source invalidates1approval, stale retry approves0; old source/rows/version/receipt immutable. Historical `approved` remains while authoritative source freshness denies delivery. Existing service verified; no rewrite.
+- [x] Operator/reviewer cloud row-only follow-up27/27: healthy incomplete review and no-version inputs remain usable; malformed row blocked/actions denied/support ID correlated. Retain original double-encoded JSON helper failures; `tx.json` fix changes only tooling.
+- [x]8unique offline scope guards,13selected source assertions,5owned-ledger assertions; seven watchdog normal stops. Final Neon disabled/idle; correctedWorkerf061/probe0/public404; queues never resumed; paidAI0/realSHOPLINE0.
+- [x] Concrete production0046/cache-disable proposal, exact migration hash/CLI flag/rollback and6-hour history metadata prepared. [Proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md) remains unexecuted.
+- [ ] Cloud UI still blocked at Vercel deployment protection despite working headless runtime; cloud matrix4passed/11partial/15blocked/0not-run is not full UAT. Production authority/backup owner, compatible safe-role cutover and remaining human/merchant gates are pending.
+
+- [x] Independent cloud permission-fault16/16/72s and14offline guards: queue/catalog500/noitems when owned SELECT denied; original ACLs restored byte-for-byte then both200, FORCE RLS unchanged; watchdog normal stop/DB disabled. [Receipt](../../runbooks/opak-staging-permission-fault-2026-10-03.json). No new rows, Worker deploy, AI admission or production change; UC29 remains partial for whole-outage/UI.
+
+ST17 is fixed and verified in isolated staging; prior failed evidence stays unchanged. See [executed follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md) and [safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json). No migration, new application env, paidAI, realSHOPLINE or production mutation. PR checks and release gates remain distinct; no conditional merge until the required gates pass.
+
+## 13. 2026-10-03 admin/outage and CI startup follow-up
+
+- [x] T00–T02/ST22 already-fixed, actual disabled-DB API verified: both roles' queue/catalog500, no empty-list success, request-ID body/header correlation15/15 in57.40s. No compute enable/write; downstream auth/query stage and UI are not inferred.
+- [x] T09/ST23 already-fixed, cloud admin CAS/readiness29/29 in113.38s: operator/reviewer403, fresh settings audit1, stale409/audit0/no overwrite, five safe readiness states/fakeAI unknown; exact canonical profile restored with second audit. AI20/publish0 unchanged;15 scope guards pass, watchdog normal stop and DB disabled/idle.
+- [x] T14/ST24 reproduced→fixed locally: competing TLS49218 allowed fake Worker/Web launch before bind failure. Reserve owned TLS listener before dependencies/readiness; actual regression RED→GREEN, competing owner untouched. Fresh review's Windows detached-descendant deadline issue independently RED→GREEN; both final regressions2/2 and full root142/142+14 cached Turbo tasks pass.
+- [x] Preserve original a8 CI attempt1 TLS bind failure and unconfirmed owner; unchanged exact-a8 attempt2 full SUCCESS, including image/Queue/audit/wine. This does not validate the subsequent harness delta. Application files remain e9; isolated Web9dd unchanged.
+- [ ] New follow-up head's own CI, authenticated cloud UI, original production500/repair authority/backup owner, paid-human quality, employee-minute and merchant gates remain separate. Cloud matrix4PASS/11PARTIAL/15BLOCKED unchanged. [Behavior/commands/rollback/review evidence](../../runbooks/opak-staging-admin-outage-ci-2026-10-03.md).
+
+Review rulings: leave original conflicting owner unconfirmed; apply actual cloud/production gates independently; retain prior A–F review because no application files changed. Cost if wrong: an unsupported diagnosis or unexecuted gate could be treated as release proof, so no gate is relaxed. Deferred minor: Windows OpenSSL discovery currently assumes the existing Git installation path. No migration/new application env, production mutation, paidAI, trueSHOPLINE or merge.
+
+## 14. 2026-10-03 native auth submission follow-up
+
+- [x] Predecessor8773 exact full CI37106290279 SUCCESS; PR121–126 marked ready for review after their green checkpoints. Conditional merge is still held by production readiness failures.
+- [x] ST25/T08 reproduced → fixed locally: pre-hydration native GET puts credential fields in URL. Explicit POST plus real SSR/JavaScript-disabled regression RED→GREEN, five assertions, provider dispatch intercepted.
+- [x] Owned synthetic operator credential rotated, old hash rejected, replacement verified, twelve sessions revoked; eight assertions, independent watchdog normal stop, staging DB disabled/idle. Original error retained privately; no production/provider credential changed.
+- [x] Auth56/56, full Web2275/2275, root/package command exit0, lint/typecheck14tasks, build8tasks, format/forbidden/machine release checks passed; independent three-file review has no actionable findings. [Receipt and scope limits](../../runbooks/opak-auth-native-submit-2026-10-03.md).
+- [ ] This application delta's own exact-head CI and guarded isolated Preview smoke; production0046/cache/runtime-role/recovery ownership/original500 and paid-human/employee-minute/merchant gates remain separate.
+
+Ruling: POST is a safe native fallback, not a no-JavaScript authentication implementation. Cost if wrong: an intercepted security test could be mistaken for successful provider authentication. Keep the existing hydrated APIs and verify actual password sessions independently; no permission or release gate is relaxed.

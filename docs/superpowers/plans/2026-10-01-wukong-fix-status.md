@@ -400,3 +400,78 @@ No schema migration or application env name. Existing guarded mail compatibility
 Full local build8/8 tasks; fresh-context review (audit delta and corrected probe plus targeted branch risk paths): no remaining Critical/Important findings. Delayed-body expiry/timestamp review concern reproduced2RED then corrected; final private probe contracts11/11. Review does not replace actual cloud permission, restoration or lifecycle evidence.
 
 Final: Ruling: historical audit backfill remains excluded; actual permissions/restoration/latest cloud and production/merchant acceptance require execution within their own authority. No evidence claim is relaxed. Cost if wrong: an unexecuted gate stays blocked and release cannot proceed.
+
+## 2026-10-03 repaired cloud lifecycle terminal checkpoint
+
+Source e9d0d4ce / isolated candidate9dd64bf1 (sole vercel.json guard delta); READY dpl_4cZXFy8epug84HxvW9npgJEq2YDf/54s, isolated alias readback exact. Worker original e4 restored100%, fresh public HEAD404; fresh Neon disabled/idle. Exact source CI37036970244 status is recorded separately, not inferred from old green receipts.
+
+- [x] Actual new reviewed export and repeat share attempt/hash;5 exact terminal member events, no duplicate/backfill; unchanged lifecycle audit5/5 missing0/foreign0; AI10→10,144s, independent10-minute normal stop.
+- [x] Actual Worker own R2 GET200/hash94 and foreign production-bucket metadata HEAD403; no foreign content/write.
+- [ ] ST17 hard failure: own canary PUT200 proves Worker pair has write permission. User correction requested: distinct bucket-limited ObjectRO pair in the two existing Worker S3 secrets. Web key untouched; canary/evidence retained; no release/merge.
+- [x] Precise30-case cloud matrix3PASS/10PARTIAL/15BLOCKED/2NOT_RUN; no unsupported browser/quality/production/merchant success claimed.
+- [x] All local source gates root140/packages3987+1skip/Web2275/type14/build8/affectedPG44/route67 and fresh review; exact head CI remains a separate remote gate.
+
+H05 private SDK import reproduced local Worker CJS failure→ESM success and final cloud GET200; H06 failed28s relative path/curl23 retained (main stop actual, no watcher success claim), corrected absolute144s normalStopObserved=true; H07 immediate404 causeunconfirmed, final live signed marker401 proves tested probe. See [delivery follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md).
+
+Final: Ruling: ST17 never becomes a passed readonly gate on the strength of own GET/foreign HEAD. Requires actual denied PUT with a freshly corrected Worker version. Restore that fresh version after re-test; never restore stale e4 binding over a user's corrected secret. Cost if wrong: write-capable Worker credentials could be released, so this gate stays blocking.
+
+Source e9d0d4ce exact full CI37036970244 COMPLETED SUCCESS, verified 2026-10-02T17:18:35.5650532Z. All verify job steps finished; later documentation-only head is outside this receipt. ST17 remains a hard external gate.
+
+## 2026-10-03 corrected Worker key and release-gate refresh
+
+Finding ST17: reproduced → fixed and verified in isolated staging. Source checkpoint9281f545 full CI37040041259 SUCCESS and PR121–126 inspected heads green/CLEAN; this subsequent docs-only commit needs its own checks. Production/merchant acceptance is still blocked.
+
+- [x] Initial failed CLI upload retained (exit1, no new active binding). Latest uploaded temporary probe differed from active normal version; this matches the CLI precondition, but discarded original error text prevents asserting the exact API error. Clean held9281f545 Worker prepared, required secret names preserved and fake/mock scope verified before upload.
+- [x] User masked-input bulk upload of the two existing Worker S3 fields succeeded0; new secret-bound versionf0614b8e-8628-4cc0-82f5-e318c6565be2. Agent never read keys; no credential file or key in arguments/chat/logs; Web keys unchanged.
+- [x] Private CLI16/16, probe21/21, clean/probe dry-build0. Retest denies both earlier old-key versions and preserves unknown/later external secret saves.
+- [x] Actual remote52s test: signed live marker, invalid-signature401, own94-byte GET200/hash match, unique own PUT403, foreign-bucket metadata-only HEAD403, no canary written. [Safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json).
+- [x] Correctedf061 version restored100%; four cleanup commands0, probe bindings0, public HEAD404,9-minute watchdog normalStopObserved=true, staging Neon disabled/idle. Keep this binding in hold/rollback; never revert to old key versions.
+- [ ] Production read-only refresh still lacks source_import_id/source_row_digest. Hyperdrive eef464 uses neondb_owner/BYPASSRLS and caching.disabled=false. Production READY Web dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d/main dde9e178 and Worker6842b51c remain unchanged.
+- [ ] Effective production Web DB/authenticated original500 cause, cloud browser/full30cases, paid/human AI quality, employee-minute baseline and first realSHOPLINE/merchant5→20→100 remain open. Cloud matrix remains3PASS/10PARTIAL/15BLOCKED/2NOT_RUN; the storage retest does not satisfy unrelated criteria.
+
+No migration or application env name added. Temporarily deployed probe fields removed; hold keeps corrected key, guarded Resend, data/versions/audit/reservations/artifacts/DLQs. Preserve all prior failure receipts and synthetic canaries. PaidAI0, trueSHOPLINE0, production changes0, dollar billing unmeasured under US$5 cap. Conditional merge remains held while these release gates are incomplete; evidence/doc changes are committed separately from tested source.
+
+## 2026-10-03 synthetic cloud intake/read follow-up
+
+Source8dfef1d0 exact CI37094533417 SUCCESS/current main unchanged; subsequent documentation-only commit needs its own checks. No application code, migration or app env name changed. [Safe behavior/failure/hold evidence](../../runbooks/opak-staging-intake-read-2026-10-03.md).
+
+- [x] ST18 already-fixed, cloud verified:20readonly references/20source-bound drafts/20current editable inputs, leading-zero SKU match; owned AI/pipeline/publish0. Same-byte replay creates0/no freshness renewal; new source invalidates1approval, stale retry0, immutable source/rows/version/receipt.
+- [x] ST19 already-fixed, API verified: operator/reviewer healthy and no-version details usable; malformed row blocked/actions denied/support correlation. Row-only27/27,113s; separate readonly-ledger5/5,43s. UI remains pending.
+- [x] Preserve five earlier failing windows: wrong raw auth route, English title search assumption, historical-status assertion, and double-encoded JSON fixtures. Real DB `jsonb_typeof` proved the latter; `tx.json` preserves schema-valid objects. These are helper fixes, not application defects or fabricated passes. The fourth window's13independent source assertions passed before its faulty row check failed.
+- [x]8unique scope guards/0provider offline; all seven watchdog normal stops. Final stage disabled/idle, active correctedf061, fake/paid-disabled, probe0/public404; no Worker deployment or queue resume. Retain all fixtures/evidence and previous20AI ledger entries; row window adds0AI/0publish.
+- [ ] ST21 changed: headless Chromium starts, direct staging redirects to Vercel `/login`; no authenticated app screenshot/navigation claim. Cloud matrix4PASS/11PARTIAL/15BLOCKED/0NOT_RUN remains distinct from full UAT/merchant acceptance.
+- [ ] Production columns/FK missing, Hyperdrive BYPASSRLS/cache-enabled; valid reference key1/appSELECTtrue/appowner0. Six-hour history retention does not prove restore. [Concrete first-stage proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md) awaits explicit production authorization and backup/rollback ownership; compatible safe-role cutover/release/human gates separate.
+
+Final: Ruling: source import invalidates approval freshness, while immutable approval receipt and historical status remain. Delivery authority follows current source/version/confirmation fences, never the historical status alone. Cost if wrong: old approval could authorize changed source, so stale service retry and advisory/permission checks must fail.
+
+Final: Ruling: validate seeded JSONB object type and the existing reviewable schema before fault acceptance. Preserve original failures and the readonly ledger helper's inherited-counter correction. Cost if wrong: malformed fixture strings could be misreported as application regressions or silently turned into false passes.
+
+### Controlled global permission faults after54837392
+
+- [x]14offline guards/16actual cloud assertions/72s: original SELECT withdrawal on owned `listing_versions` makes queue500; owned `platform_products` makes catalog500. Correlated IDs/noitems/non-empty-success contract holds. Each exact original ACL restores then route200; FORCE RLS/policies/other grants unchanged. RetainedAI20 stays20, newrows0.
+- [x] Independent watchdog normal stop; originalACL restore and staging compute disabled acknowledgements0. Corrected Workerf061 and queues remain held. [Safe receipt](../../runbooks/opak-staging-permission-fault-2026-10-03.json) preserves the original hash and explicitly corrects the predecessor helper's inherited pending text.
+- [ ] UC29 remains partial for whole DB outage/UI; matrix4/11/15 unchanged. Current54837392 fullCI37101837145 was still running at this supplement; subsequent docs-only head needs its own check. No production mutation, migration, secret change, merge, paidAI or trueSHOPLINE call.
+
+## 2026-10-03 admin/outage and CI startup follow-up
+
+- [x] ST22 already-fixed/cloud verified: existing held endpoint disabled/idle; operator/reviewer queue/catalog500/noitems/request correlation15/15,57.40s. No compute enable or mutation in this outage-only window. Session DB dependence prevents attribution to one downstream query; UI/original production500 not claimed.
+- [x] ST23 already-fixed/cloud API verified: admin settings/readiness29/29,113.38s; non-adminGET/POST403, freshCAS audit1, stale409/audit0 and no overwrite, safe5states/private-no-store/fakeAIunknown. Canonical original profile restored through current-digest API, audit2 total; retainedAI20/publish0 unchanged.15 scope/hold guards,8-minute independent watchdog normal stop, final disabled/idle and corrected Workerf061 at100%.
+- [x] ST24 reproduced/local fixed: unchanged harness exposes Web before required TLS bind; actual occupied-port subprocess launches both fake services before EADDRINUSE (RED). Early owned TLS reservation fixes readiness race (GREEN), leaves conflicting listener untouched. Original CI37102831725/a8 attempt1 owner stays unconfirmed; unchanged-a8 retry2 completes fullSUCCESS, separate from this delta.548 CI37101837145 also fullSUCCESS.
+- [x] Fresh independent review: no Critical; Important Windows leader-only deadline cleanup fixed with actual detached-descendant RED→GREEN and awaited owned-tree termination. Initial socket fixture resets and non-detached non-reproduction retained. Root test-script contract failure corrected; final2/2 behavioral regressions and full `pnpm test` root142/142,14/14 valid unchanged app-cache tasks. No app/package-runtime file delta frome9.
+- [ ] Current follow-up needs its own exact-head CI. Cloud4PASS/11PARTIAL/15BLOCKED unchanged; deployment-protected UI, production repair/backup ownership/original500, paid-human quality, employee-minute and merchant gates remain open. No merge/production change or new migration/application env.
+
+Final: Ruling: original port owner remains unconfirmed; actual bind/readiness defect and its deterministic test are distinct from successful unchanged-head retry. Cost if wrong: a passing retry could be misreported as a diagnosed incident fix, so original failure/unknown owner and new-head CI remain separate.
+
+Final: Ruling: cloud/production readiness uses its independent actual gates; broader A–F application review remains the prior e9 review because no application files changed. Cost if wrong: unexecuted provider/human criteria could be silently promoted to passed, so no release boundary is relaxed.
+
+Final: minor (deferred): Windows OpenSSL executable discovery follows the existing `C:/Program Files/Git` convention; portable/per-user installs can fail this local test dependency. [Safe receipt, commands and rollback](../../runbooks/opak-staging-admin-outage-ci-2026-10-03.md).
+
+## 2026-10-03 native auth submission repair
+
+- [x] Exact8773 CI37106290279 completed SUCCESS; PR121–126 green checkpoints confirmed and drafts made review-ready. No merge or production mutation.
+- [x] ST25/T08 reproduced before code change: unhydrated native password form GET exposes fields in navigation URL. Explicit form POST preserves the existing hydrated server APIs. Actual SSR/no-JavaScript helper RED→GREEN; five safe assertions; owned loopback server stopped.
+- [x] An error excerpt incorrectly exposed the synthetic operator password. Only the owned isolated account was rotated: eight assertions, old hash refused/replacement valid, twelve sessions revoked, private fixture updated, staging disabled/idle and watchdog normal stop. No raw failure URL or credentials published.
+- [x] Auth56/56, full `pnpm test` exit0/Web2275/2275, lint/typecheck14tasks, build8tasks and runtime/format/machine gates passed. Fresh review of the three-file delta reports no Critical/Important/Minor finding. [Evidence and rollback](../../runbooks/opak-auth-native-submit-2026-10-03.md).
+- [ ] New application head requires its own CI and guarded Preview smoke. Prior e9 application review/8773 CI are dated receipts, not proof of this delta. Remaining production and human/merchant gates stay open.
+
+Final: Ruling: intercepting native POST proves credentials stay out of the URL, not no-JavaScript authentication success. Preserve the hydrated session endpoints and test actual sessions separately. Cost if wrong: a security regression pass could be misreported as provider/authentication acceptance.

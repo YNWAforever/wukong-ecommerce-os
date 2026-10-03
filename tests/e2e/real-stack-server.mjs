@@ -562,6 +562,10 @@ async function runServer() {
   });
 
   try {
+    // Reserve the required TLS listener before child services expose /signin.
+    // A bind failure must fail startup, not race Playwright's web readiness.
+    if (wineFixtureEnabled || productShotFixtureEnabled)
+      await startPublicImageProxy();
     await waitForTlsPort("localhost", 9012);
     await access(localCaPath);
     if (wineFixtureEnabled) {
@@ -607,8 +611,6 @@ async function runServer() {
     );
     await waitFor(`${workerUrl}/health`, "Wrangler");
 
-    if (wineFixtureEnabled) await startPublicImageProxy();
-
     start("web", [
       "--filter",
       "@wukong/web",
@@ -620,7 +622,6 @@ async function runServer() {
     ]);
     await waitFor(`${baseUrl}/signin`, "Web");
     if (productShotFixtureEnabled) {
-      await startPublicImageProxy();
       await waitFor(
         `https://localhost:${publicImagePort}/signin`,
         "public-image-proxy",
