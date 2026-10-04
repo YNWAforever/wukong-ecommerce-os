@@ -4,6 +4,17 @@ import { createListListingsHandler } from "../listings/route";
 import { createJobsHandler } from "../jobs/route";
 import { createQualityHandler } from "../quality/route";
 vi.mock("../../../lib/source-readiness", () => ({
+  loadSourceReadinessBatch: async () => ({
+    read: async () => ({
+      eligible: false,
+      eligibleAfterAttestation: false,
+      reason: "approval_required",
+    }),
+    deps: {
+      getReviewConfirmation: async () => null,
+      getPlatformProductLink: async () => null,
+    },
+  }),
   readSourceReadiness: async () => ({
     eligible: false,
     eligibleAfterAttestation: false,
@@ -136,24 +147,58 @@ describe("full read route contracts", () => {
       kind: "batch",
     });
   });
-  it("quality scans every current listing in bounded pages, accounting for missing content and all-history costs", async () => {
-    const ids = Array.from({ length: 237 }, (_, i) =>
-      String(i).padStart(4, "0"),
-    );
-    const scanMaintenancePage = vi.fn(async (after?: string, limit = 100) =>
-      ids
-        .filter((id) => after === undefined || id > after)
-        .slice(0, limit)
-        .map((id) => ({
-          listingId: id,
-          content: null,
-          assessmentState: "missing",
-          fence: { activeVersionId: null },
-        })),
-    );
-    const summarizeCostForListings = vi.fn(async (ids: string[]) => ({
-      knownCostUsd: ids.length,
-      unknownCostRunCount: ids.length,
+  it("quality retains complete persisted populations beyond5000 while admitting only bounded reconciliation", async () => {
+    const scanMaintenancePage = vi.fn(() => {
+      throw Error("must not scan content");
+    });
+    const summarizeCostForListings = vi.fn(() => {
+      throw Error("must not scan cost chunks");
+    });
+    const reconcile = vi.fn(async () => ({
+      assessmentVersion: "opak-current-content-v1",
+      totalListings: 6001,
+      totalAssessed: 0,
+      cleanCount: 0,
+      hasGapsCount: 0,
+      noActiveVersion: 6001,
+      missingCurrentContent: 6001,
+      invalidCurrentContent: 0,
+      unassessableActiveVersion: 0,
+      gapCounts: {
+        untranslatedName: 0,
+        untranslatedSeoTitle: 0,
+        seoTitleMirrorsName: 0,
+        seoDescriptionMirrorsSeoTitle: 0,
+        keywordsMirrorName: 0,
+        summaryMissing: 0,
+      },
+      projection: {
+        state: "ready",
+        stale: false,
+        asOf: "2026-10-01T12:00:00.000Z",
+        pendingCount: 0,
+        failedCount: 0,
+      },
+    }));
+    const recordCostSnapshot = vi.fn(async () => {});
+    const references = {
+      asOf: "2026-10-01T12:00:01.000Z",
+      total: 6001,
+      limit: 25,
+      hasMore: true,
+      items: Array.from({ length: 25 }, (_, index) => ({
+        aiRunId: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        listingId: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        pipelineRunId: null,
+        batchId: null,
+        stage: null,
+        createdAt: "2026-10-01T12:00:00.000Z",
+      })),
+    };
+    const summarizeOwnedCostMetadata = vi.fn(async () => ({
+      knownCostUsd: 6001,
+      unknownCostRunCount: 6001,
+      unknownCostReferences: references,
     }));
     const response = await createQualityHandler(
       deps({
@@ -168,29 +213,35 @@ describe("full read route contracts", () => {
           }),
         },
         platformProducts: { scanMaintenancePage },
-        aiRuns: { summarizeCostForListings },
+        qualityProjection: { reconcile, recordCostSnapshot },
+        aiRuns: { summarizeCostForListings, summarizeOwnedCostMetadata },
       }),
     )();
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       scope: "workspace_current_content",
-      totalListings: 237,
+      totalListings: 6001,
       totalAssessed: 0,
-      noActiveVersion: 237,
-      missingCurrentContent: 237,
+      noActiveVersion: 6001,
+      missingCurrentContent: 6001,
       invalidCurrentContent: 0,
-      totalCostUsd: 237,
-      unknownCostRunCount: 237,
+      totalCostUsd: 6001,
+      unknownCostRunCount: 6001,
+      unknownCostReferences: references,
+      consistency: "revision_aware_projection",
       costScope: "all_history_for_workspace_listings",
     });
-    expect(scanMaintenancePage.mock.calls).toEqual([
-      [undefined, 100],
-      ["0099", 100],
-      ["0199", 100],
-    ]);
-    expect(
-      summarizeCostForListings.mock.calls.every(([ids]) => ids.length <= 100),
-    ).toBe(true);
+    expect(scanMaintenancePage).not.toHaveBeenCalled();
+    expect(summarizeCostForListings).not.toHaveBeenCalled();
+    expect(reconcile).toHaveBeenCalledExactlyOnceWith(expect.any(Function), {
+      limit: 25,
+    });
+    expect(summarizeOwnedCostMetadata).toHaveBeenCalledTimes(1);
+    expect(recordCostSnapshot).toHaveBeenCalledExactlyOnceWith({
+      knownCostUsd: 6001,
+      unknownCostRunCount: 6001,
+      asOf: references.asOf,
+    });
   });
   it.each(["catalog", "listings", "jobs"])(
     "rejects invalid %s page before database reads",

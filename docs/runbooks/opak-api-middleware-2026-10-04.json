@@ -1,0 +1,620 @@
+{
+  "recordedAt": "2026-10-04T10:57:29.687Z",
+  "scope": "T10 slash-bounded API middleware exclusion, isolated synthetic after-window",
+  "sourceSha": "92d15ca0aedee28007ce3125da0d765936ab234b",
+  "web": {
+    "deploymentId": "dpl_7dqPcUiahKTomSSagtg8J3bSERCk",
+    "sha": "6bec84869e156c5edf0edf6d0f3f5672e255fb61",
+    "readyState": "READY",
+    "target": null,
+    "aliasVerified": true,
+    "regions": ["iad1"]
+  },
+  "worker": {
+    "versionId": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "percentage": 100,
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "deploymentId": "1c597fda-bd87-4a02-982b-062a760e759d",
+    "secretNames": [
+      "OPENAI_API_KEY",
+      "QUEUE_INGRESS_SECRET",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY",
+      "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+    ],
+    "probeNames": [],
+    "publicHealthStatus": 404
+  },
+  "ci": {
+    "recordedAt": "2026-10-04T10:48:07.608Z",
+    "headSha": "92d15ca0aedee28007ce3125da0d765936ab234b",
+    "run": 37195229837,
+    "url": "https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/37195229837",
+    "status": "completed",
+    "conclusion": "success",
+    "successSteps": 43,
+    "skippedSteps": ["Upload Playwright artifacts on failure"],
+    "failedSteps": [],
+    "headMatches": true,
+    "blindRerun": false,
+    "productionChanged": false
+  },
+  "localChecks": {
+    "matcherRedFailed": 6,
+    "matcherRedPassed": 23,
+    "focusedPassed": 56,
+    "compiledMatcherPassed": 8,
+    "rootTestsPassed": 142,
+    "rootTestsSkipped": 0,
+    "webTestsPassed": 2306,
+    "webTestFiles": 231,
+    "testTurboTasks": 14,
+    "testCacheTasks": 13,
+    "typecheckTasks": 14,
+    "typecheckCacheTasks": 13,
+    "buildTasks": 8,
+    "buildCacheTasks": 7,
+    "buildSeconds": 88.389,
+    "automatedReleaseChecks": 6,
+    "humanReleaseChecksPending": 14,
+    "forbiddenRuntimeMatches": 0
+  },
+  "window": {
+    "startedAt": "2026-10-04T10:43:01.729Z",
+    "finishedAt": "2026-10-04T10:45:26.358Z",
+    "elapsedMs": 144629,
+    "checks": [
+      {
+        "id": "exact-reviewed-web-alias",
+        "pass": true
+      },
+      {
+        "id": "exact-reviewed-worker-active",
+        "pass": true
+      },
+      {
+        "id": "compute-held-before",
+        "pass": true
+      },
+      {
+        "id": "non-bypass-runtime",
+        "pass": true
+      },
+      {
+        "id": "anonymous-catalog-still-rejected",
+        "pass": true
+      },
+      {
+        "id": "page-middleware-redirect-retained",
+        "pass": true
+      },
+      {
+        "id": "real-native-password-login",
+        "pass": true
+      },
+      {
+        "id": "server-workspace-operator",
+        "pass": true
+      },
+      {
+        "id": "exact-full-cohort-cardinality",
+        "pass": true,
+        "size": 20000
+      },
+      {
+        "id": "normal-server-workspace-switch",
+        "pass": true
+      },
+      {
+        "id": "server-selected-operator",
+        "pass": true
+      },
+      {
+        "id": "current-staging-role-and-force-rls",
+        "pass": true
+      },
+      {
+        "id": "original-uc24-domain-retained",
+        "pass": true
+      },
+      {
+        "id": "synthetic-domain-retained",
+        "pass": true
+      },
+      {
+        "id": "original-workspace-restored",
+        "pass": true
+      }
+    ],
+    "stops": [
+      {
+        "id": "owned-session",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-listing-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-shopline-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "ingress-cron-held",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      }
+    ],
+    "controller": {
+      "startedAt": "2026-10-04T10:42:50.324Z",
+      "controller": "authenticated Neon connector independent of sampler and expired CLI",
+      "deadlineMs": 430000,
+      "events": [
+        {
+          "id": "endpoint-before",
+          "at": "2026-10-04T10:43:25.697Z",
+          "disabled": true,
+          "state": "idle"
+        },
+        {
+          "id": "compute-enable",
+          "at": "2026-10-04T10:43:39.252Z",
+          "disabled": false,
+          "state": "idle"
+        },
+        {
+          "id": "compute-disable",
+          "at": "2026-10-04T10:45:16.760Z",
+          "disabled": true,
+          "state": "idle"
+        },
+        {
+          "id": "endpoint-after",
+          "at": "2026-10-04T10:45:26.408Z",
+          "disabled": true,
+          "state": "idle"
+        }
+      ],
+      "productionChanged": false,
+      "paidAiCalls": 0,
+      "enabledAt": "2026-10-04T10:43:30.712Z",
+      "nodeExitCode": 0,
+      "finalHeld": true,
+      "deadlineFired": false,
+      "finishedAt": "2026-10-04T10:45:35.051Z",
+      "elapsedMs": 164727
+    }
+  },
+  "counts": {
+    "recordedAt": "2026-10-04T10:49:24.970Z",
+    "projectId": "prj_qAipFTpy8NebABNWVTMOtGthC6cH",
+    "teamId": "team_qvzlsFmfCsLkgItSypqHjw3z",
+    "deploymentId": "dpl_7dqPcUiahKTomSSagtg8J3bSERCk",
+    "environment": "preview",
+    "since": "2026-10-04T10:43:01.729Z",
+    "until": "2026-10-04T10:45:26.358Z",
+    "query": "/api/catalog",
+    "groupBy": "source",
+    "readVia": "authenticated Vercel connector grouped counts",
+    "reportedSourceRows": [
+      {
+        "source": "function",
+        "count": 46
+      }
+    ],
+    "reportedMiddlewareCount": 0,
+    "expectedFunctionRequests": 46,
+    "requestAccounting": {
+      "anonymous": 1,
+      "cursorSetup": 3,
+      "samples": 42
+    },
+    "baseline": {
+      "deploymentId": "dpl_3oiUCZboohZqaQ5s9kvSVnjEtUAD",
+      "since": "2026-10-04T08:54:00Z",
+      "until": "2026-10-04T09:08:00Z",
+      "function": 111,
+      "middleware": 111
+    },
+    "statusLookup": {
+      "reportedRows": [
+        {
+          "statusCode": 200,
+          "count": 45
+        },
+        {
+          "statusCode": 401,
+          "count": 1
+        }
+      ],
+      "footer": "3 distinct values total; showing top 2.",
+      "completeCategoryInventory": false
+    },
+    "limit": "Exact deployment/time/path grouped lookup lists only function46 and no middleware row; no durations or unique latency cause. Unequal before/after request totals are intentional; ratio of reported middleware to function invocations changes 1:1 to 0:46. Status footer reports an unspecified third category, so it is not claimed complete.",
+    "productionChanged": false
+  },
+  "measurements": [
+    {
+      "name": "catalog-deep-25",
+      "size": 20000,
+      "transport": "api",
+      "sampleCount": 21,
+      "errorCount": 0,
+      "expectationFailures": 0,
+      "firstObservedMs": 470.943299999999,
+      "warmLatencyMs": {
+        "min": 482.513300000006,
+        "p50": 555.9449000000022,
+        "p95": 655.7912999999971,
+        "max": 1596.4899000000005
+      },
+      "targetMs": 800,
+      "targetPassed": true,
+      "warmStageMs": {
+        "session": {
+          "min": 14.1,
+          "p50": 17.3,
+          "p95": 62.9,
+          "max": 301.9
+        },
+        "workspace": {
+          "min": 97.4,
+          "p50": 114,
+          "p95": 228.8,
+          "max": 259.1
+        },
+        "catalog": {
+          "min": 78,
+          "p50": 90.1,
+          "p95": 164.3,
+          "max": 174.6
+        },
+        "products": {
+          "min": 4.5,
+          "p50": 6,
+          "p95": 9.1,
+          "max": 20.7
+        },
+        "sources": {
+          "min": 7.1,
+          "p50": 9,
+          "p95": 14.6,
+          "max": 20.3
+        },
+        "rows": {
+          "min": 1.1,
+          "p50": 1.5,
+          "p95": 2,
+          "max": 2.4
+        },
+        "serialize": {
+          "min": 0.5,
+          "p50": 0.5,
+          "p95": 0.8,
+          "max": 21.9
+        },
+        "total": {
+          "min": 115.6,
+          "p50": 132.2,
+          "p95": 245.2,
+          "max": 584.6
+        }
+      },
+      "warmOutsideHandlerMs": {
+        "min": 328.9027999999933,
+        "p50": 381.1902999999991,
+        "p95": 518.649900000001,
+        "max": 1011.8899000000005
+      },
+      "actualHttpP95Sample": {
+        "index": 7,
+        "phase": "warm",
+        "startedAt": "2026-10-04T10:44:20.027Z",
+        "finishedAt": "2026-10-04T10:44:20.683Z",
+        "status": 200,
+        "latencyMs": 655.7912999999971,
+        "responseBytes": 24681,
+        "transport": "api",
+        "browserTransport": null,
+        "expectationFailures": [],
+        "providerRegions": ["sin1", "iad1"],
+        "serverStagesMs": {
+          "session": 25.4,
+          "workspace": 181.5,
+          "catalog": 149,
+          "products": 8.3,
+          "sources": 11.7,
+          "rows": 1.7,
+          "serialize": 0.5,
+          "total": 207.5
+        },
+        "outsideHandlerMs": 448.29129999999714,
+        "blockedRows": 0
+      },
+      "providerRegions": ["sin1", "iad1"]
+    },
+    {
+      "name": "catalog-browser-deep-25",
+      "size": 20000,
+      "transport": "browser",
+      "sampleCount": 21,
+      "errorCount": 0,
+      "expectationFailures": 0,
+      "firstObservedMs": 446.3490999999922,
+      "warmLatencyMs": {
+        "min": 455.77850000000035,
+        "p50": 493.71510000000126,
+        "p95": 527.8257999999914,
+        "max": 531.9548000000068
+      },
+      "targetMs": 800,
+      "targetPassed": true,
+      "warmStageMs": {
+        "session": {
+          "min": 11.4,
+          "p50": 15.1,
+          "p95": 18.7,
+          "max": 25.1
+        },
+        "workspace": {
+          "min": 158,
+          "p50": 171.3,
+          "p95": 182.8,
+          "max": 185.3
+        },
+        "catalog": {
+          "min": 136.7,
+          "p50": 147.5,
+          "p95": 157.1,
+          "max": 157.8
+        },
+        "products": {
+          "min": 3.3,
+          "p50": 5.5,
+          "p95": 7.9,
+          "max": 10.4
+        },
+        "sources": {
+          "min": 6.5,
+          "p50": 8.3,
+          "p95": 12.3,
+          "max": 14.8
+        },
+        "rows": {
+          "min": 1,
+          "p50": 1.4,
+          "p95": 1.8,
+          "max": 2.1
+        },
+        "serialize": {
+          "min": 0.4,
+          "p50": 0.5,
+          "p95": 0.6,
+          "max": 0.7
+        },
+        "total": {
+          "min": 176.1,
+          "p50": 185.6,
+          "p95": 200.1,
+          "max": 201.5
+        }
+      },
+      "warmOutsideHandlerMs": {
+        "min": 278.1785000000003,
+        "p50": 302.34369999998887,
+        "p95": 330.4548000000068,
+        "max": 343.42579999999145
+      },
+      "actualHttpP95Sample": {
+        "index": 15,
+        "phase": "warm",
+        "startedAt": "2026-10-04T10:44:28.902Z",
+        "finishedAt": "2026-10-04T10:44:29.430Z",
+        "status": 200,
+        "latencyMs": 527.8257999999914,
+        "responseBytes": 24681,
+        "transport": "browser",
+        "browserTransport": {
+          "protocol": "h2",
+          "durationMs": 524,
+          "dnsMs": 0,
+          "connectMs": 0,
+          "tlsMs": 0,
+          "requestToHeadersMs": 497.19999999925494,
+          "bodyMs": 25.800000000745058,
+          "transferSize": 3851,
+          "encodedBodySize": 3551,
+          "decodedBodySize": 24681
+        },
+        "expectationFailures": [],
+        "providerRegions": ["sin1", "iad1"],
+        "serverStagesMs": {
+          "session": 14.9,
+          "workspace": 169,
+          "catalog": 149.8,
+          "products": 4.6,
+          "sources": 7.7,
+          "rows": 1.5,
+          "serialize": 0.5,
+          "total": 184.4
+        },
+        "outsideHandlerMs": 343.42579999999145,
+        "blockedRows": 0
+      },
+      "browserResourceTiming": {
+        "protocols": ["h2"],
+        "dnsMs": {
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "connectMs": {
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "tlsMs": {
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "durationMs": {
+          "min": 452.59999999962747,
+          "p50": 486.69999999925494,
+          "p95": 524,
+          "max": 528.5999999996275
+        },
+        "requestToHeadersMs": {
+          "min": 444.2999999988824,
+          "p50": 464.59999999962747,
+          "p95": 497.19999999925494,
+          "max": 511.09999999962747
+        },
+        "bodyMs": {
+          "min": 1.5,
+          "p50": 17.800000000745058,
+          "p95": 35.40000000037253,
+          "max": 36
+        }
+      },
+      "providerRegions": ["sin1", "iad1"]
+    }
+  ],
+  "cursorComparison": {
+    "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+    "equal": true,
+    "rowCount": 25,
+    "totalMatching": 20000,
+    "legacyDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+    "cursorDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+    "setupRequestCount": 3,
+    "setupWallMs": 1611.1022999999986
+  },
+  "domainPreservation": {
+    "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+    "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+    "targetBeforeHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+    "targetAfterHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+    "tables": [
+      "platform_products",
+      "listing_drafts",
+      "listing_input_revisions",
+      "listing_versions",
+      "source_imports",
+      "ai_runs",
+      "listing_pipeline_runs",
+      "ai_budget_reservations",
+      "enrichment_batches",
+      "enrichment_batch_items"
+    ]
+  },
+  "databaseInventory": {
+    "database": "opak_stage",
+    "role": "wukong_app",
+    "postgres_version": "17.11 (fcae950)",
+    "public_tables": 69,
+    "rls_tables": 59,
+    "forced_rls_tables": 59,
+    "owned_tables": 0
+  },
+  "billing": {
+    "recordedAt": "2026-10-04T10:49:28.449Z",
+    "httpStatus": 200,
+    "ownedProjectId": "prj_qAipFTpy8NebABNWVTMOtGthC6cH",
+    "ownedProjectBilledUsd": 1.4595415531509197,
+    "ownedProjectRows": 159,
+    "readOnly": true,
+    "productionChanged": false,
+    "computeEnabled": false,
+    "allProviderBillMeasured": false,
+    "limit": "Shared Wukong project including production and other previews; reported charge can lag. Not an isolated final invoice."
+  },
+  "retainedFailures": {
+    "historicalP95Ms": {
+      "originalLegacy": 827.7767,
+      "priorLegacy": 1045.5626,
+      "priorNativeOuter": 805.704
+    },
+    "originalMeasurementsImmutable": true,
+    "cliLogPagination": {
+      "rows": 500,
+      "uniqueEventIds": 50,
+      "identicalPages": 10,
+      "completeDataset": false
+    },
+    "cliBillingParserFailed": true,
+    "firstCompiledStaticCaseHelperFailed": true,
+    "powershellHelperPreparationFailedBeforeProviderCall": true,
+    "finalStageHelperFailures": {
+      "recordedAt": "2026-10-04T10:54:37.408Z",
+      "helperFailures": [
+        {
+          "file": "read-final-stage.mjs",
+          "errorCode": "FINAL_WORKER_URL_SCOPE",
+          "sha256": "2dcaa8c06baf675bb22eb18c43e7e4f1eaffad62ee22a44c85fb3a45c3728805"
+        },
+        {
+          "file": "continue-final-stage.mjs",
+          "errorCode": "FINAL_WORKER_ORIGIN_SCOPE",
+          "sha256": "02d63848305161e42950a4b47b1ce09f51093b898fc0e860a8a253b33a114adf"
+        }
+      ],
+      "cause": "Unverified helper assumption that preview Worker URL was stored in scope/environment values. Established prior signed-health helper has the exact URL literal.",
+      "cloudSamplingRepeated": false,
+      "providerMutation": false,
+      "productFailure": false
+    }
+  },
+  "review": {
+    "findings": 0,
+    "scope": "Read-only final middleware implementation and regression tests",
+    "ruling": "Keep API handler authorization unchanged; deployed routing/session/count evidence required separately. Source review is not production readiness or unique latency causation."
+  },
+  "rollback": {
+    "matcher": "Revert the matcher delta only; compatible preceding Web dpl_3oiUCZboohZqaQ5s9kvSVnjEtUAD retained.",
+    "data": "Preserve sources/current inputs/versions/approvals/audit/artifacts/queues and positive/unknown reservations.",
+    "migrationNames": [],
+    "newEnvNames": [],
+    "secretChanges": false,
+    "workerChanges": false
+  },
+  "release": {
+    "uat": {
+      "pass": 15,
+      "partial": 3,
+      "blocked": 12,
+      "total": 30
+    },
+    "merged": false,
+    "productionChanged": false,
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "newQueueMessages": 0,
+    "newBatchAdmissions": 0,
+    "outgoingEmail": 0,
+    "originalLatencyGateClosed": false,
+    "uniqueLatencyCauseConfirmed": false,
+    "remaining": [
+      "Production exact0046/cache-only authority, named recovery owner and confirmed recoverable point",
+      "Production safe-role/schema/cache/effective Web and original authenticated detail/queue500",
+      "Paid/live 12-case AI quality and human verdicts/image fixtures",
+      "Matched20-item employee timing and acceptance",
+      "First true SHOPLINE and reconciled merchant5-to20-to100 pilot"
+    ]
+  },
+  "limits": [
+    "Two sequential observational groups, first observed not guaranteed cold; no matched repeated before/after causal experiment.",
+    "Stage p95s are not additive. HTTP minus handler includes framework/edge/transport/automation; not pure network.",
+    "Provider invocation grouped counts give no duration. Status footer reports an unspecified third category.",
+    "API warm maximum1596.4899ms retained despite655.7913ms p95 pass; original failures remain unchanged.",
+    "Billing shared project/reporting lag/all-provider final bill unavailable; queue/cron flags acknowledgement-only.",
+    "No field-INP, human time, merchant accuracy or production acceptance inferred."
+  ],
+  "privacy": "Full provider request identifiers, UUIDs, connection strings, customer data, prompts and model outputs excluded."
+}

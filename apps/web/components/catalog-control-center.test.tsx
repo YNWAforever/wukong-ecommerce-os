@@ -305,6 +305,109 @@ it("debounces rapid zero-prefixed SKU typing, then restores a prior page on pops
     await unmount(root);
   }
 });
+it("keeps cursor pagination in URL/back navigation and clears it before a debounced search fetch", async () => {
+  const calls: URL[] = [];
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    calls.push(url);
+    return Response.json(
+      pageResponse([makeItem({ id: "cursor-row" })], {
+        page: Number(url.searchParams.get("page")),
+        nextCursor: "opaque-next",
+        previousCursor: "opaque-previous",
+      }),
+    );
+  });
+  const { container, root } = await mount(
+    fetcher,
+    "q=000674&page=2&cursor=opaque-start",
+  );
+  try {
+    await act(async () => findButtonByText(container, "下一頁")!.click());
+    expect(calls.at(-1)!.searchParams.get("cursor")).toBe("opaque-next");
+    expect(window.location.search).toContain("cursor=opaque-next");
+    await act(async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/catalog?q=000674&page=2&cursor=opaque-start",
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(calls.at(-1)!.searchParams.get("cursor")).toBe("opaque-start");
+    await act(async () =>
+      nativeSet(
+        container.querySelector<HTMLInputElement>('input[type="search"]')!,
+        "000675",
+      ),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 330));
+    });
+    expect(calls.at(-1)!.searchParams.get("q")).toBe("000675");
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("1");
+    expect(calls.at(-1)!.searchParams.has("cursor")).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});
+it("clears old scoped selections when a trusted cursor refresh reports a changed role scope", async () => {
+  let changed = false;
+  const calls: URL[] = [];
+  const fetcher = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    calls.push(url);
+    if (changed && url.searchParams.has("cursor"))
+      return Response.json({ code: "invalid_cursor" }, { status: 400 });
+    return Response.json(
+      pageResponse(
+        [
+          makeItem({
+            id: "scoped",
+            listingId: "00000000-0000-4000-8000-000000000001",
+          }),
+        ],
+        {
+          selectionScope: changed ? "new-role" : "old-role",
+          capabilities: {
+            canMaintainProducts: true,
+            canGenerateBulkUpdate: false,
+            canRecordImportResult: false,
+          },
+        },
+      ),
+    );
+  });
+  const { container, root } = await mount(fetcher, "page=2&cursor=old-scope");
+  try {
+    await act(async () =>
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).click(),
+    );
+    changed = true;
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+    expect(calls.at(-1)!.searchParams.has("cursor")).toBe(false);
+    expect(calls.at(-1)!.searchParams.get("page")).toBe("1");
+    expect(
+      sessionStorage.getItem("wukong:catalog:selection:old-role"),
+    ).toBeNull();
+    expect(
+      (
+        container.querySelector(
+          'tbody input[type="checkbox"]',
+        ) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  } finally {
+    await unmount(root);
+  }
+});
 
 /**
  * Fetcher used by the tests that page/paginate: always echoes back a
@@ -1142,10 +1245,29 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
   // perfectly current listing from the export. The fix captures the digest
   // the operator was actually shown at the moment they selected the row, so
   // it survives regardless of which page is loaded when they hit Generate.
+  const previewSha256 = "a".repeat(64);
   const calls: { url: string; init?: RequestInit }[] = [];
   const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
     const url = typeof input === "string" ? input : input.toString();
     calls.push({ url, init });
+    if (url === "/api/listings/export/preview") {
+      return Promise.resolve(
+        Response.json({
+          previewSha256,
+          fields: ["nameZh"],
+          rowCount: 1,
+          manifest: [
+            {
+              listingId: "listing-kept",
+              versionId: "version-kept",
+              outcome: "included",
+            },
+          ],
+          changes: [],
+          neutralizedQuantityDeltas: [],
+        }),
+      );
+    }
     if (url === "/api/listings/export") {
       return Promise.resolve(
         Response.json({ exportAttemptId: null, rowCount: 0, manifest: [] }),
@@ -1200,10 +1322,37 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     });
     expect(container.textContent).not.toContain("listing-kept");
     // The digest captured at selection survived the page change, so the
-    // attestation is still valid and Generate is still enabled.
+    // attestation remains valid through field selection and server preview.
     expect(attestation.checked).toBe(true);
+    const field = container.querySelector(
+      '[data-export-fields] input[value="nameZh"]',
+    ) as HTMLInputElement;
+    await act(async () => field.click());
+    expect(field.checked).toBe(true);
 
-    const generateButton = findButtonByText(container, "產生批量更新 XLSX")!;
+    const previewButton = findButtonByText(container, "預覽批量更新 XLSX")!;
+    expect(previewButton.disabled).toBe(false);
+    await act(async () => {
+      previewButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const previewCall = calls.find(
+      (call) => call.url === "/api/listings/export/preview",
+    );
+    expect(previewCall).toBeDefined();
+    expect(JSON.parse(String(previewCall!.init!.body))).toEqual({
+      listingIds: ["listing-kept"],
+      fields: ["nameZh"],
+      attestation: {
+        listings: [{ listingId: "listing-kept", contentDigest: "digest-real" }],
+      },
+    });
+    expect(calls.some((call) => call.url === "/api/listings/export")).toBe(
+      false,
+    );
+
+    const generateButton = findButtonByText(container, "確認預覽並產生 XLSX")!;
     expect(generateButton.disabled).toBe(false);
     await act(async () => {
       generateButton.click();
@@ -1216,6 +1365,8 @@ it("attests a selected listing's real digest, not a sentinel, after it scrolls o
     );
     expect(exportCall).toBeDefined();
     const body = JSON.parse(String(exportCall!.init!.body));
+    expect(body.fields).toEqual(["nameZh"]);
+    expect(body.previewSha256).toBe(previewSha256);
     expect(body.attestation.listings).toEqual([
       { listingId: "listing-kept", contentDigest: "digest-real" },
     ]);

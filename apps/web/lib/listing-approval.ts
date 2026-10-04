@@ -4,7 +4,8 @@ import { usesProductShotWorkflow } from "./product-shot-workflow";
 import {
   missingWorkspaceFields,
   readWorkingField,
-  approveListing as domainApprove,
+  validateListingApproval,
+  type approveListing as domainApprove,
   assertApprovalFreshness,
   type AuditContext,
   type CanonicalListing,
@@ -91,6 +92,7 @@ export type ApproveOneAssetStore = {
 };
 
 export type ApproveOneDeps = {
+  /** Legacy explicit override; the production default validates without auditing. */
   approve?: typeof domainApprove;
   /** The version and checklist revision observed by the reviewer. Never default to current state. */
   expectedVersionId: string;
@@ -544,12 +546,16 @@ export async function approveOne(
     });
   }
   try {
-    const approved = await (deps.approve ?? domainApprove)(
-      versionIdToApprove,
-      snapshot.flags,
-      auditContext,
-      repositories.audit,
-    );
+    // The repository owns the approval mutation and its audit. Validation
+    // must not emit approval before that mutation succeeds.
+    const approved = deps.approve
+      ? await deps.approve(
+          versionIdToApprove,
+          snapshot.flags,
+          auditContext,
+          repositories.audit,
+        )
+      : validateListingApproval(versionIdToApprove, snapshot.flags);
     if (versionIdToApprove === snapshot.activeVersion.id) {
       if (typeof repositories.listings.approve !== "function")
         throw new Error("listing approval repository is unavailable");

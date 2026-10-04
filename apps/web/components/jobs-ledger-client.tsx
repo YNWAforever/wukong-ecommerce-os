@@ -12,7 +12,7 @@ import {
 } from "../lib/ui-copy";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkQuery } from "../lib/use-work-query";
 import { parseJobsQuery, jobsQuery } from "../lib/catalog-query-state";
 
@@ -60,6 +60,8 @@ type JobsResponse = {
   page: number;
   pageSize: number;
   totalMatching: number;
+  nextCursor?: string | null;
+  previousCursor?: string | null;
   total: number;
   counts: Record<LedgerKind, number>;
   scope: "workspace_all_history";
@@ -81,6 +83,20 @@ const KIND_FILTERS: ReadonlyArray<{
   { value: "import_result", labelZh: "匯入結果", labelEn: "Import result" },
 ];
 
+function useTrustedRefresh(reload: () => void) {
+  useEffect(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [reload]);
+}
+
 // Each of the 5 normalizedStatus values gets its own `status-*` tone class
 // (see globals.css) so they read as genuinely distinct states rather than a
 // couple of colors reused ambiguously: pending is neutral grey, running is
@@ -98,6 +114,28 @@ export function JobsLedgerClient({
     () => new URLSearchParams(workQuery.search),
     [workQuery.search],
   );
+  const [accessRevoked, setAccessRevoked] = useState(false);
+  const onAccessRevoked = useCallback(() => {
+    setAccessRevoked(true);
+    // An authorization rejection retires every cached ledger/inspector form and its old cursor/context.
+    window.history.replaceState(window.history.state, "", "/jobs");
+    workQuery.navigate("");
+  }, [workQuery.navigate]);
+  if (accessRevoked)
+    return (
+      <div className="load-error" role="alert">
+        <p>
+          {localized(
+            locale,
+            "工作區權限已變更。請重新載入以核實存取權限。",
+            "Workspace access changed. Reload to verify access.",
+          )}
+        </p>
+        <button type="button" onClick={() => setAccessRevoked(false)}>
+          {commonCopy[locale].retry}
+        </button>
+      </div>
+    );
   const attempt = params.get("attempt");
   const attemptId = exactQueryId(attempt);
   const returnTo = params.get("returnTo");
@@ -127,6 +165,7 @@ export function JobsLedgerClient({
             key={attemptId}
             attemptId={attemptId}
             initiallyOpened
+            onAccessRevoked={onAccessRevoked}
           />
         </section>
       ) : attempt ? (
@@ -141,8 +180,10 @@ export function JobsLedgerClient({
       <JobsLedger
         initialKind={params.get("kind")}
         initialPage={params.get("page")}
+        initialCursor={params.get("cursor")}
         returnTo={returnTo}
         navigate={workQuery.navigate}
+        onAccessRevoked={onAccessRevoked}
       />
     </>
   );
@@ -150,13 +191,17 @@ export function JobsLedgerClient({
 function JobsLedger({
   initialKind,
   initialPage,
+  initialCursor,
   returnTo,
   navigate,
+  onAccessRevoked,
 }: {
   initialKind: string | null;
   initialPage: string | null;
+  initialCursor: string | null;
   returnTo: string | null;
   navigate(query: string, mode?: "replace" | "push"): void;
+  onAccessRevoked(): void;
 }) {
   const locale = useLocale();
   const c = commonCopy[locale];
@@ -164,20 +209,23 @@ function JobsLedger({
     new URLSearchParams({
       kind: initialKind ?? "all",
       page: initialPage ?? "1",
+      ...(initialCursor ? { cursor: initialCursor } : {}),
     }),
   );
   const destinationKind = parsed.kind,
     destinationPage = parsed.page;
-  const destination = `${destinationKind}:${destinationPage}`;
+  const destination = `${destinationKind}:${destinationPage}:${parsed.cursor ?? ""}`;
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [kindFilter, setKindFilter] = useState<KindFilter>(destinationKind);
   const [page, setPage] = useState(destinationPage);
+  const [cursor, setCursor] = useState(parsed.cursor);
   // Apply navigation before committing a fetch with the previous URL's filters.
   // Other stateful panels stay mounted and retain their local form state.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
     setKindFilter(destinationKind);
     setPage(destinationPage);
+    setCursor(parsed.cursor);
   }
 
   const load = useCallback(
@@ -187,20 +235,35 @@ function JobsLedger({
         pageSize: "50",
       });
       if (kindFilter !== "all") params.set("kind", kindFilter);
+      if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/jobs?${params.toString()}`, {
         cache: "no-store",
         signal,
       });
+      if (response.status === 400 && cursor) {
+        const failure = await response.json();
+        if (!signal.aborted && failure.code === "invalid_cursor") {
+          setCursor(undefined);
+          setPage(1);
+          navigate(jobsQuery({ kind: kindFilter, page: 1 }));
+        }
+      }
+      if (
+        !signal.aborted &&
+        (response.status === 401 || response.status === 403)
+      )
+        onAccessRevoked();
       if (!response.ok)
         throw new Error(`Unable to load jobs (${response.status})`);
       return (await response.json()) as JobsResponse;
     },
-    [page, kindFilter],
+    [page, cursor, kindFilter, onAccessRevoked],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     load,
     "Unable to load jobs",
   );
+  useTrustedRefresh(reload);
 
   if (!data && error)
     return (
@@ -236,6 +299,15 @@ function JobsLedger({
             {c.retry}
           </button>
         </div>
+      ) : null}
+      {error && !loading ? (
+        <p className="refresh-status" role="status">
+          {localized(
+            locale,
+            "顯示上次載入的作業記錄；重新載入未成功。",
+            "Showing previously loaded jobs; refresh failed.",
+          )}
+        </p>
       ) : null}
       {stale ? (
         <p className="refresh-status" role="status">
@@ -341,6 +413,7 @@ function JobsLedger({
             onClick={() => {
               setKindFilter(option.value);
               setPage(1);
+              setCursor(undefined);
               navigate(jobsQuery({ kind: option.value, page: 1 }));
             }}
           >
@@ -389,9 +462,22 @@ function JobsLedger({
           onClick={() => {
             const next = Math.max(1, page - 1);
             setPage(next);
-            navigate(jobsQuery({ kind: kindFilter, page: next }), "push");
+            setCursor(response.previousCursor ?? undefined);
+            navigate(
+              jobsQuery({
+                kind: kindFilter,
+                page: next,
+                cursor: response.previousCursor ?? undefined,
+              }),
+              "push",
+            );
           }}
-          disabled={page === 1 || loading}
+          disabled={
+            loading ||
+            (response.previousCursor !== undefined
+              ? response.previousCursor === null
+              : page === 1)
+          }
         >
           {c.previous}
         </button>
@@ -409,12 +495,22 @@ function JobsLedger({
           type="button"
           onClick={() => {
             setPage(page + 1);
-            navigate(jobsQuery({ kind: kindFilter, page: page + 1 }), "push");
+            setCursor(response.nextCursor ?? undefined);
+            navigate(
+              jobsQuery({
+                kind: kindFilter,
+                page: page + 1,
+                cursor: response.nextCursor ?? undefined,
+              }),
+              "push",
+            );
           }}
           disabled={
             loading ||
             response.pageSize === undefined ||
-            page * response.pageSize >= response.totalMatching
+            (response.nextCursor !== undefined
+              ? response.nextCursor === null
+              : page * response.pageSize >= response.totalMatching)
           }
         >
           {c.next}
@@ -472,7 +568,10 @@ function JobsLedger({
                     </time>
                   </div>
                   {entry.kind === "export" ? (
-                    <ExportAttemptInspector attemptId={entry.id} />
+                    <ExportAttemptInspector
+                      attemptId={entry.id}
+                      onAccessRevoked={onAccessRevoked}
+                    />
                   ) : null}
                   {entry.listingId ? (
                     <Link
@@ -480,8 +579,9 @@ function JobsLedger({
                       href={withWorkbenchReturn(
                         `/listings/${entry.listingId}`,
                         "/jobs" +
-                          (jobsQuery({ kind: kindFilter, page })
-                            ? "?" + jobsQuery({ kind: kindFilter, page })
+                          (jobsQuery({ kind: kindFilter, page, cursor })
+                            ? "?" +
+                              jobsQuery({ kind: kindFilter, page, cursor })
                             : ""),
                       )}
                     >
@@ -501,9 +601,11 @@ function JobsLedger({
 function ExportAttemptInspector({
   attemptId,
   initiallyOpened = false,
+  onAccessRevoked,
 }: {
   attemptId: string;
   initiallyOpened?: boolean;
+  onAccessRevoked(): void;
 }) {
   const locale = useLocale();
   const c = commonCopy[locale];
@@ -515,16 +617,22 @@ function ExportAttemptInspector({
         cache: "no-store",
         signal,
       });
+      if (
+        !signal.aborted &&
+        (response.status === 401 || response.status === 403)
+      )
+        onAccessRevoked();
       if (!response.ok)
         throw new Error(`Unable to load export attempt (${response.status})`);
       return (await response.json()) as WireExportReconciliationDetail;
     },
-    [attemptId, opened],
+    [attemptId, opened, onAccessRevoked],
   );
   const { data, error, loading, reload } = useLatestRequest(
     load,
     "Unable to load export attempt",
   );
+  useTrustedRefresh(reload);
   if (!opened)
     return (
       <button
@@ -549,6 +657,15 @@ function ExportAttemptInspector({
             {localized(locale, "重試載入詳情", "Retry detail")}
           </button>
         </div>
+      ) : null}
+      {error && data && !loading ? (
+        <p className="refresh-status" role="status">
+          {localized(
+            locale,
+            "顯示上次載入的匯出紀錄；重新載入未成功。",
+            "Showing previously loaded export evidence; refresh failed.",
+          )}
+        </p>
       ) : null}
       {data ? <ExportReconciliationPanel detail={data} /> : null}
     </div>

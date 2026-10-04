@@ -9,7 +9,8 @@ import { requireListingRecovery } from "../../../lib/listing-recovery-readiness"
 import { createHash } from "node:crypto";
 import { acceptListingOperation } from "../../../lib/listing-operation-service";
 import { dispatchListingOperation } from "../../../lib/dispatch-listing-operation";
-import { readSourceReadiness } from "../../../lib/source-readiness";
+import { loadSourceReadinessBatch } from "../../../lib/source-readiness";
+import { decodeReadCursor, encodeReadCursor } from "../../../lib/read-cursor";
 import { z } from "zod";
 import {
   isImageMimeType,
@@ -426,6 +427,7 @@ async function readQueueReviewContext(
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(21474836).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(100),
+  cursor: z.string().min(1).max(1024).optional(),
   q: z.string().trim().optional(),
   status: z
     .enum([
@@ -454,88 +456,120 @@ export function createListListingsHandler(deps: ListListingsDeps) {
           new URL(request?.url ?? "http://local/api/listings").searchParams,
         ),
       );
-      const { items, counts, totalMatching } = await deps
-        .getDatabase()
-        .forWorkspace(context.workspaceId, async (repositories) => {
-          const page = await atRouteStage("listing", () =>
-            repositories.reads.listingPage(query),
-          );
-          const hydrated = await atRouteStage("listing", () =>
-            repositories.listings.getByIds(page.ids),
-          );
-          const byId = new Map(hydrated.map((item) => [item.id, item]));
-          const items = page.ids.flatMap((id) =>
-            byId.has(id) ? [byId.get(id)!] : [],
-          );
-          const counts = await atRouteStage("listing", () =>
-            repositories.listings.countByStatus(),
-          );
-          const reviewedItems = await Promise.all(
-            items.map(async (item) => {
-              if (item.readFailure)
+      const cursorScope = {
+        workspaceId: context.workspaceId,
+        actorId: context.actorId,
+        role: context.role,
+        view: "listings",
+        pageSize: query.pageSize,
+        q: (query.q ?? "").trim().toLocaleLowerCase(),
+        status: query.status ?? null,
+      };
+      const { cursor: token, ...pageQuery } = query;
+      const cursor = decodeReadCursor(token, cursorScope);
+      const { items, counts, totalMatching, nextCursor, previousCursor } =
+        await deps
+          .getDatabase()
+          .forWorkspace(context.workspaceId, async (repositories) => {
+            const page = await atRouteStage("listing", () =>
+              repositories.reads.listingPage({
+                ...pageQuery,
+                ...(cursor ? { cursor } : {}),
+              }),
+            );
+            const hydrated = await atRouteStage("listing", () =>
+              repositories.listings.getByIds(page.ids),
+            );
+            const byId = new Map(hydrated.map((item) => [item.id, item]));
+            const items = page.ids.flatMap((id) =>
+              byId.has(id) ? [byId.get(id)!] : [],
+            );
+            const counts = await atRouteStage("listing", () =>
+              repositories.listings.countByStatus(),
+            );
+            const sourceReader = await atRouteStage("sources", () =>
+              loadSourceReadinessBatch(
+                repositories,
+                context.workspaceId,
+                page.ids,
+              ),
+            );
+            const reviewRepositories = {
+              reviewConfirmations: {
+                getByVersionId: sourceReader.deps.getReviewConfirmation,
+              },
+              platformProducts: {
+                getByListingId: sourceReader.deps.getPlatformProductLink,
+              },
+            } as Pick<
+              WorkspaceRepositories,
+              "reviewConfirmations" | "platformProducts"
+            >;
+            const reviewedItems = await Promise.all(
+              items.map(async (item) => {
+                if (item.readFailure)
+                  return {
+                    ...item,
+                    readState: "blocked" as const,
+                    readFailure: recordListingReadFailure(
+                      diagnostics,
+                      "listing",
+                      item.readFailure,
+                    ),
+                    reviewContext: null,
+                    sourceReadiness: null,
+                  };
+                const review = await readIsolatedListing(
+                  diagnostics,
+                  "review",
+                  () => readQueueReviewContext(item, reviewRepositories),
+                );
+                const source = await readIsolatedListing(
+                  diagnostics,
+                  "sources",
+                  () => sourceReader.read(item.id),
+                );
+                if (
+                  review.state === "unavailable" ||
+                  source.state === "unavailable"
+                )
+                  return {
+                    ...item,
+                    readState: "blocked" as const,
+                    readFailure:
+                      review.state === "unavailable"
+                        ? review.failure
+                        : source.state === "unavailable"
+                          ? source.failure
+                          : undefined,
+                    reviewContext: null,
+                    sourceReadiness: null,
+                  };
                 return {
                   ...item,
-                  readState: "blocked" as const,
-                  readFailure: recordListingReadFailure(
-                    diagnostics,
-                    "listing",
-                    item.readFailure,
-                  ),
-                  reviewContext: null,
-                  sourceReadiness: null,
+                  readState: "ready" as const,
+                  readFailure: undefined,
+                  reviewContext: review.value,
+                  sourceReadiness: source.value,
                 };
-              const review = await readIsolatedListing(
-                diagnostics,
-                "review",
-                () => readQueueReviewContext(item, repositories),
-              );
-              const source = await readIsolatedListing(
-                diagnostics,
-                "sources",
-                () =>
-                  readSourceReadiness(
-                    repositories,
-                    context.workspaceId,
-                    item.id,
-                  ),
-              );
-              if (
-                review.state === "unavailable" ||
-                source.state === "unavailable"
-              )
-                return {
-                  ...item,
-                  readState: "blocked" as const,
-                  readFailure:
-                    review.state === "unavailable"
-                      ? review.failure
-                      : source.state === "unavailable"
-                        ? source.failure
-                        : undefined,
-                  reviewContext: null,
-                  sourceReadiness: null,
-                };
-              return {
-                ...item,
-                readState: "ready" as const,
-                readFailure: undefined,
-                reviewContext: review.value,
-                sourceReadiness: source.value,
-              };
-            }),
-          );
-          return {
-            items: reviewedItems,
-            counts,
-            totalMatching: page.totalMatching,
-          };
-        });
+              }),
+            );
+            return {
+              items: reviewedItems,
+              counts,
+              totalMatching: page.totalMatching,
+              nextCursor: page.nextCursor,
+              previousCursor: page.previousCursor,
+            };
+          });
 
       return jsonResponse(200, {
         counts,
         page: query.page,
         pageSize: query.pageSize,
         totalMatching,
+        nextCursor: encodeReadCursor(nextCursor, cursorScope),
+        previousCursor: encodeReadCursor(previousCursor, cursorScope),
         scope: "workspace",
         items: items.map((item) => {
           const content = item.activeVersion?.content as

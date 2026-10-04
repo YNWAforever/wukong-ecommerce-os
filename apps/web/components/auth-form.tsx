@@ -310,6 +310,7 @@ export function AuthForm({
       </div>
       <form
         className="auth-form"
+        method="post"
         onSubmit={handleSubmit}
         aria-labelledby="auth-title"
       >

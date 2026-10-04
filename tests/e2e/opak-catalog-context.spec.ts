@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -80,6 +80,9 @@ test("catalog restores zero-prefixed search/page/selection and reference drawer 
     });
     await signInBulkImportOperator(page, fixture);
     await page.setViewportSize({ width: 1348, height: 926 });
+    // Install before navigation so page timers share one browser clock.
+    const clockOrigin = Date.now();
+    await page.clock.install({ time: clockOrigin });
     await page.goto("/catalog");
     await expect(page.locator("tbody tr")).toHaveCount(25);
     await expect(page.getByRole("searchbox")).toBeInViewport();
@@ -103,12 +106,34 @@ test("catalog restores zero-prefixed search/page/selection and reference drawer 
       if (new URL(request.url()).pathname === "/api/catalog")
         calls.push(request.url());
     });
+    // Use a future point within the unchanged test budget: slow locator/RPC
+    // work must not turn a 100ms browser input interval into a real 300ms idle.
+    await page.clock.pauseAt(clockOrigin + info.timeout);
     const before = calls.length;
-    await page.getByRole("searchbox").fill("000");
-    await page.waitForTimeout(100);
-    await page.getByRole("searchbox").fill("000674");
-    await page.waitForTimeout(150);
-    expect(calls).toHaveLength(before);
+    let finalSearch: ReturnType<Page["waitForResponse"]> | undefined;
+    try {
+      await page.getByRole("searchbox").fill("000");
+      await page.clock.runFor(100);
+      expect(calls).toHaveLength(before);
+      await page.getByRole("searchbox").fill("000674");
+      await page.clock.runFor(299);
+      expect(calls).toHaveLength(before);
+      finalSearch = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname === "/api/catalog" &&
+          url.searchParams.get("q") === "000674" &&
+          response.request().method() === "GET"
+        );
+      });
+      await page.clock.runFor(1);
+    } finally {
+      // Network/server time stays real; later navigation and scroll use live timers.
+      await page.clock.resume();
+    }
+    const finalResponse = await finalSearch!;
+    expect(finalResponse.status()).toBe(200);
+    expect(new URL(finalResponse.url()).searchParams.get("page")).toBe("1");
     await expect(page).toHaveURL(/q=000674/);
     await expect(page.locator("tbody tr")).toHaveCount(2);
     expect(

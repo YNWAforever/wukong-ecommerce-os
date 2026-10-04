@@ -2570,3 +2570,137 @@ export const enrichmentBatchCreateReceipts = pgTable(
     ),
   ],
 );
+
+/** Scalar counts only; current source content remains in its authoritative tables. */
+export const workspaceQualitySummaries = pgTable(
+  "workspace_quality_summaries",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    assessmentVersion: text("assessment_version").notNull(),
+    initialized: boolean("initialized").notNull().default(false),
+    counts: jsonb("counts").notNull().default({
+      totalListings: 0,
+      totalAssessed: 0,
+      cleanCount: 0,
+      hasGapsCount: 0,
+      noActiveVersion: 0,
+      unassessableActiveVersion: 0,
+      missingCurrentContent: 0,
+      invalidCurrentContent: 0,
+      untranslatedName: 0,
+      untranslatedSeoTitle: 0,
+      seoTitleMirrorsName: 0,
+      seoDescriptionMirrorsSeoTitle: 0,
+      keywordsMirrorName: 0,
+      summaryMissing: 0,
+    }),
+    knownCostUsd: numeric("known_cost_usd").notNull().default("0"),
+    unknownCostRunCount: bigint("unknown_cost_run_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    costAsOf: timestamp("cost_as_of", { withTimezone: true }),
+    asOf: timestamp("as_of", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.assessmentVersion] }),
+    check(
+      "workspace_quality_summaries_assessment_version_check",
+      sql`${table.assessmentVersion}='opak-current-content-v1'`,
+    ),
+    check(
+      "workspace_quality_summaries_counts_check",
+      sql`jsonb_typeof(${table.counts})='object'`,
+    ),
+    check(
+      "workspace_quality_summaries_known_cost_usd_check",
+      sql`${table.knownCostUsd}>=0`,
+    ),
+    check(
+      "workspace_quality_summaries_unknown_cost_run_count_check",
+      sql`${table.unknownCostRunCount}>=0`,
+    ),
+  ],
+);
+export const listingQualityAssessments = pgTable(
+  "listing_quality_assessments",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    assessmentVersion: text("assessment_version").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    liveListingId: uuid("live_listing_id"),
+    requestedGeneration: bigint("requested_generation", { mode: "number" })
+      .notNull()
+      .default(1),
+    appliedGeneration: bigint("applied_generation", { mode: "number" })
+      .notNull()
+      .default(0),
+    state: text("state").notNull().default("pending"),
+    contribution: jsonb("contribution").notNull().default({
+      totalListings: 0,
+      totalAssessed: 0,
+      cleanCount: 0,
+      hasGapsCount: 0,
+      noActiveVersion: 0,
+      unassessableActiveVersion: 0,
+      missingCurrentContent: 0,
+      invalidCurrentContent: 0,
+      untranslatedName: 0,
+      untranslatedSeoTitle: 0,
+      seoTitleMirrorsName: 0,
+      seoDescriptionMirrorsSeoTitle: 0,
+      keywordsMirrorName: 0,
+      summaryMissing: 0,
+    }),
+    sourceFence: jsonb("source_fence"),
+    errorCategory: text("error_category"),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.assessmentVersion, table.listingId],
+    }),
+    foreignKey({
+      name: "listing_quality_live_listing_fk",
+      columns: [table.workspaceId, table.liveListingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    index("listing_quality_pending_idx")
+      .on(table.workspaceId, table.assessmentVersion, table.listingId)
+      .where(
+        sql`${table.state}<>'ready' OR ${table.requestedGeneration}<>${table.appliedGeneration}`,
+      ),
+    check(
+      "listing_quality_assessments_assessment_version_check",
+      sql`${table.assessmentVersion}='opak-current-content-v1'`,
+    ),
+    check(
+      "listing_quality_assessments_requested_generation_check",
+      sql`${table.requestedGeneration}>0`,
+    ),
+    check(
+      "listing_quality_assessments_applied_generation_check",
+      sql`${table.appliedGeneration}>=0 AND ${table.appliedGeneration}<=${table.requestedGeneration}`,
+    ),
+    check(
+      "listing_quality_assessments_state_check",
+      sql`${table.state} IN ('pending','ready','failed')`,
+    ),
+    check(
+      "listing_quality_assessments_contribution_check",
+      sql`jsonb_typeof(${table.contribution})='object'`,
+    ),
+    check(
+      "listing_quality_assessments_error_category_check",
+      sql`${table.errorCategory} IS NULL OR ${table.errorCategory}='content_assessment_failed'`,
+    ),
+    check(
+      "listing_quality_live_identity_check",
+      sql`${table.liveListingId} IS NULL OR ${table.liveListingId}=${table.listingId}`,
+    ),
+  ],
+);
