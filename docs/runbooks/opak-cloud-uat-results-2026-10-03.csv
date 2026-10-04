@@ -4,7 +4,7 @@ case_id,cloud_status,evidence_or_limit
 "UC03","partial","Five source-bound detail reads200; production500 repro remains blocked"
 "UC04","passed","Both-role cloud API and actualUI: malformed queue row blocked/selection disabled/supportID; blocked detail no editable fields; healthySKU000674 and no-version manual inputs remain usable; no delivery inferred"
 "UC05","passed","Exact guardedc23/source593 browserv31:20 owned current English multiword matches with Chinese display; leading-zero distinct readonly source identities and intended/source-qualified drawers; literal query URL and refresh retained"
-"UC06","partial","20readonly references/20source-bound drafts/20current editable inputs/SKUs; 1manual review version; full20product UI/merchant journey pending"
+"UC06","passed","Original synthetic contract: normalUI reference20/store identity confirmation/source import20; exact ProductID-SKU-store-listing-source mappings and1420logical cells; same-byte replay0/same receipt; same20actual editableUI details; v3partial-command/filter failure retained, v4readonly38/38 and11domain equality; fakeAI0/publish0/newbatch0. Saved store is not merchant API health"
 "UC07","passed","Synthetic cloud API same-byte replay creates0/renews no freshness; new source invalidates1 old approval; stale retry0; old source/rows/version/receipt immutable"
 "UC08","passed","Independent71-column XML assertions355+142cells; nameZh-only changes and quantityDelta+0"
 "UC09","blocked","Local deterministic12-fixture adapter/harness retained; fake cloud generation is not paid-model accuracy or human assessment"

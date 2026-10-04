@@ -193,3 +193,16 @@ Current source593 full CI is separate from the latest evidence-only commit. Exac
 - [ ] Production exact first-operation authority/named recovery owner/confirmed recoverable point/schema/role/cache/effective Web/original500 remain open; paid-human quality, full20-item journey/employee benefit/cloudload, first trueSHOPLINE/merchant5→20→100 gates remain distinct. Conditional main auto-deploy merge held; PR120 remains an overlapping non-green draft.
 
 [Executed UC23 and compatible hold/rollback](./opak-uc23-cloud-pause-retry-2026-10-04.md). Earlier pending lines are dated; this supplement supersedes only the verified label candidate/cloud scope.
+
+## 2026-10-04 HKT original UC06 verified intake checkpoint
+
+- [x] Exact original CSV criterion reread:20 synthetic products/import/store check/match/draft/unchanged ProductID-SKU-source binding. No added merchant-write or full-generation requirement; human/employee/merchant gates remain separate.
+- [x] Single normalUI readonly20 → connected maintenance20/current editable inputs20; explicit store/identity/source confirmations; exact20 unique ID/SKU/store/source mappings and1,420 logical source-column comparisons. Same-byte UI replay same receipt/0new drafts/eleven-domain equality.
+- [x] Same20 realUI detail pages editable/noAI/current revision1/no active version; source/price/stock retained/audit20. Read-only continuation38/38/173.011s/eleven-domain equality/AI56/publish0/batch count unchanged; four synthetic screenshots visually reviewed.
+- [x] All four8-minute windows stop normally; logout/Queue/ingress/compute acknowledged. Fresh2026-10-04T01:02:14.530Z metadata confirms reviewedfcf100/source593/no probes/public404/disabled-idle0.25CU. No migration/env/paidAI/merchant/production mutation; billing unmeasured.
+- [x] Three helper failures retained: missing Workbook tab, early tab state and malformed platform filter400. v3 command stays failed after20 successful import/replay checks; v4 continues same20 with0 repeat imports. Lost pre-import full snapshot is not invented; replay and read-only equality scopes remain explicit.
+- [x] Current cloud matrix14PASS/3PARTIAL/13BLOCKED/all30; only UC06 advanced. Prior e52 ownCI37158090454 attempt2 SUCCESS43 verified, first admin-SPA timeout root unconfirmed and retained. PR121–126 green/CLEAN;120nongreen draft.
+- [ ] New docs-only exact-head CI/publication/immutable archive are completed in outside-Git terminal receipts, keeping self-referential evidence commits out of the code branch.
+- [ ] Original production500/effective Web/0046/safe role/cache/exact authority/named recovery owner/confirmed point; simulated cloud positive-budget/unknown gates; paid-human quality/cloudload/matched employee20minutes; first realSHOPLINE/reconciled5→20→100 remain open. Conditional main auto-deploy merge held.
+
+[Executed behavior, failures, exact criteria and compatible hold](./opak-uc06-cloud-intake-2026-10-04.md). Historical unchecked checkpoints are superseded only by the explicit executed scope above. Existing application already implements this behavior; no product rewrite or new production authority is inferred.
