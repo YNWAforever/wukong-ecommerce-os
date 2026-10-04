@@ -38,6 +38,7 @@ import {
 
 import type { CatalogPage, PlatformCatalogItem } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
+import { safeResponseError } from "../lib/support-request-id";
 import { SourceReadinessSummary } from "./source-readiness-summary";
 import { SupportRequestId } from "./support-request-id";
 import {
@@ -205,9 +206,19 @@ export function CatalogControlCenter({
         cache: "no-store",
         signal,
       });
-      if (response.status === 400 && cursor) {
-        const failure = await response.json();
-        if (!signal.aborted && failure.code === "invalid_cursor") {
+      if (
+        !signal.aborted &&
+        (response.status === 401 || response.status === 403)
+      )
+        setAccessRevoked(true);
+      if (!response.ok) {
+        const failure = await safeResponseError(response);
+        if (
+          response.status === 400 &&
+          cursor &&
+          !signal.aborted &&
+          failure.code === "invalid_cursor"
+        ) {
           setAccessRevoked(true);
           setCursor(undefined);
           setPage(1);
@@ -215,14 +226,8 @@ export function CatalogControlCenter({
             catalogQuery({ ...queryState, page: 1, cursor: undefined }),
           );
         }
+        throw failure;
       }
-      if (
-        !signal.aborted &&
-        (response.status === 401 || response.status === 403)
-      )
-        setAccessRevoked(true);
-      if (!response.ok)
-        throw new Error(`Unable to load catalog (${response.status})`);
       const pageData = (await response.json()) as CatalogPage;
       if (!signal.aborted) setAccessRevoked(false);
       return { importId, page: pageData };
@@ -237,7 +242,7 @@ export function CatalogControlCenter({
       queryState.work,
     ],
   );
-  const { data, error, loading, stale, reload } = useLatestRequest(
+  const { data, error, supportId, loading, stale, reload } = useLatestRequest(
     loadCatalog,
     "Unable to load catalog",
   );
@@ -478,6 +483,7 @@ export function CatalogControlCenter({
       <div className="load-error" role="alert">
         {returnLink}
         <p>{safeUiError(error, locale)}</p>
+        <SupportRequestId value={supportId} />
         <button type="button" onClick={reload}>
           {c.retry}
         </button>
@@ -515,6 +521,7 @@ export function CatalogControlCenter({
       {error ? (
         <div className="load-error" role="alert">
           <span>{safeUiError(error, locale)}</span>
+          <SupportRequestId value={supportId} />
           <button type="button" onClick={reload}>
             {c.retry}
           </button>

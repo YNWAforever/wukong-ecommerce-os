@@ -667,3 +667,14 @@ Session/queues/ingress/compute five stops acknowledged; independent430s connecto
 - [ ] Original production500/effective Web; backup/restore owner/confirmed point; compatible production schema/safe role/cache/runtime; paid-human quality, employee20minutes and first trueSHOPLINE/reconciled5→20→100. UAT15PASS/3PARTIAL/12BLOCKED/all30; conditional main merge held.
 
 [Candidate commands, retained failures, artifact scope and compatible recovery](../../runbooks/opak-candidate-preflight-2026-10-05.md). This docs-only reconciliation needs its own source checks and publication receipt; no new software or cloud acceptance is inferred.
+
+## 2026-10-05 HKT final catalog support-ID acceptance fix
+
+- [x] Whole-branch review of baseline dde9e178 to reviewed62b6accf found no material authorization, freshness, manual-value, cost/retry, source-binding or XLSX regression. SUP01 was the sole minor acceptance omission; the final fix pass closes the explicit T01 support-number/T08 copying contract rather than claiming a production-root or security fix.
+- [x] SUP01 reproduced: initial non-JSON500/header ID and cached refresh500/body ID both failed to render a support number. RED2 with32 existing component tests passed; safeResponseError/useLatestRequest/SupportRequestId wiring yields focused38/38. Invalid-cursor reset, immediate401/403 revocation and obsolete-request guards remain intact; success clears the old ID. Independent focused recheck found no regression.
+- [x] Web typecheck and production compilation pass. Full default unit profile retains1 PDF-finalization5000ms timeout/2307passes; exact unchanged file isolated3times passes6/6. Bounded maxWorkers2 full profile passes231files/2308tests with unchanged assertions/timeouts and no added skips. The timeout cause remains unconfirmed; no default-profile full-pass claim.
+- [x] Existing green PR126/125/124/123 have been integrated into feature parents, preserving the reviewed full Git tree. PR122's new exact head is undergoing its own checks at this checkpoint. Main is held; PR120 remains a distinct failing draft.
+- [ ] New support-ID source needs its exact-head CI/Preview and reviewed feature-parent integration receipts, retained outside Git. No new runtime acceptance is inferred from local tests or a READY deployment.
+- [ ] Original production500/effective Web DB/session; restore owner/confirmed current recoverable point; compatible production schema/safe runtime/cache; paid human12-case quality, employee20-item timing, all-provider budget and separately confirmed first realSHOPLINE/reconciled5→20→100 remain open. UAT remains15PASS/3PARTIAL/12BLOCKED/all30.
+
+[Behavior, commands, retained failures and rollback](../../runbooks/opak-catalog-support-id-2026-10-05.md). No migration/new env/dependency/provider credential/Worker software/runtime upload/paid AI/real SHOPLINE/production mutation.
