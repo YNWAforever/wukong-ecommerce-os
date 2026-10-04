@@ -656,3 +656,14 @@ Session/queues/ingress/compute five stops acknowledged; independent430s connecto
 - [ ] Original authenticated500/effective Web DB; restore owner/confirmed point; production compatible schema/safe role/cache/runtime; paid-human quality, matched employee timing and first trueSHOPLINE/reconciled5→20→100 remain open. UAT15PASS/3PARTIAL/12BLOCKED/all30; no main merge or production mutation.
 
 [Findings, unchanged journey, commands, failures and rollback](../../runbooks/opak-admin-ci-diagnostics-2026-10-04.md). Diagnostic changes only; no migration/new app env/secret/deploy/provider call. Safe terminal receipts remain outside Git.
+
+## 2026-10-05 HKT T14 exact candidate and remaining-plan reconciliation
+
+- [x] Exact reviewed659519c9 current PR126 OPEN/CLEAN and CI/Vercel/Comments success read back; terminal CI37213826698 SUCCESS/43 and exact READY PR preview receipts retained. This closes that exact head's terminal checkpoint, not historical CI01/CI02 causes or authenticated production flow.
+- [x] Fresh normal-CLI metadata: staging compute disabled/idle0.25CU; preview Workerfcf/source593100%. Latest source is not cloud-deployed.
+- [x] Rebuilt DB dependencies and local Wrangler4.112.0 dry-run pass with no errors/warnings; exact659 bundle/config hashes and bindCreatedProduct presence recorded outside Git. Candidate is fake/mock, paid/publish disabled, closed ingress/no cron, secret names only; no upload/deploy/provider mutation.
+- [x] Correct stale top-level master-plan/proposal claims that0046/cache scope is unapproved. Scope and Codex operator are already authorized; ownership/recovery/runtime preflight remain distinct blockers. Historical dated checkpoints remain retained.
+- [ ] New staging admission: failed connector404 and CLI JSONL parser reads retained; actual all-provider budget remains unmeasured. Preserve the US$5 cap and held runtime; do not use generated local test config as a deployment candidate.
+- [ ] Original production500/effective Web; backup/restore owner/confirmed point; compatible production schema/safe role/cache/runtime; paid-human quality, employee20minutes and first trueSHOPLINE/reconciled5→20→100. UAT15PASS/3PARTIAL/12BLOCKED/all30; conditional main merge held.
+
+[Candidate commands, retained failures, artifact scope and compatible recovery](../../runbooks/opak-candidate-preflight-2026-10-05.md). This docs-only reconciliation needs its own source checks and publication receipt; no new software or cloud acceptance is inferred.

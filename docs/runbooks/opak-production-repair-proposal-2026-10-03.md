@@ -1,6 +1,6 @@
 # Opak production repair proposal — 2026-10-03
 
-This is the concrete next operation for review. It grants no production authority. The user authorized isolated synthetic staging and conditional merge after the release gates; the production changes below still require explicit approval.
+This is the concrete bounded production operation. The user explicitly authorized only the existing hash-pinned0046 on the exact production target and disabling cache on the exact Hyperdrive, and named Codex as the migration operator. That approval is recorded; do not request it again. Execution remains blocked by the missing backup/restore owner, confirmed recoverable point and controlled runtime/migration preflight. No later migration, role/secret change, deployment, merge or SHOPLINE write is included.
 
 ## Verified target and failures
 
@@ -10,7 +10,7 @@ Production Hyperdrive `eef464f2d3c0480b94d22eaca060b209` / `wukong-neon-producti
 
 Neon reports the exact default `main` branch ready and a21600-second history retention window. This six-hour retention setting is metadata, not a successful restore drill or a named recovery owner.
 
-## First approval scope: additive schema repair and disabled cache
+## Authorized first scope: additive schema repair and disabled cache
 
 1. Record the operator and backup/restore owner, current recovery point, controlled migration credential custody, active deployment pair, Queue/DLQ backlog and accepted/unknown operations. Missing ownership, a changed target or an unavailable recovery point stops the operation before any change. Do not retrieve production credentials from browser state or publish connection strings.
 2. Run the existing `db:listing-read-preflight` with the actual runtime connection. A provider-admin catalog query does not establish the effective Web identity. Validate the existing source-import unique reference key, target column types/defaults and conflicting foreign keys. The repository runner loads `DATABASE_MIGRATIONS_DIR` and executes each SQL file in its own transaction; it has no migration-journal write. Use a controlled directory containing only the hash-verified existing0046 file, with bounded timeout settings supplied by the controlled migration job. Do not point it at the complete drizzle directory.
@@ -20,7 +20,7 @@ Neon reports the exact default `main` branch ready and a21600-second history ret
 
 Expected configuration/schema change: two nullable columns, one index, one validated workspace/source foreign key from0046, and the one Hyperdrive cache flag. No new app env name, role grant, paid AI call, SHOPLINE write, merge or production deployment is included.
 
-Installed Wrangler4.112.0 confirms the boolean flag below. Execute it only after approval and the exact account/resource preflight; no credential value belongs in these arguments.
+Installed Wrangler4.112.0 confirms the boolean flag below. Execute it only after the recorded ownership/recovery requirements and exact account/resource preflight; no credential value belongs in these arguments.
 
 ```powershell
 wrangler hyperdrive update eef464f2d3c0480b94d22eaca060b209 --caching-disabled
@@ -34,8 +34,8 @@ Keep production SHOPLINE disabled and publishing false. First real SHOPLINE writ
 
 ## Failure and rollback
 
-Before approval, name who can stop new admission and restore a compatible artifact. On a failed preflight or bounded DDL failure, stop and retain the receipt; the transaction rolls back without deleting historical records. After a committed additive change, retain the columns/index/FK and old null bindings. Do not down-migrate or backfill invented values.
+Before execution, name who can stop new admission and restore a compatible artifact. On a failed preflight or bounded DDL failure, stop and retain the receipt; the transaction rolls back without deleting historical records. After a committed additive change, retain the columns/index/FK and old null bindings. Do not down-migrate or backfill invented values.
 
 Keep query caching disabled. Do not use the old BYPASSRLS credential as the routine rollback after a safe-role cutover. Under the separately approved controls, stop new admission, preserve accepted/unknown operations, reservations, sources, versions, audits, artifacts, primary Queues and DLQs, and use the approved compatible artifact with the safe runtime role. A backup/restore event needs its own reviewed scope.
 
-Authorization boundary: [production-ai-runtime.md](./production-ai-runtime.md) says “Obtain explicit approval before creating paid or production resources, changing secrets, or deploying.” [production-readiness.md](./production-readiness.md) also requires human ownership, recovery and release sign-off. This proposal prepares the reviewable operation without asserting those approvals.
+Authorization boundary: [production-ai-runtime.md](./production-ai-runtime.md) says “Obtain explicit approval before creating paid or production resources, changing secrets, or deploying.” [production-readiness.md](./production-readiness.md) also requires human ownership, recovery and release sign-off. The exact first-scope approval and operator are recorded above. Those decisions do not fill the missing recovery/ownership gates or authorize any separate runtime cutover.
