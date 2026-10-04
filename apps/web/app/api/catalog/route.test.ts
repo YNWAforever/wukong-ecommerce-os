@@ -161,6 +161,35 @@ function makeHandler({
 }
 
 describe("GET /api/catalog", () => {
+  it("attributes successful authorized reads without exposing query or tenant data", async () => {
+    const { handler } = makeHandler({
+      products: [product({ id: "private-product", sku: "PRIVATE-SKU" })],
+    });
+    const response = await handler(buildRequest("q=PRIVATE-SKU"));
+    expect(response.status).toBe(200);
+    const timing = response.headers.get("server-timing");
+    expect(timing).not.toBeNull();
+    const entries = timing!.split(", ");
+    expect(entries.map((entry) => entry.split(";")[0])).toEqual([
+      "session",
+      "workspace",
+      "catalog",
+      "products",
+      "sources",
+      "rows",
+      "serialize",
+      "total",
+    ]);
+    expect(entries.every((entry) => /^[a-z]+;dur=\d+\.\d$/.test(entry))).toBe(
+      true,
+    );
+    expect(timing).not.toMatch(
+      /PRIVATE|private-product|ws_opak|user_1|SELECT|desc=/,
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9-]{36}$/);
+    expect((await response.json()).items).toHaveLength(1);
+  });
   it("keeps a malformed record visible and blocked without breaking healthy rows", async () => {
     readiness.mockImplementation(
       async (_repositories, _workspace, listingId) => {
@@ -197,6 +226,7 @@ describe("GET /api/catalog", () => {
     const { handler } = makeHandler({ products: [product({ id: "one" })] });
     const response = await handler(buildRequest());
     expect(response.status).toBe(500);
+    expect(response.headers.get("server-timing")).toBeNull();
     expect(await response.json()).not.toHaveProperty("items");
     expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9-]{36}$/);
   });
@@ -215,6 +245,7 @@ describe("GET /api/catalog", () => {
     const response = await handler(buildRequest());
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("server-timing")).toBeNull();
   });
 
   it("returns page 1 at page size 25 with no query params", async () => {

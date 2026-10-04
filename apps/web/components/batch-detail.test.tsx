@@ -80,7 +80,13 @@ describe("BatchDetail", () => {
             status: "paused",
             controlRevision: 3,
           },
-          counts: { pending: 1, queued: 0, succeeded: 3, failed: 1, skipped: 0 },
+          counts: {
+            pending: 1,
+            queued: 0,
+            succeeded: 3,
+            failed: 1,
+            skipped: 0,
+          },
           items: [],
         }),
       );
@@ -90,7 +96,10 @@ describe("BatchDetail", () => {
         expect(container.textContent).not.toContain("Unknown status");
         expect(container.textContent).not.toContain("狀態未明");
         expect(
-          Array.from(container.querySelectorAll("button"), (b) => b.textContent),
+          Array.from(
+            container.querySelectorAll("button"),
+            (b) => b.textContent,
+          ),
         ).toContain(resumeLabel);
       } finally {
         await unmount(root);
