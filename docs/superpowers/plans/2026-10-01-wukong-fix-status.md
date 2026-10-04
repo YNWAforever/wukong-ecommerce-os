@@ -645,3 +645,14 @@ Session/queues/ingress/compute five stops acknowledged; independent430s connecto
 - [ ] Backup/restore owner and confirmed recoverable point; effective Web DB/session and original detail/queue500; production schema/safe role/cache; paid-human quality and matched employee timing; first realSHOPLINE/reconciled5→20→100. UAT remains15PASS/3PARTIAL/12BLOCKED/all30 and conditional main merge held.
 
 [Behavior, regression commands, failure disposition and compatible recovery](../../runbooks/opak-create-import-binding-2026-10-04.md). PR120's original safeguards retained; no blind rerun/merge/cherry-pick. No migration/new app env/dependency/secret/live provider call.
+
+## 2026-10-04 HKT T14 Admin CI diagnosis checkpoint
+
+- [x] Exact binding head187394c9 CI37209276630 failed selected acceptance17/18; original CI01 empty Admin main/zero workspace POST reproduced again. RSC headers/JS200 and missing streaming bodies do not establish a rendering cause. READY preview metadata is separate; failure and skipped stages retained.
+- [x] Actual closed-page cleanup RED reproduced; edited-body3/3 checks and independent review pass. Named Admin readiness and bounded route checks retain all SPA/native/single-switch/tenant assertions.
+- [x] Unchanged fresh-local three-case suite repeated3 passes9/9/49.1s; this is negative CI01 reproduction evidence. Initial diagnostic-suite6PASS/1FAIL/2not-run/2.4m and separate CI02 Save timing failure remain retained.
+- [x] CI02 response synchronization uses both exactPOST200 receipts and unchanged5000ms response/navigation budgets; independent review passes. Revised suite6PASS/1FAIL/2not-run/2.0m fails unchanged sign-in setup before amended assertions; remaining two repetitions pass all three cases. Full-suite gate remains failed, not a rendering/sign-in/product timing fix.
+- [ ] This diagnostic checkpoint needs its own exact-head CI/preview and immutable receipt; current binding head187 CI failure remains retained.
+- [ ] Original authenticated500/effective Web DB; restore owner/confirmed point; production compatible schema/safe role/cache/runtime; paid-human quality, matched employee timing and first trueSHOPLINE/reconciled5→20→100 remain open. UAT15PASS/3PARTIAL/12BLOCKED/all30; no main merge or production mutation.
+
+[Findings, unchanged journey, commands, failures and rollback](../../runbooks/opak-admin-ci-diagnostics-2026-10-04.md). Diagnostic changes only; no migration/new app env/secret/deploy/provider call. Safe terminal receipts remain outside Git.

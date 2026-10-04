@@ -131,9 +131,23 @@ test("dirty workspace Stay and failed Save keep old session; approved Save write
   await page.getByTestId("workspace-select").selectOption(second.workspaceId);
   await expect(dialog).toBeVisible();
   expect(switches).toBe(0);
-  await dialog
-    .getByRole("button", { name: "Save and leave", exact: true })
-    .click();
+  const [savedInvite, switchedWorkspace] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/workspace/members/invite" &&
+        response.request().method() === "POST",
+      { timeout: 5000 },
+    ),
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/workspace/select" &&
+        response.request().method() === "POST",
+      { timeout: 5000 },
+    ),
+    dialog.getByRole("button", { name: "Save and leave", exact: true }).click(),
+  ]);
+  expect(savedInvite.status()).toBe(200);
+  expect(switchedWorkspace.status()).toBe(200);
   await expect(page).toHaveURL(/\/dashboard$/);
   expect(switches).toBe(1);
   expect(
@@ -201,6 +215,23 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
   await page.goto("/jobs");
   await page.getByRole("link", { name: "Admin", exact: true }).click();
   await expect(page).toHaveURL(/\/admin$/);
+  await test.step("Admin content is ready after Jobs → Admin SPA return", async () => {
+    await expect(
+      page.getByRole("heading", {
+        name: "工作區管理 Workspace administration",
+        exact: true,
+      }),
+      "Admin heading must render after the SPA return",
+    ).toBeVisible({ timeout: 10000 });
+    await expect(
+      page.getByRole("tabpanel"),
+      "Members panel must render",
+    ).toHaveAttribute("aria-labelledby", "admin-tab-members");
+    await expect(
+      page.getByRole("textbox", { name: /Invite email address/ }),
+      "Invite textbox must render before the workspace switch",
+    ).toBeVisible();
+  });
   const before = await page.evaluate(() => ({
     count:
       (window as Window & { __opakGuardPopCount?: number })
@@ -210,33 +241,33 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
     ).navigation?.currentEntry?.index,
   }));
   let release!: () => void,
-    started!: () => void,
-    finished!: () => void,
-    switches = 0;
+    switches = 0,
+    routeCompleted = false;
   const hold = new Promise<void>((resolve) => {
-      release = resolve;
-    }),
-    entered = new Promise<void>((resolve) => {
-      started = resolve;
-    }),
-    completed = new Promise<void>((resolve) => {
-      finished = resolve;
-    });
+    release = resolve;
+  });
+  const waitForCompletion = () =>
+    expect
+      .poll(() => routeCompleted, {
+        timeout: 11000,
+        message: "Held workspace POST must settle after release",
+      })
+      .toBe(true);
   await page.route("**/api/workspace/select", async (route) => {
     if (route.request().method() !== "POST") {
       await route.continue();
       return;
     }
     switches++;
-    started();
     await hold;
     try {
       await route.fulfill({ response: await route.fetch({ timeout: 10000 }) });
     } finally {
-      finished();
+      routeCompleted = true;
     }
   });
   const draftEmail = `delayed-${randomUUID()}@local.invalid`;
+  let primaryFailed = false;
   try {
     await page
       .getByRole("textbox", { name: /Invite email address/ })
@@ -246,7 +277,12 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
       .getByRole("alertdialog")
       .getByRole("button", { name: "Discard and leave", exact: true })
       .click();
-    await entered;
+    await expect
+      .poll(() => switches, {
+        timeout: 10000,
+        message: "Discard must issue exactly one workspace POST",
+      })
+      .toBe(1);
     expect(switches).toBe(1);
     await expect(page.getByTestId("workspace-select")).toBeDisabled();
     expect(
@@ -286,7 +322,7 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
     await expect(page.getByTestId("workspace-select")).toBeDisabled();
     expect(switches).toBe(1);
     release();
-    await completed;
+    await waitForCompletion();
     await expect(page).toHaveURL(/\/dashboard$/);
     expect(switches).toBe(1);
     expect(
@@ -300,9 +336,18 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
     } finally {
       await db.end();
     }
+  } catch (error) {
+    primaryFailed = true;
+    throw error;
   } finally {
     release();
-    if (switches > 0) await completed;
-    await page.unroute("**/api/workspace/select");
+    try {
+      if (switches > 0 && !page.isClosed()) await waitForCompletion();
+      if (!page.isClosed()) await page.unroute("**/api/workspace/select");
+    } catch (error) {
+      // A timeout can close the page while route cleanup is in flight.
+      // Keep its primary assertion; cleanup still fails an otherwise healthy test.
+      if (!primaryFailed && !page.isClosed()) throw error;
+    }
   }
 });
