@@ -123,13 +123,16 @@ export type PublishRepositories = {
     getById(id: string): Promise<DeliveryConnectionSnapshot | null>;
   };
   platformProducts: {
+    bindCreatedProduct(input: {
+      connectionId: string;
+      remoteProductId: string;
+      listingId: string;
+    }): Promise<boolean>;
     getByListingId(
       listingId: string,
     ): Promise<PublishPlatformProductLink | null>;
-    // Returns `Promise<unknown>`, not `Promise<void>`: the real `@wukong/db`
-    // repository resolves the upserted row, and this file deliberately does
-    // not import that type just to narrow this signature. `complete()` below
-    // never reads the result.
+    // Import fixture/setup capability; completion uses atomic binding instead.
+    // The real repository returns its row, which this narrow port does not need.
     upsert(input: {
       connectionId: string;
       remoteProductId: string;
@@ -531,18 +534,15 @@ export async function publishApprovedProduct(
         // An update already has a binding. Rewriting the claimed snapshot here
         // would overwrite a newer import committed during the remote call.
         if (!input.existingLink) {
-          await repositories.platformProducts.upsert({
+          const bound = await repositories.platformProducts.bindCreatedProduct({
             connectionId,
             remoteProductId,
-            origin: "created",
             listingId: listing.id,
-            sku: null,
-            specVersion: null,
-            rawRow: null,
-            factsPrefill: null,
-            contentDigest: null,
-            sourceImportId: null,
           });
+          // This is a local reconciliation failure, outside connector retries.
+          // The transaction rolls back completion; the separately recorded
+          // remote ID remains running so redelivery cannot create a duplicate.
+          if (!bound) throw new Error("Platform product binding conflict");
         }
       },
     );

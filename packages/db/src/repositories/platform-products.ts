@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { listingFactsSchema, type ListingFacts } from "@wukong/core";
@@ -65,6 +65,12 @@ export type UpsertPlatformProductInput = {
 export type PlatformProductRepository = ReturnType<
   typeof createMaintenanceContentReader
 > & {
+  /** Bind a successful create without replacing an imported snapshot or another draft. */
+  bindCreatedProduct(input: {
+    connectionId: string;
+    remoteProductId: string;
+    listingId: string;
+  }): Promise<boolean>;
   upsert(input: UpsertPlatformProductInput): Promise<PlatformProduct>;
   upsertMany(
     inputs: readonly UpsertPlatformProductInput[],
@@ -160,6 +166,44 @@ export function createPlatformProductRepository(
 ): PlatformProductRepository {
   return {
     ...createMaintenanceContentReader(transaction, workspaceId, scope),
+    async bindCreatedProduct(input) {
+      scope.assertOpen();
+      const rows = await transaction
+        .insert(platformProducts)
+        .values({
+          workspaceId,
+          connectionId: input.connectionId,
+          remoteProductId: input.remoteProductId,
+          listingId: input.listingId,
+          origin: "created",
+          sku: null,
+          specVersion: null,
+          rawRow: null,
+          factsPrefill: null,
+          contentDigest: null,
+          sourceImportId: null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            platformProducts.workspaceId,
+            platformProducts.connectionId,
+            platformProducts.remoteProductId,
+          ],
+          // The remote call can overlap an import. Only claim an empty binding;
+          // leave every imported field and an existing binding's timestamp intact.
+          set: {
+            listingId: input.listingId,
+            updatedAt: sql`case when ${platformProducts.listingId} is null then now() else ${platformProducts.updatedAt} end`,
+          },
+          setWhere: or(
+            isNull(platformProducts.listingId),
+            eq(platformProducts.listingId, input.listingId),
+          ),
+        })
+        .returning({ id: platformProducts.id });
+      return rows.length === 1;
+    },
+
     async upsert(input) {
       scope.assertOpen();
       const [row] = await transaction
