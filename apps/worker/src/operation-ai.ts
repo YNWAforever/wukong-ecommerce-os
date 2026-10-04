@@ -19,7 +19,12 @@ import {
   workspaceProfileSchema,
   LISTING_PROMPT_VERSIONS,
 } from "@wukong/core";
-import type { Database, ListingOperation } from "@wukong/db";
+import {
+  listingInputDigest,
+  maintenanceContentFenceSchema,
+  type Database,
+  type ListingOperation,
+} from "@wukong/db";
 import type { WorkerEnv } from "./worker-env.js";
 
 /** Every physical call gets its own committed pending row before network I/O. */
@@ -78,6 +83,22 @@ export function operationAI(
             !["queued", "running"].includes(current.executionState)
           )
             throw new Error("operation no longer active");
+          if (run.execution.contentFields !== undefined) {
+            const fence = maintenanceContentFenceSchema.parse(
+              run.execution.maintenanceFence,
+            );
+            await repos.platformProducts.lockMaintenanceBindings([
+              run.listingId,
+            ]);
+            const [fresh] = await repos.platformProducts.getMaintenanceByIds([
+              run.listingId,
+            ]);
+            if (
+              !fresh ||
+              listingInputDigest(fresh.fence) !== listingInputDigest(fence)
+            )
+              throw new Error("maintenance content or source changed");
+          }
           const claimed = await repos.aiRuns.beginInvocation({
             listingId: run.listingId,
             pipelineRunId: run.id,

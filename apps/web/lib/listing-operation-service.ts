@@ -5,8 +5,9 @@ import {
 } from "./wine-enrichment-service";
 import type { WineMode, SectionKey } from "@wukong/core";
 import { paidListingReservation, LISTING_PROMPT_VERSIONS } from "@wukong/core";
+import { contentFieldSelectionSchema, type ContentField } from "@wukong/core";
 import { createHash } from "node:crypto";
-import type { WorkspaceRepositories } from "@wukong/db";
+import { listingInputDigest, type WorkspaceRepositories } from "@wukong/db";
 import { ApiError } from "./route-support";
 
 export type AcceptListingOperationInput = {
@@ -22,6 +23,8 @@ export type AcceptListingOperationInput = {
   wineMode?: WineMode;
   wineSection?: SectionKey;
   wineIdentityReference?: import("@wukong/db").WineIdentityReference;
+  contentFields?: ContentField[];
+  maintenanceFence?: import("@wukong/db").MaintenanceContentFence;
 };
 export type AcceptedListingOperation = {
   flowVersion?: "wine-enrichment-v1";
@@ -53,6 +56,9 @@ export async function acceptListingOperation(
   input: AcceptListingOperationInput,
   admission: WineAdmissionContext = {},
 ): Promise<AcceptedListingOperation> {
+  const contentFields = input.contentFields
+    ? contentFieldSelectionSchema.parse(input.contentFields)
+    : undefined;
   await repos.listings.lockReviewState(input.listingId);
   const listing = await repos.listings.getById(input.listingId);
   if (!listing)
@@ -63,6 +69,9 @@ export async function acceptListingOperation(
         revision: input.observedInputRevision ?? input.expectedInputRevision,
         baseVersionId: input.baseVersionId,
         retryOfRunId: input.retryOfRunId ?? null,
+        ...(contentFields
+          ? { contentFields, maintenanceFence: input.maintenanceFence ?? null }
+          : {}),
         ...(input.wineMode ? { wineMode: input.wineMode } : {}),
         ...(input.wineIdentityReference
           ? { wineIdentityReference: input.wineIdentityReference }
@@ -111,6 +120,35 @@ export async function acceptListingOperation(
       "base_version_conflict",
       "The saved version changed. Reload before processing.",
     );
+  let acceptedInput = snapshot;
+  if (contentFields) {
+    await repos.platformProducts.lockMaintenanceBindings([input.listingId]);
+    const [current] = await repos.platformProducts.getMaintenanceByIds([
+      input.listingId,
+    ]);
+    if (
+      !input.maintenanceFence ||
+      !current ||
+      !current.content ||
+      listingInputDigest(current.fence) !==
+        listingInputDigest(input.maintenanceFence)
+    )
+      throw new ApiError(
+        409,
+        "batch_content_stale",
+        "Selected content or source changed. Preview the selection again.",
+      );
+    acceptedInput = { ...snapshot, workingContent: current.content };
+  }
+  if (
+    input.retryOfRunId &&
+    (await repos.pipelineRuns.hasUnknownOperationCost?.(input.retryOfRunId))
+  )
+    throw new ApiError(
+      409,
+      "provider_outcome_unknown",
+      "Reconcile the previous provider outcome before retrying. Its cost hold remains protected.",
+    );
   if (listing.status === "publishing")
     throw new ApiError(
       409,
@@ -120,7 +158,11 @@ export async function acceptListingOperation(
   if (wineAdmissionEnabled()) await repos.pipelineRuns.lockAdmissionBudget();
   const provider = process.env.AI_PROVIDER ?? "openai";
   const profile = await repos.workspaces?.requireProfile?.();
-  if (wineAdmissionEnabled() && profile?.wineEnrichment?.enabled) {
+  if (
+    !contentFields &&
+    wineAdmissionEnabled() &&
+    profile?.wineEnrichment?.enabled
+  ) {
     return repos.pipelineRuns.withAcceptanceSavepoint(() =>
       acceptWineOperation(
         repos,
@@ -195,11 +237,14 @@ export async function acceptListingOperation(
       requestDigest,
       retryOfRunId: input.retryOfRunId,
       execution: {
-        input: snapshot,
+        input: acceptedInput,
         aiPolicy: policy,
         provider,
         profile,
         promptVersions: LISTING_PROMPT_VERSIONS,
+        ...(contentFields
+          ? { contentFields, maintenanceFence: input.maintenanceFence ?? null }
+          : {}),
       },
     });
   } catch (error) {
@@ -246,6 +291,7 @@ export async function acceptListingOperation(
     runId: run.id,
     inputRevision: run.inputRevision,
     activeVersionSequence: run.activeVersionSequence,
+    ...(contentFields ? { contentFields } : {}),
   };
   const outbox = await repos.dispatchOutbox.record([
     { listingId: input.listingId, dedupeKey: run.idempotencyKey, payload },

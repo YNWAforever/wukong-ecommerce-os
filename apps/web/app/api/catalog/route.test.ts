@@ -5,6 +5,13 @@ import {
 const readiness = vi.hoisted(() => vi.fn());
 vi.mock("../../../lib/source-readiness", () => ({
   readSourceReadiness: readiness,
+  loadSourceReadinessBatch: async (
+    repositories: unknown,
+    workspaceId: string,
+  ) => ({
+    read: (id: string | null, link: unknown) =>
+      readiness(repositories, workspaceId, id, link),
+  }),
 }));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ListingDataError } from "@wukong/db";
@@ -154,6 +161,35 @@ function makeHandler({
 }
 
 describe("GET /api/catalog", () => {
+  it("attributes successful authorized reads without exposing query or tenant data", async () => {
+    const { handler } = makeHandler({
+      products: [product({ id: "private-product", sku: "PRIVATE-SKU" })],
+    });
+    const response = await handler(buildRequest("q=PRIVATE-SKU"));
+    expect(response.status).toBe(200);
+    const timing = response.headers.get("server-timing");
+    expect(timing).not.toBeNull();
+    const entries = timing!.split(", ");
+    expect(entries.map((entry) => entry.split(";")[0])).toEqual([
+      "session",
+      "workspace",
+      "catalog",
+      "products",
+      "sources",
+      "rows",
+      "serialize",
+      "total",
+    ]);
+    expect(entries.every((entry) => /^[a-z]+;dur=\d+\.\d$/.test(entry))).toBe(
+      true,
+    );
+    expect(timing).not.toMatch(
+      /PRIVATE|private-product|ws_opak|user_1|SELECT|desc=/,
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9-]{36}$/);
+    expect((await response.json()).items).toHaveLength(1);
+  });
   it("keeps a malformed record visible and blocked without breaking healthy rows", async () => {
     readiness.mockImplementation(
       async (_repositories, _workspace, listingId) => {
@@ -190,6 +226,7 @@ describe("GET /api/catalog", () => {
     const { handler } = makeHandler({ products: [product({ id: "one" })] });
     const response = await handler(buildRequest());
     expect(response.status).toBe(500);
+    expect(response.headers.get("server-timing")).toBeNull();
     expect(await response.json()).not.toHaveProperty("items");
     expect(response.headers.get("x-request-id")).toMatch(/^[a-f0-9-]{36}$/);
   });
@@ -208,6 +245,7 @@ describe("GET /api/catalog", () => {
     const response = await handler(buildRequest());
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("server-timing")).toBeNull();
   });
 
   it("returns page 1 at page size 25 with no query params", async () => {
@@ -397,7 +435,7 @@ describe("GET /api/catalog", () => {
     expect(body.items[0]?.title).not.toBe("shopline-fallback-1");
     expect(calls).toContainEqual([
       "reads.catalogPage",
-      { page: 1, pageSize: 25, filter: "all" },
+      { page: 1, pageSize: 25, filter: "all", work: "all", actorId: "user_1" },
     ]);
   });
 });
@@ -408,6 +446,7 @@ it("returns viewer reporting/generation capabilities from the server context", a
   expect(body.capabilities).toEqual({
     canGenerateBulkUpdate: false,
     canRecordImportResult: false,
+    canMaintainProducts: false,
   });
 });
 
@@ -509,4 +548,14 @@ it("validates and passes the exact import ID to the scoped repository", async ()
   const before = calls.length;
   expect((await handler(buildRequest("importId=../foreign"))).status).toBe(400);
   expect(calls.length).toBe(before);
+});
+it("uses the server actor for responsibility filters even when an actor query is supplied", async () => {
+  const { handler, calls } = makeHandler({ products: [] });
+  expect(
+    (await handler(buildRequest("work=mine&actorId=foreign-actor"))).status,
+  ).toBe(200);
+  expect(calls).toContainEqual([
+    "reads.catalogPage",
+    expect.objectContaining({ work: "mine", actorId: "user_1" }),
+  ]);
 });

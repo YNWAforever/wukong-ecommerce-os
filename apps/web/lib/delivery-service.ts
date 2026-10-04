@@ -1,3 +1,4 @@
+import type { ExportContentField } from "./bulk-export-contract";
 import type {
   CanonicalListing,
   ComplianceFlag,
@@ -20,6 +21,7 @@ import {
   createBulkExport,
   recheckBulkExport,
   BulkUpdateEligibilityConflict,
+  requireBulkExportPreview,
   type CreateBulkExportDeps,
   type ExportManifestEntry,
 } from "./bulk-export-service";
@@ -31,6 +33,8 @@ export type DeliverInput = {
   method: "csv" | "shopline_api" | "bulk_form";
   /** The digest the operator attested for this one listing, when they did. */
   attestedContentDigest?: string;
+  fields?: readonly ExportContentField[];
+  previewSha256?: string;
 };
 
 export type DeliverySnapshot = {
@@ -550,6 +554,7 @@ async function deliverBulkForm(
     workspaceId: input.workspaceId,
     requestedBy: input.actorId,
     listingIds: [input.draftId],
+    fields: input.fields ?? [],
     attestedDigests: new Map(
       input.attestedContentDigest
         ? [[input.draftId, input.attestedContentDigest]]
@@ -587,6 +592,7 @@ async function deliverBulkForm(
         };
       return { kind: "bulk_update_ineligible", entry };
     }
+    requireBulkExportPreview(input.previewSha256 ?? "", exportInput, exported);
     await recheckBulkExport(exportInput, exported.evidence, deps.bulkUpdate);
     const evidence = exported.evidence[0]!;
     await deps.audit.write({

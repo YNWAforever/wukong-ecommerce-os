@@ -63,10 +63,14 @@ async function attempt(overrides: Record<string, unknown> = {}) {
       artifactSha256: "a".repeat(64),
       ...overrides,
     });
-    return r.exportAttempts.markReady({
-      id: a.id,
-      artifactSha256: "a".repeat(64),
-    });
+    return r.exportAttempts.markReady(
+      {
+        id: a.id,
+        artifactSha256: "a".repeat(64),
+        actorId: "synthetic-ready-reviewer",
+      },
+      r.audit,
+    );
   });
 }
 const create = (input: any) =>
@@ -220,7 +224,14 @@ describe("trusted results repository", () => {
       "export_artifact_not_ready",
     );
     await db.forWorkspace("ws_results", (r) =>
-      r.exportAttempts.markReady({ id: a.id, artifactSha256: "a".repeat(64) }),
+      r.exportAttempts.markReady(
+        {
+          id: a.id,
+          artifactSha256: "a".repeat(64),
+          actorId: "synthetic-ready-reviewer",
+        },
+        r.audit,
+      ),
     );
     await admin`update export_attempts set provenance='{"identityVersion":1}' where id=${a.id}`;
     await expect(create({ ...base, exportAttemptId: a.id })).rejects.toThrow(

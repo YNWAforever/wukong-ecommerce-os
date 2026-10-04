@@ -1,0 +1,119 @@
+{
+  "stage": "isolated-cloud-permission-fault",
+  "startedAt": "2026-10-03T06:14:19.911Z",
+  "finishedAt": "2026-10-03T06:15:32.079Z",
+  "durationSeconds": 72,
+  "outcome": "cloud-permission-fault-passed",
+  "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+  "checks": [
+    {
+      "id": "exact-preview-pair",
+      "pass": true
+    },
+    {
+      "id": "corrected-worker-retained-before",
+      "pass": true
+    },
+    {
+      "id": "runtime-non-bypass",
+      "pass": true
+    },
+    {
+      "id": "queue-before",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "catalog-before",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "denied-select-listing_versions",
+      "pass": true
+    },
+    {
+      "id": "permission-fault-listing_versions",
+      "pass": true,
+      "status": 500
+    },
+    {
+      "id": "whole-failure-not-empty-listing_versions",
+      "pass": true,
+      "status": 500,
+      "hasItems": false
+    },
+    {
+      "id": "original-acl-restored-listing_versions",
+      "pass": true
+    },
+    {
+      "id": "healthy-after-listing_versions",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "denied-select-platform_products",
+      "pass": true
+    },
+    {
+      "id": "permission-fault-platform_products",
+      "pass": true,
+      "status": 500
+    },
+    {
+      "id": "whole-failure-not-empty-platform_products",
+      "pass": true,
+      "status": 500,
+      "hasItems": false
+    },
+    {
+      "id": "original-acl-restored-platform_products",
+      "pass": true
+    },
+    {
+      "id": "healthy-after-platform_products",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "no-new-admission",
+      "pass": true,
+      "retainedAiRuns": 20
+    }
+  ],
+  "stops": [
+    {
+      "id": "original-acls",
+      "acknowledged": true
+    },
+    {
+      "id": "staging-compute",
+      "acknowledged": true
+    }
+  ],
+  "offlineGuards": {
+    "passed": 14,
+    "total": 14,
+    "providerCalls": 0
+  },
+  "watchdog": {
+    "startedAt": "2026-10-03T06:14:43.800Z",
+    "finishedAt": "2026-10-03T06:15:32.170Z",
+    "ceilingMinutes": 8,
+    "normalStopObserved": true,
+    "emergencyAclRestored": null,
+    "errorCode": null,
+    "productionChanged": false
+  },
+  "fixtureRowsAdded": 0,
+  "roleGrantsAfter": "byte-for-byte original ACLs",
+  "rlsPoliciesChanged": false,
+  "workerChanged": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "productionChanged": false,
+  "migrationApplied": false,
+  "originalReceiptSha256": "fc81685d59b3026f370ba1027c5b4b057ff49254cdccbfc3d774f1acf3b774f3",
+  "metadataCorrection": "The original helper inherited predecessor remaining text; this receipt reports the actual two permission-fault scope. UI/merchant/production acceptance remains open."
+}

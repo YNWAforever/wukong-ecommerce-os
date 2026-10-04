@@ -22,6 +22,19 @@ export function SourceReadinessSummary({
         {localized(locale, "來源準備狀態不明", "Source readiness unknown")}
       </span>
     );
+  if (compact)
+    return (
+      <details className="source-readiness compact">
+        <summary>
+          {readiness.currentVersionId === null
+            ? localized(locale, "尚未建立版本", "No version yet")
+            : readiness.eligibleAfterAttestation
+              ? localized(locale, "需確認來源時效", "Confirm source freshness")
+              : localized(locale, "來源需要處理", "Source action required")}
+        </summary>
+        <SourceReadinessSummary readiness={readiness} />
+      </details>
+    );
   if (readiness.currentVersionId === null)
     return (
       <div

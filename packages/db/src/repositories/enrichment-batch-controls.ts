@@ -1,5 +1,9 @@
 import { sql } from "drizzle-orm";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
+import {
+  batchItemRecovery,
+  type BatchRecovery,
+} from "./batch-item-recovery.js";
 
 export type BatchItemDetail = {
   id: string;
@@ -10,6 +14,15 @@ export type BatchItemDetail = {
   status: string;
   retryOfItemId: string | null;
   isCurrent: boolean;
+  recovery?: BatchRecovery;
+  canRetry?: boolean;
+  sku?: string | null;
+  sourceRef?: string | null;
+  lastStage?: string;
+  updatedAt?: string;
+  thumbnailAssetId?: string | null;
+  thumbnailUrl?: string | null;
+  thumbnailState?: "ready" | "unavailable";
 };
 export class BatchControlConflict extends Error {
   constructor(readonly code: string) {
@@ -22,6 +35,13 @@ export function createBatchControlRepository(
   scope: WorkspaceScope,
 ) {
   return {
+    async setArchived(batchId: string, archived: boolean) {
+      scope.assertOpen();
+      const rows = await tx.execute(
+        sql`update enrichment_batches set archived_at=${archived ? sql`now()` : sql`null`},updated_at=now() where workspace_id=${workspaceId} and id=${batchId}::uuid returning id`,
+      );
+      if (rows.length !== 1) throw new BatchControlConflict("batch_not_found");
+    },
     async beginCommand(input: {
       batchId: string;
       expectedControlRevision: number;
@@ -67,7 +87,19 @@ export function createBatchControlRepository(
     async listItemDetails(batchId: string): Promise<BatchItemDetail[]> {
       scope.assertOpen();
       const rows = await tx.execute(
-        sql`select id,listing_id,pipeline_run_id,input_revision,outcome,status,retry_of_item_id,is_current from enrichment_batch_items where workspace_id=${workspaceId} and batch_id=${batchId}::uuid order by created_at,id`,
+        sql`select i.id,i.listing_id,i.pipeline_run_id,i.input_revision,i.outcome,i.status,i.retry_of_item_id,i.is_current,i.updated_at,r.error_code,
+          coalesce(current_input.working_content->>'sku',p.remote_product_id) sku,p.id source_ref,image.id thumbnail_asset_id,
+          coalesce((select case when a.stage in ('extract','generate','verify') then a.stage else 'unknown' end from ai_runs a where a.workspace_id=i.workspace_id and a.pipeline_run_id=i.pipeline_run_id order by a.created_at desc limit 1),'unknown') last_stage,
+          (exists(select 1 from ai_budget_reservations a where a.workspace_id=i.workspace_id and a.pipeline_run_id=i.pipeline_run_id and a.state in ('held','unknown')) or exists(select 1 from ai_runs a where a.workspace_id=i.workspace_id and a.pipeline_run_id=i.pipeline_run_id and (a.status='started' or a.estimated_cost_usd is null or a.usage_certainty='unknown'))) cost_unknown
+          from enrichment_batch_items i
+          left join listing_pipeline_runs r on r.workspace_id=i.workspace_id and r.id=i.pipeline_run_id
+          left join listing_drafts d on d.workspace_id=i.workspace_id and d.id=i.listing_id
+          left join listing_input_revisions current_input on current_input.workspace_id=i.workspace_id and current_input.listing_id=i.listing_id and current_input.revision=d.input_revision
+          left join lateral(select id,remote_product_id from platform_products where workspace_id=i.workspace_id and listing_id=i.listing_id order by updated_at desc,id desc limit 1) p on true
+          left join lateral(select a.id from source_assets a where a.workspace_id=i.workspace_id and a.listing_id=i.listing_id and a.kind like 'image/%'
+            and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(current_input.sources)='array' then current_input.sources else '[]'::jsonb end) source where source->>'assetId'=a.id::text)
+            order by a.created_at,a.id limit 1) image on true
+          where i.workspace_id=${workspaceId} and i.batch_id=${batchId}::uuid order by i.created_at,i.id`,
       );
       return rows.map((r) => ({
         id: String(r.id),
@@ -78,6 +110,19 @@ export function createBatchControlRepository(
         status: String(r.status),
         retryOfItemId: r.retry_of_item_id as string | null,
         isCurrent: Boolean(r.is_current),
+        ...(r.outcome !== null || r.cost_unknown
+          ? batchItemRecovery({
+              outcome: r.outcome as string | null,
+              errorCode: r.error_code as string | null,
+              costUnknown: Boolean(r.cost_unknown),
+              isCurrent: Boolean(r.is_current),
+            })
+          : { canRetry: false }),
+        sku: r.sku as string | null,
+        sourceRef: r.source_ref ? String(r.source_ref).slice(0, 8) : null,
+        lastStage: String(r.last_stage),
+        updatedAt: new Date(r.updated_at as string).toISOString(),
+        thumbnailAssetId: r.thumbnail_asset_id as string | null,
       }));
     },
     async cancelBoundItems(batchId: string) {
@@ -108,7 +153,7 @@ export function createBatchControlRepository(
         sql`select id,listing_id,pipeline_run_id,outcome from enrichment_batch_items where workspace_id=${workspaceId} and batch_id=${batchId}::uuid and id in (${sql.join(
           itemIds.map((id) => sql`${id}::uuid`),
           sql`,`,
-        )}) and is_current and outcome in ('failed','needs_input','superseded','cancelled') and pipeline_run_id is not null for update`,
+        )}) and is_current and outcome='failed' and pipeline_run_id is not null for update`,
       );
       if (rows.length !== itemIds.length)
         throw new BatchControlConflict("invalid_retry_selection");
@@ -118,7 +163,7 @@ export function createBatchControlRepository(
           sql`update enrichment_batch_items set is_current=false where workspace_id=${workspaceId} and id=${row.id}::uuid`,
         );
         await tx.execute(
-          sql`insert into enrichment_batch_items(workspace_id,batch_id,listing_id,retry_of_item_id,status) values(${workspaceId},${batchId}::uuid,${row.listing_id}::uuid,${row.id}::uuid,'queued')`,
+          sql`insert into enrichment_batch_items(workspace_id,batch_id,listing_id,retry_of_item_id,status,content_fence) select ${workspaceId},${batchId}::uuid,${row.listing_id}::uuid,${row.id}::uuid,'queued',content_fence from enrichment_batch_items where workspace_id=${workspaceId} and id=${row.id}::uuid`,
         );
         output.push({
           listingId: String(row.listing_id),

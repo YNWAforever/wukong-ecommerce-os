@@ -5,6 +5,8 @@ import {
   workingListingSchema,
   workingFields,
   readWorkingField,
+  contentFieldSelectionSchema,
+  contentWorkingFields,
   type WorkingField,
 } from "@wukong/core";
 import {
@@ -84,13 +86,25 @@ export function candidateDifferences(
       return [];
     const currentValue = readWorkingField(current.workingContent, field);
     if (JSON.stringify(value) === JSON.stringify(currentValue)) return [];
-    const reason = !compatible
-      ? "candidate_incompatible"
-      : ["sku", "priceHkd", "stockQuantity"].includes(field)
-        ? "merchant_field"
-        : current.fieldStates[field]?.locked
-          ? "field_locked"
-          : null;
+    const selection =
+      run.execution.contentFields === undefined
+        ? null
+        : contentFieldSelectionSchema.safeParse(run.execution.contentFields);
+    const allowed = selection?.success
+      ? new Set(selection.data.map((key) => contentWorkingFields[key]))
+      : null;
+    const reason =
+      selection && (!allowed || !allowed.has(field))
+        ? "not_in_selection"
+        : selection && current.fieldStates[field]?.owner === "operator"
+          ? "manual_ownership"
+          : !compatible
+            ? "candidate_incompatible"
+            : ["sku", "priceHkd", "stockQuantity"].includes(field)
+              ? "merchant_field"
+              : current.fieldStates[field]?.locked
+                ? "field_locked"
+                : null;
     return [
       {
         field,
@@ -155,6 +169,23 @@ export async function adoptListingCandidate(
       "Save the working inputs before adopting a candidate.",
     );
   const listing = await repos.listings.getById(input.listingId);
+  if (run.execution.contentFields !== undefined) {
+    await repos.platformProducts.lockMaintenanceBindings([input.listingId]);
+    const [content] = await repos.platformProducts.getMaintenanceByIds([
+      input.listingId,
+    ]);
+    if (
+      !run.execution.maintenanceFence ||
+      !content ||
+      listingInputDigest(content.fence) !==
+        listingInputDigest(run.execution.maintenanceFence)
+    )
+      throw new ApiError(
+        409,
+        "batch_content_stale",
+        "Selected content or source changed. Preview the selection again.",
+      );
+  }
   if (current.revision !== input.expectedInputRevision)
     throw new ApiError(
       409,

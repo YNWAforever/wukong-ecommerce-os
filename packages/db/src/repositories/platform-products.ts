@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { listingFactsSchema, type ListingFacts } from "@wukong/core";
@@ -6,6 +6,7 @@ import { listingFactsSchema, type ListingFacts } from "@wukong/core";
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { platformProducts } from "../schema.js";
 import { ListingDataError } from "../listing-data-error.js";
+import { createMaintenanceContentReader } from "./maintenance-content.js";
 
 export type PlatformProductOrigin = "import" | "created";
 
@@ -61,7 +62,15 @@ export type UpsertPlatformProductInput = {
   sourceImportId: string | null;
 };
 
-export type PlatformProductRepository = {
+export type PlatformProductRepository = ReturnType<
+  typeof createMaintenanceContentReader
+> & {
+  /** Bind a successful create without replacing an imported snapshot or another draft. */
+  bindCreatedProduct(input: {
+    connectionId: string;
+    remoteProductId: string;
+    listingId: string;
+  }): Promise<boolean>;
   upsert(input: UpsertPlatformProductInput): Promise<PlatformProduct>;
   upsertMany(
     inputs: readonly UpsertPlatformProductInput[],
@@ -127,7 +136,7 @@ type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
  * so a malformed prefill would flow straight through the boundary. Parse it at
  * the seam, the way the workspace repository parses its profile jsonb.
  */
-const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
+export const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
   const origin = platformProductOriginSchema.safeParse(row.origin);
   const facts =
     row.factsPrefill === null
@@ -156,6 +165,45 @@ export function createPlatformProductRepository(
   scope: WorkspaceScope,
 ): PlatformProductRepository {
   return {
+    ...createMaintenanceContentReader(transaction, workspaceId, scope),
+    async bindCreatedProduct(input) {
+      scope.assertOpen();
+      const rows = await transaction
+        .insert(platformProducts)
+        .values({
+          workspaceId,
+          connectionId: input.connectionId,
+          remoteProductId: input.remoteProductId,
+          listingId: input.listingId,
+          origin: "created",
+          sku: null,
+          specVersion: null,
+          rawRow: null,
+          factsPrefill: null,
+          contentDigest: null,
+          sourceImportId: null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            platformProducts.workspaceId,
+            platformProducts.connectionId,
+            platformProducts.remoteProductId,
+          ],
+          // The remote call can overlap an import. Only claim an empty binding;
+          // leave every imported field and an existing binding's timestamp intact.
+          set: {
+            listingId: input.listingId,
+            updatedAt: sql`case when ${platformProducts.listingId} is null then now() else ${platformProducts.updatedAt} end`,
+          },
+          setWhere: or(
+            isNull(platformProducts.listingId),
+            eq(platformProducts.listingId, input.listingId),
+          ),
+        })
+        .returning({ id: platformProducts.id });
+      return rows.length === 1;
+    },
+
     async upsert(input) {
       scope.assertOpen();
       const [row] = await transaction
@@ -228,7 +276,7 @@ export function createPlatformProductRepository(
             eq(platformProducts.listingId, listingId),
           ),
         )
-        .orderBy(desc(platformProducts.updatedAt))
+        .orderBy(desc(platformProducts.updatedAt), desc(platformProducts.id))
         .limit(1);
       return row ? toPlatformProduct(row) : null;
     },

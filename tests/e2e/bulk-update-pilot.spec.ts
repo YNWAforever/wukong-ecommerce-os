@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { stateLabel } from "../../apps/web/lib/ui-copy.js";
@@ -240,17 +240,65 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   expect((await imported).status()).toBe(201);
+  // Attended maintenance starts from current, human-confirmed product facts.
+  // The uploaded source did not establish a pack; no one-bottle default is used.
+  const draftIds = (
+    await (await page.request.get("/api/catalog?filter=bound")).json()
+  ).items.map((item: { listingId: string }) => item.listingId);
+  for (const id of draftIds) {
+    const view = await (await page.request.get("/api/listings/" + id)).json();
+    const saved = await page.request.patch("/api/listings/" + id + "/inputs", {
+      headers: { "Idempotency-Key": randomUUID() },
+      data: {
+        expectedInputRevision: view.workingInput.revision,
+        baseVersionId: null,
+        changes: [
+          { field: "producer", value: "Demo Estate", locked: true },
+          { field: "productType", value: "wine", locked: true },
+          { field: "country", value: "Germany", locked: true },
+          { field: "region", value: "Mosel", locked: true },
+          { field: "grapeVarieties", value: ["Riesling"], locked: true },
+          { field: "volumeMl", value: 750, locked: true },
+          { field: "abvPercent", value: 12.5, locked: true },
+          { field: "packQuantity", value: 6, locked: true },
+        ],
+        action: "save",
+      },
+    });
+    expect(saved.status()).toBe(200);
+  }
   await page.goto("/batches");
   await page.getByLabel(/Label/).fill("Synthetic attended update");
   await page.getByLabel(/Budget/).fill("1");
   await page.getByLabel(/Wave size/).fill("2");
+  for (const field of [
+    "summaryEn",
+    "summaryZh",
+    "seoTitleEn",
+    "seoTitleZh",
+    "seoDescriptionEn",
+    "seoDescriptionZh",
+    "seoKeywords",
+  ])
+    await page.getByRole("checkbox", { name: field, exact: true }).check();
+  const previewed = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/enrichment-batches/preview" &&
+      r.request().method() === "POST",
+    { timeout: 10_000 },
+  );
+  await page.getByRole("button", { name: "Preview batch" }).click();
+  expect((await previewed).status()).toBe(200);
+  await expect(
+    page.getByRole("region", { name: "Batch preview" }),
+  ).toContainText("eligible 2");
   const created = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === "/api/enrichment-batches" &&
       r.request().method() === "POST",
     { timeout: 10_000 },
   );
-  await page.getByRole("button", { name: /Create batch/ }).click();
+  await page.getByRole("button", { name: "Confirm create batch" }).click();
   const createdResponse = await created;
   expect(createdResponse.status()).toBe(201);
   const { batchId, selected } = await createdResponse.json();
@@ -351,17 +399,47 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   await page.goto("/catalog");
   await page.getByLabel("Select 0001 for Bulk Update", { exact: true }).check();
   await page.getByLabel("Select 0002 for Bulk Update", { exact: true }).check();
-  const generate = page.getByRole("button", {
-    name: "Generate Bulk Update XLSX",
+  const exportPreview = page.getByRole("button", {
+    name: "Preview Bulk Update XLSX",
     exact: true,
   });
-  await expect(generate).toBeDisabled();
+  await expect(exportPreview).toBeDisabled();
   await page
     .getByLabel("I confirm this SHOPLINE source export is still current.", {
       exact: true,
     })
     .check();
 
+  await expect(exportPreview).toBeDisabled();
+  const exportRegion = page.getByRole("region", {
+    name: "Bulk Update XLSX export",
+    exact: true,
+  });
+  for (const field of [
+    "Chinese name",
+    "English summary",
+    "Chinese summary",
+    "English SEO title",
+    "Chinese SEO title",
+    "English SEO description",
+    "Chinese SEO description",
+    "SEO keywords",
+  ])
+    await exportRegion.getByLabel(field, { exact: true }).check();
+  const exportPreviewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/export/preview" &&
+      r.request().method() === "POST",
+  );
+  await exportPreview.click();
+  expect((await exportPreviewResponse).status()).toBe(200);
+  await expect(
+    exportRegion.getByRole("region", { name: "XLSX update preview" }),
+  ).toBeVisible();
+  const generate = exportRegion.getByRole("button", {
+    name: "Generate Bulk Update XLSX",
+    exact: true,
+  });
   await expect(generate).toBeEnabled();
   const exportedResponse = page.waitForResponse(
     (r) =>
@@ -790,15 +868,29 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       await evidenceDb`SELECT count(*)::int AS count FROM publish_jobs WHERE workspace_id=${operator.workspaceId}`;
     expect(publishes!.count).toBe(0);
     const aiRuns =
-      await evidenceDb`SELECT model,estimated_cost_usd FROM ai_runs WHERE workspace_id=${operator.workspaceId}`;
+      await evidenceDb`SELECT task,model,estimated_cost_usd FROM ai_runs WHERE workspace_id=${operator.workspaceId}`;
     expect(aiRuns).toHaveLength(4);
     expect(
       aiRuns.every(
         (run) =>
-          run.model === "fake-listing-provider" &&
+          ((run.task === "extract" && run.model === "maintenance-snapshot") ||
+            (run.task === "generate" &&
+              run.model === "fake-listing-provider")) &&
+          run.estimated_cost_usd !== null &&
           Number(run.estimated_cost_usd) === 0,
       ),
     ).toBe(true);
+    expect(
+      aiRuns.filter(
+        (run) => run.task === "extract" && run.model === "maintenance-snapshot",
+      ),
+    ).toHaveLength(2);
+    expect(
+      aiRuns.filter(
+        (run) =>
+          run.task === "generate" && run.model === "fake-listing-provider",
+      ),
+    ).toHaveLength(2);
   } finally {
     await evidenceDb.end();
   }
@@ -1224,9 +1316,37 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     if (!(await box.isChecked())) await box.click();
     await expect(box).toBeChecked({ timeout: 10_000 });
   }
+  // Approval publishes its success message after the authoritative detail
+  // refresh. Observe both requests before asserting that message.
+  const reboundApproval = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/approve`) &&
+      response.request().method() === "POST",
+  );
+  const approvedDetail = page.waitForResponse(async (response) => {
+    if (
+      !response.url().endsWith(`/api/listings/${listingIds[0]}`) ||
+      response.request().method() !== "GET" ||
+      response.status() !== 200
+    )
+      return false;
+    return (await response.json()).status === "approved";
+  });
   await page
     .getByRole("button", { name: "Approve listing", exact: true })
     .click();
+  const approvalResponse = await reboundApproval;
+  expect(approvalResponse.status()).toBe(200);
+  const approvalResult = await approvalResponse.json();
+  expect(approvalResult).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+  });
+  expect(await (await approvedDetail).json()).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+    activeVersion: { id: approvalResult.versionId },
+  });
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   // A later confirmation change now reopens the newly approved version.

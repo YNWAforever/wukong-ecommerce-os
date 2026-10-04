@@ -3,9 +3,8 @@ import {
   reviewMetricWindow,
 } from "../../../lib/review-quality-metrics";
 import type { Database } from "@wukong/db";
-
 import { getDatabase } from "../../../lib/intake-runtime";
-import { computeQualitySummary } from "../../../lib/quality-summary";
+import { computeCurrentContentGaps } from "../../../lib/current-content-gaps";
 import {
   jsonResponse,
   requireSessionContext,
@@ -13,60 +12,35 @@ import {
 } from "../../../lib/route-support";
 import { authSessionContext } from "../../../lib/session-context";
 import type { SessionContextPort } from "../../../lib/session-context-port";
-
 type QualityRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase(): Database;
   now?(): Date;
 };
-
 export function createQualityHandler(deps: QualityRouteDeps) {
   return async function quality(): Promise<Response> {
     return withRouteErrors(async () => {
       const context = await requireSessionContext(deps.sessionContext);
-      const now = deps.now?.() ?? new Date();
-      const window = reviewMetricWindow(now);
+      const now = deps.now?.() ?? new Date(),
+        window = reviewMetricWindow(now);
       const summary = await deps
         .getDatabase()
         .forWorkspace(context.workspaceId, async (repositories) => {
-          const scanStartedAt = new Date().toISOString();
-          const summary = computeQualitySummary([], 0);
-          let totalListings = 0,
-            noActiveVersion = 0,
-            unassessableActiveVersion = 0;
-          let afterId: string | undefined;
-          for (;;) {
-            const ids = await repositories.reads.scanListingIds(afterId, 100);
-            if (ids.length === 0) break;
-            const listings = await repositories.listings.getByIds(ids);
-            const cost =
-              await repositories.aiRuns.summarizeCostForListings(ids);
-            const chunk = computeQualitySummary(
-              listings,
-              cost.knownCostUsd,
-              cost.unknownCostRunCount,
-            );
-            totalListings += listings.length;
-            noActiveVersion += listings.filter(
-              (item) => !(item.activeVersionId ?? item.activeVersion?.id),
-            ).length;
-            unassessableActiveVersion += listings.filter(
-              (item) => item.activeVersionId && !item.activeVersion,
-            ).length;
-            summary.totalAssessed += chunk.totalAssessed;
-            summary.cleanCount += chunk.cleanCount;
-            summary.hasGapsCount += chunk.hasGapsCount;
-            summary.totalCostUsd += chunk.totalCostUsd;
-            summary.unknownCostRunCount += chunk.unknownCostRunCount;
-            for (const key of Object.keys(
-              summary.gapCounts,
-            ) as (keyof typeof summary.gapCounts)[])
-              summary.gapCounts[key] += chunk.gapCounts[key];
-            if (ids.length < 100) break;
-            afterId = ids.at(-1);
-          }
+          const projection = await repositories.qualityProjection.reconcile(
+            computeCurrentContentGaps,
+            { limit: 25 },
+          );
+          const cost = await repositories.aiRuns.summarizeOwnedCostMetadata();
+          await repositories.qualityProjection.recordCostSnapshot({
+            knownCostUsd: cost.knownCostUsd,
+            unknownCostRunCount: cost.unknownCostRunCount,
+            asOf: cost.unknownCostReferences.asOf,
+          });
           return {
-            ...summary,
+            ...projection,
+            totalCostUsd: cost.knownCostUsd,
+            unknownCostRunCount: cost.unknownCostRunCount,
+            unknownCostReferences: cost.unknownCostReferences,
             reviewMetrics: computeReviewMetrics(
               await repositories.reads.reviewQualityEvidence(
                 window.start,
@@ -74,22 +48,17 @@ export function createQualityHandler(deps: QualityRouteDeps) {
               ),
               now,
             ),
-            totalListings,
-            noActiveVersion,
-            unassessableActiveVersion,
-            scope: "workspace_active_versions",
-            consistency: "bounded_scan",
-            scanStartedAt,
-            scanCompletedAt: new Date().toISOString(),
+            scope: "workspace_current_content",
+            consistency: "revision_aware_projection",
             costScope: "all_history_for_workspace_listings",
           };
         });
-
-      return jsonResponse(200, summary);
+      const response = jsonResponse(200, summary);
+      response.headers.set("Cache-Control", "no-store");
+      return response;
     });
   };
 }
-
 export const GET = createQualityHandler({
   sessionContext: authSessionContext,
   getDatabase,

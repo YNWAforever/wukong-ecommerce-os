@@ -10,6 +10,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParamsMock(),
 }));
 import { AppShellNav, type NavItem } from "./app-shell-nav.js";
+import {
+  subscribeClientContextChangeGuard,
+  type ClientContextChangeRequest,
+} from "../lib/client-context-change-guard";
 import { SHELL_NAV_ITEMS } from "../app/(app)/shell-nav-items";
 
 (
@@ -622,5 +626,186 @@ describe("grouped operator navigation", () => {
     expect(container.querySelector(".app-sidebar")!.textContent).toContain(
       "工作台",
     );
+  });
+});
+
+describe("workspace choice before context mutation", () => {
+  const shell = (admin = true) => (
+    <AppShellNav
+      navItems={NAV_ITEMS}
+      isAdmin={admin}
+      workspaceName="Synthetic"
+      activeWorkspaceId="ws_first"
+      workspaceOptions={[
+        { id: "ws_first", name: "First" },
+        { id: "ws_second", name: "Second" },
+        { id: "ws_third", name: "Third" },
+      ]}
+      roleLabelZh="管理"
+      roleLabelEn={admin ? "Admin" : "Viewer"}
+      initialLocale="en"
+    />
+  );
+  const select = async (value: string) => {
+    await act(async () => {
+      const input = container.querySelector<HTMLSelectElement>(
+        "[data-testid='workspace-select']",
+      )!;
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  it("does not POST until approval and Stay cancels a workspace choice", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 403 }));
+    vi.stubGlobal("fetch", fetcher);
+    let pending!: ClientContextChangeRequest;
+    const off = subscribeClientContextChangeGuard(
+      () => true,
+      (request) => {
+        pending = request;
+      },
+    );
+    try {
+      render(shell());
+      await select("ws_second");
+      expect(fetcher).not.toHaveBeenCalled();
+      await act(async () => pending.cancel());
+      expect(fetcher).not.toHaveBeenCalled();
+      await select("ws_second");
+      await act(async () => {
+        pending.approve();
+        pending.approve();
+      });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      off();
+      vi.unstubAllGlobals();
+    }
+  });
+  it("cancels a held action on role/context change and on unmount", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    let pending!: ClientContextChangeRequest;
+    const off = subscribeClientContextChangeGuard(
+      () => true,
+      (request) => {
+        pending = request;
+      },
+    );
+    try {
+      render(shell());
+      await select("ws_second");
+      const old = pending;
+      render(shell(false));
+      await act(async () => old.approve());
+      expect(fetcher).not.toHaveBeenCalled();
+      await select("ws_third");
+      const retiring = pending;
+      act(() => root.unmount());
+      root = createRoot(container);
+      await act(async () => retiring.approve());
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      off();
+      vi.unstubAllGlobals();
+    }
+  });
+  it("replaces a held second choice without letting the obsolete target dispatch", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 403 }));
+    vi.stubGlobal("fetch", fetcher);
+    const requests: ClientContextChangeRequest[] = [];
+    const off = subscribeClientContextChangeGuard(
+      () => true,
+      (request) => requests.push(request),
+    );
+    try {
+      render(shell());
+      await select("ws_second");
+      await select("ws_third");
+      expect(requests).toHaveLength(2);
+      await act(async () => requests[0]!.approve());
+      expect(fetcher).not.toHaveBeenCalled();
+      await act(async () => requests[1]!.approve());
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.calls[0]?.[1].body).toBe(
+        JSON.stringify({ workspaceId: "ws_third" }),
+      );
+    } finally {
+      off();
+      vi.unstubAllGlobals();
+    }
+  });
+  it("keeps the deferred POST exclusive after the admission guard unmounts", async () => {
+    let resolve!: (response: Response) => void;
+    const response = new Promise<Response>((finish) => {
+      resolve = finish;
+    });
+    const fetcher = vi.fn().mockReturnValue(response);
+    vi.stubGlobal("fetch", fetcher);
+    let pending!: ClientContextChangeRequest;
+    const off = subscribeClientContextChangeGuard(
+      () => true,
+      (request) => {
+        pending = request;
+      },
+    );
+    try {
+      render(shell());
+      await select("ws_second");
+      await act(async () => pending.approve());
+      expect(fetcher).toHaveBeenCalledOnce();
+      await act(async () => off());
+      await select("ws_third");
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(
+        container.querySelector<HTMLSelectElement>(
+          "[data-testid='workspace-select']",
+        )?.disabled,
+      ).toBe(true);
+      await act(async () => resolve(new Response(null, { status: 403 })));
+      await select("ws_third");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => resolve(new Response(null, { status: 403 })));
+      off();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("explicit shell context abort prevents a late successful POST response from redirecting", async () => {
+    let resolve!: (response: Response) => void;
+    const fetcher = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((finish) => {
+          resolve = finish;
+        }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const assign = vi
+      .spyOn(window.location, "assign")
+      .mockImplementation(() => {});
+    const off = subscribeClientContextChangeGuard(
+      () => true,
+      (request) => request.approve(),
+    );
+    try {
+      render(shell());
+      await select("ws_second");
+      expect(fetcher).toHaveBeenCalledOnce();
+      const signal = fetcher.mock.calls[0]?.[1]?.signal as AbortSignal;
+      render(shell(false));
+      expect(signal.aborted).toBe(true);
+      await act(async () => resolve(new Response(null, { status: 200 })));
+      expect(assign).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => resolve(new Response(null, { status: 403 })));
+      off();
+      assign.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });

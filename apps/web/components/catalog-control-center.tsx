@@ -1,9 +1,18 @@
 "use client";
+import { withWorkbenchReturn } from "../lib/workbench-navigation";
 import {
-  exactQueryId,
-  initialDestinationSearch,
-  withWorkbenchReturn,
-} from "../lib/workbench-navigation";
+  parseCatalogQuery,
+  catalogQuery,
+  catalogContextKey,
+} from "../lib/catalog-query-state";
+import { AssignmentPanel, AssignmentWorkFilter } from "./assignment-panel";
+import { useWorkQuery } from "../lib/use-work-query";
+import { CatalogDetailDrawer } from "./catalog-detail-drawer";
+import {
+  clearWorkSession,
+  readCatalogSelection,
+  writeCatalogSelection,
+} from "../lib/catalog-session-state";
 import { WorkbenchReturnLink } from "./workbench-return-link";
 import { useLocale } from "../lib/locale-context";
 import {
@@ -18,7 +27,14 @@ import {
 import Link from "next/link";
 import { WorkbookProductDetail } from "./workbook-product-detail";
 import { WebsiteProductDetail } from "./website-product-detail";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { CatalogPage, PlatformCatalogItem } from "../lib/catalog-contract";
 import { useLatestRequest } from "../lib/use-latest-request";
@@ -31,6 +47,7 @@ import {
 } from "./catalog-view-models";
 import styles from "./catalog-control-center.module.css";
 import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
+import { CreateBatchForm } from "./create-batch-form";
 
 const STATUS_TONE_CLASSES = {
   neutral: styles.statusNeutral,
@@ -62,46 +79,91 @@ const EMPTY_RESPONSE: CatalogPage = {
 export function CatalogControlCenter({
   initialSearch,
 }: { initialSearch?: string } = {}) {
+  const workQuery = useWorkQuery(initialSearch);
   const params = useMemo(
-    () => initialDestinationSearch(initialSearch),
-    [initialSearch],
+    () => new URLSearchParams(workQuery.search),
+    [workQuery.search],
   );
-  const [workspaceScope, setWorkspaceScope] = useState(false);
-  const importId = workspaceScope ? null : exactQueryId(params.get("importId"));
-  const invalidImport = !workspaceScope && params.has("importId") && !importId;
+  const queryState = parseCatalogQuery(params);
+  const { importId, invalidImport } = queryState;
   const returnTo = params.get("returnTo");
   const locale = useLocale();
   const c = commonCopy[locale];
   const [workbookDetailId, setWorkbookDetailId] = useState<string | null>(null);
   const [websiteDetailId, setWebsiteDetailId] = useState<string | null>(null);
-  const destinationQuery = params.get("q") ?? "";
-  const destinationFilter =
-    CATALOG_FILTERS.find((option) => option.value === params.get("filter"))
-      ?.value ?? "all";
-  const pageValue = params.get("page");
-  const destinationPage =
-    pageValue &&
-    /^[1-9][0-9]*$/.test(pageValue) &&
-    Number(pageValue) <= 21474836
-      ? Number(pageValue)
-      : 1;
+  const destinationQuery = queryState.q;
+  const destinationFilter = queryState.filter;
+  const destinationPage = queryState.page;
   const destination = JSON.stringify([
     params.get("importId"),
     destinationQuery,
     destinationFilter,
     destinationPage,
+    queryState.work,
+    queryState.cursor,
   ]);
   const [previousDestination, setPreviousDestination] = useState(destination);
   const [query, setQuery] = useState(destinationQuery);
+  const [settledQuery, setSettledQuery] = useState(destinationQuery);
   const [filter, setFilter] = useState<CatalogFilter>(destinationFilter);
   const [page, setPage] = useState(destinationPage);
+  const [cursor, setCursor] = useState(queryState.cursor);
   // Synchronize URL-owned controls without remounting detail or export forms.
   if (previousDestination !== destination) {
     setPreviousDestination(destination);
-    setWorkspaceScope(false);
     setQuery(destinationQuery);
+    setSettledQuery(destinationQuery);
     setFilter(destinationFilter);
     setPage(destinationPage);
+    setCursor(queryState.cursor);
+  }
+  useEffect(() => {
+    if (query === settledQuery) return;
+    const timeout = setTimeout(() => {
+      setSettledQuery(query);
+      setPage(1);
+      setCursor(undefined);
+      workQuery.navigate(
+        catalogQuery({ ...queryState, q: query, page: 1, cursor: undefined }),
+      );
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [query, settledQuery, destination, workQuery.navigate]);
+  const closeDetails = useCallback(() => {
+    setWorkbookDetailId(null);
+    setWebsiteDetailId(null);
+  }, []);
+  function changePage(value: number) {
+    const cursor = value > page ? response.nextCursor : response.previousCursor;
+    setPage(value);
+    setCursor(cursor ?? undefined);
+    workQuery.navigate(
+      catalogQuery({ ...queryState, page: value, cursor: cursor ?? undefined }),
+      "push",
+    );
+  }
+  const departing = useRef(false);
+  const restoreFrame = useRef<number | null>(null);
+  function rememberPosition() {
+    // Retire this mounted catalog before saving a position for its next arrival.
+    departing.current = true;
+    if (restoreFrame.current !== null) {
+      cancelAnimationFrame(restoreFrame.current);
+      restoreFrame.current = null;
+    }
+    if (selectionScope) {
+      try {
+        sessionStorage.setItem(
+          "wukong:catalog:scroll:" + selectionScope,
+          JSON.stringify({
+            href: catalogContextKey(window.location.search),
+            y: window.scrollY,
+          }),
+        );
+      } catch {
+        /* Optional same-session position. */
+      }
+    }
   }
   // Keyed by listingId, valued by the `contentDigest` the operator was
   // actually shown at the moment they ticked the row -- not re-derived later
@@ -113,47 +175,225 @@ export function CatalogControlCenter({
   const [selectedListings, setSelectedListings] = useState<
     ReadonlyMap<string, string | null>
   >(new Map());
+  const [maintenanceSelection, setMaintenanceSelection] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [selectionScope, setSelectionScope] = useState<string | null>(null);
+  const [accessRevoked, setAccessRevoked] = useState(false);
+  useEffect(() => {
+    if (!accessRevoked) return;
+    clearWorkSession();
+    setSelectionScope(null);
+    setSelectedListings(new Map());
+    setMaintenanceSelection(new Set());
+    closeDetails();
+  }, [accessRevoked, closeDetails]);
 
   const loadCatalog = useCallback(
     async (signal: AbortSignal) => {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(PAGE_SIZE),
-        q: query,
+        q: settledQuery,
         filter,
+        work: queryState.work,
       });
       if (invalidImport) throw new Error("Invalid import link");
       if (importId) params.set("importId", importId);
+      if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/catalog?${params.toString()}`, {
         cache: "no-store",
         signal,
       });
+      if (response.status === 400 && cursor) {
+        const failure = await response.json();
+        if (!signal.aborted && failure.code === "invalid_cursor") {
+          setAccessRevoked(true);
+          setCursor(undefined);
+          setPage(1);
+          workQuery.navigate(
+            catalogQuery({ ...queryState, page: 1, cursor: undefined }),
+          );
+        }
+      }
+      if (
+        !signal.aborted &&
+        (response.status === 401 || response.status === 403)
+      )
+        setAccessRevoked(true);
       if (!response.ok)
         throw new Error(`Unable to load catalog (${response.status})`);
-      return { importId, page: (await response.json()) as CatalogPage };
+      const pageData = (await response.json()) as CatalogPage;
+      if (!signal.aborted) setAccessRevoked(false);
+      return { importId, page: pageData };
     },
-    [page, query, filter, importId, invalidImport],
+    [
+      page,
+      cursor,
+      settledQuery,
+      filter,
+      importId,
+      invalidImport,
+      queryState.work,
+    ],
   );
   const { data, error, loading, stale, reload } = useLatestRequest(
     loadCatalog,
     "Unable to load catalog",
   );
+  useEffect(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [reload]);
 
   // Retain same-import refresh results, but never relabel another import's rows.
   // Keep the surrounding detail/export forms mounted during scope changes.
   const response =
-    data && !invalidImport && data.importId === importId
+    data && !accessRevoked && !invalidImport && data.importId === importId
       ? data.page
       : EMPTY_RESPONSE;
+  useEffect(() => {
+    if (response.selectionScope && response.selectionScope !== selectionScope) {
+      if (selectionScope) clearWorkSession();
+      closeDetails();
+      setSelectionScope(response.selectionScope);
+      const saved = selectionScope
+        ? { ids: [], exports: [] }
+        : readCatalogSelection(response.selectionScope);
+      setSelectedListings(
+        new Map(saved.exports as Array<[string, string | null]>),
+      );
+      setMaintenanceSelection(new Set(saved.ids));
+    }
+  }, [response.selectionScope, selectionScope, closeDetails]);
+  useEffect(() => {
+    if (selectionScope)
+      writeCatalogSelection(
+        selectionScope,
+        maintenanceSelection,
+        selectedListings,
+      );
+  }, [selectionScope, maintenanceSelection, selectedListings]);
+  const canMaintain =
+    response.capabilities.canMaintainProducts ??
+    response.capabilities.canGenerateBulkUpdate;
+  const assignmentKey = useMemo(
+    () => [...maintenanceSelection].sort().join(","),
+    [maintenanceSelection],
+  );
+  const assignmentLayoutKey = JSON.stringify([
+    selectionScope,
+    canMaintain ? assignmentKey : "",
+  ]);
+  const [assignmentLayout, setAssignmentLayout] = useState({
+    key: assignmentLayoutKey,
+    settled: false,
+  });
+  // Each selection needs its own completed read, including A -> B -> A.
+  if (assignmentLayout.key !== assignmentLayoutKey) {
+    setAssignmentLayout({ key: assignmentLayoutKey, settled: false });
+  }
+  const assignmentSettled = useCallback(
+    (key: string) => {
+      if (key !== assignmentKey) return;
+      setAssignmentLayout((current) =>
+        current.key === assignmentLayoutKey
+          ? { ...current, settled: true }
+          : current,
+      );
+    },
+    [assignmentKey, assignmentLayoutKey],
+  );
+  const assignmentLayoutReady =
+    !canMaintain ||
+    !assignmentKey ||
+    (assignmentLayout.key === assignmentLayoutKey && assignmentLayout.settled);
+  useEffect(() => {
+    if (
+      departing.current ||
+      !selectionScope ||
+      selectionScope !== response.selectionScope ||
+      loading ||
+      !assignmentLayoutReady
+    )
+      return;
+    try {
+      const key = "wukong:catalog:scroll:" + selectionScope;
+      const stored = sessionStorage.getItem(key);
+      const saved = JSON.parse(stored ?? "null");
+      if (
+        saved?.href === catalogContextKey(window.location.search) &&
+        Number.isFinite(saved.y) &&
+        saved.y >= 0
+      ) {
+        // Assignment actions change the document height. Restore only after
+        // their current read has rendered; an earlier frame can clamp the Y.
+        const frame = requestAnimationFrame(() => {
+          restoreFrame.current = null;
+          try {
+            if (
+              departing.current ||
+              window.location.pathname !== "/catalog" ||
+              saved.href !== catalogContextKey(window.location.search) ||
+              sessionStorage.getItem(key) !== stored
+            )
+              return;
+            window.scrollTo(0, saved.y);
+            sessionStorage.removeItem(key);
+          } catch {
+            /* Optional same-session position. */
+          }
+        });
+        restoreFrame.current = frame;
+        return () => {
+          cancelAnimationFrame(frame);
+          if (restoreFrame.current === frame) restoreFrame.current = null;
+        };
+      }
+    } catch {
+      /* Optional same-session position. */
+    }
+  }, [
+    selectionScope,
+    response.selectionScope,
+    loading,
+    assignmentLayoutReady,
+    assignmentLayoutKey,
+    destination,
+  ]);
+  const visibleSelected = new Set(
+    response.items.flatMap((item) =>
+      item.sourceType === "platform" || item.sourceType === "draft"
+        ? item.listingId
+          ? [item.listingId]
+          : []
+        : [],
+    ),
+  );
+  const offPageCount = [...maintenanceSelection].filter(
+    (id) => !visibleSelected.has(id),
+  ).length;
   useEffect(() => {
     const blocked = new Set(
       response.items
         .filter(
           (item) =>
-            item.sourceType === "platform" && item.readState === "blocked",
+            (item.sourceType === "platform" || item.sourceType === "draft") &&
+            item.readState === "blocked",
         )
         .map((item) => (item as PlatformCatalogItem).listingId),
     );
+    if (blocked.size)
+      setMaintenanceSelection(
+        (current) => new Set([...current].filter((id) => !blocked.has(id))),
+      );
     if (blocked.size)
       setSelectedListings((current) => {
         const next = new Map([...current].filter(([id]) => !blocked.has(id)));
@@ -195,19 +435,39 @@ export function CatalogControlCenter({
 
   function handleQueryChange(value: string) {
     setQuery(value);
-    setPage(1);
   }
 
   function handleFilterChange(value: CatalogFilter) {
+    setSettledQuery(query);
     setFilter(value);
     setPage(1);
+    setCursor(undefined);
+    workQuery.navigate(
+      catalogQuery({
+        ...queryState,
+        q: query,
+        filter: value,
+        page: 1,
+        cursor: undefined,
+      }),
+    );
   }
   function handleMetricChange(value: CatalogFilter) {
-    setWorkspaceScope(true);
-    handleFilterChange(value);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("importId");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    setSettledQuery(query);
+    setFilter(value);
+    setPage(1);
+    setCursor(undefined);
+    workQuery.navigate(
+      catalogQuery({
+        ...queryState,
+        q: query,
+        filter: value,
+        page: 1,
+        cursor: undefined,
+        importId: null,
+        invalidImport: false,
+      }),
+    );
   }
 
   const returnLink = returnTo ? (
@@ -266,20 +526,24 @@ export function CatalogControlCenter({
         </p>
       ) : null}
       {websiteDetailId ? (
-        <div>
-          <button type="button" onClick={() => setWebsiteDetailId(null)}>
-            {localized(locale, "關閉資料", "Close details")}
-          </button>
+        <CatalogDetailDrawer
+          title={localized(locale, "網站商品資料", "Website product details")}
+          onClose={closeDetails}
+        >
           <WebsiteProductDetail key={websiteDetailId} id={websiteDetailId} />
-        </div>
+        </CatalogDetailDrawer>
       ) : null}
       {workbookDetailId ? (
-        <div>
-          <button type="button" onClick={() => setWorkbookDetailId(null)}>
-            {localized(locale, "關閉資料", "Close details")}
-          </button>
+        <CatalogDetailDrawer
+          title={localized(
+            locale,
+            "試算表商品資料",
+            "Workbook product details",
+          )}
+          onClose={closeDetails}
+        >
           <WorkbookProductDetail key={workbookDetailId} id={workbookDetailId} />
-        </div>
+        </CatalogDetailDrawer>
       ) : null}
       <div className={styles.metrics}>
         <Metric
@@ -342,32 +606,83 @@ export function CatalogControlCenter({
       </div>
 
       <div className={styles.controlPanel}>
-        <div className={styles.selectionBar} aria-live="polite">
-          <strong>
+        {canMaintain && !response.capabilities.canGenerateBulkUpdate ? (
+          <p className={styles.roleHint}>
             {localized(
               locale,
-              `已選取 ${selectedListings.size} 個商品作批量更新`,
-              `${selectedListings.size} selected for Bulk Update`,
+              "你可以維護商品；批准與匯出由審核員完成。",
+              "You can maintain products. A reviewer completes approval and export.",
             )}
-          </strong>
-          <button
-            type="button"
-            className={styles.pageButton}
-            disabled={selectedListings.size === 0}
-            onClick={() => setSelectedListings(new Map())}
-          >
-            {localized(locale, "清除選取", "Clear selection")}
-          </button>
-        </div>
-        <BulkExportPanel
-          listings={exportListings}
-          canGenerate={response.capabilities.canGenerateBulkUpdate}
-        />
+          </p>
+        ) : null}
+        {maintenanceSelection.size > 0 ? (
+          <div className={styles.selectionBar} aria-live="polite">
+            <strong>
+              {localized(
+                locale,
+                `已選取 ${maintenanceSelection.size} 個商品作批量更新`,
+                `${maintenanceSelection.size} selected for Bulk Update`,
+              )}
+            </strong>
+            <button
+              type="button"
+              className={styles.pageButton}
+              disabled={maintenanceSelection.size === 0}
+              onClick={() => {
+                setSelectedListings(new Map());
+                setMaintenanceSelection(new Set());
+              }}
+            >
+              {localized(locale, "清除選取", "Clear selection")}
+            </button>
+          </div>
+        ) : null}
+        {offPageCount > 0 ? (
+          <p>
+            {localized(
+              locale,
+              `另有 ${offPageCount} 項不在目前篩選`,
+              `${offPageCount} selected products are outside this filter`,
+            )}
+          </p>
+        ) : null}
+        {canMaintain && maintenanceSelection.size > 0 ? (
+          <CreateBatchForm listingIds={[...maintenanceSelection]} />
+        ) : null}
+        {canMaintain && maintenanceSelection.size > 0 ? (
+          <AssignmentPanel
+            listingIds={[...maintenanceSelection]}
+            locale={locale}
+            onUpdated={reload}
+            onSettled={assignmentSettled}
+          />
+        ) : null}
+        {exportListings.length > 0 ? (
+          <BulkExportPanel
+            listings={exportListings}
+            canGenerate={response.capabilities.canGenerateBulkUpdate}
+          />
+        ) : null}
         <div className={styles.toolbar}>
+          <AssignmentWorkFilter
+            value={queryState.work}
+            locale={locale}
+            onChange={(work) =>
+              workQuery.navigate(
+                catalogQuery({
+                  ...queryState,
+                  work,
+                  page: 1,
+                  cursor: undefined,
+                }),
+              )
+            }
+          />
           <label className={styles.searchField}>
             <span>{localized(locale, "搜尋商品", "Search catalog")}</span>
             <input
               type="search"
+              maxLength={200}
               value={query}
               onChange={(event) => handleQueryChange(event.target.value)}
               placeholder={localized(
@@ -535,7 +850,28 @@ export function CatalogControlCenter({
                   if (item.sourceType === "draft")
                     return (
                       <tr key={`draft:${item.id}`}>
-                        <td />
+                        <td>
+                          {canMaintain && item.readState !== "blocked" ? (
+                            <input
+                              type="checkbox"
+                              aria-label={localized(
+                                locale,
+                                `選取 ${item.sku ?? item.id} 作批量更新`,
+                                `Select ${item.sku ?? item.id} for Bulk Update`,
+                              )}
+                              checked={maintenanceSelection.has(item.listingId)}
+                              onChange={(event) =>
+                                setMaintenanceSelection((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked)
+                                    next.add(item.listingId);
+                                  else next.delete(item.listingId);
+                                  return next;
+                                })
+                              }
+                            />
+                          ) : null}
+                        </td>
                         <td>
                           <strong className={styles.productTitle}>
                             {item.title}
@@ -562,9 +898,13 @@ export function CatalogControlCenter({
                         <td>{item.openBlockingFlagCount}</td>
                         <td>
                           <Link
+                            onClick={rememberPosition}
                             href={withWorkbenchReturn(
                               `/listings/${item.listingId}`,
-                              returnTo,
+                              "/catalog" +
+                                (catalogQuery(queryState)
+                                  ? "?" + catalogQuery(queryState)
+                                  : ""),
                             )}
                           >
                             {localized(locale, "開啟草稿", "Open draft")}
@@ -576,10 +916,11 @@ export function CatalogControlCenter({
                   return (
                     <tr key={`platform:${item.id}`}>
                       <td>
-                        {item.origin === "import" &&
+                        {(item.origin === "import" ||
+                          response.capabilities.canMaintainProducts === true) &&
                         item.listingId &&
                         item.readState !== "blocked" &&
-                        response.capabilities.canGenerateBulkUpdate ? (
+                        canMaintain ? (
                           <input
                             type="checkbox"
                             aria-label={localized(
@@ -587,22 +928,33 @@ export function CatalogControlCenter({
                               `選取 ${item.sku ?? item.remoteProductId} 作批量更新`,
                               `Select ${item.sku ?? item.remoteProductId} for Bulk Update`,
                             )}
-                            checked={selectedListings.has(item.listingId)}
-                            onChange={(event) =>
-                              setSelectedListings((current) => {
-                                const next = new Map(current);
-                                if (event.target.checked) {
-                                  // Capture the digest as shown right now --
-                                  // this is what the operator is attesting
-                                  // to, not whatever a later page happens to
-                                  // find under this id.
-                                  next.set(item.listingId!, item.contentDigest);
-                                } else {
-                                  next.delete(item.listingId!);
-                                }
+                            checked={maintenanceSelection.has(item.listingId)}
+                            onChange={(event) => {
+                              const checked = event.target.checked;
+                              setMaintenanceSelection((current) => {
+                                const next = new Set(current);
+                                if (checked) next.add(item.listingId!);
+                                else next.delete(item.listingId!);
                                 return next;
-                              })
-                            }
+                              });
+                              if (item.origin === "import")
+                                setSelectedListings((current) => {
+                                  const next = new Map(current);
+                                  if (checked) {
+                                    // Capture the digest as shown right now --
+                                    // this is what the operator is attesting
+                                    // to, not whatever a later page happens to
+                                    // find under this id.
+                                    next.set(
+                                      item.listingId!,
+                                      item.contentDigest,
+                                    );
+                                  } else {
+                                    next.delete(item.listingId!);
+                                  }
+                                  return next;
+                                });
+                            }}
                           />
                         ) : null}
                       </td>
@@ -670,9 +1022,13 @@ export function CatalogControlCenter({
                         {item.listingId ? (
                           <Link
                             className={styles.actionLink}
+                            onClick={rememberPosition}
                             href={withWorkbenchReturn(
                               `/listings/${item.listingId}`,
-                              returnTo,
+                              "/catalog" +
+                                (catalogQuery(queryState)
+                                  ? "?" + catalogQuery(queryState)
+                                  : ""),
                             )}
                           >
                             {localized(locale, "開啟流程", "Open")}
@@ -701,8 +1057,13 @@ export function CatalogControlCenter({
           <button
             type="button"
             className={styles.pageButton}
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={loading || page === 1}
+            onClick={() => changePage(Math.max(1, page - 1))}
+            disabled={
+              loading ||
+              (response.previousCursor !== undefined
+                ? response.previousCursor === null
+                : page === 1)
+            }
           >
             {localized(locale, "上一頁", "Previous")}
           </button>
@@ -712,8 +1073,13 @@ export function CatalogControlCenter({
           <button
             type="button"
             className={styles.pageButton}
-            onClick={() => setPage((current) => current + 1)}
-            disabled={loading || response.totalMatching <= page * PAGE_SIZE}
+            onClick={() => changePage(page + 1)}
+            disabled={
+              loading ||
+              (response.nextCursor !== undefined
+                ? response.nextCursor === null
+                : response.totalMatching <= page * PAGE_SIZE)
+            }
           >
             {localized(locale, "下一頁", "Next")}
           </button>

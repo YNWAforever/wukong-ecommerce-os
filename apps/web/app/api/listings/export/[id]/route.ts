@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { RepairSourceObservation } from "../../../../../lib/bulk-export-contract";
 import type { Database } from "@wukong/db";
 import { getDatabase } from "../../../../../lib/intake-runtime";
 import {
@@ -42,9 +43,46 @@ export function createExportDetailHandler(deps: {
             );
           const results =
             await repositories.importResults.listForExportAttempts([id]);
+          const reconciliation = buildExportReconciliation(attempt, results);
+          const repairSourceObservations: RepairSourceObservation[] = [];
+          if (
+            attempt.artifactStatus === "ready" &&
+            resultCapabilities(session.role).canGenerateBulkUpdate
+          ) {
+            const evidence = attempt.provenance?.evidence;
+            const rejected = reconciliation.members.filter(
+              (member) => member.latestResult?.outcome === "rejected",
+            );
+            if (Array.isArray(evidence) && rejected.length <= 100)
+              for (const member of rejected) {
+                const previous = evidence.find(
+                  (binding) => binding.listingId === member.listingId,
+                );
+                const current =
+                  await repositories.platformProducts.getByListingId(
+                    member.listingId,
+                  );
+                if (
+                  current?.origin === "import" &&
+                  current.sourceImportId &&
+                  current.contentDigest &&
+                  previous?.connectionId === current.connectionId &&
+                  previous.remoteProductId === current.remoteProductId
+                )
+                  repairSourceObservations.push({
+                    listingId: member.listingId,
+                    contentDigest: current.contentDigest,
+                    sourceImportId: current.sourceImportId,
+                    remoteProductId: current.remoteProductId,
+                  });
+              }
+          }
           return {
             attempt,
-            reconciliation: buildExportReconciliation(attempt, results),
+            reconciliation,
+            ...(resultCapabilities(session.role).canGenerateBulkUpdate
+              ? { repairSourceObservations }
+              : {}),
           };
         });
       return jsonResponse(200, {
