@@ -2,7 +2,7 @@
 
 Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan](2026-10-01-wukong-opakcellar-fixes.md).
 
-Current checkpoint (2026-10-04 HKT): T10 safe catalog stage attribution locally verified; controlled deployed attribution pending. Retained UC30 20k legacy827.78ms/800ms gate remains open; matrix15PASS/3PARTIAL/12BLOCKED/all30. See [stage attribution](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md) and [retained UC30 receipt](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No employee-time/paid-quality/production/merchant completion is inferred. Prior dated findings remain evidence.
+Current checkpoint (2026-10-04 HKT): T10 safe catalog stage attribution locally and deployed verified with105same20k diagnostic samples; unique request-path cause and employee evidence remain open. Retained UC30 20k legacy827.78ms/800ms gate remains open; matrix15PASS/3PARTIAL/12BLOCKED/all30. See [stage attribution](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md) and [retained UC30 receipt](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No employee-time/paid-quality/production/merchant completion is inferred. Prior dated findings remain evidence.
 
 ## Baseline and custody (T00)
 
@@ -603,3 +603,9 @@ Final: Ruling: exact-source successful cloud context checks validate synthetic b
 - [ ] Cloud matrix15PASS/3PARTIAL/12BLOCKED/all30. UC03/29 production500 and UC30 legacy20k latency/human timing remain partial; paid-human UC09–20 remain blocked. Production authorization/recovery/schema/safe role/cache/effectiveWeb and real merchant gates remain incomplete; conditional main merge held.
 
 [Executed metrics, billing limits, first-observed/cold distinction and hold/rollback](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No new product code/migration/env/credential/runtime deployment or production mutation.
+
+## 2026-10-04 HKT T10 observed request boundaries
+
+F09 changed/reproduced: new authorized success-phase diagnostics are implemented and source24fffullCI37189358010 passes43steps; performance is not declared fixed. Same20k63stage/42transport samples retain original827.78ms miss, new1045.56ms legacy miss and805.70ms native outer miss. The exact1045.56ms tail is118.2handler/927.36outside; native ResourceTiming732.90ms is separate from805.70outer automation timing. Runtime roles/RLS/current cardinality/cursor/domain hashes/stops pass26checks across two windows. Prior access/locator and create-parser failures remain failed and are diagnosed as tooling admission/parsing, not500 roots.
+
+No migration/env/secret/Worker source/production change; paidAI0/realSHOPLINE0/newQueue0. Current fba82/dpl_3oi guarded Web and heldfcf/source593 are independently versioned. Billing1.45954is shared-project and can lag; final all-provider invoice unmeasured. UAT15PASS/3PARTIAL/12BLOCKED remains. This new docs-only head needs exactCI/PR/archive terminal evidence; production exact approval/recovery/schema/role/cache/effective Web/original500, paid-human quality, matched employee20minutes and real merchant gates remain open. [Full behavior/metrics/failure/rollback receipt](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md).

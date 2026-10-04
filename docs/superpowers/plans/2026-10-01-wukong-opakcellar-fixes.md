@@ -552,7 +552,18 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 - [x] Add request-local fixed-label numeric `Server-Timing` only to authorized successful catalog responses. Behavior RED1→GREEN30; full root142/Web2290/14tasks and typecheck14 pass. Existing DB/auth/row-error/cursor/payload behavior retained; no successful-request content logs.
 - [x] Independent scoped review has no findings. Rulings: deployed tail/liveRLS/framework transport require actual evidence; executor test results do not substitute them. No migration/env/Worker/credential/provider change.
 - [x] This candidate's local build8/8 passes; existing middleware deprecation retained. Base CI does not certify this new candidate.
-- [ ] Exact CI, guarded staging deployment and controlled same-cohort server-stage attribution; original latency cause remains unconfirmed and its miss remains open.
+- [x] Exact source24ffCI37189358010 SUCCESS43steps; guarded fba82/dpl_3oi READY/iad1 and exact dedicated alias. Same20k105samples/26scope-domain checks/0sample errors; native h2 ResourceTiming and exact HTTP-tail stages recorded.
+- [ ] Retained827.78/1045.56legacy and805.70native outer misses: dominant measured time lies outside the handler, but unique request-path cause and employee acceptance remain unconfirmed. No rerun-to-green or speculative DB fix.
 - [ ] Production exact authority/recovery/0046/safe role/cache/effective Web/original500, paid-human quality/employee20minutes and first trueSHOPLINE/merchant gates; no main merge or production action inferred.
 
 [Behavior, measurement meanings, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical checkpoints are superseded only within explicitly verified scope; UAT stays15PASS/3PARTIAL/12BLOCKED/all30.
+
+## 2026-10-04 HKT T10 executed attribution supplement
+
+- [x] Two controlled windows63+42samples with current native password/server-role/workspace checks, deep25cursor equality and ten-domain retention; normal logout/queues/ingress/compute stops and independent deadlines. Source24ffexactCI43success/1conditional artifact skip.
+- [x] First no-sample protection-link/locator failure retained; regenerated same-alias temporary access fixes tooling admission only. Mixed CLI create parser failure recovered without repeat POST; no source500 fix inferred.
+- [x] Attribute observed legacy1045.56ms tail to118.2ms measured handler and927.36ms outside it; native outer805.70/resource732.90/handler118.9 measured separately. Native field-INP/employee minutes and unique outside-handler cause remain unproven.
+- [x] Current Workerfcf100/source593/no probes/public404 and staging disabled-idle0.25 readback; billingUS$1.45954shared-project/lagged, all-provider final bill unmeasured. PaidAI0/realSHOPLINE0/no new admissions.
+- [ ] This new evidence-only head exactCI/PR/archive terminal receipts; UAT unchanged15PASS/3PARTIAL/12BLOCKED. Original performance/production/paid-human/employee/merchant release gates remain open and conditional main merge held.
+
+[Executed metrics, causal limits, failures, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical unchecked statements are superseded only by explicitly executed evidence, not by a new release authorization.
