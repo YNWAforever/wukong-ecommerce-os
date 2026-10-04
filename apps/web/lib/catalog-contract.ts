@@ -1,11 +1,14 @@
 import type { SourceReadiness } from "./source-readiness";
 import type { ListingStatus } from "@wukong/core";
+import type { DraftCatalogReadItem } from "@wukong/db";
 
 export type CatalogOrigin = "import" | "created";
 
 export type PlatformCatalogItem = {
   sourceType: "platform";
-  sourceReadiness?: SourceReadiness;
+  sourceReadiness?: SourceReadiness | null;
+  readState?: "ready" | "blocked";
+  supportRequestId?: string;
   id: string;
   remoteProductId: string;
   origin: CatalogOrigin;
@@ -43,7 +46,15 @@ export type WorkbookCatalogItem = {
   canExport: false;
 };
 export type CatalogItem =
-  PlatformCatalogItem | WebsiteCatalogItem | WorkbookCatalogItem;
+  | PlatformCatalogItem
+  | WebsiteCatalogItem
+  | WorkbookCatalogItem
+  | DraftCatalogItem;
+export type DraftCatalogItem = DraftCatalogReadItem & {
+  sourceReadiness?: SourceReadiness | null;
+  readState?: "ready" | "blocked";
+  supportRequestId?: string;
+};
 export type CatalogSummary = {
   website: number;
   workbook: number;
@@ -53,6 +64,9 @@ export type CatalogSummary = {
   needsReview: number;
   needsAttention: number;
   published: number;
+  referenceRows?: number;
+  drafts?: number;
+  boundProducts?: number;
 };
 
 export type CatalogPage = {
@@ -60,18 +74,37 @@ export type CatalogPage = {
   capabilities: {
     canGenerateBulkUpdate: boolean;
     canRecordImportResult: boolean;
+    canMaintainProducts?: boolean;
   };
+  selectionScope?: string;
   items: CatalogItem[];
   summary: CatalogSummary;
   page: number;
   pageSize: number;
   totalMatching: number;
+  nextCursor?: string | null;
+  previousCursor?: string | null;
 };
 
 export function summarizeCatalog(
   items: readonly CatalogItem[],
 ): CatalogSummary {
   return {
+    referenceRows: items.filter(
+      (item) => item.sourceType === "website" || item.sourceType === "workbook",
+    ).length,
+    drafts: new Set(
+      items
+        .filter(
+          (item) =>
+            item.sourceType === "draft" || item.sourceType === "platform",
+        )
+        .map((item) => item.listingId)
+        .filter(Boolean),
+    ).size,
+    boundProducts: items.filter(
+      (item) => item.sourceType === "platform" && item.listingId !== null,
+    ).length,
     total: items.length,
     workbook: items.filter((item) => item.sourceType === "workbook").length,
     website: items.filter((item) => item.sourceType === "website").length,
@@ -82,14 +115,19 @@ export function summarizeCatalog(
       (item) => item.sourceType === "platform" && item.listingId === null,
     ).length,
     needsReview: items.filter(
-      (item) => item.sourceType === "platform" && item.needsReview,
+      (item) =>
+        (item.sourceType === "platform" || item.sourceType === "draft") &&
+        item.needsReview,
     ).length,
     needsAttention: items.filter(
-      (item) => item.sourceType === "platform" && item.needsAttention,
+      (item) =>
+        (item.sourceType === "platform" || item.sourceType === "draft") &&
+        item.needsAttention,
     ).length,
     published: items.filter(
       (item) =>
-        item.sourceType === "platform" && item.listingStatus === "published",
+        (item.sourceType === "platform" || item.sourceType === "draft") &&
+        item.listingStatus === "published",
     ).length,
   };
 }
@@ -108,6 +146,8 @@ export function filterCatalogItemsServer(
     | "workbook"
     | "website"
     | "all"
+    | "drafts"
+    | "bound"
     | "attention"
     | "review"
     | "unlinked"
@@ -134,14 +174,26 @@ export function filterCatalogItemsServer(
       );
     const matchesFilter =
       filter === "all" ||
+      (filter === "drafts" && item.listingId !== null) ||
+      (filter === "bound" &&
+        item.sourceType === "platform" &&
+        item.listingId !== null) ||
       (filter === "attention" && item.needsAttention) ||
       (filter === "review" && item.needsReview) ||
-      (filter === "unlinked" && item.listingId === null) ||
+      (filter === "unlinked" &&
+        item.sourceType === "platform" &&
+        item.listingId === null) ||
       (filter === "published" && item.listingStatus === "published");
     if (!matchesFilter) return false;
     if (!normalizedQuery) return true;
 
-    return [item.title, item.sku, item.remoteProductId, item.specVersion]
+    return [
+      item.title,
+      item.sku,
+      ...(item.sourceType === "platform"
+        ? [item.remoteProductId, item.specVersion]
+        : []),
+    ]
       .filter((value): value is string => value !== null)
       .some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
   });

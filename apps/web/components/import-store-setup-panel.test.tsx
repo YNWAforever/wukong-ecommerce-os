@@ -48,7 +48,10 @@ it("keeps actual selected file and time through inline connect and imports origi
       return Response.json(
         summary({
           connection: connected
-            ? { shopDomain: "synthetic.myshopline.com" }
+            ? {
+                id: "11111111-1111-4111-8111-111111111111",
+                shopDomain: "synthetic.myshopline.com",
+              }
             : null,
         }),
       );
@@ -121,6 +124,16 @@ it("keeps actual selected file and time through inline connect and imports origi
     container.querySelector<HTMLButtonElement>(
       ".intake-form button[type=submit]",
     )!.disabled,
+  ).toBe(true);
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>("#bulk-source-confirmation")!
+      .click(),
+  );
+  expect(
+    container.querySelector<HTMLButtonElement>(
+      ".intake-form button[type=submit]",
+    )!.disabled,
   ).toBe(false);
   await act(async () =>
     container
@@ -162,7 +175,10 @@ it("fails closed and retries summary without uploading", async () => {
     .mockResolvedValue(
       Response.json(
         summary({
-          connection: { shopDomain: "synthetic.myshopline.com" },
+          connection: {
+            id: "11111111-1111-4111-8111-111111111111",
+            shopDomain: "synthetic.myshopline.com",
+          },
           credentialStorageConfigured: false,
         }),
       ),
@@ -175,6 +191,16 @@ it("fails closed and retries summary without uploading", async () => {
     )!.disabled,
   ).toBe(true);
   await click(container, "Retry");
+  expect(
+    container.querySelector<HTMLButtonElement>(
+      ".intake-form button[type=submit]",
+    )!.disabled,
+  ).toBe(true);
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>("#bulk-source-confirmation")!
+      .click(),
+  );
   expect(
     container.querySelector<HTMLButtonElement>(
       ".intake-form button[type=submit]",
@@ -208,7 +234,10 @@ it("blocks connected viewers and keeps the import guard effective on synthetic s
   const fetcher = vi.fn(async () =>
     Response.json(
       summary({
-        connection: { shopDomain: "synthetic.myshopline.com" },
+        connection: {
+          id: "11111111-1111-4111-8111-111111111111",
+          shopDomain: "synthetic.myshopline.com",
+        },
         canManageConnection: false,
         canImport: false,
       }),

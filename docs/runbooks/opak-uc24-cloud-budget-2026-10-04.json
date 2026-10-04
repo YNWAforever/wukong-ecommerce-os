@@ -1,0 +1,441 @@
+{
+  "recordedAt": "2026-10-04T02:48:27.712Z",
+  "case": "UC24",
+  "disposition": "already-fixed; original simulated cloud criterion verified",
+  "originalCriterion": {
+    "precondition": "Small test budget; simulated response loss",
+    "steps": ["reach cap", "timeout", "retry"],
+    "expected": [
+      "over-cap work does not start",
+      "unknown hold remains",
+      "unknown is not zero cost"
+    ]
+  },
+  "outcome": "passed-original-simulated-cloud-contract",
+  "syntheticProducts": 4,
+  "simulatedKnownUsd": 0.05,
+  "unknownHoldUsd": 0.05,
+  "actualPaidAiCalls": 0,
+  "execution": [
+    {
+      "directory": "uc24-prepare-v1",
+      "receipt": {
+        "stage": "synthetic-cloud-hundred-selection-and-preview",
+        "startedAt": "2026-10-04T02:34:00.693Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "hundred-normal-source-bound-drafts",
+            "pass": true,
+            "createdDrafts": 4
+          },
+          {
+            "id": "hundred-distinct-owned-leading-zero-identities",
+            "pass": true
+          },
+          {
+            "id": "twenty-manual-input-revision-locks-saved",
+            "pass": true,
+            "lockedListings": 4
+          },
+          {
+            "id": "reviewable-current-input-ce9a9144-12fa-4400-9a2f-2213a9d80b5b",
+            "pass": true
+          },
+          {
+            "id": "reviewable-current-input-e21aaf5b-812a-4b11-8e21-e0dc0639d326",
+            "pass": true
+          },
+          {
+            "id": "reviewable-current-input-e62dc0f8-962b-4f18-ac03-bc1ed5db6fc4",
+            "pass": true
+          },
+          {
+            "id": "reviewable-current-input-7990c2fb-ef7e-4780-9caa-f3ab77666aa5",
+            "pass": true
+          },
+          {
+            "id": "five-normal-manual-inputs-complete",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "outcome": "four-uc24-normal-fixtures-ready",
+        "limit": "Five isolated synthetic normal import/manual input fixtures only; no AI, queue admission, approval or real SHOPLINE.",
+        "finishedAt": "2026-10-04T02:35:37.844Z",
+        "elapsedMs": 97151
+      },
+      "watchdog": {
+        "startedAt": "2026-10-04T02:34:25.761Z",
+        "finishedAt": "2026-10-04T02:35:38.811Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    },
+    {
+      "directory": "uc24-execute-v1",
+      "receipt": {
+        "stage": "uc24-cloud-simulated-positive-budget-and-response-loss",
+        "startedAt": "2026-10-04T02:40:14.700Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "workerSourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+        "restoreVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "reviewed-worker-preflight",
+            "pass": true
+          },
+          {
+            "id": "worker-runtime-byte-identical-to-reviewed-source",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "existing-workspace-no-unknown-or-positive-spend",
+            "pass": true
+          },
+          {
+            "id": "server-operator-workspace",
+            "pass": true
+          },
+          {
+            "id": "fresh-two-item-one-field-preview-0",
+            "pass": true
+          },
+          {
+            "id": "one-admitted-one-pending-ingress-held-0",
+            "pass": true
+          },
+          {
+            "id": "fresh-two-item-one-field-preview-1",
+            "pass": true
+          },
+          {
+            "id": "one-admitted-one-pending-ingress-held-1",
+            "pass": true
+          },
+          {
+            "id": "concurrent-exact-cap-admits-one-rejects-one",
+            "pass": true
+          },
+          {
+            "id": "exact-cap-one-held-no-invocations",
+            "pass": true
+          },
+          {
+            "id": "fault-config-isolated-fake-mock-only",
+            "pass": true
+          },
+          {
+            "id": "fault-active-one-scoped-version",
+            "pass": true
+          },
+          {
+            "id": "known-one-owned-outbox",
+            "pass": true
+          },
+          {
+            "id": "known-same-id-signed-queue-accepted",
+            "pass": true,
+            "newAdmission": false
+          },
+          {
+            "id": "actual-queue-known-success-one-pending",
+            "pass": true
+          },
+          {
+            "id": "known-reservation-settled-from-simulated-invocation",
+            "pass": true
+          },
+          {
+            "id": "known-positive-cost-not-zero",
+            "pass": true
+          },
+          {
+            "id": "real-ui-cap-exhaustion-zero-new-admissions",
+            "pass": true
+          },
+          {
+            "id": "second-positive-hold-at-exact-workspace-cap",
+            "pass": true
+          },
+          {
+            "id": "unknown-one-owned-outbox",
+            "pass": true
+          },
+          {
+            "id": "unknown-same-id-signed-queue-accepted",
+            "pass": true,
+            "newAdmission": false
+          },
+          {
+            "id": "actual-queue-response-loss-one-failed-one-pending",
+            "pass": true
+          },
+          {
+            "id": "unknown-outcome-not-retryable",
+            "pass": true
+          },
+          {
+            "id": "unknown-reservation-retains-positive-hold-and-null-settlement",
+            "pass": true
+          },
+          {
+            "id": "normal-server-unknown-retry-denied-with-no-new-operation",
+            "pass": true
+          },
+          {
+            "id": "unknown-held-charge-blocks-next-batch-wave",
+            "pass": true
+          },
+          {
+            "id": "unknown-settlement-replay-preserves-null-hold",
+            "pass": true
+          },
+          {
+            "id": "normal-quality-api-known-subtotal-plus-unknown-lineage",
+            "pass": true
+          },
+          {
+            "id": "real-ui-unknown-retry-checkbox-absent",
+            "pass": true
+          },
+          {
+            "id": "duplicate-known-same-id-signed-queue-accepted",
+            "pass": true,
+            "newAdmission": false
+          },
+          {
+            "id": "duplicate-unknown-same-id-signed-queue-accepted",
+            "pass": true,
+            "newAdmission": false
+          },
+          {
+            "id": "reviewed-worker-duplicate-terminal-deliveries-no-cost-or-run-drift",
+            "pass": true
+          },
+          {
+            "id": "manual-unselected-commercial-identity-preserved-ce9a9144-12fa-4400-9a2f-2213a9d80b5b",
+            "pass": true
+          },
+          {
+            "id": "manual-unselected-commercial-identity-preserved-e21aaf5b-812a-4b11-8e21-e0dc0639d326",
+            "pass": true
+          },
+          {
+            "id": "manual-unselected-commercial-identity-preserved-e62dc0f8-962b-4f18-ac03-bc1ed5db6fc4",
+            "pass": true
+          },
+          {
+            "id": "manual-unselected-commercial-identity-preserved-7990c2fb-ef7e-4780-9caa-f3ab77666aa5",
+            "pass": true
+          },
+          {
+            "id": "all-older-runs-ledgers-versions-and-source-cells-preserved",
+            "pass": true
+          },
+          {
+            "id": "synthetic-only-ledger-one-positive-one-unknown",
+            "pass": true
+          },
+          {
+            "id": "zero-publish-jobs",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "reviewed-worker-restored",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          },
+          {
+            "id": "reviewed-worker-final-readback",
+            "acknowledged": true
+          },
+          {
+            "id": "public-ingress-closed",
+            "acknowledged": true,
+            "status": 404
+          }
+        ],
+        "paidAiCalls": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "simulatedCost": true,
+        "faultVersion": "15a7bd31-5c5f-49d9-a43b-d20dcc343db6",
+        "cost": {
+          "simulatedKnownCostUsd": 0.05,
+          "unknownCostRunCount": 1,
+          "unknownReservationUsd": 0.05,
+          "actualPaidAiCalls": 0
+        },
+        "outcome": "uc24-simulated-cloud-budget-and-unknown-passed",
+        "limit": "Positive holds inserted through the actual scoped reservation repository; costs/response loss simulated in two exact-run fake Worker providers. Actual normal cloud batch/quality/UI/retry/Queue paths verified, without paid provider HTTP or real merchant origin. Paid model pricing accuracy and natural network loss are not claimed.",
+        "finishedAt": "2026-10-04T02:45:18.712Z",
+        "elapsedMs": 304012
+      },
+      "watchdog": {
+        "startedAt": "2026-10-04T02:40:36.426Z",
+        "finishedAt": "2026-10-04T02:45:18.808Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    }
+  ],
+  "faultScopeVerification": {
+    "command": "node --test uc24-fault-scope.test.mjs",
+    "exit": 0,
+    "passed": 18,
+    "failed": 0,
+    "sourceSha256": "16e04aeb868183f00a12af5df1e8a8778316295c183fad607479faab911aaf1a"
+  },
+  "screenshotsVisuallyReviewed": 2,
+  "safeFinalHold": {
+    "recordedAt": "2026-10-04T02:45:50.934Z",
+    "readOnly": true,
+    "productionChanged": false,
+    "outcome": "candidate-restored-and-held",
+    "activeDeployment": {
+      "id": "1c597fda-bd87-4a02-982b-062a760e759d",
+      "versions": [
+        {
+          "version_id": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidate": {
+      "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+      "secretNames": [
+        "OPENAI_API_KEY",
+        "QUEUE_INGRESS_SECRET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+      ],
+      "secretValuesRead": false,
+      "temporaryProbeBindingsAbsent": true
+    },
+    "compute": {
+      "disabled": true,
+      "state": "idle",
+      "maxComputeUnits": 0.25
+    },
+    "publicHeadStatus": 404,
+    "queuePauseMetadata": "command acknowledgements only; independently unavailable"
+  },
+  "evidenceLimits": [
+    "Positive reservations are created through the actual scoped repository; the fake Web admission normally reserves no money. This is not a paid provider admission/configuration/pricing test.",
+    "Two exact-run fake Worker providers simulate known usage and response loss; no external AI HTTP request, natural network loss or paid model accuracy is claimed.",
+    "The original copied preparation helper retains historical hundred/twenty/five check labels; only four products are validated. No hundred/twenty-item execution claim.",
+    "Queue pause/cron flags have command acknowledgements only; actual cloud billing unmeasured under the standing US$5 cap.",
+    "Unknown ledger/reservation and both unstarted pending members are retained, not reconciled to zero, retried, reset or purged."
+  ],
+  "applicationChanged": false,
+  "migrationApplied": false,
+  "appEnvAdded": false,
+  "providerSecretsChanged": false,
+  "temporaryWorkerRestored": true,
+  "outgoingEmail": 0,
+  "realShoplineCalls": 0,
+  "productionChanged": false,
+  "merged": false,
+  "currentCloudMatrix": {
+    "passed": 15,
+    "partial": 2,
+    "blocked": 13,
+    "total": 30
+  }
+}

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import type { AuditWriter } from "@wukong/core";
 
 import { inArray, and, desc, eq, sql, ne, isNotNull } from "drizzle-orm";
 
@@ -96,10 +97,15 @@ export type ExportAttemptRepository = {
    */
   ensure(input: EnsureExportAttemptInput): Promise<EnsuredExportAttempt>;
   getById(id: string): Promise<ExportAttempt | null>;
-  markReady(input: {
-    id: string;
-    artifactSha256: string;
-  }): Promise<ExportAttempt>;
+  /** Ready and included members' terminal audit commit atomically; repeats do not audit again. */
+  markReady(
+    input: {
+      id: string;
+      artifactSha256: string;
+      actorId: string;
+    },
+    audit: AuditWriter,
+  ): Promise<ExportAttempt>;
   markFailed(input: {
     id: string;
     artifactSha256: string;
@@ -188,6 +194,7 @@ export function createExportAttemptRepository(
   async function transition(
     input: { id: string; artifactSha256: string; errorCode?: string },
     ready: boolean,
+    onReady?: (row: ExportAttempt) => Promise<void>,
   ): Promise<ExportAttempt> {
     scope.assertOpen();
     const binding = and(
@@ -209,7 +216,10 @@ export function createExportAttemptRepository(
       )
       .where(and(binding, ne(exportAttempts.artifactStatus, "ready")))
       .returning(COLUMNS);
-    if (updated) return updated;
+    if (updated) {
+      if (onReady) await onReady(updated);
+      return updated;
+    }
     const [existing] = await transaction
       .select(COLUMNS)
       .from(exportAttempts)
@@ -279,7 +289,26 @@ export function createExportAttemptRepository(
       return { ...row, wasCreated };
     },
 
-    markReady: (input) => transition(input, true),
+    markReady: (input, audit) =>
+      transition(input, true, async (row) => {
+        // The conditional UPDATE wins once, even across concurrent retries. Audit
+        // failure rolls this workspace transaction back, keeping readiness retryable.
+        for (const entry of row.manifest) {
+          if (entry.outcome !== "included") continue;
+          await audit.write({
+            workspaceId,
+            actorId: input.actorId,
+            entityId: entry.listingId,
+            action: "listing.bulk_form_exported",
+            metadata: {
+              exportAttemptId: row.id,
+              versionId: entry.versionId,
+              artifactSha256: row.artifactSha256,
+              specVersion: row.specVersion,
+            },
+          });
+        }
+      }),
     markFailed: (input) => transition(input, false),
 
     async getById(id) {

@@ -278,10 +278,8 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1440, height: 1000 });
     await signInBulkImportOperator(page, fixture);
-    await expect(page.locator("#merchant-attested-export-at")).toHaveCount(0);
-    await expect(
-      page.locator("#connected-shopline-update"),
-    ).not.toHaveAttribute("open", "");
+    await expect(page.locator("#merchant-attested-export-at")).toBeHidden();
+    await expect(page.locator("#connected-shopline-update")).toHaveCount(0);
     const preview = await choose(page);
     await expect(
       page.getByText("24 rows · 23 eligible · 1 excluded · 1 issues", {
@@ -383,7 +381,7 @@ test("automatic sample imports all eligible products, retains excluded evidence,
       path: resolve(evidenceDir, "catalog-detail-en-1440.png"),
       fullPage: true,
     });
-    await page.goto("/listings/import");
+    await page.goto("/listings/import?intent=reference-only");
     await page.getByRole("tab", { name: "Workbook", exact: true }).click();
     await choose(page, renamedName);
     const replay = await save(page);
@@ -403,17 +401,35 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     ).toHaveLength(23);
     assertBaseRequests(requests);
     const id = products[22]!.id;
+    // Both requests use the same authenticated reviewer and exact selection.
+    // This saved reference is not a listing: its digest is never compared,
+    // and preview/generation must reach the scoped listing_not_found outcome.
+    const exportSelection = {
+      listingIds: [id],
+      fields: ["nameZh"],
+      attestation: {
+        listings: [{ listingId: id, contentDigest: SYNTHETIC_DIGEST }],
+      },
+    };
+    const exportPreviewResponse = await page.request.post(
+      "/api/listings/export/preview",
+      { data: exportSelection },
+    );
+    expect(exportPreviewResponse.status()).toBe(200);
+    const exportPreview = await exportPreviewResponse.json();
+    expect(exportPreview).toMatchObject({
+      fields: ["nameZh"],
+      rowCount: 0,
+      changes: [],
+      manifest: [
+        { listingId: id, versionId: null, outcome: "listing_not_found" },
+      ],
+    });
+    expect(exportPreview.previewSha256).toMatch(/^[a-f0-9]{64}$/);
     const exported = await page.request.post("/api/listings/export", {
-      // Well-formed attestation for a listing this workspace cannot see. The
-      // digest is never compared -- the listing resolves to
-      // `listing_not_found` first -- but it has to cover exactly `listingIds`,
-      // or the refusal would come from schema validation rather than from the
-      // workspace boundary this case exists to prove.
       data: {
-        listingIds: [id],
-        attestation: {
-          listings: [{ listingId: id, contentDigest: SYNTHETIC_DIGEST }],
-        },
+        ...exportSelection,
+        previewSha256: exportPreview.previewSha256,
       },
     });
     expect(exported.status()).toBe(200);
@@ -424,9 +440,19 @@ test("automatic sample imports all eligible products, retains excluded evidence,
     });
     for (const method of ["csv", "bulk_form", "shopline_api"]) {
       const response = await page.request.post(`/api/listings/${id}/deliver`, {
-        // `bulk_form` refuses outright without an attestation, so send one for
-        // every method: the status must come from the boundary, not the schema.
-        data: { method, attestedContentDigest: SYNTHETIC_DIGEST },
+        // Only bulk_form requires explicit fields and the actual preview hash.
+        // Keep CSV/API payloads unchanged and reach the scoped missing-listing
+        // boundary with the same reviewer, selection, and preview evidence.
+        data: {
+          method,
+          attestedContentDigest: SYNTHETIC_DIGEST,
+          ...(method === "bulk_form"
+            ? {
+                fields: exportSelection.fields,
+                previewSha256: exportPreview.previewSha256,
+              }
+            : {}),
+        },
       });
       expect([404, 409]).toContain(response.status());
       expect(await response.json()).toMatchObject({
@@ -699,7 +725,14 @@ for (const locale of ["en", "zh-Hant"] as const) {
         path: resolve(evidenceDir, `catalog-${locale}-${width}.png`),
         fullPage: true,
       });
+      const selectedResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.startsWith(
+            "/api/workbook-products/",
+          ) && response.request().method() === "GET",
+      );
       await detailButtons.first().click();
+      const selected = await (await selectedResponse).json();
       const detail = page.getByRole("region", {
         name: locale === "en" ? "Workbook product details" : "試算表商品資料",
         exact: true,
@@ -710,7 +743,15 @@ for (const locale of ["en", "zh-Hant"] as const) {
           ? "unavailable for export or publication"
           : "不能匯出或發佈",
       );
-      await expect(detail.locator("img, a")).toHaveCount(0);
+      await expect(detail.locator("img")).toHaveCount(0);
+      const maintenance = detail.getByRole("link", {
+        name: locale === "en" ? "Start maintenance" : "開始維護",
+        exact: true,
+      });
+      await expect(maintenance).toHaveAttribute(
+        "href",
+        `/listings/import?intent=maintain-existing&referenceKind=workbook&referenceId=${selected.id}`,
+      );
       await assertNoHorizontalOverflow(page);
       await page.screenshot({
         path: resolve(evidenceDir, `detail-${locale}-${width}.png`),

@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
+import Script from "next/script";
+import { ADMIN_POPSTATE_BRIDGE_SCRIPT } from "../lib/admin-popstate-bridge";
 
 import "./globals.css";
 import { localized } from "../lib/ui-copy";
@@ -33,6 +35,9 @@ export default async function RootLayout({
   return (
     <html lang={locale}>
       <body>
+        <Script id="admin-popstate-bridge" strategy="beforeInteractive">
+          {ADMIN_POPSTATE_BRIDGE_SCRIPT}
+        </Script>
         <LocaleProvider locale={locale}>{children}</LocaleProvider>
       </body>
     </html>

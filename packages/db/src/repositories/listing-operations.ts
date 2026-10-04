@@ -55,6 +55,13 @@ export function createListingOperationRepository(
   };
   return {
     getOperation,
+    async hasUnknownOperationCost(id: string) {
+      scope.assertOpen();
+      const rows = await tx.execute(sql`select
+        exists(select 1 from ai_budget_reservations where workspace_id=${workspaceId} and pipeline_run_id=${id}::uuid and state in ('held','unknown'))
+        or exists(select 1 from ai_runs where workspace_id=${workspaceId} and pipeline_run_id=${id}::uuid and (status='started' or estimated_cost_usd is null or usage_certainty='unknown')) as unknown`);
+      return Boolean(rows[0]?.unknown);
+    },
     /** Listing first, then run: also shared by the wine stage coordinator. */
     async lockOperation(id: string) {
       scope.assertOpen();

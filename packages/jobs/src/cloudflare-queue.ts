@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 
 import { z } from "zod";
+import { contentFieldSelectionSchema } from "@wukong/core";
 import type { ProductShotJob } from "./product-shot-queue.js";
 import type { WebsiteJob } from "./website-queue.js";
 
@@ -38,6 +39,7 @@ export const listingJobSchema = z
     schemaVersion: z.literal(2).optional(),
     runId: z.string().uuid().optional(),
     inputRevision: z.number().int().positive().optional(),
+    contentFields: contentFieldSelectionSchema.optional(),
   })
   .strict();
 

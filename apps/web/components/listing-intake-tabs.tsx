@@ -8,7 +8,13 @@ import { NewProductBlockedPanel } from "./new-product-blocked-panel";
 import { SupportingEvidencePanel } from "./supporting-evidence-panel";
 import { WebsiteImportPanel } from "./website-import-panel";
 type IntakeTab = "website" | "bulk" | "evidence" | "create";
-export function ListingIntakeTabs({ canScan = true }: { canScan?: boolean }) {
+export function ListingIntakeTabs({
+  canScan = true,
+  referenceOnly = false,
+}: {
+  canScan?: boolean;
+  referenceOnly?: boolean;
+}) {
   const locale = useLocale();
   const [active, setActive] = useState<IntakeTab>("website");
   const [connectedVisited, setConnectedVisited] = useState(false);
@@ -20,7 +26,14 @@ export function ListingIntakeTabs({ canScan = true }: { canScan?: boolean }) {
       id: "evidence",
       label: localized(locale, "補充證據", "Supporting evidence"),
     },
-    { id: "create", label: localized(locale, "新商品", "New products") },
+    ...(!referenceOnly
+      ? [
+          {
+            id: "create" as const,
+            label: localized(locale, "新商品", "New products"),
+          },
+        ]
+      : []),
   ];
   function select(id: IntakeTab) {
     setActive(id);
@@ -82,21 +95,23 @@ export function ListingIntakeTabs({ canScan = true }: { canScan?: boolean }) {
           {tab.id === "bulk" && workbookVisited ? (
             <>
               <WorkbookImportPanel canImport={canScan} />
-              <details
-                id="connected-shopline-update"
-                onToggle={(event) => {
-                  if (event.currentTarget.open) setConnectedVisited(true);
-                }}
-              >
-                <summary>
-                  {localized(
-                    locale,
-                    "已連接 SHOPLINE 更新",
-                    "Connected SHOPLINE update",
-                  )}
-                </summary>
-                {connectedVisited ? <BulkImportPanel /> : null}
-              </details>
+              {!referenceOnly ? (
+                <details
+                  id="connected-shopline-update"
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) setConnectedVisited(true);
+                  }}
+                >
+                  <summary>
+                    {localized(
+                      locale,
+                      "已連接 SHOPLINE 更新",
+                      "Connected SHOPLINE update",
+                    )}
+                  </summary>
+                  {connectedVisited ? <BulkImportPanel /> : null}
+                </details>
+              ) : null}
             </>
           ) : null}
           {tab.id === "evidence" && active === "evidence" ? (

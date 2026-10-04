@@ -1,138 +1,164 @@
-import { describe, expect, it } from "vitest";
-
+import { describe, expect, it, vi } from "vitest";
 import { createQualityHandler } from "./route.js";
 
-describe("GET /api/quality", () => {
-  it("requires an authenticated workspace session", async () => {
-    const handler = createQualityHandler({
-      now: () => new Date("2026-09-05T00:00:00Z"),
+const gapCounts = {
+  untranslatedName: 1,
+  untranslatedSeoTitle: 0,
+  seoTitleMirrorsName: 0,
+  seoDescriptionMirrorsSeoTitle: 0,
+  keywordsMirrorName: 0,
+  summaryMissing: 0,
+};
+const projected = {
+  totalListings: 31,
+  totalAssessed: 24,
+  cleanCount: 23,
+  hasGapsCount: 1,
+  gapCounts,
+  noActiveVersion: 0,
+  unassessableActiveVersion: 0,
+  missingCurrentContent: 0,
+  invalidCurrentContent: 0,
+  assessmentVersion: "opak-current-content-v1",
+  projection: {
+    state: "pending",
+    asOf: "2026-10-01T00:00:00.000Z",
+    stale: true,
+    pendingCount: 7,
+    failedCount: 0,
+  },
+};
+const costs = {
+  knownCostUsd: 12.5,
+  unknownCostRunCount: 2,
+  unknownCostReferences: {
+    asOf: "2026-10-01T00:00:01.000Z",
+    total: 2,
+    limit: 25,
+    hasMore: false,
+    items: [
+      {
+        aiRunId: "r1",
+        listingId: "l1",
+        pipelineRunId: null,
+        batchId: null,
+        stage: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      },
+    ],
+  },
+};
+function fixture(failure?: Error) {
+  const reconcile = vi.fn(async (_assessor, options) => {
+    expect(options).toEqual({ limit: 25 });
+    if (failure) throw failure;
+    return projected;
+  });
+  const metadata = vi.fn(async () => costs);
+  const handler = createQualityHandler({
+    now: () => new Date("2026-10-01T00:00:00Z"),
+    sessionContext: {
+      async resolve() {
+        return {
+          workspaceId: "ws_quality",
+          actorId: "synthetic_actor",
+          role: "viewer",
+        };
+      },
+    },
+    getDatabase: () =>
+      ({
+        async forWorkspace<T>(
+          workspaceId: string,
+          work: (repositories: any) => Promise<T>,
+        ) {
+          expect(workspaceId).toBe("ws_quality");
+          return work({
+            qualityProjection: {
+              reconcile,
+              async recordCostSnapshot(input: unknown) {
+                expect(input).toEqual({
+                  knownCostUsd: 12.5,
+                  unknownCostRunCount: 2,
+                  asOf: costs.unknownCostReferences.asOf,
+                });
+              },
+            },
+            aiRuns: { summarizeOwnedCostMetadata: metadata },
+            reads: {
+              async reviewQualityEvidence() {
+                return {
+                  versions: 0,
+                  approved: 0,
+                  elapsedMs: 0,
+                  duplicateApprovals: 0,
+                  invalidApprovals: 0,
+                  edits: [],
+                };
+              },
+            },
+          });
+        },
+      }) as never,
+  });
+  return { handler, reconcile, metadata };
+}
+describe("GET /api/quality persisted projection", () => {
+  it("requires an authenticated workspace session before opening the database", async () => {
+    const response = await createQualityHandler({
       sessionContext: {
         async resolve() {
           return null;
         },
       },
-      getDatabase: () => {
-        throw new Error("database should not be opened");
+      getDatabase() {
+        throw Error("must not open");
       },
-    });
-
-    const response = await handler();
-
+    })();
     expect(response.status).toBe(401);
   });
-
-  it("returns a QualitySummary-shaped body for an authenticated viewer", async () => {
-    const calls: unknown[] = [];
-    const cleanContent = {
-      title: { en: "A", "zh-Hant": "甲" },
-      description: { en: "desc", "zh-Hant": "描述" },
-      seo: {
-        title: { en: "seo title", "zh-Hant": "seo 標題" },
-        description: { en: "seo desc", "zh-Hant": "seo 描述" },
-      },
-      tags: ["tag1"],
-    };
-    const gappyContent = {
-      ...cleanContent,
-      title: { en: "A", "zh-Hant": "A" },
-    };
-
-    const handler = createQualityHandler({
-      now: () => new Date("2026-09-05T00:00:00Z"),
-      sessionContext: {
-        async resolve() {
-          return {
-            workspaceId: "ws_opak",
-            actorId: "user_1",
-            role: "viewer",
-          };
-        },
-      },
-      getDatabase: () =>
-        ({
-          async forWorkspace<T>(
-            workspaceId: string,
-            work: (repositories: any) => Promise<T>,
-          ) {
-            calls.push(["forWorkspace", workspaceId]);
-            return work({
-              reads: {
-                async reviewQualityEvidence(start: string, end: string) {
-                  expect(start).toBe("2026-08-06T00:00:00.000Z");
-                  expect(end).toBe("2026-09-05T00:00:00.000Z");
-                  return {
-                    versions: 0,
-                    approved: 0,
-                    elapsedMs: 0,
-                    duplicateApprovals: 0,
-                    invalidApprovals: 0,
-                    edits: [],
-                  };
-                },
-                async scanListingIds() {
-                  return ["l1", "l2", "l3"];
-                },
-              },
-              listings: {
-                async getByIds() {
-                  calls.push(["listings.getByIds"]);
-                  return [
-                    {
-                      id: "l1",
-                      activeVersion: { id: "v1", content: cleanContent },
-                    },
-                    {
-                      id: "l2",
-                      activeVersion: { id: "v2", content: gappyContent },
-                    },
-                    { id: "l3", activeVersion: null },
-                  ];
-                },
-              },
-              aiRuns: {
-                async summarizeCostForListings(listingIds: readonly string[]) {
-                  calls.push(["aiRuns.summarizeCostForListings", listingIds]);
-                  return { knownCostUsd: 12.5, unknownCostRunCount: 2 };
-                },
-              },
-            });
-          },
-        }) as never,
-    });
-
+  it("reconciles at most25, returns mandatory freshness metadata and LIVE known/unknown costs", async () => {
+    const { handler, reconcile, metadata } = fixture();
     const response = await handler();
-
     expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toMatchObject({
-      reviewMetrics: {
-        approvalFraction: { value: null, denominator: 0 },
-        humanEditedFieldFraction: { value: null },
-      },
-      totalListings: 3,
-      noActiveVersion: 1,
-      unassessableActiveVersion: 0,
-      scope: "workspace_active_versions",
-      costScope: "all_history_for_workspace_listings",
-      totalAssessed: 2,
-      cleanCount: 1,
-      hasGapsCount: 1,
-      gapCounts: {
-        untranslatedName: 1,
-        untranslatedSeoTitle: 0,
-        seoTitleMirrorsName: 0,
-        seoDescriptionMirrorsSeoTitle: 0,
-        keywordsMirrorName: 0,
-        summaryMissing: 0,
-      },
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({
+      ...projected,
+      consistency: "revision_aware_projection",
+      scope: "workspace_current_content",
       totalCostUsd: 12.5,
       unknownCostRunCount: 2,
+      unknownCostReferences: costs.unknownCostReferences,
+      costScope: "all_history_for_workspace_listings",
+      reviewMetrics: { approvalFraction: { value: null, denominator: 0 } },
     });
-
-    expect(calls).toEqual([
-      ["forWorkspace", "ws_opak"],
-      ["listings.getByIds"],
-      ["aiRuns.summarizeCostForListings", ["l1", "l2", "l3"]],
-    ]);
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(metadata).toHaveBeenCalledOnce();
+  });
+  it.each([
+    new Error("database unavailable"),
+    Object.assign(new Error("missing schema"), { code: "42P01" }),
+  ])(
+    "does not turn global failures into clean/empty/failed-all success",
+    async (failure) => {
+      const { handler, metadata } = fixture(failure);
+      const response = await handler();
+      expect(response.status).toBe(500);
+      expect(metadata).not.toHaveBeenCalled();
+      expect(await response.json()).not.toHaveProperty("cleanCount");
+    },
+  );
+  it("propagates authentication faults instead of returning a zero summary", async () => {
+    const response = await createQualityHandler({
+      sessionContext: {
+        async resolve() {
+          throw Error("auth unavailable");
+        },
+      },
+      getDatabase() {
+        throw Error("must not open");
+      },
+    })();
+    expect(response.status).toBe(500);
   });
 });

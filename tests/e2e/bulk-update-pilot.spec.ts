@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { stateLabel } from "../../apps/web/lib/ui-copy.js";
@@ -50,8 +50,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   const requests: string[] = [];
   page.on("request", (request) => {
     if (
@@ -88,14 +87,18 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
     await page
       .getByRole("button", { name: /Refresh status|重新整理狀態/ })
       .click();
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await time.fill("");
+    await page.locator("#bulk-source-confirmation").check();
     await submit.click();
     await expect(
       page.locator("form.intake-form").getByRole("status"),
     ).toContainText("Enter the SHOPLINE export time.");
     expect(requests).toHaveLength(0);
     await time.fill("2026-01-01T00:15");
+    await page.locator("#bulk-source-confirmation").check();
     await page.route(
       "**/api/listings/import?**",
       (route) => route.abort("failed"),
@@ -169,8 +172,7 @@ test("viewer import is rejected by the real handler", async ({ page }) => {
   } finally {
     await admin.end();
   }
-  await signInBulkImportOperator(page, fixture);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, fixture, false);
   await page.locator("#bulk-import-file").setInputFiles({
     name: filename,
     mimeType:
@@ -203,8 +205,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   const operator = await prepareBulkUpdateFixture();
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await signInBulkImportOperator(page, operator);
-  await page.locator("#connected-shopline-update > summary").click();
+  await signInBulkImportOperator(page, operator, false);
   const rows = ["0001", "0002"].map((sku) => ({
     ...defaults,
     productId: "synthetic-update-" + sku,
@@ -236,19 +237,68 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   expect((await imported).status()).toBe(201);
+  // Attended maintenance starts from current, human-confirmed product facts.
+  // The uploaded source did not establish a pack; no one-bottle default is used.
+  const draftIds = (
+    await (await page.request.get("/api/catalog?filter=bound")).json()
+  ).items.map((item: { listingId: string }) => item.listingId);
+  for (const id of draftIds) {
+    const view = await (await page.request.get("/api/listings/" + id)).json();
+    const saved = await page.request.patch("/api/listings/" + id + "/inputs", {
+      headers: { "Idempotency-Key": randomUUID() },
+      data: {
+        expectedInputRevision: view.workingInput.revision,
+        baseVersionId: null,
+        changes: [
+          { field: "producer", value: "Demo Estate", locked: true },
+          { field: "productType", value: "wine", locked: true },
+          { field: "country", value: "Germany", locked: true },
+          { field: "region", value: "Mosel", locked: true },
+          { field: "grapeVarieties", value: ["Riesling"], locked: true },
+          { field: "volumeMl", value: 750, locked: true },
+          { field: "abvPercent", value: 12.5, locked: true },
+          { field: "packQuantity", value: 6, locked: true },
+        ],
+        action: "save",
+      },
+    });
+    expect(saved.status()).toBe(200);
+  }
   await page.goto("/batches");
   await page.getByLabel(/Label/).fill("Synthetic attended update");
   await page.getByLabel(/Budget/).fill("1");
   await page.getByLabel(/Wave size/).fill("2");
+  for (const field of [
+    "summaryEn",
+    "summaryZh",
+    "seoTitleEn",
+    "seoTitleZh",
+    "seoDescriptionEn",
+    "seoDescriptionZh",
+    "seoKeywords",
+  ])
+    await page.getByRole("checkbox", { name: field, exact: true }).check();
+  const previewed = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/enrichment-batches/preview" &&
+      r.request().method() === "POST",
+    { timeout: 10_000 },
+  );
+  await page.getByRole("button", { name: "Preview batch" }).click();
+  expect((await previewed).status()).toBe(200);
+  await expect(
+    page.getByRole("region", { name: "Batch preview" }),
+  ).toContainText("eligible 2");
   const created = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === "/api/enrichment-batches" &&
       r.request().method() === "POST",
     { timeout: 10_000 },
   );
-  await page.getByRole("button", { name: /Create batch/ }).click();
+  await page.getByRole("button", { name: "Confirm create batch" }).click();
   const createdResponse = await created;
   expect(createdResponse.status()).toBe(201);
   const { batchId, selected } = await createdResponse.json();
@@ -326,7 +376,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-field-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     for (const key of [
       "priceUnchanged",
@@ -339,7 +389,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     ]) {
       const box = page.locator("#confirmation-negative-" + key);
       await box.click();
-      await expect(box).toBeChecked();
+      await expect(box).toBeChecked({ timeout: 10_000 });
     }
     await page
       .getByRole("button", { name: "Approve listing", exact: true })
@@ -349,17 +399,47 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   await page.goto("/catalog");
   await page.getByLabel("Select 0001 for Bulk Update", { exact: true }).check();
   await page.getByLabel("Select 0002 for Bulk Update", { exact: true }).check();
-  const generate = page.getByRole("button", {
-    name: "Generate Bulk Update XLSX",
+  const exportPreview = page.getByRole("button", {
+    name: "Preview Bulk Update XLSX",
     exact: true,
   });
-  await expect(generate).toBeDisabled();
+  await expect(exportPreview).toBeDisabled();
   await page
     .getByLabel("I confirm this SHOPLINE source export is still current.", {
       exact: true,
     })
     .check();
 
+  await expect(exportPreview).toBeDisabled();
+  const exportRegion = page.getByRole("region", {
+    name: "Bulk Update XLSX export",
+    exact: true,
+  });
+  for (const field of [
+    "Chinese name",
+    "English summary",
+    "Chinese summary",
+    "English SEO title",
+    "Chinese SEO title",
+    "English SEO description",
+    "Chinese SEO description",
+    "SEO keywords",
+  ])
+    await exportRegion.getByLabel(field, { exact: true }).check();
+  const exportPreviewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/export/preview" &&
+      r.request().method() === "POST",
+  );
+  await exportPreview.click();
+  expect((await exportPreviewResponse).status()).toBe(200);
+  await expect(
+    exportRegion.getByRole("region", { name: "XLSX update preview" }),
+  ).toBeVisible();
+  const generate = exportRegion.getByRole("button", {
+    name: "Generate Bulk Update XLSX",
+    exact: true,
+  });
   await expect(generate).toBeEnabled();
   const exportedResponse = page.waitForResponse(
     (r) =>
@@ -569,7 +649,9 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   );
   const snapshotTime = new Date(Date.now() + 8 * 60 * 60 * 1000)
     .toISOString()
-    .slice(0, 19);
+    .slice(0, 19)
+    // HTML normalizes zero seconds away; Playwright requires canonical input.
+    .replace(/:00$/, "");
   const snapshotSheet = sheet.map((row) => row.map((cell) => cell ?? ""));
   const matchingBytes = Buffer.from(
     writeBulkFormWorkbook([
@@ -786,15 +868,29 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       await evidenceDb`SELECT count(*)::int AS count FROM publish_jobs WHERE workspace_id=${operator.workspaceId}`;
     expect(publishes!.count).toBe(0);
     const aiRuns =
-      await evidenceDb`SELECT model,estimated_cost_usd FROM ai_runs WHERE workspace_id=${operator.workspaceId}`;
+      await evidenceDb`SELECT task,model,estimated_cost_usd FROM ai_runs WHERE workspace_id=${operator.workspaceId}`;
     expect(aiRuns).toHaveLength(4);
     expect(
       aiRuns.every(
         (run) =>
-          run.model === "fake-listing-provider" &&
+          ((run.task === "extract" && run.model === "maintenance-snapshot") ||
+            (run.task === "generate" &&
+              run.model === "fake-listing-provider")) &&
+          run.estimated_cost_usd !== null &&
           Number(run.estimated_cost_usd) === 0,
       ),
     ).toBe(true);
+    expect(
+      aiRuns.filter(
+        (run) => run.task === "extract" && run.model === "maintenance-snapshot",
+      ),
+    ).toHaveLength(2);
+    expect(
+      aiRuns.filter(
+        (run) =>
+          run.task === "generate" && run.model === "fake-listing-provider",
+      ),
+    ).toHaveLength(2);
   } finally {
     await evidenceDb.end();
   }
@@ -1082,21 +1178,24 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   expect(qualityMetrics.creationToApprovalMs.value).toBeGreaterThanOrEqual(0);
   await captureDeliveryLocaleMatrix(page, testInfo, listingIds[0]!, attemptId);
 
-  // W7: re-importing the same workbook re-binds both approvals to a new source
-  // import. That must be visible when it happens, and the status must stay.
+  // W7: a distinct original export with unchanged cells re-binds approvals.
+  // Identical-byte retries are covered separately and must not re-bind.
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/listings/import");
   await page.evaluate(() => {
     document.cookie = "locale=en; path=/; max-age=31536000";
   });
   await page.reload();
-  await page.getByRole("tab", { name: "Workbook", exact: true }).click();
-  await page.locator("#connected-shopline-update > summary").click();
   await page.locator("#bulk-import-file").setInputFiles({
     name: "synthetic-task5-reimport.xlsx",
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    buffer: input,
+    buffer: (() => {
+      const comment = Buffer.from("synthetic distinct original export");
+      const fresh = Buffer.concat([input, comment]);
+      fresh.writeUInt16LE(comment.length, input.length - 2);
+      return fresh;
+    })(),
   });
   await page
     .locator("#merchant-attested-export-at")
@@ -1106,6 +1205,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
       new URL(r.url()).pathname === "/api/listings/import" &&
       r.request().method() === "POST",
   );
+  await page.locator("#bulk-source-confirmation").check();
   await page.getByRole("button", { name: "Start import" }).click();
   const reimportResponse = await reimported;
   expect(reimportResponse.status()).toBe(201);
@@ -1143,7 +1243,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     page.getByText("Approval invalidated (Re-imported, row unchanged)"),
   ).toBeVisible();
 
-  // The new import is byte-for-byte identical, but its import ID is newer.
+  // The fresh workbook has unchanged cells but distinct bytes/import identity.
   // The old review version must not accept fresh confirmations.
   await expect(
     page.getByText(
@@ -1166,9 +1266,26 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   // Saving after checking the current row creates a version bound to this
   // import. Reconfirm and approve that version before testing a later
   // confirmation change.
+  const reboundReview = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/review`) &&
+      response.request().method() === "PUT",
+  );
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await expect(page.getByText(/Draft saved/)).toBeVisible();
+  expect((await reboundReview).status()).toBe(200);
   await page.reload();
+  const reboundSnapshot = await (
+    await page.request.get(`/api/listings/${listingIds[0]}`)
+  ).json();
+  expect(reboundSnapshot.activeVersion.sourceImportId).toBe(
+    reboundSnapshot.sourceReadiness.sourceImportId,
+  );
+  await expect(
+    page.getByText(
+      "The imported source changed after this version was created.",
+      { exact: false },
+    ),
+  ).toHaveCount(0);
   await expect(page.locator(".review-status")).toHaveText(
     stateLabel("reopened", "en"),
   );
@@ -1184,7 +1301,7 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-field-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
   for (const key of [
     "priceUnchanged",
@@ -1197,11 +1314,39 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   ]) {
     const box = page.locator("#confirmation-negative-" + key);
     if (!(await box.isChecked())) await box.click();
-    await expect(box).toBeChecked();
+    await expect(box).toBeChecked({ timeout: 10_000 });
   }
+  // Approval publishes its success message after the authoritative detail
+  // refresh. Observe both requests before asserting that message.
+  const reboundApproval = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/approve`) &&
+      response.request().method() === "POST",
+  );
+  const approvedDetail = page.waitForResponse(async (response) => {
+    if (
+      !response.url().endsWith(`/api/listings/${listingIds[0]}`) ||
+      response.request().method() !== "GET" ||
+      response.status() !== 200
+    )
+      return false;
+    return (await response.json()).status === "approved";
+  });
   await page
     .getByRole("button", { name: "Approve listing", exact: true })
     .click();
+  const approvalResponse = await reboundApproval;
+  expect(approvalResponse.status()).toBe(200);
+  const approvalResult = await approvalResponse.json();
+  expect(approvalResult).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+  });
+  expect(await (await approvedDetail).json()).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+    activeVersion: { id: approvalResult.versionId },
+  });
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   // A later confirmation change now reopens the newly approved version.
@@ -1251,8 +1396,7 @@ test("admin sets up a store inline without losing the selected workbook", async 
       },
       { times: 1 },
     );
-    await signInBulkImportOperator(page, setupFixture);
-    await page.locator("#connected-shopline-update > summary").click();
+    await signInBulkImportOperator(page, setupFixture, false);
     const file = page.locator("#bulk-import-file");
     const time = page.locator("#merchant-attested-export-at");
     const submit = page.getByRole("button", { name: "Start import" });
@@ -1304,6 +1448,8 @@ test("admin sets up a store inline without losing the selected workbook", async 
       .getByRole("button", { name: "連線 Connect", exact: true })
       .click();
     expect((await connected).status()).toBe(200);
+    await expect(submit).toBeDisabled();
+    await page.locator("#bulk-source-confirmation").check();
     await expect(submit).toBeEnabled();
     await expect(
       page.getByText("synthetic-inline-store.invalid", { exact: true }),
@@ -1332,13 +1478,6 @@ test("admin sets up a store inline without losing the selected workbook", async 
           { name: "locale", value: locale, url: "http://127.0.0.1:49217" },
         ]);
       await page.reload();
-      await page
-        .getByRole("tab", {
-          name: locale === "en" ? "Workbook" : "試算表",
-          exact: true,
-        })
-        .click();
-      await page.locator("#connected-shopline-update > summary").click();
       await expect(
         page.getByText("synthetic-inline-store.invalid", { exact: true }),
       ).toBeVisible();

@@ -3,7 +3,7 @@ import {
   type GetBatchInput,
   type GetBatchResult,
 } from "../../../../lib/enrichment-batch-service";
-import { getDatabase } from "../../../../lib/intake-runtime";
+import { getDatabase, getAssetStore } from "../../../../lib/intake-runtime";
 import { listingPublisher } from "../../../../lib/listing-queue-runtime";
 import {
   ApiError,
@@ -60,6 +60,7 @@ export function createGetEnrichmentBatchHandler(
 const service = createEnrichmentBatchService({
   getDatabase,
   publisher: listingPublisher,
+  getAssetStore,
 });
 
 export const GET = createGetEnrichmentBatchHandler({

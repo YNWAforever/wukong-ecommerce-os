@@ -37,7 +37,12 @@ it.each(["en", "zh-Hant"] as const)(
       }),
     );
     expect(exportMarkup).toContain(
-      locale === "en" ? "Generate Bulk Update XLSX" : "產生批量更新 XLSX",
+      locale === "en" ? "Preview Bulk Update XLSX" : "預覽批量更新 XLSX",
+    );
+    expect(exportMarkup).toContain(
+      locale === "en"
+        ? "Choose fields for this XLSX"
+        : "選擇本次 XLSX 更新欄位",
     );
   },
 );

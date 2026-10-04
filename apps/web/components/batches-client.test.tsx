@@ -23,6 +23,21 @@ describe("BatchesClient", () => {
     let listCalls = 0;
     const fetcher = vi.fn<typeof fetch>().mockImplementation((input, init) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/enrichment-batches/preview")
+        return Promise.resolve(
+          Response.json({
+            previewId: "10000000-0000-4000-8000-000000000001",
+            digest: "a".repeat(64),
+            expiresAt: "2026-10-01T08:50:00Z",
+            selectedCount: 2,
+            eligibleCount: 2,
+            skippedByReason: {},
+            fields: ["nameZh"],
+            budgetUsd: 5,
+            waveSize: 3,
+            maxCostUsd: 0,
+          }),
+        );
       if (init?.method === "POST" && url === "/api/enrichment-batches") {
         return Promise.resolve(
           Response.json(
@@ -85,6 +100,14 @@ describe("BatchesClient", () => {
       await Promise.resolve();
     });
     // BatchList remounts (new key) and fetches again.
+    expect(listCalls).toBe(1);
+    await act(async () => {
+      form.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     await act(async () => {
       await Promise.resolve();
     });

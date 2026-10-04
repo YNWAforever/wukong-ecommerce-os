@@ -34,10 +34,9 @@ const post = (body: unknown) =>
   });
 
 const validBody = {
-  label: "zh names",
-  gap: "untranslatedName",
-  budgetUsd: 5,
-  waveSize: 3,
+  previewId: "10000000-0000-4000-8000-000000000001",
+  digest: "a".repeat(64),
+  idempotencyKey: "10000000-0000-4000-8000-000000000002",
 };
 
 describe("POST /api/enrichment-batches", () => {
@@ -62,12 +61,26 @@ describe("POST /api/enrichment-batches", () => {
     expect(called).toBe(0);
   });
 
-  it("rejects an unknown gap", async () => {
+  it("rejects client options that bypass the immutable preview", async () => {
     const response = await handlerFor("operator")(
       post({ ...validBody, gap: "notAGap" }),
     );
 
     expect(response.status).toBe(400);
+  });
+  it("rejects direct cohort creation without a preview", async () => {
+    expect(
+      (
+        await handlerFor("operator")(
+          post({
+            label: "Old create",
+            gap: "untranslatedName",
+            budgetUsd: 5,
+            waveSize: 3,
+          }),
+        )
+      ).status,
+    ).toBe(400);
   });
 
   it("rejects a wave size above the 1-5 cap", async () => {

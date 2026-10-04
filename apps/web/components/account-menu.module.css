@@ -1,0 +1,49 @@
+.account {
+  position: relative;
+  min-width: 0;
+}
+.account summary {
+  cursor: pointer;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+.panel {
+  position: absolute;
+  z-index: 90;
+  right: 0;
+  top: calc(100% + 12px);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  width: min(320px, calc(100vw - 40px));
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px #0002;
+  overflow-wrap: anywhere;
+}
+.panel a {
+  color: var(--cobalt);
+}
+.panel button {
+  padding: 10px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.panel button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.panel [role="alert"] {
+  margin: 0;
+}
+@media (max-width: 560px) {
+  .account summary {
+    max-width: 180px;
+  }
+}

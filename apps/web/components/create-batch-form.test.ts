@@ -16,10 +16,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 const validInput = {
-  label: "zh names",
-  gap: "untranslatedName" as const,
-  budgetUsd: 5,
-  waveSize: 3,
+  previewId: "10000000-0000-4000-8000-000000000001",
+  digest: "a".repeat(64),
+  idempotencyKey: "10000000-0000-4000-8000-000000000002",
 };
 
 describe("submitCreateBatch", () => {
@@ -102,9 +101,23 @@ function nativeSet(input: HTMLInputElement, value: string): void {
 }
 
 describe("CreateBatchForm", () => {
-  it("calls onCreated after a successful submit", async () => {
+  it("previews without creating and calls onCreated only after explicit confirmation", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          previewId: validInput.previewId,
+          digest: validInput.digest,
+          expiresAt: "2026-10-01T08:50:00Z",
+          selectedCount: 4,
+          eligibleCount: 4,
+          skippedByReason: {},
+          fields: ["nameZh"],
+          budgetUsd: 5,
+          waveSize: 3,
+          maxCostUsd: null,
+        }),
+      )
       .mockResolvedValue(
         Response.json(
           { batchId: "batch_1", selected: 4, budgetUsd: 5, waveSize: 3 },
@@ -139,6 +152,15 @@ describe("CreateBatchForm", () => {
       await Promise.resolve();
     });
 
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("未知");
+    await act(async () => {
+      form.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith(
       "/api/enrichment-batches",
@@ -151,6 +173,14 @@ describe("CreateBatchForm", () => {
       gap: "untranslatedName",
       budgetUsd: 5,
       waveSize: 3,
+      fields: ["nameZh"],
+    });
+    expect(
+      JSON.parse((fetcher.mock.calls[1]?.[1] as RequestInit).body as string),
+    ).toEqual({
+      previewId: validInput.previewId,
+      digest: validInput.digest,
+      idempotencyKey: expect.any(String),
     });
 
     await act(async () => root.unmount());
@@ -260,7 +290,7 @@ describe("CreateBatchForm localisation", () => {
       expect(labels.some((text) => /Budget/.test(text))).toBe(true);
       expect(labels.some((text) => /Wave size/.test(text))).toBe(true);
       expect(container.querySelector("button")?.textContent).toBe(
-        "Create batch",
+        "Preview batch",
       );
     } finally {
       await unmountLocale(root);
@@ -288,7 +318,7 @@ describe("CreateBatchForm localisation", () => {
     const { container, root } = await mountWithLocale("zh-Hant");
     try {
       expect(container.textContent).not.toContain("Create batch");
-      expect(container.querySelector("button")?.textContent).toBe("建立批次");
+      expect(container.querySelector("button")?.textContent).toBe("預覽批次");
     } finally {
       await unmountLocale(root);
     }

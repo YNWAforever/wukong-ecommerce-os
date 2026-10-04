@@ -54,6 +54,12 @@ export function WorkbookImportPanel({
   const generation = useRef(0),
     controller = useRef<AbortController | null>(null),
     busy = useRef(false);
+  const previewSummary = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const summary = previewSummary.current;
+    if (summary && summary.getClientRects().length && preview)
+      summary.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [preview, result]);
   useEffect(
     () => () => {
       generation.current++;
@@ -246,7 +252,7 @@ export function WorkbookImportPanel({
       )}
       {preview && (
         <>
-          <p>
+          <p ref={previewSummary} aria-live="polite">
             {t(
               `${preview.totalRows} 列，共 ${preview.eligibleProducts} 個可匯入商品，${preview.excludedRows} 列已排除，${preview.totalIssues} 項注意事項。`,
               `${preview.totalRows} rows · ${preview.eligibleProducts} eligible · ${preview.excludedRows} excluded · ${preview.totalIssues} issues`,
@@ -260,7 +266,11 @@ export function WorkbookImportPanel({
                   `${result.importedProducts} imported · ${result.alreadyImportedProducts} already imported · ${result.excludedRows} excluded`,
                 )}
               </p>
-              <a href="/catalog">{t("查看商品目錄", "View catalog")}</a>
+              <a
+                href={`/catalog?filter=workbook&importId=${encodeURIComponent(result.importId)}`}
+              >
+                {t("查看商品目錄", "View catalog")}
+              </a>
             </div>
           )}
           {!result && (

@@ -18,12 +18,10 @@ export default async function CatalogPage({
   );
   const copy = readPageCopy.catalog[locale];
   return (
-    <div className="page-wrap">
+    <div className="page-wrap catalog-page">
       <div className="page-header">
         <div>
-          <p className="eyebrow">{copy.eyebrow}</p>
-          <h1>{copy.title}</h1>
-          <p className="lede">{copy.description}</p>
+          <h1>{copy.eyebrow}</h1>
         </div>
         <Link className="primary-button" href="/listings/new">
           {commonCopy[locale].createDraft}

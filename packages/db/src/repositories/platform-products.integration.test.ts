@@ -161,6 +161,38 @@ describe("platform product repository", () => {
       expect(found).toEqual([]);
     });
   });
+  it("classifies malformed facts after the SQL read and isolates that product only", async () => {
+    const [bad] =
+      await admin`update platform_products set facts_prefill='{"volumeMl":"bad"}'::jsonb where workspace_id=${workspaceId} and remote_product_id='aaaaaaaaaaaaaaaaaaaaaa01' returning id`;
+    const [good] =
+      await admin`select id from platform_products where workspace_id=${workspaceId} and remote_product_id='aaaaaaaaaaaaaaaaaaaaaa02'`;
+    try {
+      await expect(
+        database.forWorkspace(workspaceId, (r) =>
+          r.platformProducts.getByIds([bad!.id]),
+        ),
+      ).rejects.toMatchObject({
+        name: "ListingDataError",
+        reason: "invalid_platform_product",
+      });
+      const reads = await database.forWorkspace(workspaceId, (r) =>
+        r.platformProducts.getByIdsIsolated([bad!.id, good!.id]),
+      );
+      expect(reads.find((r) => r.id === bad!.id)).toMatchObject({
+        error: { reason: "invalid_platform_product" },
+      });
+      expect(reads.find((r) => r.id === good!.id)).toMatchObject({
+        product: { id: good!.id },
+      });
+      expect(
+        await database.forWorkspace(otherWorkspaceId, (r) =>
+          r.platformProducts.getByIdsIsolated([bad!.id, good!.id]),
+        ),
+      ).toEqual([]);
+    } finally {
+      await admin`update platform_products set facts_prefill=${admin.json(factsFixture)} where id=${bad!.id}`;
+    }
+  });
 
   it("writes a whole batch in one statement", async () => {
     const written = await database.forWorkspace(
@@ -244,6 +276,201 @@ describe("platform product repository", () => {
           sourceImportId: null,
         }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe("created product binding", () => {
+    it("creates one scoped row and keeps repeated completion idempotent", async () => {
+      await database.forWorkspace(workspaceId, async (r) => {
+        const draft = await r.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        const input = {
+          connectionId,
+          remoteProductId: "binding_created",
+          listingId: draft.id,
+        };
+        expect(await r.platformProducts.bindCreatedProduct(input)).toBe(true);
+        const first = await r.platformProducts.getByListingId(draft.id);
+        expect(first).toMatchObject({
+          origin: "created",
+          sku: null,
+          rawRow: null,
+          factsPrefill: null,
+          contentDigest: null,
+          sourceImportId: null,
+        });
+        expect(await r.platformProducts.bindCreatedProduct(input)).toBe(true);
+        expect(await r.platformProducts.getByListingId(draft.id)).toEqual(
+          first,
+        );
+      });
+      expect(
+        await database.forWorkspace(otherWorkspaceId, (r) =>
+          r.platformProducts.listByRemoteProductIds(connectionId, [
+            "binding_created",
+          ]),
+        ),
+      ).toEqual([]);
+      await expect(
+        database.forWorkspace(otherWorkspaceId, (r) =>
+          r.platformProducts.bindCreatedProduct({
+            connectionId,
+            remoteProductId: "binding_foreign",
+            listingId: "00000000-0000-4000-8000-000000000001",
+          }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it("binds an unlinked imported row without changing its source snapshot", async () => {
+      await database.forWorkspace(workspaceId, async (r) => {
+        const draft = await r.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        const source = await r.sourceImports.create({
+          connectionId,
+          filename: "synthetic-binding.xlsx",
+          workbookSha256: "a".repeat(64),
+          headerContractSha256: "b".repeat(64),
+          sheetName: "Default",
+          rowCount: 1,
+          merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+          importerId: "synthetic_user",
+          specVersion: "opak-2026-05",
+        });
+        const imported = await r.platformProducts.upsert({
+          connectionId,
+          remoteProductId: "binding_imported",
+          listingId: null,
+          origin: "import",
+          sku: "IMPORTED",
+          specVersion: "opak-2026-05",
+          rawRow: { sku: "IMPORTED", price: "100", stock: "6" },
+          factsPrefill: factsFixture,
+          contentDigest: "d".repeat(64),
+          sourceImportId: source.id,
+        });
+        const input = {
+          connectionId,
+          remoteProductId: imported.remoteProductId,
+          listingId: draft.id,
+        };
+        expect(await r.platformProducts.bindCreatedProduct(input)).toBe(true);
+        const bound = await r.platformProducts.getByListingId(draft.id);
+        expect(bound).toEqual({
+          ...imported,
+          listingId: draft.id,
+          updatedAt: expect.any(Date),
+        });
+        expect(await r.platformProducts.bindCreatedProduct(input)).toBe(true);
+        expect(await r.platformProducts.getByListingId(draft.id)).toEqual(
+          bound,
+        );
+      });
+    });
+
+    it("refuses another draft's binding without changing that row", async () => {
+      await database.forWorkspace(workspaceId, async (r) => {
+        const first = await r.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        const second = await r.listings.create({
+          target: "shopline",
+          note: null,
+        });
+        const imported = await r.platformProducts.upsert({
+          connectionId,
+          remoteProductId: "binding_conflict",
+          listingId: first.id,
+          origin: "import",
+          sku: "OTHER",
+          specVersion: "opak-2026-05",
+          rawRow: { sku: "OTHER" },
+          factsPrefill: factsFixture,
+          contentDigest: "e".repeat(64),
+          sourceImportId: null,
+        });
+        expect(
+          await r.platformProducts.bindCreatedProduct({
+            connectionId,
+            remoteProductId: imported.remoteProductId,
+            listingId: second.id,
+          }),
+        ).toBe(false);
+        expect(await r.platformProducts.getByListingId(first.id)).toEqual(
+          imported,
+        );
+        expect(await r.platformProducts.getByListingId(second.id)).toBeNull();
+      });
+    });
+
+    it("waits for a concurrent import commit and preserves the committed snapshot", async () => {
+      const draft = await database.forWorkspace(workspaceId, (r) =>
+        r.listings.create({ target: "shopline", note: null }),
+      );
+      let allowCommit!: () => void;
+      let inserted!: () => void;
+      const mayCommit = new Promise<void>((resolve) => {
+        allowCommit = resolve;
+      });
+      const didInsert = new Promise<void>((resolve) => {
+        inserted = resolve;
+      });
+      const importTransaction = database.forWorkspace(
+        workspaceId,
+        async (r) => {
+          const imported = await r.platformProducts.upsert({
+            connectionId,
+            remoteProductId: "binding_concurrent",
+            listingId: draft.id,
+            origin: "import",
+            sku: "CONCURRENT",
+            specVersion: "opak-2026-05",
+            rawRow: { sku: "CONCURRENT" },
+            factsPrefill: factsFixture,
+            contentDigest: "f".repeat(64),
+            sourceImportId: null,
+          });
+          inserted();
+          await mayCommit;
+          return imported;
+        },
+      );
+      await didInsert;
+      const bindingTransaction = database.forWorkspace(workspaceId, (r) =>
+        r.platformProducts.bindCreatedProduct({
+          connectionId,
+          remoteProductId: "binding_concurrent",
+          listingId: draft.id,
+        }),
+      );
+      try {
+        const deadline = Date.now() + 5_000;
+        let blocked = false;
+        while (Date.now() < deadline && !blocked) {
+          const [state] =
+            await admin`select exists(select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and query ilike '%insert into "platform_products"%') as blocked`;
+          blocked = state?.blocked === true;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(blocked).toBe(true);
+      } finally {
+        allowCommit();
+      }
+      const [imported, bound] = await Promise.all([
+        importTransaction,
+        bindingTransaction,
+      ]);
+      expect(bound).toBe(true);
+      expect(
+        await database.forWorkspace(workspaceId, (r) =>
+          r.platformProducts.getByListingId(draft.id),
+        ),
+      ).toEqual(imported);
     });
   });
 

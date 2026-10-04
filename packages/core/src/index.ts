@@ -30,7 +30,11 @@ export type {
   GroundedClaims,
 } from "./compliance.js";
 
-export { approveListing, reopenListing } from "./review.js";
+export {
+  approveListing,
+  reopenListing,
+  validateListingApproval,
+} from "./review.js";
 
 export { transitionListing } from "./workflow.js";
 export type { ListingAction, ListingStatus } from "./workflow.js";
@@ -94,6 +98,7 @@ export type {
 
 export { usesProductShotWorkflow } from "./product-shot.js";
 export * from "./working-listing.js";
+export * from "./maintenance-content-fields.js";
 export { calculateConservativeRunCeiling } from "./provider-cost-bound.js";
 
 export { paidListingReservation } from "./paid-listing-policy.js";

@@ -1113,6 +1113,9 @@ export const enrichmentBatches = pgTable(
     budgetUsd: numeric("budget_usd", { precision: 12, scale: 6 }).notNull(),
     /** Bounds how far a wave already in flight can overshoot the budget. */
     waveSize: integer("wave_size").notNull(),
+    contentFields:
+      jsonb("content_fields").$type<import("@wukong/core").ContentField[]>(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     status: enrichmentBatchStatus("status").default("open").notNull(),
     controlRevision: integer("control_revision").default(0).notNull(),
     createdBy: text("created_by").notNull(),
@@ -1195,6 +1198,7 @@ export const enrichmentBatchItems = pgTable(
     isCurrent: boolean("is_current").default(true).notNull(),
     pipelineRunId: uuid("pipeline_run_id"),
     inputRevision: integer("input_revision"),
+    contentFence: jsonb("content_fence"),
     outcome: text("outcome"),
     reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
     createdAt: timestamps.createdAt,
@@ -2436,5 +2440,267 @@ export const wineEvidenceCache = pgTable(
       t.capturedAt.desc(),
     ),
     index("wine_cache_run_idx").on(t.workspaceId, t.runId),
+  ],
+);
+
+export const listingAssignments = pgTable(
+  "listing_assignments",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    assigneeUserId: text("assignee_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignmentRevision: integer("assignment_revision").default(0).notNull(),
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.listingId] }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+    index("listing_assignments_assignee_idx").on(
+      table.workspaceId,
+      table.assigneeUserId,
+      table.listingId,
+    ),
+    check(
+      "listing_assignments_assignment_revision_check",
+      sql`${table.assignmentRevision} >= 0`,
+    ),
+  ],
+);
+export const listingAssignmentRequests = pgTable(
+  "listing_assignment_requests",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    listingId: uuid("listing_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    requestKey: uuid("request_key").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [
+        table.workspaceId,
+        table.listingId,
+        table.actorId,
+        table.requestKey,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.listingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const enrichmentBatchPreviews = pgTable(
+  "enrichment_batch_previews",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    id: uuid("id").notNull(),
+    actorId: text("actor_id").notNull(),
+    digest: text("digest").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    options: jsonb("options").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    check(
+      "enrichment_batch_previews_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_previews_options_check",
+      sql`jsonb_typeof(${table.options})='object'`,
+    ),
+  ],
+);
+export const enrichmentBatchCreateReceipts = pgTable(
+  "enrichment_batch_create_receipts",
+  {
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id)
+      .notNull(),
+    requestKey: uuid("request_key").notNull(),
+    previewId: uuid("preview_id").notNull(),
+    digest: text("digest").notNull(),
+    batchId: uuid("batch_id").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.requestKey] }),
+    uniqueIndex(
+      "enrichment_batch_create_receipts_workspace_id_preview_id_key",
+    ).on(table.workspaceId, table.previewId),
+    index("enrichment_batch_create_receipts_batch_idx").on(
+      table.workspaceId,
+      table.batchId,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.previewId],
+      foreignColumns: [
+        enrichmentBatchPreviews.workspaceId,
+        enrichmentBatchPreviews.id,
+      ],
+    }),
+    foreignKey({
+      columns: [table.workspaceId, table.batchId],
+      foreignColumns: [enrichmentBatches.workspaceId, enrichmentBatches.id],
+    }),
+    check(
+      "enrichment_batch_create_receipts_digest_check",
+      sql`${table.digest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "enrichment_batch_create_receipts_response_check",
+      sql`jsonb_typeof(${table.response})='object'`,
+    ),
+  ],
+);
+
+/** Scalar counts only; current source content remains in its authoritative tables. */
+export const workspaceQualitySummaries = pgTable(
+  "workspace_quality_summaries",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    assessmentVersion: text("assessment_version").notNull(),
+    initialized: boolean("initialized").notNull().default(false),
+    counts: jsonb("counts").notNull().default({
+      totalListings: 0,
+      totalAssessed: 0,
+      cleanCount: 0,
+      hasGapsCount: 0,
+      noActiveVersion: 0,
+      unassessableActiveVersion: 0,
+      missingCurrentContent: 0,
+      invalidCurrentContent: 0,
+      untranslatedName: 0,
+      untranslatedSeoTitle: 0,
+      seoTitleMirrorsName: 0,
+      seoDescriptionMirrorsSeoTitle: 0,
+      keywordsMirrorName: 0,
+      summaryMissing: 0,
+    }),
+    knownCostUsd: numeric("known_cost_usd").notNull().default("0"),
+    unknownCostRunCount: bigint("unknown_cost_run_count", { mode: "number" })
+      .notNull()
+      .default(0),
+    costAsOf: timestamp("cost_as_of", { withTimezone: true }),
+    asOf: timestamp("as_of", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.assessmentVersion] }),
+    check(
+      "workspace_quality_summaries_assessment_version_check",
+      sql`${table.assessmentVersion}='opak-current-content-v1'`,
+    ),
+    check(
+      "workspace_quality_summaries_counts_check",
+      sql`jsonb_typeof(${table.counts})='object'`,
+    ),
+    check(
+      "workspace_quality_summaries_known_cost_usd_check",
+      sql`${table.knownCostUsd}>=0`,
+    ),
+    check(
+      "workspace_quality_summaries_unknown_cost_run_count_check",
+      sql`${table.unknownCostRunCount}>=0`,
+    ),
+  ],
+);
+export const listingQualityAssessments = pgTable(
+  "listing_quality_assessments",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    assessmentVersion: text("assessment_version").notNull(),
+    listingId: uuid("listing_id").notNull(),
+    liveListingId: uuid("live_listing_id"),
+    requestedGeneration: bigint("requested_generation", { mode: "number" })
+      .notNull()
+      .default(1),
+    appliedGeneration: bigint("applied_generation", { mode: "number" })
+      .notNull()
+      .default(0),
+    state: text("state").notNull().default("pending"),
+    contribution: jsonb("contribution").notNull().default({
+      totalListings: 0,
+      totalAssessed: 0,
+      cleanCount: 0,
+      hasGapsCount: 0,
+      noActiveVersion: 0,
+      unassessableActiveVersion: 0,
+      missingCurrentContent: 0,
+      invalidCurrentContent: 0,
+      untranslatedName: 0,
+      untranslatedSeoTitle: 0,
+      seoTitleMirrorsName: 0,
+      seoDescriptionMirrorsSeoTitle: 0,
+      keywordsMirrorName: 0,
+      summaryMissing: 0,
+    }),
+    sourceFence: jsonb("source_fence"),
+    errorCategory: text("error_category"),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.workspaceId, table.assessmentVersion, table.listingId],
+    }),
+    foreignKey({
+      name: "listing_quality_live_listing_fk",
+      columns: [table.workspaceId, table.liveListingId],
+      foreignColumns: [listingDrafts.workspaceId, listingDrafts.id],
+    }),
+    index("listing_quality_pending_idx")
+      .on(table.workspaceId, table.assessmentVersion, table.listingId)
+      .where(
+        sql`${table.state}<>'ready' OR ${table.requestedGeneration}<>${table.appliedGeneration}`,
+      ),
+    check(
+      "listing_quality_assessments_assessment_version_check",
+      sql`${table.assessmentVersion}='opak-current-content-v1'`,
+    ),
+    check(
+      "listing_quality_assessments_requested_generation_check",
+      sql`${table.requestedGeneration}>0`,
+    ),
+    check(
+      "listing_quality_assessments_applied_generation_check",
+      sql`${table.appliedGeneration}>=0 AND ${table.appliedGeneration}<=${table.requestedGeneration}`,
+    ),
+    check(
+      "listing_quality_assessments_state_check",
+      sql`${table.state} IN ('pending','ready','failed')`,
+    ),
+    check(
+      "listing_quality_assessments_contribution_check",
+      sql`jsonb_typeof(${table.contribution})='object'`,
+    ),
+    check(
+      "listing_quality_assessments_error_category_check",
+      sql`${table.errorCategory} IS NULL OR ${table.errorCategory}='content_assessment_failed'`,
+    ),
+    check(
+      "listing_quality_live_identity_check",
+      sql`${table.liveListingId} IS NULL OR ${table.liveListingId}=${table.listingId}`,
+    ),
   ],
 );

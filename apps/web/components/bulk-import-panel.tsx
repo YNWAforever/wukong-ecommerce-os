@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -8,6 +8,9 @@ import {
   type BilingualMessage,
 } from "../lib/ui-copy";
 import { ImportStoreSetupPanel } from "./import-store-setup-panel";
+import type { MaintenanceReference } from "./listing-intake-choices";
+import type { MaintenanceReferenceRequest } from "../lib/catalog-maintenance-intent";
+import { MaintenanceReferenceSelection } from "./maintenance-reference-selection";
 
 /** Matches MAX_UPLOAD_BYTES in apps/web/app/api/listings/import/route.ts:34. */
 export const MAX_BULK_IMPORT_BYTES = 4 * 1024 * 1024;
@@ -29,6 +32,10 @@ export type BulkImportSuccess = {
   refreshedProducts: number;
   invalidatedApprovals: number;
   issues: BulkImportIssue[];
+  replayed: boolean;
+  alreadyImportedProducts: number;
+  sourceImportId?: string;
+  merchantAttestedExportAt?: string;
 };
 
 export type BulkImportFailure =
@@ -85,6 +92,38 @@ const API_ERROR_MESSAGES: Record<string, BilingualMessage> = {
   shopline_connection_missing: [
     "匯入商品目錄前，請先連結 SHOPLINE 商店。",
     "Connect a SHOPLINE store before importing a catalog.",
+  ],
+  bulk_form_ambiguous_identity: [
+    "原始檔案有重複 Product ID，請先解決。",
+    "Resolve duplicate Product IDs in the original export.",
+  ],
+  maintenance_reference_missing: [
+    "此工作區沒有該參考資料。",
+    "The reference is unavailable in this workspace.",
+  ],
+  maintenance_store_changed: [
+    "店舖設定已變更，請重新核對。",
+    "The store changed. Check it again.",
+  ],
+  maintenance_request_invalid: [
+    "請填寫商品 ID 及確認店舖與來源。",
+    "Supply the product ID and confirm the store and source.",
+  ],
+  maintenance_product_missing: [
+    "新匯出檔沒有此商品的有效資料列，請核對 Product ID 及變體。",
+    "The new export has no eligible row for this product. Check Product ID and variants.",
+  ],
+  maintenance_identity_conflict: [
+    "商品身份、年份、容量或包裝有衝突，請先解決。",
+    "Resolve product identity, vintage, volume or pack conflicts.",
+  ],
+  maintenance_identity_confirmation_required: [
+    "有資料未確認，請人工核實商品身份及包裝。",
+    "Manually verify unknown product identity and pack facts.",
+  ],
+  maintenance_source_confirmation_required: [
+    "請確認店舖及目前的原始匯出檔。",
+    "Confirm the store and current original export.",
   ],
   insufficient_role: sharedMessages.operatorRequired,
   merchant_attested_export_at_missing: EXPORT_TIME_MISSING,
@@ -149,6 +188,10 @@ export async function submitBulkImport(
   file: File,
   merchantAttestedExportTime: string,
   deps: BulkImportDeps = { fetcher: fetch },
+  options: {
+    maintenance?: MaintenanceReferenceRequest;
+    expectedConnectionId?: string;
+  } = {},
 ): Promise<BulkImportOutcome> {
   const validationError = validateBulkImportFile(file);
   if (validationError)
@@ -168,6 +211,11 @@ export async function submitBulkImport(
     merchantAttestedExportAt,
     filename: file.name,
   });
+  if (options.expectedConnectionId)
+    params.set("expectedConnectionId", options.expectedConnectionId);
+  if (options.maintenance)
+    for (const [key, value] of Object.entries(options.maintenance))
+      params.set(key, String(value));
 
   let response: Response;
   try {
@@ -192,16 +240,23 @@ export async function submitBulkImport(
     const code = typeof body.code === "string" ? body.code : "unknown_error";
     // A message the server wrote is shown as it stands: translating it here
     // would mean inventing a Chinese version of text we did not write.
-    const message: BilingualMessage =
-      API_ERROR_MESSAGES[code] ??
-      (typeof body.message === "string"
-        ? [body.message, body.message]
-        : IMPORT_FAILED);
+    const message: BilingualMessage = API_ERROR_MESSAGES[code] ?? IMPORT_FAILED;
     return { kind: "api_error", code, message };
   }
 
   return {
     kind: "success",
+    replayed: body.replayed === true,
+    alreadyImportedProducts:
+      typeof body.alreadyImportedProducts === "number"
+        ? body.alreadyImportedProducts
+        : 0,
+    ...(typeof body.sourceImportId === "string"
+      ? { sourceImportId: body.sourceImportId }
+      : {}),
+    ...(typeof body.merchantAttestedExportAt === "string"
+      ? { merchantAttestedExportAt: body.merchantAttestedExportAt }
+      : {}),
     specVersion: body.specVersion as string,
     parsedRows: body.parsedRows as number,
     createdDrafts: body.createdDrafts as number,
@@ -215,7 +270,9 @@ export async function submitBulkImport(
   };
 }
 
-export function BulkImportPanel() {
+export function BulkImportPanel({
+  reference,
+}: { reference?: MaintenanceReference } = {}) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
   const [outcome, setOutcome] = useState<BulkImportOutcome | null>(null);
@@ -224,16 +281,35 @@ export function BulkImportPanel() {
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
   const [importReady, setImportReady] = useState(false);
+  const [connectionId, setConnectionId] = useState<string | undefined>();
+  const [sourceConfirmed, setSourceConfirmed] = useState(false);
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  const [remoteProductId, setRemoteProductId] = useState("");
+  const readyChanged = useCallback((ready: boolean, id?: string) => {
+    setImportReady(ready);
+    setConnectionId(id);
+    setSourceConfirmed(false);
+    setIdentityConfirmed(false);
+  }, []);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = event.target.files?.[0] ?? null;
     setFile(selectedFile);
     setOutcome(null);
+    setSourceConfirmed(false);
+    setIdentityConfirmed(false);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submittingRef.current || !importReady) return;
+    if (
+      submittingRef.current ||
+      !importReady ||
+      !connectionId ||
+      !sourceConfirmed ||
+      (reference && (!remoteProductId.trim() || !identityConfirmed))
+    )
+      return;
     if (!file) {
       setOutcome({ kind: "validation_error", message: FILE_MISSING });
       return;
@@ -247,7 +323,23 @@ export function BulkImportPanel() {
     setBusy(true);
     setOutcome(null);
     try {
-      setOutcome(await submitBulkImport(file, merchantExportTime));
+      setOutcome(
+        await submitBulkImport(file, merchantExportTime, undefined, {
+          expectedConnectionId: connectionId,
+          ...(reference
+            ? {
+                maintenance: {
+                  referenceKind: reference.kind,
+                  referenceId: reference.id,
+                  remoteProductId: remoteProductId.trim(),
+                  expectedConnectionId: connectionId,
+                  identityConfirmed,
+                  storeSourceConfirmed: sourceConfirmed,
+                },
+              }
+            : {}),
+        }),
+      );
     } finally {
       submittingRef.current = false;
       setBusy(false);
@@ -256,8 +348,28 @@ export function BulkImportPanel() {
 
   return (
     <>
-      <ImportStoreSetupPanel onImportReadyChange={setImportReady} />
+      <ImportStoreSetupPanel onImportReadyChange={readyChanged} />
       <form className="intake-form" onSubmit={handleSubmit}>
+        {reference ? (
+          <MaintenanceReferenceSelection
+            reference={reference}
+            productId={remoteProductId}
+            onProductIdChange={(value) => {
+              setRemoteProductId(value);
+              setIdentityConfirmed(false);
+              setOutcome(null);
+            }}
+            confirmed={identityConfirmed}
+            onConfirmedChange={setIdentityConfirmed}
+            disabled={busy}
+          />
+        ) : null}
+        <p className="helper-copy">
+          {t(
+            "請上載此店舖目前的原始 SHOPLINE Bulk Update 檔；舊參考資料不會被複製成最新來源。此步會匯入檔案內所有有效資料列為維護草稿，不會寫入 SHOPLINE。",
+            "Upload this store's current original SHOPLINE Bulk Update file. Old reference rows are not copied into a new source. All eligible rows become maintenance drafts; this step does not write to SHOPLINE.",
+          )}
+        </p>
         <div className="upload-dropzone">
           <label htmlFor="bulk-import-file" className="upload-label">
             <span className="upload-title">
@@ -304,20 +416,67 @@ export function BulkImportPanel() {
           disabled={busy}
           onChange={(event) => {
             setMerchantExportTime(event.target.value);
+            setSourceConfirmed(false);
+            setIdentityConfirmed(false);
             setOutcome(null);
           }}
         />
+        <label>
+          <input
+            id="bulk-source-confirmation"
+            type="checkbox"
+            checked={sourceConfirmed}
+            disabled={busy || !importReady}
+            onChange={(event) => setSourceConfirmed(event.target.checked)}
+          />
+          {t(
+            "我確認這是上述店舖目前的原始匯出檔，並已核對匯出時間。",
+            "I confirm this is the above store's current original export and I checked its export time.",
+          )}
+        </label>
 
         <button
           type="submit"
           className="primary-button"
-          disabled={busy || !importReady}
+          disabled={
+            busy ||
+            !importReady ||
+            !connectionId ||
+            !sourceConfirmed ||
+            Boolean(
+              reference && (!remoteProductId.trim() || !identityConfirmed),
+            )
+          }
         >
           {busy ? t("匯入中…", "Importing…") : t("開始匯入", "Start import")}
         </button>
 
         {outcome?.kind === "success" ? (
           <ul className="file-list" aria-live="polite">
+            {outcome.replayed ? (
+              <li>
+                {t(
+                  `相同檔案已匯入：${outcome.alreadyImportedProducts} 列；保留原匯出時間及來源。`,
+                  `This file was already imported: ${outcome.alreadyImportedProducts} rows. Original export time and source are retained.`,
+                )}
+              </li>
+            ) : null}
+            {outcome.sourceImportId ? (
+              <li>
+                {t("來源收據", "Source receipt")}: {outcome.sourceImportId}
+              </li>
+            ) : null}
+            {outcome.merchantAttestedExportAt ? (
+              <li>
+                {t("保留的匯出時間", "Recorded export time")}:{" "}
+                {outcome.merchantAttestedExportAt}
+              </li>
+            ) : null}
+            <li>
+              <a href="/queue">
+                {t("查看維護草稿", "View maintenance drafts")}
+              </a>
+            </li>
             <li>
               {/* Labelled figures rather than a sentence, so one phrasing
                   reads correctly for any count in either language. */}

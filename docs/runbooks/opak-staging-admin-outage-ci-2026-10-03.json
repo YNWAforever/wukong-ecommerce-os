@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-10-03T07:19:57.649Z",
+  "scope": "synthetic isolated cloud API and local CI harness; not release signoff",
+  "windows": [
+    {
+      "folder": "cloud-db-outage-v9",
+      "receiptSha256": "7d9f0ef25457e1916738cdd19c88a2eb8a77a5afdf13d556cb7076c14482a6b7",
+      "outcome": "disabled-db-error-contract-passed",
+      "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+      "startedAt": "2026-10-03T06:50:43.211Z",
+      "finishedAt": "2026-10-03T06:51:40.611Z",
+      "elapsedMs": 57400,
+      "checks": [
+        {
+          "id": "exact-preview-pair",
+          "pass": true
+        },
+        {
+          "id": "disabled-endpoint-before",
+          "pass": true,
+          "disabled": true,
+          "state": "idle"
+        },
+        {
+          "id": "operator-queue-server-failure",
+          "pass": true,
+          "status": 500
+        },
+        {
+          "id": "operator-queue-not-empty-list",
+          "pass": true
+        },
+        {
+          "id": "operator-queue-support-correlation",
+          "pass": true
+        },
+        {
+          "id": "operator-catalog-server-failure",
+          "pass": true,
+          "status": 500
+        },
+        {
+          "id": "operator-catalog-not-empty-list",
+          "pass": true
+        },
+        {
+          "id": "operator-catalog-support-correlation",
+          "pass": true
+        },
+        {
+          "id": "reviewer-queue-server-failure",
+          "pass": true,
+          "status": 500
+        },
+        {
+          "id": "reviewer-queue-not-empty-list",
+          "pass": true
+        },
+        {
+          "id": "reviewer-queue-support-correlation",
+          "pass": true
+        },
+        {
+          "id": "reviewer-catalog-server-failure",
+          "pass": true,
+          "status": 500
+        },
+        {
+          "id": "reviewer-catalog-not-empty-list",
+          "pass": true
+        },
+        {
+          "id": "reviewer-catalog-support-correlation",
+          "pass": true
+        },
+        {
+          "id": "disabled-endpoint-after",
+          "pass": true,
+          "disabled": true,
+          "state": "idle"
+        }
+      ],
+      "stops": [],
+      "limit": "Session resolution also requires DB; this proves outage-level server errors, not authenticated app UI or a specific downstream query stage. Recovery200 was verified in the prior permission window; this read-only window does not re-enable compute.",
+      "readinessStates": [],
+      "syntheticRows": 0,
+      "productionChanged": false,
+      "migrationApplied": false,
+      "workerChanged": false,
+      "paidAiCalls": 0,
+      "realShoplineCalls": 0,
+      "outgoingEmail": 0
+    },
+    {
+      "folder": "cloud-admin-cas-v10",
+      "receiptSha256": "376ad5d76afa64f768e6e7a67d20ab8f0851cce45d92e714420acbb9072d12dc",
+      "outcome": "cloud-admin-settings-cas-passed",
+      "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+      "startedAt": "2026-10-03T06:56:37.785Z",
+      "finishedAt": "2026-10-03T06:58:31.165Z",
+      "elapsedMs": 113380,
+      "checks": [
+        {
+          "id": "exact-preview-pair",
+          "pass": true
+        },
+        {
+          "id": "endpoint-held-before",
+          "pass": true
+        },
+        {
+          "id": "runtime-non-bypass",
+          "pass": true
+        },
+        {
+          "id": "admin-settings-before",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "settings-current-digest",
+          "pass": true
+        },
+        {
+          "id": "operator-settings-get-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "operator-settings-write-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "operator-readiness-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "reviewer-settings-get-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "reviewer-settings-write-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "reviewer-readiness-denied",
+          "pass": true,
+          "status": 403
+        },
+        {
+          "id": "denied-requests-no-settings-audit",
+          "pass": true
+        },
+        {
+          "id": "admin-settings-save",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "fresh-cas-saved",
+          "pass": true
+        },
+        {
+          "id": "fresh-cas-audit-once",
+          "pass": true
+        },
+        {
+          "id": "stale-cas-refused",
+          "pass": true,
+          "status": 409
+        },
+        {
+          "id": "stale-cas-code",
+          "pass": true
+        },
+        {
+          "id": "stale-cas-no-audit",
+          "pass": true
+        },
+        {
+          "id": "settings-after-conflict",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "stale-cas-no-overwrite",
+          "pass": true
+        },
+        {
+          "id": "admin-readiness",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "readiness-safe-five-states",
+          "pass": true
+        },
+        {
+          "id": "readiness-private-no-store",
+          "pass": true
+        },
+        {
+          "id": "synthetic-ai-never-live-ready",
+          "pass": true
+        },
+        {
+          "id": "restore-read",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "restore-settings",
+          "pass": true,
+          "status": 200
+        },
+        {
+          "id": "original-canonical-profile-restored",
+          "pass": true
+        },
+        {
+          "id": "only-two-successful-setting-audits",
+          "pass": true
+        },
+        {
+          "id": "no-new-ai-or-publish",
+          "pass": true,
+          "retainedAiRuns": 20,
+          "retainedPublishJobs": 0
+        }
+      ],
+      "stops": [
+        {
+          "id": "profile-restored",
+          "acknowledged": true
+        },
+        {
+          "id": "staging-compute",
+          "acknowledged": true
+        }
+      ],
+      "limit": "API role/CAS/readiness scope only. Unsaved-form navigation, role-handoff UX and browser UI remain pending behind deployment protection.",
+      "readinessStates": [
+        {
+          "key": "ai",
+          "state": "unknown"
+        },
+        {
+          "key": "queue",
+          "state": "unknown"
+        },
+        {
+          "key": "storage",
+          "state": "unknown"
+        },
+        {
+          "key": "shopline",
+          "state": "unknown"
+        },
+        {
+          "key": "reviewer",
+          "state": "ready"
+        }
+      ],
+      "syntheticRows": 0,
+      "productionChanged": false,
+      "migrationApplied": false,
+      "workerChanged": false,
+      "paidAiCalls": 0,
+      "realShoplineCalls": 0,
+      "outgoingEmail": 0
+    }
+  ],
+  "offlineGuards": {
+    "passed": 15,
+    "failed": 0
+  },
+  "localVerification": {
+    "command": "pnpm test",
+    "rootTests": 142,
+    "rootFailed": 0,
+    "turboTasks": 14,
+    "cachedTurboTasks": 14,
+    "applicationFilesChanged": 0,
+    "regressionsPassed": 2,
+    "redStartupSha256": "912c22cc88e9be97df5014c7cd63975a7be93bab704b1548cf8c2f08bc72d74b",
+    "redDetachedCleanupSha256": "79bc2a48895716b5e4bb7f21ddfc7e426894259f5917ba0859b4a5ffb5265670",
+    "greenRegressionsSha256": "162c043bf05d7867c4a90bc22ce4c20bf3a0086c2bd0b208ae237832d9615fec",
+    "fullUnitSha256": "cc8dcd58143382a3bff34eba2f4a19aa4c043de92569540dc5a2cd980c4b5b69"
+  },
+  "ciHistory": {
+    "initial": {
+      "head": "a8eddcb7f34155a62288c1da2bf3d02511cb7ede",
+      "runId": "37102831725",
+      "attempt": 1,
+      "conclusion": "failure",
+      "stage": "Playwright product-shot acceptance",
+      "directTrigger": "TLS listener EADDRINUSE on 127.0.0.1:49218 followed by Web49217 connection refusal",
+      "conflictingOwner": "unconfirmed"
+    },
+    "retry": {
+      "head": "a8eddcb7f34155a62288c1da2bf3d02511cb7ede",
+      "runId": "37102831725",
+      "attempt": 2,
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/37102831725"
+    },
+    "attribution": "Retry success belongs to unchanged a8 head; it does not verify the subsequent harness repair or identify the original port owner."
+  },
+  "hold": {
+    "endpointDisabled": true,
+    "endpointState": "idle",
+    "workerVersion": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+    "workerTrafficPercent": 100,
+    "watchdogNormalStop": true
+  },
+  "limits": [
+    "Current follow-up commit requires its own exact-head CI.",
+    "Authenticated cloud UI remains blocked by Vercel deployment protection.",
+    "Original production500, production repair/backup ownership, paid/human AI and real SHOPLINE merchant gates remain unapproved or incomplete.",
+    "Windows regression requires the existing C:/Program Files/Git OpenSSL location; portable installs remain a deferred minor."
+  ]
+}

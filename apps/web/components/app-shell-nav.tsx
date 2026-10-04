@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { AccountMenu } from "./account-menu";
+import { clearWorkSession } from "../lib/catalog-session-state";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { requestClientContextChange } from "../lib/client-context-change-guard";
 
 import { useLocalePreference } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
@@ -34,6 +37,7 @@ type AppShellNavProps = {
   roleLabelZh: string;
   roleLabelEn: string;
   initialLocale: Locale;
+  accountUser?: { userId: string; email: string; name: string | null };
   onLocaleChange?: (locale: Locale) => void;
 };
 
@@ -55,6 +59,7 @@ export function AppShellNav({
   roleLabelZh,
   roleLabelEn,
   initialLocale,
+  accountUser,
   onLocaleChange,
 }: AppShellNavProps) {
   const preference = useLocalePreference();
@@ -129,21 +134,74 @@ export function AppShellNav({
     onLocaleChange?.(next);
   }
 
+  const workspaceContext = `${activeWorkspaceId ?? ""}|${accountUser?.userId ?? ""}|${roleLabelEn}|${isAdmin}`;
+  const contextRef = useRef(workspaceContext);
+  contextRef.current = workspaceContext;
+  const workspaceRequest = useRef<{
+    controller: AbortController;
+    phase: "waiting" | "switching";
+  } | null>(null);
+  useEffect(() => {
+    setSwitchingWorkspace(false);
+    return () => {
+      workspaceRequest.current?.controller.abort();
+      workspaceRequest.current = null;
+    };
+  }, [workspaceContext]);
   async function changeWorkspace(workspaceId: string) {
-    if (workspaceId === activeWorkspaceId || switchingWorkspace) return;
+    if (workspaceRequest.current?.phase === "switching") return;
+    workspaceRequest.current?.controller.abort();
+    if (workspaceId === activeWorkspaceId) {
+      workspaceRequest.current = null;
+      setSwitchingWorkspace(false);
+      return;
+    }
+    const request = {
+      controller: new AbortController(),
+      phase: "waiting" as "waiting" | "switching",
+    };
+    workspaceRequest.current = request;
+    const originContext = workspaceContext;
     setSwitchingWorkspace(true);
     setWorkspaceSwitchError(false);
     try {
-      const response = await fetch("/api/workspace/select", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workspaceId }),
-      });
-      if (!response.ok) throw new Error("workspace switch failed");
-      window.location.assign("/dashboard");
+      await requestClientContextChange(
+        { kind: "workspace", workspaceId },
+        async () => {
+          if (
+            request.controller.signal.aborted ||
+            contextRef.current !== originContext
+          )
+            return;
+          request.phase = "switching";
+          const response = await fetch("/api/workspace/select", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ workspaceId }),
+            signal: request.controller.signal,
+          });
+          if (!response.ok) throw new Error("workspace switch failed");
+          if (
+            request.controller.signal.aborted ||
+            contextRef.current !== originContext
+          )
+            return;
+          clearWorkSession();
+          window.location.assign("/dashboard");
+        },
+        { signal: request.controller.signal },
+      );
     } catch {
-      setWorkspaceSwitchError(true);
-      setSwitchingWorkspace(false);
+      if (
+        !request.controller.signal.aborted &&
+        contextRef.current === originContext
+      )
+        setWorkspaceSwitchError(true);
+    } finally {
+      if (workspaceRequest.current === request) {
+        workspaceRequest.current = null;
+        setSwitchingWorkspace(false);
+      }
     }
   }
   function openDrawer() {
@@ -340,9 +398,18 @@ export function AppShellNav({
           <span className="pilot-badge">
             {localized(locale, "試行", "PILOT")}
           </span>
-          <span className="operator-name">
-            {localized(locale, roleLabelZh, roleLabelEn)}
-          </span>
+          {accountUser ? (
+            <AccountMenu
+              user={accountUser}
+              workspaceName={workspaceName}
+              roleLabel={localized(locale, roleLabelZh, roleLabelEn)}
+              locale={locale}
+            />
+          ) : (
+            <span className="operator-name">
+              {localized(locale, roleLabelZh, roleLabelEn)}
+            </span>
+          )}
         </div>
       </div>
 

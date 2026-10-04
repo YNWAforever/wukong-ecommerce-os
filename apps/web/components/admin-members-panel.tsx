@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
 
 type Member = {
   userId: string;
@@ -29,6 +31,7 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export function AdminMembersPanel() {
+  const submitting = useRef(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [busy, setBusy] = useState(false);
@@ -60,6 +63,8 @@ export function AdminMembersPanel() {
 
   const run = useCallback(
     async (work: () => Promise<void>, success: string) => {
+      if (submitting.current) return false;
+      submitting.current = true;
       setBusy(true);
       setError(null);
       setMessage(null);
@@ -67,21 +72,28 @@ export function AdminMembersPanel() {
         await work();
         await load();
         setMessage(success);
+        return true;
       } catch (runError) {
         setError(
           runError instanceof Error
             ? runError.message
             : "Unable to complete request.",
         );
+        return false;
       } finally {
+        submitting.current = false;
         setBusy(false);
       }
     },
     [load],
   );
 
-  const invite = () =>
-    run(async () => {
+  const invite = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim())) {
+      setError("請填寫有效電郵 Enter a valid email address.");
+      return false;
+    }
+    return run(async () => {
       const response = await fetch("/api/workspace/members/invite", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -89,7 +101,18 @@ export function AdminMembersPanel() {
       });
       if (!response.ok) throw await responseError(response);
       setInviteEmail("");
+      setInviteRole("viewer");
     }, "邀請已送出 Invite sent");
+  };
+  useAdminDirtyGuard("members-invite", {
+    dirty: Boolean(inviteEmail || inviteRole !== "viewer" || busy),
+    save: invite,
+    discard: () => {
+      setInviteEmail("");
+      setInviteRole("viewer");
+      setError(null);
+    },
+  });
 
   const changeRole = (userId: string, role: AssignableRole) =>
     run(async () => {

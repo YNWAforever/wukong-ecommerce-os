@@ -11,6 +11,7 @@ import { sep } from "node:path";
 import { emptyWorkingListing } from "@wukong/core";
 import { createListListingsHandler } from "./route";
 import { createListingViewHandler } from "./[id]/route";
+import { createCatalogHandler } from "../catalog/route";
 
 const adminUrl = process.env.TEST_DATABASE_ADMIN_URL!;
 const appUrl = process.env.TEST_DATABASE_URL!;
@@ -156,6 +157,56 @@ describe.skipIf(!enabled)(
       expect(await database.inspectListingReadCompatibility!()).toMatchObject({
         ready: true,
       });
+    });
+    it("isolates real malformed catalog hydration but fails a global platform-table permission fault", async () => {
+      const connectionId = randomUUID();
+      const badId = randomUUID();
+      const goodId = randomUUID();
+      const handler = createCatalogHandler({
+        sessionContext: session(),
+        getDatabase: () => database,
+      });
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await admin`insert into shopline_connections(id,workspace_id,shop_domain,encrypted_access_token) values (${connectionId},${workspaceId},'synthetic.invalid','disabled')`;
+        await admin`insert into platform_products(id,workspace_id,connection_id,remote_product_id,origin,listing_id,facts_prefill) values
+        (${badId},${workspaceId},${connectionId},'synthetic-bad','created',${normalIds[0]!},'{"volumeMl":"bad"}'::jsonb),
+        (${goodId},${workspaceId},${connectionId},'synthetic-good','created',${noVersionId},null)`;
+        const response = await handler(
+          new Request("http://local/api/catalog?filter=bound"),
+        );
+        expect(response.status, JSON.stringify(log.mock.calls)).toBe(200);
+        const body = await response.json();
+        expect(body.items).toHaveLength(2);
+        expect(body.items.find((r: any) => r.id === badId)).toMatchObject({
+          readState: "blocked",
+          sourceReadiness: null,
+          supportRequestId: expect.any(String),
+        });
+        expect(body.items.find((r: any) => r.id === goodId)).toMatchObject({
+          readState: "ready",
+        });
+        expect(
+          (
+            await createCatalogHandler({
+              sessionContext: session(foreignWorkspaceId),
+              getDatabase: () => database,
+            })(new Request("http://local/api/catalog?filter=bound"))
+          ).status,
+        ).toBe(200);
+        await admin.unsafe(
+          "REVOKE SELECT ON platform_products FROM wukong_app",
+        );
+        const failed = await handler(
+          new Request("http://local/api/catalog?filter=bound"),
+        );
+        expect(failed.status).toBe(500);
+        expect(await failed.json()).not.toHaveProperty("items");
+      } finally {
+        await admin.unsafe("GRANT SELECT ON platform_products TO wukong_app");
+        await admin`delete from shopline_connections where id=${connectionId}`;
+        log.mockRestore();
+      }
     });
 
     it("returns a safe blocked identity instead of losing the malformed listing's support path", async () => {

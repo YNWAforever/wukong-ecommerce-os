@@ -32,6 +32,9 @@ vi.mock("@wukong/ai", async (original) => {
         await this.config.invocationObserver({ ...base, outcome: "api_error" });
         throw new actual.ProviderApiError("transport failed");
       }
+      async generate() {
+        return this.extract();
+      }
     },
   };
 });
@@ -81,6 +84,46 @@ function fixture(claimed = true) {
   return { run, repos, db, env };
 }
 describe("physical invocation runtime", () => {
+  it("rejects a source-only maintenance change before recording or sending a physical generation call", async () => {
+    const { run, repos, db, env } = fixture();
+    const accepted = {
+      inputRevision: 1,
+      activeVersionId: null,
+      sourceBinding: {
+        productId: "10000000-0000-4000-8000-000000000001",
+        sourceImportId: null,
+        rowDigest: "a".repeat(64),
+        updatedAt: "2026-10-01T08:00:00.000Z",
+      },
+    };
+    Object.assign(run.execution, {
+      contentFields: ["nameZh"],
+      maintenanceFence: accepted,
+    });
+    const current = structuredClone(accepted);
+    current.sourceBinding.rowDigest = "b".repeat(64);
+    const bindings = {
+      lockMaintenanceBindings: vi.fn(),
+      getMaintenanceByIds: vi.fn(async () => [
+        { listingId: run.listingId, fence: current },
+      ]),
+    };
+    Object.assign(repos, { platformProducts: bindings });
+    await expect(
+      operationAI(
+        db as never,
+        env as never,
+        "workspace",
+        run as never,
+      ).generate({} as never),
+    ).rejects.toThrow("source changed");
+    expect(bindings.lockMaintenanceBindings).toHaveBeenCalledWith([
+      run.listingId,
+    ]);
+    expect(repos.aiRuns.beginInvocation).not.toHaveBeenCalled();
+    expect(repos.aiRuns.finalizeInvocation).not.toHaveBeenCalled();
+    expect(calls.fetch).not.toHaveBeenCalled();
+  });
   it("commits pending identity before the call and records unknown transport usage", async () => {
     const { run, repos, db, env } = fixture();
     const provider = operationAI(

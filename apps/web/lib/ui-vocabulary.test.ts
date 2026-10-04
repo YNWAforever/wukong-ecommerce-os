@@ -75,7 +75,11 @@ function withoutComments(source: string): string {
 }
 
 describe("interface vocabulary", () => {
-  const sources = copySources(join(import.meta.dirname, ".."));
+  // All cases inspect the same source snapshot; read and strip it once.
+  const sources = copySources(join(import.meta.dirname, "..")).map((path) => ({
+    path,
+    copy: withoutComments(readFileSync(path, "utf8")),
+  }));
 
   it("reads enough of the app to be worth trusting", () => {
     // A guard that silently stopped finding files would pass for ever.
@@ -84,10 +88,8 @@ describe("interface vocabulary", () => {
 
   it.each(RETIRED)("no longer says $term", ({ term, use, because }) => {
     const offenders = sources
-      .filter((path) =>
-        withoutComments(readFileSync(path, "utf8")).includes(term),
-      )
-      .map((path) => relative(join(import.meta.dirname, ".."), path));
+      .filter((source) => source.copy.includes(term))
+      .map((source) => relative(join(import.meta.dirname, ".."), source.path));
 
     expect(
       offenders,

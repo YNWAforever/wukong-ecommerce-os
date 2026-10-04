@@ -463,6 +463,14 @@ button:disabled {
   }
 }
 
+.catalog-page .page-header {
+  margin-bottom: 12px;
+  align-items: center;
+}
+.catalog-page .page-header h1 {
+  font-size: 30px;
+  margin: 0;
+}
 .page-wrap {
   width: min(1200px, calc(100% - 40px));
   margin: 0 auto;
