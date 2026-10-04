@@ -218,3 +218,7 @@ Current source593 full CI is separate from the latest evidence-only commit. Exac
 - [ ] Production exact scope/recovery/schema/role/cache/effective Web/original500; paid-human quality/cloudload/matched employee minutes; first trueSHOPLINE/reconciled5→20→100 remain open. Conditional main merge held; PR120 remains nongreen.
 
 [Executed commands, evidence limits, safe receipt and compatible hold/rollback](../../runbooks/opak-uc24-cloud-budget-2026-10-04.md). Positive reservations/costs are simulated; unknowns remain protected. Historical checkpoints are superseded only within this exact executed scope.
+
+## 2026-10-04 UC30 cloud-scale supplement
+
+[Actual protected synthetic HTTP504samples](./opak-uc30-cloud-performance-2026-10-04.md) covers500/5k/20k, full cardinality/deep cursor equality/domain retention and20/21 configured warm targets. Quality bootstrap costs and first-observed/cold limitations are explicit. Local before/after SQL/EXPLAIN remains separate. Cloud matrix15PASS/3PARTIAL/12BLOCKED; human20-item minutes/acceptance remain incomplete, with [blank timing record](./opak-human-efficiency.md). Legacy20k deep p95 remains827.78ms against800ms. Separate read-only cloud factory diagnostic is not a deployed tail attribution or replacement p95. Production/paid-human/merchant gates and conditional main merge hold remain. No new application code/migration/env/deployment or production mutation.

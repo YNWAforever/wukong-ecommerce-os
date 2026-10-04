@@ -1,0 +1,1278 @@
+{
+  "recordedAt": "2026-10-04T06:10:27.471Z",
+  "productionChanged": false,
+  "productCodeChanged": false,
+  "applicationSource": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+  "protectedWeb": {
+    "sha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+    "deployment": "dpl_J3hvtmygPraTyp2XakUM9k2TXXH6",
+    "region": "iad1",
+    "functionType": "fluid",
+    "memory": "standard"
+  },
+  "worker": {
+    "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "source": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "held": true
+  },
+  "neon": {
+    "project": "small-fire-41282929",
+    "branch": "br-fragrant-sky-b8p8ns7a",
+    "endpoint": "ep-hidden-meadow-b8gvbtoo",
+    "maxCu": 0.25,
+    "plan": "free_v3"
+  },
+  "cloudUat": {
+    "pass": 15,
+    "partial": 3,
+    "blocked": 12,
+    "total": 30
+  },
+  "sampleCount": 504,
+  "configuredTargets": 21,
+  "configuredTargetsPassed": 20,
+  "httpErrors": 0,
+  "cardinalityErrors": 0,
+  "blockedRows": 0,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "queueMessages": 0,
+  "r2Operations": 0,
+  "outgoingEmail": 0,
+  "preparation": {
+    "fixtureCount": 25500,
+    "checks": 8,
+    "elapsedMs": 280370
+  },
+  "qualityChunks": [
+    {
+      "requests": 320,
+      "elapsedMs": 315873.1239,
+      "first": {
+        "index": 0,
+        "elapsedMs": 1534.5357000000004,
+        "totalListings": 20000,
+        "totalAssessed": 25,
+        "pendingCount": 19975,
+        "failedCount": 0,
+        "state": "pending"
+      },
+      "last": {
+        "index": 319,
+        "elapsedMs": 884.7665999999736,
+        "totalListings": 20000,
+        "totalAssessed": 8000,
+        "pendingCount": 12000,
+        "failedCount": 0,
+        "state": "pending"
+      },
+      "outcome": "quality-preparation-partial"
+    },
+    {
+      "requests": 320,
+      "elapsedMs": 293781.9089,
+      "first": {
+        "index": 0,
+        "elapsedMs": 1127.0662999999986,
+        "totalListings": 20000,
+        "totalAssessed": 8025,
+        "pendingCount": 11975,
+        "failedCount": 0,
+        "state": "pending"
+      },
+      "last": {
+        "index": 319,
+        "elapsedMs": 827.1246999999858,
+        "totalListings": 20000,
+        "totalAssessed": 16000,
+        "pendingCount": 4000,
+        "failedCount": 0,
+        "state": "pending"
+      },
+      "outcome": "quality-preparation-partial"
+    }
+  ],
+  "billing": {
+    "readAt": "2026-10-04T05:39:32.749Z",
+    "periodFrom": "2026-10-02T00:00:00Z",
+    "periodToExclusive": "2026-10-05T00:00:00Z",
+    "reportedWukongProjectUsd": 1.419121998889282,
+    "scope": "Wukong project includes production and other previews; not isolated-deployment or all-provider attribution.",
+    "allProviderBillMeasured": false,
+    "capUsd": 5
+  },
+  "cloudSqlDiagnostic": {
+    "stage": "UC30 separate read-only cloud SQL diagnostic, not deployed HTTP rerun",
+    "startedAt": "2026-10-04T06:04:32.003Z",
+    "checks": [
+      {
+        "id": "reviewed-web",
+        "pass": true
+      },
+      {
+        "id": "reviewed-worker",
+        "pass": true
+      },
+      {
+        "id": "owned-app-before-session-setting",
+        "pass": true,
+        "identity": {
+          "role": "wukong_app",
+          "database": "opak_stage",
+          "rolsuper": false,
+          "rolbypassrls": false,
+          "read_only": "off"
+        }
+      },
+      {
+        "id": "read-only-non-bypass-app",
+        "pass": true,
+        "identity": {
+          "role": "wukong_app",
+          "database": "opak_stage",
+          "rolsuper": false,
+          "rolbypassrls": false,
+          "read_only": "on"
+        }
+      },
+      {
+        "id": "full-owned-cohort",
+        "pass": true
+      },
+      {
+        "id": "owned-cardinality-catalog-25",
+        "pass": true
+      },
+      {
+        "id": "owned-cardinality-legacy-deep-25",
+        "pass": true
+      },
+      {
+        "id": "owned-cardinality-cursor-deep-25",
+        "pass": true
+      },
+      {
+        "id": "original-uc24-domain-retained",
+        "pass": true
+      },
+      {
+        "id": "synthetic-domain-retained",
+        "pass": true
+      }
+    ],
+    "stops": [
+      {
+        "id": "wukong-listing-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "wukong-shopline-preview",
+        "acknowledged": true
+      },
+      {
+        "id": "ingress-cron-held",
+        "acknowledged": true
+      },
+      {
+        "id": "compute-held",
+        "acknowledged": true
+      }
+    ],
+    "groups": [
+      {
+        "name": "catalog-25",
+        "sampleCount": 1,
+        "diagnosticRouteWallMs": 3706.2569000000003,
+        "applicationQueryCount": 5,
+        "clientQueryWaitMs": 2917.8835999999865,
+        "executedSqlCount": 8,
+        "plans": [
+          {
+            "fingerprint": "5a2f8c5a748458195c6e8ad70979224dff0331860b378f5a3fc70e50cec3796a",
+            "planningTimeMs": 7.484,
+            "executionTimeMs": 81.007,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 5147,
+            "sharedReadBlocks": 0,
+            "nodeCount": 106,
+            "nodeTypes": [
+              "Aggregate",
+              "Append",
+              "Subquery Scan",
+              "Result",
+              "Hash Join",
+              "Seq Scan",
+              "Hash",
+              "Sort",
+              "Bitmap Heap Scan",
+              "Bitmap Index Scan",
+              "Index Scan",
+              "Index Only Scan",
+              "CTE Scan",
+              "Limit",
+              "Nested Loop"
+            ]
+          },
+          {
+            "fingerprint": "1a95957b986239eafa9ad074bc8af93b819fc2e51069fdd4d2ab11063849a03e",
+            "planningTimeMs": 1.711,
+            "executionTimeMs": 0.433,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 201,
+            "sharedReadBlocks": 0,
+            "nodeCount": 12,
+            "nodeTypes": ["Result", "Nested Loop", "Index Scan", "Materialize"]
+          },
+          {
+            "fingerprint": "03c428fd5f06fd243bc5e4140722378c4b0041b71ad3e5a0c5d65937f24562b4",
+            "planningTimeMs": 0.147,
+            "executionTimeMs": 0.144,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 28,
+            "sharedReadBlocks": 0,
+            "nodeCount": 5,
+            "nodeTypes": ["Limit", "Result", "Sort", "Index Scan"]
+          },
+          {
+            "fingerprint": "c77d366f126d99b224610b5f26d3e733b6d4fb8e9e3a7e2ad34c7c459cb906aa",
+            "planningTimeMs": 1.793,
+            "executionTimeMs": 1.341,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 211,
+            "sharedReadBlocks": 0,
+            "nodeCount": 53,
+            "nodeTypes": [
+              "Result",
+              "Nested Loop",
+              "Index Scan",
+              "Materialize",
+              "CTE Scan",
+              "Subquery Scan",
+              "Limit",
+              "Sort",
+              "Aggregate"
+            ]
+          }
+        ],
+        "planServerExecutionSumMs": 82.92500000000001
+      },
+      {
+        "name": "legacy-deep-25",
+        "sampleCount": 1,
+        "diagnosticRouteWallMs": 3856.1247999999905,
+        "applicationQueryCount": 5,
+        "clientQueryWaitMs": 3079.780700000003,
+        "executedSqlCount": 8,
+        "plans": [
+          {
+            "fingerprint": "5a2f8c5a748458195c6e8ad70979224dff0331860b378f5a3fc70e50cec3796a",
+            "planningTimeMs": 6.831,
+            "executionTimeMs": 95.063,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 5135,
+            "sharedReadBlocks": 0,
+            "nodeCount": 106,
+            "nodeTypes": [
+              "Aggregate",
+              "Append",
+              "Subquery Scan",
+              "Result",
+              "Hash Join",
+              "Seq Scan",
+              "Hash",
+              "Sort",
+              "Bitmap Heap Scan",
+              "Bitmap Index Scan",
+              "Index Scan",
+              "Index Only Scan",
+              "CTE Scan",
+              "Limit",
+              "Nested Loop"
+            ]
+          },
+          {
+            "fingerprint": "1a95957b986239eafa9ad074bc8af93b819fc2e51069fdd4d2ab11063849a03e",
+            "planningTimeMs": 1.635,
+            "executionTimeMs": 0.358,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 201,
+            "sharedReadBlocks": 0,
+            "nodeCount": 12,
+            "nodeTypes": ["Result", "Nested Loop", "Index Scan", "Materialize"]
+          },
+          {
+            "fingerprint": "03c428fd5f06fd243bc5e4140722378c4b0041b71ad3e5a0c5d65937f24562b4",
+            "planningTimeMs": 0.161,
+            "executionTimeMs": 0.127,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 28,
+            "sharedReadBlocks": 0,
+            "nodeCount": 5,
+            "nodeTypes": ["Limit", "Result", "Sort", "Index Scan"]
+          },
+          {
+            "fingerprint": "c77d366f126d99b224610b5f26d3e733b6d4fb8e9e3a7e2ad34c7c459cb906aa",
+            "planningTimeMs": 1.288,
+            "executionTimeMs": 1.37,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 208,
+            "sharedReadBlocks": 0,
+            "nodeCount": 53,
+            "nodeTypes": [
+              "Result",
+              "Nested Loop",
+              "Index Scan",
+              "Materialize",
+              "CTE Scan",
+              "Subquery Scan",
+              "Limit",
+              "Sort",
+              "Aggregate"
+            ]
+          }
+        ],
+        "planServerExecutionSumMs": 96.918
+      },
+      {
+        "name": "cursor-deep-25",
+        "sampleCount": 1,
+        "diagnosticRouteWallMs": 4455.046000000002,
+        "applicationQueryCount": 5,
+        "clientQueryWaitMs": 3677.676499999987,
+        "executedSqlCount": 8,
+        "plans": [
+          {
+            "fingerprint": "c1d5f732cbcb73c29a3481fdb18440b7f862f32fab76b9e80f617238b504bbaa",
+            "planningTimeMs": 6.69,
+            "executionTimeMs": 68.652,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 4983,
+            "sharedReadBlocks": 0,
+            "nodeCount": 106,
+            "nodeTypes": [
+              "Aggregate",
+              "Append",
+              "Subquery Scan",
+              "Result",
+              "Hash Join",
+              "Seq Scan",
+              "Hash",
+              "Sort",
+              "Bitmap Heap Scan",
+              "Bitmap Index Scan",
+              "Index Scan",
+              "Index Only Scan",
+              "CTE Scan",
+              "Limit",
+              "Nested Loop"
+            ]
+          },
+          {
+            "fingerprint": "1a95957b986239eafa9ad074bc8af93b819fc2e51069fdd4d2ab11063849a03e",
+            "planningTimeMs": 5.321,
+            "executionTimeMs": 0.328,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 201,
+            "sharedReadBlocks": 0,
+            "nodeCount": 12,
+            "nodeTypes": ["Result", "Nested Loop", "Index Scan", "Materialize"]
+          },
+          {
+            "fingerprint": "03c428fd5f06fd243bc5e4140722378c4b0041b71ad3e5a0c5d65937f24562b4",
+            "planningTimeMs": 0.16,
+            "executionTimeMs": 0.133,
+            "actualRows": 25,
+            "estimatedRows": 19,
+            "sharedHitBlocks": 28,
+            "sharedReadBlocks": 0,
+            "nodeCount": 5,
+            "nodeTypes": ["Limit", "Result", "Sort", "Index Scan"]
+          },
+          {
+            "fingerprint": "c77d366f126d99b224610b5f26d3e733b6d4fb8e9e3a7e2ad34c7c459cb906aa",
+            "planningTimeMs": 1.43,
+            "executionTimeMs": 1.46,
+            "actualRows": 1,
+            "estimatedRows": 1,
+            "sharedHitBlocks": 208,
+            "sharedReadBlocks": 0,
+            "nodeCount": 53,
+            "nodeTypes": [
+              "Result",
+              "Nested Loop",
+              "Index Scan",
+              "Materialize",
+              "CTE Scan",
+              "Subquery Scan",
+              "Limit",
+              "Sort",
+              "Aggregate"
+            ]
+          }
+        ],
+        "planServerExecutionSumMs": 70.573
+      }
+    ],
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "newQueueMessages": 0,
+    "productionChanged": false,
+    "syntheticSessionPort": true,
+    "diagnosticGuard": "SET default_transaction_read_only on for probe; SET TRANSACTION READ ONLY before every factory transaction, counted as control SQL",
+    "beforeSessionReadOnlySetting": {
+      "role": "wukong_app",
+      "database": "opak_stage",
+      "rolsuper": false,
+      "rolbypassrls": false,
+      "read_only": "off"
+    },
+    "readOnlyIdentity": {
+      "role": "wukong_app",
+      "database": "opak_stage",
+      "rolsuper": false,
+      "rolbypassrls": false,
+      "read_only": "on"
+    },
+    "cursorComparison": {
+      "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+      "equal": true,
+      "rowCount": 25,
+      "totalMatching": 20000,
+      "legacyDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+      "cursorDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+      "setupRequestCount": 3,
+      "setupWallMs": 13815.233999999997
+    },
+    "domainPreservation": {
+      "tables": [
+        "platform_products",
+        "listing_drafts",
+        "listing_input_revisions",
+        "listing_versions",
+        "source_imports",
+        "ai_runs",
+        "listing_pipeline_runs",
+        "ai_budget_reservations",
+        "enrichment_batches",
+        "enrichment_batch_items"
+      ],
+      "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+      "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+      "targetBeforeHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+      "targetAfterHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9"
+    },
+    "outcome": "read-only-cloud-sql-diagnostic-complete",
+    "meaning": "Single samples of existing route factory from Windows/HK to cloud DB using a synthetic injected session port, explicitly not deployed HTTP/auth proof or a new p95 pass. Driver wait includes pool/network/decoding. Post-operation EXPLAIN is separate and cannot identify the cause of the retained 827.78ms deployed tail. SQL/parameters/full plans/responses not written.",
+    "finishedAt": "2026-10-04T06:07:02.700Z",
+    "elapsedMs": 150697
+  },
+  "retainedTargetMisses": [
+    {
+      "size": 20000,
+      "name": "catalog-deep-25",
+      "p95Ms": 827.7767000000167,
+      "targetMs": 800,
+      "cause": "unconfirmed"
+    }
+  ],
+  "runs": [
+    {
+      "size": 500,
+      "elapsedMs": 188482,
+      "checks": 13,
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "qualityPreparation": {
+        "requests": 20,
+        "elapsedMs": 15731.731200000002,
+        "first": {
+          "index": 0,
+          "elapsedMs": 968.1512000000002,
+          "totalListings": 500,
+          "totalAssessed": 25,
+          "pendingCount": 475,
+          "failedCount": 0,
+          "state": "pending"
+        },
+        "last": {
+          "index": 19,
+          "elapsedMs": 780.1848000000027,
+          "totalListings": 500,
+          "totalAssessed": 500,
+          "pendingCount": 0,
+          "failedCount": 0,
+          "state": "ready"
+        },
+        "meaning": "Actual bounded25 normal API reconciliation, outside sampled steady-state latencies."
+      },
+      "cursorComparison": {
+        "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+        "equal": true,
+        "rowCount": 25,
+        "totalMatching": 500,
+        "legacyDigest": "2611891056a3ed39349da1699888c9bab3e9fcd423bdebc3ccc76e811d4ab679",
+        "cursorDigest": "2611891056a3ed39349da1699888c9bab3e9fcd423bdebc3ccc76e811d4ab679",
+        "setupRequestCount": 3,
+        "setupWallMs": 2147.8108999999968
+      },
+      "domainPreservation": {
+        "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "targetBeforeHash": "cf7d6c647fb6ef8443f8cec738dacc76d73e96f45872bf7686028655d34429d3",
+        "targetAfterHash": "cf7d6c647fb6ef8443f8cec738dacc76d73e96f45872bf7686028655d34429d3",
+        "tables": [
+          "platform_products",
+          "listing_drafts",
+          "listing_input_revisions",
+          "listing_versions",
+          "source_imports",
+          "ai_runs",
+          "listing_pipeline_runs",
+          "ai_budget_reservations",
+          "enrichment_batches",
+          "enrichment_batch_items"
+        ]
+      },
+      "databaseInventory": null,
+      "groups": [
+        {
+          "name": "catalog-1",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 647.2201000000059,
+          "warmLatencyMs": {
+            "min": 574.3629999999976,
+            "p50": 649.5190999999904,
+            "p95": 718.2277999999933,
+            "max": 778.0951999999961
+          },
+          "responseBytes": {
+            "min": 1719,
+            "p50": 1719,
+            "p95": 1719,
+            "max": 1719
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-25",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 702.6505000000034,
+          "warmLatencyMs": {
+            "min": 586.8678000000073,
+            "p50": 633.3908000000083,
+            "p95": 686.3159000000014,
+            "max": 1539.427199999991
+          },
+          "responseBytes": {
+            "min": 24585,
+            "p50": 24585,
+            "p95": 24585,
+            "max": 24585
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-deep-25",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 613.4860000000044,
+          "warmLatencyMs": {
+            "min": 597.540599999993,
+            "p50": 621.0934000000125,
+            "p95": 705.0987999999925,
+            "max": 824.3654999999999
+          },
+          "responseBytes": {
+            "min": 24556,
+            "p50": 24556,
+            "p95": 24556,
+            "max": 24556
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "search-sku",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 708.0246000000043,
+          "warmLatencyMs": {
+            "min": 642.7695999999996,
+            "p50": 662.6601999999984,
+            "p95": 725.3071000000054,
+            "max": 757.3561999999947
+          },
+          "responseBytes": {
+            "min": 1420,
+            "p50": 1420,
+            "p95": 1420,
+            "max": 1420
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "search-name",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 636.6633999999904,
+          "warmLatencyMs": {
+            "min": 617.2060000000056,
+            "p50": 629.5141999999905,
+            "p95": 669.1120000000083,
+            "max": 766.3085999999894
+          },
+          "responseBytes": {
+            "min": 24585,
+            "p50": 24585,
+            "p95": 24585,
+            "max": 24585
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "detail",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 745.8027999999904,
+          "warmLatencyMs": {
+            "min": 598.9279000000097,
+            "p50": 638.6429999999964,
+            "p95": 692.0182999999961,
+            "max": 735.6671999999962
+          },
+          "responseBytes": {
+            "min": 2961,
+            "p50": 2961,
+            "p95": 2961,
+            "max": 2961
+          },
+          "targetMs": 1500,
+          "targetPassed": true
+        },
+        {
+          "name": "quality",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 654.0833999999886,
+          "warmLatencyMs": {
+            "min": 555.5546000000031,
+            "p50": 639.1169000000082,
+            "p95": 669.5477000000101,
+            "max": 868.289499999999
+          },
+          "responseBytes": {
+            "min": 1445,
+            "p50": 1445,
+            "p95": 1445,
+            "max": 1445
+          },
+          "targetMs": null,
+          "targetPassed": null
+        },
+        {
+          "name": "catalog-cursor-deep-25",
+          "size": 500,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 647.8256999999867,
+          "warmLatencyMs": {
+            "min": 596.0071000000171,
+            "p50": 623.7039999999979,
+            "p95": 688.040599999993,
+            "max": 822.9157999999879
+          },
+          "responseBytes": {
+            "min": 24556,
+            "p50": 24556,
+            "p95": 24556,
+            "max": 24556
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        }
+      ],
+      "measurementMeaning": "Authenticated deployed HTTP from Windows/HK. First observed is not a guaranteed cold server/pool/cache. SQL/query/EXPLAIN/CPU are not inferred from HTTP latency. No matched cloud before/after baseline or employee-time/INP claim."
+    },
+    {
+      "size": 5000,
+      "elapsedMs": 317345,
+      "checks": 13,
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "qualityPreparation": {
+        "requests": 200,
+        "elapsedMs": 162617.09649999999,
+        "first": {
+          "index": 0,
+          "elapsedMs": 1899.872000000003,
+          "totalListings": 5000,
+          "totalAssessed": 25,
+          "pendingCount": 4975,
+          "failedCount": 0,
+          "state": "pending"
+        },
+        "last": {
+          "index": 199,
+          "elapsedMs": 782.2659999999742,
+          "totalListings": 5000,
+          "totalAssessed": 5000,
+          "pendingCount": 0,
+          "failedCount": 0,
+          "state": "ready"
+        },
+        "meaning": "Actual bounded25 normal API reconciliation, outside sampled steady-state latencies."
+      },
+      "cursorComparison": {
+        "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+        "equal": true,
+        "rowCount": 25,
+        "totalMatching": 5000,
+        "legacyDigest": "e076bef6d1b620a189a0dc7b826323b3783ead7febf4f5694ebebf59d22fedad",
+        "cursorDigest": "e076bef6d1b620a189a0dc7b826323b3783ead7febf4f5694ebebf59d22fedad",
+        "setupRequestCount": 3,
+        "setupWallMs": 2078.277000000002
+      },
+      "domainPreservation": {
+        "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "targetBeforeHash": "f56b1098e9a630ba80dbb8e80f2c7ac100f4c1ef3ece8dd2a20b23ee2b125709",
+        "targetAfterHash": "f56b1098e9a630ba80dbb8e80f2c7ac100f4c1ef3ece8dd2a20b23ee2b125709",
+        "tables": [
+          "platform_products",
+          "listing_drafts",
+          "listing_input_revisions",
+          "listing_versions",
+          "source_imports",
+          "ai_runs",
+          "listing_pipeline_runs",
+          "ai_budget_reservations",
+          "enrichment_batches",
+          "enrichment_batch_items"
+        ]
+      },
+      "databaseInventory": null,
+      "groups": [
+        {
+          "name": "catalog-1",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 688.6739000000234,
+          "warmLatencyMs": {
+            "min": 613.9692000000214,
+            "p50": 684.7970999999961,
+            "p95": 714.0530999999901,
+            "max": 864.0762999999861
+          },
+          "responseBytes": {
+            "min": 1717,
+            "p50": 1717,
+            "p95": 1717,
+            "max": 1717
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-25",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 697.3832000000111,
+          "warmLatencyMs": {
+            "min": 626.7913999999873,
+            "p50": 640.6368000000075,
+            "p95": 698.8407999999763,
+            "max": 775.2508000000089
+          },
+          "responseBytes": {
+            "min": 24601,
+            "p50": 24601,
+            "p95": 24601,
+            "max": 24601
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-deep-25",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 650.1276999999827,
+          "warmLatencyMs": {
+            "min": 618.1651000000129,
+            "p50": 647.3913999999932,
+            "p95": 715.6465999999782,
+            "max": 857.469299999997
+          },
+          "responseBytes": {
+            "min": 24620,
+            "p50": 24620,
+            "p95": 24620,
+            "max": 24620
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "search-sku",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 682.0442000000039,
+          "warmLatencyMs": {
+            "min": 615.6282000000065,
+            "p50": 683.3719999999739,
+            "p95": 780.6005000000005,
+            "max": 807.7105999999912
+          },
+          "responseBytes": {
+            "min": 1424,
+            "p50": 1424,
+            "p95": 1424,
+            "max": 1424
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "search-name",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 650.7806000000273,
+          "warmLatencyMs": {
+            "min": 651.4371999999858,
+            "p50": 683.4294999999984,
+            "p95": 718.5215000000026,
+            "max": 725.2953999999736
+          },
+          "responseBytes": {
+            "min": 24601,
+            "p50": 24601,
+            "p95": 24601,
+            "max": 24601
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "detail",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 673.5865000000049,
+          "warmLatencyMs": {
+            "min": 609.0724000000046,
+            "p50": 661.8989999999758,
+            "p95": 732.7649999999558,
+            "max": 746.7654000000039
+          },
+          "responseBytes": {
+            "min": 2961,
+            "p50": 2961,
+            "p95": 2961,
+            "max": 2961
+          },
+          "targetMs": 1500,
+          "targetPassed": true
+        },
+        {
+          "name": "quality",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 685.6006000000052,
+          "warmLatencyMs": {
+            "min": 598.5056999999797,
+            "p50": 701.7753999999841,
+            "p95": 749.1710999999777,
+            "max": 752.7520999999833
+          },
+          "responseBytes": {
+            "min": 1451,
+            "p50": 1451,
+            "p95": 1451,
+            "max": 1451
+          },
+          "targetMs": null,
+          "targetPassed": null
+        },
+        {
+          "name": "catalog-cursor-deep-25",
+          "size": 5000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 626.60699999996,
+          "warmLatencyMs": {
+            "min": 618.9144000000088,
+            "p50": 648.2228999999934,
+            "p95": 671.63400000002,
+            "max": 673.0052000000142
+          },
+          "responseBytes": {
+            "min": 24620,
+            "p50": 24620,
+            "p95": 24620,
+            "max": 24620
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        }
+      ],
+      "measurementMeaning": "Authenticated deployed HTTP from Windows/HK. First observed is not a guaranteed cold server/pool/cache. SQL/query/EXPLAIN/CPU are not inferred from HTTP latency. No matched cloud before/after baseline or employee-time/INP claim."
+    },
+    {
+      "size": 20000,
+      "elapsedMs": 332812,
+      "checks": 14,
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "qualityPreparation": {
+        "requests": 160,
+        "elapsedMs": 133680.08640000003,
+        "first": {
+          "index": 0,
+          "elapsedMs": 1628.4350999999879,
+          "totalListings": 20000,
+          "totalAssessed": 16025,
+          "pendingCount": 3975,
+          "failedCount": 0,
+          "state": "pending"
+        },
+        "last": {
+          "index": 159,
+          "elapsedMs": 689.7299999999814,
+          "totalListings": 20000,
+          "totalAssessed": 20000,
+          "pendingCount": 0,
+          "failedCount": 0,
+          "state": "ready"
+        },
+        "meaning": "Actual bounded25 normal API reconciliation, outside sampled steady-state latencies."
+      },
+      "cursorComparison": {
+        "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+        "equal": true,
+        "rowCount": 25,
+        "totalMatching": 20000,
+        "legacyDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "cursorDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "setupRequestCount": 3,
+        "setupWallMs": 2419.226800000004
+      },
+      "domainPreservation": {
+        "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "targetBeforeHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "targetAfterHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "tables": [
+          "platform_products",
+          "listing_drafts",
+          "listing_input_revisions",
+          "listing_versions",
+          "source_imports",
+          "ai_runs",
+          "listing_pipeline_runs",
+          "ai_budget_reservations",
+          "enrichment_batches",
+          "enrichment_batch_items"
+        ]
+      },
+      "databaseInventory": {
+        "database": "opak_stage",
+        "role": "wukong_app",
+        "postgres_version": "17.11 (fcae950)",
+        "public_tables": 69,
+        "rls_tables": 59,
+        "forced_rls_tables": 59,
+        "owned_tables": 0
+      },
+      "groups": [
+        {
+          "name": "catalog-1",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 698.9542000000074,
+          "warmLatencyMs": {
+            "min": 648.5182999999961,
+            "p50": 701.4570999999996,
+            "p95": 772.6010999999999,
+            "max": 827.9553999999771
+          },
+          "responseBytes": {
+            "min": 1722,
+            "p50": 1722,
+            "p95": 1722,
+            "max": 1722
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 691.4994000000006,
+          "warmLatencyMs": {
+            "min": 650.9036000000197,
+            "p50": 670.9713999999803,
+            "p95": 722.5592000000179,
+            "max": 769.5434999999998
+          },
+          "responseBytes": {
+            "min": 24647,
+            "p50": 24647,
+            "p95": 24647,
+            "max": 24647
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        },
+        {
+          "name": "catalog-deep-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 699.8697000000102,
+          "warmLatencyMs": {
+            "min": 669.5230000000156,
+            "p50": 700.8589999999967,
+            "p95": 827.7767000000167,
+            "max": 1747.7032999999938
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": false
+        },
+        {
+          "name": "search-sku",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 752.3000000000175,
+          "warmLatencyMs": {
+            "min": 733.1186000000162,
+            "p50": 847.7020000000193,
+            "p95": 882.9709999999905,
+            "max": 883.2908999999927
+          },
+          "responseBytes": {
+            "min": 1428,
+            "p50": 1428,
+            "p95": 1428,
+            "max": 1428
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "search-name",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 742.4925999999978,
+          "warmLatencyMs": {
+            "min": 697.390000000014,
+            "p50": 734.6290000000154,
+            "p95": 893.1203999999852,
+            "max": 950.2208999999857
+          },
+          "responseBytes": {
+            "min": 24647,
+            "p50": 24647,
+            "p95": 24647,
+            "max": 24647
+          },
+          "targetMs": 1000,
+          "targetPassed": true
+        },
+        {
+          "name": "detail",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 795.8101999999781,
+          "warmLatencyMs": {
+            "min": 618.5504000000074,
+            "p50": 663.5817999999854,
+            "p95": 711.2773999999918,
+            "max": 725.0566999999864
+          },
+          "responseBytes": {
+            "min": 2961,
+            "p50": 2961,
+            "p95": 2961,
+            "max": 2961
+          },
+          "targetMs": 1500,
+          "targetPassed": true
+        },
+        {
+          "name": "quality",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 758.6798999999883,
+          "warmLatencyMs": {
+            "min": 632.7366999999504,
+            "p50": 716.8192000000272,
+            "p95": 753.5753000000259,
+            "max": 781.6219000000274
+          },
+          "responseBytes": {
+            "min": 1456,
+            "p50": 1456,
+            "p95": 1456,
+            "max": 1456
+          },
+          "targetMs": null,
+          "targetPassed": null
+        },
+        {
+          "name": "catalog-cursor-deep-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 715.64300000004,
+          "warmLatencyMs": {
+            "min": 665.125400000019,
+            "p50": 691.2870999999577,
+            "p95": 750.5111999999499,
+            "max": 868.8855999999796
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": true
+        }
+      ],
+      "measurementMeaning": "Authenticated deployed HTTP from Windows/HK. First observed is not a guaranteed cold server/pool/cache. SQL/query/EXPLAIN/CPU are not inferred from HTTP latency. No matched cloud before/after baseline or employee-time/INP claim."
+    }
+  ],
+  "limits": [
+    "First observed HTTP response is not guaranteed cold server/pool/cache.",
+    "Deployed HTTP does not expose SQL counts/times. A separate read-only route-factory diagnostic records cloud SQL/EXPLAIN, without attributing the deployed tail or matched before/after improvement.",
+    "No employee-minute, saving-percent or paid-model/commercial acceptance claim.",
+    "Legacy20k deep warm p95 exceeds800ms; human20-item timing/acceptance and production/merchant gates remain incomplete."
+  ]
+}

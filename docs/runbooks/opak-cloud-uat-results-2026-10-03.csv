@@ -28,4 +28,4 @@ case_id,cloud_status,evidence_or_limit
 "UC27","passed","Actual search/kind URL and refresh; catalog2448px return within2px with selection/filter; two completed pages and same-ID refresh; explicit kind URLs restore through native Back/Forward; protected deployment admission retained"
 "UC28","passed","Actual admin tabs/nativeBack/freshCAS/stale save/Compare/Reload/keyboard/readiness plus v26 workspace Stay/failed Save/Discard/successful Save; response/navigation completed; old-tenant-only write and every second-profile value unchanged; original restored/audit+2"
 "UC29","partial","Both-role row/supportUI/disabled-action and global permission faults500/noitems/correlation/ACLrestore200; disabledwholeDB15checks; original authenticated production500 remains unconfirmed"
-"UC30","blocked","Local benchmarks retained; no500/5k/20k cloud load or human employee-minute result"
+"UC30","partial","Authenticated synthetic500/5k/20k504HTTP samples; full cardinality/cursor/domain preservation; 20/21 configured warm targets. Local SQL/cold-pool evidence separate; human20-item minutes/acceptance unmeasured"

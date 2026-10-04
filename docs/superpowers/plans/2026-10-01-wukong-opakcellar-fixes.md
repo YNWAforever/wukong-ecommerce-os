@@ -533,3 +533,15 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 - [ ] Production exact scope/recovery/schema/role/cache/effective Web/original500; paid-human quality/cloudload/matched employee minutes; first trueSHOPLINE/reconciled5→20→100 remain open. Conditional main merge held; PR120 remains nongreen.
 
 [Executed commands, evidence limits, safe receipt and compatible hold/rollback](../../runbooks/opak-uc24-cloud-budget-2026-10-04.md). Positive reservations/costs are simulated; unknowns remain protected. Historical checkpoints are superseded only within this exact executed scope.
+
+## 2026-10-04 HKT UC30 synthetic cloud-scale checkpoint
+
+- [x] Original UC30 criterion reread. Dedicated500/5,000/20,000 synthetic populations physically complete; original UC24 known/unknown ledger and ten domain tables retained.
+- [x] Normal password/session/server operator/workspace selection;504deployedHTTP samples/0errors/0cardinality failures/0blocked rows;20/21 configured warm targets. Quality has no p95 target. Actual deep25 ordered cursor/legacy equality includes20k; no5k truncation.
+- [x] Real bounded25 quality preparation:20/200 requests, then two320-request20k chunks and final160requests. Ready populations complete before warm sampling; startup/setup costs retained.
+- [x] Eight-minute independent windows stop normally; logout/queues/ingress/compute acknowledged. Existing benchmark contracts23/23. Failed private table/quoting/decoder/ESM helpers remain failed and retained.
+- [x] Blank20-case human timing template/procedure prepared; no measured employee minutes/acceptance/saving percentage inferred from automation or fakeAI.
+- [ ] Resolve retained20k legacy deep p95 827.78ms versus800ms. Separate read-only cloud SQL10/10 checks/12plans records5queries per mode; deployed-tail cause remains unconfirmed.
+- [ ] Cloud matrix15PASS/3PARTIAL/12BLOCKED/all30. UC03/29 production500 and UC30 legacy20k latency/human timing remain partial; paid-human UC09–20 remain blocked. Production authorization/recovery/schema/safe role/cache/effectiveWeb and real merchant gates remain incomplete; conditional main merge held.
+
+[Executed metrics, billing limits, first-observed/cold distinction and hold/rollback](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No new product code/migration/env/credential/runtime deployment or production mutation.
