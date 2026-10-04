@@ -1,0 +1,3570 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-04T09:20:54.134Z",
+  "scope": "Existing synthetic20k cohort, normal deployed password/session/operator/workspace authorization. No new fixtures, generation, queue messages, paidAI or realSHOPLINE.",
+  "sourceSha": "24ff5f68d4b5d8f99df7e335d33bdb48d169cecf",
+  "webCandidate": "fba82ee459ccdf9ad83440a20b34f456f944ec9f",
+  "deployment": "dpl_3oiUCZboohZqaQ5s9kvSVnjEtUAD",
+  "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+  "workerSource": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+  "originalMiss": {
+    "legacyP95Ms": 827.7767,
+    "targetMs": 800,
+    "retained": true
+  },
+  "latencyGateClosed": false,
+  "cloudUat": {
+    "passed": 15,
+    "partial": 3,
+    "blocked": 12,
+    "total": 30
+  },
+  "local": {
+    "targetedPassed": 30,
+    "rootPassed": 142,
+    "rootSkipped": 0,
+    "webPassed": 2290,
+    "testTasks": 14,
+    "typecheckTasks": 14,
+    "buildTasks": 8
+  },
+  "sourceCi": {
+    "run": 37189358010,
+    "conclusion": "success",
+    "successSteps": 43,
+    "skipped": ["Upload Playwright artifacts on failure"],
+    "url": "https://github.com/YNWAforever/wukong-ecommerce-os/actions/runs/37189358010"
+  },
+  "windows": [
+    {
+      "kind": "server-stage attribution",
+      "elapsedMs": 198231,
+      "checks": [
+        {
+          "id": "exact-reviewed-web-alias",
+          "pass": true
+        },
+        {
+          "id": "exact-reviewed-worker-active",
+          "pass": true
+        },
+        {
+          "id": "compute-held-before",
+          "pass": true
+        },
+        {
+          "id": "non-bypass-runtime",
+          "pass": true
+        },
+        {
+          "id": "real-native-password-login",
+          "pass": true
+        },
+        {
+          "id": "server-workspace-operator",
+          "pass": true
+        },
+        {
+          "id": "exact-full-cohort-cardinality",
+          "pass": true,
+          "size": 20000
+        },
+        {
+          "id": "normal-server-workspace-switch",
+          "pass": true
+        },
+        {
+          "id": "server-selected-operator",
+          "pass": true
+        },
+        {
+          "id": "current-staging-role-and-force-rls",
+          "pass": true
+        },
+        {
+          "id": "original-uc24-domain-retained",
+          "pass": true
+        },
+        {
+          "id": "synthetic-domain-retained",
+          "pass": true
+        },
+        {
+          "id": "original-workspace-restored",
+          "pass": true
+        }
+      ],
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "groups": [
+        {
+          "name": "catalog-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 686.6579999999958,
+          "warmLatencyMs": {
+            "min": 653.8436999999976,
+            "p50": 677.5344000000041,
+            "p95": 759.9169000000111,
+            "max": 865.2399000000005
+          },
+          "responseBytes": {
+            "min": 24647,
+            "p50": 24647,
+            "p95": 24647,
+            "max": 24647
+          },
+          "targetMs": 800,
+          "targetPassed": true,
+          "samples": [
+            {
+              "index": 0,
+              "phase": "first-observed",
+              "status": 200,
+              "latencyMs": 686.6579999999958,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.1,
+                "workspace": 116.3,
+                "catalog": 90.9,
+                "products": 7.1,
+                "sources": 8.7,
+                "rows": 1.6,
+                "serialize": 0.6,
+                "total": 131.2
+              },
+              "outsideHandlerMs": 555.4579999999958,
+              "blockedRows": 0
+            },
+            {
+              "index": 1,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 759.9169000000111,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 47,
+                "workspace": 127.9,
+                "catalog": 84,
+                "products": 12.6,
+                "sources": 8.4,
+                "rows": 1.3,
+                "serialize": 0.6,
+                "total": 175.6
+              },
+              "outsideHandlerMs": 584.3169000000111,
+              "blockedRows": 0
+            },
+            {
+              "index": 2,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 865.2399000000005,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.7,
+                "workspace": 88.4,
+                "catalog": 65.7,
+                "products": 5.5,
+                "sources": 8.2,
+                "rows": 1.1,
+                "serialize": 1,
+                "total": 101.2
+              },
+              "outsideHandlerMs": 764.0399000000004,
+              "blockedRows": 0
+            },
+            {
+              "index": 3,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 690.5693000000028,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.9,
+                "workspace": 91.7,
+                "catalog": 68.8,
+                "products": 6.4,
+                "sources": 7.9,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 104.3
+              },
+              "outsideHandlerMs": 586.2693000000029,
+              "blockedRows": 0
+            },
+            {
+              "index": 4,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 727.775999999998,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.3,
+                "workspace": 152.2,
+                "catalog": 78,
+                "products": 7.4,
+                "sources": 11.6,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 168.2
+              },
+              "outsideHandlerMs": 559.575999999998,
+              "blockedRows": 0
+            },
+            {
+              "index": 5,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 657.0380000000005,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.7,
+                "workspace": 85.3,
+                "catalog": 63,
+                "products": 5.7,
+                "sources": 7.7,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 98.6
+              },
+              "outsideHandlerMs": 558.4380000000004,
+              "blockedRows": 0
+            },
+            {
+              "index": 6,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 668.3837000000058,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12,
+                "workspace": 102.2,
+                "catalog": 71.6,
+                "products": 8.1,
+                "sources": 10.2,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 114.8
+              },
+              "outsideHandlerMs": 553.5837000000058,
+              "blockedRows": 0
+            },
+            {
+              "index": 7,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 660.2914000000019,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.9,
+                "workspace": 93.5,
+                "catalog": 67.4,
+                "products": 4.8,
+                "sources": 8.4,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 106
+              },
+              "outsideHandlerMs": 554.2914000000019,
+              "blockedRows": 0
+            },
+            {
+              "index": 8,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 667.0795000000071,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.4,
+                "workspace": 100,
+                "catalog": 71.4,
+                "products": 7.1,
+                "sources": 9.9,
+                "rows": 1.2,
+                "serialize": 0.4,
+                "total": 113
+              },
+              "outsideHandlerMs": 554.0795000000071,
+              "blockedRows": 0
+            },
+            {
+              "index": 9,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 678.8349000000017,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.3,
+                "workspace": 89.9,
+                "catalog": 67.4,
+                "products": 5,
+                "sources": 8.4,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 102.8
+              },
+              "outsideHandlerMs": 576.0349000000017,
+              "blockedRows": 0
+            },
+            {
+              "index": 10,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 704.0669000000053,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.1,
+                "workspace": 101,
+                "catalog": 72.4,
+                "products": 7,
+                "sources": 9.9,
+                "rows": 1,
+                "serialize": 0.5,
+                "total": 115.7
+              },
+              "outsideHandlerMs": 588.3669000000052,
+              "blockedRows": 0
+            },
+            {
+              "index": 11,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 653.8436999999976,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.1,
+                "workspace": 83.2,
+                "catalog": 62.9,
+                "products": 4.9,
+                "sources": 7.7,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 98
+              },
+              "outsideHandlerMs": 555.8436999999976,
+              "blockedRows": 0
+            },
+            {
+              "index": 12,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 689.8948999999993,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.9,
+                "workspace": 95.1,
+                "catalog": 68.7,
+                "products": 6.9,
+                "sources": 8.9,
+                "rows": 1,
+                "serialize": 0.4,
+                "total": 108.6
+              },
+              "outsideHandlerMs": 581.2948999999993,
+              "blockedRows": 0
+            },
+            {
+              "index": 13,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 666.6670000000013,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13,
+                "workspace": 89.6,
+                "catalog": 66.2,
+                "products": 5.6,
+                "sources": 8.1,
+                "rows": 1.2,
+                "serialize": 0.5,
+                "total": 103.1
+              },
+              "outsideHandlerMs": 563.5670000000013,
+              "blockedRows": 0
+            },
+            {
+              "index": 14,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 678.3683000000019,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14,
+                "workspace": 99.2,
+                "catalog": 70.9,
+                "products": 7.8,
+                "sources": 9.1,
+                "rows": 1.1,
+                "serialize": 0.6,
+                "total": 113.9
+              },
+              "outsideHandlerMs": 564.4683000000019,
+              "blockedRows": 0
+            },
+            {
+              "index": 15,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 677.5344000000041,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.3,
+                "workspace": 90.1,
+                "catalog": 65.5,
+                "products": 5.6,
+                "sources": 8.7,
+                "rows": 1.6,
+                "serialize": 0.5,
+                "total": 102.1
+              },
+              "outsideHandlerMs": 575.4344000000041,
+              "blockedRows": 0
+            },
+            {
+              "index": 16,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 675.4909999999945,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.8,
+                "workspace": 104.6,
+                "catalog": 73,
+                "products": 7.7,
+                "sources": 10.8,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 119.1
+              },
+              "outsideHandlerMs": 556.3909999999945,
+              "blockedRows": 0
+            },
+            {
+              "index": 17,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 685.7350000000006,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.1,
+                "workspace": 91.2,
+                "catalog": 68.2,
+                "products": 5.3,
+                "sources": 8.5,
+                "rows": 1.6,
+                "serialize": 0.6,
+                "total": 104
+              },
+              "outsideHandlerMs": 581.7350000000006,
+              "blockedRows": 0
+            },
+            {
+              "index": 18,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 675.9314999999915,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.6,
+                "workspace": 102,
+                "catalog": 70.1,
+                "products": 7.2,
+                "sources": 9.8,
+                "rows": 1.7,
+                "serialize": 0.4,
+                "total": 115.1
+              },
+              "outsideHandlerMs": 560.8314999999915,
+              "blockedRows": 0
+            },
+            {
+              "index": 19,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 679.761599999998,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.5,
+                "workspace": 92,
+                "catalog": 70.3,
+                "products": 4.6,
+                "sources": 7.6,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 105.1
+              },
+              "outsideHandlerMs": 574.661599999998,
+              "blockedRows": 0
+            },
+            {
+              "index": 20,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 658.3214000000007,
+              "responseBytes": 24647,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.2,
+                "workspace": 99.8,
+                "catalog": 73.9,
+                "products": 6.6,
+                "sources": 8.6,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 112.5
+              },
+              "outsideHandlerMs": 545.8214000000007,
+              "blockedRows": 0
+            }
+          ],
+          "warmStageMs": {
+            "session": {
+              "min": 11.3,
+              "p50": 12.5,
+              "p95": 15.3,
+              "max": 47
+            },
+            "workspace": {
+              "min": 83.2,
+              "p50": 93.5,
+              "p95": 127.9,
+              "max": 152.2
+            },
+            "catalog": {
+              "min": 62.9,
+              "p50": 68.8,
+              "p95": 78,
+              "max": 84
+            },
+            "products": {
+              "min": 4.6,
+              "p50": 6.4,
+              "p95": 8.1,
+              "max": 12.6
+            },
+            "sources": {
+              "min": 7.6,
+              "p50": 8.5,
+              "p95": 10.8,
+              "max": 11.6
+            },
+            "rows": {
+              "min": 1,
+              "p50": 1.1,
+              "p95": 1.7,
+              "max": 2.1
+            },
+            "serialize": {
+              "min": 0.4,
+              "p50": 0.5,
+              "p95": 0.6,
+              "max": 1
+            },
+            "total": {
+              "min": 98,
+              "p50": 106,
+              "p95": 168.2,
+              "max": 175.6
+            }
+          },
+          "warmOutsideHandlerMs": {
+            "min": 545.8214000000007,
+            "p50": 563.5670000000013,
+            "p95": 588.3669000000052,
+            "max": 764.0399000000004
+          },
+          "actualHttpP95Sample": {
+            "index": 1,
+            "phase": "warm",
+            "status": 200,
+            "latencyMs": 759.9169000000111,
+            "responseBytes": 24647,
+            "expectationFailures": [],
+            "serverStagesMs": {
+              "session": 47,
+              "workspace": 127.9,
+              "catalog": 84,
+              "products": 12.6,
+              "sources": 8.4,
+              "rows": 1.3,
+              "serialize": 0.6,
+              "total": 175.6
+            },
+            "outsideHandlerMs": 584.3169000000111,
+            "blockedRows": 0
+          }
+        },
+        {
+          "name": "catalog-deep-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 702.2407000000094,
+          "warmLatencyMs": {
+            "min": 706.338699999993,
+            "p50": 763.9627999999939,
+            "p95": 1045.5625999999902,
+            "max": 1683.0256999999983
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": false,
+          "samples": [
+            {
+              "index": 0,
+              "phase": "first-observed",
+              "status": 200,
+              "latencyMs": 702.2407000000094,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.8,
+                "workspace": 111.4,
+                "catalog": 87.8,
+                "products": 5.9,
+                "sources": 8.4,
+                "rows": 1.2,
+                "serialize": 0.5,
+                "total": 123.8
+              },
+              "outsideHandlerMs": 578.4407000000094,
+              "blockedRows": 0
+            },
+            {
+              "index": 2,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 759.2252000000008,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11,
+                "workspace": 169.2,
+                "catalog": 143.8,
+                "products": 4.7,
+                "sources": 8,
+                "rows": 1,
+                "serialize": 0.5,
+                "total": 180.8
+              },
+              "outsideHandlerMs": 578.4252000000008,
+              "blockedRows": 0
+            },
+            {
+              "index": 1,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 763.9627999999939,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12,
+                "workspace": 184.4,
+                "catalog": 152.4,
+                "products": 8.4,
+                "sources": 10.5,
+                "rows": 1.7,
+                "serialize": 0.4,
+                "total": 197
+              },
+              "outsideHandlerMs": 566.9627999999939,
+              "blockedRows": 0
+            },
+            {
+              "index": 3,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 744.2869999999966,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.7,
+                "workspace": 176.9,
+                "catalog": 145.6,
+                "products": 7.3,
+                "sources": 9.6,
+                "rows": 1.2,
+                "serialize": 0.4,
+                "total": 190.1
+              },
+              "outsideHandlerMs": 554.1869999999966,
+              "blockedRows": 0
+            },
+            {
+              "index": 4,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 772.5160999999935,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.3,
+                "workspace": 161.6,
+                "catalog": 136,
+                "products": 4.3,
+                "sources": 7.5,
+                "rows": 1,
+                "serialize": 0.3,
+                "total": 174.4
+              },
+              "outsideHandlerMs": 598.1160999999935,
+              "blockedRows": 0
+            },
+            {
+              "index": 5,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 749.4832999999926,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12,
+                "workspace": 167.3,
+                "catalog": 133.6,
+                "products": 7.7,
+                "sources": 13.8,
+                "rows": 1,
+                "serialize": 0.5,
+                "total": 179.9
+              },
+              "outsideHandlerMs": 569.5832999999926,
+              "blockedRows": 0
+            },
+            {
+              "index": 6,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 729.4732999999978,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13,
+                "workspace": 158.9,
+                "catalog": 133.6,
+                "products": 5.4,
+                "sources": 7.8,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 172.4
+              },
+              "outsideHandlerMs": 557.0732999999979,
+              "blockedRows": 0
+            },
+            {
+              "index": 7,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 745.4563999999955,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.7,
+                "workspace": 183.5,
+                "catalog": 154.2,
+                "products": 7.4,
+                "sources": 10.2,
+                "rows": 1,
+                "serialize": 0.4,
+                "total": 199.8
+              },
+              "outsideHandlerMs": 545.6563999999955,
+              "blockedRows": 0
+            },
+            {
+              "index": 8,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 733.2231999999931,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.6,
+                "workspace": 165,
+                "catalog": 141.4,
+                "products": 5.3,
+                "sources": 9.1,
+                "rows": 1,
+                "serialize": 0.4,
+                "total": 176.1
+              },
+              "outsideHandlerMs": 557.1231999999931,
+              "blockedRows": 0
+            },
+            {
+              "index": 10,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 899.4656000000105,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.7,
+                "workspace": 101.6,
+                "catalog": 79.8,
+                "products": 5.5,
+                "sources": 7.9,
+                "rows": 1,
+                "serialize": 0.4,
+                "total": 113.8
+              },
+              "outsideHandlerMs": 785.6656000000105,
+              "blockedRows": 0
+            },
+            {
+              "index": 9,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 1683.0256999999983,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 281.7,
+                "workspace": 194.3,
+                "catalog": 95.1,
+                "products": 10.5,
+                "sources": 15.6,
+                "rows": 2.5,
+                "serialize": 80.4,
+                "total": 558.4
+              },
+              "outsideHandlerMs": 1124.6256999999982,
+              "blockedRows": 0
+            },
+            {
+              "index": 11,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 822.9350999999879,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 18.3,
+                "workspace": 215.5,
+                "catalog": 151.8,
+                "products": 5.9,
+                "sources": 10.6,
+                "rows": 1.6,
+                "serialize": 0.8,
+                "total": 234.9
+              },
+              "outsideHandlerMs": 588.0350999999879,
+              "blockedRows": 0
+            },
+            {
+              "index": 12,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 753.2331000000122,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 21.5,
+                "workspace": 144.4,
+                "catalog": 116.9,
+                "products": 5.5,
+                "sources": 12.7,
+                "rows": 1.5,
+                "serialize": 0.6,
+                "total": 166.7
+              },
+              "outsideHandlerMs": 586.5331000000122,
+              "blockedRows": 0
+            },
+            {
+              "index": 13,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 749.8696000000054,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 59.6,
+                "workspace": 131.4,
+                "catalog": 109.4,
+                "products": 5.7,
+                "sources": 7.8,
+                "rows": 1.6,
+                "serialize": 0.8,
+                "total": 192
+              },
+              "outsideHandlerMs": 557.8696000000054,
+              "blockedRows": 0
+            },
+            {
+              "index": 14,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 1045.5625999999902,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.1,
+                "workspace": 101.8,
+                "catalog": 79.8,
+                "products": 5.3,
+                "sources": 7.8,
+                "rows": 1.5,
+                "serialize": 1.1,
+                "total": 118.2
+              },
+              "outsideHandlerMs": 927.3625999999902,
+              "blockedRows": 0
+            },
+            {
+              "index": 15,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 1009.880799999999,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 29,
+                "workspace": 121.8,
+                "catalog": 87.5,
+                "products": 9.3,
+                "sources": 10.7,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 151.5
+              },
+              "outsideHandlerMs": 858.380799999999,
+              "blockedRows": 0
+            },
+            {
+              "index": 17,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 932.0176000000065,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 29.3,
+                "workspace": 187.2,
+                "catalog": 147.2,
+                "products": 6.3,
+                "sources": 9.4,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 217.2
+              },
+              "outsideHandlerMs": 714.8176000000065,
+              "blockedRows": 0
+            },
+            {
+              "index": 16,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 937.104800000001,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.6,
+                "workspace": 160.8,
+                "catalog": 139.2,
+                "products": 4.5,
+                "sources": 7.5,
+                "rows": 2.2,
+                "serialize": 0.7,
+                "total": 177.3
+              },
+              "outsideHandlerMs": 759.804800000001,
+              "blockedRows": 0
+            },
+            {
+              "index": 19,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 898.0963000000047,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.5,
+                "workspace": 170,
+                "catalog": 146,
+                "products": 6.5,
+                "sources": 8.2,
+                "rows": 2.1,
+                "serialize": 0.7,
+                "total": 186.4
+              },
+              "outsideHandlerMs": 711.6963000000047,
+              "blockedRows": 0
+            },
+            {
+              "index": 18,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 903.4396000000124,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.9,
+                "workspace": 184.1,
+                "catalog": 155.6,
+                "products": 8.3,
+                "sources": 9.1,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 196.6
+              },
+              "outsideHandlerMs": 706.8396000000124,
+              "blockedRows": 0
+            },
+            {
+              "index": 20,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 706.338699999993,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.7,
+                "workspace": 103.9,
+                "catalog": 82.4,
+                "products": 5.1,
+                "sources": 7.5,
+                "rows": 2,
+                "serialize": 0.4,
+                "total": 117.1
+              },
+              "outsideHandlerMs": 589.238699999993,
+              "blockedRows": 0
+            }
+          ],
+          "warmStageMs": {
+            "session": {
+              "min": 10.6,
+              "p50": 13,
+              "p95": 59.6,
+              "max": 281.7
+            },
+            "workspace": {
+              "min": 101.6,
+              "p50": 165,
+              "p95": 194.3,
+              "max": 215.5
+            },
+            "catalog": {
+              "min": 79.8,
+              "p50": 136,
+              "p95": 154.2,
+              "max": 155.6
+            },
+            "products": {
+              "min": 4.3,
+              "p50": 5.7,
+              "p95": 9.3,
+              "max": 10.5
+            },
+            "sources": {
+              "min": 7.5,
+              "p50": 9.1,
+              "p95": 13.8,
+              "max": 15.6
+            },
+            "rows": {
+              "min": 1,
+              "p50": 1.4,
+              "p95": 2.2,
+              "max": 2.5
+            },
+            "serialize": {
+              "min": 0.3,
+              "p50": 0.5,
+              "p95": 1.1,
+              "max": 80.4
+            },
+            "total": {
+              "min": 113.8,
+              "p50": 179.9,
+              "p95": 234.9,
+              "max": 558.4
+            }
+          },
+          "warmOutsideHandlerMs": {
+            "min": 545.6563999999955,
+            "p50": 588.0350999999879,
+            "p95": 927.3625999999902,
+            "max": 1124.6256999999982
+          },
+          "actualHttpP95Sample": {
+            "index": 14,
+            "phase": "warm",
+            "status": 200,
+            "latencyMs": 1045.5625999999902,
+            "responseBytes": 24681,
+            "expectationFailures": [],
+            "serverStagesMs": {
+              "session": 15.1,
+              "workspace": 101.8,
+              "catalog": 79.8,
+              "products": 5.3,
+              "sources": 7.8,
+              "rows": 1.5,
+              "serialize": 1.1,
+              "total": 118.2
+            },
+            "outsideHandlerMs": 927.3625999999902,
+            "blockedRows": 0
+          }
+        },
+        {
+          "name": "catalog-cursor-deep-25",
+          "size": 20000,
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 1255.510300000009,
+          "warmLatencyMs": {
+            "min": 692.5911999999953,
+            "p50": 732.321100000001,
+            "p95": 774.8598000000056,
+            "max": 787.8000000000029
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": true,
+          "samples": [
+            {
+              "index": 0,
+              "phase": "first-observed",
+              "status": 200,
+              "latencyMs": 1255.510300000009,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.9,
+                "workspace": 114.2,
+                "catalog": 77.9,
+                "products": 8.7,
+                "sources": 16,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 127.4
+              },
+              "outsideHandlerMs": 1128.110300000009,
+              "blockedRows": 0
+            },
+            {
+              "index": 1,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 774.8598000000056,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 17.7,
+                "workspace": 134.7,
+                "catalog": 109.4,
+                "products": 6.2,
+                "sources": 9.3,
+                "rows": 2.1,
+                "serialize": 0.7,
+                "total": 154.5
+              },
+              "outsideHandlerMs": 620.3598000000056,
+              "blockedRows": 0
+            },
+            {
+              "index": 2,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 787.8000000000029,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.9,
+                "workspace": 155.7,
+                "catalog": 107.7,
+                "products": 31.1,
+                "sources": 8.3,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 168.8
+              },
+              "outsideHandlerMs": 619.000000000003,
+              "blockedRows": 0
+            },
+            {
+              "index": 3,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 761.215200000006,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.1,
+                "workspace": 155.3,
+                "catalog": 124.7,
+                "products": 7.8,
+                "sources": 11.1,
+                "rows": 1.2,
+                "serialize": 0.4,
+                "total": 169.6
+              },
+              "outsideHandlerMs": 591.615200000006,
+              "blockedRows": 0
+            },
+            {
+              "index": 4,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 749.440300000002,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 16,
+                "workspace": 147,
+                "catalog": 113.6,
+                "products": 6.1,
+                "sources": 11.1,
+                "rows": 2,
+                "serialize": 0.8,
+                "total": 165
+              },
+              "outsideHandlerMs": 584.440300000002,
+              "blockedRows": 0
+            },
+            {
+              "index": 6,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 718.4727999999886,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.9,
+                "workspace": 147.2,
+                "catalog": 121.8,
+                "products": 6.5,
+                "sources": 10.8,
+                "rows": 1.2,
+                "serialize": 0.5,
+                "total": 159.2
+              },
+              "outsideHandlerMs": 559.2727999999886,
+              "blockedRows": 0
+            },
+            {
+              "index": 5,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 737.4295999999886,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.8,
+                "workspace": 144.1,
+                "catalog": 116.6,
+                "products": 5.5,
+                "sources": 9.8,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 160.4
+              },
+              "outsideHandlerMs": 577.0295999999886,
+              "blockedRows": 0
+            },
+            {
+              "index": 7,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 704.930600000007,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.1,
+                "workspace": 119.8,
+                "catalog": 94.3,
+                "products": 4.9,
+                "sources": 12.1,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 135
+              },
+              "outsideHandlerMs": 569.930600000007,
+              "blockedRows": 0
+            },
+            {
+              "index": 8,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 719.9228000000003,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 18.4,
+                "workspace": 118.1,
+                "catalog": 98.6,
+                "products": 4.9,
+                "sources": 7.1,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 137.7
+              },
+              "outsideHandlerMs": 582.2228000000002,
+              "blockedRows": 0
+            },
+            {
+              "index": 9,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 707.1576999999961,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.1,
+                "workspace": 121.1,
+                "catalog": 95.4,
+                "products": 5.5,
+                "sources": 11.8,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 135.2
+              },
+              "outsideHandlerMs": 571.9576999999961,
+              "blockedRows": 0
+            },
+            {
+              "index": 10,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 692.5911999999953,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 16.2,
+                "workspace": 115.6,
+                "catalog": 96.2,
+                "products": 5.1,
+                "sources": 7,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 132.9
+              },
+              "outsideHandlerMs": 559.6911999999953,
+              "blockedRows": 0
+            },
+            {
+              "index": 11,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 758.6206999999995,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.9,
+                "workspace": 168,
+                "catalog": 145,
+                "products": 5.1,
+                "sources": 9.1,
+                "rows": 2,
+                "serialize": 0.6,
+                "total": 183.1
+              },
+              "outsideHandlerMs": 575.5206999999995,
+              "blockedRows": 0
+            },
+            {
+              "index": 12,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 750.1122999999934,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.3,
+                "workspace": 164.9,
+                "catalog": 137.2,
+                "products": 7.3,
+                "sources": 9,
+                "rows": 1.1,
+                "serialize": 0.5,
+                "total": 179.3
+              },
+              "outsideHandlerMs": 570.8122999999935,
+              "blockedRows": 0
+            },
+            {
+              "index": 14,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 715.7112000000052,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.8,
+                "workspace": 138.9,
+                "catalog": 112.2,
+                "products": 6.2,
+                "sources": 11.1,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 150.7
+              },
+              "outsideHandlerMs": 565.0112000000051,
+              "blockedRows": 0
+            },
+            {
+              "index": 13,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 732.321100000001,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.7,
+                "workspace": 134.1,
+                "catalog": 109.9,
+                "products": 5.4,
+                "sources": 9.5,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 150.2
+              },
+              "outsideHandlerMs": 582.121100000001,
+              "blockedRows": 0
+            },
+            {
+              "index": 15,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 733.1203999999998,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.5,
+                "workspace": 138.7,
+                "catalog": 113.4,
+                "products": 6.1,
+                "sources": 10.1,
+                "rows": 2,
+                "serialize": 0.5,
+                "total": 153.5
+              },
+              "outsideHandlerMs": 579.6203999999998,
+              "blockedRows": 0
+            },
+            {
+              "index": 16,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 746.7918999999965,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11,
+                "workspace": 153.5,
+                "catalog": 124.3,
+                "products": 7.6,
+                "sources": 9.9,
+                "rows": 1.1,
+                "serialize": 0.4,
+                "total": 165.5
+              },
+              "outsideHandlerMs": 581.2918999999965,
+              "blockedRows": 0
+            },
+            {
+              "index": 18,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 724.3944000000047,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.7,
+                "workspace": 121.5,
+                "catalog": 95.9,
+                "products": 9,
+                "sources": 8.6,
+                "rows": 1,
+                "serialize": 0.4,
+                "total": 134.3
+              },
+              "outsideHandlerMs": 590.0944000000047,
+              "blockedRows": 0
+            },
+            {
+              "index": 17,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 773.3487999999925,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 18.2,
+                "workspace": 122.1,
+                "catalog": 96.7,
+                "products": 5.6,
+                "sources": 9.2,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 141.7
+              },
+              "outsideHandlerMs": 631.6487999999924,
+              "blockedRows": 0
+            },
+            {
+              "index": 19,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 708.4285999999993,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 18.7,
+                "workspace": 133.7,
+                "catalog": 109.3,
+                "products": 6.4,
+                "sources": 8.8,
+                "rows": 1.6,
+                "serialize": 0.5,
+                "total": 153.4
+              },
+              "outsideHandlerMs": 555.0285999999993,
+              "blockedRows": 0
+            },
+            {
+              "index": 20,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 696.8827000000019,
+              "responseBytes": 24681,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14,
+                "workspace": 129.4,
+                "catalog": 107.8,
+                "products": 5.7,
+                "sources": 7.7,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 144.5
+              },
+              "outsideHandlerMs": 552.3827000000019,
+              "blockedRows": 0
+            }
+          ],
+          "warmStageMs": {
+            "session": {
+              "min": 10.8,
+              "p50": 13.9,
+              "p95": 18.4,
+              "max": 18.7
+            },
+            "workspace": {
+              "min": 115.6,
+              "p50": 134.7,
+              "p95": 164.9,
+              "max": 168
+            },
+            "catalog": {
+              "min": 94.3,
+              "p50": 109.4,
+              "p95": 137.2,
+              "max": 145
+            },
+            "products": {
+              "min": 4.9,
+              "p50": 6.1,
+              "p95": 9,
+              "max": 31.1
+            },
+            "sources": {
+              "min": 7,
+              "p50": 9.3,
+              "p95": 11.8,
+              "max": 12.1
+            },
+            "rows": {
+              "min": 1,
+              "p50": 1.5,
+              "p95": 2.1,
+              "max": 2.1
+            },
+            "serialize": {
+              "min": 0.4,
+              "p50": 0.5,
+              "p95": 0.7,
+              "max": 0.8
+            },
+            "total": {
+              "min": 132.9,
+              "p50": 153.4,
+              "p95": 179.3,
+              "max": 183.1
+            }
+          },
+          "warmOutsideHandlerMs": {
+            "min": 552.3827000000019,
+            "p50": 577.0295999999886,
+            "p95": 620.3598000000056,
+            "max": 631.6487999999924
+          },
+          "actualHttpP95Sample": {
+            "index": 1,
+            "phase": "warm",
+            "status": 200,
+            "latencyMs": 774.8598000000056,
+            "responseBytes": 24681,
+            "expectationFailures": [],
+            "serverStagesMs": {
+              "session": 17.7,
+              "workspace": 134.7,
+              "catalog": 109.4,
+              "products": 6.2,
+              "sources": 9.3,
+              "rows": 2.1,
+              "serialize": 0.7,
+              "total": 154.5
+            },
+            "outsideHandlerMs": 620.3598000000056,
+            "blockedRows": 0
+          }
+        }
+      ],
+      "cursorComparison": {
+        "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+        "equal": true,
+        "rowCount": 25,
+        "totalMatching": 20000,
+        "legacyDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "cursorDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "setupRequestCount": 3,
+        "setupWallMs": 2283.055600000007
+      },
+      "domainPreservation": {
+        "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "targetBeforeHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "targetAfterHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "tables": [
+          "platform_products",
+          "listing_drafts",
+          "listing_input_revisions",
+          "listing_versions",
+          "source_imports",
+          "ai_runs",
+          "listing_pipeline_runs",
+          "ai_budget_reservations",
+          "enrichment_batches",
+          "enrichment_batch_items"
+        ]
+      },
+      "databaseInventory": {
+        "database": "opak_stage",
+        "role": "wukong_app",
+        "postgres_version": "17.11 (fcae950)",
+        "public_tables": 69,
+        "rls_tables": 59,
+        "forced_rls_tables": 59,
+        "owned_tables": 0
+      }
+    },
+    {
+      "kind": "native browser versus API observation",
+      "elapsedMs": 202543,
+      "checks": [
+        {
+          "id": "exact-reviewed-web-alias",
+          "pass": true
+        },
+        {
+          "id": "exact-reviewed-worker-active",
+          "pass": true
+        },
+        {
+          "id": "compute-held-before",
+          "pass": true
+        },
+        {
+          "id": "non-bypass-runtime",
+          "pass": true
+        },
+        {
+          "id": "real-native-password-login",
+          "pass": true
+        },
+        {
+          "id": "server-workspace-operator",
+          "pass": true
+        },
+        {
+          "id": "exact-full-cohort-cardinality",
+          "pass": true,
+          "size": 20000
+        },
+        {
+          "id": "normal-server-workspace-switch",
+          "pass": true
+        },
+        {
+          "id": "server-selected-operator",
+          "pass": true
+        },
+        {
+          "id": "current-staging-role-and-force-rls",
+          "pass": true
+        },
+        {
+          "id": "original-uc24-domain-retained",
+          "pass": true
+        },
+        {
+          "id": "synthetic-domain-retained",
+          "pass": true
+        },
+        {
+          "id": "original-workspace-restored",
+          "pass": true
+        }
+      ],
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "groups": [
+        {
+          "name": "catalog-deep-25",
+          "size": 20000,
+          "transport": "api",
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 776.4627999999939,
+          "warmLatencyMs": {
+            "min": 667.4697999999917,
+            "p50": 728.556099999987,
+            "p95": 799.094499999992,
+            "max": 885.369200000001
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": true,
+          "samples": [
+            {
+              "index": 0,
+              "phase": "first-observed",
+              "status": 200,
+              "latencyMs": 776.4627999999939,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.3,
+                "workspace": 101.4,
+                "catalog": 78.6,
+                "products": 5.6,
+                "sources": 9,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 113.4
+              },
+              "outsideHandlerMs": 663.0627999999939,
+              "blockedRows": 0
+            },
+            {
+              "index": 1,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 754.8076000000001,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 19.4,
+                "workspace": 104,
+                "catalog": 81.3,
+                "products": 5.8,
+                "sources": 8.8,
+                "rows": 1.8,
+                "serialize": 0.6,
+                "total": 124.2
+              },
+              "outsideHandlerMs": 630.6076,
+              "blockedRows": 0
+            },
+            {
+              "index": 2,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 885.369200000001,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.1,
+                "workspace": 105.8,
+                "catalog": 83.3,
+                "products": 5.2,
+                "sources": 8.5,
+                "rows": 1.7,
+                "serialize": 0.5,
+                "total": 117.7
+              },
+              "outsideHandlerMs": 767.669200000001,
+              "blockedRows": 0
+            },
+            {
+              "index": 3,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 719.9160999999876,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.6,
+                "workspace": 104.8,
+                "catalog": 83.4,
+                "products": 4.8,
+                "sources": 8.1,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 117.1
+              },
+              "outsideHandlerMs": 602.8160999999876,
+              "blockedRows": 0
+            },
+            {
+              "index": 4,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 716.1294000000053,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14,
+                "workspace": 113.3,
+                "catalog": 91.2,
+                "products": 4.9,
+                "sources": 9.4,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 127.9
+              },
+              "outsideHandlerMs": 588.2294000000053,
+              "blockedRows": 0
+            },
+            {
+              "index": 5,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 749.9336999999941,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13,
+                "workspace": 128.6,
+                "catalog": 84.1,
+                "products": 4.7,
+                "sources": 9,
+                "rows": 1.4,
+                "serialize": 0.4,
+                "total": 142.2
+              },
+              "outsideHandlerMs": 607.7336999999941,
+              "blockedRows": 0
+            },
+            {
+              "index": 6,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 775.4939000000013,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.2,
+                "workspace": 168.1,
+                "catalog": 91.6,
+                "products": 7.3,
+                "sources": 11,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 181.9
+              },
+              "outsideHandlerMs": 593.5939000000013,
+              "blockedRows": 0
+            },
+            {
+              "index": 7,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 694.5543999999936,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11,
+                "workspace": 103.3,
+                "catalog": 81.9,
+                "products": 5.8,
+                "sources": 7.7,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 115
+              },
+              "outsideHandlerMs": 579.5543999999936,
+              "blockedRows": 0
+            },
+            {
+              "index": 8,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 716.2606999999989,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.2,
+                "workspace": 113.7,
+                "catalog": 86.5,
+                "products": 7,
+                "sources": 10.6,
+                "rows": 1.4,
+                "serialize": 1,
+                "total": 126
+              },
+              "outsideHandlerMs": 590.2606999999989,
+              "blockedRows": 0
+            },
+            {
+              "index": 9,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 689.2167000000045,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 9.9,
+                "workspace": 105.1,
+                "catalog": 83.8,
+                "products": 4.9,
+                "sources": 8.5,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 115.7
+              },
+              "outsideHandlerMs": 573.5167000000044,
+              "blockedRows": 0
+            },
+            {
+              "index": 10,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 734.0331000000006,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.4,
+                "workspace": 114.3,
+                "catalog": 87.9,
+                "products": 6.2,
+                "sources": 9.3,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 125.4
+              },
+              "outsideHandlerMs": 608.6331000000006,
+              "blockedRows": 0
+            },
+            {
+              "index": 11,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 764.3166000000056,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.7,
+                "workspace": 106.2,
+                "catalog": 84.2,
+                "products": 4.8,
+                "sources": 8.2,
+                "rows": 1.6,
+                "serialize": 0.5,
+                "total": 117.6
+              },
+              "outsideHandlerMs": 646.7166000000055,
+              "blockedRows": 0
+            },
+            {
+              "index": 12,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 799.094499999992,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 8.9,
+                "workspace": 107.8,
+                "catalog": 82,
+                "products": 6.3,
+                "sources": 9.5,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 117.3
+              },
+              "outsideHandlerMs": 681.794499999992,
+              "blockedRows": 0
+            },
+            {
+              "index": 13,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 756.9710999999952,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.4,
+                "workspace": 100.6,
+                "catalog": 79.9,
+                "products": 4.7,
+                "sources": 8.4,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 112.7
+              },
+              "outsideHandlerMs": 644.2710999999952,
+              "blockedRows": 0
+            },
+            {
+              "index": 14,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 742.6665999999968,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.8,
+                "workspace": 115.2,
+                "catalog": 87.9,
+                "products": 7.1,
+                "sources": 9.5,
+                "rows": 1.6,
+                "serialize": 0.5,
+                "total": 127.6
+              },
+              "outsideHandlerMs": 615.0665999999968,
+              "blockedRows": 0
+            },
+            {
+              "index": 15,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 728.556099999987,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12,
+                "workspace": 104.7,
+                "catalog": 83.5,
+                "products": 4.6,
+                "sources": 8.2,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 117.2
+              },
+              "outsideHandlerMs": 611.356099999987,
+              "blockedRows": 0
+            },
+            {
+              "index": 16,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 758.3963000000076,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.2,
+                "workspace": 108.7,
+                "catalog": 82.9,
+                "products": 5.9,
+                "sources": 9.4,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 120.5
+              },
+              "outsideHandlerMs": 637.8963000000076,
+              "blockedRows": 0
+            },
+            {
+              "index": 17,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 708.1293000000005,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 33.5,
+                "workspace": 112.6,
+                "catalog": 83.7,
+                "products": 5,
+                "sources": 8,
+                "rows": 1.6,
+                "serialize": 0.6,
+                "total": 146.8
+              },
+              "outsideHandlerMs": 561.3293000000006,
+              "blockedRows": 0
+            },
+            {
+              "index": 18,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 723.1546999999991,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.5,
+                "workspace": 119,
+                "catalog": 92.1,
+                "products": 6.8,
+                "sources": 9,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 132.1
+              },
+              "outsideHandlerMs": 591.0546999999991,
+              "blockedRows": 0
+            },
+            {
+              "index": 19,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 667.4697999999917,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.8,
+                "workspace": 102.1,
+                "catalog": 81.8,
+                "products": 4.9,
+                "sources": 7.6,
+                "rows": 1.8,
+                "serialize": 0.5,
+                "total": 114.4
+              },
+              "outsideHandlerMs": 553.0697999999917,
+              "blockedRows": 0
+            },
+            {
+              "index": 20,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 715.073000000004,
+              "responseBytes": 24681,
+              "transport": "api",
+              "browserTransport": null,
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.2,
+                "workspace": 124.4,
+                "catalog": 97.6,
+                "products": 6.8,
+                "sources": 9.3,
+                "rows": 1.6,
+                "serialize": 0.5,
+                "total": 135.2
+              },
+              "outsideHandlerMs": 579.8730000000039,
+              "blockedRows": 0
+            }
+          ],
+          "warmStageMs": {
+            "session": {
+              "min": 8.9,
+              "p50": 11.4,
+              "p95": 19.4,
+              "max": 33.5
+            },
+            "workspace": {
+              "min": 100.6,
+              "p50": 107.8,
+              "p95": 128.6,
+              "max": 168.1
+            },
+            "catalog": {
+              "min": 79.9,
+              "p50": 83.7,
+              "p95": 92.1,
+              "max": 97.6
+            },
+            "products": {
+              "min": 4.6,
+              "p50": 5.2,
+              "p95": 7.1,
+              "max": 7.3
+            },
+            "sources": {
+              "min": 7.6,
+              "p50": 8.8,
+              "p95": 10.6,
+              "max": 11
+            },
+            "rows": {
+              "min": 1.4,
+              "p50": 1.5,
+              "p95": 1.8,
+              "max": 1.8
+            },
+            "serialize": {
+              "min": 0.4,
+              "p50": 0.5,
+              "p95": 0.6,
+              "max": 1
+            },
+            "total": {
+              "min": 112.7,
+              "p50": 120.5,
+              "p95": 146.8,
+              "max": 181.9
+            }
+          },
+          "warmOutsideHandlerMs": {
+            "min": 553.0697999999917,
+            "p50": 602.8160999999876,
+            "p95": 681.794499999992,
+            "max": 767.669200000001
+          },
+          "actualHttpP95Sample": {
+            "index": 12,
+            "phase": "warm",
+            "status": 200,
+            "latencyMs": 799.094499999992,
+            "responseBytes": 24681,
+            "transport": "api",
+            "browserTransport": null,
+            "expectationFailures": [],
+            "serverStagesMs": {
+              "session": 8.9,
+              "workspace": 107.8,
+              "catalog": 82,
+              "products": 6.3,
+              "sources": 9.5,
+              "rows": 1.4,
+              "serialize": 0.5,
+              "total": 117.3
+            },
+            "outsideHandlerMs": 681.794499999992,
+            "blockedRows": 0
+          }
+        },
+        {
+          "name": "catalog-browser-deep-25",
+          "size": 20000,
+          "transport": "browser",
+          "sampleCount": 21,
+          "errorCount": 0,
+          "expectationFailures": 0,
+          "firstObservedMs": 782.0669999999955,
+          "warmLatencyMs": {
+            "min": 684.6866999999911,
+            "p50": 711.2307000000001,
+            "p95": 805.7040000000125,
+            "max": 1736.5943000000116
+          },
+          "responseBytes": {
+            "min": 24681,
+            "p50": 24681,
+            "p95": 24681,
+            "max": 24681
+          },
+          "targetMs": 800,
+          "targetPassed": false,
+          "samples": [
+            {
+              "index": 0,
+              "phase": "first-observed",
+              "status": 200,
+              "latencyMs": 782.0669999999955,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 727.6999999997206,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 641.2000000001863,
+                "bodyMs": 36.799999999813735,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 10.2,
+                "workspace": 100,
+                "catalog": 80.1,
+                "products": 4.7,
+                "sources": 7.4,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 110.9
+              },
+              "outsideHandlerMs": 671.1669999999955,
+              "blockedRows": 0
+            },
+            {
+              "index": 2,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 704.5168000000122,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 698.5999999996275,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 658.7000000001863,
+                "bodyMs": 37.299999999813735,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.6,
+                "workspace": 108.1,
+                "catalog": 83,
+                "products": 6.3,
+                "sources": 8.8,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 121.3
+              },
+              "outsideHandlerMs": 583.2168000000122,
+              "blockedRows": 0
+            },
+            {
+              "index": 3,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 711.2307000000001,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 687.5,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 647.3999999999069,
+                "bodyMs": 37.90000000037253,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11,
+                "workspace": 102.1,
+                "catalog": 81,
+                "products": 4.8,
+                "sources": 8,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 113.7
+              },
+              "outsideHandlerMs": 597.5307,
+              "blockedRows": 0
+            },
+            {
+              "index": 1,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 1736.5943000000116,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 1665,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 1621.3999999999069,
+                "bodyMs": 39.799999999813735,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 380.1,
+                "workspace": 171.3,
+                "catalog": 91.1,
+                "products": 8.5,
+                "sources": 11.5,
+                "rows": 2.4,
+                "serialize": 19,
+                "total": 572.5
+              },
+              "outsideHandlerMs": 1164.0943000000116,
+              "blockedRows": 0
+            },
+            {
+              "index": 4,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 699.4205999999976,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 691.2000000001863,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 645.5,
+                "bodyMs": 43.89999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14,
+                "workspace": 105.8,
+                "catalog": 82.3,
+                "products": 5.1,
+                "sources": 8.5,
+                "rows": 1.6,
+                "serialize": 0.8,
+                "total": 120.9
+              },
+              "outsideHandlerMs": 578.5205999999977,
+              "blockedRows": 0
+            },
+            {
+              "index": 5,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 707.1863000000012,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 684.0999999996275,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 643.7999999998137,
+                "bodyMs": 38.39999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 22.7,
+                "workspace": 105.3,
+                "catalog": 82.5,
+                "products": 5.6,
+                "sources": 8.4,
+                "rows": 1.4,
+                "serialize": 0.7,
+                "total": 128.9
+              },
+              "outsideHandlerMs": 578.2863000000012,
+              "blockedRows": 0
+            },
+            {
+              "index": 6,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 684.6866999999911,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 662.8999999999069,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 619.9000000003725,
+                "bodyMs": 41.09999999962747,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.8,
+                "workspace": 105.9,
+                "catalog": 83,
+                "products": 5.5,
+                "sources": 8.6,
+                "rows": 1.4,
+                "serialize": 1.1,
+                "total": 120
+              },
+              "outsideHandlerMs": 564.6866999999911,
+              "blockedRows": 0
+            },
+            {
+              "index": 7,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 723.2854999999981,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 699.3999999999069,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 659.3999999999069,
+                "bodyMs": 38.5,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14.2,
+                "workspace": 108,
+                "catalog": 83.6,
+                "products": 6,
+                "sources": 9.5,
+                "rows": 2,
+                "serialize": 0.7,
+                "total": 123.2
+              },
+              "outsideHandlerMs": 600.0854999999981,
+              "blockedRows": 0
+            },
+            {
+              "index": 8,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 733.1584000000003,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 687.6000000000931,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 648.2999999998137,
+                "bodyMs": 38.10000000009313,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.6,
+                "workspace": 110.4,
+                "catalog": 83.7,
+                "products": 6.5,
+                "sources": 9.5,
+                "rows": 2,
+                "serialize": 0.6,
+                "total": 123.9
+              },
+              "outsideHandlerMs": 609.2584000000003,
+              "blockedRows": 0
+            },
+            {
+              "index": 9,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 705.4091000000044,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 678.4000000003725,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 636.7999999998137,
+                "bodyMs": 40.40000000037253,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.5,
+                "workspace": 103.6,
+                "catalog": 79.4,
+                "products": 5.6,
+                "sources": 8.7,
+                "rows": 2.1,
+                "serialize": 0.7,
+                "total": 118
+              },
+              "outsideHandlerMs": 587.4091000000044,
+              "blockedRows": 0
+            },
+            {
+              "index": 10,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 805.7040000000125,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 732.8999999999069,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 658.6999999997206,
+                "bodyMs": 69.10000000009313,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.5,
+                "workspace": 106,
+                "catalog": 80.4,
+                "products": 6.5,
+                "sources": 9.1,
+                "rows": 2,
+                "serialize": 1.1,
+                "total": 118.9
+              },
+              "outsideHandlerMs": 686.8040000000125,
+              "blockedRows": 0
+            },
+            {
+              "index": 11,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 726.2759000000078,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 703,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 661.2999999998137,
+                "bodyMs": 40.90000000037253,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.1,
+                "workspace": 115.2,
+                "catalog": 92.8,
+                "products": 5.3,
+                "sources": 8.2,
+                "rows": 1.5,
+                "serialize": 0.7,
+                "total": 129.2
+              },
+              "outsideHandlerMs": 597.0759000000078,
+              "blockedRows": 0
+            },
+            {
+              "index": 12,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 724.6966000000102,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 705.8000000002794,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 621.8999999999069,
+                "bodyMs": 39.8000000002794,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.1,
+                "workspace": 108.1,
+                "catalog": 86.5,
+                "products": 6.1,
+                "sources": 7.4,
+                "rows": 1.4,
+                "serialize": 0.8,
+                "total": 120.2
+              },
+              "outsideHandlerMs": 604.4966000000102,
+              "blockedRows": 0
+            },
+            {
+              "index": 13,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 703.2983999999997,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 676.7000000001863,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 634.6000000000931,
+                "bodyMs": 41.39999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11.8,
+                "workspace": 113.6,
+                "catalog": 88.4,
+                "products": 7,
+                "sources": 9.2,
+                "rows": 1.5,
+                "serialize": 0.6,
+                "total": 126.2
+              },
+              "outsideHandlerMs": 577.0983999999996,
+              "blockedRows": 0
+            },
+            {
+              "index": 14,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 704.6526999999915,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 679.3000000002794,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 624.8999999999069,
+                "bodyMs": 50,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 11,
+                "workspace": 104.3,
+                "catalog": 80.7,
+                "products": 5.4,
+                "sources": 10.2,
+                "rows": 1.4,
+                "serialize": 0.5,
+                "total": 115.9
+              },
+              "outsideHandlerMs": 588.7526999999915,
+              "blockedRows": 0
+            },
+            {
+              "index": 15,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 707.7726999999868,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 683.5,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 640.5,
+                "bodyMs": 42,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12,
+                "workspace": 102.6,
+                "catalog": 81.8,
+                "products": 5.4,
+                "sources": 7.6,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 115.3
+              },
+              "outsideHandlerMs": 592.4726999999868,
+              "blockedRows": 0
+            },
+            {
+              "index": 16,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 714.3291999999929,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 682.8999999999069,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 637.7000000001863,
+                "bodyMs": 40.89999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 15.2,
+                "workspace": 104.9,
+                "catalog": 80.5,
+                "products": 6.4,
+                "sources": 8.9,
+                "rows": 2,
+                "serialize": 0.6,
+                "total": 120.9
+              },
+              "outsideHandlerMs": 593.4291999999929,
+              "blockedRows": 0
+            },
+            {
+              "index": 17,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 715.4003000000084,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 698.5,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 641,
+                "bodyMs": 55.89999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.6,
+                "workspace": 106.1,
+                "catalog": 79.7,
+                "products": 5.8,
+                "sources": 9,
+                "rows": 2.2,
+                "serialize": 0.7,
+                "total": 120.6
+              },
+              "outsideHandlerMs": 594.8003000000084,
+              "blockedRows": 0
+            },
+            {
+              "index": 18,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 717.5696000000025,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 697.8999999999069,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 645.6000000000931,
+                "bodyMs": 41.6999999997206,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 13.4,
+                "workspace": 104.3,
+                "catalog": 81.9,
+                "products": 5.6,
+                "sources": 8.4,
+                "rows": 2.1,
+                "serialize": 0.6,
+                "total": 118.5
+              },
+              "outsideHandlerMs": 599.0696000000025,
+              "blockedRows": 0
+            },
+            {
+              "index": 19,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 707.9579999999987,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 701.1000000000931,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 647.1999999997206,
+                "bodyMs": 51.40000000037253,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 14,
+                "workspace": 112.3,
+                "catalog": 82.2,
+                "products": 6.1,
+                "sources": 8.8,
+                "rows": 2,
+                "serialize": 0.5,
+                "total": 127
+              },
+              "outsideHandlerMs": 580.9579999999987,
+              "blockedRows": 0
+            },
+            {
+              "index": 20,
+              "phase": "warm",
+              "status": 200,
+              "latencyMs": 717.6929999999993,
+              "responseBytes": 24681,
+              "transport": "browser",
+              "browserTransport": {
+                "protocol": "h2",
+                "durationMs": 699.7999999998137,
+                "dnsMs": 0,
+                "connectMs": 0,
+                "tlsMs": 0,
+                "requestToHeadersMs": 646.6000000000931,
+                "bodyMs": 40.89999999990687,
+                "transferSize": 3851,
+                "encodedBodySize": 3551,
+                "decodedBodySize": 24681
+              },
+              "expectationFailures": [],
+              "serverStagesMs": {
+                "session": 12.4,
+                "workspace": 109,
+                "catalog": 86.7,
+                "products": 5.3,
+                "sources": 7.9,
+                "rows": 1.5,
+                "serialize": 0.5,
+                "total": 122.1
+              },
+              "outsideHandlerMs": 595.5929999999993,
+              "blockedRows": 0
+            }
+          ],
+          "warmStageMs": {
+            "session": {
+              "min": 11,
+              "p50": 12.8,
+              "p95": 22.7,
+              "max": 380.1
+            },
+            "workspace": {
+              "min": 102.1,
+              "p50": 106,
+              "p95": 115.2,
+              "max": 171.3
+            },
+            "catalog": {
+              "min": 79.4,
+              "p50": 82.3,
+              "p95": 91.1,
+              "max": 92.8
+            },
+            "products": {
+              "min": 4.8,
+              "p50": 5.6,
+              "p95": 7,
+              "max": 8.5
+            },
+            "sources": {
+              "min": 7.4,
+              "p50": 8.7,
+              "p95": 10.2,
+              "max": 11.5
+            },
+            "rows": {
+              "min": 1.4,
+              "p50": 1.5,
+              "p95": 2.2,
+              "max": 2.4
+            },
+            "serialize": {
+              "min": 0.5,
+              "p50": 0.6,
+              "p95": 1.1,
+              "max": 19
+            },
+            "total": {
+              "min": 113.7,
+              "p50": 120.9,
+              "p95": 129.2,
+              "max": 572.5
+            }
+          },
+          "warmOutsideHandlerMs": {
+            "min": 564.6866999999911,
+            "p50": 593.4291999999929,
+            "p95": 686.8040000000125,
+            "max": 1164.0943000000116
+          },
+          "actualHttpP95Sample": {
+            "index": 10,
+            "phase": "warm",
+            "status": 200,
+            "latencyMs": 805.7040000000125,
+            "responseBytes": 24681,
+            "transport": "browser",
+            "browserTransport": {
+              "protocol": "h2",
+              "durationMs": 732.8999999999069,
+              "dnsMs": 0,
+              "connectMs": 0,
+              "tlsMs": 0,
+              "requestToHeadersMs": 658.6999999997206,
+              "bodyMs": 69.10000000009313,
+              "transferSize": 3851,
+              "encodedBodySize": 3551,
+              "decodedBodySize": 24681
+            },
+            "expectationFailures": [],
+            "serverStagesMs": {
+              "session": 11.5,
+              "workspace": 106,
+              "catalog": 80.4,
+              "products": 6.5,
+              "sources": 9.1,
+              "rows": 2,
+              "serialize": 1.1,
+              "total": 118.9
+            },
+            "outsideHandlerMs": 686.8040000000125,
+            "blockedRows": 0
+          },
+          "browserResourceTiming": {
+            "protocols": ["h2"],
+            "dnsMs": {
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "connectMs": {
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "tlsMs": {
+              "min": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "durationMs": {
+              "min": 662.8999999999069,
+              "p50": 691.2000000001863,
+              "p95": 732.8999999999069,
+              "max": 1665
+            },
+            "requestToHeadersMs": {
+              "min": 619.9000000003725,
+              "p50": 645.5,
+              "p95": 661.2999999998137,
+              "max": 1621.3999999999069
+            },
+            "bodyMs": {
+              "min": 37.299999999813735,
+              "p50": 40.89999999990687,
+              "p95": 55.89999999990687,
+              "max": 69.10000000009313
+            }
+          }
+        }
+      ],
+      "cursorComparison": {
+        "method": "Exact ordered sourceType/id tuple equality; row IDs and server token remain in memory only.",
+        "equal": true,
+        "rowCount": 25,
+        "totalMatching": 20000,
+        "legacyDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "cursorDigest": "31f03ce8fa3954f6f053d3552eed43e0d062dca575353eef77e72e747d9bb3dc",
+        "setupRequestCount": 3,
+        "setupWallMs": 2279.1791999999987
+      },
+      "domainPreservation": {
+        "originalBeforeHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "originalAfterHash": "1a705675b232aaea2de2ff22201a35823e5aa8fc38ea713ca8a78b18eda69a88",
+        "targetBeforeHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "targetAfterHash": "68bbf9d5ffa4b2ab6a8aa519dbd182bfb17aa295414e21ce93529bb30b79f5d9",
+        "tables": [
+          "platform_products",
+          "listing_drafts",
+          "listing_input_revisions",
+          "listing_versions",
+          "source_imports",
+          "ai_runs",
+          "listing_pipeline_runs",
+          "ai_budget_reservations",
+          "enrichment_batches",
+          "enrichment_batch_items"
+        ]
+      },
+      "databaseInventory": {
+        "database": "opak_stage",
+        "role": "wukong_app",
+        "postgres_version": "17.11 (fcae950)",
+        "public_tables": 69,
+        "rls_tables": 59,
+        "forced_rls_tables": 59,
+        "owned_tables": 0
+      }
+    }
+  ],
+  "controllers": [
+    {
+      "recordedAt": "2026-10-04T08:57:33.115Z",
+      "elapsedMs": 221549,
+      "deadlineMs": 430000,
+      "deadlineFired": false,
+      "events": [
+        {
+          "label": "initial-controller-read",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T08:53:52.474Z"
+        },
+        {
+          "label": "endpoint-before",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T08:54:29.919Z"
+        },
+        {
+          "label": "compute-enable",
+          "disabled": false,
+          "state": "idle",
+          "at": "2026-10-04T08:54:48.053Z"
+        },
+        {
+          "label": "compute-disable",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T08:57:05.073Z"
+        },
+        {
+          "label": "endpoint-after",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T08:57:16.812Z"
+        },
+        {
+          "processExit": 0
+        },
+        {
+          "label": "final-controller-hold",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T08:57:33.114Z"
+        }
+      ],
+      "final": {
+        "endpoint": {
+          "id": "ep-hidden-meadow-b8gvbtoo",
+          "project_id": "small-fire-41282929",
+          "branch_id": "br-fragrant-sky-b8p8ns7a",
+          "host": "ep-hidden-meadow-b8gvbtoo.c-14.us-east-1.aws.neon.tech",
+          "disabled": true,
+          "current_state": "idle",
+          "autoscaling_limit_min_cu": 0.25,
+          "autoscaling_limit_max_cu": 0.25
+        },
+        "recordedAt": "2026-10-04T08:57:33.114Z",
+        "readVia": "authenticated Neon connector"
+      },
+      "productionChanged": false,
+      "paidAiCalls": 0
+    },
+    {
+      "recordedAt": "2026-10-04T09:08:21.487Z",
+      "elapsedMs": 230684,
+      "deadlineMs": 430000,
+      "deadlineFired": false,
+      "events": [
+        {
+          "label": "initial-controller-read",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T09:04:31.704Z"
+        },
+        {
+          "label": "endpoint-before",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T09:05:23.189Z"
+        },
+        {
+          "label": "compute-enable",
+          "disabled": false,
+          "state": "idle",
+          "at": "2026-10-04T09:05:39.594Z"
+        },
+        {
+          "label": "compute-disable",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T09:07:51.324Z"
+        },
+        {
+          "label": "endpoint-after",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T09:08:06.536Z"
+        },
+        {
+          "processExit": 0
+        },
+        {
+          "label": "final-controller-hold",
+          "disabled": true,
+          "state": "idle",
+          "at": "2026-10-04T09:08:21.487Z"
+        }
+      ],
+      "final": {
+        "endpoint": {
+          "id": "ep-hidden-meadow-b8gvbtoo",
+          "project_id": "small-fire-41282929",
+          "branch_id": "br-fragrant-sky-b8p8ns7a",
+          "host": "ep-hidden-meadow-b8gvbtoo.c-14.us-east-1.aws.neon.tech",
+          "disabled": true,
+          "current_state": "idle",
+          "autoscaling_limit_min_cu": 0.25,
+          "autoscaling_limit_max_cu": 0.25
+        },
+        "recordedAt": "2026-10-04T09:08:21.487Z",
+        "readVia": "authenticated Neon connector"
+      },
+      "productionChanged": false,
+      "paidAiCalls": 0
+    }
+  ],
+  "failure": {
+    "window": {
+      "stage": "UC30 controlled deployed server-stage attribution",
+      "startedAt": "2026-10-04T08:44:13.907Z",
+      "webSha": "fba82ee459ccdf9ad83440a20b34f456f944ec9f",
+      "sourceSha": "24ff5f68d4b5d8f99df7e335d33bdb48d169cecf",
+      "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "checks": [
+        {
+          "id": "exact-reviewed-web-alias",
+          "pass": true
+        },
+        {
+          "id": "exact-reviewed-worker-active",
+          "pass": true
+        },
+        {
+          "id": "compute-held-before",
+          "pass": true
+        },
+        {
+          "id": "non-bypass-runtime",
+          "pass": true
+        }
+      ],
+      "stops": [
+        {
+          "id": "owned-session",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-listing-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "wukong-shopline-preview",
+          "acknowledged": true
+        },
+        {
+          "id": "ingress-cron-held",
+          "acknowledged": true
+        },
+        {
+          "id": "compute-held",
+          "acknowledged": true
+        }
+      ],
+      "paidAiCalls": 0,
+      "newBatchAdmissions": 0,
+      "newQueueMessages": 0,
+      "realShoplineCalls": 0,
+      "outgoingEmail": 0,
+      "productionChanged": false,
+      "actualBilling": "not-measured",
+      "outcome": "failed",
+      "errorCode": "CONTROLLED_FAILURE",
+      "errorName": "Error",
+      "finishedAt": "2026-10-04T08:46:45.537Z",
+      "elapsedMs": 151630
+    },
+    "classification": {
+      "outcome": "failed",
+      "errorCode": "CONTROLLED_FAILURE",
+      "markers": {
+        "browserType.launch": false,
+        "page.goto": false,
+        "locator.click": true,
+        "locator.fill": false,
+        "Timeout": true,
+        "strict mode violation": false,
+        "net::ERR": false,
+        "To deploy to production": false,
+        "Unexpected token": false,
+        "connect_timeout": false
+      },
+      "codeLocations": ["run.mjs:29:301"],
+      "allStopsAcknowledged": true,
+      "samples": 0,
+      "rawErrorPublished": false
+    },
+    "priorAccessPage": {
+      "recordedAt": "2026-10-04T08:50:09.180Z",
+      "computeEnabled": false,
+      "credentialsSubmitted": false,
+      "productionChanged": false,
+      "paidAiCalls": 0,
+      "status": 200,
+      "pathname": "/login",
+      "englishMethods": 0,
+      "magicButtons": 0,
+      "passwordButtons": 0,
+      "emailInputs": 1,
+      "buttonCount": 8,
+      "recognizedButtons": [],
+      "unrecognizedButtonCount": 8,
+      "documentLanguage": "en-US",
+      "pageErrors": [],
+      "failedRequests": [
+        {
+          "resource": "fetch",
+          "path": "/api/1323670/envelope/"
+        }
+      ]
+    },
+    "refreshedAccessPage": {
+      "recordedAt": "2026-10-04T08:52:52.812Z",
+      "computeEnabled": false,
+      "credentialsSubmitted": false,
+      "productionChanged": false,
+      "paidAiCalls": 0,
+      "status": 200,
+      "pathname": "/signin",
+      "englishMethods": 1,
+      "magicButtons": 1,
+      "passwordButtons": 1,
+      "emailInputs": 1,
+      "buttonCount": 5,
+      "recognizedButtons": ["Password", "Magic link", "Sign in with password"],
+      "unrecognizedButtonCount": 2,
+      "documentLanguage": "en",
+      "pageErrors": [],
+      "failedRequests": [
+        {
+          "resource": "fetch",
+          "path": "/register"
+        },
+        {
+          "resource": "fetch",
+          "path": "/register"
+        },
+        {
+          "resource": "fetch",
+          "path": "/register"
+        },
+        {
+          "resource": "fetch",
+          "path": "/forgot-password"
+        }
+      ]
+    },
+    "retainedCreateFailure": "Mixed CLI notice/JSON caused parse failure after one successful create. Exact created candidate recovered; POST not repeated.",
+    "retainedOrchestrationFailures": "V8 URL global unavailable; strict URL guard corrected before use. Direct pnpm root resolution of playwright-core failed; resolved through declared dependency owners. No product/provider/gate changes."
+  },
+  "billing": {
+    "recordedAt": "2026-10-04T09:14:26.315Z",
+    "httpStatus": 200,
+    "ownedProjectId": "prj_qAipFTpy8NebABNWVTMOtGthC6cH",
+    "ownedProjectBilledUsd": 1.4595415531509197,
+    "ownedProjectRows": 159,
+    "readOnly": true,
+    "productionChanged": false,
+    "computeEnabled": false,
+    "allProviderBillMeasured": false,
+    "limit": "Shared Wukong project including production and other previews; reported charge can lag. Not an isolated final invoice."
+  },
+  "hold": {
+    "recordedAt": "2026-10-04T09:14:33.901Z",
+    "readOnly": true,
+    "productionChanged": false,
+    "outcome": "candidate-restored-and-held",
+    "activeDeployment": {
+      "id": "1c597fda-bd87-4a02-982b-062a760e759d",
+      "versions": [
+        {
+          "version_id": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidate": {
+      "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+      "secretNames": [
+        "OPENAI_API_KEY",
+        "QUEUE_INGRESS_SECRET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+      ],
+      "secretValuesRead": false,
+      "temporaryProbeBindingsAbsent": true
+    },
+    "compute": {
+      "disabled": true,
+      "state": "idle",
+      "maxComputeUnits": 0.25
+    },
+    "publicHeadStatus": 404,
+    "queuePauseMetadata": "command acknowledgements only; independently unavailable"
+  },
+  "privacy": "Request IDs stay in private diagnostics; no body, SQL, parameter, product ID, credential, private access URL, prompt or model output in this public receipt."
+}

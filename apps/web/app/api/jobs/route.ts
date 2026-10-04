@@ -145,7 +145,8 @@ export function createJobsHandler(deps: JobsRouteDeps) {
               console.info(
                 JSON.stringify({
                   event: "jobs.unknown_invalidation_cause",
-                  cause: row.value,
+                  category: "unrecognized",
+                  count: row.count,
                 }),
               );
               continue;

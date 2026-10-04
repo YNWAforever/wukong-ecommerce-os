@@ -106,6 +106,7 @@ const states: Record<string, readonly [string, string]> = {
   queued: ["已排隊", "Queued"],
   skipped: ["已略過", "Skipped"],
   running: ["進行中", "Running"],
+  paused: ["已暫停", "Paused"],
   succeeded: ["成功", "Succeeded"],
   cancelled: ["已取消", "Cancelled"],
   ready: ["已準備", "Ready"],

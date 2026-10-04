@@ -1,0 +1,637 @@
+{
+  "recordedAt": "2026-10-04T01:05:23.234Z",
+  "case": "UC06",
+  "disposition": "already-fixed; original synthetic cloud intake contract now verified",
+  "originalCriterion": {
+    "precondition": "20 synthetic existing SHOPLINE products",
+    "steps": [
+      "import",
+      "check selected store",
+      "match reference",
+      "create drafts"
+    ],
+    "expected": "Each retains Product ID, SKU and source binding; no silent mismatch"
+  },
+  "outcome": "passed-original-synthetic-cloud-contract",
+  "products": 20,
+  "referenceImportId": "987f2159-ec4f-460c-8c66-3ebd4550debb",
+  "sourceImportId": "376b7e48-7d23-4613-bbc8-c70d53194a4c",
+  "uploadedWorkbookSha256": "79fafd2702bebf7eb39d43cf526a6b27e1aa84da649e55f6cba4031dbf361343",
+  "web": {
+    "sha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+    "deployment": "dpl_J3hvtmygPraTyp2XakUM9k2TXXH6",
+    "applicationSource": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc"
+  },
+  "worker": {
+    "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "applicationSource": "593c5283bac242fc171850ee6358f2e9ccc77a1b"
+  },
+  "execution": [
+    {
+      "directory": "uc06-intake-v1",
+      "receipt": {
+        "stage": "original-uc06-twenty-synthetic-reference-to-draft",
+        "startedAt": "2026-10-04T00:46:59.549Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "mock-and-disabled-publication-config",
+            "pass": true
+          },
+          {
+            "id": "existing-synthetic-store-operator-import",
+            "pass": true
+          },
+          {
+            "id": "distinct-new-cohort-no-existing-draft",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "workbookSha256": "a42cb7893a4e4e6fb7395c2cc7bae09a22b8228128785fb69960d85ccd1fc8ec",
+        "outcome": "failed",
+        "errorCode": "CONTROLLED_FAILURE",
+        "errorName": "TimeoutError",
+        "finishedAt": "2026-10-04T00:48:42.980Z",
+        "elapsedMs": 103431
+      },
+      "watch": {
+        "startedAt": "2026-10-04T00:47:17.120Z",
+        "finishedAt": "2026-10-04T00:48:43.709Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    },
+    {
+      "directory": "uc06-intake-v2",
+      "receipt": {
+        "stage": "original-uc06-twenty-synthetic-reference-to-draft",
+        "startedAt": "2026-10-04T00:50:11.328Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "mock-and-disabled-publication-config",
+            "pass": true
+          },
+          {
+            "id": "existing-synthetic-store-operator-import",
+            "pass": true
+          },
+          {
+            "id": "distinct-new-cohort-no-existing-draft",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "workbookSha256": "c3528ea1a56ae189ec7e6facba17687018b45e317a34b1fae77c2f5084e73df6",
+        "outcome": "failed",
+        "errorCode": "CONTROLLED_FAILURE",
+        "errorName": "Error",
+        "finishedAt": "2026-10-04T00:51:23.147Z",
+        "elapsedMs": 71819
+      },
+      "watch": {
+        "startedAt": "2026-10-04T00:50:21.856Z",
+        "finishedAt": "2026-10-04T00:51:23.306Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    },
+    {
+      "directory": "uc06-intake-v3",
+      "receipt": {
+        "stage": "original-uc06-twenty-synthetic-reference-to-draft",
+        "startedAt": "2026-10-04T00:53:15.419Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "mock-and-disabled-publication-config",
+            "pass": true
+          },
+          {
+            "id": "existing-synthetic-store-operator-import",
+            "pass": true
+          },
+          {
+            "id": "distinct-new-cohort-no-existing-draft",
+            "pass": true
+          },
+          {
+            "id": "normal-ui-reference-import-twenty",
+            "pass": true
+          },
+          {
+            "id": "twenty-distinct-readonly-references",
+            "pass": true
+          },
+          {
+            "id": "actual-ui-selected-synthetic-store",
+            "pass": true
+          },
+          {
+            "id": "reference-hint-requires-actual-product-check",
+            "pass": true
+          },
+          {
+            "id": "import-refused-before-identity-confirmation",
+            "pass": true
+          },
+          {
+            "id": "import-refused-before-store-source-confirmation",
+            "pass": true
+          },
+          {
+            "id": "normal-ui-maintenance-creates-exact-twenty-drafts",
+            "pass": true
+          },
+          {
+            "id": "all-twenty-source-product-sku-store-bindings",
+            "pass": true,
+            "products": 20
+          },
+          {
+            "id": "independent-all-source-cells-retained",
+            "pass": true,
+            "rows": 20,
+            "columns": 71,
+            "cells": 1420
+          },
+          {
+            "id": "same-byte-ui-replay-same-receipt-zero-new-drafts",
+            "pass": true
+          },
+          {
+            "id": "replay-preserves-all-eleven-domain-values",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "workbookSha256": "79fafd2702bebf7eb39d43cf526a6b27e1aa84da649e55f6cba4031dbf361343",
+        "referenceImportId": "987f2159-ec4f-460c-8c66-3ebd4550debb",
+        "sourceImportId": "376b7e48-7d23-4613-bbc8-c70d53194a4c",
+        "outcome": "failed",
+        "errorCode": "CHECK_FAILED:bound-catalog",
+        "errorName": "Error",
+        "finishedAt": "2026-10-04T00:55:41.066Z",
+        "elapsedMs": 145647
+      },
+      "watch": {
+        "startedAt": "2026-10-04T00:53:26.661Z",
+        "finishedAt": "2026-10-04T00:55:41.707Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    },
+    {
+      "directory": "uc06-intake-v4",
+      "receipt": {
+        "stage": "original-uc06-readonly-same-twenty-continuation",
+        "startedAt": "2026-10-04T00:58:05.799Z",
+        "webSha": "2b8d77be01ee1c9ae1a2e1bba1d1f41fcecd07b5",
+        "sourceSha": "5f9eddbae1f394234dbfc2f2793a8eddde5685dc",
+        "workerVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+        "checks": [
+          {
+            "id": "exact-reviewed-web-alias",
+            "pass": true
+          },
+          {
+            "id": "exact-reviewed-worker-active",
+            "pass": true
+          },
+          {
+            "id": "compute-held-before",
+            "pass": true
+          },
+          {
+            "id": "non-bypass-runtime",
+            "pass": true
+          },
+          {
+            "id": "real-native-password-login",
+            "pass": true
+          },
+          {
+            "id": "server-workspace-operator",
+            "pass": true
+          },
+          {
+            "id": "mock-and-disabled-publication-config",
+            "pass": true
+          },
+          {
+            "id": "same-synthetic-store-operator-import",
+            "pass": true
+          },
+          {
+            "id": "same-twenty-references-still-readonly",
+            "pass": true
+          },
+          {
+            "id": "same-twenty-source-product-sku-store-bindings",
+            "pass": true,
+            "products": 20
+          },
+          {
+            "id": "same-independent-all-source-cells-retained",
+            "pass": true,
+            "rows": 20,
+            "columns": 71,
+            "cells": 1420
+          },
+          {
+            "id": "exact-twenty-current-bound-catalog-members",
+            "pass": true
+          },
+          {
+            "id": "actual-ui-twenty-bound-rows",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-0",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-1",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-2",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-3",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-4",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-5",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-6",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-7",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-8",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-9",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-10",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-11",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-12",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-13",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-14",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-15",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-16",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-17",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-18",
+            "pass": true
+          },
+          {
+            "id": "current-draft-identity-19",
+            "pass": true
+          },
+          {
+            "id": "all-twenty-actual-ui-details-editable-without-ai",
+            "pass": true,
+            "details": 20
+          },
+          {
+            "id": "readonly-continuation-all-eleven-domain-values-unchanged",
+            "pass": true,
+            "domains": 11
+          },
+          {
+            "id": "every-created-draft-audited-to-real-session-actor",
+            "pass": true
+          },
+          {
+            "id": "no-new-ai-publish-or-batch-admission",
+            "pass": true,
+            "ai": 56,
+            "publish": 0
+          },
+          {
+            "id": "no-page-errors",
+            "pass": true
+          }
+        ],
+        "stops": [
+          {
+            "id": "owned-session",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-listing-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "wukong-shopline-preview",
+            "acknowledged": true
+          },
+          {
+            "id": "ingress-cron-held",
+            "acknowledged": true
+          },
+          {
+            "id": "compute-held",
+            "acknowledged": true
+          }
+        ],
+        "paidAiCalls": 0,
+        "newBatchAdmissions": 0,
+        "newQueueMessages": 0,
+        "realShoplineCalls": 0,
+        "outgoingEmail": 0,
+        "productionChanged": false,
+        "actualBilling": "not-measured",
+        "sourceImportId": "376b7e48-7d23-4613-bbc8-c70d53194a4c",
+        "referenceImportId": "987f2159-ec4f-460c-8c66-3ebd4550debb",
+        "newImports": 0,
+        "newDrafts": 0,
+        "outcome": "original-uc06-same-cohort-cloud-readback-passed",
+        "products": 20,
+        "limit": "Completes original UC06 on the single v3 cohort. No repeat import, manual edit, generation, approval, export artifact, Queue admission, merchant API write or production mutation. Replay domain hashes were checked in v3; whole eleven-domain continuity is checked here across this read-only continuation. The lost pre-import full snapshot from failed v3 is not claimed.",
+        "finishedAt": "2026-10-04T01:00:58.810Z",
+        "elapsedMs": 173011
+      },
+      "watch": {
+        "startedAt": "2026-10-04T00:58:20.519Z",
+        "finishedAt": "2026-10-04T01:00:59.160Z",
+        "ceilingMinutes": 8,
+        "normalStopObserved": true,
+        "emergencyResults": [],
+        "productionChanged": false
+      }
+    }
+  ],
+  "safeFinalHold": {
+    "recordedAt": "2026-10-04T01:02:14.530Z",
+    "readOnly": true,
+    "productionChanged": false,
+    "outcome": "candidate-restored-and-held",
+    "activeDeployment": {
+      "id": "3e009322-33ce-476c-8160-0d3ce8e0e50a",
+      "versions": [
+        {
+          "version_id": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidate": {
+      "version": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+      "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+      "secretNames": [
+        "OPENAI_API_KEY",
+        "QUEUE_INGRESS_SECRET",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "SHOPLINE_TOKEN_ENCRYPTION_KEY"
+      ],
+      "secretValuesRead": false,
+      "temporaryProbeBindingsAbsent": true
+    },
+    "compute": {
+      "disabled": true,
+      "state": "idle",
+      "maxComputeUnits": 0.25
+    },
+    "publicHeadStatus": 404,
+    "queuePauseMetadata": "command acknowledgements only; independently unavailable"
+  },
+  "sourceComparison": {
+    "logicalColumns": 71,
+    "rows": 20,
+    "logicalCellComparisons": 1420,
+    "emptyTrailingSlotsNormalizedToBlank": true
+  },
+  "screenshotsVisuallyReviewed": 4,
+  "evidenceLimits": [
+    "v3 remains a failed command after20 successful checks: invalid platform filter was refused by API; v4 uses bound and continues the same20 without import",
+    "v1 omitted Workbook tab; v2 clicked before observed tab state; both fail before any import and are retained",
+    "v3 checked replay equality across eleven domains; its pre-import full snapshot was not persisted, so no complete byte-hash continuity across the original import is asserted",
+    "v4 proves eleven-domain full equality only across its read-only continuation",
+    "Synthetic saved store configuration and operator attestation do not certify merchant origin or live SHOPLINE API health",
+    "No AI generation, employee timing, human model quality, approval, export artifact or merchant pilot acceptance is inferred",
+    "Queue pause/cron flags acknowledged only; actual cloud billing unmeasured"
+  ],
+  "applicationChanged": false,
+  "migrationApplied": false,
+  "appEnvAdded": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "outgoingEmail": 0,
+  "productionChanged": false,
+  "merged": false,
+  "currentCloudMatrix": {
+    "passed": 14,
+    "partial": 3,
+    "blocked": 13,
+    "total": 30
+  }
+}

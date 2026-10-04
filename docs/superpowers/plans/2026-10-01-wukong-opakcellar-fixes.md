@@ -10,6 +10,21 @@
 
 **Spec:** `Wukong_OpakCellar_Audit_Evidence_2026-10-01.zip` 內的完整審核 Markdown、30-case UAT CSV、12-case AI fixtures JSON，以及 evidence。執行時將本文件放入 repo `docs/superpowers/plans/2026-10-01-wukong-opakcellar-fixes.md`；證據包在 repo 外解壓，勿提交商戶截圖或紀錄。
 
+## Current remaining gates — 2026-10-05 HKT
+
+The source/local implementation and dated synthetic evidence are recorded below. Original production500, human quality and merchant acceptance are not complete. The common checklist is a task template; historical unchecked checkpoints are superseded only by the identified later receipt, never by an unrelated green build.
+
+| Remaining work                                       | Current classification        | Completion evidence still needed                                                                                                                                                                                                             |
+| ---------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T01 original detail/queue500                         | blocked                       | Approved authenticated reads and safe request/stage evidence with the effective Web DB/runtime preflight;0046 presence alone cannot prove the cause fixed.                                                                                   |
+| T11 twelve-case quality                              | blocked                       | Authorized live evaluation, actual image input for AI09, per-case deterministic results and human score at least90 with zero hard failures. Dry/fake results are not accuracy evidence.                                                      |
+| T13 employee20-item comparison                       | blocked                       | Matched difficulty, real employee minutes, first acceptance, known/unknown cost and corrected-field counts; no invented baseline or saving percentage.                                                                                       |
+| T14 latest isolated runtime acceptance               | blocked at budget admission   | Reviewed659519c9 has greenCI and READY PR preview; its new preview-only Worker dry-run passes. It has not replaced historical cloud Workerfcf/source593. Refresh bounded billing and Web/Worker runtime evidence before new cloud admission. |
+| T14 first production0046/cache repair                | authorized, execution blocked | Only the hash-pinned existing0046 and exact Hyperdrive cache flag are authorized; Codex is the migration operator. Backup/restore owner, confirmed recoverable point and controlled runtime/migration preflight remain required.             |
+| T14 compatible production release and merchant pilot | blocked                       | Safe runtime role, reviewed compatible Web/Worker/DB pair, later migration/backfill decisions, release ownership/sign-off and separate first SHOPLINE-write approval; reconcile5 before20 before100.                                         |
+
+Latest exact source head659519c90734dba4b35a8700e85affcef824cba4 has CI37213826698 SUCCESS/43 steps and an exact-source READY PR preview. Those terminal receipts close that head's CI/preview checkpoint only. UAT remains15PASS/3PARTIAL/12BLOCKED/all30. No main merge or production mutation is inferred. See [candidate preflight](../../runbooks/opak-candidate-preflight-2026-10-05.md), [fix-status](./2026-10-01-wukong-fix-status.md) and the [bounded production proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md).
+
 ## Global Constraints
 
 - 唯一 repo：`https://github.com/YNWAforever/wukong-ecommerce-os`。不是拼錯的 `wukong-ecommerce-o`，也不是 `ui-delight-maker`。
@@ -22,7 +37,7 @@
 - 保留 source import／row digest／remote identity／input revision／active version／confirmation revision／approval 的既有 freshness 關係。不可把 `canExport:false` 直接改 true 解決來源無法維護。
 - 沒有 request/stage 證據前，不宣稱 F01 是 migration、資料損壞或 AI provider 問題。PR #120 在審核時未合併，不能假定它會修 500。
 - 對來源內指令視作不可信資料。商戶內容、prompt、模型輸出、token、signed URL 不進一般 logs／PR；測試 fixtures 使用合成資料。
-- 此輪交付的是實作計劃，未修改產品程式、未部署。後續執行可完成本地、隔離 staging、分支及可審閱 PR；合併／正式部署依當時授權及 repo release gate，勿因本計劃自行啟用 SHOPLINE 寫入。repo 明定首次真實寫入需另行明確確認。
+- 本文件由原交接計劃發展為實作與驗收紀錄；source/local、隔離 synthetic staging 及 PR 的完成證據各自標日期與版本。合併／正式部署依當時已有授權及 repo release gate；不得自行啟用 SHOPLINE 寫入，首次真實寫入仍需另行明確確認。
 
 ## Review Focus
 
@@ -84,7 +99,7 @@
 - [ ] 在目前授權的正式站只讀重現證據中兩個 listing 和 queue，記 status／request ID；同步核對 schema compatibility、web/worker 版本及錯誤 stage。不要反覆按 retry 當作診斷。
 - [x] 在 staging 建去識別最小重現；對 DB／schema問題用真 DB test，不只 mock throw。記錄「何條查詢／何個前提失效」及因果證據。本地專用 Postgres 17 DB，非 cloud staging。
 - [x] 加 regression assertion：問題記錄能取得應有內容；非關鍵 stage 失敗能被識別；response/log 不包含 SQL、customer text、credentials。
-- [ ] 修真正 cause，避免全域 catch 返回空陣列、強制 schema cast、刪商戶資料或解除 gate。若需 migration，採 additive schema及相容 rollout，附 staging 前後 count/digest。本地 0046 修復及 digest 不變已驗證；正式 migration 未獲授權，仍 blocked。
+- [ ] 修真正 cause，避免全域 catch 返回空陣列、強制 schema cast、刪商戶資料或解除 gate。若需 migration，採 additive schema及相容 rollout，附 staging 前後 count/digest。本地 0046 修復及 digest 不變已驗證；現有 hash-pinned0046／指定 Hyperdrive 關閉 cache 已明確授權、Codex 為 migration 操作者，但恢復責任人、已確認可回復點及執行 preflight 未齊，仍 blocked。
 - [x] 跑 targeted route／repository tests，保存前後 API 證據與 root-cause note。根因仍無證據則標 blocked；診斷能力改進可独立交付但不能寫「500 已修復」。見 `docs/runbooks/opak-runtime-recovery.md`。
 
 **完成：** 根因可重現且 regression 通過；兩個原症狀在對應環境消失，保存、review 基本操作可用；每個錯誤有可查支援編號。
@@ -212,7 +227,7 @@
 - [x] 穩定排序＋PG microsecond＋sourceType／ID tie-break scoped cursor支援catalog/listing/jobs forward/reverse；保留legacy OFFSET bookmarks與current-input名稱／精確SKU。EXPLAIN未證實缺index，沒有新增推測性index。
 - [x] 0053 revision-aware投影＋bounded 25項reconciliation；pending／failed不算clean，完整retained known／unknown cost保留；投影不作approval權威。CLI具partial resume及實際command deadline／rollback。
 - [x] 真app-role／FORCE RLS DB測current edit／source import／delete／archive／replay／concurrent generation／cost與失敗傳播；quality 20／20通過，批准／匯出保留即時權威查詢。
-- [x] exact original500／5,000／20,000 dataset、20warm samples／concurrency2已比較；441相同operations＋63獨立cursor samples，0error／blocked／cardinality failure。20k warm catalog25／deep／SKU／name／detail／ready quality為183／270／157／137／36／89ms；route-factory目標全達，HTTP／browser／field INP仍分開。cold quality只25assessed，實際bounded backfill约114秒／一次resume後才量warm-ready，沒有隱藏setup成本。
+- [x] exact original500／5,000／20,000 dataset、20warm samples／concurrency2已比較；441相同operations＋63獨立cursor samples。保留v1初始backfill约114秒／一次resume及v2 cursor 1,272.35ms超出800ms的失敗。修正寬CTE後只跑一次controlled v3：504samples／135EXPLAIN，0error／blocked／cardinality failure，21個已配置warm目標通過；quality沒有配置p95目標。20k warm catalog25／deep／SKU／name／detail／ready quality／cursor為126.47／151.26／195.08／150.18／37.10／118.74／81.07ms。source1121／compiled711 hashes與原cohort/input/import/generation指紋不變。保留500 detail、5k catalog1／SKU三項相對D回歸；READY空bounded setup與首次backfill分開。HTTP／browser／field INP分開，見performance-quality runbook。
 
 **完成：** 量測證明改善，資料一致性與readiness安全性沒有交換掉。若目標未達，交數據和具體bottleneck，不編寫達標結論。
 
@@ -237,12 +252,12 @@
 
 **Interfaces:** 沿用既有receipt/freshness型別；UI三個不同語義「檔案已生成」「商戶回報接受/拒絕」「新資料核對完成」。export artifact hash與逐行identity連結，人工回報不能變成independently verified。
 
-- [ ] 顯示舊值→新值→來源及選中欄；低風險批量確認仍是逐件合法確認，不提供「忽略全部警告」。
-- [ ] 檢查PR120相關bulk response contract；部分成功回逐件狀態，失敗不能當成功；一次操作只寫應有audit。
-- [ ] 測內容、來源、confirmation revision任何改變使舊批准失效；operator直接API不可批准/匯出；publish中較新import不被舊completion覆寫。
-- [ ] 用合成XLSX逐cell compare：只8欄允許差異，SKU`000674`、IDs、price、stock、欄位次序保持；未選中欄與inventory delta不重放。
-- [ ] 5行結果3接受2拒絕：只修2拒絕項，保留artifact/attempt lineage；再用最新merchant export獨立核對，不用自己生成的原export證明已上線。
-- [ ] 執行export/source-binding integration與`tests/e2e/bulk-update-pilot.spec.ts`；真SHOPLINE需商戶參與及已授權gate。
+- [x] 顯示舊值→新值→來源及選中欄；低風險批量確認仍是逐件合法確認，不提供「忽略全部警告」。actual F20／F5及最新整合候選full24 browser已通過。
+- [x] 檢查PR120相關bulk response contract；部分成功回逐件狀態，失敗不能當成功。actual browser重現19項審批產生38個audit；core純驗證＋repository成功CAS後單一writer修正後，actual F20先19後20個審批audit及bindings符合契約，focused110／110、獨立source review通過。PR120仍未合併，沒有假稱它已修正式環境。
+- [x] 測內容、來源、confirmation revision任何改變使舊批准失效；operator直接API不可批准/匯出；publish中較新import不被舊completion覆寫。actual F20及source-binding PG通過。
+- [x] 用合成XLSX逐cell compare：只8欄允許差異，SKU`000674`、IDs、price、stock、欄位次序保持；未選中欄與inventory delta不重放。actual F5 browser與PG均通過，71cells／name-only mask／blank保留及非blank delta `+0`逐項核對。
+- [x] 合成5行結果3接受2拒絕：只修2拒絕項，保留immutable A／B artifact/attempt lineage；actual PG及browser用獨立新合成snapshot核對，不用自己生成的原export證明已上線。最新真merchant export／authenticated origin及商戶sign-off仍blocked。
+- [x] 執行export/source-binding actual PG（最終actor-bound候選2／2，63.46秒）與`tests/e2e/bulk-update-pilot.spec.ts`；整合後full24 browser全通過。真SHOPLINE仍需商戶參與及首次真寫入明確確認。
 
 **完成：** 內容交付可追溯，沒有把下載檔案等同網站已更新。
 
@@ -250,10 +265,10 @@
 
 **Create:** `tests/e2e/opak-maintenance.spec.ts`、`docs/runbooks/opak-daily-operations.md`、`docs/runbooks/opak-support.md`。輸入原30-case UAT，新增結果表，不覆蓋原審核狀態。
 
-- [ ] 執行operator、reviewer、admin角色矩陣：登入/登出、商品查看、手動編輯、AI、交審、批准、匯出、assignment、成員/connection/policy。只測允許的role設計；不假定admin帳戶已可用。
-- [ ] 跑真DB/worker的20件合成既有商品流程及100件批次pause/retry；含重複、無版本、錯身份、人工lock、unknown成本、stale批准與跨workspace拒絕。
-- [ ] 記錄各UC的expected/actual、環境、commit、角色、證據、pass/fail/blocked/not-run；unit、mock E2E、real-stack、live provider、merchant acceptance分欄。
-- [ ] 作業手冊用員工動作說明每天匯入、選欄、審核、交接、回填；支援手冊按可重試/補資料/unknown/支援分類，不要求員工懂queue或DB。
+- [x] 執行隔離Better Auth的operator、reviewer、admin角色矩陣：登入/登出、商品查看、手動編輯、fake AI、交審、批准、匯出、assignment、成員/connection/policy；full24 browser通過。帳戶由本地fixture授權，未推定正式admin已可用。
+- [x] 跑真DB/worker的20件合成既有商品流程及100件批次pause/retry；含重複、無版本、錯身份、人工lock、unknown成本、stale批准與跨workspace拒絕。20件actual Queue/browser及100件actual service/worker PG2／2分開；另100件四頁純預覽browser通過，沒有把它當100件AI執行。
+- [x] 記錄原UC01–30的expected/actual、環境、source commit、角色、證據、pass/fail/blocked/not-run；历史狀態完整保留，unit／actual PG-worker／real-stack／live provider／merchant-human分欄，不報30／30全部正式通過。
+- [x] 作業／支援手冊已交，按員工動作、known retry／補資料／unknown／支援說明每天匯入、選欄、審核、交接、回填。
 - [ ] 20件before/after同難度樣本量測人工分鐘、一次接受率、每件已知成本與unknown、需人工修正欄數。没有baseline只報本次值，不捏造節省百分比。
 
 **完成：** 每個原UC有結果或具體blocker；沒有「30/30通過」卻跳過liveAI/admin的情況。
@@ -262,9 +277,9 @@
 
 **Create:** `docs/runbooks/opak-release-acceptance.md`；每PR附test/evidence/rollback summary。
 
-- [ ] 全量跑下面矩陣；資料schema改動在乾淨DB及舊schema升級DB驗證，舊web/worker與additive schema相容；先migration再相容code，再bounded backfill/校驗，最後才切讀取。
-- [ ] preview用fake/mock或已授權測試adapter；release pack列web/worker/DB版本、配置差異（只列名稱及狀態）、backfill progress、audit核對與未解決問題。
-- [ ] rollback以回復code/feature gate及停止新enqueue為主；保留immutable sources、events、versions、已完成外部結果。不可直接down migration刪新資料；running外部請求仍需reconcile。
+- [x] 本地全量package/root/types/build/actual PG-worker/full24 browser及既有workbook6／6矩陣通過；乾淨DB及舊schema升級、migration replay、最終indexed0053配exact舊D web/worker3／3已驗證。保留中途失敗，最終PR head遠端CI另列狀態，不能用本地代填。順序為migration→相容code→bounded backfill/校驗→切讀取；正式migration未執行。
+- [x] 本地production-built preview用fake/mock；release pack列web/worker/DB版本、配置差異（只列名稱及狀態）、backfill progress、audit核對與未解問題。Cloud READY只證明bundle部署，effective DB／worker／provider flags與authenticated smoke另記blocked，不推定cloud為fake/mock。
+- [x] rollback以回復code/feature gate及停止新enqueue為主；保留immutable sources、events、versions、已完成外部結果。最終indexed0053配exact舊D gate3／3通過47.46秒，原180000ms上限與人工／unknown斷言不變；中途timeout原因未確認並保留。不可直接down migration刪新資料；running外部請求仍需reconcile。
 - [ ] 在已有正式部署授權時，部署後用operator/reviewer開原問題商品與queue、查500、做非破壞smoke。沒有授權則先把PR、preview及證據做齊，提出具體release決定，不能停在只列計劃。
 - [ ] 真商戶pilot按5→20→100件，以每階段hard-fail=0、結果核對完成、無未解成本/身份問題為擴量條件；首次SHOPLINE真寫入遵守repo明確確認gate。
 
@@ -321,3 +336,303 @@ integration/e2e/runtime命令需要相應runbook環境；不可拿production cre
 5. 下一個依賴任務；如需外部帳戶／預算／正式release確認，交具體可審閱結果及其來源限制。
 
 最終交付repo PR、preview、30-case結果、12-case AI結果（或清楚blocked）、操作與支援runbook、效能前後數據、release/rollback pack。不能只改文案/按鈕，亦不能把未測正式流程寫成已完成。
+
+## 6. 2026-10-02 已授權 staging checkpoint
+
+T00–T14 的 source/local 交付沿用前面的已完成紀錄；production/merchant gates 與下列雲端 rehearsal 分開。使用者已明確授權隔離 synthetic staging/deployment、fake AI/mock SHOPLINE、付費AI呼叫0、雲端預算上限US$5及 production不變。詳見 [staging receipt](../../runbooks/opak-staging-rehearsal-2026-10-02.md) 與 [fix-status](./2026-10-01-wukong-fix-status.md)。
+
+- [x] 新空白 DB/app role/migrations/replay/preflight/FORCE RLS、獨立 cache-disabled Hyperdrive、private R2、preview queues。
+- [x] 合成帳戶/tenant隔離、renderer isolation/dry-build；pending credential期間 compute disabled/idle。
+- [x] 專用 Preview branch 設定及 Worker 五個必要 Secret 名稱；使用者在 provider dashboard 填 Worker R2 pair，未讀取 secret 值。
+- [x] Worker 候選6d8f8ff／version575c6814 實際部署；GET metadata、未簽名/錯誤401、正確HMAC200、Hyperdrive及listing recovery通過；runtime non-bypass/0 ownership/59 FORCE/own1 foreign0。
+- [x] 正常 Queue pause、crons=[]及關閉公開入口指令exit0；fresh HEAD404、Neon disabled/idle。remote cron GET及paused flag讀回仍unknown。
+- [ ] Web/Worker R2功能及bucket scope、安全mock SMTP、Web部署、authenticated synthetic UAT／Queue消費／scoped audit；Worker health不可代替完整驗收。
+- [ ] 保留eaa39b4 CI browser失敗：Admin SPA main空白、invite wait超時、workspace POST尚未開始；本地原case1/1，確切渲染根因未確認。後續ce4cfc9完整CI36956816510成功不構成根因修復證據。
+- [ ] Production read驗收、paid/human AI品質、首次真SHOPLINE寫入及商戶5→20→100核對／sign-off仍blocked，不由synthetic通過推定。
+
+Worker 部分 cloud 驗證及停止證據見 [2026-10-02 Worker health receipt](../../runbooks/opak-staging-worker-health-2026-10-02.md)。本次沒有變更app／tests／migration；source與當前文件head的CI須分開記錄。
+
+## 7. Resend staging mail safety — 2026-10-02
+
+Ruling: 使用者指定 Resend；採官方 simulator address＋隔離分支明確 test mode，保留原本 production／一般 Preview 行為。模式若誤放 production 會拒絕連線；不為通過 preflight 填 dummy SMTP 或放寬權限。
+
+- [x] 識別 Preview 繼承的17個非必要 Neon DB/auth alias；只在專用 staging 分支遮蔽，配置明確 auth origin；尚未部署。
+- [x] Resend recipient／模式位置／hostname及service preset繞過／URL logging-TLS選項的 RED→GREEN service tests40/40；獨立 review P1已修，final review無剩餘finding。
+- [x] Final Web units2274/2274、root143 passed/2 skipped/0 failed、typecheck通過；production/Sensitive secrets未修改，沒有寄信。
+- [x] 分支 sender及AUTH_EMAIL_DELIVERY_MODE欄位、manifest／names-only example／[staging runbook](../../runbooks/opak-staging-resend-2026-10-02.md)。
+- [ ] AUTH_SMTP_URL Save紀錄、SMTP authentication/sender/quota、實際部署mode／alias／Web-Worker/R2／Queue/UAT/audit；provider名稱及unit不能代替。
+
+Build與新head CI另記fix-status；先前b115 CI成功保留為dated evidence，不推定本次改動已過CI。
+
+## 8. Guarded cloud runtime checkpoint — 2026-10-02
+
+Earlier pending Web/Save/SMTP statements are dated checkpoints, superseded by [cloud Web receipt](../../runbooks/opak-staging-cloud-web-2026-10-02.md). Reviewed source308 fullCI SUCCESS; candidatead3 sole config delta; final READY Preview/auth alias and paired Worker verified.
+
+- [x] User Save, exact branch configuration, server-password/session/role/RLS/logout acceptance with synthetic actors.
+- [x] Actual deployed Resend guard plus1 accepted official simulator request; Web R2 read/write/inspection/copy and exact-origin/foreign-key refusal.
+- [x] Actual signed Web→Worker→remote Queue5; fake AI10/cost0; current values5 and manual lock1 preserved; scoped audit accessible foreign0.
+- [x] Bounded testing/independent watchdogs; paused/cron-ingress command acknowledgements, HEAD404, fresh DB disabled/idle; all failed and successful evidence retained outside Git.
+- [ ] Full synthetic approval/source-bound export/result reconciliation/30-case cloud UAT and complete lifecycle audit (missing2 actions); actual Worker R2 read/write-denied/scope proof.
+- [ ] Supported cloud browser tool startup failed; no cloud screenshot/browser pass. Production/merchant/paid-human-AI/first-real-write/scale-up gates unchanged.
+
+No new migration/env name. Exact env normalization and isolated CORS correction are reversible configuration actions. Hold/rollback preserves guarded mail mode, data, versions, reservations, audit, artifacts and DLQs; no destructive rollback or production change. Actual cloud billing is unmeasured; zero paid AI and bounded resource windows are separate facts.
+
+## 9. Source-bound cloud delivery — 2026-10-03 HKT
+
+- [x] Five source-import maintained drafts, actual remote fake Queue, masked current values/manual lock preserved.
+- [x] Bulk reviewer4+1/failed-only retry, operator403, source/version freshness; A5/Brejected2 and independent497cells; immutableA and independent comparison results.
+- [x] ST16 terminal audit missing1 reproduced; atomic per-member ready audit repair with realPG RED→GREEN44/44 and route67/67, release verifier unchanged.
+- [ ] Repaired-source cloud scoped lifecycle audit; originalv2 failed receipt retained without backfill. Worker R2 proof/cloud browser/full30-case and production/merchant/human gates remain open.
+
+See [delivery receipt](../../runbooks/opak-staging-delivery-2026-10-03.md) and [cloud case matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv). Exact source/build/CI/stop state and remaining limitations are maintained in fix-status; synthetic evidence does not authorize production or true SHOPLINE writes.
+
+## 10. Repaired cloud gate and Worker credential scope — 2026-10-03
+
+- [x] Repaired exact reviewed Preview/current alias; new legitimate export5 and repeat;5 terminal audits once; unchanged release verifier5/5 missing0/foreign0; no AI rerun, watchdog stop144s.
+- [x] Actual Worker own R2 read200/exact94-byte hash and foreign bucket HEAD403; original version/hold restored, fresh DB disabled/idle.
+- [ ] Worker ObjectRO is **failed**, own canary PUT200. Replace only Worker pair with distinct bucket-limited read-only credentials; re-test must preserve new secret-bound version. No merge/release until denied write proven.
+- [ ] Remaining cloud30-case/browser/production/merchant/paid-human gates per [precise matrix](../../runbooks/opak-cloud-uat-results-2026-10-03.csv);3passed/10partial/15blocked/2not-run. Actual billing unmeasured, zero paidAI.
+
+All failed receipts and original A/B audit remain preserved. No migration or production action; exact source e9 CI and later documentation-only head checks are recorded separately in fix-status.
+
+## 11. Corrected Worker Object Read-only verification — 2026-10-03
+
+- [x] User-entered distinct Worker pair uploaded with masked local Wrangler bulk stdin; existing two field names, no key values read/recorded by agent, Web pair unchanged.
+- [x] Sixteen offline CLI guards and21 probe contracts; clean normal Worker and probe dry-builds exit0; active/latest precondition verified before upload.
+- [x] Actual signed remote proof: invalid signature401; exact94-byte own GET200/hash matched; own PUT403; foreign-bucket metadata HEAD403; no new canary write.
+- [x] Preserve corrected versionf0614b8e at100%, both queues paused, cron/ingress disabled, no probe bindings, public HEAD404, independent watchdog normal stop; staging Neon disabled/idle.
+- [ ] Production 0046 columns and Hyperdrive BYPASSRLS/cache gates; effective Web DB/authenticated original500 smoke, complete cloud30/browser, paid/human quality, employee-minute and merchant/first-write gates remain open.
+
+## 12. 2026-10-03 synthetic cloud intake/read follow-up
+
+- [x]20exact readonly references,20source-bound maintained drafts and20current editable inputs/SKUs; source-owned AI/pipeline/publish0. Only1manual review version tested. [Receipt](../../runbooks/opak-staging-intake-read-2026-10-03.md).
+- [x] Same-byte replay creates0 and does not renew freshness; new source invalidates1approval, stale retry approves0; old source/rows/version/receipt immutable. Historical `approved` remains while authoritative source freshness denies delivery. Existing service verified; no rewrite.
+- [x] Operator/reviewer cloud row-only follow-up27/27: healthy incomplete review and no-version inputs remain usable; malformed row blocked/actions denied/support ID correlated. Retain original double-encoded JSON helper failures; `tx.json` fix changes only tooling.
+- [x]8unique offline scope guards,13selected source assertions,5owned-ledger assertions; seven watchdog normal stops. Final Neon disabled/idle; correctedWorkerf061/probe0/public404; queues never resumed; paidAI0/realSHOPLINE0.
+- [x] Concrete production0046/cache-disable proposal, exact migration hash/CLI flag/rollback and6-hour history metadata prepared. [Proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md) remains unexecuted.
+- [ ] Cloud UI still blocked at Vercel deployment protection despite working headless runtime; cloud matrix4passed/11partial/15blocked/0not-run is not full UAT. Production authority/backup owner, compatible safe-role cutover and remaining human/merchant gates are pending.
+
+- [x] Independent cloud permission-fault16/16/72s and14offline guards: queue/catalog500/noitems when owned SELECT denied; original ACLs restored byte-for-byte then both200, FORCE RLS unchanged; watchdog normal stop/DB disabled. [Receipt](../../runbooks/opak-staging-permission-fault-2026-10-03.json). No new rows, Worker deploy, AI admission or production change; UC29 remains partial for whole-outage/UI.
+
+ST17 is fixed and verified in isolated staging; prior failed evidence stays unchanged. See [executed follow-up](../../runbooks/opak-staging-delivery-2026-10-03.md) and [safe receipt](../../runbooks/opak-staging-worker-r2-retest-2026-10-03.json). No migration, new application env, paidAI, realSHOPLINE or production mutation. PR checks and release gates remain distinct; no conditional merge until the required gates pass.
+
+## 13. 2026-10-03 admin/outage and CI startup follow-up
+
+- [x] T00–T02/ST22 already-fixed, actual disabled-DB API verified: both roles' queue/catalog500, no empty-list success, request-ID body/header correlation15/15 in57.40s. No compute enable/write; downstream auth/query stage and UI are not inferred.
+- [x] T09/ST23 already-fixed, cloud admin CAS/readiness29/29 in113.38s: operator/reviewer403, fresh settings audit1, stale409/audit0/no overwrite, five safe readiness states/fakeAI unknown; exact canonical profile restored with second audit. AI20/publish0 unchanged;15 scope guards pass, watchdog normal stop and DB disabled/idle.
+- [x] T14/ST24 reproduced→fixed locally: competing TLS49218 allowed fake Worker/Web launch before bind failure. Reserve owned TLS listener before dependencies/readiness; actual regression RED→GREEN, competing owner untouched. Fresh review's Windows detached-descendant deadline issue independently RED→GREEN; both final regressions2/2 and full root142/142+14 cached Turbo tasks pass.
+- [x] Preserve original a8 CI attempt1 TLS bind failure and unconfirmed owner; unchanged exact-a8 attempt2 full SUCCESS, including image/Queue/audit/wine. This does not validate the subsequent harness delta. Application files remain e9; isolated Web9dd unchanged.
+- [ ] New follow-up head's own CI, authenticated cloud UI, original production500/repair authority/backup owner, paid-human quality, employee-minute and merchant gates remain separate. Cloud matrix4PASS/11PARTIAL/15BLOCKED unchanged. [Behavior/commands/rollback/review evidence](../../runbooks/opak-staging-admin-outage-ci-2026-10-03.md).
+
+Review rulings: leave original conflicting owner unconfirmed; apply actual cloud/production gates independently; retain prior A–F review because no application files changed. Cost if wrong: an unsupported diagnosis or unexecuted gate could be treated as release proof, so no gate is relaxed. Deferred minor: Windows OpenSSL discovery currently assumes the existing Git installation path. No migration/new application env, production mutation, paidAI, trueSHOPLINE or merge.
+
+## 14. 2026-10-03 native auth submission follow-up
+
+- [x] Predecessor8773 exact full CI37106290279 SUCCESS; PR121–126 marked ready for review after their green checkpoints. Conditional merge is still held by production readiness failures.
+- [x] ST25/T08 reproduced → fixed locally: pre-hydration native GET puts credential fields in URL. Explicit POST plus real SSR/JavaScript-disabled regression RED→GREEN, five assertions, provider dispatch intercepted.
+- [x] Owned synthetic operator credential rotated, old hash rejected, replacement verified, twelve sessions revoked; eight assertions, independent watchdog normal stop, staging DB disabled/idle. Original error retained privately; no production/provider credential changed.
+- [x] Auth56/56, full Web2275/2275, root/package command exit0, lint/typecheck14tasks, build8tasks, format/forbidden/machine release checks passed; independent three-file review has no actionable findings. [Receipt and scope limits](../../runbooks/opak-auth-native-submit-2026-10-03.md).
+- [ ] This application delta's own exact-head CI and guarded isolated Preview smoke; production0046/cache/runtime-role/recovery ownership/original500 and paid-human/employee-minute/merchant gates remain separate.
+
+Ruling: POST is a safe native fallback, not a no-JavaScript authentication implementation. Cost if wrong: an intercepted security test could be mistaken for successful provider authentication. Keep the existing hydrated APIs and verify actual password sessions independently; no permission or release gate is relaxed.
+
+## 15. Current completion and remaining-gate index — 2026-10-03
+
+- [x] Auth source0b398a7b exact fullCI37111215982 SUCCESS and evidence e094bf39 fullCI37113613076 SUCCESS; Vercel pass. Guarded isolated733 candidate READY/exact alias, sole original deployment-guard delta. The new retained-safeguard checkpoint needs its own source-head CI.
+- [x] Cloud v13 31/31 and current v22 32/32; synthetic screenshots reviewed, real roles/logout, row support, readonly identities, mobile/admin dirty/CAS,2448px return±2px, cross-page/refresh exact selection and real job history. Both runs stop safely; v22 watchdog normal stop/DB disabled, AI20/publish0 retained. [Executed receipt](../../runbooks/opak-staging-browser-auth-2026-10-03.md).
+- [x] Every unchecked line above audited: common-process checkboxes are a template; sections6–14 are dated receipts with superseding evidence here. Original failures and unknown causes are preserved. A later five-contract PR120 comparison reproduced two missing safeguards; both are now RED→GREEN, as recorded below.
+- [x] Open PR inventory120–126 checked.121–126 review-ready and preceding e094 exact-head checks green; the new safeguard source checkpoint requires its own CI.120 remains overlapping draft/CIFAIL36253428550 at Wrangler Queue browser gate; do not claim all open PRs green or merge it blindly. No merge/main change.
+- [x] PR120 five-contract comparison: three already-fixed/strengthened, safe Queue diagnostics and in-flight publish/import snapshot race reproduced then fixed. Targeted Web19/19/Worker32/32; full tests Web2283/Worker408/14tasks; lint/typecheck/build pass. Independent review0Critical/0Important/1comment minor deferred. [Commands, rulings and rollback](../../runbooks/opak-retained-safeguards-and-role-handoff-2026-10-03.md).
+- [x] Cloudv26 33/33/116.58s: same-context accepted-invite role handoff, dirty workspace Stay/failed Save/Discard/successful Save, old-tenant-only CAS, full second-profile preservation, restore/audit+2 and real three-role logout. Original helper failures retained; correct JSON fixture adapter, zero endpoint relaxation; compute/watchdog stopped. Cloud733 UI proof is separate from the new source fixes.
+
+| Remaining item                | Actual disposition and next concrete gate                                                                                                                                                                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T01/T00 production cause      | blocked: effective Web DB/session and original two details/queue500 require authenticated read evidence; local missing0046 and whole-DB/permission failure tests are verified, not a unique production cause                                                                             |
+| T14 production repair/release | failed readiness:0046 absent, BYPASSRLS/cache-enabled Hyperdrive; pending exact first-stage authority and backup/rollback owner/recoverable point. Then controlled compatible safe-role/schema/code/backfill/audit/smoke sequence; no production action yet                              |
+| T11 quality                   | blocked: controlled paid provider/model/pricing/budget/authorizedOCR data and independent human per-case score≥90/hardfail0. Twelve-fixture adapter/dry and service/Worker concurrency/manual/unknown tests are verified; no accuracy claim                                              |
+| T13 employee benefit          | blocked: matched20-item before/after human minutes/first acceptance/corrections/known-unknown cost and owner review; no baseline means no savings percentage                                                                                                                             |
+| T13/T14 cloud scope           | partial:11PASS/6PARTIAL/13BLOCKED, all30 IDs retained; role handoff/admin workspace-switch, bilingual source search and all six current-gap preview decisions proven. Fuller execution/fault/load and new invitation-delivery journeys remain separate. Local/CI evidence stays separate |
+| T14 merchant pilot            | blocked: first real SHOPLINE write's separate final confirmation, approved merchant data/export and5→20→100 reconciliation/hardfail0/sign-off; no expansion or live write                                                                                                                |
+| Conditional merge             | held: main auto-deploys while actual production gates fail; PR120 is not green; source593 CI is SUCCESS and subsequent docs-only head needs its own checks                                                                                                                               |
+
+Rulings: retain the native POST security fix on compatible rollback; correct malformed415/private pagination synchronization instead of rewriting product behavior or relaxing assertions; job filter clicks keep existing replace-history semantics. Cost if wrong: a helper artifact could be treated as a diagnosed product failure or a synthetic result as production/merchant acceptance. Original no-JavaScript scope, failure receipts,2px tolerance and all release boundaries remain explicit. No migration/new env/Worker deployment/production change/paidAI/realSHOPLINE.
+
+## 2026-10-03 bilingual catalog search follow-up
+
+- [x] ST26/T03–T07/UC05 reproduced: Chinese-first display title hides current English from catalog search; cloud733/v27 and actual repository query return0.
+- [x] Corrected actual PostgreSQL RED3/3 → GREEN18/18; current human/locked title authority, readonly references, foreign workspace/import exclusion, leading-zero source SKU, literal search, >5000 pagination, cursor and response boundaries retained.
+- [x] Full pnpm test14tasks/Web2283, lint/typecheck14tasks each, build8tasks; independent review0Critical/0Important/0Minor. No migration/env/dependency.
+- [x] Earlier674 fullCI37119472547 SUCCESS and six repair PR checks green at refresh; PR120 remains draft/failed. No merge/main change.
+- [x] Source593 exact CI and guardedc23/cloud UC05/current-gap acceptance completed; see2026-10-04 supplement. Original failedv27 and cleanup receipts remain unchanged.
+- [ ] Actual production readiness/authority/recovery/original500, paid/human quality/employee benefit and first merchant write/pilot gates remain open; main auto-deploy merge held.
+
+[Root cause, exact verification, review rulings and rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). Separate legacy listing API search and deployed latency are outside this reviewed catalog delta; no wider search/production acceptance inferred.
+
+## 2026-10-04 HKT verified release supplement
+
+- [x] Source593c5283 exact fullCI37132320997 SUCCESS; source/local checks and independent catalog review remain valid. Subsequent docs-only commit must complete its own checks. PR121–126 green/CLEAN at16:22:43Z; PR120 draft/failed remains distinct.
+- [x] Guardedc23 exact593 tree except branch deployment guard; READYdpl_8eC5Xw5yU1zTZ8mXPF1HWvjbvYg8/alias verified. Cloudv31 behavior39/39 proves UC05 source-qualified bilingual search and UC21 all six current-gap decisions; no batch creation or AI execution. Current matrix11PASS/6PARTIAL/13BLOCKED/all30 IDs.
+- [x] Required preview audit+2/prior252 hashes preserved; other ten domain snapshots unchanged/AI20/publish0/batches2. Logout200/401; first compute-disable timeout retained, separate cleanup disabled/idle0.25CU verified and8-minute watchdog normal stop. Screenshot visually reviewed outside Git.
+- [x] Worker candidatefcf96cda inactive0% from593 artifact/config,11/11 upload checks. Active correctedf061 stays100%/same deployment; secrets/queues/cron/ingress unchanged. No candidate runtime/R2/Queue pass inferred. All failed upload/browser/cleanup receipts retained.
+- [ ] Production0046/owner-BYPASSRLS/cache readiness, effective Web/original500, exact production repair authority and named recovery owner/confirmed recoverable point remain incomplete. Conditional main auto-deploy merge held.
+- [ ] Paid/human12-case quality, matched20-item employee benefit, fuller cloud execution/fault/load/new-invite criteria and first realSHOPLINE/5→20→100 merchant gates remain open; synthetic passes do not satisfy them.
+
+[Executed behavior, commands, safe receipt, review scope and compatible rollback](../../runbooks/opak-bilingual-catalog-search-2026-10-03.md). No migration/new app env/dependency/provider key/paidAI/realSHOPLINE/production mutation. Actual cloud billing remains unmeasured. Earlier pending lines are dated evidence superseded only within these explicitly executed scopes.
+
+## 2026-10-04 HKT reviewed Worker and hundred-selection checkpoint
+
+- [x] Exact reviewed593 Workerfcf now100% in isolated staging; signed health12/12/142.695s, domain11 unchanged, non-bypass role/FORCE59/59/foreign0. Earlier inactive/f061 checkpoint is historical.
+- [x] Temporary current-config R2 probe ownGET200/hash/PUT403/foreign metadata403; exactfcf restored with corrected five secret names/no probe vars. First placement-marker failure preserved; generated-config4 and probe11+cleanup10 guards pass. No secret/migration/app source change.
+- [x] One normal source import100/current manual facts and locks100; actual four-page/refresh/one-field exact preview17/17. Header adapter RED1→GREEN1 and invalid filter corrected only in tooling; no duplicate import or relaxed gate.
+- [x] Exactly first5 durable admissions and same-key replay; original expectation failure retained. Existing partial-copy protection correctly retains5needs-info candidates; current Worker16/16 and scoped cloud reconciliation9/9/current100 unchanged. Only original5 resumed;95remain unstarted/0queued/failed; no100 Queue pass claimed.
+- [x] Real logout/queue+cron-ingress hold acknowledgements, normal independent watchdogs and fresh public404/compute disabled-idle0.25 readback; actual billing unmeasured, paidAI0/realSHOPLINE0.
+- [ ] Original reviewer UC22 five-item export/filter/digest criterion on qualified100, injected cloud pause/failed-only/unknown/load/new invitation criteria; matrix remains11PASS/6PARTIAL/13BLOCKED.
+- [ ] Exact production authority/recovery/role/schema/cache/effective Web/original500; paid-human quality, employee minutes and first realSHOPLINE/merchant gates. Conditional merge still held; PR120 is not green.
+
+[Executed behavior, roots, commands, receipt and compatible hold/rollback](../../runbooks/opak-reviewed-worker-cloud-gates-2026-10-04.md). Source593 and prior docs d86 exact CIs passed; this new docs-only head needs its own checks. No product code fix, migration, app env, provider secret or production change inferred from evidence-helper failures.
+
+## 2026-10-04 HKT original UC22 reviewer checkpoint
+
+- [x] Original UC22 on100 synthetic approved current fixture: reviewer2+3 across pages, changed filter, exact5 preview; actual digest movement revokes attestation/preview without reload; server old-preview409; explicit current five re-review/confirmation yields new preview5.20/20/132.811s, AI/publish/artifacts unchanged.
+- [x] Normal manual review/confirmation/bulk approval fixture100; operator403. Qualification helper status/listingStatus failure preserved; independent readback8/8/7,100cells/prior5inputs-candidates/AI30/publish0. No duplicate approval or missing byte-hash claim.
+- [x] Original old batch95 unstarted cancelled through service; only5 re-reviewed on fresh source. Other95 approvals historical after refresh; no100 Queue/merchant success claim. Sessions/queues/ingress/compute held; currentfcf100/source593/HEAD404/idle0.25 independently read back.
+- [x] Cloud matrix updated only UC22:12PASS/5PARTIAL/13BLOCKED/all30.
+- [ ] Latest docs head ownCI; c3 attempt1 website dispatch failure retained, unchanged-head reproduction pending; no unique underlying ingress cause or source fix claimed.
+- [ ] UC03/06/23/24/29 partial; paid-human UC09–20 and load/employee UC30 blocked. Production authority/recovery/role/schema/cache/effective Web/original500 and separate merchant first-write gates remain open. Conditional merge held.
+
+[Commands, exact criteria, failure disposition, safe receipt and hold/rollback](../../runbooks/opak-uc22-reviewer-cloud-2026-10-04.md). Prior checkpoints remain dated; this supersedes only the old UC22 pending criterion, not other release gates.
+
+## 2026-10-04 HKT UC23 remote failure checkpoint
+
+- [x] Real isolated Queue3success/1knownfailure/1pending; normalUI pause202, paused advance0 and retry409 with unchanged runs. Same-batch refresh resolves expected stale-control409; Resume202 and failed-only one attempt2/idempotent replay; final5success/6total including old failure.30/30 completion; original3success ledger/run values, older workspace records, manual locks and source cells retained;11fake ledger records cost0/publish0.
+- [x] All11 windows normal watchdog stops/cleanup acknowledgements; reviewedfcf restored100%/no probe vars/public404/compute disabled-idle0.25. No paidAI/realSHOPLINE/production change; billing unmeasured; remote paused/cron flags independently unavailable.
+- [x] ST27/T06 reproduced paused label omitted from shared state mapper; bilingual rendered regression RED2→GREEN17/17, fulltest14tasks/Web2285.
+- [x] Cloud matrix changes only UC23 to passed:13PASS/4PARTIAL/13BLOCKED/all30. Earlier failed dispatch/proxy-shape/invalid-output/support/stale-CAS receipts remain dated evidence.
+- [ ] New label candidate lint14/typecheck14/build8 and automated static checks passed; exact CI/protected preview and final release pack pending at this precommit checkpoint.
+- [ ] UC03/06/24/29 partial; paid-human UC09–20/load-employee UC30 blocked. Production exact authority/recovery/schema/role/cache/effective Web/original500 and merchant first-write/pilot gates remain open. Conditional main merge held.
+
+[Behavior, root classifications, commands, safe receipts and rollback](../../runbooks/opak-uc23-cloud-pause-retry-2026-10-04.md). Historical checkpoints remain unchanged.
+
+## 2026-10-04 HKT UC23 verified candidate supplement
+
+- [x] ST27 paused label fixed; full test14tasks/Web2285, lint14/typecheck14/build8. Exact validation5b900e6a CI37156825749 SUCCESS/43 steps; prior5f9 format failure retained and corrected without assertion/gate relaxation.
+- [x] Protected Web2b8d77be/dpl_J3hvtmygPraTyp2XakUM9k2TXXH6 actual bilingual14/14/92.247s; one zero-admission normal batch reused after helper locator failure, then cancelled; eight domain hashes unchanged. Screenshots reviewed. Workerfcf/source593 unchanged and separately versioned; sourceWeb5f9 contains only label runtime delta.
+- [x] All13 resource windows normal stops; fresh2026-10-03T22:05:04.532Z candidatefcf100/no probes/public404/compute disabled-idle0.25. Queue pause/cron flags remain acknowledgement-only and billing unmeasured. No paidAI/realSHOPLINE/production mutation.
+- [x] Current UAT13PASS/4PARTIAL/13BLOCKED/all30; only UC23 advanced. Source/current-input/manual-lock/frozen retry/idempotency/cost/approval/RLS safeguards retained.
+- [ ] This new docs-only head needs its own exact CI; final PR metadata/readback and immutable archive remain to be recorded outside Git.
+- [ ] Production exact first-operation authority/named recovery owner/confirmed recoverable point/schema/role/cache/effective Web/original500 remain open; paid-human quality, full20-item journey/employee benefit/cloudload, first trueSHOPLINE/merchant5→20→100 gates remain distinct. Conditional main auto-deploy merge held; PR120 remains an overlapping non-green draft.
+
+[Executed UC23 and compatible hold/rollback](../../runbooks/opak-uc23-cloud-pause-retry-2026-10-04.md). Earlier pending lines are dated; this supplement supersedes only the verified label candidate/cloud scope.
+
+## 2026-10-04 HKT original UC06 verified intake checkpoint
+
+- [x] Exact original CSV criterion reread:20 synthetic products/import/store check/match/draft/unchanged ProductID-SKU-source binding. No added merchant-write or full-generation requirement; human/employee/merchant gates remain separate.
+- [x] Single normalUI readonly20 → connected maintenance20/current editable inputs20; explicit store/identity/source confirmations; exact20 unique ID/SKU/store/source mappings and1,420 logical source-column comparisons. Same-byte UI replay same receipt/0new drafts/eleven-domain equality.
+- [x] Same20 realUI detail pages editable/noAI/current revision1/no active version; source/price/stock retained/audit20. Read-only continuation38/38/173.011s/eleven-domain equality/AI56/publish0/batch count unchanged; four synthetic screenshots visually reviewed.
+- [x] All four8-minute windows stop normally; logout/Queue/ingress/compute acknowledged. Fresh2026-10-04T01:02:14.530Z metadata confirms reviewedfcf100/source593/no probes/public404/disabled-idle0.25CU. No migration/env/paidAI/merchant/production mutation; billing unmeasured.
+- [x] Three helper failures retained: missing Workbook tab, early tab state and malformed platform filter400. v3 command stays failed after20 successful import/replay checks; v4 continues same20 with0 repeat imports. Lost pre-import full snapshot is not invented; replay and read-only equality scopes remain explicit.
+- [x] Current cloud matrix14PASS/3PARTIAL/13BLOCKED/all30; only UC06 advanced. Prior e52 ownCI37158090454 attempt2 SUCCESS43 verified, first admin-SPA timeout root unconfirmed and retained. PR121–126 green/CLEAN;120nongreen draft.
+- [ ] New docs-only exact-head CI/publication/immutable archive are completed in outside-Git terminal receipts, keeping self-referential evidence commits out of the code branch.
+- [ ] Original production500/effective Web/0046/safe role/cache/exact authority/named recovery owner/confirmed point; simulated cloud positive-budget/unknown gates; paid-human quality/cloudload/matched employee20minutes; first realSHOPLINE/reconciled5→20→100 remain open. Conditional main auto-deploy merge held.
+
+[Executed behavior, failures, exact criteria and compatible hold](../../runbooks/opak-uc06-cloud-intake-2026-10-04.md). Historical unchecked checkpoints are superseded only by the explicit executed scope above. Existing application already implements this behavior; no product rewrite or new production authority is inferred.
+
+## 2026-10-04 HKT original UC24 simulated budget checkpoint
+
+- [x] Original UC24 reread:small test budget/simulated response loss/reach cap/timeout/retry. Existing scoped repository concurrentUS$0.05 holds at cap0.05 admits one/rejects one; no invocation at that checkpoint.
+- [x] Four normal synthetic bound fixtures14/14; temporary exact-two-run fake shim scope18/18; actual cloud Queue/UI/API42/42/304.012s. Known0.05 reaches cap and Advance starts0new; second unknownNULL retains positive0.05 hold/retry409/quality owned lineage. No paid provider admission or pricing claim.
+- [x] Reviewed Worker restored before duplicate terminal deliveries; original runs/ledger/holds unchanged. Four protected/manual/unselected contents and all older runs/ledgers/versions/source cells preserved; fake-only/publish0. Unknown record and two pending unstarted members retained.
+- [x] Two normal8-minute watchdog stops; independent2026-10-04T02:45:50.934Z exactfcf100/source593/five secret names/no probes/public404/compute disabled-idle0.25. Queue/cron flags acknowledgement-only; actual billing unmeasured/paidAI0/realSHOPLINE0.
+- [x] Current matrix15PASS/2PARTIAL/13BLOCKED/all30; only original simulated UC24 advanced. Application already-fixed; no product/migration/env/secret/production change.
+- [ ] New documentation-only head ownCI/PR exact readback/archive pending at this precommit checkpoint. Prior6f7 CI37167094681 attempt1SUCCESS43 remains separate.
+- [ ] Production exact scope/recovery/schema/role/cache/effective Web/original500; paid-human quality/cloudload/matched employee minutes; first trueSHOPLINE/reconciled5→20→100 remain open. Conditional main merge held; PR120 remains nongreen.
+
+[Executed commands, evidence limits, safe receipt and compatible hold/rollback](../../runbooks/opak-uc24-cloud-budget-2026-10-04.md). Positive reservations/costs are simulated; unknowns remain protected. Historical checkpoints are superseded only within this exact executed scope.
+
+## 2026-10-04 HKT UC30 synthetic cloud-scale checkpoint
+
+- [x] Original UC30 criterion reread. Dedicated500/5,000/20,000 synthetic populations physically complete; original UC24 known/unknown ledger and ten domain tables retained.
+- [x] Normal password/session/server operator/workspace selection;504deployedHTTP samples/0errors/0cardinality failures/0blocked rows;20/21 configured warm targets. Quality has no p95 target. Actual deep25 ordered cursor/legacy equality includes20k; no5k truncation.
+- [x] Real bounded25 quality preparation:20/200 requests, then two320-request20k chunks and final160requests. Ready populations complete before warm sampling; startup/setup costs retained.
+- [x] Eight-minute independent windows stop normally; logout/queues/ingress/compute acknowledged. Existing benchmark contracts23/23. Failed private table/quoting/decoder/ESM helpers remain failed and retained.
+- [x] Blank20-case human timing template/procedure prepared; no measured employee minutes/acceptance/saving percentage inferred from automation or fakeAI.
+- [ ] Resolve retained20k legacy deep p95 827.78ms versus800ms. Separate read-only cloud SQL10/10 checks/12plans records5queries per mode; deployed-tail cause remains unconfirmed.
+- [ ] Cloud matrix15PASS/3PARTIAL/12BLOCKED/all30. UC03/29 production500 and UC30 legacy20k latency/human timing remain partial; paid-human UC09–20 remain blocked. Production authorization/recovery/schema/safe role/cache/effectiveWeb and real merchant gates remain incomplete; conditional main merge held.
+
+[Executed metrics, billing limits, first-observed/cold distinction and hold/rollback](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No new product code/migration/env/credential/runtime deployment or production mutation.
+
+## 2026-10-04 HKT T10 safe stage-attribution checkpoint
+
+- [x] Reread original T00–T14 and current finding/UAT ledger; retain the 20k legacy827.78ms/800ms failure and all external release gates. Current graph remains unindexed and prior bulk export approval rejection remains; bounded known-file discovery used.
+- [x] Add request-local fixed-label numeric `Server-Timing` only to authorized successful catalog responses. Behavior RED1→GREEN30; full root142/Web2290/14tasks and typecheck14 pass. Existing DB/auth/row-error/cursor/payload behavior retained; no successful-request content logs.
+- [x] Independent scoped review has no findings. Rulings: deployed tail/liveRLS/framework transport require actual evidence; executor test results do not substitute them. No migration/env/Worker/credential/provider change.
+- [x] This candidate's local build8/8 passes; existing middleware deprecation retained. Base CI does not certify this new candidate.
+- [x] Exact source24ffCI37189358010 SUCCESS43steps; guarded fba82/dpl_3oi READY/iad1 and exact dedicated alias. Same20k105samples/26scope-domain checks/0sample errors; native h2 ResourceTiming and exact HTTP-tail stages recorded.
+- [ ] Retained827.78/1045.56legacy and805.70native outer misses: dominant measured time lies outside the handler, but unique request-path cause and employee acceptance remain unconfirmed. No rerun-to-green or speculative DB fix.
+- [ ] Production exact authority/recovery/0046/safe role/cache/effective Web/original500, paid-human quality/employee20minutes and first trueSHOPLINE/merchant gates; no main merge or production action inferred.
+
+[Behavior, measurement meanings, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical checkpoints are superseded only within explicitly verified scope; UAT stays15PASS/3PARTIAL/12BLOCKED/all30.
+
+## 2026-10-04 HKT T10 executed attribution supplement
+
+- [x] Two controlled windows63+42samples with current native password/server-role/workspace checks, deep25cursor equality and ten-domain retention; normal logout/queues/ingress/compute stops and independent deadlines. Source24ffexactCI43success/1conditional artifact skip.
+- [x] First no-sample protection-link/locator failure retained; regenerated same-alias temporary access fixes tooling admission only. Mixed CLI create parser failure recovered without repeat POST; no source500 fix inferred.
+- [x] Attribute observed legacy1045.56ms tail to118.2ms measured handler and927.36ms outside it; native outer805.70/resource732.90/handler118.9 measured separately. Native field-INP/employee minutes and unique outside-handler cause remain unproven.
+- [x] Current Workerfcf100/source593/no probes/public404 and staging disabled-idle0.25 readback; billingUS$1.45954shared-project/lagged, all-provider final bill unmeasured. PaidAI0/realSHOPLINE0/no new admissions.
+- [ ] This new evidence-only head exactCI/PR/archive terminal receipts; UAT unchanged15PASS/3PARTIAL/12BLOCKED. Original performance/production/paid-human/employee/merchant release gates remain open and conditional main merge held.
+
+## 2026-10-04 HKT T10 API invocation checkpoint
+
+- [x] Reread T10 and existing middleware/session/runtime boundaries. Duplicate pre-handler DB/session hypothesis unsupported: middleware immediately passes all `/api/` paths. Exact staging platform baseline reports111catalog function+111middleware invocations; unnecessary invocation reproduced independently of latency causation.
+- [x] Real installed Next matcher regression6RED/23pass→focused56GREEN. Slash-bounded `api/` exclusion retains `/api`/`api-keys`/`apiary`, page redirect/callback/cookies, assets and API server auth/RLS. Full root142/Web2306/14tasks and typecheck14 pass; source review has no findings.
+- [x] Failed capped CLI collector retained:500event rows repeat50IDs in ten identical ordered pages; no complete-data/duration or500unique-request claim. Grouped connector counts remain separate.
+- [x] Build8/8/88.389s and actual compiled matcher8/8; static6automated/14human pending and forbidden0. CLI billing JSON-parser and first static-case verifier failures retained; separate JSONL-compatible fresh owned billing1.45954USD succeeds with lag/all-provider limitations.
+- [ ] Exact sourceCI/controlled same20k after-evidence/PR/archive pending at this source checkpoint. Record actual API invocation reduction separately from HTTP p95, all prior827.78/1045.56/805.70misses and employee/paid-human/production/merchant gates retained. No production action or main merge.
+
+[Routing change, ruling, commands/evidence limits and rollback](../../runbooks/opak-api-middleware-2026-10-04.md).
+
+[Executed metrics, causal limits, failures, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical unchecked statements are superseded only by explicitly executed evidence, not by a new release authorization.
+
+## 2026-10-04 HKT T10 verified API invocation supplement
+
+- [x] Exact source92d15ca0 CI37195229837 SUCCESS/43steps; guarded6bec8486 differs only by existing branch deployment guard. READYdpl_7dq/iad1/staging alias independently verified; Workerfcf/source593 unchanged.
+- [x] One bounded same20k after-window15/15/144.629s: normal native auth/server workspace/role, anonymous catalog401 and page307/callback, complete cardinality/cursor identity and original/target ten-domain hashes unchanged.42HTTP200 samples/0body/cardinality/blocked-row errors.
+- [x] Exact provider grouped lookup reports46catalog function/no middleware row versus prior111/111. Slash-bounded API invocation waste is removed; no duration or unique global latency root inferred.
+- [x] This window warm p95 API655.79/native outer527.83ms both pass800ms, while APImax1596.49ms and original827.78/prior1045.56/805.70ms failures remain. Nativeh2 resourcep95524.0ms is separate; no employee/field-INP or production claim.
+- [x] Five stop acknowledgements and independent430s connector final disabled-idle0.25CU; exactWorker/no probes/public404 verified. Two local URL-scope helper failures retained and separately continued using established URL/successful metadata; no sampler rerun. Reported billing1.45954USD shared/lagged, paidAI/realSHOPLINE/newQueue/newBatch/mail0.
+- [ ] New docs-only exactCI/PR readback/immutable archive terminal receipts are maintained outside Git. UAT remains15PASS/3PARTIAL/12BLOCKED; production exact authority/recovery/schema/role/cache/effective Web/original500, paid-human quality, matched employee20minutes and first trueSHOPLINE/merchant5→20→100 gates remain open. Conditional main merge held.
+
+[Executed matcher behavior, full metrics, retained failures and rollback](../../runbooks/opak-api-middleware-2026-10-04.md). Earlier pending statements are superseded only within this explicit scope; no migration/env/secret/Worker source or production mutation.
+
+## 2026-10-04 HKT UC30 evidence reconciliation and production gate refresh
+
+- [x] UC30 evidence classified changed: the CSV omitted the already executed matcher after-window. Add its 42 same20k HTTP samples, API/native warm p95 655.79/527.83ms, API maximum 1596.49ms and scoped invocation result; retain the original 827.78ms and later 1045.56/805.70ms misses. This is a documentation correction, with no new sampling or product change. UC30 stays PARTIAL; all30 remain15PASS/3PARTIAL/12BLOCKED.
+- [x] Prior docs-only a65dcb67 exact CI37197163702 SUCCESS/43 steps and one conditional failure-artifact skip; PR126 exact body readback and immutable matcher archive verified outside Git. Archive SHA2567f56e8b9a0ea5306e4882ec94edf0d2f6aaeb5f9f38d718b8d9703f839697769,38entries/37payloads. Earlier terminal-pending notes are superseded only for that exact prior head.
+- [x] Fresh readonly production catalog still has0 of the two0046 binding columns/0 namedFK/0 namedindex; PostgreSQL17.11,54public/44RLS/all44FORCE. Hyperdrive still uses neondb_owner with cachingDisabled=false; wukong_app remains non-super/non-bypass/owns0. These are current metadata findings, not proof of the original500 root or effective Web identity.
+- [x] Owned-project grouped runtime errors span unidentified environments:50 clusters/106 reported occurrences; only3 headers identify a different deployment/commit. Raw messages/samples/request IDs are excluded. The normal production browser attempt failed before startup in the Windows sandbox ACL helper; it provides no application500 or session evidence.
+- [ ] Exact first-production0046/cache-only authority, named migration and restore owners, confirmed recoverable point, effective Web session/DB and authenticated original detail/queue500 remain blocked. Paid-human quality, full employee criterion and first trueSHOPLINE/reconciled5→20→100 remain separate. Conditional main merge held; no production mutation.
+
+[Executed matcher metrics and rollback](../../runbooks/opak-api-middleware-2026-10-04.md) and [bounded production repair proposal](../../runbooks/opak-production-repair-proposal-2026-10-03.md). Current docs-only exact-head CI/publication receipts are kept outside Git; prior archives and failures are retained. No migration/env/secret/Worker/source change, new Queue admission, paidAI or realSHOPLINE call.
+
+## 2026-10-04 HKT T12/T14 create/import binding checkpoint
+
+- [x] PUB01 reproduced with local fake connector: create completion's generic upsert erased an import committed during the remote call, and could replace another draft's binding. Two behavior RED cases retained. Atomic scoped create binding preserves all imported fields and existing bound timestamps; another draft yields a local reconciliation failure with the recorded remote result retained.
+- [x] Disposable loopback PostgreSQL17 repository20/20 passes: original16 plus4 new cases for actual concurrent import lock/commit, unlinked source snapshot preservation, idempotency, conflicting draft and foreign-workspace rejection. General import upserts, RLS, lease/version CAS, transitionListing and audit remain intact.
+- [x] Independent review reproduced PUB02: current link changed the consumer to an absent update key, acknowledging an unfinished create. Actual consumer RED retained; exact accepted remote/draft/version/connection recovery now uses the original create key and existing lease/status checks. Unconfirmed or mismatched jobs gain no connector authority.
+- [x] Current first production0046/cache-only authority and Codex operator are recorded. Normal authenticated Vercel metadata succeeds and identifies the production DATABASE_URL as Sensitive; actual deployed connection remains unverified. No secret retrieval/export or production resource/change occurred.
+- [x] Final focused64/64 and isolated repository29/29; full root142/Web2306/Worker419 and14tasks, typecheck14, build8 pass. One existing assets unit skip retained. Independent final recheck has no material findings; helper/fixture failures and four behavior RED receipts remain retained.
+- [ ] Exact new-head CI/preview and immutable evidence receipts remain separate from earlier9f and historical staging artifacts; terminal receipts are kept outside Git.
+- [ ] Backup/restore owner and confirmed recoverable point; effective Web DB/session and original detail/queue500; production schema/safe role/cache; paid-human quality and matched employee timing; first realSHOPLINE/reconciled5→20→100. UAT remains15PASS/3PARTIAL/12BLOCKED/all30 and conditional main merge held.
+
+[Behavior, regression commands, failure disposition and compatible recovery](../../runbooks/opak-create-import-binding-2026-10-04.md). PR120's original safeguards retained; no blind rerun/merge/cherry-pick. No migration/new app env/dependency/secret/live provider call.
+
+## 2026-10-04 HKT T14 Admin CI diagnosis checkpoint
+
+- [x] Exact binding head187394c9 CI37209276630 failed selected acceptance17/18; original CI01 empty Admin main/zero workspace POST reproduced again. RSC headers/JS200 and missing streaming bodies do not establish a rendering cause. READY preview metadata is separate; failure and skipped stages retained.
+- [x] Actual closed-page cleanup RED reproduced; edited-body3/3 checks and independent review pass. Named Admin readiness and bounded route checks retain all SPA/native/single-switch/tenant assertions.
+- [x] Unchanged fresh-local three-case suite repeated3 passes9/9/49.1s; this is negative CI01 reproduction evidence. Initial diagnostic-suite6PASS/1FAIL/2not-run/2.4m and separate CI02 Save timing failure remain retained.
+- [x] CI02 response synchronization uses both exactPOST200 receipts and unchanged5000ms response/navigation budgets; independent review passes. Revised suite6PASS/1FAIL/2not-run/2.0m fails unchanged sign-in setup before amended assertions; remaining two repetitions pass all three cases. Full-suite gate remains failed, not a rendering/sign-in/product timing fix.
+- [ ] This diagnostic checkpoint needs its own exact-head CI/preview and immutable receipt; current binding head187 CI failure remains retained.
+- [ ] Original authenticated500/effective Web DB; restore owner/confirmed point; production compatible schema/safe role/cache/runtime; paid-human quality, matched employee timing and first trueSHOPLINE/reconciled5→20→100 remain open. UAT15PASS/3PARTIAL/12BLOCKED/all30; no main merge or production mutation.
+
+[Findings, unchanged journey, commands, failures and rollback](../../runbooks/opak-admin-ci-diagnostics-2026-10-04.md). Diagnostic changes only; no migration/new app env/secret/deploy/provider call. Safe terminal receipts remain outside Git.

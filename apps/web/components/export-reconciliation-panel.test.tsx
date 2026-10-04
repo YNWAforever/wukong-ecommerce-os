@@ -676,3 +676,190 @@ it("only exposes fresh comparison for ready reviewer-capable attempts", () => {
   parsed.innerHTML = render(detail);
   expect(parsed.querySelector("form form")).toBeNull();
 });
+
+it("previews only latest rejected members with immutable A receipt references", async () => {
+  const rejectedDetail: WireExportReconciliationDetail = {
+    ...detail,
+    attempt: {
+      ...detail.attempt,
+      sourceAttestation: [
+        { listingId: "accepted", contentDigest: "accepted-source" },
+        { listingId: "rejected", contentDigest: "rejected-source" },
+      ],
+    },
+    reconciliation: {
+      ...detail.reconciliation,
+      counts: {
+        ...detail.reconciliation.counts,
+        requested: 2,
+        included: 2,
+        noOp: 0,
+        accepted: 1,
+        rejected: 1,
+        unreported: 0,
+      },
+      members: ["accepted", "rejected"].map((listingId, index) => ({
+        listingId,
+        versionId: "version-" + listingId,
+        outcome: "included",
+        latestResult: {
+          id: "receipt-" + listingId,
+          revision: index + 1,
+          outcome: index ? ("rejected" as const) : ("accepted" as const),
+          createdAt: "2026-01-01T00:00:00Z",
+          rejectReason: index ? "Synthetic reason" : null,
+          correctionReason: null,
+        },
+        history: [],
+      })),
+    },
+  };
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json({
+        ...rejectedDetail,
+        repairSourceObservations: [
+          {
+            listingId: "rejected",
+            contentDigest: "current-rejected-source",
+            sourceImportId: "current-source-import",
+            remoteProductId: "remote-rejected",
+          },
+        ],
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        previewSha256: "a".repeat(64),
+        fields: ["nameZh"],
+        rowCount: 1,
+        manifest: [],
+        changes: [],
+        neutralizedQuantityDeltas: [],
+      }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(ExportReconciliationPanel, { detail: rejectedDetail }),
+    ),
+  );
+  await act(async () =>
+    Array.from(container.querySelectorAll("button"))
+      .find(
+        (button) => button.textContent === "Preview rejected-only repair XLSX",
+      )!
+      .click(),
+  );
+  const repairPanel =
+    container.querySelector<HTMLElement>(".bulk-export-panel")!;
+  await act(async () => {
+    repairPanel
+      .querySelector<HTMLInputElement>('input[value="nameZh"]')!
+      .click();
+    repairPanel
+      .querySelector<HTMLInputElement>(".freshness-attestation input")!
+      .click();
+  });
+  await act(async () =>
+    repairPanel.querySelector<HTMLButtonElement>("button")!.click(),
+  );
+  expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({
+    listingIds: ["rejected"],
+    fields: ["nameZh"],
+    attestation: {
+      listings: [
+        { listingId: "rejected", contentDigest: "current-rejected-source" },
+      ],
+    },
+    repair: {
+      exportAttemptId: "attempt-1",
+      members: [
+        { listingId: "rejected", resultId: "receipt-rejected", revision: 2 },
+      ],
+    },
+  });
+  expect(container.textContent).toContain("Accepted items are not resent");
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it("does not open a deferred repair from a superseded attempt or revoked role", async () => {
+  let finish!: (response: Response) => void;
+  const rejected = {
+    ...detail,
+    reconciliation: {
+      ...detail.reconciliation,
+      members: [
+        {
+          ...detail.reconciliation.members[0]!,
+          latestResult: {
+            id: "rejected-receipt",
+            outcome: "rejected" as const,
+            revision: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+            rejectReason: "Synthetic",
+            correctionReason: null,
+          },
+        },
+      ],
+    },
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(createElement(ExportReconciliationPanel, { detail: rejected })),
+  );
+  await act(async () =>
+    Array.from(container.querySelectorAll("button"))
+      .find(
+        (button) => button.textContent === "Preview rejected-only repair XLSX",
+      )!
+      .click(),
+  );
+  await act(async () =>
+    root.render(
+      createElement(ExportReconciliationPanel, {
+        detail: {
+          ...detail,
+          attempt: { ...detail.attempt, id: "new-attempt" },
+          capabilities: {
+            canGenerateBulkUpdate: false,
+            canRecordImportResult: true,
+          },
+        },
+      }),
+    ),
+  );
+  await act(async () =>
+    finish(
+      Response.json({
+        ...rejected,
+        repairSourceObservations: [
+          {
+            listingId: "listing-a",
+            sourceImportId: "old-source",
+            contentDigest: "old-digest",
+            remoteProductId: "old-product",
+          },
+        ],
+      }),
+    ),
+  );
+  expect(container.querySelector(".bulk-export-panel")).toBeNull();
+  expect(container.textContent).not.toContain("old-source");
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});

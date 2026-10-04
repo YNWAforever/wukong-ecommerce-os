@@ -1,0 +1,534 @@
+{
+  "stage": "source-bound-cloud-delivery-v2",
+  "startedAt": "2026-10-02T16:19:14.453Z",
+  "sourceSha": "ad3b24a1931a0c8220c2bcd186c59e6cccc7ab69",
+  "checks": [
+    {
+      "id": "non-bypass-runtime",
+      "pass": true
+    },
+    {
+      "id": "signin-operator",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "identity-operator",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "server-identity-operator",
+      "pass": true
+    },
+    {
+      "id": "signin-reviewer",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "identity-reviewer",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "server-identity-reviewer",
+      "pass": true
+    },
+    {
+      "id": "signin-admin",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "identity-admin",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "server-identity-admin",
+      "pass": true
+    },
+    {
+      "id": "synthetic-connection-present",
+      "pass": true
+    },
+    {
+      "id": "source-import",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "five-source-bound-drafts",
+      "pass": true,
+      "createdDrafts": 5
+    },
+    {
+      "id": "all-exact-source-members",
+      "pass": true
+    },
+    {
+      "id": "initial-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "initial-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "initial-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "initial-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "initial-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "manual-facts-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "manual-facts-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "manual-facts-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "manual-facts-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "manual-facts-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "before-queue-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "before-queue-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "before-queue-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "before-queue-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "before-queue-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "worker-exact-fake-mock",
+      "pass": true
+    },
+    {
+      "id": "queue-preview",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "preview-five",
+      "pass": true
+    },
+    {
+      "id": "preview-zero-ai",
+      "pass": true
+    },
+    {
+      "id": "queue-create",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "queue-advance",
+      "pass": true,
+      "status": 202
+    },
+    {
+      "id": "five-admitted",
+      "pass": true,
+      "enqueued": 5
+    },
+    {
+      "id": "five-real-queue-versions",
+      "pass": true,
+      "versions": 5
+    },
+    {
+      "id": "after-queue-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "after-queue-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "after-queue-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "after-queue-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "after-queue-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "five-unselected-content-preserved",
+      "pass": true,
+      "preserved": 5
+    },
+    {
+      "id": "manual-title-preserved",
+      "pass": true
+    },
+    {
+      "id": "fresh-reviewed-source-0",
+      "pass": true
+    },
+    {
+      "id": "confirm-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "fresh-reviewed-source-1",
+      "pass": true
+    },
+    {
+      "id": "confirm-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "fresh-reviewed-source-2",
+      "pass": true
+    },
+    {
+      "id": "confirm-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "fresh-reviewed-source-3",
+      "pass": true
+    },
+    {
+      "id": "confirm-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "fresh-reviewed-source-4",
+      "pass": true
+    },
+    {
+      "id": "confirm-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "operator-approval-denied",
+      "pass": true,
+      "status": 403
+    },
+    {
+      "id": "partial-approve",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "partial-four-one-stale",
+      "pass": true,
+      "approved": 4,
+      "failed": 1
+    },
+    {
+      "id": "approve-failed-only",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "one-reapproval",
+      "pass": true
+    },
+    {
+      "id": "exact-five-approval-events",
+      "pass": true,
+      "events": 5
+    },
+    {
+      "id": "operator-export-denied",
+      "pass": true,
+      "status": 403
+    },
+    {
+      "id": "export-preview-a",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "export-preview-five-changes",
+      "pass": true
+    },
+    {
+      "id": "export-stale-preview-denied",
+      "pass": true,
+      "status": 409
+    },
+    {
+      "id": "export-a",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "artifact-a-ready",
+      "pass": true
+    },
+    {
+      "id": "download-a",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "cell-rows-5",
+      "pass": true
+    },
+    {
+      "id": "all-71-cells-5",
+      "pass": true,
+      "checked": 355,
+      "preserved": true
+    },
+    {
+      "id": "report-a-0",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "report-a-1",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "report-a-2",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "report-a-3",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "report-a-4",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "detail-a",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "three-accepted-two-rejected-unverified",
+      "pass": true
+    },
+    {
+      "id": "two-repair-members",
+      "pass": true
+    },
+    {
+      "id": "stale-repair-denied",
+      "pass": true,
+      "status": 409
+    },
+    {
+      "id": "export-preview-b",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "export-b",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "repair-only-two",
+      "pass": true
+    },
+    {
+      "id": "download-b",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "cell-rows-2",
+      "pass": true
+    },
+    {
+      "id": "all-71-cells-2",
+      "pass": true,
+      "checked": 142,
+      "preserved": true
+    },
+    {
+      "id": "download-a-unchanged",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "artifact-a-immutable",
+      "pass": true
+    },
+    {
+      "id": "report-b-3",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "report-b-4",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "independent-verify-a",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "independent-a-three-match-two-differences",
+      "pass": true,
+      "matched": 3,
+      "differences": 2
+    },
+    {
+      "id": "independent-verify-b",
+      "pass": true,
+      "status": 201
+    },
+    {
+      "id": "independent-b-two-matched",
+      "pass": true,
+      "matched": 2,
+      "differences": 0
+    },
+    {
+      "id": "final-a",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "final-b",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "immutable-attempt-a",
+      "pass": true
+    },
+    {
+      "id": "b-two-accepted",
+      "pass": true
+    },
+    {
+      "id": "fake-only-cost-zero",
+      "pass": true,
+      "calls": 10,
+      "nonFake": 0,
+      "estimatedCost": "0.000000"
+    },
+    {
+      "id": "scoped-completed-lifecycle-audit",
+      "pass": false,
+      "missing": 1,
+      "foreign": 0
+    }
+  ],
+  "stops": [
+    {
+      "id": "wukong-listing-preview",
+      "pauseAcknowledged": true
+    },
+    {
+      "id": "wukong-shopline-preview",
+      "pauseAcknowledged": true
+    },
+    {
+      "id": "worker-ingress-cron",
+      "acknowledged": true
+    },
+    {
+      "id": "staging-compute",
+      "acknowledged": true
+    }
+  ],
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "outgoingEmail": 0,
+  "productionChanged": false,
+  "verificationA": {
+    "matched": 3,
+    "missing": 0,
+    "expected": 5,
+    "ambiguous": 0,
+    "differences": 2,
+    "suppliedRows": 5,
+    "unrelatedRows": 0,
+    "unsupportedVariant": 0
+  },
+  "verificationB": {
+    "matched": 2,
+    "missing": 0,
+    "expected": 2,
+    "ambiguous": 0,
+    "differences": 0,
+    "suppliedRows": 5,
+    "unrelatedRows": 3,
+    "unsupportedVariant": 0
+  },
+  "audit": {
+    "scope": "first completed synthetic delivery draft",
+    "passed": false,
+    "missingActions": [
+      "listing.csv_exported or listing.bulk_form_exported or listing.published"
+    ],
+    "accessibleForeignRecordCount": 0
+  },
+  "outcome": "failed",
+  "errorCode": "CHECK_FAILED:scoped-completed-lifecycle-audit",
+  "finishedAt": "2026-10-02T16:27:30.066Z",
+  "durationSeconds": 496,
+  "actualBilling": "not-measured"
+}

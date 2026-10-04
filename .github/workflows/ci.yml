@@ -178,6 +178,34 @@ jobs:
           TEST_DATABASE_URL=postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_quality_20261001 TEST_DATABASE_ADMIN_URL=postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_quality_20261001 pnpm exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/quality-projection.integration.test.ts --maxWorkers=1
           psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE opak_fixes_e_reads_20261001'
           TEST_DATABASE_URL=postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_e_reads_20261001 TEST_DATABASE_ADMIN_URL=postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_e_reads_20261001 pnpm exec vitest run --config vitest.integration.config.ts packages/db/src/repositories/source-readiness.integration.test.ts packages/db/src/repositories/workspace-reads.integration.test.ts packages/db/src/repositories/cursor.integration.test.ts apps/web/app/api/listings/runtime-read.integration.test.ts --maxWorkers=1
+      - name: Opak delivery lineage and source-binding acceptance
+        env:
+          WUKONG_OPAK_INTEGRATION: "1"
+          DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_delivery_20261001
+          DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_delivery_20261001
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_delivery_20261001
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_delivery_20261001
+          AI_PROVIDER: fake
+          SHOPLINE_ADAPTER: mock
+          SHOPLINE_PUBLISH_ENABLED: "false"
+          LISTING_PAID_OPERATIONS_ENABLED: "false"
+        run: |
+          psql postgres://wukong:wukong@127.0.0.1:54329/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE opak_fixes_delivery_20261001'
+          pnpm exec vitest run --config vitest.integration.config.ts apps/web/app/api/listings/export/delivery-lineage.integration.test.ts apps/web/app/api/listings/export/source-binding.integration.test.ts --maxWorkers=1
+      - name: Opak existing-product maintenance service and worker acceptance
+        env:
+          WUKONG_OPAK_INTEGRATION: "1"
+          DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_acceptance_20261001
+          DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_acceptance_20261001
+          TEST_DATABASE_URL: postgres://wukong_app:wukong-app-local@127.0.0.1:54329/opak_fixes_acceptance_20261001
+          TEST_DATABASE_ADMIN_URL: postgres://wukong:wukong@127.0.0.1:54329/opak_fixes_acceptance_20261001
+          AI_PROVIDER: fake
+          SHOPLINE_ADAPTER: mock
+          SHOPLINE_PUBLISH_ENABLED: "false"
+          LISTING_PAID_OPERATIONS_ENABLED: "false"
+        run: |
+          psql postgres://wukong:wukong@127.0.0.1:54329/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE opak_fixes_acceptance_20261001'
+          pnpm exec vitest run --config vitest.integration.config.ts apps/web/lib/opak-maintenance-acceptance.integration.test.ts --maxWorkers=1
       - name: Prepare isolated wine acceptance database
         run: |
           psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE wukong_wine_sdd'
@@ -249,7 +277,7 @@ jobs:
           SHOPLINE_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
           AUTH_EMAIL_FROM: ci@example.com
           AUTH_SMTP_URL: smtp://127.0.0.1:1026
-        run: pnpm exec playwright test tests/e2e/opak-current-content-batches.spec.ts tests/e2e/opak-catalog-context.spec.ts tests/e2e/opak-account-assignment.spec.ts tests/e2e/opak-admin-dirty.spec.ts tests/e2e/opak-admin-workspace-switch.spec.ts tests/e2e/opak-quality.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
+        run: pnpm exec playwright test tests/e2e/opak-current-content-batches.spec.ts tests/e2e/opak-catalog-context.spec.ts tests/e2e/opak-account-assignment.spec.ts tests/e2e/opak-admin-dirty.spec.ts tests/e2e/opak-admin-workspace-switch.spec.ts tests/e2e/opak-quality.spec.ts tests/e2e/opak-maintenance.spec.ts --project=chromium --workers=1 --retries=0 --reporter=line
       - name: Upload synthetic Opak browser screenshots
         if: always()
         uses: actions/upload-artifact@v4

@@ -116,7 +116,8 @@ describe("DeliveryPanel", () => {
         sku="SKU-1"
       />,
     );
-    expect(imported).toContain("Generate Bulk Update XLSX");
+    expect(imported).toContain("Preview Bulk Update XLSX");
+    expect(imported).toContain("Choose fields for this XLSX");
     expect(imported).not.toContain("Create via API");
     expect(imported).not.toContain("Create CSV");
     expect(imported).not.toContain("Create via API");
@@ -138,7 +139,7 @@ describe("DeliveryPanel", () => {
     expect(created).toContain("Create CSV / API");
     expect(created).toContain("Update via API");
     expect(created).toContain("Create CSV");
-    expect(created).not.toContain("Generate Bulk Update XLSX");
+    expect(created).not.toContain("Preview Bulk Update XLSX");
   });
   it("shows rejection and correction reasons in manual result history", () => {
     const markup = renderToStaticMarkup(

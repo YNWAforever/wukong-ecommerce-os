@@ -138,9 +138,34 @@ export async function consumeShoplineMessage(
     const claimed = await runtime.database.forWorkspace(
       parsed.data.workspaceId,
       async (repositories) => {
-        const existingLink = await repositories.platformProducts.getByListingId(
+        let existingLink = await repositories.platformProducts.getByListingId(
           parsed.data.draftId,
         );
+        if (existingLink) {
+          const createKey = shoplinePublishIdempotencyKey(
+            parsed.data.workspaceId,
+            parsed.data.versionId,
+            "create",
+          );
+          const acceptedCreate =
+            await repositories.publishJobs.getByIdempotencyKey(createKey);
+          // An import or reviewed repair can bind an accepted create before
+          // local completion. Reconcile that exact recorded remote result
+          // under its original key rather than switching to an absent update.
+          if (
+            acceptedCreate?.listingId === parsed.data.draftId &&
+            acceptedCreate.versionId === parsed.data.versionId &&
+            acceptedCreate.connectionId === parsed.data.connectionId &&
+            acceptedCreate.remoteProductId === existingLink.remoteProductId &&
+            (acceptedCreate.status === "queued" ||
+              acceptedCreate.status === "running" ||
+              (acceptedCreate.status === "failed" &&
+                (acceptedCreate.error === "remote_unavailable" ||
+                  acceptedCreate.error === "rate_limited")))
+          ) {
+            existingLink = null;
+          }
+        }
         const action: "create" | "update" = existingLink ? "update" : "create";
         const idempotencyKey = shoplinePublishIdempotencyKey(
           parsed.data.workspaceId,

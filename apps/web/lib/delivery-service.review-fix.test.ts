@@ -1,3 +1,5 @@
+import { EXPORT_CONTENT_FIELDS } from "./bulk-export-contract";
+import { createBulkExport, bulkExportPreview } from "./bulk-export-service";
 import {
   CONFIRMATION_FIELD_KEYS,
   CONFIRMATION_NEGATIVE_KEYS,
@@ -24,9 +26,43 @@ import { readBulkFormSheet } from "@wukong/shopline/bulk-form-xlsx";
 import {
   confirmShoplineQueued,
   createDeliverySnapshotReader,
-  deliverListing,
+  deliverListing as actualDeliverListing,
   prepareShoplineDelivery,
 } from "./delivery-service.js";
+
+// Existing single-delivery regressions now submit an actual explicitly reviewed export.
+async function deliverListing(
+  input: Parameters<typeof actualDeliverListing>[0],
+  deps: Parameters<typeof actualDeliverListing>[1],
+) {
+  if (input.method !== "bulk_form") return actualDeliverListing(input, deps);
+  const reviewed = {
+    ...input,
+    fields: input.fields ?? [...EXPORT_CONTENT_FIELDS],
+  };
+  if (!reviewed.previewSha256 && deps.bulkUpdate) {
+    const exportInput = {
+      workspaceId: input.workspaceId,
+      requestedBy: input.actorId,
+      listingIds: [input.draftId],
+      fields: reviewed.fields,
+      attestedDigests: new Map(
+        input.attestedContentDigest
+          ? [[input.draftId, input.attestedContentDigest]]
+          : [],
+      ),
+    };
+    try {
+      reviewed.previewSha256 = bulkExportPreview(
+        exportInput,
+        await createBulkExport(exportInput, deps.bulkUpdate),
+      ).previewSha256;
+    } catch {
+      /* Preserve the production service's domain error classification. */
+    }
+  }
+  return actualDeliverListing(reviewed, deps);
+}
 
 const content = {
   sku: "OPAK-001",
@@ -1111,6 +1147,54 @@ describe("bulk-form export", () => {
         },
       },
     ]);
+  });
+
+  it("direct bulk_form uses the same explicit mask and reviewed hash, without touching unselected cells", async () => {
+    const { deps, audits } = bulkFormDeps();
+    const input = {
+      workspaceId: "ws_opak",
+      actorId: "reviewer_1",
+      draftId: "listing_1",
+      method: "bulk_form" as const,
+      attestedContentDigest: platformProduct.contentDigest,
+      fields: ["nameZh"] as const,
+    };
+    const selected = {
+      workspaceId: input.workspaceId,
+      requestedBy: input.actorId,
+      listingIds: [input.draftId],
+      fields: input.fields,
+      attestedDigests: new Map([[input.draftId, input.attestedContentDigest]]),
+    };
+    const reviewed = bulkExportPreview(
+      selected,
+      await createBulkExport(selected, deps.bulkUpdate),
+    );
+    await expect(actualDeliverListing(input, deps)).rejects.toThrow(
+      "reviewed export changed",
+    );
+    expect(audits).toEqual([]);
+    await expect(
+      actualDeliverListing(
+        {
+          ...input,
+          fields: ["summaryEn"],
+          previewSha256: reviewed.previewSha256,
+        },
+        deps,
+      ),
+    ).rejects.toThrow("reviewed export changed");
+    expect(audits).toEqual([]);
+    const result = await actualDeliverListing(
+      { ...input, previewSha256: reviewed.previewSha256 },
+      deps,
+    );
+    expect(result.kind).toBe("bulk_form");
+    if (result.kind !== "bulk_form") throw new Error("Expected bulk_form");
+    const cells = readBulkFormSheet(result.body)[2]!;
+    expect(cells[2]).toBe(content.title["zh-Hant"]);
+    expect(cells[3]).toBe(platformProduct.rawRow.summaryEn || null);
+    expect(audits).toHaveLength(1);
   });
 
   it("maps the canonical listing onto the eight enrichable columns", async () => {

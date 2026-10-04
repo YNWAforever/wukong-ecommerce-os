@@ -582,6 +582,42 @@ describe("full workspace read boundaries", () => {
           role: "reviewer" as const,
         }),
       };
+      const { createExportPreviewHandler } =
+        await import("../../../../apps/web/app/api/listings/export/preview/route.js");
+      async function reviewedExportBody(
+        listingId: string,
+        exportSession: typeof sessionContext,
+      ) {
+        const selection = {
+          listingIds: [listingId],
+          fields: ["nameZh"],
+          // A well-formed attestation for a listing this workspace cannot
+          // see. The digest is never compared -- the listing resolves to
+          // `listing_not_found` first -- but the explicit producer contract
+          // must reach that boundary rather than fail schema validation.
+          attestation: {
+            listings: [{ listingId, contentDigest: SYNTHETIC_DIGEST }],
+          },
+        };
+        const reviewed = await createExportPreviewHandler({
+          sessionContext: exportSession,
+          getDatabase: () => db,
+        })(
+          new Request("http://localhost/api/listings/export/preview", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(selection),
+          }),
+        );
+        expect(reviewed.status).toBe(200);
+        const preview = await reviewed.json();
+        expect(preview.previewSha256).toMatch(/^[a-f0-9]{64}$/);
+        return { ...selection, previewSha256: preview.previewSha256 };
+      }
+      const workbookExportBody = await reviewedExportBody(
+        workbookId,
+        sessionContext,
+      );
       let sideEffects = 0;
       const forbidden = async () => {
         sideEffects++;
@@ -595,20 +631,7 @@ describe("full workspace read boundaries", () => {
         new Request("http://localhost/api/listings/export", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            listingIds: [workbookId],
-            // A well-formed attestation for a listing this workspace cannot
-            // see. The digest is never compared -- the listing resolves to
-            // `listing_not_found` first -- but it has to be present and cover
-            // exactly `listingIds`, or the refusal below would come from
-            // schema validation rather than from the workspace boundary this
-            // case exists to prove.
-            attestation: {
-              listings: [
-                { listingId: workbookId, contentDigest: SYNTHETIC_DIGEST },
-              ],
-            },
-          }),
+          body: JSON.stringify(workbookExportBody),
         }),
       );
       expect(await refused.json()).toMatchObject({
@@ -650,6 +673,12 @@ describe("full workspace read boundaries", () => {
               body: JSON.stringify({
                 method,
                 attestedContentDigest: SYNTHETIC_DIGEST,
+                ...(method === "bulk_form"
+                  ? {
+                      fields: workbookExportBody.fields,
+                      previewSha256: workbookExportBody.previewSha256,
+                    }
+                  : {}),
               }),
             },
           ),
@@ -781,15 +810,20 @@ describe("full workspace read boundaries", () => {
       ).toBeNull();
       const { createExportListingsHandler } =
         await import("../../../../apps/web/app/api/listings/export/route.js");
+      const websiteExportSession = {
+        resolve: async () => ({
+          workspaceId: mixed,
+          actorId: "synthetic",
+          role: "reviewer" as const,
+        }),
+      };
+      const websiteExportBody = await reviewedExportBody(
+        websiteId,
+        websiteExportSession,
+      );
       let artifactWrites = 0;
       const exportResponse = await createExportListingsHandler({
-        sessionContext: {
-          resolve: async () => ({
-            workspaceId: mixed,
-            actorId: "synthetic",
-            role: "reviewer",
-          }),
-        },
+        sessionContext: websiteExportSession,
         getDatabase: () => db,
         getAssetStore: () =>
           ({
@@ -802,14 +836,7 @@ describe("full workspace read boundaries", () => {
         new Request("http://localhost/api/listings/export", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            listingIds: [websiteId],
-            attestation: {
-              listings: [
-                { listingId: websiteId, contentDigest: SYNTHETIC_DIGEST },
-              ],
-            },
-          }),
+          body: JSON.stringify(websiteExportBody),
         }),
       );
       expect(exportResponse.status).toBe(200);
@@ -864,6 +891,14 @@ describe("full workspace read boundaries", () => {
         sku: null,
       }),
     ]);
+    expect((await read("Original English source")).items).toEqual([
+      expect.objectContaining({
+        listingId: id!,
+        title: "新的中文標題",
+        sku: null,
+      }),
+    ]);
+    expect((await read("Generated English")).totalMatching).toBe(0);
     expect((await read("OLD-CLEARED-SKU")).totalMatching).toBe(0);
     await db.forWorkspace(currentWorkspace, (repos) =>
       repos.listingInputs.save(
@@ -876,6 +911,11 @@ describe("full workspace read boundaries", () => {
           requestDigest: "d".repeat(64),
           changes: [
             { field: "title.zh-Hant", value: "人工保留名稱", locked: true },
+            {
+              field: "title.en",
+              value: "Human English Reserve 2020",
+              locked: true,
+            },
           ],
         },
         { workspaceId: currentWorkspace, actorId: "synthetic", entityId: id! },
@@ -890,6 +930,15 @@ describe("full workspace read boundaries", () => {
       }),
     ]);
     expect((await read("新的中文標題")).totalMatching).toBe(0);
+    expect((await read("human english reserve 2020")).items).toEqual([
+      expect.objectContaining({
+        listingId: id!,
+        title: "人工保留名稱",
+        sku: null,
+      }),
+    ]);
+    expect((await read("Generated English")).totalMatching).toBe(0);
+    expect((await read("Original English source")).totalMatching).toBe(0);
   });
   it("searches current human names on bound products while retaining source SKU identity", async () => {
     const listingId = await db.forWorkspace(currentWorkspace, async (repos) => {
@@ -947,6 +996,203 @@ describe("full workspace read boundaries", () => {
         )
       ).totalMatching,
     ).toBe(1);
+  });
+  it("finds the current English name of a bound bilingual product while preserving its source identity", async () => {
+    const listingId = await db.forWorkspace(currentWorkspace, async (repos) => {
+      const draft = await repos.listings.create({ target: "shopline" });
+      await repos.listingInputs.initialize(
+        {
+          listingId: draft.id,
+          actorId: "synthetic",
+          workingContent: {
+            ...emptyWorkingListing(),
+            sku: "LOCAL-SEARCH",
+            title: { en: "Imported bound name", "zh-Hant": "匯入名稱" },
+          },
+        },
+        {
+          workspaceId: currentWorkspace,
+          actorId: "synthetic",
+          entityId: draft.id,
+        },
+        repos.audit,
+      );
+      return draft.id;
+    });
+    const [version] =
+      await admin`insert into listing_versions(workspace_id,listing_id,sequence,content,created_by) values (${currentWorkspace},${listingId},1,${admin.json({ ...emptyWorkingListing(), title: { en: "Stale generated bound name", "zh-Hant": "舊模型名稱" } })},'synthetic') returning id`;
+    await admin`update listing_drafts set active_version_id=${version!.id} where workspace_id=${currentWorkspace} and id=${listingId}`;
+    await db.forWorkspace(currentWorkspace, (repos) =>
+      repos.listingInputs.save(
+        {
+          listingId,
+          actorId: "synthetic",
+          expectedInputRevision: 1,
+          baseVersionId: version!.id,
+          operationKey: randomUUID(),
+          requestDigest: "e".repeat(64),
+          changes: [
+            {
+              field: "title.en",
+              value: "Current English Estate 2020",
+              locked: true,
+            },
+            { field: "title.zh-Hant", value: "目前鎖定商品名稱", locked: true },
+          ],
+        },
+        {
+          workspaceId: currentWorkspace,
+          actorId: "synthetic",
+          entityId: listingId,
+        },
+        repos.audit,
+      ),
+    );
+    let [connectionRow] =
+      await admin`select id from shopline_connections where workspace_id=${currentWorkspace}`;
+    if (!connectionRow)
+      [connectionRow] =
+        await admin`insert into shopline_connections(workspace_id,shop_domain,encrypted_access_token) values (${currentWorkspace},'search.invalid','fixture') returning id`;
+    await admin`insert into platform_products(workspace_id,connection_id,remote_product_id,listing_id,sku,origin) values (${currentWorkspace},${connectionRow!.id},'bound-search-synthetic',${listingId},'002100','created')`;
+    await db.forWorkspace(currentWorkspace, async (repos) => {
+      for (const q of [
+        "current english estate 2020",
+        "目前鎖定商品名稱",
+        "002100",
+        "bound-search-synthetic",
+      ]) {
+        const found = await repos.reads.catalogPage({
+          page: 1,
+          pageSize: 25,
+          filter: "bound",
+          q,
+        });
+        expect(found.totalMatching).toBe(1);
+        expect(found.items[0]).toMatchObject({
+          sourceType: "platform",
+          listingId,
+          title: "目前鎖定商品名稱",
+          sku: "002100",
+          remoteProductId: "bound-search-synthetic",
+        });
+        expect(found.items[0]).not.toHaveProperty("searchTitleEn");
+      }
+      for (const q of [
+        "Imported bound name",
+        "Stale generated bound name",
+        "LOCAL-SEARCH",
+        "%",
+      ]) {
+        expect(
+          (
+            await repos.reads.catalogPage({
+              page: 1,
+              pageSize: 25,
+              filter: "bound",
+              q,
+            })
+          ).totalMatching,
+        ).toBe(0);
+      }
+      const unfiltered = await repos.reads.catalogPage({
+        page: 1,
+        pageSize: 100,
+        filter: "bound",
+      });
+      expect(
+        unfiltered.items.find(
+          (item) =>
+            item.id === listingId ||
+            ("listingId" in item && item.listingId === listingId),
+        ),
+      ).toMatchObject({ title: "目前鎖定商品名稱", sku: "002100" });
+      expect(unfiltered.items.every((item) => !("searchTitleEn" in item))).toBe(
+        true,
+      );
+    });
+  });
+  it("searches a bilingual workbook reference in both languages without widening its workspace or export authority", async () => {
+    const foreign = "task7a-search-foreign-" + randomUUID();
+    const actorId = randomUUID();
+    await admin`insert into workspaces(id,name,profile) values (${foreign},'synthetic search foreign','{}')`;
+    await admin`insert into users(id,email) values (${actorId},${actorId + "@example.invalid"})`;
+    await admin`insert into memberships(workspace_id,user_id,role) values (${currentWorkspace},${actorId},'operator'),(${foreign},${actorId},'operator')`;
+    const sheet = [
+      BULK_FORM_COLUMNS.map((c) => c.en),
+      BULK_FORM_COLUMNS.map((c) => c.zh),
+      BULK_FORM_COLUMNS.map((c) =>
+        c.key === "productId"
+          ? "0002100"
+          : c.key === "sku"
+            ? "002101"
+            : c.key === "nameEn"
+              ? "Workbook English Estate 2020"
+              : c.key === "nameZh"
+                ? "參考莊園二零二零"
+                : "",
+      ),
+    ];
+    const input = {
+      filename: "synthetic-search.xlsx",
+      workbookSha256: "c".repeat(64),
+      headerContractSha256: hashBulkFormHeaderContract(),
+      sheetName: "Default",
+      prepared: prepareWorkbookBase(sheet, "synthetic-search.xlsx"),
+      actorId,
+    };
+    const ownImport = await db.forWorkspace(currentWorkspace, (repos) =>
+      repos.workbookCatalog.save(input),
+    );
+    const foreignImport = await db.forWorkspace(foreign, (repos) =>
+      repos.workbookCatalog.save(input),
+    );
+    await db.forWorkspace(currentWorkspace, async (repos) => {
+      for (const q of [
+        "workbook english estate 2020",
+        "參考莊園二零二零",
+        "002101",
+        "0002100",
+      ]) {
+        const found = await repos.reads.catalogPage({
+          page: 1,
+          pageSize: 25,
+          filter: "workbook",
+          q,
+        });
+        expect(found.totalMatching).toBe(1);
+        expect(found.items[0]).toMatchObject({
+          sourceType: "workbook",
+          title: "參考莊園二零二零",
+          sku: "002101",
+          sourceProductId: "0002100",
+          canExport: false,
+        });
+        expect(found.items[0]).not.toHaveProperty("listingId");
+        expect(found.items[0]).not.toHaveProperty("searchTitleEn");
+      }
+      expect(
+        (
+          await repos.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "all",
+            importId: foreignImport.importId,
+            q: "Workbook English Estate 2020",
+          })
+        ).totalMatching,
+      ).toBe(0);
+      expect(
+        (
+          await repos.reads.catalogPage({
+            page: 1,
+            pageSize: 25,
+            filter: "all",
+            importId: ownImport.importId,
+            q: "%",
+          })
+        ).totalMatching,
+      ).toBe(0);
+    });
   });
   it("paginates current responsibility in SQL and treats removed or demoted assignees as unassigned", async () => {
     const actorId = randomUUID(),

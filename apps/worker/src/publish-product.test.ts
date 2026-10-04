@@ -123,6 +123,10 @@ function makeTransactionAwareHarness(
       ...transactionState.jobs,
     );
     harness.audits.splice(0, harness.audits.length, ...transactionAudits);
+    harness.state.platformProducts.clear();
+    for (const [key, value] of transactionState.platformProducts) {
+      harness.state.platformProducts.set(key, value);
+    }
     return result;
   };
   return harness;
@@ -217,11 +221,44 @@ function makeRepos(
       },
     },
     platformProducts: {
+      async bindCreatedProduct(record) {
+        const key = `${record.connectionId}:${record.remoteProductId}`;
+        const existing = input.platformProducts.get(key);
+        if (
+          existing &&
+          existing.listingId !== null &&
+          existing.listingId !== record.listingId
+        )
+          return false;
+        input.platformProducts.set(
+          key,
+          existing
+            ? { ...existing, listingId: record.listingId }
+            : {
+                ...record,
+                origin: "created",
+                sku: null,
+                specVersion: null,
+                rawRow: null,
+                factsPrefill: null,
+                contentDigest: null,
+                sourceImportId: null,
+              },
+        );
+        return true;
+      },
       async getByListingId(listingId) {
-        return (input.platformProducts.get(listingId) as never) ?? null;
+        return (
+          ([...input.platformProducts.values()].find(
+            (row) => row.listingId === listingId,
+          ) as never) ?? null
+        );
       },
       async upsert(record) {
-        input.platformProducts.set(record.listingId, { ...record });
+        input.platformProducts.set(
+          `${record.connectionId}:${record.remoteProductId}`,
+          { ...record },
+        );
       },
     },
     audit: {
@@ -926,6 +963,7 @@ describe("publishApprovedProduct", () => {
       criticScores: [],
       awards: [],
     };
+    const existingSourceImportId = "00000000-0000-4000-8000-000000000099";
     await harness.repos.platformProducts.upsert({
       connectionId: VALID_CONNECTION_ID,
       remoteProductId: "remote_existing_1",
@@ -936,13 +974,8 @@ describe("publishApprovedProduct", () => {
       rawRow: { productId: "remote_existing_1", sku: "SKU-1" },
       factsPrefill: existingFactsPrefill,
       contentDigest: "d".repeat(64),
-      sourceImportId: null,
+      sourceImportId: existingSourceImportId,
     });
-    // A real, non-null source import id -- distinct from the seed upsert's
-    // `sourceImportId: null` above -- so the final assertion can tell
-    // "correctly preserved from `existingLink`" apart from "accidentally
-    // read back from the seeded row" or "defaulted to null".
-    const existingSourceImportId = "00000000-0000-4000-8000-000000000099";
     const existingLink = {
       remoteProductId: "remote_existing_1",
       origin: "import" as const,
@@ -980,6 +1013,188 @@ describe("publishApprovedProduct", () => {
       sourceImportId: existingSourceImportId,
     });
   });
+
+  it("preserves a newer imported snapshot while an update is in flight", async () => {
+    const key = [workspaceId, versionId, "shopline", "update"].join(":");
+    const harness = makeHarness(
+      "approved",
+      [],
+      [
+        {
+          id: "job_1",
+          idempotencyKey: key,
+          status: "running",
+          remoteProductId: null,
+          payloadDigest: hashCanonicalListing(canonicalListing),
+          error: null,
+        },
+      ],
+    );
+    const oldLink = {
+      connectionId: VALID_CONNECTION_ID,
+      remoteProductId: "remote_existing_1",
+      origin: "import" as const,
+      listingId: draftId,
+      sku: "OLD",
+      specVersion: "opak-2026-05",
+      rawRow: { productId: "remote_existing_1", sku: "OLD" },
+      factsPrefill: null,
+      contentDigest: "a".repeat(64),
+      sourceImportId: "00000000-0000-4000-8000-000000000001",
+    };
+    await harness.repos.platformProducts.upsert(oldLink);
+    const refreshedLink = {
+      ...oldLink,
+      sku: "NEW",
+      rawRow: { productId: "remote_existing_1", sku: "NEW" },
+      contentDigest: "b".repeat(64),
+      sourceImportId: "00000000-0000-4000-8000-000000000002",
+    };
+    const connector = makeConnector({
+      updateProduct: vi.fn(async () => {
+        await harness.repos.platformProducts.upsert(refreshedLink);
+      }),
+    });
+
+    const result = await publishApprovedProduct(
+      publishInput({ existingLink: oldLink }),
+      { ...harness, connector },
+    );
+
+    expect(result.status).toBe("published");
+    expect(
+      await harness.repos.platformProducts.getByListingId(draftId),
+    ).toMatchObject(refreshedLink);
+  });
+});
+
+it("preserves an imported snapshot committed while a create is in flight", async () => {
+  const harness = makeHarness();
+  const importedLink = {
+    connectionId: VALID_CONNECTION_ID,
+    remoteProductId: "remote_123",
+    origin: "import" as const,
+    listingId: draftId,
+    sku: "IMPORTED-SKU",
+    specVersion: "opak-2026-05",
+    rawRow: {
+      productId: "remote_123",
+      sku: "IMPORTED-SKU",
+      title: "Imported title",
+    },
+    factsPrefill: {
+      sku: "IMPORTED-SKU",
+      producer: "Imported Producer",
+      productType: "wine" as const,
+      country: "Portugal",
+      region: "Douro",
+      vintage: 2018,
+      grapeVarieties: ["Touriga Nacional"],
+      volumeMl: 750,
+      abvPercent: 14,
+      packQuantity: 1,
+      priceHkd: 320,
+      stockQuantity: 7,
+      criticScores: [],
+      awards: [],
+    },
+    contentDigest: "b".repeat(64),
+    sourceImportId: "00000000-0000-4000-8000-000000000002",
+  };
+  const connector = makeConnector({
+    createProduct: vi.fn(async () => {
+      await harness.repos.platformProducts.upsert(importedLink);
+      return { remoteProductId: importedLink.remoteProductId };
+    }),
+  });
+
+  const result = await publishApprovedProduct(publishInput(), {
+    ...harness,
+    connector,
+  });
+
+  expect(result.status).toBe("published");
+  expect(
+    await harness.repos.platformProducts.getByListingId(draftId),
+  ).toMatchObject(importedLink);
+  expect(harness.state.jobs[0]).toMatchObject({
+    status: "published",
+    remoteProductId: "remote_123",
+    leaseToken: null,
+  });
+  expect(
+    harness.audits.filter((event) => event.action === "listing.published"),
+  ).toHaveLength(1);
+  expect(connector.createProduct).toHaveBeenCalledTimes(1);
+  expect(connector.updateProduct).not.toHaveBeenCalled();
+});
+it("retains the accepted remote result on a conflicting binding and reconciles without another create", async () => {
+  const harness = makeTransactionAwareHarness();
+  const importedLink = {
+    connectionId: VALID_CONNECTION_ID,
+    remoteProductId: "remote_123",
+    origin: "import" as const,
+    listingId: "another_draft",
+    sku: "OTHER-SKU",
+    specVersion: "opak-2026-05",
+    rawRow: { productId: "remote_123", sku: "OTHER-SKU" },
+    factsPrefill: null,
+    contentDigest: "c".repeat(64),
+    sourceImportId: "00000000-0000-4000-8000-000000000003",
+  };
+  const connector = makeConnector({
+    createProduct: vi.fn(async () => {
+      await harness.repos.platformProducts.upsert(importedLink);
+      return { remoteProductId: "remote_123" };
+    }),
+    getProductStatus: vi.fn(async () => ({
+      exists: true,
+      status: true,
+    })),
+  });
+  await expect(
+    publishApprovedProduct(publishInput(), { ...harness, connector }),
+  ).rejects.toThrow("Platform product binding conflict");
+  expect(harness.state.jobs[0]).toMatchObject({
+    status: "running",
+    remoteProductId: "remote_123",
+    leaseToken: LEASE_TOKEN,
+  });
+  expect(harness.state.listing.status).toBe("publishing");
+  expect(
+    harness.audits.filter((event) => event.action === "listing.published"),
+  ).toHaveLength(0);
+  expect(
+    await harness.repos.platformProducts.getByListingId("another_draft"),
+  ).toMatchObject(importedLink);
+  expect(
+    await harness.repos.platformProducts.getByListingId(draftId),
+  ).toBeNull();
+  expect(connector.createProduct).toHaveBeenCalledTimes(1);
+
+  // Simulate an explicitly reviewed binding correction before redelivery.
+  await harness.repos.platformProducts.upsert({
+    ...importedLink,
+    listingId: draftId,
+  });
+  const result = await publishApprovedProduct(publishInput(), {
+    ...harness,
+    connector,
+  });
+  expect(result.status).toBe("published");
+  expect(harness.state.jobs[0]).toMatchObject({
+    status: "published",
+    remoteProductId: "remote_123",
+    leaseToken: null,
+  });
+  expect(
+    await harness.repos.platformProducts.getByListingId(draftId),
+  ).toMatchObject({ ...importedLink, listingId: draftId });
+  expect(connector.createProduct).toHaveBeenCalledTimes(1);
+  expect(connector.getProductStatus).toHaveBeenCalledTimes(1);
+  expect(
+    harness.audits.filter((event) => event.action === "listing.published"),
+  ).toHaveLength(1);
 });
 
 it("records terminal publication rejection without SHOPLINE calls or a retry lease", async () => {
