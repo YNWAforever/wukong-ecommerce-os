@@ -1660,3 +1660,67 @@ it("retires a queued incoming restore before saving an identical departure posit
     scrollY.mockRestore();
   }
 });
+
+it("shows the safe catalog support ID on initial non-JSON failure", async () => {
+  const requestId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const privateMessage = "INTERNAL_SYNTHETIC_PROXY_FAILURE";
+  const fetcher = vi.fn(
+    async () =>
+      new Response(privateMessage, {
+        status: 500,
+        headers: { "x-request-id": requestId, "content-type": "text/html" },
+      }),
+  );
+  const { container, root } = await mount(fetcher);
+  try {
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.querySelector("code")?.textContent).toBe(requestId);
+    expect(findButtonByText(container, "複製編號")).not.toBeNull();
+    expect(container.textContent).not.toContain(privateMessage);
+    expect(container.querySelector("tbody")).toBeNull();
+  } finally {
+    await unmount(root);
+  }
+});
+
+it("shows the current safe support ID on catalog refresh failure and clears it after recovery", async () => {
+  const requestId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const privateMessage = "INTERNAL_SYNTHETIC_DATABASE_FAILURE";
+  let fail = false;
+  const item = makeItem({
+    id: "support-item",
+    title: "Synthetic retained product",
+  });
+  const fetcher = vi.fn(async () =>
+    fail
+      ? Response.json(
+          { code: "internal_error", requestId, error: privateMessage },
+          { status: 500 },
+        )
+      : Response.json(pageResponse([item])),
+  );
+  const { container, root } = await mount(fetcher);
+  try {
+    expect(container.textContent).toContain(item.title);
+    await act(async () => {
+      fail = true;
+      window.dispatchEvent(new Event("focus"));
+    });
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.querySelector("code")?.textContent).toBe(requestId);
+    expect(findButtonByText(container, "複製編號")).not.toBeNull();
+    expect(container.textContent).not.toContain(privateMessage);
+    expect(container.textContent).toContain(item.title);
+    await act(async () => {
+      fail = false;
+      findButtonByText(container, "重試")!.click();
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain(requestId);
+    expect(container.textContent).toContain(item.title);
+  } finally {
+    await unmount(root);
+  }
+});
