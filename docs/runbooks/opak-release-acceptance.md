@@ -206,3 +206,15 @@ Current source593 full CI is separate from the latest evidence-only commit. Exac
 - [ ] Original production500/effective Web/0046/safe role/cache/exact authority/named recovery owner/confirmed point; simulated cloud positive-budget/unknown gates; paid-human quality/cloudload/matched employee20minutes; first realSHOPLINE/reconciled5→20→100 remain open. Conditional main auto-deploy merge held.
 
 [Executed behavior, failures, exact criteria and compatible hold](./opak-uc06-cloud-intake-2026-10-04.md). Historical unchecked checkpoints are superseded only by the explicit executed scope above. Existing application already implements this behavior; no product rewrite or new production authority is inferred.
+
+## 2026-10-04 HKT original UC24 simulated budget checkpoint
+
+- [x] Original UC24 reread:small test budget/simulated response loss/reach cap/timeout/retry. Existing scoped repository concurrentUS$0.05 holds at cap0.05 admits one/rejects one; no invocation at that checkpoint.
+- [x] Four normal synthetic bound fixtures14/14; temporary exact-two-run fake shim scope18/18; actual cloud Queue/UI/API42/42/304.012s. Known0.05 reaches cap and Advance starts0new; second unknownNULL retains positive0.05 hold/retry409/quality owned lineage. No paid provider admission or pricing claim.
+- [x] Reviewed Worker restored before duplicate terminal deliveries; original runs/ledger/holds unchanged. Four protected/manual/unselected contents and all older runs/ledgers/versions/source cells preserved; fake-only/publish0. Unknown record and two pending unstarted members retained.
+- [x] Two normal8-minute watchdog stops; independent2026-10-04T02:45:50.934Z exactfcf100/source593/five secret names/no probes/public404/compute disabled-idle0.25. Queue/cron flags acknowledgement-only; actual billing unmeasured/paidAI0/realSHOPLINE0.
+- [x] Current matrix15PASS/2PARTIAL/13BLOCKED/all30; only original simulated UC24 advanced. Application already-fixed; no product/migration/env/secret/production change.
+- [ ] New documentation-only head ownCI/PR exact readback/archive pending at this precommit checkpoint. Prior6f7 CI37167094681 attempt1SUCCESS43 remains separate.
+- [ ] Production exact scope/recovery/schema/role/cache/effective Web/original500; paid-human quality/cloudload/matched employee minutes; first trueSHOPLINE/reconciled5→20→100 remain open. Conditional main merge held; PR120 remains nongreen.
+
+[Executed commands, evidence limits, safe receipt and compatible hold/rollback](../../runbooks/opak-uc24-cloud-budget-2026-10-04.md). Positive reservations/costs are simulated; unknowns remain protected. Historical checkpoints are superseded only within this exact executed scope.
