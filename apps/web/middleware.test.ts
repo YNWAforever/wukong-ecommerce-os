@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { describe, expect, it } from "vitest";
 
-import { middleware } from "./middleware";
+import { config, middleware } from "./middleware";
 
 function request(path: string, cookie?: string): NextRequest {
   return new NextRequest(`https://wukong.test${path}`, {
@@ -10,6 +11,42 @@ function request(path: string, cookie?: string): NextRequest {
 }
 
 describe("authentication middleware", () => {
+  it.each([
+    "/api/catalog?page=800&pageSize=25",
+    "/api/listings/listing-1/approve",
+    "/api/jobs",
+    "/api/account",
+    "/api/auth/password",
+    "/api/auth",
+  ])("skips the no-op middleware invocation for API route %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    "/",
+    "/catalog",
+    "/listings/listing-1",
+    "/dashboard",
+    "/api-keys",
+    "/api",
+    "/apiary",
+  ])("keeps page redirect middleware matched at %s", (url) => {
+    expect(unstable_doesMiddlewareMatch({ config, nextConfig: {}, url })).toBe(
+      true,
+    );
+  });
+
+  it.each(["/_next/static/chunk.js", "/_next/image?url=x&w=1", "/favicon.ico"])(
+    "continues skipping the framework asset route %s",
+    (url) => {
+      expect(
+        unstable_doesMiddlewareMatch({ config, nextConfig: {}, url }),
+      ).toBe(false);
+    },
+  );
+
   it.each([
     "/signin",
     "/signin/magic-link",
@@ -35,12 +72,16 @@ describe("authentication middleware", () => {
     "better-auth.session_token=opaque",
     "__Secure-better-auth.session_token=opaque",
   ])("allows protected page navigation with cookie %s", (cookie) => {
-    const response = middleware(request("/listings/listing-1?tab=review", cookie));
+    const response = middleware(
+      request("/listings/listing-1?tab=review", cookie),
+    );
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
   it("redirects a protected page without a cookie and preserves path and query", () => {
-    const response = middleware(request("/listings/listing-1?tab=review&from=queue"));
+    const response = middleware(
+      request("/listings/listing-1?tab=review&from=queue"),
+    );
 
     expect(response.status).toBe(307);
     const location = response.headers.get("location");

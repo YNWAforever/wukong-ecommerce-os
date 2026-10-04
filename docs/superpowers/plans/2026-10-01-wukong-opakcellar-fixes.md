@@ -566,4 +566,14 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 - [x] Current Workerfcf100/source593/no probes/public404 and staging disabled-idle0.25 readback; billingUS$1.45954shared-project/lagged, all-provider final bill unmeasured. PaidAI0/realSHOPLINE0/no new admissions.
 - [ ] This new evidence-only head exactCI/PR/archive terminal receipts; UAT unchanged15PASS/3PARTIAL/12BLOCKED. Original performance/production/paid-human/employee/merchant release gates remain open and conditional main merge held.
 
+## 2026-10-04 HKT T10 API invocation checkpoint
+
+- [x] Reread T10 and existing middleware/session/runtime boundaries. Duplicate pre-handler DB/session hypothesis unsupported: middleware immediately passes all `/api/` paths. Exact staging platform baseline reports111catalog function+111middleware invocations; unnecessary invocation reproduced independently of latency causation.
+- [x] Real installed Next matcher regression6RED/23pass→focused56GREEN. Slash-bounded `api/` exclusion retains `/api`/`api-keys`/`apiary`, page redirect/callback/cookies, assets and API server auth/RLS. Full root142/Web2306/14tasks and typecheck14 pass; source review has no findings.
+- [x] Failed capped CLI collector retained:500event rows repeat50IDs in ten identical ordered pages; no complete-data/duration or500unique-request claim. Grouped connector counts remain separate.
+- [x] Build8/8/88.389s and actual compiled matcher8/8; static6automated/14human pending and forbidden0. CLI billing JSON-parser and first static-case verifier failures retained; separate JSONL-compatible fresh owned billing1.45954USD succeeds with lag/all-provider limitations.
+- [ ] Exact sourceCI/controlled same20k after-evidence/PR/archive pending at this source checkpoint. Record actual API invocation reduction separately from HTTP p95, all prior827.78/1045.56/805.70misses and employee/paid-human/production/merchant gates retained. No production action or main merge.
+
+[Routing change, ruling, commands/evidence limits and rollback](../../runbooks/opak-api-middleware-2026-10-04.md).
+
 [Executed metrics, causal limits, failures, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical unchecked statements are superseded only by explicitly executed evidence, not by a new release authorization.
