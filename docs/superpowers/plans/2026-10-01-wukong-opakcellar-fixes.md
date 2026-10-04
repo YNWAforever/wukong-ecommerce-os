@@ -545,3 +545,14 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 - [ ] Cloud matrix15PASS/3PARTIAL/12BLOCKED/all30. UC03/29 production500 and UC30 legacy20k latency/human timing remain partial; paid-human UC09–20 remain blocked. Production authorization/recovery/schema/safe role/cache/effectiveWeb and real merchant gates remain incomplete; conditional main merge held.
 
 [Executed metrics, billing limits, first-observed/cold distinction and hold/rollback](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No new product code/migration/env/credential/runtime deployment or production mutation.
+
+## 2026-10-04 HKT T10 safe stage-attribution checkpoint
+
+- [x] Reread original T00–T14 and current finding/UAT ledger; retain the 20k legacy827.78ms/800ms failure and all external release gates. Current graph remains unindexed and prior bulk export approval rejection remains; bounded known-file discovery used.
+- [x] Add request-local fixed-label numeric `Server-Timing` only to authorized successful catalog responses. Behavior RED1→GREEN30; full root142/Web2290/14tasks and typecheck14 pass. Existing DB/auth/row-error/cursor/payload behavior retained; no successful-request content logs.
+- [x] Independent scoped review has no findings. Rulings: deployed tail/liveRLS/framework transport require actual evidence; executor test results do not substitute them. No migration/env/Worker/credential/provider change.
+- [x] This candidate's local build8/8 passes; existing middleware deprecation retained. Base CI does not certify this new candidate.
+- [ ] Exact CI, guarded staging deployment and controlled same-cohort server-stage attribution; original latency cause remains unconfirmed and its miss remains open.
+- [ ] Production exact authority/recovery/0046/safe role/cache/effective Web/original500, paid-human quality/employee20minutes and first trueSHOPLINE/merchant gates; no main merge or production action inferred.
+
+[Behavior, measurement meanings, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical checkpoints are superseded only within explicitly verified scope; UAT stays15PASS/3PARTIAL/12BLOCKED/all30.

@@ -2,7 +2,7 @@
 
 Execution date: 2026-10-01 (Asia/Hong_Kong). Plan: [approved implementation plan](2026-10-01-wukong-opakcellar-fixes.md).
 
-Current checkpoint (2026-10-04 HKT): UC30 synthetic cloud-scale measured, with20k legacy latency gate still open; matrix15PASS/3PARTIAL/12BLOCKED/all30. See [current UC30 receipt](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No employee-time/paid-quality/production/merchant completion is inferred. Prior dated findings remain evidence.
+Current checkpoint (2026-10-04 HKT): T10 safe catalog stage attribution locally verified; controlled deployed attribution pending. Retained UC30 20k legacy827.78ms/800ms gate remains open; matrix15PASS/3PARTIAL/12BLOCKED/all30. See [stage attribution](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md) and [retained UC30 receipt](../../runbooks/opak-uc30-cloud-performance-2026-10-04.md). No employee-time/paid-quality/production/merchant completion is inferred. Prior dated findings remain evidence.
 
 ## Baseline and custody (T00)
 
