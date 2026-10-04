@@ -104,3 +104,90 @@ it("requires authentication before opening database", async () => {
     ).status,
   ).toBe(401);
 });
+
+it("observes current source only for same-target latest rejected members without changing original attestation", async () => {
+  const original = [
+    { listingId: "rejected", contentDigest: "original-source" },
+  ];
+  const observed: string[] = [];
+  const handler = createExportDetailHandler({
+    sessionContext: {
+      resolve: async () => ({
+        workspaceId: "ws",
+        actorId: "reviewer",
+        role: "reviewer",
+      }),
+    },
+    getDatabase: () => ({
+      forWorkspace: async (_ws: string, work: any) =>
+        work({
+          exportAttempts: {
+            getById: async () => ({
+              id,
+              artifactStatus: "ready",
+              sourceAttestation: original,
+              manifest: ["accepted", "rejected", "retargeted"].map(
+                (listingId) => ({
+                  listingId,
+                  versionId: "version",
+                  outcome: "included",
+                }),
+              ),
+              provenance: {
+                evidence: ["accepted", "rejected", "retargeted"].map(
+                  (listingId) => ({
+                    listingId,
+                    connectionId: "store",
+                    remoteProductId: "remote-" + listingId,
+                  }),
+                ),
+              },
+            }),
+          },
+          importResults: {
+            listForExportAttempts: async () =>
+              ["accepted", "rejected", "retargeted"].map(
+                (listingId, index) => ({
+                  listingId,
+                  versionId: "version",
+                  mode: "export",
+                  exportAttemptId: id,
+                  revision: 1,
+                  outcome: index ? "rejected" : "accepted",
+                }),
+              ),
+          },
+          platformProducts: {
+            getByListingId: async (listingId: string) => {
+              observed.push(listingId);
+              return {
+                origin: "import",
+                sourceImportId: "current-import",
+                contentDigest: "current-source",
+                connectionId: "store",
+                remoteProductId:
+                  listingId === "retargeted"
+                    ? "other-product"
+                    : "remote-" + listingId,
+              };
+            },
+          },
+        }),
+    }),
+  } as never);
+  const response = await handler(new Request("http://localhost"), {
+    params: Promise.resolve({ id }),
+  });
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(observed).toEqual(["rejected", "retargeted"]);
+  expect(body.attempt.sourceAttestation).toEqual(original);
+  expect(body.repairSourceObservations).toEqual([
+    {
+      listingId: "rejected",
+      contentDigest: "current-source",
+      sourceImportId: "current-import",
+      remoteProductId: "remote-rejected",
+    },
+  ]);
+});

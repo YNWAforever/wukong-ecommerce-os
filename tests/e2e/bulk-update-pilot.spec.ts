@@ -399,17 +399,47 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
   await page.goto("/catalog");
   await page.getByLabel("Select 0001 for Bulk Update", { exact: true }).check();
   await page.getByLabel("Select 0002 for Bulk Update", { exact: true }).check();
-  const generate = page.getByRole("button", {
-    name: "Generate Bulk Update XLSX",
+  const exportPreview = page.getByRole("button", {
+    name: "Preview Bulk Update XLSX",
     exact: true,
   });
-  await expect(generate).toBeDisabled();
+  await expect(exportPreview).toBeDisabled();
   await page
     .getByLabel("I confirm this SHOPLINE source export is still current.", {
       exact: true,
     })
     .check();
 
+  await expect(exportPreview).toBeDisabled();
+  const exportRegion = page.getByRole("region", {
+    name: "Bulk Update XLSX export",
+    exact: true,
+  });
+  for (const field of [
+    "Chinese name",
+    "English summary",
+    "Chinese summary",
+    "English SEO title",
+    "Chinese SEO title",
+    "English SEO description",
+    "Chinese SEO description",
+    "SEO keywords",
+  ])
+    await exportRegion.getByLabel(field, { exact: true }).check();
+  const exportPreviewResponse = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/listings/export/preview" &&
+      r.request().method() === "POST",
+  );
+  await exportPreview.click();
+  expect((await exportPreviewResponse).status()).toBe(200);
+  await expect(
+    exportRegion.getByRole("region", { name: "XLSX update preview" }),
+  ).toBeVisible();
+  const generate = exportRegion.getByRole("button", {
+    name: "Generate Bulk Update XLSX",
+    exact: true,
+  });
   await expect(generate).toBeEnabled();
   const exportedResponse = page.waitForResponse(
     (r) =>
@@ -1286,9 +1316,37 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     if (!(await box.isChecked())) await box.click();
     await expect(box).toBeChecked({ timeout: 10_000 });
   }
+  // Approval publishes its success message after the authoritative detail
+  // refresh. Observe both requests before asserting that message.
+  const reboundApproval = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/listings/${listingIds[0]}/approve`) &&
+      response.request().method() === "POST",
+  );
+  const approvedDetail = page.waitForResponse(async (response) => {
+    if (
+      !response.url().endsWith(`/api/listings/${listingIds[0]}`) ||
+      response.request().method() !== "GET" ||
+      response.status() !== 200
+    )
+      return false;
+    return (await response.json()).status === "approved";
+  });
   await page
     .getByRole("button", { name: "Approve listing", exact: true })
     .click();
+  const approvalResponse = await reboundApproval;
+  expect(approvalResponse.status()).toBe(200);
+  const approvalResult = await approvalResponse.json();
+  expect(approvalResult).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+  });
+  expect(await (await approvedDetail).json()).toMatchObject({
+    listingId: listingIds[0],
+    status: "approved",
+    activeVersion: { id: approvalResult.versionId },
+  });
   await expect(page.getByText(/Listing approved/)).toBeVisible();
 
   // A later confirmation change now reopens the newly approved version.

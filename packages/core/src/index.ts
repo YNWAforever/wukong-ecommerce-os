@@ -30,7 +30,11 @@ export type {
   GroundedClaims,
 } from "./compliance.js";
 
-export { approveListing, reopenListing } from "./review.js";
+export {
+  approveListing,
+  reopenListing,
+  validateListingApproval,
+} from "./review.js";
 
 export { transitionListing } from "./workflow.js";
 export type { ListingAction, ListingStatus } from "./workflow.js";

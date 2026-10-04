@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
+
 type Connection = { shopDomain: string; connectedAt: string } | null;
 
 async function responseError(response: Response): Promise<Error> {
@@ -55,25 +57,27 @@ export function AdminConnectionPanel({
 
   const run = useCallback(
     async (work: () => Promise<void>, success: string) => {
-      if (submitting.current) return;
+      if (submitting.current) return false;
       submitting.current = true;
       setBusy(true);
       setError(null);
       setMessage(null);
       try {
         await work();
-        if (!mounted.current) return;
+        if (!mounted.current) return false;
         await load();
-        if (!mounted.current) return;
+        if (!mounted.current) return false;
         setMessage(success);
         await onConnectionChanged?.();
+        return true;
       } catch (runError) {
-        if (!mounted.current) return;
+        if (!mounted.current) return false;
         setError(
           runError instanceof Error
             ? runError.message
             : "Unable to complete request.",
         );
+        return false;
       } finally {
         submitting.current = false;
         if (mounted.current) setBusy(false);
@@ -92,6 +96,7 @@ export function AdminConnectionPanel({
       if (!response.ok) throw await responseError(response);
       if (!mounted.current) return;
       setAccessToken("");
+      setShopDomain("");
     }, "已連線 Connected");
 
   const rotate = () =>
@@ -106,6 +111,25 @@ export function AdminConnectionPanel({
       setAccessToken("");
       setRotating(false);
     }, "存取權杖已更新 Token rotated");
+
+  useAdminDirtyGuard("connection", {
+    dirty: Boolean(shopDomain || accessToken || busy),
+    async save() {
+      if (!accessToken.trim() || (!connection && !shopDomain.trim())) {
+        setError(
+          "請填寫商店網域與權杖 Complete the shop domain and access token.",
+        );
+        return false;
+      }
+      return connection ? rotate() : connect();
+    },
+    discard() {
+      setShopDomain("");
+      setAccessToken("");
+      setRotating(false);
+      setError(null);
+    },
+  });
 
   return (
     <section className="connection-panel" aria-busy={busy}>

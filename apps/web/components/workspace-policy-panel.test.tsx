@@ -52,6 +52,14 @@ describe("workspace policy editing", () => {
         )!.set!.call(input, "Changed name");
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
+      const guidance = container.querySelectorAll("textarea")[1]!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype,
+          "value",
+        )!.set!.call(guidance, "Preserve draft lines\n\n");
+        guidance.dispatchEvent(new Event("input", { bubbles: true }));
+      });
       const save = Array.from(container.querySelectorAll("button")).find((b) =>
         b.textContent?.includes("Save policies"),
       )!;
@@ -62,6 +70,7 @@ describe("workspace policy editing", () => {
         "Settings changed",
       );
       expect(input.value).toBe("Changed name");
+      expect(guidance.value).toBe("Preserve draft lines\n\n");
       expect(container.textContent).toContain("2.5");
       const body = JSON.parse(fetcher.mock.calls[1]![1].body);
       expect(body).toMatchObject({

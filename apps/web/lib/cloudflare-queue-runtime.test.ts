@@ -283,3 +283,104 @@ it("delivers signed wine Web publisher bytes through actual Worker ingress valid
   await client.enqueue(LISTING_INGRESS_PATH, wine);
   expect(send).toHaveBeenCalledExactlyOnceWith(wine);
 }, 15_000);
+
+describe("safe queue failure diagnostics", () => {
+  it.each([
+    ["UND_ERR_CONNECT_TIMEOUT", "cause", "UND_ERR_CONNECT_TIMEOUT"],
+    ["ENOTFOUND", "cause", "ENOTFOUND"],
+    ["ECONNRESET", "cause", "ECONNRESET"],
+    ["secret-host.example", "cause", "unknown"],
+    ["ETIMEDOUT", "code", "ETIMEDOUT"],
+    ["TimeoutError", "name", "TimeoutError"],
+  ] as const)(
+    "classifies exhausted transport failure %s from %s without leaking details",
+    async (code, source, expectedCode) => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const error = new TypeError("secret URL and payload");
+      if (source === "cause")
+        error.cause = Object.assign(new Error("secret credential"), { code });
+      else Object.assign(error, { [source]: code });
+      const fetch = vi.fn().mockRejectedValue(error);
+      try {
+        const client = createCloudflareIngressClient({
+          env: {
+            QUEUE_INGRESS_URL: "https://queue.example",
+            QUEUE_INGRESS_SECRET: "private-key",
+          },
+          fetch,
+          sleep: async () => {},
+        });
+        await expect(
+          client.enqueue(LISTING_INGRESS_PATH, payload),
+        ).rejects.toMatchObject({ reason: "unreachable" });
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+          JSON.stringify({
+            event: "queue_ingress_failure",
+            stage: "transport",
+            code: expectedCode,
+          }),
+        );
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(
+          /secret|private-key|queue.example/,
+        );
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+  it("identifies signing failures without dispatching", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sign = vi
+      .spyOn(crypto.subtle, "sign")
+      .mockRejectedValue(new Error("private credential"));
+    const fetch = vi.fn();
+    try {
+      const client = createCloudflareIngressClient({
+        env: {
+          QUEUE_INGRESS_URL: "https://queue.example",
+          QUEUE_INGRESS_SECRET: "private-key",
+        },
+        fetch,
+      });
+      await expect(
+        client.enqueue(LISTING_INGRESS_PATH, payload),
+      ).rejects.toMatchObject({ reason: "unreachable" });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify({
+          event: "queue_ingress_failure",
+          stage: "signing",
+          code: "unknown",
+        }),
+      );
+    } finally {
+      sign.mockRestore();
+      log.mockRestore();
+    }
+  });
+  it("does not report a recovered transport error", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("private transient failure"))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    try {
+      const client = createCloudflareIngressClient({
+        env: {
+          QUEUE_INGRESS_URL: "https://queue.example",
+          QUEUE_INGRESS_SECRET: "private-key",
+        },
+        fetch,
+        sleep: async () => {},
+      });
+      await expect(
+        client.enqueue(LISTING_INGRESS_PATH, payload),
+      ).resolves.toEqual({ accepted: true });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+});

@@ -1,4 +1,9 @@
 "use client";
+import { BulkExportPanel } from "./bulk-export-panel";
+import type {
+  ExportRepair,
+  RepairSourceObservation,
+} from "../lib/bulk-export-contract";
 import { FreshExportVerificationPanel } from "./fresh-export-verification-panel";
 import { useLocale } from "../lib/locale-context";
 import {
@@ -9,7 +14,7 @@ import {
 } from "../lib/ui-copy";
 import { outcomeLabel, manifestReasonLabel } from "../lib/export-ui-copy";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ImportResultForm,
   ImportResultHistory,
@@ -25,8 +30,13 @@ type ManifestMember = {
   history: ImportResultReceipt[];
 };
 export type WireExportReconciliationDetail = {
+  repairSourceObservations?: RepairSourceObservation[];
   attempt: {
     id: string;
+    sourceAttestation?: Array<{
+      listingId: string;
+      contentDigest: string;
+    }> | null;
     artifactStatus?: "pending" | "ready" | "failed" | null;
     artifactErrorCode?: string | null;
     rowCount: number;
@@ -34,6 +44,7 @@ export type WireExportReconciliationDetail = {
     createdAt: string;
   };
   reconciliation: {
+    repairOf?: ExportRepair | null;
     counts: {
       requested: number;
       included: number;
@@ -88,6 +99,8 @@ function mergeDetail(
   ).length;
   return {
     ...incoming,
+    repairSourceObservations:
+      incoming.repairSourceObservations ?? current.repairSourceObservations,
     reconciliation: {
       ...incoming.reconciliation,
       members,
@@ -113,6 +126,31 @@ export function ExportReconciliationPanel({
     parent: initialDetail,
   });
   const latestReload = useRef(0);
+  const [showRepair, setShowRepair] = useState(false);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairError, setRepairError] = useState(false);
+  const active = useRef(true);
+  const repairRequest = useRef(0);
+  const currentParent = useRef(initialDetail);
+  currentParent.current = initialDetail;
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    setRepairBusy(false);
+    repairRequest.current += 1;
+  }, [initialDetail]);
+  useEffect(() => {
+    setShowRepair(false);
+    setRepairError(false);
+    repairRequest.current += 1;
+  }, [
+    initialDetail.attempt.id,
+    initialDetail.capabilities.canGenerateBulkUpdate,
+  ]);
   const { detail } = view;
   // Update during render so children never commit stale predecessor props. This
   // retains the same form instance and its in-flight/idempotency refs.
@@ -130,6 +168,12 @@ export function ExportReconciliationPanel({
     if (!response.ok)
       throw new Error(`Unable to reload export status (${response.status})`);
     const incoming = (await response.json()) as WireExportReconciliationDetail;
+    if (
+      incoming.attempt?.id !== detail.attempt.id ||
+      !incoming.reconciliation ||
+      !incoming.capabilities
+    )
+      throw new Error("Incomplete export status");
     setView((current) => {
       if (
         current.detail.attempt.id !== detail.attempt.id ||
@@ -149,8 +193,57 @@ export function ExportReconciliationPanel({
       };
     });
   }
+  async function prepareRepair() {
+    if (showRepair) {
+      setShowRepair(false);
+      return;
+    }
+    if (repairBusy || !detail.capabilities.canGenerateBulkUpdate) return;
+    const parent = currentParent.current,
+      request = ++repairRequest.current;
+    const owns = () =>
+      active.current &&
+      currentParent.current === parent &&
+      repairRequest.current === request;
+    setRepairBusy(true);
+    setRepairError(false);
+    try {
+      await reload();
+      if (owns()) setShowRepair(true);
+    } catch {
+      if (owns()) setRepairError(true);
+    } finally {
+      if (owns()) setRepairBusy(false);
+    }
+  }
   const { attempt, reconciliation, capabilities } = detail;
   const ready = attempt.artifactStatus === "ready";
+  const rejectedMembers = reconciliation.members.filter(
+    (member) =>
+      member.outcome === "included" &&
+      member.latestResult?.outcome === "rejected",
+  );
+  const repairListings = rejectedMembers.flatMap((member) => {
+    const attested = detail.repairSourceObservations?.find(
+      (listing) => listing.listingId === member.listingId,
+    );
+    return attested
+      ? [
+          {
+            listingId: attested.listingId,
+            contentDigest: attested.contentDigest,
+          },
+        ]
+      : [];
+  });
+  const repair: ExportRepair = {
+    exportAttemptId: attempt.id,
+    members: rejectedMembers.map((member) => ({
+      listingId: member.listingId,
+      resultId: member.latestResult!.id,
+      revision: member.latestResult!.revision,
+    })),
+  };
   return (
     <article
       className="reconciliation-panel"
@@ -175,6 +268,12 @@ export function ExportReconciliationPanel({
           {formatHkDate(attempt.createdAt, locale)}
         </time>
       </p>
+      {reconciliation.repairOf ? (
+        <p>
+          {t("修復來源匯出", "Repair of export attempt")}{" "}
+          <code>{reconciliation.repairOf.exportAttemptId}</code>
+        </p>
+      ) : null}
       <dl className="reconciliation-counts">
         <div>
           <dt>{t("要求", "Requested")}</dt>
@@ -226,6 +325,74 @@ export function ExportReconciliationPanel({
           )}
         </p>
       )}
+      {ready &&
+      capabilities.canGenerateBulkUpdate &&
+      rejectedMembers.length > 0 ? (
+        <section aria-label={t("修復被拒絕項目", "Repair rejected items")}>
+          <p>
+            {t(
+              "先開啟被拒絕商品修正內容並重新批准，再預覽修復檔案。已接受項目不會重送。",
+              "Repair and reapprove the rejected listings before previewing a repair file. Accepted items are not resent.",
+            )}
+          </p>
+          <ul>
+            {rejectedMembers.map((member) => (
+              <li key={member.listingId}>
+                <a href={"/listings/" + member.listingId + "?returnTo=%2Fjobs"}>
+                  {t("審核被拒絕商品", "Review rejected listing")}{" "}
+                  {member.listingId}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={repairBusy}
+            onClick={() => void prepareRepair()}
+          >
+            {t(
+              "預覽只含拒絕項目的修復 XLSX",
+              "Preview rejected-only repair XLSX",
+            )}
+          </button>
+          {showRepair ? (
+            <ul>
+              {detail.repairSourceObservations?.map((source) => (
+                <li key={source.listingId}>
+                  {source.listingId} ·{" "}
+                  {t("目前來源匯入", "Current source import")}{" "}
+                  <code>{source.sourceImportId}</code> ·{" "}
+                  <code>{source.remoteProductId}</code>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {repairError ? (
+            <p role="alert">
+              {t(
+                "未能載入目前的修復來源，請重試。",
+                "Current repair sources could not be loaded. Retry.",
+              )}
+            </p>
+          ) : null}
+          {showRepair && repairListings.length === rejectedMembers.length ? (
+            <BulkExportPanel
+              listings={repairListings}
+              canGenerate={capabilities.canGenerateBulkUpdate}
+              repair={repair}
+            />
+          ) : null}
+          {showRepair && repairListings.length !== rejectedMembers.length ? (
+            <p>
+              {t(
+                "目前來源身份不完整或已變更，請開啟商品核實來源。",
+                "Current source identity is incomplete or changed. Open the listing and check its source.",
+              )}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <ul className="reconciliation-members">
         {reconciliation.members.map((member) => (
           <li key={member.listingId} data-listing-id={member.listingId}>

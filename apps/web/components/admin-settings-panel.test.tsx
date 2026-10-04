@@ -64,7 +64,10 @@ describe("AdminSettingsPanel", () => {
   });
 
   it("pre-fills the color input with the fetched brandBackgroundColor", async () => {
-    const fetcher = stubFetch({ brandBackgroundColor: "#112233" });
+    const fetcher = stubFetch({
+      brandBackgroundColor: "#112233",
+      digest: "a".repeat(64),
+    });
 
     const { container } = await mountPanel();
 
@@ -78,10 +81,16 @@ describe("AdminSettingsPanel", () => {
 
   it("submits the new color via POST /api/workspace/settings", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ brandBackgroundColor: "#112233" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          brandBackgroundColor: "#112233",
+          digest: "a".repeat(64),
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetcher);
 
@@ -120,7 +129,50 @@ describe("AdminSettingsPanel", () => {
     expect(postCall?.[0]).toBe("/api/workspace/settings");
     expect(JSON.parse((postCall?.[1] as RequestInit).body as string)).toEqual({
       brandBackgroundColor: "#abcdef",
+      expectedDigest: "a".repeat(64),
     });
+  });
+
+  it("preserves conflicting color until an explicit compare or discard reload", async () => {
+    let latest = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (_url, init) => {
+        if (init?.method === "POST") {
+          latest = true;
+          return Response.json(
+            { message: "Settings changed" },
+            { status: 409 },
+          );
+        }
+        return Response.json({
+          brandBackgroundColor: latest ? "#445566" : "#112233",
+          digest: (latest ? "b" : "a").repeat(64),
+        });
+      }),
+    );
+    const { container } = await mountPanel();
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="color"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "#abcdef");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const button = (text: string) =>
+      Array.from(container.querySelectorAll("button")).find((b) =>
+        b.textContent?.includes(text),
+      )!;
+    await act(async () => button("儲存 Save").click());
+    expect(input.value).toBe("#abcdef");
+    await act(async () => button("Compare latest settings").click());
+    expect(input.value).toBe("#abcdef");
+    expect(container.textContent).toContain("#445566");
+    await act(async () => button("Reload and discard my edits").click());
+    expect(input.value).toBe("#445566");
   });
 
   it("shows an error banner when the initial load fails", async () => {

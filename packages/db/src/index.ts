@@ -38,6 +38,8 @@ export { PIPELINE_STEP_LEASE_MS } from "./repositories/pipeline-runs.js";
 export type {
   AiRunRepository,
   AiRunCostSummary,
+  OwnedAiCostMetadata,
+  UnknownAiCostReference,
   AppendAiRunInput,
 } from "./repositories/ai-runs.js";
 export type { WorkspaceRepository } from "./repositories/workspaces.js";
@@ -242,3 +244,26 @@ export {
 export * from "./wine-display.js";
 export * from "./wine-proposal-diff.js";
 export type { DraftCatalogReadItem } from "./repositories/workspace-reads.js";
+
+export type {
+  AssignmentMember,
+  AssignmentRole,
+  ListingAssignment,
+  AssignmentResult,
+  AssignmentOutcome,
+  ApplyAssignmentInput,
+  ListingAssignmentRepository,
+} from "./repositories/listing-assignments.js";
+
+export {
+  QUALITY_ASSESSMENT_VERSION,
+  QualityContentAssessmentError,
+  type QualityProjectionRepository,
+  type QualityProjectionSummary,
+  type QualityContentAssessor,
+} from "./repositories/quality-projection.js";
+
+export {
+  computeCurrentContentGaps,
+  type ContentAssessmentState,
+} from "./quality-content-assessor.js";

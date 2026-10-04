@@ -1,0 +1,190 @@
+{
+  "stage": "repaired-cloud-lifecycle-audit",
+  "startedAt": "2026-10-02T17:08:03.256Z",
+  "sourceSha": "9dd64bf1e71dfabd8968d99434b6c80fdc44202e",
+  "checks": [
+    {
+      "id": "non-bypass-runtime",
+      "pass": true
+    },
+    {
+      "id": "reviewer-session",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "server-reviewer-identity",
+      "pass": true
+    },
+    {
+      "id": "current-0",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "current-1",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "current-2",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "current-3",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "current-4",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "new-preview",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "fresh-real-export-selection",
+      "pass": true
+    },
+    {
+      "id": "new-export",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "new-ready-attempt",
+      "pass": true
+    },
+    {
+      "id": "new-download",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "repeat-export",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "repeat-same-attempt",
+      "pass": true
+    },
+    {
+      "id": "repeat-download",
+      "pass": true,
+      "status": 200
+    },
+    {
+      "id": "immutable-new-download",
+      "pass": true
+    },
+    {
+      "id": "one-terminal-per-included-draft",
+      "pass": true,
+      "drafts": 5,
+      "events": 5
+    },
+    {
+      "id": "original-events-not-backfilled",
+      "pass": true
+    },
+    {
+      "id": "lifecycle-audit-0",
+      "pass": true,
+      "missing": 0,
+      "foreign": 0
+    },
+    {
+      "id": "lifecycle-audit-1",
+      "pass": true,
+      "missing": 0,
+      "foreign": 0
+    },
+    {
+      "id": "lifecycle-audit-2",
+      "pass": true,
+      "missing": 0,
+      "foreign": 0
+    },
+    {
+      "id": "lifecycle-audit-3",
+      "pass": true,
+      "missing": 0,
+      "foreign": 0
+    },
+    {
+      "id": "lifecycle-audit-4",
+      "pass": true,
+      "missing": 0,
+      "foreign": 0
+    },
+    {
+      "id": "no-ai-rerun",
+      "pass": true,
+      "callsBefore": 10,
+      "callsAfter": 10
+    }
+  ],
+  "stops": [
+    {
+      "id": "wukong-listing-preview",
+      "pauseAcknowledged": true
+    },
+    {
+      "id": "wukong-shopline-preview",
+      "pauseAcknowledged": true
+    },
+    {
+      "id": "worker-ingress-cron",
+      "acknowledged": true
+    },
+    {
+      "id": "staging-compute",
+      "acknowledged": true
+    }
+  ],
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "outgoingEmail": 0,
+  "productionChanged": false,
+  "audit": [
+    {
+      "member": 1,
+      "passed": true,
+      "missingActions": [],
+      "accessibleForeignRecordCount": 0
+    },
+    {
+      "member": 2,
+      "passed": true,
+      "missingActions": [],
+      "accessibleForeignRecordCount": 0
+    },
+    {
+      "member": 3,
+      "passed": true,
+      "missingActions": [],
+      "accessibleForeignRecordCount": 0
+    },
+    {
+      "member": 4,
+      "passed": true,
+      "missingActions": [],
+      "accessibleForeignRecordCount": 0
+    },
+    {
+      "member": 5,
+      "passed": true,
+      "missingActions": [],
+      "accessibleForeignRecordCount": 0
+    }
+  ],
+  "outcome": "repaired-cloud-lifecycle-audit-passed",
+  "finishedAt": "2026-10-02T17:10:27.664Z",
+  "durationSeconds": 144,
+  "actualBilling": "not-measured"
+}

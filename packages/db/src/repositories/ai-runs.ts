@@ -45,6 +45,33 @@ export type AiRunCostSummary = {
   unknownCostRunCount: number;
 };
 
+export type UnknownAiCostReference = {
+  aiRunId: string;
+  listingId: string;
+  pipelineRunId: string | null;
+  batchId: string | null;
+  stage: string | null;
+  createdAt: string;
+};
+export type OwnedAiCostMetadata = AiRunCostSummary & {
+  unknownCostReferences: {
+    asOf: string;
+    total: number;
+    limit: 25;
+    hasMore: boolean;
+    items: UnknownAiCostReference[];
+  };
+};
+const SAFE_COST_STAGES = new Set([
+  "extract",
+  "generate",
+  "extraction",
+  "generation",
+  "verification",
+  "verification_deep",
+  "quality_check",
+]);
+
 export type BeginAiInvocationInput = {
   listingId: string;
   pipelineRunId: string;
@@ -77,6 +104,7 @@ export type FinalizeAiInvocationInput = {
 };
 
 export type AiRunRepository = {
+  summarizeOwnedCostMetadata(): Promise<OwnedAiCostMetadata>;
   beginInvocation(input: BeginAiInvocationInput): Promise<{ claimed: boolean }>;
   finalizeInvocation(input: FinalizeAiInvocationInput): Promise<boolean>;
   append(input: AppendAiRunInput): Promise<void>;
@@ -107,6 +135,64 @@ export function createAiRunRepository(
   scope: WorkspaceScope,
 ): AiRunRepository {
   return {
+    async summarizeOwnedCostMetadata() {
+      scope.assertOpen();
+      // This exact live population powers BOTH the NULL count/references and known subtotal.
+      // Owned lineage joins never echo a foreign pointer, and archive visibility never erases spend.
+      const [row] = await transaction.execute(sql`
+        with owned as materialized (
+          select a.id,a.listing_id,a.pipeline_run_id,a.stage,a.created_at,a.estimated_cost_usd
+          from ai_runs a join listing_drafts d on d.workspace_id=${workspaceId} and d.id=a.listing_id
+          where a.workspace_id=${workspaceId}
+        ), unknown_items as (
+          select a.id,a.listing_id,p.id pipeline_run_id,b.id batch_id,a.stage,a.created_at
+          from owned a
+          left join listing_pipeline_runs p on p.workspace_id=${workspaceId} and p.listing_id=a.listing_id and p.id=a.pipeline_run_id
+          left join lateral (
+            select batch.id from enrichment_batch_items item
+            join enrichment_batches batch on batch.workspace_id=${workspaceId} and batch.id=item.batch_id
+            where item.workspace_id=${workspaceId} and item.listing_id=a.listing_id and item.pipeline_run_id=p.id
+            order by batch.id limit 1
+          ) b on true
+          where a.estimated_cost_usd is null order by a.created_at desc,a.id desc limit 25
+        )
+        select clock_timestamp() as as_of,
+          (select coalesce(sum(estimated_cost_usd),0)::text from owned) as known,
+          (select count(*)::int from owned where estimated_cost_usd is null) as unknown,
+          coalesce((select jsonb_agg(jsonb_build_object('aiRunId',id,'listingId',listing_id,'pipelineRunId',pipeline_run_id,'batchId',batch_id,'stage',stage,'createdAt',created_at) order by created_at desc,id desc) from unknown_items),'[]'::jsonb) as items
+      `);
+      if (!row) throw Error("AI cost metadata observation missing");
+      const total = Number(row.unknown),
+        knownCostUsd = Number(row.known);
+      if (
+        !Number.isSafeInteger(total) ||
+        total < 0 ||
+        !Number.isFinite(knownCostUsd) ||
+        knownCostUsd < 0 ||
+        !Array.isArray(row.items)
+      )
+        throw Error("AI cost metadata invariant");
+      const items = (row.items as UnknownAiCostReference[]).map((item) => ({
+        aiRunId: item.aiRunId,
+        listingId: item.listingId,
+        pipelineRunId: item.pipelineRunId,
+        batchId: item.batchId,
+        stage:
+          item.stage && SAFE_COST_STAGES.has(item.stage) ? item.stage : null,
+        createdAt: new Date(item.createdAt).toISOString(),
+      }));
+      return {
+        knownCostUsd,
+        unknownCostRunCount: total,
+        unknownCostReferences: {
+          asOf: new Date(row.as_of as string).toISOString(),
+          total,
+          limit: 25,
+          hasMore: total > items.length,
+          items,
+        },
+      };
+    },
     async beginInvocation(input) {
       scope.assertOpen();
       const inserted = await transaction.execute(

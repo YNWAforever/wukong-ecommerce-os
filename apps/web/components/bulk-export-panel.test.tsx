@@ -1,3 +1,4 @@
+import { EXPORT_CONTENT_FIELDS } from "../lib/bulk-export-contract";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -19,6 +20,43 @@ function listingsOf(
   return ids.map((listingId) => ({ listingId, contentDigest }));
 }
 
+function stubExportFetch(fetcher: typeof fetch) {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/listings/export/preview") {
+      const submitted = JSON.parse(String(init?.body));
+      return Promise.resolve(
+        Response.json({
+          previewSha256: "a".repeat(64),
+          fields: submitted.fields,
+          rowCount: submitted.listingIds.length,
+          manifest: [],
+          changes: [],
+          neutralizedQuantityDeltas: [],
+        }),
+      );
+    }
+    return fetcher(input, init);
+  });
+}
+async function selectExportFields(container: HTMLElement) {
+  await act(async () => {
+    container
+      .querySelectorAll<HTMLInputElement>("[data-export-fields] input")
+      .forEach((input) => {
+        if (!input.checked) input.click();
+      });
+  });
+}
+async function previewExport(container: HTMLElement) {
+  const action = container.querySelector<HTMLButtonElement>("button")!;
+  if (action.textContent?.includes("Preview Bulk Update XLSX"))
+    await act(async () => {
+      action.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+}
+
 async function submitExport(
   root: ReturnType<typeof createRoot>,
   container: HTMLDivElement,
@@ -32,11 +70,13 @@ async function submitExport(
       }),
     ),
   );
+  await selectExportFields(container);
   await act(async () =>
     container
       .querySelector<HTMLInputElement>('input[type="checkbox"]')!
       .click(),
   );
+  await previewExport(container);
   await act(async () => {
     container.querySelector<HTMLButtonElement>("button")!.click();
     await Promise.resolve();
@@ -51,8 +91,7 @@ describe.each([
   [200, { exportAttemptId: null, rowCount: 0 }],
 ])("no-attempt response status %i", (status, body) => {
   it("does not present an unsuccessful or malformed response as a completed zero-row export", async () => {
-    vi.stubGlobal(
-      "fetch",
+    stubExportFetch(
       vi.fn<typeof fetch>().mockResolvedValue(Response.json(body, { status })),
     );
     const container = document.createElement("div");
@@ -90,7 +129,7 @@ it("surfaces the server's attestation_incomplete code as actionable copy, not it
       { status: 400 },
     ),
   );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -129,7 +168,7 @@ it("keeps exact mixed zero-row counts and member context bound to the submitted 
       ],
     }),
   );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -190,7 +229,7 @@ it("gates generation on permission and explicit freshness, then preserves submit
       rowCount: 0,
     }),
   );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -202,14 +241,16 @@ it("gates generation on permission and explicit freshness, then preserves submit
       }),
     ),
   );
+  await selectExportFields(container);
   const button = container.querySelector("button")!;
-  expect(button.textContent).toContain("Generate Bulk Update XLSX");
+  expect(button.textContent).toContain("Preview Bulk Update XLSX");
   expect(button.disabled).toBe(true);
   const checkbox = container.querySelector<HTMLInputElement>(
     'input[type="checkbox"]',
   )!;
   await act(async () => checkbox.click());
   expect(button.disabled).toBe(false);
+  await previewExport(container);
   await act(async () => {
     button.click();
     await Promise.resolve();
@@ -221,6 +262,8 @@ it("gates generation on permission and explicit freshness, then preserves submit
       method: "POST",
       body: JSON.stringify({
         listingIds: ["listing-a"],
+        fields: [...EXPORT_CONTENT_FIELDS],
+        previewSha256: "a".repeat(64),
         attestation: { listings: listingsOf(["listing-a"]) },
       }),
     }),
@@ -246,7 +289,7 @@ it("sends the attestation the operator was actually shown, not a hardcoded boole
     .mockResolvedValue(
       Response.json({ exportAttemptId: null, rowCount: 0, manifest: [] }),
     );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -258,6 +301,8 @@ it("sends the attestation the operator was actually shown, not a hardcoded boole
   const body = JSON.parse(String(init!.body));
   expect(body).toEqual({
     listingIds: ["listing-a", "listing-b"],
+    fields: [...EXPORT_CONTENT_FIELDS],
+    previewSha256: "a".repeat(64),
     attestation: { listings: shown },
   });
   expect(body).not.toHaveProperty("freshnessAttested");
@@ -279,6 +324,7 @@ it("invalidates freshness when the selected listing IDs change", async () => {
       }),
     ),
   );
+  await selectExportFields(container);
   await act(async () =>
     container
       .querySelector<HTMLInputElement>('input[type="checkbox"]')!
@@ -323,6 +369,7 @@ it("drops the attestation when a digest changes beneath an unchanged selection",
       }),
     ),
   );
+  await selectExportFields(container);
   await act(async () =>
     container
       .querySelector<HTMLInputElement>('input[type="checkbox"]')!
@@ -393,7 +440,7 @@ it("keeps a POST-created attempt visible and retries only its detail lookup", as
         },
       }),
     );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -405,11 +452,13 @@ it("keeps a POST-created attempt visible and retries only its detail lookup", as
       }),
     ),
   );
+  await selectExportFields(container);
   await act(async () =>
     container
       .querySelector<HTMLInputElement>('input[type="checkbox"]')!
       .click(),
   );
+  await previewExport(container);
   await act(async () => {
     container.querySelector<HTMLButtonElement>("button")!.click();
     await Promise.resolve();
@@ -449,7 +498,7 @@ it("shows the stable attempt carried by an artifact error response", async () =>
     .mockResolvedValueOnce(
       Response.json({ message: "detail unavailable" }, { status: 503 }),
     );
-  vi.stubGlobal("fetch", fetcher);
+  stubExportFetch(fetcher);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -461,11 +510,13 @@ it("shows the stable attempt carried by an artifact error response", async () =>
       }),
     ),
   );
+  await selectExportFields(container);
   await act(async () =>
     container
       .querySelector<HTMLInputElement>('input[type="checkbox"]')!
       .click(),
   );
+  await previewExport(container);
   await act(async () => {
     container.querySelector<HTMLButtonElement>("button")!.click();
     await Promise.resolve();
@@ -484,3 +535,194 @@ it("shows the stable attempt carried by an artifact error response", async () =>
 
 // Exercise the selected locale explicitly; bilingual coverage lives in listing-detail-locale.test.tsx.
 vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
+
+it("requires an explicit field selection and a reviewed preview before generating", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(BulkExportPanel, {
+          listings: listingsOf(["listing-a"]),
+          canGenerate: true,
+        }),
+      ),
+    );
+    const fields = container.querySelector("[data-export-fields]");
+    expect(fields).not.toBeNull();
+    expect(fields!.querySelectorAll('input[type="checkbox"]')).toHaveLength(8);
+    expect(fields!.querySelectorAll("input:checked")).toHaveLength(0);
+    const action = container.querySelector<HTMLButtonElement>("button")!;
+    expect(action.textContent).toContain("Preview Bulk Update XLSX");
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>(".freshness-attestation input")!
+        .click(),
+    );
+    expect(action.disabled).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    document.body.innerHTML = "";
+  }
+});
+
+it("retains explicit choices after a generation conflict and requires a fresh preview", async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (url, init) => {
+      if (String(url).endsWith("/preview")) {
+        const submitted = JSON.parse(String(init?.body));
+        return Response.json({
+          previewSha256: "b".repeat(64),
+          fields: submitted.fields,
+          rowCount: 1,
+          manifest: [],
+          changes: [],
+          neutralizedQuantityDeltas: [],
+        });
+      }
+      return Response.json(
+        { code: "export_preview_changed", message: "PRIVATE DATABASE DETAIL" },
+        { status: 409 },
+      );
+    });
+  vi.stubGlobal("fetch", fetcher);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await submitExport(root, container, listingsOf(["a"]));
+  expect(
+    container.querySelectorAll("[data-export-fields] input:checked"),
+  ).toHaveLength(8);
+  expect(
+    container.querySelector<HTMLInputElement>(".freshness-attestation input")!
+      .checked,
+  ).toBe(true);
+  expect(container.querySelector("button")!.textContent).toContain(
+    "Preview Bulk Update XLSX",
+  );
+  expect(container.textContent).not.toContain("PRIVATE DATABASE DETAIL");
+  expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toMatchObject({
+    previewSha256: "b".repeat(64),
+    fields: [...EXPORT_CONTENT_FIELDS],
+  });
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it("does not accept a deferred preview from a superseded selection", async () => {
+  let finish!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listings: listingsOf(["old"]),
+        canGenerate: true,
+      }),
+    ),
+  );
+  await selectExportFields(container);
+  await act(async () =>
+    container
+      .querySelector<HTMLInputElement>(".freshness-attestation input")!
+      .click(),
+  );
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("button")!.click();
+  });
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listings: listingsOf(["new"]),
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () => {
+    finish(
+      Response.json({
+        previewSha256: "a".repeat(64),
+        fields: [...EXPORT_CONTENT_FIELDS],
+        rowCount: 1,
+        manifest: [{ listingId: "old", outcome: "included", versionId: "v" }],
+        changes: [],
+        neutralizedQuantityDeltas: [],
+      }),
+    );
+  });
+  expect(container.querySelector("button")!.textContent).toContain(
+    "Preview Bulk Update XLSX",
+  );
+  expect(
+    container.querySelector<HTMLInputElement>(".freshness-attestation input")!
+      .checked,
+  ).toBe(false);
+  expect(container.textContent).not.toContain("old");
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});
+
+it("does not apply deferred attempt details to a newer selection", async () => {
+  let finish!: (response: Response) => void;
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (url) => {
+    if (String(url) === "/api/listings/export")
+      return Response.json({
+        exportAttemptId: "old-attempt",
+        artifactStatus: "ready",
+      });
+    return new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  });
+  stubExportFetch(fetcher);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await submitExport(root, container, listingsOf(["old"]));
+  await act(async () =>
+    root.render(
+      createElement(BulkExportPanel, {
+        listings: listingsOf(["new"]),
+        canGenerate: true,
+      }),
+    ),
+  );
+  await act(async () =>
+    finish(
+      Response.json({
+        attempt: { id: "old-attempt", artifactStatus: "ready", rowCount: 1 },
+        reconciliation: {
+          counts: {
+            requested: 1,
+            included: 1,
+            excluded: 0,
+            noOp: 0,
+            accepted: 0,
+            rejected: 0,
+            unreported: 1,
+          },
+          verificationStatus: "unverified",
+          members: [],
+        },
+        capabilities: {
+          canGenerateBulkUpdate: true,
+          canRecordImportResult: true,
+        },
+      }),
+    ),
+  );
+  expect(
+    container.querySelector('[data-export-attempt-id="old-attempt"]'),
+  ).toBeNull();
+  await act(async () => root.unmount());
+  vi.unstubAllGlobals();
+});

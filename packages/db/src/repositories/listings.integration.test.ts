@@ -431,6 +431,17 @@ describe("workspace isolation", () => {
   it("uses workspace-consistent composite foreign keys for every tenant relationship", async () => {
     const expected = [
       [
+        "listing_quality_assessments",
+        ["workspace_id", "live_listing_id"],
+        "listing_drafts",
+      ],
+      ["listing_assignments", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
+        "listing_assignment_requests",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
         "listing_version_claim_supports",
         ["workspace_id", "listing_id", "version_id"],
         "listing_versions",

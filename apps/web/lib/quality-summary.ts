@@ -29,7 +29,29 @@ export type QualitySummary = {
   invalidCurrentContent?: number;
   scope?: "workspace_active_versions" | "workspace_current_content";
   costScope?: "all_history_for_workspace_listings";
-  consistency?: "bounded_scan";
+  consistency?: "bounded_scan" | "revision_aware_projection";
+  assessmentVersion?: "opak-current-content-v1";
+  projection?: {
+    state: "ready" | "pending" | "failed";
+    asOf: string | null;
+    stale: boolean;
+    pendingCount: number;
+    failedCount: number;
+  };
+  unknownCostReferences?: {
+    asOf: string;
+    total: number;
+    limit: 25;
+    hasMore: boolean;
+    items: Array<{
+      aiRunId: string;
+      listingId: string;
+      pipelineRunId: string | null;
+      batchId: string | null;
+      stage: string | null;
+      createdAt: string;
+    }>;
+  };
   scanStartedAt?: string;
   scanCompletedAt?: string;
 };
