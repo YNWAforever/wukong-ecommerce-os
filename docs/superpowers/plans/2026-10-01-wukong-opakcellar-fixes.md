@@ -577,3 +577,14 @@ Rulings: retain the native POST security fix on compatible rollback; correct mal
 [Routing change, ruling, commands/evidence limits and rollback](../../runbooks/opak-api-middleware-2026-10-04.md).
 
 [Executed metrics, causal limits, failures, commands and rollback](../../runbooks/opak-catalog-stage-attribution-2026-10-04.md). Historical unchecked statements are superseded only by explicitly executed evidence, not by a new release authorization.
+
+## 2026-10-04 HKT T10 verified API invocation supplement
+
+- [x] Exact source92d15ca0 CI37195229837 SUCCESS/43steps; guarded6bec8486 differs only by existing branch deployment guard. READYdpl_7dq/iad1/staging alias independently verified; Workerfcf/source593 unchanged.
+- [x] One bounded same20k after-window15/15/144.629s: normal native auth/server workspace/role, anonymous catalog401 and page307/callback, complete cardinality/cursor identity and original/target ten-domain hashes unchanged.42HTTP200 samples/0body/cardinality/blocked-row errors.
+- [x] Exact provider grouped lookup reports46catalog function/no middleware row versus prior111/111. Slash-bounded API invocation waste is removed; no duration or unique global latency root inferred.
+- [x] This window warm p95 API655.79/native outer527.83ms both pass800ms, while APImax1596.49ms and original827.78/prior1045.56/805.70ms failures remain. Nativeh2 resourcep95524.0ms is separate; no employee/field-INP or production claim.
+- [x] Five stop acknowledgements and independent430s connector final disabled-idle0.25CU; exactWorker/no probes/public404 verified. Two local URL-scope helper failures retained and separately continued using established URL/successful metadata; no sampler rerun. Reported billing1.45954USD shared/lagged, paidAI/realSHOPLINE/newQueue/newBatch/mail0.
+- [ ] New docs-only exactCI/PR readback/immutable archive terminal receipts are maintained outside Git. UAT remains15PASS/3PARTIAL/12BLOCKED; production exact authority/recovery/schema/role/cache/effective Web/original500, paid-human quality, matched employee20minutes and first trueSHOPLINE/merchant5→20→100 gates remain open. Conditional main merge held.
+
+[Executed matcher behavior, full metrics, retained failures and rollback](../../runbooks/opak-api-middleware-2026-10-04.md). Earlier pending statements are superseded only within this explicit scope; no migration/env/secret/Worker source or production mutation.
