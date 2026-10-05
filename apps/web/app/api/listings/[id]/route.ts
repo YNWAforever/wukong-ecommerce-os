@@ -1,4 +1,3 @@
-import type { WorkspaceRepositories } from "@wukong/db";
 import { z } from "zod";
 import { readWineProgress } from "../../../../lib/wine-progress";
 import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
