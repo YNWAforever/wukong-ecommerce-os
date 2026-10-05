@@ -59,14 +59,17 @@ export function AdminMembersPanel() {
   }, [load]);
 
   const run = useCallback(
-    async (work: () => Promise<void>, success: string) => {
+    // `work` may return a warning: the action committed, but part of it did
+    // not, so the outcome is neither a success nor a failure to retry blindly.
+    async (work: () => Promise<string | void>, success: string) => {
       setBusy(true);
       setError(null);
       setMessage(null);
       try {
-        await work();
+        const warning = await work();
         await load();
-        setMessage(success);
+        if (warning) setError(warning);
+        else setMessage(success);
       } catch (runError) {
         setError(
           runError instanceof Error
@@ -89,6 +92,11 @@ export function AdminMembersPanel() {
       });
       if (!response.ok) throw await responseError(response);
       setInviteEmail("");
+      const body = (await response.json().catch(() => null)) as {
+        emailDelivery?: string;
+      } | null;
+      if (body?.emailDelivery === "failed")
+        return "邀請已建立，但電郵未能寄出；請再次邀請以重寄 The invite was saved, but its email could not be sent. Invite the same address again to resend.";
     }, "邀請已送出 Invite sent");
 
   const changeRole = (userId: string, role: AssignableRole) =>

@@ -157,5 +157,15 @@ describe("POST /api/workspace/members/invite", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.email).toBe("new@opak.test");
+    expect(body.emailDelivery).toBe("failed");
+  });
+
+  it("reports a requested email delivery when sending does not fail", async () => {
+    const { handler } = harness("admin");
+    const response = await handler(
+      makeRequest({ email: "new@opak.test", role: "operator" }),
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).emailDelivery).toBe("requested");
   });
 });
