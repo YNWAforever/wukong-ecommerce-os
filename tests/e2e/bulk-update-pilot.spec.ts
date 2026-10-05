@@ -94,7 +94,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
     await page.locator("#bulk-source-confirmation").check();
     await submit.click();
     await expect(
-      page.locator("form.intake-form").getByRole("status"),
+      page.locator("form.intake-form").getByRole("alert"),
     ).toContainText("Enter the SHOPLINE export time.");
     expect(requests).toHaveLength(0);
     await time.fill("2026-01-01T00:15");
@@ -106,7 +106,7 @@ test("operator supplies explicit Hong Kong export time and retries a synthetic w
     );
     await submit.click();
     await expect(
-      page.locator("form.intake-form").getByRole("status"),
+      page.locator("form.intake-form").getByRole("alert"),
     ).toContainText("Could not reach the server");
     await expect(time).toHaveValue("2026-01-01T00:15");
     const success = page.waitForResponse(

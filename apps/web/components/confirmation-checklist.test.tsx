@@ -130,6 +130,9 @@ describe("ConfirmationChecklist rendering", () => {
     );
     expect(incompleteMarkup).toContain('data-all-confirmed="false"');
     expect(incompleteMarkup).toContain("0 / 15");
+    // Anchored, and links back to the approval action it unblocks.
+    expect(incompleteMarkup).toContain('id="review-confirmations"');
+    expect(incompleteMarkup).toContain('href="#listing-approval-actions"');
 
     const completeMarkup = renderToStaticMarkup(
       createElement(ConfirmationChecklist, {

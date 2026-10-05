@@ -22,7 +22,8 @@
 
 .metricValue {
   color: var(--navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
   font-size: 22px;
   line-height: 1;
 }
@@ -64,7 +65,7 @@
   padding: 10px 12px;
   color: var(--ink);
   background: white;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
 }
 
@@ -75,7 +76,7 @@
   min-height: 44px;
   max-width: 180px;
   padding: 8px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
   background: white;
 }

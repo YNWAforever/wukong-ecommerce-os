@@ -180,6 +180,12 @@ describe("browser import contract", () => {
     expect(fileInput.files?.[0]).toBe(file);
     expect(timeInput.value).toBe("2026-08-01T08:00");
     expect(container.textContent).toContain("Could not reach the server");
+    // The failure is announced as an alert and says what was kept for retry.
+    const failure = container.querySelector('[role="alert"]');
+    expect(failure?.textContent).toContain("Could not reach the server");
+    expect(failure?.textContent).toContain("retry.xlsx");
+    expect(failure?.textContent).toContain("2026-08-01 08:00");
+    expect(failure?.textContent).toMatch(/kept/i);
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
     document.body.innerHTML = "";

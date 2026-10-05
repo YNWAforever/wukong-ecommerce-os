@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { WorkbenchPage, WorkbenchQuery, WorkbenchKind } from "@wukong/db";
 import { useLocale } from "../lib/locale-context";
 import { useLatestRequest } from "../lib/use-latest-request";
+import { formatHkDate } from "../lib/ui-copy";
 import { workbenchCopy } from "../lib/workbench-copy";
 import {
   parseWorkbenchQuery,
@@ -79,15 +80,13 @@ export function WorkbenchClient() {
           <p>
             {copy.observed}:{" "}
             <time dateTime={matching.observedAt}>
-              {new Date(matching.observedAt).toLocaleString(locale, {
-                timeZone: "Asia/Hong_Kong",
-              })}
+              {formatHkDate(matching.observedAt, locale)}
             </time>
           </p>
         )}
       </div>
       <div className="workbench-layout">
-        <section className="workbench-panel">
+        <section className="workbench-panel" aria-busy={busy}>
           <div className="workbench-controls">
             <h2>
               {copy.states[query.state]}

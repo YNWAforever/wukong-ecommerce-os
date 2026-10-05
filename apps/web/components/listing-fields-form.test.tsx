@@ -144,6 +144,9 @@ describe("ListingFieldsForm", () => {
     );
 
     expect(markup).toContain('disabled=""');
+    // The incomplete notice links straight to the checklist it refers to.
+    expect(markup).toContain('href="#review-confirmations"');
+    expect(markup).toContain('id="listing-approval-actions"');
   });
 
   it("enables approval once every field and negative confirmation is checked and no flags block it", () => {

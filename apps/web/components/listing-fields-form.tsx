@@ -238,7 +238,7 @@ export function ListingFieldsForm({
                           · 「{field.evidence.excerpt}」
                         </span>
                       ) : (
-                        <span className="source-copy">
+                        <span className="source-copy source-missing">
                           {t("尚未有來源摘錄", "No source excerpt")}
                         </span>
                       )}
@@ -251,7 +251,7 @@ export function ListingFieldsForm({
         );
       })}
 
-      <div className="form-actions">
+      <div className="form-actions" id="listing-approval-actions">
         <button className="secondary-button" type="submit" disabled={!canEdit}>
           {busy ? commonCopy[locale].loading : t("儲存草稿", "Save draft")}
         </button>
@@ -302,7 +302,10 @@ export function ListingFieldsForm({
           {t(
             "請在下方確認清單勾選所有 8 個欄位與 7 項條件後才能批准上架。",
             "Confirm all 8 fields and 7 conditions in the checklist before approval.",
-          )}
+          )}{" "}
+          <a href="#review-confirmations">
+            {t("前往確認清單", "Go to the checklist")}
+          </a>
         </div>
       ) : null}
       {!canApprove ? (

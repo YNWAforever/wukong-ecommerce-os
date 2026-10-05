@@ -167,10 +167,12 @@ export function AdminMembersPanel() {
       <table className="members-table">
         <thead>
           <tr>
-            <th>Email</th>
+            <th>電郵 Email</th>
             <th>角色 Role</th>
             <th>狀態 Status</th>
-            <th aria-hidden="true" />
+            <th>
+              <span className="visually-hidden">操作 Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
