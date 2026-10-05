@@ -748,10 +748,15 @@ describe("CatalogControlCenter", () => {
     ];
 
     tiles.forEach((tile, index) => {
-      const labelledBy = tile.getAttribute("aria-labelledby");
-      expect(labelledBy).not.toBeNull();
-      const labelElement = document.getElementById(labelledBy!);
-      expect(labelElement?.textContent).toBe(expectedLabels[index]);
+      // WCAG 2.5.3: the name is the visible value followed by its label.
+      const ids = (tile.getAttribute("aria-labelledby") ?? "").split(" ");
+      expect(ids).toHaveLength(2);
+      expect(document.getElementById(ids[0]!)?.textContent).toBe(
+        tile.firstElementChild?.textContent,
+      );
+      expect(document.getElementById(ids[1]!)?.textContent).toBe(
+        expectedLabels[index],
+      );
     });
 
     await unmount(root);

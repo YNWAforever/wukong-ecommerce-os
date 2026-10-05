@@ -1107,9 +1107,10 @@ function Metric({
 }) {
   const locale = useLocale();
   const labelId = useId();
+  const valueId = useId();
   const content = (
     <>
-      <span className={styles.metricValue}>
+      <span className={styles.metricValue} id={valueId}>
         {value === undefined ? "—" : formatNumber(value, locale)}
       </span>
       <span className={styles.metricLabel} id={labelId}>
@@ -1121,13 +1122,17 @@ function Metric({
     <button
       type="button"
       className={styles.metric}
-      aria-labelledby={labelId}
+      aria-labelledby={`${valueId} ${labelId}`}
       onClick={onClick}
     >
       {content}
     </button>
   ) : (
-    <div className={styles.metric} role="group" aria-labelledby={labelId}>
+    <div
+      className={styles.metric}
+      role="group"
+      aria-labelledby={`${valueId} ${labelId}`}
+    >
       {content}
     </div>
   );
