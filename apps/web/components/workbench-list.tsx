@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { WorkbenchItem } from "@wukong/db";
 import type { Locale } from "../lib/locale";
+import { formatHkDate, formatNumber } from "../lib/ui-copy";
 import { workbenchCopy } from "../lib/workbench-copy";
 import { workbenchDestination } from "../lib/workbench-actions";
 export type WorkbenchCapabilities = {
@@ -40,7 +41,8 @@ export function WorkbenchList({
               {item.sourceLabel && <span>{item.sourceLabel} · </span>}
               {item.productCount !== null ? (
                 <span>
-                  {item.productCount.toLocaleString(locale)} {copy.products}{" "}
+                  {formatNumber(item.productCount, locale)}{" "}
+                  {item.productCount === 1 ? copy.product : copy.products}{" "}
                   ·{" "}
                 </span>
               ) : (
@@ -52,9 +54,7 @@ export function WorkbenchList({
                   : copy.updated}
                 :{" "}
                 <time dateTime={item.occurredAt}>
-                  {new Date(item.occurredAt).toLocaleString(locale, {
-                    timeZone: "Asia/Hong_Kong",
-                  })}
+                  {formatHkDate(item.occurredAt, locale)}
                 </time>
               </span>
             </div>

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Locale } from "../lib/locale";
+import { formatHkDate } from "../lib/ui-copy";
 import { WorkbenchClient } from "./workbench-client";
 const navigation = vi.hoisted(() => ({
   search: "",
@@ -243,3 +244,20 @@ it("distinguishes wholly empty workspace and respects viewer capability", async 
   expect(container.textContent).toContain("No tasks match these filters.");
   expect(container.textContent).not.toContain("No work yet.");
 });
+
+for (const locale of ["en", "zh-Hant"] as const) {
+  it(`formats row and observed times in Hong Kong style and counts one product in ${locale}`, async () => {
+    navigation.locale = locale;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(page())));
+    await mount();
+    await settle();
+    const row = container.querySelector("li")!;
+    expect(row.querySelector("time")?.textContent).toBe(
+      formatHkDate("2026-09-06T00:00:00Z", locale),
+    );
+    if (locale === "en") {
+      expect(row.textContent).toContain("1 product ·");
+      expect(row.textContent).not.toContain("1 products");
+    }
+  });
+}
