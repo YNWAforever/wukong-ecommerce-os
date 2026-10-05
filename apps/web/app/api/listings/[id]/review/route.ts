@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { readCopyClaimSupports } from "../../../../../lib/listing-claim-support";
 import { requireListingRecovery } from "../../../../../lib/listing-recovery-readiness";
 import { randomUUID } from "node:crypto";
@@ -31,7 +32,7 @@ type ReviewRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
 };

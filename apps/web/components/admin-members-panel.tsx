@@ -62,16 +62,19 @@ export function AdminMembersPanel() {
   }, [load]);
 
   const run = useCallback(
-    async (work: () => Promise<void>, success: string) => {
+    // `work` may return a warning: the action committed, but part of it did
+    // not, so the outcome is neither a success nor a failure to retry blindly.
+    async (work: () => Promise<string | void>, success: string) => {
       if (submitting.current) return false;
       submitting.current = true;
       setBusy(true);
       setError(null);
       setMessage(null);
       try {
-        await work();
+        const warning = await work();
         await load();
-        setMessage(success);
+        if (warning) setError(warning);
+        else setMessage(success);
         return true;
       } catch (runError) {
         setError(
@@ -102,7 +105,15 @@ export function AdminMembersPanel() {
       if (!response.ok) throw await responseError(response);
       setInviteEmail("");
       setInviteRole("viewer");
-    }, "邀請已送出 Invite sent");
+      const body = (await response.json().catch(() => null)) as {
+        emailDelivery?: string;
+      } | null;
+      // "requested" cannot confirm delivery: the auth flow answers every
+      // request the same way so it never reveals whether an address is
+      // eligible. Send failures and throttling show only in the auth audit.
+      if (body?.emailDelivery === "failed")
+        return "邀請已建立，但未能要求寄出電郵；請檢查電郵設定後再次邀請 The invite was saved, but its email could not be requested. Check the auth email settings, then invite the same address again.";
+    }, "邀請已建立，已要求寄出電郵 Invite saved; email requested");
   };
   useAdminDirtyGuard("members-invite", {
     dirty: Boolean(inviteEmail || inviteRole !== "viewer" || busy),

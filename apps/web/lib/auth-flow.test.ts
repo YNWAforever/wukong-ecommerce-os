@@ -12,6 +12,7 @@ function harness(
     enrollmentComplete?: boolean;
     lockedUntil?: Date | null;
     authResponse?: Response;
+    emailAllowed?: boolean;
   } = {},
 ) {
   const user =
@@ -38,6 +39,7 @@ function harness(
     completeEnrollment: vi.fn().mockResolvedValue(undefined),
     revokeUserSessions: vi.fn().mockResolvedValue(undefined),
     writeAuthAudit: vi.fn().mockResolvedValue(undefined),
+    allowAuthEmail: vi.fn().mockResolvedValue(options.emailAllowed ?? true),
   };
   const auth = {
     handler: vi
@@ -243,6 +245,52 @@ describe("invite-aware authentication flow", () => {
     });
     expect(denied.auth.handler).not.toHaveBeenCalled();
   });
+
+  it("counts every outgoing auth email against the normalized address", async () => {
+    const { flow, access } = harness({ credential: true });
+    await flow.requestMagicLink({ email: " ADMIN@example.com " });
+    expect(access.allowAuthEmail).toHaveBeenCalledExactlyOnceWith(
+      "admin@example.com",
+      NOW,
+    );
+  });
+
+  it.each([
+    [
+      "magic link",
+      { credential: true },
+      (flow: ReturnType<typeof harness>["flow"]) =>
+        flow.requestMagicLink({ email: "admin@example.com" }),
+    ],
+    [
+      "password reset",
+      { credential: true },
+      (flow: ReturnType<typeof harness>["flow"]) =>
+        flow.requestPasswordReset({ email: "admin@example.com" }),
+    ],
+    [
+      "enrollment",
+      { credential: false },
+      (flow: ReturnType<typeof harness>["flow"]) =>
+        flow.requestEnrollment({ email: "admin@example.com" }),
+    ],
+  ] as const)(
+    "sends no %s email once the address is throttled, answering identically",
+    async (_label, options, send) => {
+      const { flow, auth, access } = harness({
+        ...options,
+        emailAllowed: false,
+      });
+      await expect(send(flow)).resolves.toEqual({ accepted: true });
+      expect(auth.handler).not.toHaveBeenCalled();
+      expect(access.writeAuthAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: "failure",
+          reason: "auth_email_throttled",
+        }),
+      );
+    },
+  );
 
   it("uses a dashboard fallback for unsafe or malformed callback paths", () => {
     expect(safeCallbackPath("/listings?view=mine")).toBe("/listings?view=mine");

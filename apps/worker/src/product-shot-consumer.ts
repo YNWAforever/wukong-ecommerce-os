@@ -57,12 +57,15 @@ export async function consumeProductShotMessage(
       error instanceof ProductShotBusyError ||
       error instanceof ProductShotBudgetError;
     if (!waiting) {
-      console.error("product_shot_consumer_failure", {
-        category: runtime
-          ? "processing_failed"
-          : "runtime_initialization_failed",
-        attemptId: job.attemptId,
-      });
+      console.error(
+        JSON.stringify({
+          event: "product_shot_consumer_failure",
+          category: runtime
+            ? "processing_failed"
+            : "runtime_initialization_failed",
+          attemptId: job.attemptId,
+        }),
+      );
     }
     if (!finalDelivery) {
       return {
@@ -89,10 +92,13 @@ export async function consumeProductShotMessage(
     if (outcome !== "ended") {
       // Either the write failed, or the attempt had in fact been dispatched and
       // still owns its outcome. Both keep the message rather than losing it.
-      console.error("product_shot_consumer_unreconciled", {
-        attemptId: job.attemptId,
-        outcome: outcome ?? "write_failed",
-      });
+      console.error(
+        JSON.stringify({
+          event: "product_shot_consumer_unreconciled",
+          attemptId: job.attemptId,
+          outcome: outcome ?? "write_failed",
+        }),
+      );
       return { retryAfterSeconds: RETRY_AFTER_SECONDS };
     }
     return "ack";

@@ -556,6 +556,26 @@ describe("POST /api/listings/bulk-approve", () => {
     expect(audited).toHaveLength(2);
   });
 
+  it("logs an unexpected item failure as one safe JSON line naming the listing", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { handler } = makeHandler({ rows: { [id2]: { broken: true } } });
+      await handler(request({ items: [item(id1), item(id2)] }));
+      expect(log).toHaveBeenCalledOnce();
+      const [line] = log.mock.calls[0] ?? [];
+      expect(typeof line).toBe("string");
+      expect(JSON.parse(line as string)).toMatchObject({
+        event: "route_error",
+        reason: "internal_error",
+        listingId: id2,
+        errorName: "Error",
+      });
+      expect(line).not.toMatch(/postgres|password|private-host/);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("requires context even for callers directly invoking the shared service", async () => {
     const { repositoriesFor } = makeHandler();
     await expect(

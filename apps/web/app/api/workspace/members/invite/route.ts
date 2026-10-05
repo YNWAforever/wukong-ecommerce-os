@@ -71,6 +71,10 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
       // future bug in requestEnrollment) must not turn a real invite into
       // an error response -- the admin can always re-invite the same email
       // to resend, since createInvite upserts by (workspaceId, email).
+      // `emailDelivery` tells the admin which case happened. "requested" means
+      // the auth flow accepted the request; it deliberately cannot confirm
+      // delivery without revealing whether an address is eligible.
+      let emailDelivery: "requested" | "failed" = "requested";
       try {
         if (invite.status === "accepted") {
           await deps.requestMagicLink({
@@ -81,6 +85,7 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
           await deps.requestEnrollment({ email: invite.email });
         }
       } catch (error) {
+        emailDelivery = "failed";
         console.error(
           JSON.stringify({
             event: "member_invite_email_failed",
@@ -88,7 +93,7 @@ export function createMemberInviteHandler(deps: InviteRouteDeps) {
           }),
         );
       }
-      return jsonResponse(200, invite);
+      return jsonResponse(200, { ...invite, emailDelivery });
     });
   };
 }
