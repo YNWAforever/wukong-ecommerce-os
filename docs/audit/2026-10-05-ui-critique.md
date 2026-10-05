@@ -101,7 +101,7 @@ This pass is a preserve-mode evolution, not a redesign.
 These are fixed here, in plain CSS, using the existing tokens with no new
 dependency:
 
-- U1–U9, U11, U13, U14, U16–U21.
+- U1, U2, U4–U9, U11, U13, U14, U16–U21.
 
 These are recorded but not changed:
 
@@ -109,6 +109,7 @@ These are recorded but not changed:
   data change.
 - **U15:** unifying H1 styles is a redesign decision.
 - **U10:** deferred as low priority.
+- **U3:** deferred. Locale-aware titles need the Workbench four-branch UNION and the Catalog read model to return both titles. That is a read-model change in queries #121 tuned for its latency gate, so it belongs in its own reviewed change.
 
 Nothing in this PR changes approval, eligibility, export or publish logic, or
 the cautious wording.
