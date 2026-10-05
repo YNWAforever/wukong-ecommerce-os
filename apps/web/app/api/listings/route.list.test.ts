@@ -1,4 +1,13 @@
 vi.mock("../../../lib/source-readiness", () => ({
+  loadSourceReadinessBatch: async (repositories: any) => ({
+    read: async () => null,
+    deps: {
+      getReviewConfirmation: (id: string) =>
+        repositories.reviewConfirmations?.getByVersionId(id),
+      getPlatformProductLink: (id: string) =>
+        repositories.platformProducts?.getByListingId(id),
+    },
+  }),
   readSourceReadiness: async () => null,
 }));
 import { describe, expect, it, vi } from "vitest";
@@ -109,9 +118,12 @@ describe("GET /api/listings", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
+      nextCursor: null,
+      previousCursor: null,
       items: [
         {
           id: "00000000-0000-4000-8000-000000000101",
+          readState: "ready",
           status: "in_review",
           target: "shopline",
           title: "Opak \u96f7\u53f8\u4ee4",

@@ -180,6 +180,11 @@ function makeHandler(options: {
                 return confirmation;
               },
             },
+            sourceImports: {
+              getById: async () => ({
+                merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+              }),
+            },
             sourceRows: {
               async getForProduct(input: Record<string, string>) {
                 return {
@@ -405,6 +410,11 @@ describe("POST /api/listings/[id]/approve", () => {
                   return fullyConfirmed;
                 },
               },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
+              },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
                   return {
@@ -621,6 +631,11 @@ describe("POST /api/listings/[id]/approve", () => {
                   return fullyConfirmed;
                 },
               },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
+              },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
                   return {
@@ -759,6 +774,11 @@ describe("POST /api/listings/[id]/approve", () => {
                 async getByVersionId() {
                   return fullyConfirmed;
                 },
+              },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
               },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
@@ -1106,6 +1126,11 @@ describe("POST /api/listings/[id]/approve", () => {
                   return fullyConfirmed;
                 },
               },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
+              },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
                   return {
@@ -1225,6 +1250,11 @@ describe("POST /api/listings/[id]/approve", () => {
                   return { ...fullyConfirmed!, revision };
                 },
               },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
+              },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
                   return {
@@ -1342,6 +1372,11 @@ describe("POST /api/listings/[id]/approve", () => {
                     rowDigest: sourceDigest,
                   };
                 },
+              },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
               },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {
@@ -1475,6 +1510,11 @@ describe("POST /api/listings/[id]/approve", () => {
                 async getByVersionId() {
                   return fullyConfirmed;
                 },
+              },
+              sourceImports: {
+                getById: async () => ({
+                  merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+                }),
               },
               sourceRows: {
                 async getForProduct(input: Record<string, string>) {

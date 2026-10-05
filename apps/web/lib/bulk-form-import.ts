@@ -12,11 +12,17 @@ import {
 } from "@wukong/shopline";
 import {
   APPROVAL_INVALIDATED_ACTION,
+  emptyWorkingListing,
   type ApprovalInvalidationCause,
   type ListingStatus,
 } from "@wukong/core";
 
 import { ApiError } from "./route-support";
+import {
+  matchMaintenanceCandidate,
+  observedMaintenancePack,
+  type MaintenanceReferenceRequest,
+} from "./catalog-maintenance-intent";
 
 // Statuses whose approval a re-import breaks. `publishing` is included even
 // though a confirmation change refuses it: nothing is transitioned here, and a
@@ -44,6 +50,8 @@ export type BulkFormImportInput = {
   merchantAttestedExportAt: Date;
   filename: string;
   sheetName: string;
+  maintenance?: MaintenanceReferenceRequest;
+  expectedConnectionId?: string;
 };
 
 export type BulkFormImportResult = {
@@ -54,6 +62,10 @@ export type BulkFormImportResult = {
   /** Approved, published, publish-failed or publishing listings this import re-bound. */
   invalidatedApprovals: number;
   issues: BulkFormIssue[];
+  sourceImportId: string;
+  replayed: boolean;
+  alreadyImportedProducts: number;
+  merchantAttestedExportAt: string;
 };
 
 /**
@@ -94,6 +106,13 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
     input: BulkFormImportInput,
   ): Promise<BulkFormImportResult> {
     const parsed = parseBulkForm(input.sheet);
+    if (parsed.issues.some((issue) => issue.code === "product_id_duplicated")) {
+      throw new ApiError(
+        422,
+        "bulk_form_ambiguous_identity",
+        "Resolve duplicate product IDs in the original SHOPLINE export before importing.",
+      );
+    }
     if (parsed.rows.length === 0) {
       throw new ApiError(
         422,
@@ -138,6 +157,118 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             "Connect a SHOPLINE store before importing a catalog.",
           );
         }
+
+        if (
+          input.expectedConnectionId &&
+          input.expectedConnectionId !== connection.id
+        )
+          throw new ApiError(
+            409,
+            "maintenance_store_changed",
+            "The selected store has changed. Check the store and original export again.",
+          );
+        if (input.maintenance) {
+          const candidate = input.maintenance;
+          if (candidate.expectedConnectionId !== connection.id)
+            throw new ApiError(
+              409,
+              "maintenance_store_changed",
+              "The selected store has changed. Check the store and select the original export again.",
+            );
+          if (!candidate.storeSourceConfirmed)
+            throw new ApiError(
+              409,
+              "maintenance_source_confirmation_required",
+              "Confirm the store and that this is its current original SHOPLINE export.",
+            );
+          const reference =
+            candidate.referenceKind === "workbook"
+              ? await repositories.workbookCatalog.getProduct(
+                  candidate.referenceId,
+                )
+              : await repositories.reads.websiteProduct(candidate.referenceId);
+          if (!reference)
+            throw new ApiError(
+              404,
+              "maintenance_reference_missing",
+              "The reference is unavailable in this workspace.",
+            );
+          if (
+            reference.sourceType === "website" &&
+            reference.observation.warnings.some((warning) =>
+              /conflict|multiple|truncated/.test(warning),
+            )
+          )
+            throw new ApiError(
+              409,
+              "maintenance_identity_conflict",
+              "The website observation has ambiguous or incomplete extraction. Resolve it before importing.",
+            );
+          const selected = parsed.rows.find(
+            (row) => row.productId === candidate.remoteProductId,
+          );
+          if (!selected)
+            throw new ApiError(
+              422,
+              "maintenance_product_missing",
+              "The chosen product has no eligible row in this original export. Check product ID and variants.",
+            );
+          const referenceRaw =
+            reference.sourceType === "website"
+              ? {
+                  ...reference.observation.attributes,
+                  productId: null,
+                  variantId: null,
+                  nameEn: reference.observation.title,
+                  sku: reference.observation.attributes.sku ?? null,
+                }
+              : reference.product.raw;
+          const match = matchMaintenanceCandidate({
+            connectionId: connection.id,
+            expectedConnectionId: candidate.expectedConnectionId,
+            referenceRaw,
+            currentRaw: selected.raw,
+          });
+          if (match.state === "blocked")
+            throw new ApiError(
+              409,
+              "maintenance_identity_conflict",
+              "Store, product, year, volume or pack identity conflicts. Resolve it before importing.",
+            );
+          if (
+            match.state === "confirmation_required" &&
+            !candidate.identityConfirmed
+          )
+            throw new ApiError(
+              409,
+              "maintenance_identity_confirmation_required",
+              "Some identity facts are unknown. Confirm the actual product, year, volume and pack before importing.",
+            );
+        }
+
+        // The connection row lock serializes identical concurrent uploads.
+        // Replaying bytes cannot refresh their original freshness attestation,
+        // replace current source bindings or invalidate an approval again.
+        const replay = await repositories.sourceImports.findByWorkbookIdentity({
+          connectionId: connection.id,
+          workbookSha256,
+          headerContractSha256,
+          specVersion: parsed.specVersion,
+        });
+        if (replay)
+          return {
+            sourceImportId: replay.id,
+            specVersion: replay.specVersion,
+            parsedRows: replay.rowCount,
+            createdDrafts: 0,
+            refreshedProducts: 0,
+            invalidatedApprovals: 0,
+            alreadyImportedProducts: replay.rowCount,
+            replayed: true,
+            merchantAttestedExportAt:
+              replay.merchantAttestedExportAt.toISOString(),
+            issues: [...parsed.issues],
+          };
 
         // One row per import batch, not per product row: it records
         // provenance for the file as a whole (which bytes, which contract,
@@ -203,6 +334,52 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
               note: importedDraftNote(row.rowNumber, rawRow),
             });
             listingId = draft.id;
+            // Seed only a newly created draft from the actual uploaded row.
+            // Re-imports retain saved input revisions and all manual values.
+            await repositories.listingInputs.initialize(
+              {
+                listingId,
+                actorId: input.actorId,
+                note: importedDraftNote(row.rowNumber, rawRow),
+                importedSource: {
+                  sourceImportId: sourceImport.id,
+                  sourceRowDigest: contentDigest,
+                },
+                workingContent: {
+                  ...emptyWorkingListing(),
+                  ...row.facts,
+                  packQuantity: observedMaintenancePack(rawRow),
+                  title: {
+                    en: rawRow.nameEn ?? "",
+                    "zh-Hant": rawRow.nameZh ?? "",
+                  },
+                  description: {
+                    en: rawRow.summaryEn ?? "",
+                    "zh-Hant": rawRow.summaryZh ?? "",
+                  },
+                  seo: {
+                    title: {
+                      en: rawRow.seoTitleEn ?? "",
+                      "zh-Hant": rawRow.seoTitleZh ?? "",
+                    },
+                    description: {
+                      en: rawRow.seoDescriptionEn ?? "",
+                      "zh-Hant": rawRow.seoDescriptionZh ?? "",
+                    },
+                  },
+                  tags: (rawRow.seoKeywords ?? "")
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                },
+              },
+              {
+                workspaceId: input.workspaceId,
+                actorId: input.actorId,
+                entityId: listingId,
+              },
+              repositories.audit,
+            );
             createdDrafts += 1;
           } else {
             listingId = existingListingId;
@@ -313,10 +490,24 @@ export function createBulkFormImporter(deps: BulkFormImportDeps) {
             refreshedProducts,
             invalidatedApprovals,
             issueCount: parsed.issues.length,
+            ...(input.maintenance
+              ? {
+                  referenceKind: input.maintenance.referenceKind,
+                  referenceId: input.maintenance.referenceId,
+                  selectedRemoteProductId: input.maintenance.remoteProductId,
+                  storeSourceConfirmed: true,
+                  identityConfirmed: input.maintenance.identityConfirmed,
+                }
+              : {}),
           },
         });
 
         return {
+          sourceImportId: sourceImport.id,
+          replayed: false,
+          alreadyImportedProducts: 0,
+          merchantAttestedExportAt:
+            sourceImport.merchantAttestedExportAt.toISOString(),
           specVersion: parsed.specVersion,
           parsedRows: parsed.rows.length,
           createdDrafts,

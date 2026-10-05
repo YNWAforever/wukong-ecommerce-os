@@ -1,3 +1,5 @@
+import { exportGenerationSchema } from "../../../../lib/bulk-export-contract";
+import { ImportResultConflict } from "@wukong/db";
 import type { WorkspaceRepositories } from "@wukong/db";
 import type { ExportAttempt } from "@wukong/db";
 import { createHash } from "node:crypto";
@@ -9,9 +11,7 @@ import {
   ExportArtifactConflict,
 } from "../../../../lib/export-artifact";
 import { ShoplineBulkFormError } from "@wukong/shopline";
-import { z } from "zod";
 
-import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
 // Strict: refuses values JSON cannot represent instead of hashing them as text,
 // so attempt identity always matches the provenance that is stored.
 import { canonicalJson } from "../../../../lib/export-evidence-packet";
@@ -20,6 +20,9 @@ import {
   createBulkExportDeps,
   recheckBulkExport,
   BulkUpdateEligibilityConflict,
+  BulkExportPreviewConflict,
+  requireBulkExportPreview,
+  assertBulkRepairTargets,
 } from "../../../../lib/bulk-export-service";
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
@@ -33,38 +36,7 @@ import type { SessionContextPort } from "../../../../lib/session-context-port";
 
 export const runtime = "nodejs";
 
-const bodySchema = z
-  .object({
-    listingIds: z.array(z.string().min(1)).min(1).max(MAX_BULK_EXPORT_ITEMS),
-    attestation: z.object({
-      listings: z
-        .array(
-          z.object({
-            listingId: z.string().min(1),
-            contentDigest: z.string().min(1),
-          }),
-        )
-        .min(1)
-        .max(MAX_BULK_EXPORT_ITEMS)
-        // Same rule listingIds already carries. Without it two entries for one
-        // listing collapse in the Map below and the set-equality check still
-        // passes, silently picking whichever digest came last.
-        .refine(
-          (listings) =>
-            new Set(listings.map((entry) => entry.listingId)).size ===
-            listings.length,
-          { message: "attestation must not name a listing twice" },
-        ),
-    }),
-  })
-  .strict()
-  .refine(
-    (value) => new Set(value.listingIds).size === value.listingIds.length,
-    {
-      message: "listingIds must not contain duplicate entries",
-      path: ["listingIds"],
-    },
-  );
+const bodySchema = exportGenerationSchema;
 
 // Identical to the deliver route's bespoke check (apps/web/app/api/listings/[id]/deliver/route.ts) --
 // not exported there, so this is a local copy of the exact same rule rather than a shared import.
@@ -126,13 +98,33 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
           workspaceId: session.workspaceId,
           requestedBy: session.actorId,
           listingIds: body.listingIds,
+          fields: body.fields,
+          ...(body.repair ? { repair: body.repair } : {}),
           attestedDigests: attested,
         };
         const exported = await database.forWorkspace(
           session.workspaceId,
-          (repositories) =>
-            createBulkExport(input, createBulkExportDeps(repositories)),
+          async (repositories) => {
+            if (body.repair)
+              await repositories.importResults.assertRejectedForRepair(
+                body.repair,
+              );
+            const current = await createBulkExport(
+              input,
+              createBulkExportDeps(repositories),
+            );
+            if (body.repair)
+              assertBulkRepairTargets(
+                body.repair,
+                current,
+                await repositories.exportAttempts.getById(
+                  body.repair.exportAttemptId,
+                ),
+              );
+            return current;
+          },
         );
+        requireBulkExportPreview(body.previewSha256, input, exported);
         if (exported.rowCount === 0) {
           return jsonResponse(200, {
             exportAttemptId: null,
@@ -159,6 +151,9 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
           (entry) => entry.reason === "row_digest_mismatch",
         ).length;
         const provenance = {
+          fields: exported.fields,
+          previewSha256: body.previewSha256,
+          ...(body.repair ? { repairOf: body.repair } : {}),
           identityVersion: 1,
           workspaceId: session.workspaceId,
           rowDigestMismatchCount,
@@ -179,11 +174,32 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
         const attempt = await database.forWorkspace(
           session.workspaceId,
           async (repositories) => {
+            // Lock excluded candidates too before rechecking included evidence:
+            // locking an included subset first can invert two requests' order.
+            for (const id of [...body.listingIds].sort())
+              await repositories.listings.lockReviewState(id);
+            if (body.repair)
+              await repositories.importResults.assertRejectedForRepair(
+                body.repair,
+              );
             await recheckBulkExport(
               input,
               exported.evidence,
               createBulkExportDeps(repositories),
             );
+            const current = await createBulkExport(
+              input,
+              createBulkExportDeps(repositories),
+            );
+            if (body.repair)
+              assertBulkRepairTargets(
+                body.repair,
+                current,
+                await repositories.exportAttempts.getById(
+                  body.repair.exportAttemptId,
+                ),
+              );
+            requireBulkExportPreview(body.previewSha256, input, current);
 
             const ensured = await repositories.exportAttempts.ensure({
               idempotencyKey,
@@ -261,10 +277,14 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
           ready = await database.forWorkspace<ExportAttempt>(
             session.workspaceId,
             (repositories) =>
-              repositories.exportAttempts.markReady({
-                id: attempt.id,
-                artifactSha256,
-              }),
+              repositories.exportAttempts.markReady(
+                {
+                  id: attempt.id,
+                  artifactSha256,
+                  actorId: session.actorId,
+                },
+                repositories.audit,
+              ),
           );
         } catch (error) {
           const code =
@@ -316,6 +336,19 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
           artifactSha256,
         });
       } catch (error) {
+        if (
+          error instanceof BulkExportPreviewConflict ||
+          error instanceof ImportResultConflict
+        ) {
+          return jsonResponse(409, {
+            code:
+              error instanceof ImportResultConflict
+                ? error.code
+                : "export_preview_changed",
+            message:
+              "The reviewed export or rejected receipt changed. Preview again before exporting.",
+          });
+        }
         if (error instanceof BulkUpdateEligibilityConflict) {
           return jsonResponse(409, {
             code: "export_eligibility_changed",

@@ -61,6 +61,18 @@ export function manifestReasonLabel(
  * fallback (mirrors `reviewErrorLabel`).
  */
 const exportErrors = {
+  export_preview_changed: [
+    "匯出內容已變更，請重新預覽目前的商品及欄位後再確認。",
+    "The export changed. Preview the current listings and fields again before confirming.",
+  ],
+  repair_result_changed: [
+    "拒絕記錄已變更，請重新載入原匯出並比較最新記錄。",
+    "The rejected receipt changed. Reload the original attempt and compare the latest reports.",
+  ],
+  repair_identity_changed: [
+    "修復商品的 SHOPLINE 目標已變更，請重新核實來源。",
+    "The repair target changed. Check the SHOPLINE source identity again.",
+  ],
   attestation_incomplete: [
     "此確認未涵蓋你選取的商品，請重新確認後再試。",
     "This confirmation does not cover the listings you selected. Confirm again and retry.",

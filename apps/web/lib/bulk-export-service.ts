@@ -1,3 +1,10 @@
+import { createHash } from "node:crypto";
+import {
+  exportFieldsSchema,
+  type ExportContentField,
+  type ExportPreview,
+  type ExportRepair,
+} from "./bulk-export-contract";
 import type {
   ListingRepository,
   ApprovalReceiptRepository,
@@ -52,6 +59,8 @@ export type CreateBulkExportInput = {
   workspaceId: string;
   requestedBy: string;
   listingIds: readonly string[];
+  fields: readonly ExportContentField[];
+  repair?: ExportRepair;
   /**
    * The digest the operator attested, per listing id.
    *
@@ -77,12 +86,18 @@ export type BulkExportListingContent = Pick<
 >;
 
 export type CreateBulkExportDeps = BulkUpdateEligibilityDeps & {
-  getActiveVersion(
-    listingId: string,
-  ): Promise<{ id: string; content: BulkExportListingContent } | null>;
+  getActiveVersion(listingId: string): Promise<{
+    id: string;
+    content: BulkExportListingContent;
+    inputRevision?: number;
+  } | null>;
 };
 
 export type CreateBulkExportResult = {
+  fields: ExportContentField[];
+  inputRevisions: Array<{ listingId: string; inputRevision: number | null }>;
+  changes: ExportPreview["changes"];
+  neutralizedQuantityDeltas: string[];
   manifest: ExportManifestEntry[];
   evidence: BulkUpdateEvidence[];
   /** Count of listings actually written into the sheet — not raw cell-change count. */
@@ -131,6 +146,8 @@ export async function createBulkExport(
   input: CreateBulkExportInput,
   deps: CreateBulkExportDeps,
 ): Promise<CreateBulkExportResult> {
+  const fields = exportFieldsSchema.parse(input.fields);
+  const inputRevisions: CreateBulkExportResult["inputRevisions"] = [];
   const manifest: ExportManifestEntry[] = [];
   const evidence: BulkUpdateEvidence[] = [];
   const rows: BulkFormExportRow[] = [];
@@ -144,6 +161,10 @@ export async function createBulkExport(
   // One stable order binds locks, workbook rows, manifest and approval evidence.
   for (const listingId of [...input.listingIds].sort()) {
     const activeVersion = await deps.getActiveVersion(listingId);
+    inputRevisions.push({
+      listingId,
+      inputRevision: activeVersion?.inputRevision ?? null,
+    });
     if (!activeVersion) {
       manifest.push({
         listingId,
@@ -206,21 +227,22 @@ export async function createBulkExport(
       raw: link.rawRow,
       rowNumber: rows.length + 1,
     });
+    const values: Record<ExportContentField, string> = {
+      nameZh: content.title["zh-Hant"],
+      summaryEn: content.description.en,
+      summaryZh: content.description["zh-Hant"],
+      seoTitleEn: content.seo.title.en,
+      seoTitleZh: content.seo.title["zh-Hant"],
+      seoDescriptionEn: content.seo.description.en,
+      seoDescriptionZh: content.seo.description["zh-Hant"],
+      // No delimiter convention exists elsewhere in the codebase for this
+      // field — chosen as the plain, human-editable form an operator
+      // reviewing the file by eye would expect. Matches deliverBulkForm.
+      seoKeywords: content.tags.join(", "),
+    };
     enrichments.push({
       productId: link.remoteProductId,
-      values: {
-        nameZh: content.title["zh-Hant"],
-        summaryEn: content.description.en,
-        summaryZh: content.description["zh-Hant"],
-        seoTitleEn: content.seo.title.en,
-        seoTitleZh: content.seo.title["zh-Hant"],
-        seoDescriptionEn: content.seo.description.en,
-        seoDescriptionZh: content.seo.description["zh-Hant"],
-        // No delimiter convention exists elsewhere in the codebase for this
-        // field — chosen as the plain, human-editable form an operator
-        // reviewing the file by eye would expect. Matches deliverBulkForm.
-        seoKeywords: content.tags.join(", "),
-      },
+      values: Object.fromEntries(fields.map((field) => [field, values[field]])),
     });
     survivorRemoteProductIds.set(listingId, link.remoteProductId);
     // Placeholder outcome, corrected below once we know which survivors
@@ -306,6 +328,24 @@ export async function createBulkExport(
   ).length;
 
   return {
+    fields,
+    inputRevisions,
+    changes: (update?.changes ?? []).map((change) => {
+      const binding = includedEvidence.find(
+        (entry) => entry.remoteProductId === change.productId,
+      )!;
+      return {
+        listingId: binding.listingId,
+        column: change.column,
+        from: change.from,
+        to: change.to,
+        versionId: binding.versionId,
+        sourceSnapshotId: binding.sourceSnapshotId,
+      };
+    }),
+    neutralizedQuantityDeltas: (update?.neutralizedQuantityDeltas ?? []).map(
+      (row) => evidence[row - 1]!.listingId,
+    ),
     manifest,
     evidence: includedEvidence,
     rowCount,
@@ -384,8 +424,14 @@ export function createBulkExportDeps(repositories: {
 }): CreateBulkExportDeps {
   return {
     async getActiveVersion(listingId) {
+      await repositories.listings.lockReviewState(listingId);
       const snapshot = await repositories.listings.getReviewSnapshot(listingId);
-      return snapshot?.activeVersion ?? null;
+      return snapshot?.activeVersion
+        ? {
+            ...snapshot.activeVersion,
+            inputRevision: snapshot.listing.inputRevision,
+          }
+        : null;
     },
     async getReviewState(listingId) {
       await repositories.listings.lockReviewState(listingId);
@@ -410,11 +456,107 @@ export function createBulkExportDeps(repositories: {
     getPlatformProductLink: (listingId) =>
       repositories.platformProducts.getByListingId(listingId),
     async getSourceImportHeaderContractSha256(sourceImportId) {
-      return (
-        (await repositories.sourceImports.getById(sourceImportId))
-          ?.headerContractSha256 ?? null
-      );
+      const source = await repositories.sourceImports.getById(sourceImportId);
+      return source &&
+        source.merchantAttestedExportAt instanceof Date &&
+        Number.isFinite(source.merchantAttestedExportAt.getTime())
+        ? source.headerContractSha256
+        : null;
     },
     currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
   };
+}
+
+function canonicalExportJson(value: unknown): string {
+  if (Array.isArray(value))
+    return "[" + value.map(canonicalExportJson).join(",") + "]";
+  if (value && typeof value === "object")
+    return (
+      "{" +
+      Object.entries(value)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(
+          ([key, item]) =>
+            JSON.stringify(key) + ":" + canonicalExportJson(item),
+        )
+        .join(",") +
+      "}"
+    );
+  return JSON.stringify(value);
+}
+export function bulkExportPreview(
+  input: CreateBulkExportInput,
+  exported: CreateBulkExportResult,
+): ExportPreview {
+  const plan = {
+    workspaceId: input.workspaceId,
+    requestedBy: input.requestedBy,
+    listingIds: [...input.listingIds].sort(),
+    fields: exported.fields,
+    attestation: [...input.attestedDigests.entries()].sort(([a], [b]) =>
+      a.localeCompare(b),
+    ),
+    repair: input.repair
+      ? {
+          ...input.repair,
+          members: [...input.repair.members].sort((a, b) =>
+            a.listingId.localeCompare(b.listingId),
+          ),
+        }
+      : null,
+    inputRevisions: exported.inputRevisions,
+    evidence: exported.evidence,
+    manifest: exported.manifest,
+    changes: exported.changes,
+    neutralizedQuantityDeltas: exported.neutralizedQuantityDeltas,
+    artifactSha256: createHash("sha256").update(exported.body).digest("hex"),
+    headerContractSha256: exported.headerContractSha256,
+    specVersion: exported.specVersion,
+  };
+  return {
+    previewSha256: createHash("sha256")
+      .update(canonicalExportJson(plan))
+      .digest("hex"),
+    fields: exported.fields,
+    rowCount: exported.rowCount,
+    manifest: exported.manifest,
+    changes: exported.changes,
+    neutralizedQuantityDeltas: exported.neutralizedQuantityDeltas,
+  };
+}
+export class BulkExportPreviewConflict extends Error {
+  constructor() {
+    super("The reviewed export changed. Preview the current selection again.");
+  }
+}
+export function requireBulkExportPreview(
+  expected: string,
+  input: CreateBulkExportInput,
+  exported: CreateBulkExportResult,
+): void {
+  if (expected !== bulkExportPreview(input, exported).previewSha256)
+    throw new BulkExportPreviewConflict();
+}
+
+export function assertBulkRepairTargets(
+  repair: ExportRepair,
+  exported: CreateBulkExportResult,
+  parent: { provenance?: Record<string, unknown> | null } | null,
+): void {
+  const evidence = parent?.provenance?.evidence;
+  if (!Array.isArray(evidence)) throw new BulkExportPreviewConflict();
+  for (const current of exported.evidence) {
+    const previous = evidence.find(
+      (entry) => entry.listingId === current.listingId,
+    );
+    if (
+      !repair.members.some(
+        (member) => member.listingId === current.listingId,
+      ) ||
+      !previous ||
+      previous.connectionId !== current.connectionId ||
+      previous.remoteProductId !== current.remoteProductId
+    )
+      throw new BulkExportPreviewConflict();
+  }
 }

@@ -1,8 +1,13 @@
 "use client";
 import { useLocale } from "../lib/locale-context";
 import { localized } from "../lib/ui-copy";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WORKSPACE_REQUIRED_FIELDS, type WorkspacePolicy } from "@wukong/core";
+import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
+import {
+  publishSettingsFence,
+  useSettingsFence,
+} from "../lib/workspace-settings-fence";
 type View = {
   policy: WorkspacePolicy;
   digest: string;
@@ -23,7 +28,10 @@ type View = {
 async function read(response: Response) {
   const body = await response.json();
   if (!response.ok)
-    throw new Error(body.message ?? "設定暫時無法儲存 Settings unavailable");
+    throw Object.assign(
+      new Error(body.message ?? "設定暫時無法儲存 Settings unavailable"),
+      { conflict: response.status === 409 },
+    );
   return body;
 }
 export function WorkspacePolicyPanel() {
@@ -42,6 +50,10 @@ export function WorkspacePolicyPanel() {
     priceHkd: ["售價 (HK$)", "Price (HK$)"],
     stockQuantity: ["庫存", "Stock"],
   };
+  const submitting = useRef(false);
+  const digestRef = useRef<string | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [comparison, setComparison] = useState<View | null>(null);
   const [view, setView] = useState<View | null>(null);
   const [policy, setPolicy] = useState<WorkspacePolicy | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,9 +62,12 @@ export function WorkspacePolicyPanel() {
   const load = async () => {
     try {
       const next = await read(await fetch("/api/workspace/policies"));
+      digestRef.current = next.digest;
       setView(next);
       setPolicy(next.policy);
       setError(null);
+      setConflict(false);
+      setComparison(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -60,6 +75,39 @@ export function WorkspacePolicyPanel() {
   useEffect(() => {
     void load();
   }, []);
+  useSettingsFence(
+    useCallback((previous, next) => {
+      if (digestRef.current === previous) digestRef.current = next;
+      setView((current) =>
+        current?.digest === previous ? { ...current, digest: next } : current,
+      );
+    }, []),
+  );
+  const normalize = (next: WorkspacePolicy): WorkspacePolicy => ({
+    ...next,
+    claimPolicy: next.claimPolicy.map((value) => value.trim()).filter(Boolean),
+    sourcePreferences: {
+      allowedDomains: next.sourcePreferences.allowedDomains
+        .map((value) => value.trim())
+        .filter(Boolean),
+    },
+  });
+  useAdminDirtyGuard("workspace-policy", {
+    dirty: Boolean(
+      view &&
+      policy &&
+      (JSON.stringify(policy) !== JSON.stringify(view.policy) || busy),
+    ),
+    async save() {
+      return policy ? saveNormalized(normalize(policy)) : false;
+    },
+    discard() {
+      setPolicy(view?.policy ?? null);
+      setError(null);
+      setConflict(false);
+      setComparison(null);
+    },
+  });
   return (
     <section
       className="settings-panel workspace-policy-panel"
@@ -71,9 +119,42 @@ export function WorkspacePolicyPanel() {
         <p role="alert">
           {error}{" "}
           <button type="button" disabled={busy} onClick={load}>
-            {t("重新載入", "Reload")}
+            {t("重新載入並捨棄我的修改", "Reload and discard my edits")}
           </button>
         </p>
+      )}
+      {conflict && (
+        <div>
+          <p>
+            {t(
+              "另一位管理員已儲存，請比較或重新載入。",
+              "Another administrator saved first. Compare or reload before saving.",
+            )}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              try {
+                setComparison(
+                  await read(await fetch("/api/workspace/policies")),
+                );
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
+          >
+            {t("比較最新政策", "Compare latest policies")}
+          </button>
+          {comparison && (
+            <>
+              <h3>{t("我的修改", "My edits")}</h3>
+              <pre>{JSON.stringify(policy, null, 2)}</pre>
+              <h3>{t("最新政策", "Latest policies")}</h3>
+              <pre>{JSON.stringify(comparison.policy, null, 2)}</pre>
+            </>
+          )}
+        </div>
       )}
       {message && <p role="status">{message}</p>}
       {policy && view && (
@@ -168,7 +249,6 @@ export function WorkspacePolicyPanel() {
                     .filter(Boolean),
                 },
               };
-              setPolicy(next);
               void saveNormalized(next);
             }}
           >
@@ -220,7 +300,9 @@ export function WorkspacePolicyPanel() {
     </section>
   );
   async function saveNormalized(next: WorkspacePolicy) {
-    if (!view) return;
+    if (!view || submitting.current) return false;
+    submitting.current = true;
+    const expectedDigest = digestRef.current ?? view.digest;
     setBusy(true);
     setMessage(null);
     setError(null);
@@ -229,15 +311,23 @@ export function WorkspacePolicyPanel() {
         await fetch("/api/workspace/policies", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ expectedDigest: view.digest, policy: next }),
+          body: JSON.stringify({ expectedDigest, policy: next }),
         }),
       );
+      publishSettingsFence(expectedDigest, result.digest);
+      digestRef.current = result.digest;
       setView({ ...view, ...result });
       setPolicy(result.policy);
       setMessage(t("工作區政策已儲存", "Policies saved"));
+      setConflict(false);
+      setComparison(null);
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      setConflict(Boolean((e as { conflict?: boolean }).conflict));
+      return false;
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }

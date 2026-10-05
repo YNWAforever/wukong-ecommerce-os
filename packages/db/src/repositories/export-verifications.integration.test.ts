@@ -79,10 +79,14 @@ async function fixture(workspaceId = "ws_verifications") {
       artifactSha256: "a".repeat(64),
       provenance,
     });
-    return r.exportAttempts.markReady({
-      id: a.id,
-      artifactSha256: "a".repeat(64),
-    });
+    return r.exportAttempts.markReady(
+      {
+        id: a.id,
+        artifactSha256: "a".repeat(64),
+        actorId: "synthetic-ready-reviewer",
+      },
+      r.audit,
+    );
   });
   await new Promise((resolve) => setTimeout(resolve, 5));
   return {

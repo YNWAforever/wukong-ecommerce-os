@@ -65,6 +65,83 @@ const publishedItem = {
 };
 
 describe("QueueClient", () => {
+  it("preserves selection when a successful approval response omits its approved version", async () => {
+    let listLoads = 0;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      if (input === "/api/listings/bulk-approve")
+        return Response.json({
+          results: [{ listingId: "listing_1", ok: true }],
+          approved: 1,
+          failed: 0,
+        });
+      listLoads++;
+      return Response.json({ items: [eligibleItem] });
+    });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(container.querySelector(".bulk-result-list")).toBeNull();
+      expect(listLoads).toBe(1);
+    } finally {
+      await unmount(root);
+    }
+  });
+  it("keeps a blocked row visible and unselectable even if it carries a stale approval context", async () => {
+    const requestId = "00000000-0000-4000-8000-000000000123";
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        items: [
+          {
+            ...eligibleItem,
+            readState: "blocked",
+            readFailure: { reason: "invalid_active_version", requestId },
+          },
+          {
+            ...eligibleItem,
+            id: "healthy_synthetic",
+            title: "Healthy synthetic",
+          },
+        ],
+      }),
+    );
+    const { container, root } = await mount(fetcher);
+    try {
+      expect(container.textContent).toContain(requestId);
+      const checkboxes = Array.from(
+        container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+      );
+      expect(checkboxes[0]?.disabled).toBe(true);
+      expect(checkboxes[1]?.disabled).toBe(false);
+      expect(
+        container.querySelector('a[href="/listings/listing_1"]'),
+      ).not.toBeNull();
+    } finally {
+      await unmount(root);
+    }
+  });
+  it("shows a safe support ID for a whole-queue failure without displaying the server message", async () => {
+    const requestId = "00000000-0000-4000-8000-000000000124";
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { requestId, message: "private SQL customer content" },
+          { status: 500 },
+        ),
+      );
+    const { container, root } = await mount(fetcher);
+    try {
+      expect(container.textContent).toContain(requestId);
+      expect(container.textContent).not.toMatch(/private SQL|customer content/);
+    } finally {
+      await unmount(root);
+    }
+  });
   it("renders the fetched listings inside the grouped queue", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
@@ -277,6 +354,73 @@ describe("QueueClient", () => {
 });
 
 describe("QueueClient review context", () => {
+  it("revokes a now-blocked selected row after reload while retaining an off-page selection", async () => {
+    const blocked = { ...eligibleItem, id: "listing_blocked" };
+    const offPage = { ...eligibleItem, id: "listing_off_page" };
+    const requests: unknown[] = [];
+    let loads = 0;
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        if (input === "/api/listings/bulk-approve") {
+          requests.push(JSON.parse(init!.body as string));
+          return Response.json({
+            results: [
+              ...(requests.length === 1
+                ? [
+                    {
+                      listingId: eligibleItem.id,
+                      ok: true,
+                      versionId: "version_1",
+                    },
+                  ]
+                : []),
+              ...[blocked, offPage].map((item) => ({
+                listingId: item.id,
+                ok: false,
+                code: "version_conflict",
+                message: "Reload",
+              })),
+            ],
+            approved: requests.length === 1 ? 1 : 0,
+            failed: 2,
+          });
+        }
+        return Response.json({
+          items:
+            ++loads === 1
+              ? [eligibleItem, blocked, offPage]
+              : [
+                  {
+                    ...blocked,
+                    readState: "blocked",
+                    readFailure: {
+                      reason: "invalid_source_time",
+                      requestId: "00000000-0000-4000-8000-000000000123",
+                    },
+                  },
+                ],
+        });
+      });
+    const { container, root } = await mount(fetcher);
+    try {
+      await act(async () =>
+        findButtonByText(container, "全選可批准項目")!.click(),
+      );
+      await act(async () => findButtonByText(container, "批准 3")!.click());
+      expect(container.textContent).toContain("1 個項目已選取");
+      expect(
+        container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+          ?.checked,
+      ).toBe(false);
+      await act(async () => findButtonByText(container, "批准 1")!.click());
+      expect(requests[1]).toEqual({
+        items: [{ listingId: offPage.id, ...offPage.reviewContext }],
+      });
+    } finally {
+      await unmount(root);
+    }
+  });
   it("keeps failed selections and their observed context after a partial-success reload", async () => {
     const failedItem = {
       ...eligibleItem,

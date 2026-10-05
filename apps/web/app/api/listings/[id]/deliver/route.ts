@@ -1,3 +1,5 @@
+import { exportFieldsSchema } from "../../../../../lib/bulk-export-contract";
+import { BulkExportPreviewConflict } from "../../../../../lib/bulk-export-service";
 import { createBulkExportDeps } from "../../../../../lib/bulk-export-service";
 import { z } from "zod";
 import {
@@ -26,12 +28,22 @@ import {
   type DeliverInput,
 } from "../../../../../lib/delivery-service";
 
-const bodySchema = z
-  .object({
-    method: z.enum(["csv", "shopline_api", "bulk_form"]),
-    attestedContentDigest: z.string().min(1).optional(),
-  })
-  .strict();
+const bodySchema = z.discriminatedUnion("method", [
+  z
+    .object({
+      method: z.literal("bulk_form"),
+      attestedContentDigest: z.string().min(1),
+      fields: exportFieldsSchema,
+      previewSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict(),
+  z
+    .object({
+      method: z.enum(["csv", "shopline_api"]),
+      attestedContentDigest: z.string().min(1).optional(),
+    })
+    .strict(),
+]);
 /**
  * A bulk form delivery must say what the operator attested.
  *
@@ -166,7 +178,10 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
       const { id } = await context.params;
       if (!z.uuid().safeParse(id).success)
         throw new ApiError(404, "listing_not_found", "Listing not found.");
-      const body = bodySchema.parse(await request.json());
+      const rawBody = await request.json();
+      if (rawBody?.method === "bulk_form")
+        requireAttestation(rawBody.attestedContentDigest);
+      const body = bodySchema.parse(rawBody);
       let result: DeliveryResult;
       try {
         result = await deps.delivery.deliver({
@@ -181,6 +196,8 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
                 // would have inherited a refusal nobody chose. There is no
                 // bulk_form UI today; when there is, it must fail loudly here
                 // rather than silently.
+                fields: body.fields,
+                previewSha256: body.previewSha256,
                 attestedContentDigest: requireAttestation(
                   body.attestedContentDigest,
                 ),
@@ -188,6 +205,12 @@ export function createDeliverListingHandler(deps: DeliverListingRouteDeps) {
             : {}),
         });
       } catch (error) {
+        if (error instanceof BulkExportPreviewConflict)
+          throw new ApiError(
+            409,
+            "export_preview_changed",
+            "The reviewed export changed. Preview again before delivery.",
+          );
         if (
           error instanceof Error &&
           ((error.name === "ProductShotConflict" &&

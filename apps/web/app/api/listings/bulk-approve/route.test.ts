@@ -158,6 +158,11 @@ function makeHandler(
           : row.confirmation;
       },
     },
+    sourceImports: {
+      getById: async () => ({
+        merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+      }),
+    },
     sourceRows: {
       async getForProduct(input: Record<string, string>) {
         return {

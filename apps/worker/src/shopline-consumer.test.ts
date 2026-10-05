@@ -228,6 +228,9 @@ function makeHarness(
       },
     },
     platformProducts: {
+      async bindCreatedProduct() {
+        return true;
+      },
       async getByListingId() {
         return options.existingLink ?? null;
       },
@@ -311,6 +314,119 @@ describe("consumeShoplineMessage", () => {
     ).resolves.toBeNull();
   });
 
+  it("reconciles the accepted create job after its current link appears", async () => {
+    const harness = makeHarness({
+      status: "running",
+      leaseToken: "lease_original",
+      attemptCount: 1,
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+    });
+    harness.job.remoteProductId = "remote_123";
+    harness.listing.status = "publishing";
+    const correctedLink: PublishPlatformProductLink = {
+      remoteProductId: "remote_123",
+      origin: "import",
+      sku: "IMPORTED",
+      specVersion: "opak-2026-05",
+      rawRow: { sku: "IMPORTED" },
+      factsPrefill: null,
+      contentDigest: "d".repeat(64),
+      sourceImportId: "00000000-0000-4000-8000-000000000401",
+    };
+    harness.repositories.platformProducts.getByListingId = vi.fn(
+      async () => correctedLink,
+    );
+    harness.connector.getProductStatus = vi.fn(async () => ({
+      exists: true,
+      status: true,
+    }));
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, harness.dependencies),
+    ).resolves.toEqual({ retryAfterSeconds: 30 });
+    expect(harness.job).toMatchObject({
+      status: "running",
+      idempotencyKey: key,
+      attemptCount: 1,
+    });
+    expect(harness.dependencies.connectorFactory).not.toHaveBeenCalled();
+
+    await expect(
+      consumeShoplineMessage(payload, {} as never, {
+        ...harness.dependencies,
+        now: () => new Date(now.getTime() + 30_000),
+      }),
+    ).resolves.toBe("ack");
+    expect(harness.job).toMatchObject({
+      status: "published",
+      idempotencyKey: key,
+      remoteProductId: "remote_123",
+      attemptCount: 2,
+      leaseToken: null,
+    });
+    expect(harness.listing.status).toBe("published");
+    expect(harness.connector.createProduct).not.toHaveBeenCalled();
+    expect(harness.connector.updateProduct).not.toHaveBeenCalled();
+    expect(harness.connector.getProductStatus).toHaveBeenCalledTimes(1);
+    expect(
+      harness.audits.filter((entry) => entry.action === "listing.published"),
+    ).toHaveLength(1);
+  });
+  it.each([
+    { status: "failed" as const, error: "remote_unavailable" },
+    { status: "failed" as const, error: "rate_limited" },
+    { status: "queued" as const, error: null },
+  ])(
+    "reconciles an accepted create after retry enqueue with a current link: %j",
+    async ({ status, error }) => {
+      const harness = makeHarness({ status, error });
+      harness.job.remoteProductId = "remote_123";
+      harness.listing.status = "publish_failed";
+      harness.repositories.platformProducts.getByListingId = vi.fn(
+        async () => ({ remoteProductId: "remote_123" }),
+      );
+      harness.connector.getProductStatus = vi.fn(async () => ({
+        exists: true,
+        status: true,
+      }));
+      await expect(
+        consumeShoplineMessage(payload, {} as never, harness.dependencies),
+      ).resolves.toBe("ack");
+      expect(harness.job).toMatchObject({
+        status: "published",
+        idempotencyKey: key,
+        remoteProductId: "remote_123",
+      });
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
+      expect(harness.connector.updateProduct).not.toHaveBeenCalled();
+      expect(harness.connector.getProductStatus).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    { listingId: "00000000-0000-4000-8000-000000000999" },
+    { versionId: "00000000-0000-4000-8000-000000000999" },
+    { connectionId: "00000000-0000-4000-8000-000000000999" },
+    { remoteProductId: "remote_other" },
+    { remoteProductId: null },
+  ])(
+    "does not adopt an unrelated or unconfirmed create during link recovery: %j",
+    async (changed) => {
+      const harness = makeHarness({ status: "running", leaseExpiresAt: now });
+      Object.assign(harness.job, { remoteProductId: "remote_123" }, changed);
+      harness.repositories.platformProducts.getByListingId = vi.fn(
+        async () => ({ remoteProductId: "remote_123" }),
+      );
+      const originalJob = { ...harness.job };
+      await expect(
+        consumeShoplineMessage(payload, {} as never, harness.dependencies),
+      ).resolves.toBe("ack");
+      expect(harness.job).toEqual(originalJob);
+      expect(harness.dependencies.connectorFactory).not.toHaveBeenCalled();
+      expect(harness.connector.createProduct).not.toHaveBeenCalled();
+      expect(harness.connector.updateProduct).not.toHaveBeenCalled();
+    },
+  );
   it("claims concurrent duplicates once and reschedules the active duplicate", async () => {
     const harness = makeHarness();
 

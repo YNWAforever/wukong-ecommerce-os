@@ -2,18 +2,66 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { it, expect, vi } from "vitest";
-const current = vi.hoisted(() => ({ locale: "zh-Hant" }));
+const current = vi.hoisted(() => ({
+  locale: "zh-Hant",
+  authenticated: true,
+  workspaceId: "wrapper-workspace",
+  actorId: "wrapper-actor",
+  role: "viewer",
+}));
+const workspaceRead = vi.hoisted(() => vi.fn());
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: current.locale }) }),
 }));
 vi.mock("next/navigation", () => ({
+  redirect: (href: string) => {
+    throw new Error(`redirect:${href}`);
+  },
   useRouter: () => ({ refresh: vi.fn() }),
   usePathname: () => "/catalog",
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock("../lib/session-context", () => ({
-  authSessionContext: { resolve: async () => null },
+  authSessionContext: {
+    resolve: async () =>
+      current.authenticated
+        ? {
+            workspaceId: current.workspaceId,
+            actorId: current.actorId,
+            role: current.role,
+          }
+        : null,
+  },
   requireWorkspaceRole: () => false,
+}));
+vi.mock("../lib/intake-runtime", () => ({
+  getDatabase: () => ({
+    forWorkspace: async (
+      workspaceId: string,
+      work: (repos: unknown) => unknown,
+    ) => {
+      workspaceRead(workspaceId);
+      expect(workspaceId).toBe("wrapper-workspace");
+      return work({
+        assignments: {
+          listActiveMembers: async () => [
+            {
+              userId: "wrapper-actor",
+              email: "wrapper@local.invalid",
+              name: "Synthetic viewer",
+              role: "viewer",
+            },
+          ],
+        },
+      });
+    },
+  }),
+}));
+vi.mock("../lib/workspace-selection", () => ({
+  listUserWorkspaces: async (actorId: string) => {
+    expect(actorId).toBe("wrapper-actor");
+    return [];
+  },
 }));
 vi.mock("../app/(app)/workspace-chrome", () => ({
   resolveWorkspaceChrome: async () => ({
@@ -57,10 +105,9 @@ it.each(["zh-Hant", "en"] as const)(
     );
     expect(headers).toHaveLength(6);
     expect(headers[0]).toBe(
-      locale === "en"
-        ? "Track platform products and listing drafts in one place."
-        : "由平台商品到可發佈草稿，一頁掌握營運狀態。",
+      locale === "en" ? "Catalog operations" : "商品營運",
     );
+    expect(el.textContent).toContain("Synthetic viewer");
     for (const header of headers)
       expect(header).not.toMatch(
         locale === "en" ? /[\u4e00-\u9fff]/ : /^Track |^Your |^Focus /,
@@ -81,3 +128,43 @@ it.each(["zh-Hant", "en"] as const)(
     vi.unstubAllGlobals();
   },
 );
+it("redirects an absent server session before reading workspace account data", async () => {
+  current.authenticated = false;
+  const readsBefore = workspaceRead.mock.calls.length;
+  try {
+    await expect(AppLayout({ children: null })).rejects.toThrow(
+      "redirect:/signin",
+    );
+    expect(workspaceRead.mock.calls).toHaveLength(readsBefore);
+  } finally {
+    current.authenticated = true;
+  }
+});
+
+it("remounts quality work when the server workspace, actor or role changes", async () => {
+  const clientKey = async () => (await QualityPage()).props.children.at(-1).key;
+  const initial = await clientKey();
+  try {
+    current.workspaceId = "wrapper-other";
+    const switched = await clientKey();
+    expect(switched).not.toBe(initial);
+    current.actorId = "wrapper-other-actor";
+    const otherActor = await clientKey();
+    expect(otherActor).not.toBe(switched);
+    current.role = "operator";
+    expect(await clientKey()).not.toBe(otherActor);
+  } finally {
+    current.workspaceId = "wrapper-workspace";
+    current.actorId = "wrapper-actor";
+    current.role = "viewer";
+  }
+});
+
+it("redirects quality when the current server membership is absent", async () => {
+  current.authenticated = false;
+  try {
+    await expect(QualityPage()).rejects.toThrow("redirect:/signin");
+  } finally {
+    current.authenticated = true;
+  }
+});

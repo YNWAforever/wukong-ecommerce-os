@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { validateExportResultBinding } from "./import-results.js";
+import {
+  validateExportResultBinding,
+  assertLatestRejectedMember,
+} from "./import-results.js";
 const member = {
   listingId: "listing",
   versionId: "exported",
@@ -156,4 +159,24 @@ it("validates every version and rejects duplicates even when asked about the fir
   expect(() =>
     validateExportResultBinding(large, "ws", "listing-0", "version-0"),
   ).toThrow("export_provenance_incomplete");
+});
+
+it("accepts only the exact latest rejected receipt for repair", () => {
+  const expected = { listingId: "listing", resultId: "rejection", revision: 2 };
+  const latest = {
+    listingId: "listing",
+    id: "rejection",
+    revision: 2,
+    outcome: "rejected",
+  } as any;
+  expect(() => assertLatestRejectedMember(expected, latest)).not.toThrow();
+  for (const changed of [
+    null,
+    { ...latest, outcome: "accepted" },
+    { ...latest, id: "new-rejection", revision: 3 },
+    { ...latest, listingId: "foreign" },
+  ])
+    expect(() => assertLatestRejectedMember(expected, changed)).toThrow(
+      "repair_result_changed",
+    );
 });

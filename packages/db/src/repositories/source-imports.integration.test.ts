@@ -89,4 +89,35 @@ describe("source import repository", () => {
     );
     expect(found).toBeNull();
   });
+  it("looks up exact workbook identity within its workspace/store without refreshing the original attestation", async () => {
+    const input = inputFor({ connectionId });
+    const original = await database.forWorkspace(workspaceId, (r) =>
+      r.sourceImports.findByWorkbookIdentity(input),
+    );
+    expect(original).not.toBeNull();
+    expect(original?.merchantAttestedExportAt.toISOString()).toBe(
+      input.merchantAttestedExportAt.toISOString(),
+    );
+    expect(
+      await database.forWorkspace(otherWorkspaceId, (r) =>
+        r.sourceImports.findByWorkbookIdentity(input),
+      ),
+    ).toBeNull();
+    expect(
+      await database.forWorkspace(workspaceId, (r) =>
+        r.sourceImports.findByWorkbookIdentity({
+          ...input,
+          connectionId: otherConnectionId,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      await database.forWorkspace(workspaceId, (r) =>
+        r.sourceImports.findByWorkbookIdentity({
+          ...input,
+          headerContractSha256: "c".repeat(64),
+        }),
+      ),
+    ).toBeNull();
+  });
 });

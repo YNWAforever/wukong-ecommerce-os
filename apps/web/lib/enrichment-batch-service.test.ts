@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyWorkingListing } from "@wukong/core";
 
 import { createEnrichmentBatchService } from "./enrichment-batch-service";
 import { MAX_ENRICHMENT_WAVE_SIZE } from "./enrichment-wave-limit";
@@ -48,6 +49,30 @@ function serviceWith(
         ) {
           return work({
             platformProducts: {
+              async scanMaintenancePage(afterId?: string) {
+                if (afterId) return [];
+                return products
+                  .filter((product) => product.listingId)
+                  .map((product) => {
+                    const content = emptyWorkingListing();
+                    content.title = {
+                      en: product.rawRow?.nameEn ?? "",
+                      "zh-Hant": product.rawRow?.nameZh ?? "",
+                    };
+                    return {
+                      listingId: product.listingId,
+                      status: "received",
+                      content: product.origin === "created" ? null : content,
+                      assessmentState:
+                        product.origin === "created" ? "missing" : "assessed",
+                      fence: {
+                        inputRevision: 1,
+                        activeVersionId: null,
+                        sourceBinding: null,
+                      },
+                    };
+                  });
+              },
               async listRecent() {
                 return products;
               },
@@ -84,7 +109,7 @@ function serviceWith(
 }
 
 describe("enrichment batch creation", () => {
-  it("selects only products whose rows show the requested gap", async () => {
+  it("selects only saved current contents with the requested gap", async () => {
     const { service, recorded } = serviceWith();
 
     const result = await service.createBatch({
@@ -126,6 +151,9 @@ describe("enrichment batch creation", () => {
           selected: 1,
           budgetUsd: 5,
           waveSize: 3,
+          scannedCount: 2,
+          totalMatching: 1,
+          truncated: false,
         },
       },
     ]);
@@ -147,7 +175,7 @@ describe("enrichment batch creation", () => {
     expect(recorded.created).toEqual([]);
   });
 
-  it("excludes a created-origin product from gap-based cohort selection", async () => {
+  it("keeps a created-origin listing without current content unassessed", async () => {
     const { service, recorded } = serviceWith([
       {
         remoteProductId: "remote_import_1",

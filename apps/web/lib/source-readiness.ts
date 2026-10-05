@@ -1,5 +1,10 @@
-import type { PlatformProduct, WorkspaceRepositories } from "@wukong/db";
+import {
+  ListingDataError,
+  type PlatformProduct,
+  type WorkspaceRepositories,
+} from "@wukong/db";
 import { hashBulkFormHeaderContract } from "@wukong/shopline";
+import { sourceImportHasValidTime } from "./source-import-time";
 import {
   checkBulkUpdateEligibility,
   type BulkUpdateEligibilityDeps,
@@ -33,6 +38,8 @@ export async function evaluateSourceReadiness(
   const source = link?.sourceImportId
     ? await deps.getSourceImport(link.sourceImportId)
     : null;
+  if (source && !sourceImportHasValidTime(source))
+    throw new ListingDataError("invalid_source_time");
   const receipt = versionId ? await deps.getApprovalReceipt(versionId) : null;
   const currentConfirmation = versionId
     ? await deps.getReviewConfirmation(versionId)
@@ -160,5 +167,96 @@ export function readSourceReadiness(
       },
       currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
     },
+  );
+}
+
+/** Advisory only: one owned snapshot, then the existing policy against in-memory
+ * dependencies. Never use this snapshot as a mutation/export attestation. */
+export async function loadSourceReadinessBatch(
+  repositories: WorkspaceRepositories,
+  workspaceId: string,
+  listingIds: readonly string[],
+  links: readonly PlatformProduct[] = [],
+) {
+  const bundle = await repositories.reads.sourceReadinessBatch(
+    [...new Set(listingIds)],
+    [
+      ...new Set(
+        links.flatMap((link) =>
+          link.sourceImportId ? [link.sourceImportId] : [],
+        ),
+      ),
+    ],
+  );
+  const records = new Map(bundle.listings.map((item) => [item.id, item]));
+  const imports = new Map(bundle.imports.map((item) => [item.id, item]));
+  const confirmations = new Map(
+    bundle.listings.flatMap((item) =>
+      [item.currentConfirmation, item.inheritedConfirmation].flatMap(
+        (confirmation) =>
+          confirmation ? [[confirmation.versionId, confirmation] as const] : [],
+      ),
+    ),
+  );
+  const receipts = new Map(
+    bundle.listings.flatMap((item) =>
+      item.receipt ? [[item.receipt.versionId, item.receipt] as const] : [],
+    ),
+  );
+  const deps: ReadinessDeps = {
+    async getReviewState(id) {
+      const item = records.get(id);
+      if (item?.error) throw item.error;
+      return item?.state ?? null;
+    },
+    async getPlatformProductLink(id) {
+      const item = records.get(id);
+      if (item?.error) throw item.error;
+      return item?.link ?? null;
+    },
+    getReviewConfirmation: async (id) => confirmations.get(id) ?? null,
+    getApprovalReceipt: async (id) => receipts.get(id) ?? null,
+    async getSourceRow(input) {
+      return (
+        bundle.listings.find(
+          (item) =>
+            item.sourceRow?.sourceImportId === input.sourceImportId &&
+            item.sourceRow.connectionId === input.connectionId &&
+            item.sourceRow.remoteProductId === input.remoteProductId,
+        )?.sourceRow ?? null
+      );
+    },
+    getSourceImport: async (id) => imports.get(id) ?? null,
+    getSourceImportHeaderContractSha256: async (id) =>
+      imports.get(id)?.headerContractSha256 ?? null,
+    currentHeaderContractSha256: () => hashBulkFormHeaderContract(),
+  };
+  return {
+    deps,
+    read(listingId: string | null, link?: PlatformProduct | null) {
+      return evaluateSourceReadiness(
+        { workspaceId, listingId, ...(link === undefined ? {} : { link }) },
+        deps,
+      );
+    },
+  };
+}
+
+export async function readSourceReadinessBatch(
+  repositories: WorkspaceRepositories,
+  workspaceId: string,
+  listingIds: readonly string[],
+) {
+  const reader = await loadSourceReadinessBatch(
+    repositories,
+    workspaceId,
+    listingIds,
+  );
+  return new Map(
+    await Promise.all(
+      [...new Set(listingIds)].map(
+        async (id) => [id, await reader.read(id)] as const,
+      ),
+    ),
   );
 }

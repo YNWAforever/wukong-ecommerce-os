@@ -8,7 +8,11 @@ import {
   CONFIRMATION_FIELD_KEYS,
   CONFIRMATION_NEGATIVE_KEYS,
 } from "./review-confirmation-keys";
-import { evaluateSourceReadiness } from "./source-readiness";
+import {
+  evaluateSourceReadiness,
+  loadSourceReadinessBatch,
+} from "./source-readiness";
+import { hashBulkFormHeaderContract } from "@wukong/shopline";
 function fixture() {
   const rawRow = Object.fromEntries(
     BULK_FORM_COLUMNS.map((c) => [
@@ -73,7 +77,100 @@ function fixture() {
   };
   return { deps, state };
 }
+it("evaluates the same scalar policy from one immutable bundle, including duplicate catalog links", async () => {
+  const { deps, state } = fixture();
+  const header = hashBulkFormHeaderContract();
+  const link = await deps.getPlatformProductLink();
+  const receipt = {
+    ...(await deps.getApprovalReceipt()),
+    headerContractSha256: header,
+  };
+  const sourceRow = {
+    ...(await deps.getSourceRow()),
+    headerContractSha256: header,
+  };
+  const confirmation = await deps.getReviewConfirmation();
+  let calls = 0;
+  const repositories = {
+    reads: {
+      async sourceReadinessBatch(ids: string[]) {
+        calls++;
+        expect(ids).toEqual(["listing"]);
+        return {
+          listings: [
+            {
+              id: "listing",
+              state,
+              link,
+              receipt,
+              sourceRow,
+              currentConfirmation: confirmation,
+              inheritedConfirmation: confirmation,
+              error: null,
+            },
+          ],
+          imports: [
+            {
+              id: "source",
+              merchantAttestedExportAt: new Date("2026-01-01"),
+              headerContractSha256: header,
+            },
+          ],
+        };
+      },
+    },
+  };
+  const reader = await loadSourceReadinessBatch(
+    repositories as never,
+    "workspace",
+    ["listing", "listing"],
+  );
+  const scalarDeps = {
+    ...deps,
+    currentHeaderContractSha256: () => header,
+    getSourceImportHeaderContractSha256: async () => header,
+    getSourceImport: async () => ({
+      merchantAttestedExportAt: new Date("2026-01-01"),
+      headerContractSha256: header,
+    }),
+    getApprovalReceipt: async () => receipt,
+    getSourceRow: async () => sourceRow,
+  };
+  for (const outerLink of [
+    link,
+    { ...link, contentDigest: "different" },
+    null,
+  ]) {
+    expect(await reader.read("listing", outerLink as never)).toEqual(
+      await evaluateSourceReadiness(
+        {
+          workspaceId: "workspace",
+          listingId: "listing",
+          link: outerLink as never,
+        },
+        scalarDeps as never,
+      ),
+    );
+  }
+  expect(calls).toBe(1);
+});
 describe("advisory source readiness", () => {
+  it("classifies invalid source time without substituting fresh export evidence", async () => {
+    const { deps } = fixture();
+    deps.getSourceImport = async () => ({
+      merchantAttestedExportAt: new Date("invalid"),
+      headerContractSha256: "header",
+    });
+    await expect(
+      evaluateSourceReadiness(
+        { workspaceId: "workspace", listingId: "listing" },
+        deps as never,
+      ),
+    ).rejects.toMatchObject({
+      name: "ListingDataError",
+      reason: "invalid_source_time",
+    });
+  });
   it("shows bindings without granting freshness or downstream verification", async () => {
     const { deps } = fixture();
     const result = await evaluateSourceReadiness(

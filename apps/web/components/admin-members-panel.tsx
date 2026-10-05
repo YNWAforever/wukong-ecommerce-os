@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
 
 type Member = {
   userId: string;
@@ -29,6 +31,7 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export function AdminMembersPanel() {
+  const submitting = useRef(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [busy, setBusy] = useState(false);
@@ -62,6 +65,8 @@ export function AdminMembersPanel() {
     // `work` may return a warning: the action committed, but part of it did
     // not, so the outcome is neither a success nor a failure to retry blindly.
     async (work: () => Promise<string | void>, success: string) => {
+      if (submitting.current) return false;
+      submitting.current = true;
       setBusy(true);
       setError(null);
       setMessage(null);
@@ -70,21 +75,28 @@ export function AdminMembersPanel() {
         await load();
         if (warning) setError(warning);
         else setMessage(success);
+        return true;
       } catch (runError) {
         setError(
           runError instanceof Error
             ? runError.message
             : "Unable to complete request.",
         );
+        return false;
       } finally {
+        submitting.current = false;
         setBusy(false);
       }
     },
     [load],
   );
 
-  const invite = () =>
-    run(async () => {
+  const invite = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim())) {
+      setError("請填寫有效電郵 Enter a valid email address.");
+      return false;
+    }
+    return run(async () => {
       const response = await fetch("/api/workspace/members/invite", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -92,6 +104,7 @@ export function AdminMembersPanel() {
       });
       if (!response.ok) throw await responseError(response);
       setInviteEmail("");
+      setInviteRole("viewer");
       const body = (await response.json().catch(() => null)) as {
         emailDelivery?: string;
       } | null;
@@ -101,6 +114,16 @@ export function AdminMembersPanel() {
       if (body?.emailDelivery === "failed")
         return "邀請已建立，但未能要求寄出電郵；請檢查電郵設定後再次邀請 The invite was saved, but its email could not be requested. Check the auth email settings, then invite the same address again.";
     }, "邀請已建立，已要求寄出電郵 Invite saved; email requested");
+  };
+  useAdminDirtyGuard("members-invite", {
+    dirty: Boolean(inviteEmail || inviteRole !== "viewer" || busy),
+    save: invite,
+    discard: () => {
+      setInviteEmail("");
+      setInviteRole("viewer");
+      setError(null);
+    },
+  });
 
   const changeRole = (userId: string, role: AssignableRole) =>
     run(async () => {

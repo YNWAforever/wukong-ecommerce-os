@@ -1,10 +1,12 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { listingFactsSchema, type ListingFacts } from "@wukong/core";
 
 import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 import { platformProducts } from "../schema.js";
+import { ListingDataError } from "../listing-data-error.js";
+import { createMaintenanceContentReader } from "./maintenance-content.js";
 
 export type PlatformProductOrigin = "import" | "created";
 
@@ -60,7 +62,15 @@ export type UpsertPlatformProductInput = {
   sourceImportId: string | null;
 };
 
-export type PlatformProductRepository = {
+export type PlatformProductRepository = ReturnType<
+  typeof createMaintenanceContentReader
+> & {
+  /** Bind a successful create without replacing an imported snapshot or another draft. */
+  bindCreatedProduct(input: {
+    connectionId: string;
+    remoteProductId: string;
+    listingId: string;
+  }): Promise<boolean>;
   upsert(input: UpsertPlatformProductInput): Promise<PlatformProduct>;
   upsertMany(
     inputs: readonly UpsertPlatformProductInput[],
@@ -70,6 +80,14 @@ export type PlatformProductRepository = {
     remoteProductIds: readonly string[],
   ): Promise<PlatformProduct[]>;
   getByIds(ids: readonly string[]): Promise<PlatformProduct[]>;
+  getByIdsIsolated(
+    ids: readonly string[],
+  ): Promise<
+    Array<
+      | { id: string; product: PlatformProduct; error: null }
+      | { id: string; product: null; error: ListingDataError }
+    >
+  >;
   listRecent(limit?: number): Promise<PlatformProduct[]>;
   /**
    * The link the exporter reads: does this listing have a known remote
@@ -118,14 +136,16 @@ type PlatformProductRow = Omit<PlatformProduct, "factsPrefill" | "origin"> & {
  * so a malformed prefill would flow straight through the boundary. Parse it at
  * the seam, the way the workspace repository parses its profile jsonb.
  */
-const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => ({
-  ...row,
-  origin: platformProductOriginSchema.parse(row.origin),
-  factsPrefill:
+export const toPlatformProduct = (row: PlatformProductRow): PlatformProduct => {
+  const origin = platformProductOriginSchema.safeParse(row.origin);
+  const facts =
     row.factsPrefill === null
       ? null
-      : listingFactsSchema.parse(row.factsPrefill),
-});
+      : listingFactsSchema.safeParse(row.factsPrefill);
+  if (!origin.success || (facts && !facts.success))
+    throw new ListingDataError("invalid_platform_product");
+  return { ...row, origin: origin.data, factsPrefill: facts?.data ?? null };
+};
 
 const validatedValues = (
   input: UpsertPlatformProductInput,
@@ -145,6 +165,45 @@ export function createPlatformProductRepository(
   scope: WorkspaceScope,
 ): PlatformProductRepository {
   return {
+    ...createMaintenanceContentReader(transaction, workspaceId, scope),
+    async bindCreatedProduct(input) {
+      scope.assertOpen();
+      const rows = await transaction
+        .insert(platformProducts)
+        .values({
+          workspaceId,
+          connectionId: input.connectionId,
+          remoteProductId: input.remoteProductId,
+          listingId: input.listingId,
+          origin: "created",
+          sku: null,
+          specVersion: null,
+          rawRow: null,
+          factsPrefill: null,
+          contentDigest: null,
+          sourceImportId: null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            platformProducts.workspaceId,
+            platformProducts.connectionId,
+            platformProducts.remoteProductId,
+          ],
+          // The remote call can overlap an import. Only claim an empty binding;
+          // leave every imported field and an existing binding's timestamp intact.
+          set: {
+            listingId: input.listingId,
+            updatedAt: sql`case when ${platformProducts.listingId} is null then now() else ${platformProducts.updatedAt} end`,
+          },
+          setWhere: or(
+            isNull(platformProducts.listingId),
+            eq(platformProducts.listingId, input.listingId),
+          ),
+        })
+        .returning({ id: platformProducts.id });
+      return rows.length === 1;
+    },
+
     async upsert(input) {
       scope.assertOpen();
       const [row] = await transaction
@@ -217,7 +276,7 @@ export function createPlatformProductRepository(
             eq(platformProducts.listingId, listingId),
           ),
         )
-        .orderBy(desc(platformProducts.updatedAt))
+        .orderBy(desc(platformProducts.updatedAt), desc(platformProducts.id))
         .limit(1);
       return row ? toPlatformProduct(row) : null;
     },
@@ -269,6 +328,30 @@ export function createPlatformProductRepository(
         .orderBy(desc(platformProducts.updatedAt))
         .limit(100);
       return rows.map(toPlatformProduct);
+    },
+    async getByIdsIsolated(ids) {
+      scope.assertOpen();
+      if (!ids.length) return [];
+      if (ids.length > 100) throw new Error("read hydration exceeds page size");
+      const rows = await transaction
+        .select(COLUMNS)
+        .from(platformProducts)
+        .where(
+          and(
+            eq(platformProducts.workspaceId, workspaceId),
+            inArray(platformProducts.id, [...ids]),
+          ),
+        )
+        .orderBy(desc(platformProducts.updatedAt))
+        .limit(100);
+      return rows.map((row) => {
+        try {
+          return { id: row.id, product: toPlatformProduct(row), error: null };
+        } catch (error) {
+          if (!(error instanceof ListingDataError)) throw error;
+          return { id: row.id, product: null, error };
+        }
+      });
     },
 
     async listRecent(limit = 100) {

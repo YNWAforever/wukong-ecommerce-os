@@ -6,6 +6,85 @@ import {
   type SessionContextPort,
 } from "./session-context-port";
 
+export type DiagnosticStage =
+  | "session"
+  | "listing"
+  | "review"
+  | "sources"
+  | "assets"
+  | "activity"
+  | "unknown";
+export type RouteDiagnostics = { requestId: string; stage?: DiagnosticStage };
+
+class RouteStageError extends Error {
+  constructor(
+    readonly stage: DiagnosticStage,
+    readonly original: unknown,
+  ) {
+    super("route stage failed");
+  }
+}
+
+export function createRouteDiagnostics(): RouteDiagnostics {
+  return { requestId: crypto.randomUUID() };
+}
+
+// The stage travels with the failure, rather than a shared mutable variable:
+// concurrent row reads cannot overwrite the failing row's stage.
+export async function atRouteStage<T>(
+  stage: DiagnosticStage,
+  work: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof RouteStageError) throw error;
+    throw new RouteStageError(stage, error);
+  }
+}
+
+function diagnosticCode(error: unknown): string {
+  const codes: Record<string, string> = {
+    "42501": "permission_denied",
+    "42P01": "schema_unavailable",
+    "42703": "schema_unavailable",
+    "25P02": "transaction_unavailable",
+    "08006": "database_unavailable",
+    "08001": "database_unavailable",
+    "53300": "database_unavailable",
+    "57P01": "database_unavailable",
+    ECONNREFUSED: "database_unavailable",
+    ECONNRESET: "database_unavailable",
+    ETIMEDOUT: "database_unavailable",
+  };
+  let current = error;
+  for (let depth = 0; depth < 4; depth++) {
+    if (typeof current !== "object" || current === null) break;
+    if (
+      "code" in current &&
+      typeof current.code === "string" &&
+      codes[current.code]
+    )
+      return codes[current.code]!;
+    if ("name" in current && current.name === "ListingDataError")
+      return "invalid_record";
+    current = "cause" in current ? current.cause : null;
+  }
+  return "unknown";
+}
+
+function deploymentIdentity() {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.BUILD_SHA;
+  const deployment = process.env.VERCEL_DEPLOYMENT_ID;
+  return {
+    commitSha: sha && /^[a-f0-9]{40}$/i.test(sha) ? sha : "unknown",
+    deploymentId:
+      deployment && /^dpl_[a-zA-Z0-9]{1,80}$/.test(deployment)
+        ? deployment
+        : "unknown",
+  };
+}
+
 type RuntimeConfigurationFailure = Error & { variable: string };
 
 // Matched by name rather than instanceof. This helper is imported by every
@@ -133,24 +212,58 @@ export async function requireSessionContext(
 
 export async function withRouteErrors(
   work: () => Promise<Response>,
+  diagnostics?: RouteDiagnostics,
 ): Promise<Response> {
+  const requestId = diagnostics
+    ? /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
+        diagnostics.requestId,
+      )
+      ? diagnostics.requestId
+      : crypto.randomUUID()
+    : undefined;
+  const errorResponse = (status: number, body: Record<string, unknown>) => {
+    const response = jsonResponse(status, {
+      ...body,
+      ...(requestId ? { requestId } : {}),
+    });
+    if (requestId) response.headers.set("x-request-id", requestId);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  };
   try {
-    return await work();
-  } catch (error) {
+    const response = await work();
+    if (requestId) {
+      response.headers.set("x-request-id", requestId);
+      response.headers.set("Cache-Control", "no-store");
+    }
+    return response;
+  } catch (caught) {
+    const error = caught instanceof RouteStageError ? caught.original : caught;
+    const detail = requestId
+      ? {
+          requestId,
+          stage:
+            caught instanceof RouteStageError
+              ? caught.stage
+              : (diagnostics?.stage ?? "unknown"),
+          code: diagnosticCode(error),
+          ...deploymentIdentity(),
+        }
+      : {};
     if (error instanceof ApiError) {
-      return jsonResponse(error.status, {
+      return errorResponse(error.status, {
         code: error.code,
         message: error.message,
       });
     }
     if (error instanceof ZodError || error instanceof SyntaxError) {
-      return jsonResponse(400, {
+      return errorResponse(400, {
         code: "invalid_request",
         message: "Request body is invalid.",
       });
     }
     if (error instanceof SessionContextUnavailableError) {
-      return jsonResponse(503, {
+      return errorResponse(503, {
         code: "authentication_unavailable",
         message: "Authentication is not configured.",
       });
@@ -161,14 +274,14 @@ export async function withRouteErrors(
       "code" in error &&
       error.code === "23505"
     ) {
-      return jsonResponse(409, {
+      return errorResponse(409, {
         code: "conflict",
         message: "The resource already exists.",
       });
     }
     const membershipGuardFailure = asMembershipGuardViolation(error);
     if (membershipGuardFailure) {
-      return jsonResponse(409, {
+      return errorResponse(409, {
         code: membershipGuardFailure.reason,
         message: membershipGuardFailure.message,
       });
@@ -179,8 +292,9 @@ export async function withRouteErrors(
       // .env.example. The value never is.
       report("runtime_not_configured", {
         variable: configurationFailure.variable,
+        ...detail,
       });
-      return jsonResponse(503, {
+      return errorResponse(503, {
         code: "runtime_unavailable",
         message: "This feature is not configured.",
       });
@@ -188,15 +302,28 @@ export async function withRouteErrors(
 
     const queueFailure = asQueueIngressError(error);
     if (queueFailure) {
-      report("queue_unavailable", { queueReason: queueFailure.reason });
-      return jsonResponse(503, {
+      report("queue_unavailable", {
+        queueReason: queueFailure.reason,
+        ...detail,
+      });
+      return errorResponse(503, {
         code: "queue_unavailable",
         message: "The processing queue is unavailable.",
       });
     }
 
-    reportUnexpectedError(error);
-    return jsonResponse(500, {
+    // Name only, never the message: an unexpected error can carry a connection
+    // string or a signed URL, and the readiness gate scans runtime logs.
+    report("internal_error", {
+      ...(diagnostics
+        ? {}
+        : {
+            errorName: error instanceof Error ? error.name : "UnknownError",
+            errorSite: throwSite(error),
+          }),
+      ...detail,
+    });
+    return errorResponse(500, {
       code: "internal_error",
       message: "The request could not be completed.",
     });

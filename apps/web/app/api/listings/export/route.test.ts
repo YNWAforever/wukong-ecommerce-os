@@ -1,3 +1,13 @@
+import {
+  EXPORT_CONTENT_FIELDS,
+  exportSelectionSchema,
+} from "../../../../lib/bulk-export-contract";
+import {
+  createBulkExport,
+  createBulkExportDeps,
+  bulkExportPreview,
+} from "../../../../lib/bulk-export-service";
+import { createExportPreviewHandler } from "./preview/route";
 import { createHash } from "node:crypto";
 import { AssetObjectMissingError } from "@wukong/assets";
 import type { ReviewConfirmation } from "@wukong/db";
@@ -220,6 +230,7 @@ function makeExportAttempts() {
 
   return {
     ensureCalls: [] as any[],
+    readyCalls: [] as any[],
     async ensure(input: any) {
       this.ensureCalls.push(input);
       const existing = store.get(input.idempotencyKey);
@@ -259,7 +270,8 @@ function makeExportAttempts() {
       store.set(input.idempotencyKey, created);
       return { ...created, wasCreated: true };
     },
-    async markReady(input: any) {
+    async markReady(input: any, audit: unknown) {
+      this.readyCalls.push({ input, audit });
       const row = [...store.values()].find(
         (row) =>
           row.id === input.id && row.artifactSha256 === input.artifactSha256,
@@ -406,7 +418,10 @@ function makeRepositories(
     sourceImports: {
       async getById(id: string) {
         if (id === "import_1" || id === "import_2")
-          return { headerContractSha256 };
+          return {
+            headerContractSha256,
+            merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+          };
         return null;
       },
     },
@@ -504,7 +519,7 @@ function makeHandler(
   let transactionCalls = 0;
   const workspaces: string[] = [];
 
-  const handler = createExportListingsHandler({
+  const rawHandler = createExportListingsHandler({
     sessionContext: {
       async resolve() {
         return { ...context, role: options.role ?? "reviewer" };
@@ -526,8 +541,50 @@ function makeHandler(
     getAssetStore: () => assetStore,
   });
 
+  // Existing artifact/authorization regressions now submit an explicitly reviewed plan.
+  // The direct raw handler remains available for missing-preview and stale-preview tests.
+  const handler = async (request: Request) => {
+    const original = await request.clone().json();
+    const selection = { fields: [...EXPORT_CONTENT_FIELDS], ...original };
+    const { previewSha256: expected, ...candidate } = selection;
+    let previewSha256 = expected ?? "0".repeat(64);
+    const parsed = exportSelectionSchema.safeParse(candidate);
+    if (parsed.success && !expected) {
+      try {
+        const input = {
+          workspaceId: context.workspaceId,
+          requestedBy: context.actorId,
+          listingIds: parsed.data.listingIds,
+          fields: parsed.data.fields,
+          attestedDigests: new Map(
+            parsed.data.attestation.listings.map((entry) => [
+              entry.listingId,
+              entry.contentDigest,
+            ]),
+          ),
+        };
+        previewSha256 = bulkExportPreview(
+          input,
+          await createBulkExport(
+            input,
+            createBulkExportDeps(repositories as never),
+          ),
+        ).previewSha256;
+      } catch {
+        /* The real route still classifies malformed or changed source content. */
+      }
+    }
+    return rawHandler(
+      new Request(request.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...candidate, previewSha256 }),
+      }),
+    );
+  };
   return {
     handler,
+    rawHandler,
     repositories,
     audits,
     assetStore,
@@ -761,6 +818,7 @@ describe("POST /api/listings/export", () => {
           if (change === "header")
             repositories.sourceImports.getById = async () => ({
               headerContractSha256: "changed",
+              merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
             });
         },
       });
@@ -1523,4 +1581,212 @@ describe("attestation request shape", () => {
     );
     expect(response.status).toBe(400);
   });
+});
+
+describe("explicit preview contract", () => {
+  const selection = {
+    listingIds: ["listing_changed"],
+    fields: ["nameZh"],
+    attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+  };
+  function previewHandler(
+    fixture: ReturnType<typeof makeHandler>,
+    role = "reviewer",
+    actorId = context.actorId,
+  ) {
+    return createExportPreviewHandler({
+      sessionContext: {
+        async resolve() {
+          return { ...context, role, actorId } as never;
+        },
+      },
+      getDatabase: () =>
+        ({
+          async forWorkspace<T>(
+            _id: string,
+            work: (repositories: any) => Promise<T>,
+          ) {
+            return work(fixture.repositories);
+          },
+        }) as never,
+    });
+  }
+  it("previews exact old/new/source fields without artifacts, attempts or audit mutations", async () => {
+    const fixture = makeHandler();
+    const response = await previewHandler(fixture)(request(selection));
+    expect(response.status).toBe(200);
+    const preview = await response.json();
+    expect(preview).toMatchObject({
+      fields: ["nameZh"],
+      rowCount: 1,
+      changes: [
+        {
+          listingId: "listing_changed",
+          column: "nameZh",
+          from: "舊標題",
+          to: "新標題",
+          versionId: "version_changed",
+        },
+      ],
+    });
+    expect(preview.changes[0].sourceSnapshotId).toBeTruthy();
+    expect(preview.previewSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(fixture.assetStore.calls).toEqual([]);
+    expect(fixture.exportAttempts.ensureCalls).toEqual([]);
+    expect(fixture.audits).toEqual([]);
+  });
+  it.each(["viewer", "operator"])("forbids %s previews", async (role) => {
+    const fixture = makeHandler();
+    expect(
+      (await previewHandler(fixture, role)(request(selection))).status,
+    ).toBe(403);
+    expect(fixture.assetStore.calls).toEqual([]);
+  });
+  it.each([
+    { ...selection, fields: [] },
+    { ...selection, fields: ["regularPrice"] },
+    { ...selection, fields: ["nameZh", "nameZh"] },
+    selection,
+  ])(
+    "generation rejects a missing or invalid explicit contract",
+    async (body) => {
+      const fixture = makeHandler();
+      expect((await fixture.rawHandler(request(body))).status).toBe(400);
+      expect(fixture.assetStore.calls).toEqual([]);
+      expect(fixture.exportAttempts.ensureCalls).toEqual([]);
+    },
+  );
+  it("rejects a mask changed after review without persisting anything", async () => {
+    const fixture = makeHandler();
+    const reviewed = await (
+      await previewHandler(fixture)(request(selection))
+    ).json();
+    const response = await fixture.rawHandler(
+      request({
+        ...selection,
+        fields: ["summaryEn"],
+        previewSha256: reviewed.previewSha256,
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "export_preview_changed",
+    });
+    expect(fixture.assetStore.calls).toEqual([]);
+    expect(fixture.exportAttempts.ensureCalls).toEqual([]);
+    expect(fixture.audits).toEqual([]);
+  });
+  it("refuses another server actor's preview in the same workspace before any persistence", async () => {
+    const fixture = makeHandler();
+    const reviewedResponse = await previewHandler(
+      fixture,
+      "reviewer",
+      "another-reviewer",
+    )(request(selection));
+    expect(reviewedResponse.status).toBe(200);
+    const reviewed = await reviewedResponse.json();
+    const response = await fixture.rawHandler(
+      request({ ...selection, previewSha256: reviewed.previewSha256 }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "export_preview_changed",
+    });
+    expect(fixture.assetStore.calls).toEqual([]);
+    expect(fixture.exportAttempts.ensureCalls).toEqual([]);
+    expect(fixture.audits).toEqual([]);
+  });
+  it("recomputes even excluded members at the final locked boundary", async () => {
+    const fixture = makeHandler({
+      beforeTransaction(repositories, call) {
+        if (call === 2) {
+          const getSnapshot = repositories.listings.getReviewSnapshot;
+          repositories.listings.getReviewSnapshot = async (id: string) => {
+            const value = await getSnapshot(id);
+            return id === "listing_noop"
+              ? {
+                  ...value,
+                  activeVersion: {
+                    ...value.activeVersion,
+                    content: contentFor("Now changed"),
+                  },
+                }
+              : value;
+          };
+        }
+      },
+    });
+    const submitted = {
+      ...selection,
+      listingIds: ["listing_changed", "listing_noop"],
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        listing_noop: NOOP_DIGEST,
+      }),
+    };
+    const reviewed = await (
+      await previewHandler(fixture)(request(submitted))
+    ).json();
+    const response = await fixture.rawHandler(
+      request({ ...submitted, previewSha256: reviewed.previewSha256 }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "export_preview_changed",
+    });
+    expect(fixture.exportAttempts.ensureCalls).toEqual([]);
+    expect(fixture.assetStore.calls).toEqual([]);
+  });
+});
+
+it("locks the entire selected set in sorted order before any final included-member recheck", async () => {
+  const events: string[] = [];
+  const fixture = makeHandler({
+    beforeTransaction(repositories, call) {
+      if (call === 2) {
+        const read = repositories.listings.getReviewSnapshot;
+        repositories.listings.lockReviewState = async (id: string) => {
+          events.push("lock:" + id);
+        };
+        repositories.listings.getReviewSnapshot = async (id: string) => {
+          events.push("read:" + id);
+          return read(id);
+        };
+      }
+    },
+  });
+  const response = await fixture.handler(
+    request({
+      listingIds: ["listing_changed", "a_missing"],
+      fields: ["nameZh"],
+      attestation: attestationFor({
+        listing_changed: CHANGED_DIGEST,
+        a_missing: "unavailable-source",
+      }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(events.slice(0, 2)).toEqual([
+    "lock:a_missing",
+    "lock:listing_changed",
+  ]);
+});
+
+it("passes the server actor and scoped audit port to atomic artifact readiness", async () => {
+  const fixture = makeHandler();
+  const response = await fixture.handler(
+    request({
+      listingIds: ["listing_changed"],
+      fields: ["nameZh"],
+      attestation: attestationFor({ listing_changed: CHANGED_DIGEST }),
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(fixture.exportAttempts.readyCalls).toHaveLength(1);
+  expect(fixture.exportAttempts.readyCalls[0].input.actorId).toBe(
+    context.actorId,
+  );
+  expect(fixture.exportAttempts.readyCalls[0].audit).toBe(
+    fixture.repositories.audit,
+  );
 });

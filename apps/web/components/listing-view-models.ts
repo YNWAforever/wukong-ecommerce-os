@@ -9,6 +9,8 @@ export type QueueStatus =
   | "failed";
 
 export type QueueItem = {
+  readBlocked?: boolean;
+  readFailure?: { reason: string; requestId: string };
   id: string;
   title: string;
   subtitle: string;

@@ -1,4 +1,10 @@
 "use client";
+import {
+  EXPORT_CONTENT_FIELDS,
+  type ExportContentField,
+  type ExportPreview,
+  type ExportRepair,
+} from "../lib/bulk-export-contract";
 import { useLocale } from "../lib/locale-context";
 import {
   localized,
@@ -13,7 +19,7 @@ import {
   exportErrorLabel,
 } from "../lib/export-ui-copy";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ExportReconciliationPanel,
   type WireExportReconciliationDetail,
@@ -36,6 +42,17 @@ import {
  * it was selected instead, precisely so it never needs this sentinel for
  * that case.
  */
+const exportFieldLabels: Record<ExportContentField, [string, string]> = {
+  nameZh: ["中文名稱", "Chinese name"],
+  summaryEn: ["英文摘要", "English summary"],
+  summaryZh: ["中文摘要", "Chinese summary"],
+  seoTitleEn: ["英文 SEO 標題", "English SEO title"],
+  seoTitleZh: ["中文 SEO 標題", "Chinese SEO title"],
+  seoDescriptionEn: ["英文 SEO 描述", "English SEO description"],
+  seoDescriptionZh: ["中文 SEO 描述", "Chinese SEO description"],
+  seoKeywords: ["SEO 關鍵字", "SEO keywords"],
+};
+
 export const NO_CONTENT_DIGEST = "no-content-digest-recorded";
 
 type ExportResponse = {
@@ -86,9 +103,11 @@ function selectionIdentity(
 export function BulkExportPanel({
   listings,
   canGenerate,
+  repair,
 }: {
   listings: ReadonlyArray<{ listingId: string; contentDigest: string }>;
   canGenerate: boolean;
+  repair?: ExportRepair;
 }) {
   const locale = useLocale();
   const t = (zh: string, en: string) => localized(locale, zh, en);
@@ -98,6 +117,30 @@ export function BulkExportPanel({
     () => selectionIdentity(listings),
     [listings],
   );
+  const [fields, setFields] = useState<ExportContentField[]>([]);
+  const contextIdentity = JSON.stringify([
+    currentSelection,
+    fields,
+    canGenerate,
+    repair ?? null,
+  ]);
+  const currentContext = useRef(contextIdentity);
+  currentContext.current = contextIdentity;
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  const [reviewedPreview, setReviewedPreview] = useState<{
+    identity: string;
+    value: ExportPreview;
+  } | null>(null);
+  const preview =
+    reviewedPreview?.identity === contextIdentity
+      ? reviewedPreview.value
+      : null;
   const [attestedSelection, setAttestedSelection] = useState<string | null>(
     null,
   );
@@ -115,10 +158,25 @@ export function BulkExportPanel({
     null,
   );
   const inFlight = useRef(false);
+  const detailSequence = useRef(0);
+  useEffect(() => {
+    detailSequence.current += 1;
+    setResult(null);
+    setDetail(null);
+    setDetailBusy(false);
+    setError(null);
+    setErrorCode(null);
+  }, [contextIdentity]);
   const attested =
     currentSelection.length > 0 && attestedSelection === currentSelection;
 
   async function loadDetail(attemptId: string) {
+    const identity = currentContext.current;
+    const sequence = ++detailSequence.current;
+    const isCurrent = () =>
+      active.current &&
+      currentContext.current === identity &&
+      detailSequence.current === sequence;
     setDetailBusy(true);
     try {
       const response = await fetch(`/api/listings/export/${attemptId}`, {
@@ -126,10 +184,13 @@ export function BulkExportPanel({
       });
       if (!response.ok)
         throw new Error(`Unable to load export status (${response.status})`);
-      setDetail((await response.json()) as WireExportReconciliationDetail);
+      const loaded = (await response.json()) as WireExportReconciliationDetail;
+      if (!isCurrent()) return;
+      setDetail(loaded);
       setError(null);
       setErrorCode(null);
     } catch (caught) {
+      if (!isCurrent()) return;
       setError(
         caught instanceof Error
           ? caught.message
@@ -137,7 +198,59 @@ export function BulkExportPanel({
       );
       setErrorCode(null);
     } finally {
-      setDetailBusy(false);
+      if (isCurrent()) setDetailBusy(false);
+    }
+  }
+
+  async function reviewPreview() {
+    if (
+      inFlight.current ||
+      !canGenerate ||
+      !attested ||
+      !fields.length ||
+      !listingIds.length
+    )
+      return;
+    const identity = contextIdentity;
+    const submitted = {
+      listingIds: listings.map((listing) => listing.listingId),
+      fields: [...fields],
+      attestation: { listings: [...listings] },
+      ...(repair ? { repair } : {}),
+    };
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    setErrorCode(null);
+    setReviewedPreview(null);
+    try {
+      const response = await fetch("/api/listings/export/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(submitted),
+      });
+      const body = await response.json();
+      if (!active.current || currentContext.current !== identity) return;
+      if (!response.ok) {
+        setErrorCode(body.code ?? null);
+        throw new Error("Unable to preview export");
+      }
+      if (
+        !/^[a-f0-9]{64}$/.test(body.previewSha256) ||
+        !Array.isArray(body.changes) ||
+        !Array.isArray(body.manifest) ||
+        !Array.isArray(body.fields)
+      )
+        throw new Error("Incomplete export preview");
+      setReviewedPreview({ identity, value: body as ExportPreview });
+    } catch (caught) {
+      if (active.current && currentContext.current === identity)
+        setError(
+          caught instanceof Error ? caught.message : "Unable to preview export",
+        );
+    } finally {
+      inFlight.current = false;
+      if (active.current) setBusy(false);
     }
   }
 
@@ -146,6 +259,7 @@ export function BulkExportPanel({
       inFlight.current ||
       !canGenerate ||
       !attested ||
+      !preview ||
       listingIds.length === 0
     )
       return;
@@ -159,6 +273,9 @@ export function BulkExportPanel({
     // `submittedIds` and the attested listings can never name different
     // selections -- there is no separate `listingIds` capture that could
     // drift from what gets attested.
+    const identity = contextIdentity;
+    const submittedFields = [...fields];
+    const submittedPreview = preview.previewSha256;
     const submittedListings = [...listings];
     const submittedIds = submittedListings.map((entry) => entry.listingId);
     try {
@@ -167,10 +284,14 @@ export function BulkExportPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           listingIds: submittedIds,
+          fields: submittedFields,
+          previewSha256: submittedPreview,
+          ...(repair ? { repair } : {}),
           attestation: { listings: submittedListings },
         }),
       });
       const body = (await response.json()) as ExportResponse;
+      if (!active.current || currentContext.current !== identity) return;
       if (!response.ok) {
         if (body.exportAttemptId) {
           setResult(body);
@@ -183,6 +304,7 @@ export function BulkExportPanel({
         // fixed, made-up string (never the server's), kept only as a
         // fallback for a code the render's lookup does not recognise.
         setErrorCode(body.code ?? null);
+        setReviewedPreview(null);
         throw new Error(`Unable to generate export (${response.status})`);
       }
       if (body.exportAttemptId) {
@@ -196,12 +318,13 @@ export function BulkExportPanel({
         );
       }
     } catch (caught) {
+      if (!active.current || currentContext.current !== identity) return;
       setError(
         caught instanceof Error ? caught.message : "Unable to generate export",
       );
     } finally {
       inFlight.current = false;
-      setBusy(false);
+      if (active.current) setBusy(false);
     }
   }
 
@@ -247,17 +370,109 @@ export function BulkExportPanel({
           "I confirm this SHOPLINE source export is still current.",
         )}
       </label>
+      <fieldset data-export-fields disabled={busy || !canGenerate}>
+        <legend>
+          {t("選擇本次 XLSX 更新欄位", "Choose fields for this XLSX")}
+        </legend>
+        {EXPORT_CONTENT_FIELDS.map((field) => {
+          return (
+            <label key={field}>
+              <input
+                type="checkbox"
+                value={field}
+                checked={fields.includes(field)}
+                onChange={(event) => {
+                  setFields((current) =>
+                    EXPORT_CONTENT_FIELDS.filter((key) =>
+                      key === field
+                        ? event.target.checked
+                        : current.includes(key),
+                    ),
+                  );
+                  setReviewedPreview(null);
+                }}
+              />
+              {t(...exportFieldLabels[field])}
+            </label>
+          );
+        })}
+      </fieldset>
+      <p className="helper-copy">
+        {t(
+          "只更新所選內容欄；其他欄位保留，庫存增減指令歸零。",
+          "Only selected copy fields change. Other cells are preserved; stock delta instructions are neutralized.",
+        )}
+      </p>
+      {preview ? (
+        <section aria-label={t("XLSX 更新預覽", "XLSX update preview")}>
+          <p>
+            {t("納入商品：", "Included listings:")} {preview.rowCount} ·{" "}
+            {t("選中欄位：", "Selected fields:")}{" "}
+            {preview.fields
+              .map((field) => t(...exportFieldLabels[field]))
+              .join(", ")}
+          </p>
+          <ul>
+            {preview.manifest.map((member) => (
+              <li key={member.listingId}>
+                {member.listingId} · {outcomeLabel(member.outcome, locale)}
+                {member.reason
+                  ? " · " +
+                    manifestReasonLabel(member.reason, member.outcome, locale)
+                  : ""}
+              </li>
+            ))}
+          </ul>
+          <ul>
+            {preview.changes.map((change) => (
+              <li key={change.listingId + change.column}>
+                {change.listingId} · {t(...exportFieldLabels[change.column])}:{" "}
+                {change.from ?? t("空白", "Blank")} → {change.to} ·{" "}
+                {t("來源", "Source")} {change.sourceSnapshotId} ·{" "}
+                {t("批准版本", "Approved version")} {change.versionId}
+              </li>
+            ))}
+          </ul>
+          {preview.neutralizedQuantityDeltas.length ? (
+            <p>
+              {t(
+                "庫存增減指令將歸零：",
+                "Stock delta instructions will be neutralized:",
+              )}{" "}
+              {preview.neutralizedQuantityDeltas.join(", ")}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       <button
         className="primary-button"
         type="button"
-        disabled={!canGenerate || !attested || listingIds.length === 0 || busy}
+        disabled={
+          !canGenerate ||
+          !attested ||
+          !fields.length ||
+          listingIds.length === 0 ||
+          busy
+        }
         aria-describedby={error ? errorId : undefined}
-        onClick={() => void generate()}
+        onClick={() => void (preview ? generate() : reviewPreview())}
       >
         {busy
           ? t("正在產生…", "Generating…")
-          : t("產生批量更新 XLSX", "Generate Bulk Update XLSX")}
+          : preview
+            ? t("確認預覽並產生 XLSX", "Generate Bulk Update XLSX")
+            : t("預覽批量更新 XLSX", "Preview Bulk Update XLSX")}
       </button>
+      {preview ? (
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy}
+          onClick={() => void reviewPreview()}
+        >
+          {t("重新預覽", "Preview again")}
+        </button>
+      ) : null}
       {!canGenerate ? (
         <p className="helper-copy">
           {t("需要審核員權限。", "Reviewer access required.")}
