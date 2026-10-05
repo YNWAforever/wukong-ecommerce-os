@@ -51,9 +51,11 @@ in `docs/audit/2026-10-05-*.md`.
   conflicts with #121 in five files; the tested resolution is local branch
   `claude/final-audit-verify-all`.
 - No migration is added. Nothing is applied to production, and SHOPLINE stays mock/disabled.
-- Listing prompt versions move to extraction 1.2.0 and generation 1.1.0. Drain the listing queue
-  before deploying the Worker; otherwise accepted operations pinned to the old versions refuse
-  and need a new retry.
+- Listing prompt versions move to extraction 1.2.0 and generation 1.1.0. The web app pins the
+  versions on each new operation and the Worker requires an exact match, so web (Vercel, deploys
+  on merge) and Worker (manual Cloudflare deploy) must ship together. Pause intake or drain the
+  listing queue, merge, deploy the Worker immediately, then resume. Operations pinned during the
+  gap refuse with "Accepted prompt versions are unavailable" and need a new retry.
 - Every web route now sends baseline security headers (`frame-ancestors 'none'`,
   `X-Frame-Options: DENY`, HSTS without `includeSubDomains`). Check that nothing embeds the app.
 - Auth emails are capped at 3 per address per 15 minutes. Expect `auth_email_throttled` audit

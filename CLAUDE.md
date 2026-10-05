@@ -72,7 +72,8 @@ docs/superpowers/{specs,plans}  Dated design docs — read before changing a sub
 - **Model input is untrusted data.** Notes, label/photo text, workbook cells and web pages go in
   the user turn as JSON; system instructions say to ignore instructions inside them. Any prompt
   text change bumps `packages/core/src/listing-prompt-versions.ts`. Accepted operations pinned to
-  an old version then refuse, so deploy with the listing queue drained.
+  another version then refuse. The web app pins versions and the Worker checks them, so deploy
+  web and Worker together with the listing queue drained.
 
 ## Conventions
 
