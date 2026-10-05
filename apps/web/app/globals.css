@@ -2491,3 +2491,34 @@ button:disabled {
 .intake-failure p + p {
   margin-top: 6px;
 }
+
+/* Review loop: evidence status reads as information; amber stays for
+   "Needs information", the one state a reviewer must act on. */
+.field-meta .confidence-missing {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.field-meta .source-missing {
+  width: auto;
+}
+.field-meta .source-missing::before {
+  content: "· ";
+}
+.confirmations-return {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--navy);
+  font-weight: 600;
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+#review-confirmations,
+#listing-approval-actions {
+  scroll-margin-top: 96px;
+}
