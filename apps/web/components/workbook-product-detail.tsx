@@ -1,5 +1,6 @@
 "use client";
 import { useCallback } from "react";
+import Link from "next/link";
 import type { WorkbookCatalogProduct } from "@wukong/db";
 import { useLatestRequest } from "../lib/use-latest-request";
 import { useLocale } from "../lib/locale-context";
@@ -49,6 +50,12 @@ export function WorkbookProductDetail({ id }: { id: string }) {
               "Workbook source · read only; unavailable for export or publication",
             )}
           </p>
+          <Link
+            className="secondary-button"
+            href={`/listings/import?intent=maintain-existing&referenceKind=workbook&referenceId=${encodeURIComponent(id)}`}
+          >
+            {t("開始維護", "Start maintenance")}
+          </Link>
           <dl>
             <dt>{t("商品名稱（中文）", "Title (Chinese)")}</dt>
             <dd>{data.product.title["zh-Hant"] ?? "—"}</dd>

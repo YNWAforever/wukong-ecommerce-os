@@ -15,6 +15,8 @@ import {
   CONFIRMATION_NEGATIVE_KEYS,
 } from "../../../../lib/review-confirmation-keys";
 import { createExportListingsHandler } from "./route";
+import { createExportPreviewHandler } from "./preview/route";
+import { EXPORT_CONTENT_FIELDS } from "../../../../lib/bulk-export-contract";
 import { createImportResultHandler } from "../[id]/shopline-import-result/route";
 
 // This suite deliberately requires explicit isolated test-service URLs.
@@ -105,21 +107,35 @@ async function exportListing(listingId: string) {
     const link = await r.platformProducts.getByListingId(listingId);
     return link?.contentDigest ?? null;
   });
-  const response = await exportHandler(
+  const selection = {
+    listingIds: [listingId],
+    fields: [...EXPORT_CONTENT_FIELDS],
+    attestation: {
+      listings: [
+        { listingId, contentDigest: attestedDigest ?? "no-digest-recorded" },
+      ],
+    },
+  };
+  const previewHandler = createExportPreviewHandler({
+    getDatabase: () => database,
+    sessionContext: {
+      async resolve() {
+        return { workspaceId, actorId, role: "reviewer" };
+      },
+    },
+  });
+  const toRequest = (body: unknown) =>
     new Request("http://localhost/api/listings/export", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        listingIds: [listingId],
-        attestation: {
-          listings: [
-            {
-              listingId,
-              contentDigest: attestedDigest ?? "no-digest-recorded",
-            },
-          ],
-        },
-      }),
+      body: JSON.stringify(body),
+    });
+  const reviewed = await previewHandler(toRequest(selection));
+  expect(reviewed.status).toBe(200);
+  const response = await exportHandler(
+    toRequest({
+      ...selection,
+      previewSha256: (await reviewed.json()).previewSha256,
     }),
   );
   expect(response.status).toBe(200);

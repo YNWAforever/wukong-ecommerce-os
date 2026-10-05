@@ -1,4 +1,5 @@
 import type { BulkFormSheet } from "@wukong/shopline";
+import { z } from "zod";
 import {
   readBulkFormSheet,
   readBulkFormSheetName,
@@ -113,6 +114,49 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
       // request missing either param fails fast instead of paying for a parse
       // whose result would just be discarded.
       const url = new URL(request.url);
+      const maintenanceKeys = [
+        "referenceKind",
+        "referenceId",
+        "remoteProductId",
+        "expectedConnectionId",
+        "identityConfirmed",
+        "storeSourceConfirmed",
+      ] as const;
+      const hasMaintenance = maintenanceKeys.some(
+        (key) => key !== "expectedConnectionId" && url.searchParams.has(key),
+      );
+      const expectedConnectionId = url.searchParams.has("expectedConnectionId")
+        ? z.uuid().safeParse(url.searchParams.get("expectedConnectionId"))
+        : null;
+      if (expectedConnectionId && !expectedConnectionId.success)
+        throw new ApiError(
+          400,
+          "maintenance_request_invalid",
+          "Provide a valid selected store ID.",
+        );
+      const maintenanceSchema = z.object({
+        referenceKind: z.enum(["workbook", "website"]),
+        referenceId: z.uuid(),
+        remoteProductId: z.string().trim().min(1).max(255),
+        expectedConnectionId: z.uuid(),
+        identityConfirmed: z
+          .enum(["true", "false"])
+          .transform((value) => value === "true"),
+        storeSourceConfirmed: z.literal("true").transform(() => true),
+      });
+      const candidate = hasMaintenance
+        ? maintenanceSchema.safeParse(
+            Object.fromEntries(
+              maintenanceKeys.map((key) => [key, url.searchParams.get(key)]),
+            ),
+          )
+        : null;
+      if (candidate && !candidate.success)
+        throw new ApiError(
+          400,
+          "maintenance_request_invalid",
+          "Provide a valid reference, chosen product ID and confirmed store for maintenance.",
+        );
       const merchantAttestedExportAtRaw = url.searchParams.get(
         "merchantAttestedExportAt",
       );
@@ -186,6 +230,10 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         merchantAttestedExportAt,
         filename,
         sheetName,
+        ...(candidate?.success ? { maintenance: candidate.data } : {}),
+        ...(expectedConnectionId?.success
+          ? { expectedConnectionId: expectedConnectionId.data }
+          : {}),
       });
 
       console.info(
@@ -201,7 +249,11 @@ export function createBulkFormImportHandler(deps: BulkFormImportRouteDeps) {
         }),
       );
 
-      return jsonResponse(201, {
+      return jsonResponse(result.replayed ? 200 : 201, {
+        sourceImportId: result.sourceImportId,
+        replayed: result.replayed,
+        alreadyImportedProducts: result.alreadyImportedProducts,
+        merchantAttestedExportAt: result.merchantAttestedExportAt,
         specVersion: result.specVersion,
         parsedRows: result.parsedRows,
         createdDrafts: result.createdDrafts,

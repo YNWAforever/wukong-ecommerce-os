@@ -448,6 +448,118 @@ it("includes the listing's activity feed in the response", async () => {
   expect(Array.isArray(body.activity)).toBe(true);
 });
 
+it("keeps editable content and source identity when only signed previews are unavailable", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const response = await handlerFor("operator", false, {
+      sourceAssets: {
+        listForListing: async () => [
+          {
+            id: "asset_synthetic",
+            kind: "image/jpeg",
+            metadata: {},
+            storageKey: "synthetic/photo.jpg",
+          },
+        ],
+      },
+      assetStore: {
+        createReadUrl: async () => {
+          throw new Error("signed private customer URL");
+        },
+      },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.permissions.canEdit).toBe(true);
+    expect(body.activeVersion.id).toBe("version_1");
+    expect(body.sources).toEqual([
+      {
+        assetId: "asset_synthetic",
+        mimeType: "image/jpeg",
+        name: "photo.jpg",
+        previewUrl: null,
+      },
+    ]);
+    expect(body.sections.previews).toEqual({
+      state: "unavailable",
+      reason: "preview_unavailable",
+      requestId: response.headers.get("x-request-id"),
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /signed private|customer|photo.jpg/,
+    );
+  } finally {
+    log.mockRestore();
+  }
+});
+
+it("marks a malformed activity section unavailable instead of displaying an empty healthy history", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const response = await handlerFor("reviewer", false, {
+      audit: {
+        findRelatedToListing: async () => [
+          {
+            id: "synthetic_event",
+            action: "listing.transition",
+            metadata: {},
+            createdAt: new Date("invalid"),
+          },
+        ],
+      },
+    })(new Request("http://localhost"), {
+      params: Promise.resolve({ id: listingId }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.sections.activity).toEqual({
+      state: "unavailable",
+      reason: "invalid_activity",
+      requestId: response.headers.get("x-request-id"),
+    });
+    expect(body.permissions.canEdit).toBe(true);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+it.each(["assets", "activity"])(
+  "propagates an overall database fault in %s with the correct stage",
+  async (stage) => {
+    const fault = () => {
+      throw Object.assign(new Error("private database query"), {
+        code: "42501",
+      });
+    };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await handlerFor(
+        "reviewer",
+        false,
+        stage === "assets"
+          ? {
+              sourceAssets: { listForListing: async () => fault() },
+            }
+          : { audit: { findRelatedToListing: async () => fault() } },
+      )(new Request("http://localhost"), {
+        params: Promise.resolve({ id: listingId }),
+      });
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body).not.toHaveProperty("activeVersion");
+      expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
+        stage,
+        code: "permission_denied",
+        requestId: body.requestId,
+      });
+    } finally {
+      log.mockRestore();
+    }
+  },
+);
+
 it("returns durable manual history from the authorized listing read", async () => {
   const history = [
     { id: "manual-receipt", mode: "historical_manual", revision: 2 },

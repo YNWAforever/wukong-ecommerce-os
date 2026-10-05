@@ -36,5 +36,8 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // API handlers own authorization; this UX redirect always passes them through.
+  // Skip that extra invocation while retaining the existing page redirect.
+  // Match the slash boundary to retain pages such as /api-keys and /apiary.
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico).*)"],
 };

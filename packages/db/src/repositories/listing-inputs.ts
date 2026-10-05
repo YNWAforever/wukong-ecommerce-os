@@ -47,6 +47,8 @@ export type InitializeListingInput = {
   note?: string | null;
   sources?: SourceSelection[];
   workingContent?: WorkingListing;
+  /** Existing importer only; public save/intake schemas never accept this. */
+  importedSource?: { sourceImportId: string; sourceRowDigest: string };
 };
 export type SaveListingInput = {
   listingId: string;
@@ -538,6 +540,45 @@ export function createListingInputRepository(
         for (const field of workingFields)
           if (states[field]?.state === "manual")
             states[field] = { ...states[field]!, provenanceUncertain: true };
+      }
+      if (input.importedSource) {
+        if (
+          !input.workingContent ||
+          draft.activeVersionId ||
+          !/^[a-f0-9-]{36}$/i.test(input.importedSource.sourceImportId) ||
+          !/^[a-f0-9]{64}$/i.test(input.importedSource.sourceRowDigest)
+        )
+          throw new ListingInputError("invalid_imported_source");
+        // Imported copy is observed/proposed, not a human edit. Only the eight
+        // maintenance copy fields may be replaced by later field-selected AI.
+        // Existing human revisions return above before this initialization.
+        const copyFields: WorkingField[] = [
+          "title.zh-Hant",
+          "description.en",
+          "description.zh-Hant",
+          "seo.title.en",
+          "seo.title.zh-Hant",
+          "seo.description.en",
+          "seo.description.zh-Hant",
+          "tags",
+        ];
+        for (const field of copyFields) {
+          const value = readWorkingField(content, field);
+          const populated =
+            value !== null &&
+            value !== "" &&
+            !(Array.isArray(value) && value.length === 0);
+          states[field] = {
+            owner: "ai",
+            state: populated ? "proposed" : "unknown",
+            locked: false,
+            evidenceRefs: populated
+              ? [
+                  `source-import:${input.importedSource.sourceImportId}:${input.importedSource.sourceRowDigest}`,
+                ]
+              : [],
+          };
+        }
       }
       const assets =
         input.sources === undefined

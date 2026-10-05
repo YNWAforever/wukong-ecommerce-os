@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
+import type { AssetStore } from "@wukong/assets";
 import { emptyWorkingListing } from "@wukong/core";
+import { listingInputDigest } from "@wukong/db";
 import type {
   Database,
   EnrichmentBatch,
   EnrichmentBatchCounts,
-  PlatformProduct,
+  MaintenanceContentFence,
   WorkspaceRepositories,
 } from "@wukong/db";
 import { listingRunKey } from "@wukong/jobs";
-import { bulkFormGaps, type BulkFormContentGaps } from "@wukong/shopline";
+import type { BulkFormContentGaps } from "@wukong/shopline";
+import { computeCurrentContentGaps } from "./current-content-gaps";
 
 import type { ListingPublisher } from "./listing-queue-runtime.js";
 import { ApiError } from "./route-support";
@@ -22,6 +25,7 @@ export type EnrichmentGap = keyof BulkFormContentGaps;
 export type EnrichmentBatchServiceDeps = {
   getDatabase(): Database;
   publisher: ListingPublisher;
+  getAssetStore?(): Pick<AssetStore, "createReadUrl">;
 };
 
 export type CreateBatchInput = {
@@ -31,6 +35,7 @@ export type CreateBatchInput = {
   gap: EnrichmentGap;
   budgetUsd: number;
   waveSize: number;
+  continuation?: string;
 };
 
 export type CreateBatchResult = {
@@ -38,9 +43,13 @@ export type CreateBatchResult = {
   selected: number;
   budgetUsd: number;
   waveSize: number;
+  totalMatching?: number;
+  scannedCount?: number;
+  truncated?: boolean;
+  continuation?: string | null;
 };
 
-/** Ten times the pilot catalog, matching the import cap. */
+/** Execution cap; discovery still scans every workspace-scoped cursor page. */
 const MAX_BATCH_ITEMS = 5_000;
 
 export type AdvanceBatchInput = {
@@ -62,7 +71,10 @@ export type AdvanceBatchResult = {
   budgetUsd: number;
 };
 
-export type ListBatchesInput = { workspaceId: string };
+export type ListBatchesInput = {
+  workspaceId: string;
+  includeArchived?: boolean;
+};
 
 export type GetBatchInput = { workspaceId: string; batchId: string };
 
@@ -149,26 +161,6 @@ async function markItems(
 const includes = (statuses: readonly string[], value: string | undefined) =>
   value !== undefined && statuses.includes(value);
 
-/**
- * A create-origin product (published to SHOPLINE directly, never imported
- * through the bulk form) has no imported row and so `rawRow` is `null` — it
- * has nothing for `bulkFormGaps` to read. Narrowing on `origin` here, rather
- * than on `rawRow !== null`, keeps the filter's meaning aligned with *why*
- * the row is excluded and lets the compiler carry the non-null `rawRow`
- * forward to the `bulkFormGaps` call below.
- *
- * This is the only call site of `bulkFormGaps`, so today a create-origin
- * listing is invisible to gap-based enrichment entirely — there is no
- * imported sheet row (or any other data source) to measure gaps against.
- * A future gap detector for create-origin listings would need its own
- * facts-based comparison, not a relaxation of this filter.
- */
-const isImportOrigin = (
-  product: PlatformProduct,
-): product is PlatformProduct & {
-  rawRow: NonNullable<PlatformProduct["rawRow"]>;
-} => product.origin === "import";
-
 export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
   async function createBatch(
     input: CreateBatchInput,
@@ -198,17 +190,36 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     return deps
       .getDatabase()
       .forWorkspace(input.workspaceId, async (repositories) => {
-        const products =
-          await repositories.platformProducts.listRecent(MAX_BATCH_ITEMS);
-
-        // A product with no draft has nothing to enrich; the gap is computed
-        // from the stored snapshot so the cohort is a query, not a hand-picked
-        // list.
-        const listingIds = products
-          .filter((product) => product.listingId !== null)
-          .filter(isImportOrigin)
-          .filter((product) => bulkFormGaps(product.rawRow)[input.gap])
-          .map((product) => product.listingId as string);
+        const listingIds: string[] = [];
+        const contentFences: Record<string, MaintenanceContentFence> = {};
+        let afterId = input.continuation;
+        let totalMatching = 0;
+        let scannedCount = 0;
+        let continuation: string | null = null;
+        for (;;) {
+          const page = await repositories.platformProducts.scanMaintenancePage(
+            afterId,
+            100,
+          );
+          if (!page.length) break;
+          scannedCount += page.length;
+          for (const item of page) {
+            const assessment = computeCurrentContentGaps(item);
+            if (
+              !includes(RUNNABLE_STATUSES, item.status) ||
+              !assessment.gaps?.[input.gap]
+            )
+              continue;
+            totalMatching += 1;
+            if (listingIds.length < MAX_BATCH_ITEMS) {
+              listingIds.push(item.listingId);
+              contentFences[item.listingId] = item.fence;
+              continuation = item.listingId;
+            }
+          }
+          afterId = page.at(-1)!.listingId;
+          if (page.length < 100) break;
+        }
 
         if (listingIds.length === 0) {
           throw new ApiError(
@@ -224,6 +235,7 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           waveSize: input.waveSize,
           createdBy: input.actorId,
           listingIds,
+          contentFences,
         });
 
         // Metadata carries identifiers and counts only — never merchant
@@ -238,6 +250,9 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
             selected: listingIds.length,
             budgetUsd: input.budgetUsd,
             waveSize: input.waveSize,
+            scannedCount,
+            totalMatching,
+            truncated: totalMatching > MAX_BATCH_ITEMS,
           },
         });
 
@@ -246,6 +261,10 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           selected: listingIds.length,
           budgetUsd: batch.budgetUsd,
           waveSize: batch.waveSize,
+          scannedCount,
+          totalMatching,
+          truncated: totalMatching > MAX_BATCH_ITEMS,
+          continuation: totalMatching > MAX_BATCH_ITEMS ? continuation : null,
         };
       });
   }
@@ -278,11 +297,31 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     input: AdvanceBatchInput,
     wave: readonly string[],
   ): Promise<WaveDispatch[]> {
+    const batch = await repositories.enrichmentBatches.getById(input.batchId);
+    if (!batch) throw new ApiError(404, "batch_not_found", "Batch not found.");
     const statuses = await repositories.listings.statusesByIds([...wave]);
     const jobs: WaveDispatch[] = [];
     const finished: string[] = [];
     const unusable: string[] = [];
     for (const draftId of wave) {
+      const fence = await repositories.enrichmentBatches.getContentFence?.(
+        input.batchId,
+        draftId,
+      );
+      if (fence) {
+        await repositories.listings.lockReviewState(draftId);
+        const [current] =
+          await repositories.platformProducts.getMaintenanceByIds([draftId]);
+        if (
+          !current ||
+          listingInputDigest(current.fence) !== listingInputDigest(fence)
+        )
+          throw new ApiError(
+            409,
+            "batch_content_stale",
+            "Content or source changed. Preview a new batch before continuing.",
+          );
+      }
       const status = statuses[draftId];
       if (!includes(RUNNABLE_STATUSES, status)) {
         // Already carried past enrichment by someone else, or in a state the
@@ -352,6 +391,16 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
         baseVersionId: revision.activeVersionId,
         operationKey: randomUUID(),
         actorId: input.actorId,
+        ...(batch.fields
+          ? {
+              contentFields: batch.fields,
+              maintenanceFence: (
+                await repositories.platformProducts.getMaintenanceByIds([
+                  draftId,
+                ])
+              )[0]!.fence,
+            }
+          : {}),
         ...(previous &&
         ["failed", "superseded", "succeeded"].includes(previous.executionState)
           ? { retryOfRunId: previous.id }
@@ -553,6 +602,45 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
               claimedWaveSize: waveSize,
             }),
           );
+        }
+        if (repositories.enrichmentBatches.getContentFences) {
+          const pending = (
+            await repositories.enrichmentBatches.listItemsByStatus(
+              input.batchId,
+              "pending",
+            )
+          ).sort();
+          for (let offset = 0; offset < pending.length; offset += 100)
+            await repositories.platformProducts.lockMaintenanceListings(
+              pending.slice(offset, offset + 100),
+            );
+          for (let offset = 0; offset < pending.length; offset += 100) {
+            const ids = pending.slice(offset, offset + 100);
+            await repositories.platformProducts.lockMaintenanceBindings(ids);
+            const fences =
+              await repositories.enrichmentBatches.getContentFences(
+                input.batchId,
+                ids,
+              );
+            const current = new Map(
+              (
+                await repositories.platformProducts.getMaintenanceByIds(ids)
+              ).map((row) => [row.listingId, row]),
+            );
+            if (
+              ids.some(
+                (id) =>
+                  fences[id] &&
+                  listingInputDigest(current.get(id)?.fence) !==
+                    listingInputDigest(fences[id]),
+              )
+            )
+              throw new ApiError(
+                409,
+                "batch_content_stale",
+                "Selected content or source changed. Preview the complete selection again.",
+              );
+          }
         }
         const wave = await repositories.enrichmentBatches.claimWave(
           input.batchId,
@@ -765,7 +853,10 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
     return deps
       .getDatabase()
       .forWorkspace(input.workspaceId, (repositories) =>
-        repositories.enrichmentBatches.listForWorkspace(),
+        repositories.enrichmentBatches.listForWorkspace(
+          100,
+          input.includeArchived ?? false,
+        ),
       );
   }
 
@@ -790,6 +881,51 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
           await repositories.enrichmentBatches.reconcileBoundRuns(
             input.batchId,
           );
+        const items = await repositories.enrichmentBatches.listItemDetails?.(
+          input.batchId,
+        );
+        const imageIds = [
+          ...new Set(
+            (items ?? []).flatMap((item) =>
+              item.thumbnailAssetId ? [item.thumbnailAssetId] : [],
+            ),
+          ),
+        ];
+        // The DB/permission read stays outside signing degradation.
+        const images = imageIds.length
+          ? await repositories.sourceAssets.getByIds(imageIds)
+          : [];
+        const hydratedItems = await Promise.all(
+          (items ?? []).map(async (item) => {
+            if (!item.thumbnailAssetId) return item;
+            const image = images.find(
+              (asset) =>
+                asset.id === item.thumbnailAssetId &&
+                asset.listingId === item.listingId &&
+                asset.kind.startsWith("image/"),
+            );
+            let thumbnailUrl: string | null = null;
+            if (image && deps.getAssetStore) {
+              try {
+                const preview = await deps
+                  .getAssetStore()
+                  .createReadUrl(input.workspaceId, image.storageKey, {
+                    expiresInMs: 300_000,
+                  });
+                thumbnailUrl = preview.url;
+              } catch {
+                /* Only this optional signing operation degrades. */
+              }
+            }
+            return {
+              ...item,
+              thumbnailUrl,
+              thumbnailState: thumbnailUrl
+                ? ("ready" as const)
+                : ("unavailable" as const),
+            };
+          }),
+        );
         return {
           batch,
           counts:
@@ -799,9 +935,7 @@ export function createEnrichmentBatchService(deps: EnrichmentBatchServiceDeps) {
                   input.batchId,
                 )
               : counts,
-          items: await repositories.enrichmentBatches.listItemDetails?.(
-            input.batchId,
-          ),
+          items: items ? hydratedItems : undefined,
           spentUsd: await repositories.enrichmentBatches.sumBoundRunCost?.(
             input.batchId,
           ),

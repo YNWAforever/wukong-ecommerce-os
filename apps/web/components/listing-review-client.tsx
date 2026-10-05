@@ -42,6 +42,11 @@ import { ProductShotReview } from "./product-shot-review";
 import { ProductShotPanel, type BackgroundChoice } from "./product-shot-panel";
 import { SourceReadinessSummary } from "./source-readiness-summary";
 import type { SourceReadiness } from "../lib/source-readiness";
+import { SupportRequestId } from "./support-request-id";
+import {
+  safeResponseError,
+  type SafeResponseError,
+} from "../lib/support-request-id";
 
 type ListingPermissions = {
   canProcess: boolean;
@@ -82,6 +87,18 @@ type WireListingActivityEntry =
     };
 
 export type ListingViewResponse = {
+  readState?: "ready" | "blocked";
+  readFailure?: { reason: string; requestId: string };
+  sections?: Partial<
+    Record<
+      "activity" | "previews" | "sources",
+      {
+        state: "ready" | "unavailable";
+        reason?: string;
+        requestId?: string;
+      }
+    >
+  >;
   wineProgress?: WineProgress | null;
   inputRevision?: number;
   workingInput?: {
@@ -96,7 +113,7 @@ export type ListingViewResponse = {
     assetId: string;
     mimeType: string;
     name: string;
-    previewUrl: string;
+    previewUrl: string | null;
   }[];
   currentRun?: {
     runId: string;
@@ -108,7 +125,7 @@ export type ListingViewResponse = {
     inputRevision: number;
     baseVersionId: string | null;
   } | null;
-  sourceReadiness?: SourceReadiness;
+  sourceReadiness?: SourceReadiness | null;
   listingId: string;
   status: ListingStatus;
   activeVersion: {
@@ -551,7 +568,7 @@ export function applyListingFields(
   };
 }
 
-type CodedError = Error & { code?: string };
+type CodedError = SafeResponseError;
 
 /**
  * Keeps the server's error CODE, and nothing else.
@@ -568,15 +585,7 @@ type CodedError = Error & { code?: string };
  * `safeUiError` reads it to recognise 401/403.
  */
 async function responseError(response: Response): Promise<CodedError> {
-  const error: CodedError = new Error(`Request failed (${response.status})`);
-  try {
-    const body = (await response.json()) as { code?: unknown };
-    if (typeof body?.code === "string") error.code = body.code;
-  } catch {
-    // A half-deployed edge answers with an HTML error page, so `json()` throws
-    // after the fetch resolved. Reporting a failure must not itself fail.
-  }
-  return error;
+  return safeResponseError(response);
 }
 
 const errorCodeOf = (cause: unknown): string | undefined =>
@@ -596,6 +605,7 @@ export function ListingReviewClient({
   const [errorKind, setErrorKind] = useState<"read" | "action">("read");
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
+  const [supportId, setSupportId] = useState<string | undefined>();
   const [message, setMessage] = useState<readonly [string, string] | null>(
     null,
   );
@@ -631,6 +641,7 @@ export function ListingReviewClient({
         setSnapshot(next);
         setError(null);
         setErrorCode(undefined);
+        setSupportId(undefined);
         const current = next.currentRun;
         if (
           current &&
@@ -656,6 +667,11 @@ export function ListingReviewClient({
             cause instanceof Error ? cause.message : "Unable to load listing.",
           );
           setErrorCode(errorCodeOf(cause));
+          setSupportId(
+            cause instanceof Error
+              ? (cause as CodedError).requestId
+              : undefined,
+          );
         }
         // Background callers swallow rejection; imperative callers must observe it
         // even when a newer request owns the displayed snapshot and load error.
@@ -676,6 +692,7 @@ export function ListingReviewClient({
   }, [load]);
 
   useEffect(() => {
+    if (snapshot?.readState === "blocked") return;
     if (
       !["queued", "running"].includes(snapshot?.wineProgress?.state ?? "") &&
       processingState !== "queued" &&
@@ -687,12 +704,19 @@ export function ListingReviewClient({
       void load().catch(() => {});
     }, 3_000);
     return () => window.clearInterval(timer);
-  }, [load, snapshot?.status, snapshot?.wineProgress?.state, processingState]);
+  }, [
+    load,
+    snapshot?.status,
+    snapshot?.readState,
+    snapshot?.wineProgress?.state,
+    processingState,
+  ]);
 
   let mapped: MappedListingView | null = null;
   let mappingError: string | null = null;
   if (
     snapshot &&
+    snapshot.readState !== "blocked" &&
     !(snapshot.activeVersion === null && isProcessingStatus(snapshot.status))
   ) {
     try {
@@ -708,6 +732,7 @@ export function ListingReviewClient({
       setBusy(true);
       setError(null);
       setErrorCode(undefined);
+      setSupportId(undefined);
       setMessage(null);
       try {
         await work();
@@ -720,6 +745,11 @@ export function ListingReviewClient({
             : "Unable to complete request.",
         );
         setErrorCode(errorCodeOf(runError));
+        setSupportId(
+          runError instanceof Error
+            ? (runError as CodedError).requestId
+            : undefined,
+        );
       } finally {
         setBusy(false);
       }
@@ -763,11 +793,55 @@ export function ListingReviewClient({
     mappingError,
   });
 
+  if (snapshot?.readState === "blocked")
+    return (
+      <div className="page-wrap review-page">
+        <h1>{t("商品資料讀取受阻", "Listing record unavailable")}</h1>
+        <code>{snapshot.listingId}</code>
+        <div className="load-error listing-read-unavailable" role="alert">
+          <p>
+            {t(
+              "資料需要支援人員核對；批准及交付已暫停。請提供以下編號。",
+              "Support must check this record. Approval and delivery are blocked. Share the ID below.",
+            )}
+          </p>
+          <SupportRequestId value={snapshot.readFailure?.requestId} />
+          <button type="button" onClick={() => void load().catch(() => {})}>
+            {commonCopy[locale].retry}
+          </button>
+        </div>
+      </div>
+    );
+  const unavailableSections = snapshot?.sections
+    ? Object.entries(snapshot.sections).filter(
+        ([, section]) => section?.state === "unavailable",
+      )
+    : [];
+  const sectionNotices = unavailableSections.map(([name, section]) => (
+    <div key={name} className="inline-warning" role="status">
+      {name === "activity"
+        ? t("活動紀錄暫不可用。", "Activity history unavailable.")
+        : name === "sources"
+          ? t(
+              "來源狀態未能核對；暫不可批准或交付。",
+              "Source readiness unknown; approval and delivery blocked.",
+            )
+          : t(
+              "圖片預覽暫不可用；來源及已保存內容仍然保留。",
+              "Image previews unavailable; sources and saved content are retained.",
+            )}{" "}
+      <SupportRequestId value={section?.requestId} />
+      <button type="button" onClick={() => void load().catch(() => {})}>
+        {commonCopy[locale].retry}
+      </button>
+    </div>
+  ));
   if (viewState.kind === "error")
     return (
       <div className="page-wrap">
         <div className="load-error" role="alert">
           <span>{safeUiError(viewState.message, locale)}</span>
+          <SupportRequestId value={supportId} />
           <button type="button" onClick={() => void load().catch(() => {})}>
             {commonCopy[locale].retry}
           </button>
@@ -777,9 +851,11 @@ export function ListingReviewClient({
   if (viewState.kind === "processing" && snapshot)
     return (
       <div className="page-wrap review-page" aria-busy={mutationBusy}>
+        {sectionNotices}
         {error ? (
           <p className="inline-warning" role="alert" id="listing-action-error">
             {actionErrorText}
+            <SupportRequestId value={supportId} />
             <button type="button" onClick={() => void load().catch(() => {})}>
               {commonCopy[locale].retry}
             </button>
@@ -983,6 +1059,7 @@ export function ListingReviewClient({
 
   return (
     <div className="page-wrap review-page" aria-busy={mutationBusy}>
+      {sectionNotices}
       <div className="breadcrumb">
         <Link href="/dashboard">{t("工作台", "Dashboard")}</Link>
         <span aria-hidden="true">/</span>
@@ -1010,6 +1087,7 @@ export function ListingReviewClient({
       {error ? (
         <p className="inline-warning" role="alert" id="listing-action-error">
           {actionErrorText}
+          <SupportRequestId value={supportId} />
           <button type="button" onClick={() => void load().catch(() => {})}>
             {commonCopy[locale].retry}
           </button>
@@ -1177,7 +1255,9 @@ export function ListingReviewClient({
             onPublish={publish}
             onResultRecorded={() => load()}
           />
-          <ActivityPanel entries={snapshot.activity} />
+          {snapshot.sections?.activity?.state !== "unavailable" ? (
+            <ActivityPanel entries={snapshot.activity} />
+          ) : null}
         </div>
       </div>
     </div>

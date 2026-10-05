@@ -481,50 +481,57 @@ describe("export attempts repository", () => {
     );
   });
   it("persists pending provenance, recovers ready, and never demotes a concurrent success", async () => {
-    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
-      const input = {
-        idempotencyKey: "artifact_state",
-        requestedBy: "user_1",
-        manifest,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-        provenance: { version: 1, rowOrder: [manifest[0].listingId] },
-        artifactSha256: "a".repeat(64),
-      };
-      const created = await exportAttempts.ensure(input);
-      expect(created).toMatchObject({
-        artifactStatus: "pending",
-        artifactSha256: input.artifactSha256,
-        provenance: input.provenance,
-      });
-      const failed = await exportAttempts.markFailed({
-        id: created.id,
-        artifactSha256: input.artifactSha256,
-        errorCode: "artifact_upload_failed",
-      });
-      expect(failed.artifactStatus).toBe("failed");
-      const ready = await exportAttempts.markReady({
-        id: created.id,
-        artifactSha256: input.artifactSha256,
-      });
-      expect(ready).toMatchObject({
-        artifactStatus: "ready",
-        artifactErrorCode: null,
-      });
-      expect(ready.artifactReadyAt).toBeInstanceOf(Date);
-      const lateFailure = await exportAttempts.markFailed({
-        id: created.id,
-        artifactSha256: input.artifactSha256,
-        errorCode: "artifact_upload_failed",
-      });
-      expect(lateFailure.artifactStatus).toBe("ready");
-      const repeat = await exportAttempts.ensure(input);
-      expect(repeat).toMatchObject({
-        id: created.id,
-        wasCreated: false,
-        artifactStatus: "ready",
-      });
-    });
+    await database.forWorkspace(
+      workspaceId,
+      async ({ exportAttempts, audit }) => {
+        const input = {
+          idempotencyKey: "artifact_state",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+          provenance: { version: 1, rowOrder: [manifest[0].listingId] },
+          artifactSha256: "a".repeat(64),
+        };
+        const created = await exportAttempts.ensure(input);
+        expect(created).toMatchObject({
+          artifactStatus: "pending",
+          artifactSha256: input.artifactSha256,
+          provenance: input.provenance,
+        });
+        const failed = await exportAttempts.markFailed({
+          id: created.id,
+          artifactSha256: input.artifactSha256,
+          errorCode: "artifact_upload_failed",
+        });
+        expect(failed.artifactStatus).toBe("failed");
+        const ready = await exportAttempts.markReady(
+          {
+            id: created.id,
+            artifactSha256: input.artifactSha256,
+            actorId: "synthetic-ready-reviewer",
+          },
+          audit,
+        );
+        expect(ready).toMatchObject({
+          artifactStatus: "ready",
+          artifactErrorCode: null,
+        });
+        expect(ready.artifactReadyAt).toBeInstanceOf(Date);
+        const lateFailure = await exportAttempts.markFailed({
+          id: created.id,
+          artifactSha256: input.artifactSha256,
+          errorCode: "artifact_upload_failed",
+        });
+        expect(lateFailure.artifactStatus).toBe("ready");
+        const repeat = await exportAttempts.ensure(input);
+        expect(repeat).toMatchObject({
+          id: created.id,
+          wasCreated: false,
+          artifactStatus: "ready",
+        });
+      },
+    );
   });
 
   it("rejects artifact identity collisions and cross-workspace status mutations", async () => {
@@ -537,11 +544,12 @@ describe("export attempts repository", () => {
       provenance: { version: 1, source: "source-1" },
       artifactSha256: "b".repeat(64),
     };
-    const row = await database.forWorkspace(workspaceId, ({ exportAttempts }) =>
-      exportAttempts.ensure(input),
+    const row = await database.forWorkspace(
+      workspaceId,
+      ({ exportAttempts, audit }) => exportAttempts.ensure(input),
     );
     await expect(
-      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+      database.forWorkspace(workspaceId, ({ exportAttempts, audit }) =>
         exportAttempts.ensure({
           ...input,
           provenance: { version: 1, source: "source-2" },
@@ -549,38 +557,47 @@ describe("export attempts repository", () => {
       ),
     ).rejects.toThrow(/idempotency/);
     await expect(
-      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+      database.forWorkspace(workspaceId, ({ exportAttempts, audit }) =>
         exportAttempts.ensure({ ...input, artifactSha256: "c".repeat(64) }),
       ),
     ).rejects.toThrow(/idempotency/);
     await expect(
-      database.forWorkspace(otherWorkspaceId, ({ exportAttempts }) =>
-        exportAttempts.markReady({
-          id: row.id,
-          artifactSha256: input.artifactSha256,
-        }),
+      database.forWorkspace(otherWorkspaceId, ({ exportAttempts, audit }) =>
+        exportAttempts.markReady(
+          {
+            id: row.id,
+            artifactSha256: input.artifactSha256,
+            actorId: "synthetic-ready-reviewer",
+          },
+          audit,
+        ),
       ),
     ).rejects.toThrow(/artifact/);
   });
 
   it("concurrent completion and failure preserve a ready artifact", async () => {
     const artifactSha256 = "d".repeat(64);
-    const row = await database.forWorkspace(workspaceId, ({ exportAttempts }) =>
-      exportAttempts.ensure({
-        idempotencyKey: "artifact_race",
-        requestedBy: "user_1",
-        manifest,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-        provenance: { version: 1 },
-        artifactSha256,
-      }),
+    const row = await database.forWorkspace(
+      workspaceId,
+      ({ exportAttempts, audit }) =>
+        exportAttempts.ensure({
+          idempotencyKey: "artifact_race",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+          provenance: { version: 1 },
+          artifactSha256,
+        }),
     );
     await Promise.all([
-      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
-        exportAttempts.markReady({ id: row.id, artifactSha256 }),
+      database.forWorkspace(workspaceId, ({ exportAttempts, audit }) =>
+        exportAttempts.markReady(
+          { id: row.id, artifactSha256, actorId: "synthetic-ready-reviewer" },
+          audit,
+        ),
       ),
-      database.forWorkspace(workspaceId, ({ exportAttempts }) =>
+      database.forWorkspace(workspaceId, ({ exportAttempts, audit }) =>
         exportAttempts.markFailed({
           id: row.id,
           artifactSha256,
@@ -590,7 +607,7 @@ describe("export attempts repository", () => {
     ]);
     const actual = await database.forWorkspace(
       workspaceId,
-      ({ exportAttempts }) => exportAttempts.getById(row.id),
+      ({ exportAttempts, audit }) => exportAttempts.getById(row.id),
     );
     expect(actual).toMatchObject({
       artifactStatus: "ready",
@@ -621,7 +638,7 @@ describe("export attempts repository", () => {
 
     const created = await database.forWorkspace(
       workspaceId,
-      ({ exportAttempts }) =>
+      ({ exportAttempts, audit }) =>
         exportAttempts.ensure({
           idempotencyKey: "key_source_attestation",
           requestedBy: "user_1",
@@ -659,20 +676,10 @@ describe("export attempts repository", () => {
       { listingId: manifest[0].listingId, contentDigest: "b".repeat(64) },
     ];
 
-    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
-      await exportAttempts.ensure({
-        idempotencyKey: "key_attestation_collision",
-        requestedBy: "user_1",
-        manifest,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-        provenance,
-        artifactSha256,
-        sourceAttestation: firstAttestation,
-      });
-
-      await expect(
-        exportAttempts.ensure({
+    await database.forWorkspace(
+      workspaceId,
+      async ({ exportAttempts, audit }) => {
+        await exportAttempts.ensure({
           idempotencyKey: "key_attestation_collision",
           requestedBy: "user_1",
           manifest,
@@ -680,10 +687,23 @@ describe("export attempts repository", () => {
           specVersion: "bulk-form-v1",
           provenance,
           artifactSha256,
-          sourceAttestation: secondAttestation,
-        }),
-      ).rejects.toThrow(/idempotency key does not match/i);
-    });
+          sourceAttestation: firstAttestation,
+        });
+
+        await expect(
+          exportAttempts.ensure({
+            idempotencyKey: "key_attestation_collision",
+            requestedBy: "user_1",
+            manifest,
+            rowCount: 1,
+            specVersion: "bulk-form-v1",
+            provenance,
+            artifactSha256,
+            sourceAttestation: secondAttestation,
+          }),
+        ).rejects.toThrow(/idempotency key does not match/i);
+      },
+    );
   });
 
   it("does not throw when a repeat call's source attestation has the same entries in a different array order", async () => {
@@ -697,26 +717,29 @@ describe("export attempts repository", () => {
     ];
     const reversed = [...forward].reverse();
 
-    await database.forWorkspace(workspaceId, async ({ exportAttempts }) => {
-      const created = await exportAttempts.ensure({
-        idempotencyKey: "key_attestation_reordered",
-        requestedBy: "user_1",
-        manifest,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-        sourceAttestation: forward,
-      });
+    await database.forWorkspace(
+      workspaceId,
+      async ({ exportAttempts, audit }) => {
+        const created = await exportAttempts.ensure({
+          idempotencyKey: "key_attestation_reordered",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+          sourceAttestation: forward,
+        });
 
-      const repeat = await exportAttempts.ensure({
-        idempotencyKey: "key_attestation_reordered",
-        requestedBy: "user_1",
-        manifest,
-        rowCount: 1,
-        specVersion: "bulk-form-v1",
-        sourceAttestation: reversed,
-      });
-      expect(repeat.id).toBe(created.id);
-    });
+        const repeat = await exportAttempts.ensure({
+          idempotencyKey: "key_attestation_reordered",
+          requestedBy: "user_1",
+          manifest,
+          rowCount: 1,
+          specVersion: "bulk-form-v1",
+          sourceAttestation: reversed,
+        });
+        expect(repeat.id).toBe(created.id);
+      },
+    );
   });
 
   it("rejects a source_attestation that is a JSON object instead of an array", async () => {
@@ -735,5 +758,98 @@ describe("export attempts repository", () => {
         )
       `,
     ).rejects.toThrow(/export_attempts_source_attestation_is_array/);
+  });
+  it("audits included members exactly once across concurrent ready retries", async () => {
+    const artifactSha256 = "e".repeat(64);
+    const row = await database.forWorkspace(workspaceId, (r) =>
+      r.exportAttempts.ensure({
+        idempotencyKey: "terminal_audit_race",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        provenance: { identityVersion: 1 },
+        artifactSha256,
+      }),
+    );
+    const complete = () =>
+      database.forWorkspace(workspaceId, (r) =>
+        r.exportAttempts.markReady(
+          {
+            id: row.id,
+            artifactSha256,
+            actorId: "reviewer_ready",
+          },
+          r.audit,
+        ),
+      );
+    await Promise.all([complete(), complete()]);
+    await complete();
+    const events =
+      await admin`select entity_id as "entityId", actor_id as "actorId", metadata
+      from audit_events where workspace_id = ${workspaceId} and action = 'listing.bulk_form_exported'
+      and metadata->>'exportAttemptId' = ${row.id}`;
+    expect(events).toEqual([
+      {
+        entityId: manifest[0].listingId,
+        actorId: "reviewer_ready",
+        metadata: {
+          exportAttemptId: row.id,
+          versionId: manifest[0].versionId,
+          artifactSha256,
+          specVersion: "bulk-form-v1",
+        },
+      },
+    ]);
+    expect(events.some((e) => e.entityId === manifest[1].listingId)).toBe(
+      false,
+    );
+  });
+
+  it("rolls ready back when its terminal member audit fails, then retries once", async () => {
+    const artifactSha256 = "f".repeat(64);
+    const row = await database.forWorkspace(workspaceId, (r) =>
+      r.exportAttempts.ensure({
+        idempotencyKey: "terminal_audit_rollback",
+        requestedBy: "user_1",
+        manifest,
+        rowCount: 1,
+        specVersion: "bulk-form-v1",
+        provenance: { identityVersion: 1 },
+        artifactSha256,
+      }),
+    );
+    await expect(
+      database.forWorkspace(workspaceId, (r) =>
+        r.exportAttempts.markReady(
+          {
+            id: row.id,
+            artifactSha256,
+            actorId: "reviewer_ready",
+          },
+          {
+            async write() {
+              throw new Error("synthetic audit unavailable");
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrow("synthetic audit unavailable");
+    expect(
+      (
+        await database.forWorkspace(workspaceId, (r) =>
+          r.exportAttempts.getById(row.id),
+        )
+      )?.artifactStatus,
+    ).toBe("pending");
+    await database.forWorkspace(workspaceId, (r) =>
+      r.exportAttempts.markReady(
+        { id: row.id, artifactSha256, actorId: "reviewer_ready" },
+        r.audit,
+      ),
+    );
+    const events = await admin`select count(*)::int as count from audit_events
+      where workspace_id = ${workspaceId} and action = 'listing.bulk_form_exported' and metadata->>'exportAttemptId' = ${row.id}`;
+    expect(events[0]?.count).toBe(1);
   });
 });

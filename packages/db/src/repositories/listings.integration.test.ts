@@ -431,6 +431,17 @@ describe("workspace isolation", () => {
   it("uses workspace-consistent composite foreign keys for every tenant relationship", async () => {
     const expected = [
       [
+        "listing_quality_assessments",
+        ["workspace_id", "live_listing_id"],
+        "listing_drafts",
+      ],
+      ["listing_assignments", ["workspace_id", "listing_id"], "listing_drafts"],
+      [
+        "listing_assignment_requests",
+        ["workspace_id", "listing_id"],
+        "listing_drafts",
+      ],
+      [
         "listing_version_claim_supports",
         ["workspace_id", "listing_id", "version_id"],
         "listing_versions",
@@ -449,6 +460,16 @@ describe("workspace isolation", () => {
         "ai_budget_reservations",
         ["workspace_id", "pipeline_run_id"],
         "listing_pipeline_runs",
+      ],
+      [
+        "enrichment_batch_create_receipts",
+        ["workspace_id", "batch_id"],
+        "enrichment_batches",
+      ],
+      [
+        "enrichment_batch_create_receipts",
+        ["workspace_id", "preview_id"],
+        "enrichment_batch_previews",
       ],
       [
         "enrichment_batch_items",

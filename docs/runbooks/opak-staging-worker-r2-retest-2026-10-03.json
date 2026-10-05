@@ -1,0 +1,74 @@
+{
+  "finding": "ST17",
+  "status": "fixed-and-verified-in-isolated-staging",
+  "sourceSha": "9281f5455aaf3504819f39ef70f1ecfc320b9a4f",
+  "worker": "wukong-runtime-preview",
+  "secretNames": ["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"],
+  "keyUpdate": {
+    "method": "wrangler secret bulk via masked local input and stdin",
+    "uploadExitCode": 0,
+    "newVersion": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+    "secretValuesReadByAgent": false,
+    "credentialFileCreated": false,
+    "webKeyChanged": false
+  },
+  "probe": {
+    "startedAtUtc": "2026-10-03T03:41:17.421Z",
+    "finishedAtUtc": "2026-10-03T03:42:09.590Z",
+    "version": "8c0a0309-0830-4697-9a1d-7b833fd6a568",
+    "liveMarkerMatched": true,
+    "invalidSignatureStatus": 401,
+    "ownFixtureBytes": 94,
+    "ownGetStatus": 200,
+    "ownFixtureHashMatched": true,
+    "ownPutStatus": 403,
+    "foreignBucketMetadataHeadStatus": 403,
+    "canaryWritten": false,
+    "productionObjectContentRead": false,
+    "productionObjectWritten": false
+  },
+  "restoration": {
+    "activeVersion": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+    "normalRestoreExitCode": 0,
+    "listingQueuePauseExitCode": 0,
+    "shoplineQueuePauseExitCode": 0,
+    "emptyCronDisabledIngressExitCode": 0,
+    "probeBindingsRemaining": 0,
+    "publicHeadStatus": 404,
+    "watchdogNormalStopObserved": true,
+    "watchdogCeilingMinutes": 9,
+    "stagingComputeDisabled": true,
+    "stagingComputeState": "idle"
+  },
+  "localVerification": {
+    "cliGuardChecksPassed": 16,
+    "probeContractChecksPassed": 21,
+    "cleanWorkerDryBuildExitCode": 0,
+    "probeDryBuildExitCode": 0
+  },
+  "productionReadOnlyRefresh": {
+    "webDeployment": "dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d",
+    "webAndMainSha": "dde9e178d9e1f9ca8880618c63104f41fe2fa3be",
+    "workerVersion": "6842b51c-95ce-4bdf-989d-36a645be8f59",
+    "sourceImportIdColumn": "absent",
+    "sourceRowDigestColumn": "absent",
+    "hyperdriveOriginRole": "neondb_owner",
+    "originRoleBypassRls": true,
+    "hyperdriveCachingDisabled": false
+  },
+  "remainingReleaseGates": [
+    "Production schema and non-bypass runtime role/cache correction require separately authorized production changes",
+    "Effective production Web DB and authenticated original detail/queue 500 reproduction remain unverified",
+    "Cloud browser and complete 30-case UAT remain incomplete",
+    "Paid/human AI quality and employee-minute measurements remain unverified",
+    "First real SHOPLINE write and merchant 5-to-20-to-100 acceptance remain separately gated"
+  ],
+  "historicalFailedReceiptsPreserved": true,
+  "migrationAdded": false,
+  "applicationEnvAdded": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "productionChanged": false,
+  "releaseGatePassed": false,
+  "actualBilling": "not-measured"
+}

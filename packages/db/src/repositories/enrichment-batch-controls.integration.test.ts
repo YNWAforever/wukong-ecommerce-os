@@ -129,7 +129,7 @@ it("50 mixed isolated items preserve CAS, dispatch recovery, exact outcomes, can
         r.pipelineRuns.setOperationState(
           item.pipelineRunId!,
           "failed",
-          "synthetic_provider_failure",
+          "provider_failure",
         ),
       );
     else if (n < 20)
@@ -246,10 +246,23 @@ it("50 mixed isolated items preserve CAS, dispatch recovery, exact outcomes, can
     executionState: "cancelled",
     execution: { candidate: { synthetic: true } },
   });
+  await expect(
+    control({
+      ...identity,
+      action: "retry_selected",
+      itemIds: [items.find((i) => i.outcome === "superseded")!.id],
+      expectedControlRevision: 12,
+      idempotencyKey: randomUUID(),
+    }),
+  ).rejects.toMatchObject({ code: "invalid_retry_selection" });
   const retried = await control({
     ...identity,
     action: "retry_selected",
-    itemIds: [items.find((i) => i.outcome === "superseded")!.id],
+    itemIds: [
+      items.find(
+        (i) => i.outcome === "failed" && i.listingId === bound[11]!.listingId,
+      )!.id,
+    ],
     expectedControlRevision: 12,
     idempotencyKey: randomUUID(),
   });
@@ -260,7 +273,7 @@ it("50 mixed isolated items preserve CAS, dispatch recovery, exact outcomes, can
   expect(newItems).toHaveLength(51);
   expect(newItems.filter((i) => i.isCurrent)).toHaveLength(50);
   const child = newItems.find((i) => i.retryOfItemId)!;
-  expect(child.inputRevision).toBe(2);
+  expect(child.inputRevision).toBe(1);
   expect(child.pipelineRunId).not.toBe(
     newItems.find((i) => i.id === child.retryOfItemId)!.pipelineRunId,
   );

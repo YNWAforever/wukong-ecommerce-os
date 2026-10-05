@@ -1,0 +1,477 @@
+{
+  "recordedAt": "2026-10-03T16:52:16.984Z",
+  "sourceHead": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+  "sourceCi": {
+    "head": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "status": "completed",
+    "conclusion": "success",
+    "run": 37132320997,
+    "successfulSteps": 43
+  },
+  "guardedWeb": {
+    "head": "c23e0e4afe9c55ce42d78500e2b6e134008c3883",
+    "deployment": "dpl_8eC5Xw5yU1zTZ8mXPF1HWvjbvYg8",
+    "alias": "https://wukong-opak-staging-20261002.vercel.app",
+    "treeDelta": ["apps/web/vercel.json"]
+  },
+  "browser": {
+    "startedAt": "2026-10-03T16:38:49.052Z",
+    "finishedAt": "2026-10-03T16:43:55.703Z",
+    "elapsedMs": 306892,
+    "behaviorChecks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "endpoint-held-before",
+        "pass": true,
+        "maxComputeUnits": 0.25
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "owned-synthetic-source-twenty",
+        "pass": true
+      },
+      {
+        "id": "current-twenty-names-have-chinese",
+        "pass": true
+      },
+      {
+        "id": "owned-missing-summary-precondition",
+        "pass": true,
+        "ownedMissing": 19
+      },
+      {
+        "id": "operator-password-post",
+        "pass": true
+      },
+      {
+        "id": "operator-server-identity",
+        "pass": true
+      },
+      {
+        "id": "prior-failed-window-only-mandatory-preview-audit",
+        "pass": true,
+        "priorPreviewAudits": 1
+      },
+      {
+        "id": "leading-zero-distinct-readonly-source-precondition",
+        "pass": true,
+        "matchingReferences": 3
+      },
+      {
+        "id": "other-source-qualified-drawer",
+        "pass": true
+      },
+      {
+        "id": "intended-source-qualified-drawer",
+        "pass": true
+      },
+      {
+        "id": "source-qualified-target-distinguished",
+        "pass": true
+      },
+      {
+        "id": "independent-owned-english-source-precondition",
+        "pass": true,
+        "expectedReferences": 20
+      },
+      {
+        "id": "english-multiword-source-search",
+        "pass": true,
+        "expectedReferences": 20,
+        "renderedFirstPage": 20
+      },
+      {
+        "id": "english-search-all-owned-identities",
+        "pass": true
+      },
+      {
+        "id": "multiword-search-url-context",
+        "pass": true
+      },
+      {
+        "id": "multiword-search-refresh-preserved",
+        "pass": true
+      },
+      {
+        "id": "eight-content-fields-no-protected-controls",
+        "pass": true
+      },
+      {
+        "id": "filled-current-names-zero-cohort",
+        "pass": true
+      },
+      {
+        "id": "current-summary-gap-preview-success",
+        "pass": true
+      },
+      {
+        "id": "summary-gap-owned-cohort-current-fences",
+        "pass": true
+      },
+      {
+        "id": "preview-eligibility-and-protection-visible",
+        "pass": true,
+        "selected": 38,
+        "eligible": 38,
+        "ownedMissing": 19
+      },
+      {
+        "id": "field-change-invalidates-browser-preview",
+        "pass": true
+      },
+      {
+        "id": "untranslatedSeoTitle-exact-field-actor-digest",
+        "pass": true
+      },
+      {
+        "id": "untranslatedSeoTitle-current-version-fences",
+        "pass": true
+      },
+      {
+        "id": "untranslatedSeoTitle-exact-current-owned-cohort",
+        "pass": true,
+        "ownedMatching": 19
+      },
+      {
+        "id": "seoTitleMirrorsName-empty-cohort-refused",
+        "pass": true
+      },
+      {
+        "id": "seoTitleMirrorsName-exact-current-owned-cohort",
+        "pass": true,
+        "ownedMatching": 0
+      },
+      {
+        "id": "seoDescriptionMirrorsSeoTitle-empty-cohort-refused",
+        "pass": true
+      },
+      {
+        "id": "seoDescriptionMirrorsSeoTitle-exact-current-owned-cohort",
+        "pass": true,
+        "ownedMatching": 0
+      },
+      {
+        "id": "keywordsMirrorName-empty-cohort-refused",
+        "pass": true
+      },
+      {
+        "id": "keywordsMirrorName-exact-current-owned-cohort",
+        "pass": true,
+        "ownedMatching": 0
+      },
+      {
+        "id": "all-six-current-gap-browser-decisions",
+        "pass": true,
+        "gapTypes": 6,
+        "additionalSuccessfulPreviews": 1
+      },
+      {
+        "id": "only-exact-mandatory-preview-audits-appended",
+        "pass": true,
+        "previewAudits": 2,
+        "priorAuditsPreserved": 252
+      },
+      {
+        "id": "current-input-source-version-and-admission-unchanged",
+        "pass": true,
+        "retainedAiRuns": 20,
+        "retainedPublishJobs": 0,
+        "retainedBatches": 2
+      },
+      {
+        "id": "no-page-errors-or-unexpected-write",
+        "pass": true,
+        "pageErrorCount": 0
+      },
+      {
+        "id": "operator-real-ui-logout",
+        "pass": true
+      },
+      {
+        "id": "operator-anonymous-after-logout",
+        "pass": true
+      }
+    ],
+    "originalSteps": [
+      {
+        "label": "deployment-preflight",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "alias-preflight",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "endpoint-before",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "compute-enable",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "compute-disable",
+        "exit": 1,
+        "timeout": true
+      }
+    ],
+    "originalStops": [
+      {
+        "id": "owned-session",
+        "acknowledged": true
+      },
+      {
+        "id": "staging-compute",
+        "acknowledged": false
+      }
+    ],
+    "paidAiCalls": 0,
+    "realShoplineCalls": 0,
+    "outgoingEmail": 0,
+    "newBatchAdmissions": 0,
+    "actualBilling": "not-measured"
+  },
+  "cleanupRecovery": {
+    "startedAt": "2026-10-03T16:46:32.931Z",
+    "productionChanged": false,
+    "steps": [
+      {
+        "label": "endpoint-read-before",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "bounded-staging-disable",
+        "exit": 0,
+        "timeout": false
+      },
+      {
+        "label": "endpoint-read-after",
+        "exit": 0,
+        "timeout": false
+      }
+    ],
+    "disabled": true,
+    "currentState": "idle",
+    "maxComputeUnits": 0.25,
+    "ownedSessionRevoked": true,
+    "outcome": "staging-compute-disabled-verified",
+    "finishedAt": "2026-10-03T16:47:48.924Z"
+  },
+  "watchdog": {
+    "startedAt": "2026-10-03T16:40:22.777Z",
+    "finishedAt": "2026-10-03T16:47:49.898Z",
+    "ceilingMinutes": 8,
+    "normalStopObserved": true,
+    "emergencyDisableExit": null,
+    "productionChanged": false
+  },
+  "workerCandidate": {
+    "stage": "isolated-worker-release-candidate-upload",
+    "startedAt": "2026-10-03T16:19:44.646Z",
+    "sourceSha": "593c5283bac242fc171850ee6358f2e9ccc77a1b",
+    "productionChanged": false,
+    "activeWorkerChanged": false,
+    "credentialsChanged": false,
+    "paidAiCalls": 0,
+    "queueMessagesSubmitted": 0,
+    "computeResumed": false,
+    "steps": [
+      {
+        "label": "source-head",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "clean-tree",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "source-ci",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "deployments-before",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "endpoint-before",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "render-source",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "exact-config-existing-worker",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "upload-v2",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "candidate-readback",
+        "exit": 0,
+        "timedOut": false
+      },
+      {
+        "label": "deployments-after",
+        "exit": 0,
+        "timedOut": false
+      }
+    ],
+    "checks": [
+      {
+        "id": "exact-clean-reviewed-head",
+        "pass": true
+      },
+      {
+        "id": "exact-source-full-ci",
+        "pass": true
+      },
+      {
+        "id": "owned-existing-active-version",
+        "pass": true
+      },
+      {
+        "id": "staging-compute-held",
+        "pass": true
+      },
+      {
+        "id": "exact-synthetic-rendered-bindings",
+        "pass": true
+      },
+      {
+        "id": "built-source-publish",
+        "pass": true
+      },
+      {
+        "id": "built-source-catalog",
+        "pass": true
+      },
+      {
+        "id": "rendered-target-worker-exists",
+        "pass": true
+      },
+      {
+        "id": "candidate-source-metadata",
+        "pass": true
+      },
+      {
+        "id": "active-worker-not-changed",
+        "pass": true
+      },
+      {
+        "id": "existing-public-ingress-held",
+        "pass": true
+      }
+    ],
+    "outcome": "candidate-uploaded-inactive",
+    "activeDeploymentBefore": {
+      "id": "1be7fc72-5d5d-4fc9-bc2c-62f814f06e5c",
+      "versions": [
+        {
+          "version_id": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+          "percentage": 100
+        }
+      ]
+    },
+    "workerArtifactSha256": "88113e2a0667b3501c969717fc66cafadd6e830fc56d6bf3a70e9ec7e496eefa",
+    "artifactBytes": 3332924,
+    "configurationSha256": "f0aa8572b21f9ed0159d64fd6fd73748d210d1d3ee31eeb2d972568fb02e83b5",
+    "secretNames": [
+      "QUEUE_INGRESS_SECRET",
+      "OPENAI_API_KEY",
+      "SHOPLINE_TOKEN_ENCRYPTION_KEY",
+      "S3_ACCESS_KEY_ID",
+      "S3_SECRET_ACCESS_KEY"
+    ],
+    "candidateVersion": "fcf96cda-1054-4fdb-8ba0-0e002294c466",
+    "activeDeploymentAfter": {
+      "id": "1be7fc72-5d5d-4fc9-bc2c-62f814f06e5c",
+      "versions": [
+        {
+          "version_id": "f0614b8e-8628-4cc0-82f5-e318c6565be2",
+          "percentage": 100
+        }
+      ]
+    },
+    "candidateTrafficPercent": 0,
+    "limit": "Uploaded reviewed Worker code/config only; no versions deploy/triggers/secret command, runtime health/R2 proof of candidate or Queue resume. Existing active f061 ObjectRO proof remains its own receipt.",
+    "localGeneratedRestored": true,
+    "finishedAt": "2026-10-03T16:21:35.912Z"
+  },
+  "productionMetadataAt": "2026-10-03T16:22:43.327Z",
+  "productionWeb": {
+    "project": "prj_qAipFTpy8NebABNWVTMOtGthC6cH",
+    "team": "team_qvzlsFmfCsLkgItSypqHjw3z",
+    "id": "dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d",
+    "state": "READY",
+    "sha": "dde9e178d9e1f9ca8880618c63104f41fe2fa3be",
+    "productionBranch": "main",
+    "readOnly": true,
+    "effectiveDatabaseConnection": "unverified"
+  },
+  "productionWorker": {
+    "name": "wukong-runtime-production",
+    "deployment": "01bb6ad8-6227-49b9-b903-43ccb22488ee",
+    "active": [
+      {
+        "id": "6842b51c-95ce-4bdf-989d-36a645be8f59",
+        "percentage": 100,
+        "flags": {
+          "AI_PROVIDER": "opencode-go",
+          "BUILD_SHA": "3ca5b99520e056bda99c0efbe87192e619026f04",
+          "LISTING_PAID_OPERATIONS_ENABLED": "true",
+          "PRODUCT_SHOT_PROVIDER": "disabled",
+          "SHOPLINE_ADAPTER": "disabled",
+          "SHOPLINE_PUBLISH_ENABLED": "false"
+        }
+      }
+    ],
+    "readOnly": true
+  },
+  "hyperdrive": {
+    "id": "eef464f2d3c0480b94d22eaca060b209",
+    "name": "wukong-neon-production",
+    "originUser": "neondb_owner",
+    "originDatabase": "neondb",
+    "cachingDisabled": false,
+    "readOnly": true
+  },
+  "productionDatabaseCatalogWindow": "2026-10-03T11:46Z–11:52Z",
+  "productionChanged": false,
+  "mergePerformed": false,
+  "cloudUat": {
+    "passed": 11,
+    "partial": 6,
+    "blocked": 13,
+    "total": 30
+  },
+  "remaining": [
+    "production authority/recovery/effective Web/original500",
+    "safe runtime role/additive schema/cache/release",
+    "paid-model and independent human quality",
+    "matched employee-minute benefit",
+    "fuller cloud execution/fault/load/new invitation delivery",
+    "first true SHOPLINE confirmation and merchant5/20/100"
+  ]
+}

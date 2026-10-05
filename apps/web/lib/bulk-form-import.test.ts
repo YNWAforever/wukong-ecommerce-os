@@ -34,6 +34,7 @@ const FILENAME = "opak-export.xlsx";
 const SHEET_NAME = "Default";
 
 type Recorded = {
+  inputInitializations: Record<string, unknown>[];
   connectionReads: unknown[];
   approvalLockRequests: { ids: readonly string[]; options: unknown }[];
   sourceRows: Record<string, unknown>[];
@@ -76,8 +77,17 @@ type Existing = {
   activeVersionId?: string | null;
 };
 
-function importerWith(existing: Record<string, Existing> = {}) {
+function importerWith(
+  existing: Record<string, Existing> = {},
+  referenceRaw: Record<string, string | null> | null = DEFAULTS as Record<
+    string,
+    string
+  >,
+  websiteAttributes: Record<string, string> | null = null,
+  websiteWarnings: string[] = [],
+) {
   const recorded: Recorded = {
+    inputInitializations: [],
     connectionReads: [],
     approvalLockRequests: [],
     sourceRows: [],
@@ -98,6 +108,34 @@ function importerWith(existing: Record<string, Existing> = {}) {
           work: (repositories: any) => Promise<T>,
         ) {
           return work({
+            listingInputs: {
+              async initialize(input: Record<string, unknown>) {
+                recorded.inputInitializations.push(input);
+                return { revision: 1 };
+              },
+            },
+            workbookCatalog: {
+              async getProduct() {
+                return referenceRaw
+                  ? { product: { raw: referenceRaw }, canExport: false }
+                  : null;
+              },
+            },
+            reads: {
+              async websiteProduct() {
+                return websiteAttributes
+                  ? {
+                      sourceType: "website",
+                      observation: {
+                        title: "SYN Estate",
+                        attributes: websiteAttributes,
+                        warnings: websiteWarnings,
+                      },
+                      canExport: false,
+                    }
+                  : null;
+              },
+            },
             shoplineConnections: {
               async getDefault(options?: unknown) {
                 recorded.connectionReads.push(options);
@@ -105,6 +143,26 @@ function importerWith(existing: Record<string, Existing> = {}) {
               },
             },
             sourceImports: {
+              async findByWorkbookIdentity(input: {
+                connectionId: string;
+                workbookSha256: string;
+                headerContractSha256: string;
+                specVersion: string;
+              }) {
+                const index = recorded.sourceImportCreates.findIndex(
+                  (row) =>
+                    row.connectionId === input.connectionId &&
+                    row.workbookSha256 === input.workbookSha256 &&
+                    row.headerContractSha256 === input.headerContractSha256 &&
+                    row.specVersion === input.specVersion,
+                );
+                return index < 0
+                  ? null
+                  : {
+                      id: `source_import_${index + 1}`,
+                      ...recorded.sourceImportCreates[index],
+                    };
+              },
               async create(input: Recorded["sourceImportCreates"][number]) {
                 recorded.sourceImportCreates.push(input);
                 return {
@@ -134,6 +192,14 @@ function importerWith(existing: Record<string, Existing> = {}) {
               },
               async upsertMany(inputs: Recorded["upserts"]) {
                 recorded.upserts.push(...inputs);
+                for (const input of inputs)
+                  if (input.listingId)
+                    existing[input.remoteProductId] = {
+                      ...existing[input.remoteProductId],
+                      listingId: input.listingId,
+                      contentDigest: input.contentDigest,
+                      sourceImportId: input.sourceImportId,
+                    };
                 return inputs;
               },
             },
@@ -187,6 +253,34 @@ function importerWith(existing: Record<string, Existing> = {}) {
 }
 
 describe("bulk form importer", () => {
+  it.each([
+    ["SYN Estate 2020 750ml 6 bottles", 6],
+    ["SYN Estate 2020 750ml", null],
+  ])(
+    "seeds only an observed pack quantity in fresh current input (%s)",
+    async (nameEn, packQuantity) => {
+      const { importBulkForm, recorded } = importerWith();
+      await importBulkForm({
+        workspaceId: "ws_opak",
+        actorId: "user_1",
+        sheet: sheetOf(
+          rowFor({ nameEn: String(nameEn), nameZh: String(nameEn) }),
+        ),
+        rawBytes: RAW_BYTES,
+        merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+        filename: FILENAME,
+        sheetName: SHEET_NAME,
+      });
+      expect(recorded.inputInitializations[0]).toMatchObject({
+        workingContent: {
+          packQuantity,
+          sku: "0001",
+          priceHkd: 80,
+          stockQuantity: 6,
+        },
+      });
+    },
+  );
   it("creates one draft per parsed row and links it to the remote product", async () => {
     const { importBulkForm, recorded } = importerWith();
 
@@ -205,6 +299,7 @@ describe("bulk form importer", () => {
     expect(result.createdDrafts).toBe(2);
     expect(result.refreshedProducts).toBe(0);
     expect(recorded.created).toHaveLength(2);
+    expect(recorded.inputInitializations).toHaveLength(2);
     expect(recorded.upserts.map((upsert) => upsert.listingId)).toEqual([
       "draft_1",
       "draft_2",
@@ -765,6 +860,7 @@ describe("bulk form importer", () => {
     await importBulkForm({ ...input, sheet: sheetOf(rowFor()) });
     await importBulkForm({
       ...input,
+      rawBytes: new TextEncoder().encode("synthetic changed workbook bytes"),
       sheet: sheetOf(rowFor({ regularPrice: "105.0" })),
     });
     expect(recorded.sourceRows).toHaveLength(2);
@@ -785,5 +881,179 @@ describe("bulk form importer", () => {
     expect(recorded.sourceRows.map((row) => row.sourceRowDigest)).toEqual(
       recorded.upserts.map((row) => row.contentDigest),
     );
+  });
+});
+
+it("returns the same source receipt on identical-file retry without creating or rebinding drafts", async () => {
+  const { importBulkForm, recorded } = importerWith();
+  const input = {
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    rawBytes: RAW_BYTES,
+    merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+    filename: FILENAME,
+    sheetName: SHEET_NAME,
+    sheet: sheetOf(rowFor()),
+  };
+  const first = await importBulkForm(input);
+  const second = await importBulkForm(input);
+  expect(recorded.sourceImportCreates).toHaveLength(1);
+  expect(recorded.created).toHaveLength(1);
+  expect(recorded.sourceRows).toHaveLength(1);
+  expect(recorded.upserts).toHaveLength(1);
+  expect(
+    recorded.audits.filter(
+      (event) => event.action === "listing.bulk_form_import_completed",
+    ),
+  ).toHaveLength(1);
+  expect(second).toMatchObject({
+    sourceImportId: (first as unknown as { sourceImportId: string })
+      .sourceImportId,
+    replayed: true,
+    alreadyImportedProducts: 1,
+    createdDrafts: 0,
+    invalidatedApprovals: 0,
+  });
+});
+
+describe("maintenance imports", () => {
+  const input = {
+    workspaceId: "ws_opak",
+    actorId: "user_1",
+    rawBytes: RAW_BYTES,
+    merchantAttestedExportAt: MERCHANT_ATTESTED_EXPORT_AT,
+    filename: FILENAME,
+    sheetName: SHEET_NAME,
+    sheet: sheetOf(rowFor()),
+  };
+  const maintenance = {
+    referenceKind: "workbook" as const,
+    referenceId: "11111111-1111-4111-8111-111111111111",
+    remoteProductId: "remote_1",
+    expectedConnectionId: "connection_1",
+    identityConfirmed: true,
+    storeSourceConfirmed: true,
+  };
+  it("refuses a reference from another workspace before any mutation", async () => {
+    const { importBulkForm, recorded } = importerWith({}, null);
+    await expect(
+      importBulkForm({ ...input, maintenance }),
+    ).rejects.toMatchObject({ code: "maintenance_reference_missing" });
+    expect(recorded.sourceImportCreates).toHaveLength(0);
+    expect(recorded.created).toHaveLength(0);
+  });
+  it("fences a store changed after the operator chose it", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    await expect(
+      importBulkForm({
+        ...input,
+        maintenance: { ...maintenance, expectedConnectionId: "other_store" },
+      }),
+    ).rejects.toMatchObject({ code: "maintenance_store_changed" });
+    expect(recorded.sourceImportCreates).toHaveLength(0);
+  });
+  it("requires explicit confirmation of the store and current original export", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    await expect(
+      importBulkForm({
+        ...input,
+        maintenance: { ...maintenance, storeSourceConfirmed: false },
+      }),
+    ).rejects.toMatchObject({
+      code: "maintenance_source_confirmation_required",
+    });
+    expect(recorded.created).toHaveLength(0);
+  });
+  it("requires human confirmation for unknown facts and never treats SKU as a remote ID", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    await expect(
+      importBulkForm({
+        ...input,
+        maintenance: { ...maintenance, identityConfirmed: false },
+      }),
+    ).rejects.toMatchObject({
+      code: "maintenance_identity_confirmation_required",
+    });
+    expect(recorded.upserts).toHaveLength(0);
+    await expect(
+      importBulkForm({ ...input, maintenance }),
+    ).resolves.toMatchObject({ createdDrafts: 1 });
+  });
+  it("does not permit confirmation to override a known vintage conflict", async () => {
+    const { importBulkForm, recorded } = importerWith({}, {
+      ...DEFAULTS,
+      nameEn: "SYN Estate 2023 750ml 6 bottles",
+      nameZh: "SYN Estate 2023 750ml 6 bottles",
+    } as Record<string, string>);
+    await expect(
+      importBulkForm({ ...input, maintenance }),
+    ).rejects.toMatchObject({ code: "maintenance_identity_conflict" });
+    expect(recorded.created).toHaveLength(0);
+  });
+  it.each<Record<string, string>>([
+    { vintage: "2023" },
+    { volumeMl: "375" },
+    { packCount: "1" },
+  ])(
+    "preserves known website identity facts through the importer (%j)",
+    async (attributes) => {
+      const { importBulkForm, recorded } = importerWith({}, null, attributes);
+      await expect(
+        importBulkForm({
+          ...input,
+          sheet: sheetOf(
+            rowFor({
+              nameEn: "SYN Estate 2024 750ml 6 bottles",
+              nameZh: "SYN Estate 2024 750ml 6 bottles",
+            }),
+          ),
+          maintenance: { ...maintenance, referenceKind: "website" },
+        }),
+      ).rejects.toMatchObject({ code: "maintenance_identity_conflict" });
+      expect(recorded.sourceImportCreates).toHaveLength(0);
+    },
+  );
+  it.each([
+    "conflicting_attributes",
+    "conflicting_title",
+    "multiple_variants",
+    "attributes_truncated",
+  ])(
+    "refuses an extractor identity ambiguity even when its conflicting value was removed (%s)",
+    async (warning) => {
+      const { importBulkForm, recorded } = importerWith({}, null, {}, [
+        warning,
+      ]);
+      await expect(
+        importBulkForm({
+          ...input,
+          maintenance: { ...maintenance, referenceKind: "website" },
+        }),
+      ).rejects.toMatchObject({ code: "maintenance_identity_conflict" });
+      expect(recorded.sourceImportCreates).toHaveLength(0);
+    },
+  );
+  it("refuses ambiguous duplicate remote IDs instead of binding the first row", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    await expect(
+      importBulkForm({
+        ...input,
+        sheet: sheetOf(rowFor(), rowFor({ sku: "other" })),
+      }),
+    ).rejects.toMatchObject({ code: "bulk_form_ambiguous_identity" });
+    expect(recorded.sourceImportCreates).toHaveLength(0);
+  });
+  it("cannot renew an old workbook's freshness by entering a later date on replay", async () => {
+    const { importBulkForm, recorded } = importerWith();
+    const first = await importBulkForm(input);
+    const replay = await importBulkForm({
+      ...input,
+      merchantAttestedExportAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    expect(replay).toMatchObject({
+      replayed: true,
+      merchantAttestedExportAt: first.merchantAttestedExportAt,
+    });
+    expect(recorded.sourceImportCreates).toHaveLength(1);
   });
 });

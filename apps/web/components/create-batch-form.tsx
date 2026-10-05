@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { contentFields, type ContentField } from "@wukong/core";
+import type { BatchPreviewResult } from "../lib/batch-selection";
 
 import { useLocale } from "../lib/locale-context";
 import {
@@ -48,10 +50,9 @@ const GAP_LABELS: Record<EnrichmentGap, BilingualMessage> = {
 };
 
 export type CreateBatchFormInput = {
-  label: string;
-  gap: EnrichmentGap;
-  budgetUsd: number;
-  waveSize: number;
+  previewId: string;
+  digest: string;
+  idempotencyKey: string;
 };
 
 export type CreateBatchSuccess = {
@@ -145,7 +146,13 @@ export async function submitCreateBatch(
   };
 }
 
-export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
+export function CreateBatchForm({
+  onCreated,
+  listingIds,
+}: {
+  onCreated?: () => void;
+  listingIds?: string[];
+}) {
   const locale = useLocale();
   const [label, setLabel] = useState("");
   const [gap, setGap] = useState<EnrichmentGap>("untranslatedName");
@@ -153,21 +160,96 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
   const [waveSize, setWaveSize] = useState("3");
   const [outcome, setOutcome] = useState<CreateBatchOutcome | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fields, setFields] = useState<ContentField[]>(["nameZh"]);
+  const [preview, setPreview] = useState<BatchPreviewResult | null>(null);
+  const [createKey, setCreateKey] = useState<string | null>(null);
+  const [continuation, setContinuation] = useState<string | null>(null);
+  const [nextContinuation, setNextContinuation] = useState<string | null>(null);
+  const baseInput = {
+    label,
+    budgetUsd: Number(budgetUsd),
+    waveSize: Number(waveSize),
+    ...(listingIds
+      ? { selection: { mode: "explicit", listingIds, fields } }
+      : { gap, fields }),
+  };
+  const baseInputKey = JSON.stringify(baseInput);
+  useEffect(() => {
+    setContinuation(null);
+    setNextContinuation(null);
+  }, [baseInputKey]);
+  const requestInput = {
+    ...baseInput,
+    ...(!listingIds && continuation ? { continuation } : {}),
+  };
+  const inputKey = JSON.stringify(requestInput);
+  const inputKeyRef = useRef(inputKey);
+  inputKeyRef.current = inputKey;
+  useEffect(() => {
+    setPreview(null);
+    setCreateKey(null);
+    setOutcome(null);
+  }, [inputKey]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setOutcome(null);
-    const result = await submitCreateBatch({
-      label,
-      gap,
-      budgetUsd: Number(budgetUsd),
-      waveSize: Number(waveSize),
-    });
-    setOutcome(result);
-    setBusy(false);
-    if (result.kind === "success") {
-      onCreated?.();
+    const key = inputKey;
+    if (!preview) {
+      try {
+        const response = await fetch("/api/enrichment-batches/preview", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: key,
+        });
+        const body = await response.json();
+        if (inputKeyRef.current !== key) return;
+        if (!response.ok) {
+          const code =
+            typeof body.code === "string" ? body.code : "unknown_error";
+          setOutcome({
+            kind: "api_error",
+            code,
+            message: API_ERROR_MESSAGES[code] ?? [
+              body.message ?? "Preview failed",
+              body.message ?? "Preview failed",
+            ],
+          });
+        } else {
+          setPreview(body as BatchPreviewResult);
+          setCreateKey(crypto.randomUUID());
+        }
+      } catch {
+        if (inputKeyRef.current === key)
+          setOutcome({
+            kind: "network_error",
+            message: sharedMessages.unreachable,
+          });
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      const result = await submitCreateBatch({
+        previewId: preview.previewId,
+        digest: preview.digest,
+        idempotencyKey: createKey!,
+      });
+      setBusy(false);
+      if (inputKeyRef.current !== key) return;
+      setOutcome(result);
+      if (result.kind === "success") {
+        setNextContinuation(preview.scope?.continuation ?? null);
+        setPreview(null);
+        setCreateKey(null);
+        onCreated?.();
+      } else if (
+        result.kind === "api_error" &&
+        result.code !== "internal_error"
+      ) {
+        setPreview(null);
+        setCreateKey(null);
+      }
     }
   }
 
@@ -183,20 +265,30 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
           required
         />
       </label>
-      <label>
-        {localized(locale, "缺口類型", "Gap")}
-        <select
-          value={gap}
-          onChange={(e) => setGap(e.target.value as EnrichmentGap)}
-          disabled={busy}
-        >
-          {Object.entries(GAP_LABELS).map(([value, text]) => (
-            <option key={value} value={value}>
-              {localized(locale, ...text)}
-            </option>
-          ))}
-        </select>
-      </label>
+      {!listingIds ? (
+        <label>
+          {localized(locale, "缺口類型", "Gap")}
+          <select
+            value={gap}
+            onChange={(e) => setGap(e.target.value as EnrichmentGap)}
+            disabled={busy}
+          >
+            {Object.entries(GAP_LABELS).map(([value, text]) => (
+              <option key={value} value={value}>
+                {localized(locale, ...text)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p>
+          {localized(
+            locale,
+            `這次只處理明確選中的 ${listingIds.length} 件商品。`,
+            `Only the ${listingIds.length} explicitly selected products are included.`,
+          )}
+        </p>
+      )}
       <label>
         {localized(locale, "預算 (USD)", "Budget (USD)")}
         <input
@@ -222,11 +314,158 @@ export function CreateBatchForm({ onCreated }: { onCreated?: () => void }) {
           required
         />
       </label>
-      <button type="submit" className="primary-button" disabled={busy}>
+      <fieldset disabled={busy}>
+        <legend>
+          {localized(locale, "允許修改的內容欄位", "Content fields to change")}
+        </legend>
+        {contentFields.map((field) => (
+          <label key={field}>
+            <input
+              type="checkbox"
+              checked={fields.includes(field)}
+              onChange={(event) =>
+                setFields((current) =>
+                  event.target.checked
+                    ? [...current, field]
+                    : current.filter((value) => value !== field),
+                )
+              }
+            />
+            {locale === "en"
+              ? field
+              : {
+                  nameZh: "中文商品名",
+                  summaryEn: "英文摘要",
+                  summaryZh: "中文摘要",
+                  seoTitleEn: "英文 SEO 標題",
+                  seoTitleZh: "中文 SEO 標題",
+                  seoDescriptionEn: "英文 SEO 描述",
+                  seoDescriptionZh: "中文 SEO 描述",
+                  seoKeywords: "SEO 關鍵字",
+                }[field]}
+          </label>
+        ))}
+      </fieldset>
+      {preview ? (
+        <section aria-label={localized(locale, "批次預覽", "Batch preview")}>
+          <p>
+            {localized(
+              locale,
+              `選中 ${preview.selectedCount}；合資格 ${preview.eligibleCount}；每波 ${preview.waveSize} 件。`,
+              `Selected ${preview.selectedCount}; eligible ${preview.eligibleCount}; ${preview.waveSize} per wave.`,
+            )}
+          </p>
+          <p>
+            {localized(locale, "修改欄位", "Fields")}:{" "}
+            {preview.fields.join(", ")}
+          </p>
+          <p>
+            {localized(locale, "最高預計成本", "Maximum estimated cost")}:{" "}
+            {preview.maxCostUsd === null
+              ? localized(
+                  locale,
+                  "未知：未有核准的定價上限",
+                  "Unknown: reviewed pricing bounds are unavailable",
+                )
+              : `USD ${preview.maxCostUsd.toFixed(6)}`}
+            ; {localized(locale, "批次預算", "Batch budget")}: USD{" "}
+            {preview.budgetUsd}
+          </p>
+          {Object.entries(preview.skippedByReason).map(([reason, count]) => (
+            <p key={reason}>
+              {localized(
+                locale,
+                ...((
+                  {
+                    requires_legal_reopen: [
+                      "需先重新開啟商品",
+                      "Reopen the product before generation",
+                    ],
+                    missing_current_content: [
+                      "缺少目前內容",
+                      "Current content is missing",
+                    ],
+                    invalid_current_content: [
+                      "目前內容需要修正",
+                      "Current content needs repair",
+                    ],
+                    save_current_inputs: [
+                      "需先儲存商品資料",
+                      "Save product inputs first",
+                    ],
+                    confirm_pack_quantity: [
+                      "需先人工確認包裝數量",
+                      "Confirm the package quantity first",
+                    ],
+                  } as Record<string, BilingualMessage>
+                )[reason] ?? [
+                  "需先修正商品資料",
+                  "Repair the product input first",
+                ]),
+              )}
+              : {count}
+            </p>
+          ))}
+          {preview.scope ? (
+            <p>
+              {localized(
+                locale,
+                `已掃描 ${preview.scope.scannedCount}；符合 ${preview.scope.totalMatching}；本批 ${preview.selectedCount}。`,
+                `Scanned ${preview.scope.scannedCount}; matching ${preview.scope.totalMatching}; this batch ${preview.selectedCount}.`,
+              )}
+              {preview.scope.truncated
+                ? localized(
+                    locale,
+                    " 尚有商品未納入，需另建預覽。",
+                    " More products remain and require another preview.",
+                  )
+                : ""}
+            </p>
+          ) : null}
+          <p>
+            {localized(locale, "預覽到期時間", "Preview expires")}:{" "}
+            {preview.expiresAt}
+          </p>
+          <p>
+            {localized(
+              locale,
+              "人工鎖定值優先保留；任何內容或來源變更都需要重新預覽。建立後仍需明確開始波次。",
+              "Human values and locks are retained. Changed content or sources require a new preview. Starting a wave is a separate action.",
+            )}
+          </p>
+        </section>
+      ) : null}
+      <button
+        type="submit"
+        className="primary-button"
+        disabled={
+          busy ||
+          fields.length === 0 ||
+          Boolean(listingIds && !listingIds.length) ||
+          Boolean(preview && preview.eligibleCount === 0)
+        }
+      >
         {busy
           ? localized(locale, "建立中…", "Creating…")
-          : localized(locale, "建立批次", "Create batch")}
+          : preview
+            ? localized(locale, "確認建立批次", "Confirm create batch")
+            : localized(locale, "預覽批次", "Preview batch")}
       </button>
+      {outcome?.kind === "success" && nextContinuation && !listingIds ? (
+        <button
+          type="button"
+          onClick={() => {
+            setContinuation(nextContinuation);
+            setNextContinuation(null);
+          }}
+        >
+          {localized(
+            locale,
+            "預覽其餘符合的商品",
+            "Preview the remaining matching products",
+          )}
+        </button>
+      ) : null}
       {outcome && outcome.kind !== "success" ? (
         <p className="intake-message" role="status" aria-live="polite">
           {localized(locale, ...outcome.message)}

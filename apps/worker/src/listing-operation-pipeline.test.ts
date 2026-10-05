@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyWorkingListing } from "@wukong/core";
+import { ProviderApiError } from "@wukong/ai";
+import { randomUUID } from "node:crypto";
 import { unavailableVerification } from "./listing-verification-support.js";
 import { runListingPipeline } from "./listing-pipeline.js";
-import { makeHarness, draftId, workspaceId } from "./pipeline-test-support.js";
+import {
+  makeHarness,
+  draftId,
+  workspaceId,
+  listing,
+} from "./pipeline-test-support.js";
 
 describe("immutable input pipeline", () => {
   function fixture() {
@@ -102,6 +109,165 @@ describe("immutable input pipeline", () => {
     ]);
     expect(state.versions).toHaveLength(1);
   });
+  it("adopts only accepted Chinese/SEO fields, protects all facts and unselected copy", async () => {
+    const { deps, run, input } = fixture();
+    const saved = {
+      ...listing,
+      imageAssetIds: [],
+      sku: "000012",
+      producer: "Saved producer",
+      packQuantity: 6,
+      title: { en: "Keep English", "zh-Hant": "" },
+      description: { en: "Keep summary", "zh-Hant": "人工摘要" },
+    };
+    Object.assign(run.execution, { contentFields: ["nameZh", "seoTitleZh"] });
+    run.execution.input.workingContent = saved;
+    Object.assign(input, { contentFields: ["nameZh", "seoTitleZh"] });
+    const extract = vi.spyOn(deps.ai, "extract");
+    const original = deps.withWorkspace;
+    const adopted: unknown[] = [];
+    deps.withWorkspace = (ws, work) =>
+      original(ws, (repos) =>
+        work({
+          ...repos,
+          listings: {
+            ...repos.listings,
+            appendVersion: async (...args) => {
+              adopted.push(args[1]);
+              return repos.listings.appendVersion(...args);
+            },
+          },
+        }),
+      );
+    await runListingPipeline(input, deps);
+    expect(extract).not.toHaveBeenCalled();
+    expect(adopted).toEqual([
+      {
+        ...saved,
+        title: { ...saved.title, "zh-Hant": listing.title["zh-Hant"] },
+        seo: {
+          ...saved.seo,
+          title: {
+            ...saved.seo.title,
+            "zh-Hant": listing.seo.title["zh-Hant"],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("keeps incomplete unselected copy editable as a candidate without an unreadable active version", async () => {
+    const { deps, state, run, hooks, input } = fixture();
+    Object.assign(run.execution, { contentFields: ["nameZh"] });
+    Object.assign(input, { contentFields: ["nameZh"] });
+    run.execution.input.workingContent = {
+      ...listing,
+      imageAssetIds: [],
+      title: { en: "Synthetic source", "zh-Hant": "" },
+      description: { en: "", "zh-Hant": "" },
+      seo: {
+        title: { en: "", "zh-Hant": "" },
+        description: { en: "", "zh-Hant": "" },
+      },
+    };
+    expect(await runListingPipeline(input, deps)).toMatchObject({
+      status: "needs_info",
+      versionId: null,
+    });
+    expect(state.versions).toHaveLength(0);
+    expect(hooks.retainCandidate).toHaveBeenCalledWith(
+      run.id,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          title: expect.objectContaining({
+            "zh-Hant": listing.title["zh-Hant"],
+          }),
+          description: { en: "", "zh-Hant": "" },
+          seo: {
+            title: { en: "", "zh-Hant": "" },
+            description: { en: "", "zh-Hant": "" },
+          },
+        }),
+      }),
+    );
+    expect(state.completed).toMatchObject({
+      status: "needs_info",
+      versionId: null,
+    });
+  });
+  it("blocks unknown pack without accepting the provider's one-bottle default", async () => {
+    const { deps, state, run, input } = fixture();
+    Object.assign(run.execution, { contentFields: ["nameZh"] });
+    run.execution.input.workingContent = {
+      ...listing,
+      imageAssetIds: [],
+      packQuantity: null,
+    };
+    Object.assign(input, { contentFields: ["nameZh"] });
+    const extract = vi.spyOn(deps.ai, "extract");
+    const generate = vi.spyOn(deps.ai, "generate");
+    expect(await runListingPipeline(input, deps)).toMatchObject({
+      status: "needs_info",
+      versionId: null,
+    });
+    expect(extract).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(state.versions).toHaveLength(0);
+  });
+  it("ten concurrent maintenance operations retain five late human corrections and make exactly ten fake generation calls", async () => {
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    let extracts = 0;
+    const fixtures = Array.from({ length: 10 }, () => fixture());
+    const jobs = fixtures.map((f, index) => {
+      f.run.id = randomUUID();
+      f.run.listingId = randomUUID();
+      f.input.runId = f.run.id;
+      f.input.draftId = f.run.listingId;
+      Object.assign(f.run.execution, { contentFields: ["nameZh"] });
+      Object.assign(f.input, { contentFields: ["nameZh"] });
+      f.run.execution.input.workingContent = {
+        ...listing,
+        imageAssetIds: [],
+        sku: `0000${index}`,
+        title: { en: "Saved English", "zh-Hant": "" },
+      };
+      const extract = f.deps.ai.extract.bind(f.deps.ai);
+      f.deps.ai.extract = async (request) => {
+        extracts++;
+        return extract(request);
+      };
+      const generate = f.deps.ai.generate.bind(f.deps.ai);
+      f.deps.ai.generate = async (request) => {
+        calls++;
+        await barrier;
+        return generate(request);
+      };
+      return runListingPipeline(f.input, f.deps);
+    });
+    for (let attempt = 0; attempt < 100 && calls < 10; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    expect(calls).toBe(10);
+    for (const f of fixtures.slice(0, 5))
+      f.hooks.matches.mockResolvedValue(false);
+    release();
+    await Promise.all(jobs);
+    expect(extracts).toBe(0);
+    expect(calls).toBe(10);
+    for (const f of fixtures.slice(0, 5)) {
+      expect(f.state.versions).toHaveLength(0);
+      expect(f.hooks.mark).toHaveBeenCalledWith(
+        f.run.id,
+        "superseded",
+        "input_superseded",
+        expect.anything(),
+      );
+    }
+    for (const f of fixtures.slice(5)) expect(f.state.versions).toHaveLength(1);
+  });
   it("derives trusted fact keys from locked snapshot fields, excluding copy fields", async () => {
     const { deps, run, input } = fixture();
     run.execution.input.fieldStates.producer.owner = "ai";
@@ -163,6 +329,25 @@ describe("immutable input pipeline", () => {
         ["producer", "sku", "priceHkd", "stockQuantity"].includes(e.field),
       ),
     ).toBe(false);
+  });
+  it("retains the classified provider failure for the server recovery decision", async () => {
+    const { deps, hooks, input } = fixture();
+    vi.spyOn(deps.ai, "generate").mockRejectedValue(
+      new ProviderApiError("Synthetic timeout", {
+        category: "timeout",
+        retryable: true,
+        httpStatus: null,
+        providerCode: null,
+        requestId: null,
+      }),
+    );
+    await expect(runListingPipeline(input, deps)).rejects.toThrow(
+      "Synthetic timeout",
+    );
+    const failures = hooks.mark.mock.calls.filter(
+      (call) => call[1] === "failed",
+    );
+    expect(failures.at(-1)?.[2]).toBe("timeout");
   });
   it("does not call providers again for a terminal failed attempt", async () => {
     const { deps, input, hooks, run } = fixture();

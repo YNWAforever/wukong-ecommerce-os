@@ -1,0 +1,215 @@
+{
+  "recordedAt": "2026-10-03T11:19:57.714Z",
+  "sourceBase": "e094bf39debe3cc2c7b62c0f56867afbb5ef4593",
+  "sourceVerification": {
+    "red": {
+      "webFailed": 7,
+      "webPassed": 12,
+      "workerFailed": 1,
+      "workerPassed": 31
+    },
+    "green": {
+      "webPassed": 19,
+      "workerPassed": 32
+    },
+    "fullUnit": {
+      "exit": 0,
+      "webPassed": 2283,
+      "workerPassed": 408,
+      "turboTasks": 14
+    },
+    "lintExit": 0,
+    "typecheckExit": 0,
+    "buildExit": 0,
+    "buildTasks": 8,
+    "review": {
+      "critical": 0,
+      "important": 0,
+      "minorDeferred": 1
+    },
+    "newHeadCi": "requires-own-checks"
+  },
+  "cloud": {
+    "sourceSha": "7333d9496d43723cbb9fe0cef7517a8f8058b214",
+    "outcome": "cloud-role-handoff-workspace-guard-passed",
+    "checks": [
+      {
+        "id": "exact-preview-pair",
+        "pass": true
+      },
+      {
+        "id": "endpoint-held-before",
+        "pass": true
+      },
+      {
+        "id": "runtime-non-bypass",
+        "pass": true
+      },
+      {
+        "id": "fixture-is-json-object-before-browser",
+        "pass": true
+      },
+      {
+        "id": "operator-hydrated-password-post",
+        "pass": true
+      },
+      {
+        "id": "operator-server-identity",
+        "pass": true
+      },
+      {
+        "id": "operator-logout-response",
+        "pass": true
+      },
+      {
+        "id": "operator-logout-api-401",
+        "pass": true
+      },
+      {
+        "id": "operator-work-session-cleared",
+        "pass": true
+      },
+      {
+        "id": "same-context-back-remains-anonymous",
+        "pass": true
+      },
+      {
+        "id": "reviewer-hydrated-password-post",
+        "pass": true
+      },
+      {
+        "id": "reviewer-server-identity",
+        "pass": true
+      },
+      {
+        "id": "same-context-role-handoff-server-authority",
+        "pass": true
+      },
+      {
+        "id": "reviewer-does-not-inherit-operator-work",
+        "pass": true
+      },
+      {
+        "id": "reviewer-logout-response",
+        "pass": true
+      },
+      {
+        "id": "reviewer-logout-api-401",
+        "pass": true
+      },
+      {
+        "id": "admin-hydrated-password-post",
+        "pass": true
+      },
+      {
+        "id": "admin-server-identity",
+        "pass": true
+      },
+      {
+        "id": "dirty-workspace-choice-not-dispatched",
+        "pass": true
+      },
+      {
+        "id": "workspace-stay-retains-input-and-session",
+        "pass": true
+      },
+      {
+        "id": "failed-save-does-not-switch-or-send-valid-invite",
+        "pass": true
+      },
+      {
+        "id": "workspace-discard-switches-once",
+        "pass": true
+      },
+      {
+        "id": "return-workspace-response",
+        "pass": true
+      },
+      {
+        "id": "return-workspace-completed-before-admin-navigation",
+        "pass": true
+      },
+      {
+        "id": "workspace-save-cas-response",
+        "pass": true
+      },
+      {
+        "id": "workspace-save-then-switch",
+        "pass": true
+      },
+      {
+        "id": "save-writes-only-old-workspace",
+        "pass": true
+      },
+      {
+        "id": "original-profile-restored",
+        "pass": true
+      },
+      {
+        "id": "admin-logout-response",
+        "pass": true
+      },
+      {
+        "id": "admin-logout-api-401",
+        "pass": true
+      },
+      {
+        "id": "exact-settings-audit-and-no-provider-or-invite-change",
+        "pass": true,
+        "settingsAuditDelta": 2,
+        "retainedAiRuns": 20,
+        "retainedPublishJobs": 0
+      },
+      {
+        "id": "second-workspace-no-invite-or-cross-tenant-save",
+        "pass": true
+      },
+      {
+        "id": "no-unexpected-domain-write-or-page-error",
+        "pass": true,
+        "pageErrorCount": 0,
+        "invalidInviteRequests": 0
+      }
+    ],
+    "elapsedMs": 116584,
+    "stops": [
+      {
+        "id": "profile-restored",
+        "acknowledged": true
+      },
+      {
+        "id": "staging-compute",
+        "acknowledged": true
+      }
+    ],
+    "existingAcceptedInviteActors": 2,
+    "settingsAuditDelta": 2,
+    "retainedAiRuns": 20,
+    "retainedPublishJobs": 0,
+    "syntheticRowsCreated": 2,
+    "syntheticProfilesCorrected": 3,
+    "allSecondProfileValuesPreserved": true,
+    "threeOwnedContextsLoggedOut": true,
+    "olderFixtureSessionRevocationClaimed": false,
+    "watchdog": {
+      "normalStopObserved": true,
+      "ceilingMinutes": 8
+    },
+    "limit": "Existing synthetic password actors and a newly scoped synthetic second workspace; no invitation-delivery claim, no merchant or production acceptance, no delayed-switch cloud fault case."
+  },
+  "matrix": {
+    "cases": 30,
+    "passed": 9,
+    "partial": 8,
+    "blocked": 13
+  },
+  "productionChanged": false,
+  "mergePerformed": false,
+  "paidAiCalls": 0,
+  "realShoplineCalls": 0,
+  "outgoingEmail": 0,
+  "actualCloudBilling": "not-measured",
+  "newMigration": false,
+  "newEnvironmentName": false,
+  "newProviderKey": false
+}

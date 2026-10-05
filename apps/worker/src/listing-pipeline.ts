@@ -11,7 +11,11 @@ import type {
   ListingStatus,
   WorkspaceProfile,
 } from "@wukong/core";
-import { localizedCopyFields, scanCompliance } from "@wukong/core";
+import {
+  localizedCopyFields,
+  scanCompliance,
+  reviewableListingSchema,
+} from "@wukong/core";
 import {
   factsSufficientForGeneration,
   ProviderApiError,
@@ -524,6 +528,43 @@ async function executeListingPipeline(
         .filter((asset) => asset.mimeType.startsWith("image/"))
         .map((asset) => asset.id),
     });
+    // Selected copy can leave other fields incomplete. Its masked candidate
+    // remains available for manual adoption without an unreadable active version.
+    if (
+      input.contentFields &&
+      !reviewableListingSchema.safeParse(generation.listing).success
+    ) {
+      const result: PipelineResult = { status: "needs_info", versionId: null };
+      await deps.withWorkspace(input.workspaceId, async (repos) => {
+        await repos.aiRuns.append(
+          aiRunFrom("generate", generation.usage, input),
+        );
+        await repos.pipelineRuns.recordStep({
+          idempotencyKey,
+          listingId: input.draftId,
+          activeVersionSequence: input.activeVersionSequence,
+          step: "generated",
+          leaseToken: generationLeaseToken,
+          output: { versionId: null, needsInput: true },
+        });
+        await repos.listings.complete(
+          input.draftId,
+          { ...result, idempotencyKey },
+          context(input),
+          repos.audit,
+        );
+        await repos.pipelineRuns.complete({
+          idempotencyKey,
+          listingId: input.draftId,
+          activeVersionSequence: input.activeVersionSequence,
+          step: "generated",
+          leaseToken: generationLeaseToken,
+          status: result.status,
+          versionId: null,
+        });
+      });
+      return result;
+    }
     const verificationInput = {
       listing: generation.listing,
       facts: extraction.facts,

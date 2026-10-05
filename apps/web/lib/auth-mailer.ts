@@ -23,6 +23,8 @@ export type AuthEmailDeliveryEvent =
 type AuthEmailEnvironment = {
   AUTH_SMTP_URL?: string;
   AUTH_EMAIL_FROM?: string;
+  VERCEL_ENV?: string;
+  AUTH_EMAIL_DELIVERY_MODE?: string;
 };
 
 type MailTransport = {
@@ -41,6 +43,47 @@ export class AuthEmailConfigurationError extends Error {
   constructor() {
     super("Authentication email is not configured");
     this.name = "AuthEmailConfigurationError";
+  }
+}
+
+class AuthEmailRecipientError extends Error {
+  constructor() {
+    super("Preview auth email recipient is not a Resend test address");
+    this.name = "AuthEmailRecipientError";
+  }
+}
+
+function assertPreviewResendRecipient(
+  smtpUrl: string,
+  environment: string | undefined,
+  deliveryMode: string | undefined,
+  recipient: string,
+): void {
+  if (!deliveryMode) return;
+  if (deliveryMode !== "resend-test" || environment !== "preview") {
+    throw new AuthEmailConfigurationError();
+  }
+
+  // The explicit mode is the boundary: Nodemailer normalizes hostname variants
+  // and service presets, so inferring this restriction from a host is unsafe.
+  const testAddress =
+    /^(?:(?:delivered|bounced|complained)(?:\+[a-z0-9._-]+)?|suppressed)@resend\.dev$/i;
+  if (!testAddress.test(recipient)) throw new AuthEmailRecipientError();
+
+  let smtp: URL;
+  try {
+    smtp = new URL(smtpUrl);
+  } catch {
+    throw new AuthEmailConfigurationError();
+  }
+  // URL options can enable Nodemailer content logging or change TLS/service
+  // behavior. Test mode accepts a plain SMTP URL, with credentials encoded.
+  if (
+    !["smtp:", "smtps:"].includes(smtp.protocol) ||
+    smtp.search ||
+    smtp.hash
+  ) {
+    throw new AuthEmailConfigurationError();
   }
 }
 
@@ -83,6 +126,13 @@ export function createAuthEmailSender(
       const smtpUrl = env.AUTH_SMTP_URL;
       const from = env.AUTH_EMAIL_FROM;
       if (!smtpUrl || !from) throw new AuthEmailConfigurationError();
+
+      assertPreviewResendRecipient(
+        smtpUrl,
+        env.VERCEL_ENV,
+        env.AUTH_EMAIL_DELIVERY_MODE,
+        email.to,
+      );
 
       const transport = createTransport(smtpUrl);
       await transport.sendMail({

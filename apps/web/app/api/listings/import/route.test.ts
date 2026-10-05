@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { createBulkFormImportHandler } from "./route.js";
 
 const okResult = {
+  sourceImportId: "source_1",
+  replayed: false,
+  alreadyImportedProducts: 0,
+  merchantAttestedExportAt: "2026-08-01T00:00:00.000Z",
   specVersion: "opak-2026-05",
   parsedRows: 2,
   createdDrafts: 2,

@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
-import type { Database } from "@wukong/db";
+import { listingInputDigest, type Database } from "@wukong/db";
 import { z } from "zod";
 import { acceptListingOperation } from "./listing-operation-service";
 import { ApiError } from "./route-support";
 
 export const batchControlSchema = z
   .object({
-    action: z.enum(["pause", "resume", "cancel", "retry_selected"]),
+    action: z.enum([
+      "pause",
+      "resume",
+      "cancel",
+      "retry_selected",
+      "archive",
+      "restore",
+    ]),
     expectedControlRevision: z.number().int().min(0),
     idempotencyKey: z.uuid(),
     itemIds: z.array(z.uuid()).min(1).max(5).optional(),
@@ -76,7 +83,12 @@ export function createBatchControlService(getDatabase: () => Database) {
         await r.enrichmentBatches.reconcileBoundRuns(input.batchId);
         let status = batch.status;
         const runIds: string[] = [];
-        if (input.action === "pause") {
+        if (input.action === "archive" || input.action === "restore") {
+          await r.enrichmentBatches.setArchived(
+            input.batchId,
+            input.action === "archive",
+          );
+        } else if (input.action === "pause") {
           if (
             !["open", "running", "budget_exhausted", "paused"].includes(status)
           )
@@ -104,11 +116,51 @@ export function createBatchControlService(getDatabase: () => Database) {
               "batch_paused",
               "Resume the batch before admitting a retry.",
             );
+          const selected = (
+            await r.enrichmentBatches.listItemDetails(input.batchId)
+          ).filter((item) => input.itemIds!.includes(item.id));
+          if (selected.some((item) => item.recovery === "outcome-unknown"))
+            throw new ApiError(
+              409,
+              "provider_outcome_unknown",
+              "Reconcile the previous provider outcome before retrying. Its cost hold remains protected.",
+            );
+          if (
+            selected.length !== input.itemIds!.length ||
+            selected.some((item) => !item.canRetry)
+          )
+            throw new ApiError(
+              409,
+              "invalid_retry_selection",
+              "Only known failed attempts can be retried. Changed content needs a fresh preview.",
+            );
           const retries = await r.enrichmentBatches.allocateRetries(
             input.batchId,
             input.itemIds!,
           );
           for (const retry of retries) {
+            await r.listings.lockReviewState(retry.listingId);
+            const fence = await r.enrichmentBatches.getContentFence(
+              input.batchId,
+              retry.listingId,
+            );
+            if (fence) {
+              await r.platformProducts.lockMaintenanceBindings([
+                retry.listingId,
+              ]);
+              const [current] = await r.platformProducts.getMaintenanceByIds([
+                retry.listingId,
+              ]);
+              if (
+                !current ||
+                listingInputDigest(current.fence) !== listingInputDigest(fence)
+              )
+                throw new ApiError(
+                  409,
+                  "batch_content_stale",
+                  "Selected content or source changed. Preview the complete selection again.",
+                );
+            }
             const listing = await r.listings.requireById(retry.listingId);
             const snapshot = await r.listingInputs.getCurrent(retry.listingId);
             if (!snapshot)
@@ -125,6 +177,9 @@ export function createBatchControlService(getDatabase: () => Database) {
               baseVersionId: listing.activeVersionId,
               operationKey: randomUUID(),
               retryOfRunId: retry.retryOfRunId,
+              ...(batch.fields
+                ? { contentFields: batch.fields, maintenanceFence: fence! }
+                : {}),
             });
             if (
               !(await r.enrichmentBatches.bindRun({

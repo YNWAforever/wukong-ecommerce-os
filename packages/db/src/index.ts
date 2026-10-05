@@ -8,6 +8,14 @@ export {
   type WorkspaceRepositories,
 } from "./client.js";
 export { loadSqlMigrations, type SqlMigration } from "./migrations.js";
+export {
+  ListingDataError,
+  type ListingDataFailureReason,
+} from "./listing-data-error.js";
+export {
+  inspectListingReadCompatibility,
+  LISTING_READ_COMPATIBILITY_SQL,
+} from "./listing-read-compatibility.js";
 export type {
   CreateListingInput,
   Listing,
@@ -30,6 +38,8 @@ export { PIPELINE_STEP_LEASE_MS } from "./repositories/pipeline-runs.js";
 export type {
   AiRunRepository,
   AiRunCostSummary,
+  OwnedAiCostMetadata,
+  UnknownAiCostReference,
   AppendAiRunInput,
 } from "./repositories/ai-runs.js";
 export type { WorkspaceRepository } from "./repositories/workspaces.js";
@@ -60,6 +70,11 @@ export type {
   PlatformProductRepository,
   UpsertPlatformProductInput,
 } from "./repositories/platform-products.js";
+export type {
+  MaintenanceContent,
+  MaintenanceContentFence,
+} from "./repositories/maintenance-content.js";
+export { maintenanceContentFenceSchema } from "./repositories/maintenance-content.js";
 export type {
   CreateSourceImportInput,
   SourceImport,
@@ -228,3 +243,27 @@ export {
 
 export * from "./wine-display.js";
 export * from "./wine-proposal-diff.js";
+export type { DraftCatalogReadItem } from "./repositories/workspace-reads.js";
+
+export type {
+  AssignmentMember,
+  AssignmentRole,
+  ListingAssignment,
+  AssignmentResult,
+  AssignmentOutcome,
+  ApplyAssignmentInput,
+  ListingAssignmentRepository,
+} from "./repositories/listing-assignments.js";
+
+export {
+  QUALITY_ASSESSMENT_VERSION,
+  QualityContentAssessmentError,
+  type QualityProjectionRepository,
+  type QualityProjectionSummary,
+  type QualityContentAssessor,
+} from "./repositories/quality-projection.js";
+
+export {
+  computeCurrentContentGaps,
+  type ContentAssessmentState,
+} from "./quality-content-assessor.js";
