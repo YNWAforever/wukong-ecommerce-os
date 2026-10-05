@@ -86,7 +86,7 @@ export function WorkbenchClient() {
         )}
       </div>
       <div className="workbench-layout">
-        <section className="workbench-panel">
+        <section className="workbench-panel" aria-busy={busy}>
           <div className="workbench-controls">
             <h2>
               {copy.states[query.state]}

@@ -2596,3 +2596,12 @@ html {
 .members-panel .invite-form input {
   flex: 1 1 260px;
 }
+
+/* Workbench: reserve the status line and the list while the first read runs,
+   so the page does not jump when tasks arrive (CLS was 0.25). */
+.workbench-status {
+  min-height: 1.6em;
+}
+.workbench-panel[aria-busy="true"] {
+  min-height: min(70vh, 760px);
+}

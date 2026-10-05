@@ -97,7 +97,14 @@ it("shows loading without invented zero metrics, then first-read error and Retry
   await mount();
   expect(container.textContent).toContain("Loading");
   expect(container.querySelector(".workbench-summary strong")).toBeNull();
+  // The list region is marked busy so its reserved space and state are explicit.
+  expect(
+    container.querySelector(".workbench-panel")?.getAttribute("aria-busy"),
+  ).toBe("true");
   await act(async () => reject(new Error("offline")));
+  expect(
+    container.querySelector(".workbench-panel")?.getAttribute("aria-busy"),
+  ).toBe("false");
   expect(container.textContent).toContain("Unable to load");
   expect(button("Retry")).toBeTruthy();
   expect(container.textContent).not.toContain("No tasks");
