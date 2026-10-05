@@ -2442,3 +2442,52 @@ button:disabled {
     padding: 18px;
   }
 }
+
+/* Import form: label above input, its own checkbox row, then actions. */
+.intake-form .intake-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  max-width: 360px;
+}
+.intake-form .intake-field label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.intake-form .intake-field input {
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.intake-form .intake-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.intake-form .intake-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--navy);
+}
+.intake-form .intake-actions {
+  display: flex;
+  margin-top: 18px;
+}
+.intake-failure p {
+  margin: 0;
+}
+.intake-failure p + p {
+  margin-top: 6px;
+}

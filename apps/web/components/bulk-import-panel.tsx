@@ -403,25 +403,27 @@ export function BulkImportPanel({
           </p>
         ) : null}
 
-        <label htmlFor="merchant-attested-export-at">
-          {t(
-            "SHOPLINE 匯出時間（香港時間 UTC+08:00）",
-            "SHOPLINE export time (Hong Kong time, UTC+08:00)",
-          )}
-        </label>
-        <input
-          id="merchant-attested-export-at"
-          type="datetime-local"
-          value={merchantExportTime}
-          disabled={busy}
-          onChange={(event) => {
-            setMerchantExportTime(event.target.value);
-            setSourceConfirmed(false);
-            setIdentityConfirmed(false);
-            setOutcome(null);
-          }}
-        />
-        <label>
+        <div className="intake-field">
+          <label htmlFor="merchant-attested-export-at">
+            {t(
+              "SHOPLINE 匯出時間（香港時間 UTC+08:00）",
+              "SHOPLINE export time (Hong Kong time, UTC+08:00)",
+            )}
+          </label>
+          <input
+            id="merchant-attested-export-at"
+            type="datetime-local"
+            value={merchantExportTime}
+            disabled={busy}
+            onChange={(event) => {
+              setMerchantExportTime(event.target.value);
+              setSourceConfirmed(false);
+              setIdentityConfirmed(false);
+              setOutcome(null);
+            }}
+          />
+        </div>
+        <label className="intake-check">
           <input
             id="bulk-source-confirmation"
             type="checkbox"
@@ -429,27 +431,50 @@ export function BulkImportPanel({
             disabled={busy || !importReady}
             onChange={(event) => setSourceConfirmed(event.target.checked)}
           />
-          {t(
-            "我確認這是上述店舖目前的原始匯出檔，並已核對匯出時間。",
-            "I confirm this is the above store's current original export and I checked its export time.",
-          )}
+          <span>
+            {t(
+              "我確認這是上述店舖目前的原始匯出檔，並已核對匯出時間。",
+              "I confirm this is the above store's current original export and I checked its export time.",
+            )}
+          </span>
         </label>
 
-        <button
-          type="submit"
-          className="primary-button"
-          disabled={
-            busy ||
-            !importReady ||
-            !connectionId ||
-            !sourceConfirmed ||
-            Boolean(
-              reference && (!remoteProductId.trim() || !identityConfirmed),
-            )
-          }
-        >
-          {busy ? t("匯入中…", "Importing…") : t("開始匯入", "Start import")}
-        </button>
+        {!busy && outcome && outcome.kind !== "success" ? (
+          <div className="inline-warning intake-failure" role="alert">
+            <p>{localized(locale, ...outcome.message)}</p>
+            {file ? (
+              <p>
+                {merchantExportTime
+                  ? t(
+                      `已保留檔案「${file.name}」及匯出時間 ${merchantExportTime.replace("T", " ")}（香港時間）。修正上述問題後，再按「開始匯入」。`,
+                      `Your file “${file.name}” and export time ${merchantExportTime.replace("T", " ")} (Hong Kong time) are kept. Fix the issue above, then select Start import again.`,
+                    )
+                  : t(
+                      `已保留檔案「${file.name}」。修正上述問題後，再按「開始匯入」。`,
+                      `Your file “${file.name}” is kept. Fix the issue above, then select Start import again.`,
+                    )}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="intake-actions">
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={
+              busy ||
+              !importReady ||
+              !connectionId ||
+              !sourceConfirmed ||
+              Boolean(
+                reference && (!remoteProductId.trim() || !identityConfirmed),
+              )
+            }
+          >
+            {busy ? t("匯入中…", "Importing…") : t("開始匯入", "Start import")}
+          </button>
+        </div>
 
         {outcome?.kind === "success" ? (
           <ul className="file-list" aria-live="polite">
@@ -504,7 +529,7 @@ export function BulkImportPanel({
           {busy
             ? t("匯入中…", "Importing…")
             : outcome && outcome.kind !== "success"
-              ? localized(locale, ...outcome.message)
+              ? null
               : t(
                   "選擇檔案並輸入 SHOPLINE 匯出時間後開始匯入。",
                   "Choose a file and enter the SHOPLINE export time, then start the import.",
