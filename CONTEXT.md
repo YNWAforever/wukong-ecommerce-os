@@ -284,3 +284,35 @@ The setup summary is read-only, workspace-scoped and not cached. It exposes no t
 Catalog import defaults to Website. Operators, reviewers, admins and owners can paste a public HTTPS storefront URL, preview at most 20 unique products and save selected immutable observations without a SHOPLINE connection or credential key. The scan ID is retained in the page URL for reload; credentials are never included. Polling stops on unmount or storefront change. Retrying preserves the previous preview as read-only until the new scan completes, and changing the storefront clears the old selection. Website products appear in Catalog with read-only source evidence and cannot be exported, approved or published.
 
 Workbook remains an explicit import choice with the existing inline store setup, selected file and export-time behavior. Supporting evidence and new-product safeguards are unchanged. Website scans use the existing listing queue, signed Worker-to-Node callback, protected Node public transport, workspace-scoped durable steps and transactional audits. Local synthetic acceptance uses a separate test-only callback bundle injecting PublicFetch at the real route factory; production code contains no test URL/address bypass. Production use requires a separately authorized migration 0019 rollout and trusted HTTPS WEBSITE_FETCH_BASE_URL configuration.
+
+## Auth email throttle
+
+Magic-link, password-reset and enrollment emails are capped at 3 per address per 15 minutes. The
+window starts at the first send and is not extended by blocked requests. The counter lives in
+`auth_rate_limits` under `auth-email:<sha256 of the normalised address>`, so the table holds no
+address. A throttled request gets the same accepted response as every other request and writes
+an `auth_email_throttled` audit event. Anyone who knows an eligible address can use up its three
+sends and delay its emails for one window; that is the accepted trade-off of a per-address cap.
+
+## Invite email delivery signal
+
+Inviting a member always commits the invite row first. The response carries `emailDelivery`:
+`requested` means the auth flow accepted the request, which cannot confirm delivery because the
+flow answers every request alike to avoid revealing eligibility. `failed` means the auth flow could
+not run (for example unconfigured auth email). SMTP rejection and throttling show only in the auth
+audit. The members panel says "Invite saved; email requested" rather than "Invite sent".
+
+## Review edits and status
+
+Editing a listing's review fields goes through `transitionListing`. An edit to a `needs_info`
+listing submits it manually (`in_review`); an edit to an `approved`, `published` or
+`publish_failed` listing reopens it (`reopened`) and so needs approval again. Edits to `in_review`
+or `reopened` listings keep their status and write no transition.
+
+## Untrusted source material in listing prompts
+
+Extraction and generation instructions declare operator notes, label and photo text, workbook
+cells and web pages untrusted and tell the model to ignore instructions inside them. Source
+material is sent as JSON in the user turn only. Instruction-like text is not stripped, because
+extraction evidence must quote the source verbatim for grounding. The defences are declaration,
+structural separation, the strict output schema, grounding validation and human approval.
