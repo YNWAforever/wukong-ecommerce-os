@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -119,6 +119,18 @@ test("keeps service-backed suites in the integration gate", () => {
     databasePackage.scripts.test,
     /--exclude .*integration\.test\.ts/,
   );
+});
+
+test("runs every root node:test suite in pnpm test or CI", () => {
+  // A root suite nobody runs passes forever while asserting nothing.
+  const unrun = readdirSync(new URL("./", import.meta.url))
+    .filter((name) => name.endsWith(".test.mjs"))
+    .filter(
+      (name) =>
+        !rootPackage.scripts.test.includes(`tests/${name}`) &&
+        !workflow.includes(`tests/${name}`),
+    );
+  assert.deepEqual(unrun, []);
 });
 
 test("pins the declared pnpm release toolchain", () => {
