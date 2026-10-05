@@ -3,7 +3,7 @@
   --ink-soft: #506070;
   --muted: #5f6e7b;
   --navy: #17324d;
-  --amber: #b36a24;
+  --amber: #a35f1e;
   --amber-dark: #8d4e17;
   --amber-soft: #fff2df;
   --stone: #f6f4ef;
@@ -11,6 +11,9 @@
   --surface: #fff;
   --line: #dfe2e1;
   --line-strong: #c7cfcd;
+  /* WCAG 1.4.11: form-control boundaries and focus rings need 3:1. */
+  --line-input: #7f8a88;
+  --focus-ring: #b7742f;
   --success: #2e6b58;
   --danger: #a53e35;
   --radius: 12px;
@@ -59,7 +62,7 @@ button:disabled {
   cursor: not-allowed;
 }
 :focus-visible {
-  outline: 3px solid #d5914f;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -132,7 +135,7 @@ button:disabled {
   max-width: 180px;
   margin-top: 2px;
   padding: 2px 4px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-input);
   border-radius: 4px;
   background: var(--surface);
   color: var(--ink);
@@ -863,7 +866,7 @@ button:disabled {
   padding: 11px 12px;
   color: var(--ink);
   background: white;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
 }
 .notes-field textarea,
@@ -1189,7 +1192,7 @@ button:disabled {
   padding: 10px 11px;
   color: var(--ink);
   background: white;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
   resize: vertical;
 }
@@ -1435,7 +1438,7 @@ button:disabled {
   padding: 10px 12px;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
 }
 .auth-field input:focus-visible {
@@ -1714,7 +1717,7 @@ button:disabled {
   width: 100%;
   min-height: 44px;
   padding: 8px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
 }
 .load-error {
@@ -1930,7 +1933,7 @@ button:disabled {
   width: 100%;
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
   font: inherit;
 }
@@ -2319,7 +2322,7 @@ button:disabled {
   min-width: 0;
   min-height: 44px;
   margin-block: 6px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
   padding: 10px 12px;
   background: var(--surface);
