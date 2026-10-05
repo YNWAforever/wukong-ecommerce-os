@@ -11,6 +11,9 @@ import { ShoplineBulkFormError } from "@wukong/shopline";
 import { z } from "zod";
 
 import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
+// Strict: refuses values JSON cannot represent instead of hashing them as text,
+// so attempt identity always matches the provenance that is stored.
+import { canonicalJson } from "../../../../lib/export-evidence-packet";
 import {
   createBulkExport,
   createBulkExportDeps,
@@ -73,17 +76,6 @@ function assertReviewer(role: string): void {
       "Reviewer access is required.",
     );
   }
-}
-
-/** Canonical JSON makes object property insertion order irrelevant to request identity. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
 }
 
 export type ExportListingsRouteDeps = {

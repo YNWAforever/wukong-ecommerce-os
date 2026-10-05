@@ -7,6 +7,7 @@ import {
   CONFIRMATION_NEGATIVE_KEYS,
 } from "../../../../lib/review-confirmation-keys";
 import { MAX_BULK_EXPORT_ITEMS } from "../../../../lib/bulk-approve-limit";
+import { canonicalJson } from "../../../../lib/export-evidence-packet";
 import {
   BULK_FORM_COLUMNS,
   hashBulkFormHeaderContract,
@@ -1221,6 +1222,30 @@ describe("attestation evidence recorded on the attempt", () => {
 });
 
 describe("durable artifact creation", () => {
+  it("derives the attempt identity from the shared strict canonical JSON", async () => {
+    const { handler, exportAttempts } = makeHandler();
+    await handler(
+      request({
+        listingIds: ["listing_noop", "listing_changed"],
+        attestation: attestationFor({
+          listing_noop: NOOP_DIGEST,
+          listing_changed: CHANGED_DIGEST,
+        }),
+      }),
+    );
+    const [call] = exportAttempts.ensureCalls;
+    expect(call.idempotencyKey).toBe(
+      createHash("sha256")
+        .update(
+          canonicalJson({
+            provenance: call.provenance,
+            artifactSha256: call.artifactSha256,
+          }),
+        )
+        .digest("hex"),
+    );
+  });
+
   it("commits canonical provenance and a hash of exactly the downloadable rows", async () => {
     const { handler, assetStore, exportAttempts } = makeHandler();
     const digests = attestationFor({
