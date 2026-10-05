@@ -95,9 +95,12 @@ export function AdminMembersPanel() {
       const body = (await response.json().catch(() => null)) as {
         emailDelivery?: string;
       } | null;
+      // "requested" cannot confirm delivery: the auth flow answers every
+      // request the same way so it never reveals whether an address is
+      // eligible. Send failures and throttling show only in the auth audit.
       if (body?.emailDelivery === "failed")
-        return "邀請已建立，但電郵未能寄出；請再次邀請以重寄 The invite was saved, but its email could not be sent. Invite the same address again to resend.";
-    }, "邀請已送出 Invite sent");
+        return "邀請已建立，但未能要求寄出電郵；請檢查電郵設定後再次邀請 The invite was saved, but its email could not be requested. Check the auth email settings, then invite the same address again.";
+    }, "邀請已建立，已要求寄出電郵 Invite saved; email requested");
 
   const changeRole = (userId: string, role: AssignableRole) =>
     run(async () => {

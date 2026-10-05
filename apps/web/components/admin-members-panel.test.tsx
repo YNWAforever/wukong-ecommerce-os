@@ -130,47 +130,55 @@ describe("AdminMembersPanel", () => {
     ).not.toBeNull();
   });
 
-  it("warns instead of claiming success when the invite email failed", async () => {
-    const list = { members: [], invites: [] };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>(async (input) =>
-        String(input) === "/api/workspace/members/invite"
-          ? Response.json({
-              id: "inv1",
-              email: "new@opak.test",
-              role: "operator",
-              status: "pending",
-              emailDelivery: "failed",
-            })
-          : Response.json(list),
-      ),
-    );
-    const { container } = await mountPanel();
-    const input = container.querySelector(
-      'input[aria-label="邀請成員的電子郵件 Invite email address"]',
-    ) as HTMLInputElement;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )!.set!.call(input, "new@opak.test");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await act(async () => {
-      container
-        .querySelector("form")!
-        .dispatchEvent(
-          new Event("submit", { bubbles: true, cancelable: true }),
-        );
-    });
-    await settleEffects();
+  it.each([
+    ["failed", "email could not be requested"],
+    ["requested", "Invite saved; email requested"],
+  ])(
+    "reports emailDelivery %s without claiming the email was sent",
+    async (emailDelivery, expected) => {
+      const list = { members: [], invites: [] };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async (input) =>
+          String(input) === "/api/workspace/members/invite"
+            ? Response.json({
+                id: "inv1",
+                email: "new@opak.test",
+                role: "operator",
+                status: "pending",
+                emailDelivery,
+              })
+            : Response.json(list),
+        ),
+      );
+      const { container } = await mountPanel();
+      const input = container.querySelector(
+        'input[aria-label="邀請成員的電子郵件 Invite email address"]',
+      ) as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(input, "new@opak.test");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => {
+        container
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+      });
+      await settleEffects();
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "email could not be sent",
-    );
-    expect(container.textContent).not.toContain("Invite sent");
-  });
+      expect(container.textContent).toContain(expected);
+      expect(container.textContent).not.toContain("Invite sent");
+      if (emailDelivery === "failed")
+        expect(
+          container.querySelector('[role="alert"]')?.textContent,
+        ).toContain(expected);
+    },
+  );
 
   it("shows an error banner when the initial load fails", async () => {
     vi.stubGlobal(
