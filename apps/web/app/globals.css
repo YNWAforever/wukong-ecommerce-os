@@ -3,7 +3,7 @@
   --ink-soft: #506070;
   --muted: #5f6e7b;
   --navy: #17324d;
-  --amber: #b36a24;
+  --amber: #a35f1e;
   --amber-dark: #8d4e17;
   --amber-soft: #fff2df;
   --stone: #f6f4ef;
@@ -11,6 +11,9 @@
   --surface: #fff;
   --line: #dfe2e1;
   --line-strong: #c7cfcd;
+  /* WCAG 1.4.11: form-control boundaries and focus rings need 3:1. */
+  --line-input: #7f8a88;
+  --focus-ring: #b7742f;
   --success: #2e6b58;
   --danger: #a53e35;
   --radius: 12px;
@@ -59,7 +62,7 @@ button:disabled {
   cursor: not-allowed;
 }
 :focus-visible {
-  outline: 3px solid #d5914f;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -132,7 +135,7 @@ button:disabled {
   max-width: 180px;
   margin-top: 2px;
   padding: 2px 4px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-input);
   border-radius: 4px;
   background: var(--surface);
   color: var(--ink);
@@ -863,7 +866,7 @@ button:disabled {
   padding: 11px 12px;
   color: var(--ink);
   background: white;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
 }
 .notes-field textarea,
@@ -1189,7 +1192,7 @@ button:disabled {
   padding: 10px 11px;
   color: var(--ink);
   background: white;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
   resize: vertical;
 }
@@ -1435,7 +1438,7 @@ button:disabled {
   padding: 10px 12px;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
 }
 .auth-field input:focus-visible {
@@ -1714,7 +1717,7 @@ button:disabled {
   width: 100%;
   min-height: 44px;
   padding: 8px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 7px;
 }
 .load-error {
@@ -1930,7 +1933,7 @@ button:disabled {
   width: 100%;
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
   font: inherit;
 }
@@ -2319,7 +2322,7 @@ button:disabled {
   min-width: 0;
   min-height: 44px;
   margin-block: 6px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: 8px;
   padding: 10px 12px;
   background: var(--surface);
@@ -2438,4 +2441,167 @@ button:disabled {
   .wine-workspace > .panel {
     padding: 18px;
   }
+}
+
+/* Import form: label above input, its own checkbox row, then actions. */
+.intake-form .intake-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  max-width: 360px;
+}
+.intake-form .intake-field label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.intake-form .intake-field input {
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.intake-form .intake-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.intake-form .intake-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--navy);
+}
+.intake-form .intake-actions {
+  display: flex;
+  margin-top: 18px;
+}
+.intake-failure p {
+  margin: 0;
+}
+.intake-failure p + p {
+  margin-top: 6px;
+}
+
+/* Review loop: evidence status reads as information; amber stays for
+   "Needs information", the one state a reviewer must act on. */
+.field-meta .confidence-missing {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.field-meta .source-missing {
+  width: auto;
+}
+.field-meta .source-missing::before {
+  content: "· ";
+}
+.confirmations-return {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--navy);
+  font-weight: 600;
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+#review-confirmations,
+#listing-approval-actions {
+  scroll-margin-top: 96px;
+}
+
+/* Figures: Georgia's zero reads as the letter O; counts use tabular sans. */
+.metric-value {
+  font-family: inherit;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+/* Work Queue: the title block fills the row so selectable and plain rows align. */
+.queue-item > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Locale toggle: "繁中" must not break across lines at 390px. */
+.locale-toggle button {
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Admin members: a real table rhythm and full-size controls. */
+.members-table {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.members-table th,
+.members-table td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--line);
+}
+.members-table th {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--stone);
+}
+.members-table td:first-child {
+  overflow-wrap: anywhere;
+}
+.members-table select,
+.members-panel .invite-form input,
+.members-panel .invite-form select {
+  min-height: 40px;
+  padding: 6px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+  font: inherit;
+}
+.members-panel .invite-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+.members-panel .invite-form input {
+  flex: 1 1 260px;
+}
+
+/* Workbench: reserve the status line and the list while the first read runs,
+   so the page does not jump when tasks arrive (CLS was 0.25). */
+.workbench-status {
+  min-height: 1.6em;
+}
+.workbench-panel[aria-busy="true"] {
+  min-height: min(70vh, 760px);
 }

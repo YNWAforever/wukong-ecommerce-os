@@ -98,6 +98,27 @@ describe("AdminMembersPanel", () => {
     expect(container.textContent).toContain("待接受 Pending");
   });
 
+  it("names every column header, including the actions column", async () => {
+    stubFetch({
+      members: [
+        {
+          userId: "u1",
+          email: "admin@opak.test",
+          role: "admin",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      invites: [],
+    });
+    const { container } = await mountPanel();
+    const headers = [...container.querySelectorAll("thead th")];
+    expect(headers.length).toBe(4);
+    for (const header of headers) {
+      expect(header.getAttribute("aria-hidden")).toBeNull();
+      expect(header.textContent?.trim()).not.toBe("");
+    }
+  });
+
   it("labels every form control accessibly", async () => {
     stubFetch({
       members: [

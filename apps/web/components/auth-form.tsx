@@ -392,8 +392,10 @@ export function AuthForm({
             : copy.submit}
         </button>
         <p className="auth-status" role="status" aria-live="polite">
-          <strong>{locale === "zh-Hant" ? "狀態：" : "Status: "}</strong>
-          {status || " "}
+          {status ? (
+            <strong>{locale === "zh-Hant" ? "狀態：" : "Status: "}</strong>
+          ) : null}
+          {status}
         </p>
       </form>
       <nav className="auth-links" aria-label="Account help">

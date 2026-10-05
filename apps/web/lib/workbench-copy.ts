@@ -24,6 +24,7 @@ type Copy = {
   all: string;
   kind: string;
   tasks: string;
+  product: string;
   products: string;
   recorded: string;
   updated: string;
@@ -63,6 +64,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
     all: "All sources",
     kind: "Task source",
     tasks: "tasks · not product count",
+    product: "product",
     products: "products",
     recorded: "Recorded",
     updated: "Updated",
@@ -129,6 +131,7 @@ export const workbenchCopy: Record<Locale, Copy> = {
     all: "全部來源",
     kind: "工作來源",
     tasks: "項工作 · 並非商品數量",
+    product: "件商品",
     products: "件商品",
     recorded: "記錄時間",
     updated: "更新時間",

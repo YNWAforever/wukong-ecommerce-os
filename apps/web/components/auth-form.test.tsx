@@ -236,6 +236,13 @@ describe("AuthForm", () => {
     ).not.toBeNull();
   });
 
+  it("keeps the live region but shows no empty Status label", async () => {
+    const container = await mount("password-signin");
+    const status = container.querySelector('[aria-live="polite"]');
+    expect(status).not.toBeNull();
+    expect(status?.textContent?.trim()).toBe("");
+  });
+
   it("renders an accessible generic initial completion status", async () => {
     const container = await mount("password-signin", {
       initialStatus: "Your password is ready. Sign in to continue.",

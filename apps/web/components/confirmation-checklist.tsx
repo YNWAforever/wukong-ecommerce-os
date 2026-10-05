@@ -79,6 +79,7 @@ export function ConfirmationChecklist({
 
   return (
     <section
+      id="review-confirmations"
       className="confirmations"
       aria-labelledby="confirmations-heading"
       data-all-confirmed={complete}
@@ -149,6 +150,9 @@ export function ConfirmationChecklist({
           })}
         </ul>
       </fieldset>
+      <a className="confirmations-return" href="#listing-approval-actions">
+        {t("返回批准上架", "Back to Approve listing")}
+      </a>
     </section>
   );
 }
