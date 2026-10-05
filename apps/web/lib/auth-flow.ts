@@ -121,6 +121,18 @@ export function createAuthFlow({
   now: () => Date;
   observe?: AuthFlowObserver;
 }) {
+  /** True when this address has used its auth-email allowance; the caller answers generically. */
+  async function emailThrottled(email: string, userId: string) {
+    if (await access.allowAuthEmail(email, now())) return false;
+    await audit({
+      email,
+      userId,
+      outcome: "failure",
+      reason: "auth_email_throttled",
+    });
+    return true;
+  }
+
   async function audit(event: AuthAuditEvent) {
     // Observed before the write, so the reason still reaches the logs when the
     // audit store itself is the thing that is broken.
@@ -156,6 +168,7 @@ export function createAuthFlow({
           });
           return ACCEPTED;
         }
+        if (await emailThrottled(email, user.id)) return ACCEPTED;
         const response = await auth.handler(
           authRequest("/api/auth/request-password-reset", {
             email,
@@ -291,6 +304,7 @@ export function createAuthFlow({
           });
           return ACCEPTED;
         }
+        if (await emailThrottled(email, user.id)) return ACCEPTED;
         const response = await auth.handler(
           authRequest("/api/auth/sign-in/magic-link", {
             email,
@@ -330,6 +344,7 @@ export function createAuthFlow({
           });
           return ACCEPTED;
         }
+        if (await emailThrottled(email, user.id)) return ACCEPTED;
         const response = await auth.handler(
           authRequest("/api/auth/request-password-reset", {
             email,

@@ -265,6 +265,28 @@ describe("auth access repository", () => {
     });
   });
 
+  it("allows three auth emails per address per 15 minutes through the runtime role", async () => {
+    await admin`delete from auth_rate_limits where key like 'auth-email:%'`;
+    const at = (minutes: number) => new Date(now.getTime() + minutes * 60_000);
+    const results = [];
+    for (const minute of [0, 1, 2, 3])
+      results.push(await runtimeRepository.allowAuthEmail(email, at(minute)));
+    expect(results).toEqual([true, true, true, false]);
+    // Normalized: the same address in another case shares the allowance.
+    await expect(
+      runtimeRepository.allowAuthEmail(" ADMIN@example.com ", at(5)),
+    ).resolves.toBe(false);
+    // A new window starts once 15 minutes have passed since the first send.
+    await expect(runtimeRepository.allowAuthEmail(email, at(15))).resolves.toBe(
+      true,
+    );
+    const keys = await admin<
+      { key: string }[]
+    >`select key from auth_rate_limits where key like 'auth-email:%'`;
+    expect(keys).toHaveLength(1);
+    expect(keys[0]!.key).not.toContain("example.com");
+  });
+
   it("atomically completes enrollment for an eligible invite", async () => {
     await db
       .insert(workspaceInvites)

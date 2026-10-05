@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 
 import type { AuthDatabase } from "../client.js";
@@ -10,6 +12,11 @@ import {
 
 const LOCKOUT_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+// Sign-in, reset and enrollment emails share one allowance per address. The
+// custom auth routes call Better Auth without a client IP, which its own
+// limiter needs, so this per-address cap is what bounds unauthenticated sends.
+const AUTH_EMAIL_LIMIT = 3;
+const AUTH_EMAIL_WINDOW_MS = 15 * 60 * 1000;
 
 export type EligibleAuthUser = {
   id: string;
@@ -39,6 +46,8 @@ export type AuthAccessRepository = {
   completeEnrollment(userId: string, email: string): Promise<void>;
   revokeUserSessions(userId: string): Promise<void>;
   writeAuthAudit(event: AuthAuditEvent): Promise<void>;
+  /** Consumes one auth-email send for the address; false once its window is spent. */
+  allowAuthEmail(email: string, now: Date): Promise<boolean>;
 };
 
 function normalizeEmail(email: string): string {
@@ -152,6 +161,27 @@ export function createAuthAccessRepository(
           ? new Date(guard.lockedUntil as unknown as string)
           : null,
       };
+    },
+
+    async allowAuthEmail(candidateEmail, now) {
+      // Keyed by a digest so the rate-limit table never holds an address.
+      const key = `auth-email:${createHash("sha256").update(normalizeEmail(candidateEmail)).digest("hex")}`;
+      const at = now.getTime();
+      const windowStart = at - AUTH_EMAIL_WINDOW_MS;
+      // `last_request` holds the start of the current window. One statement,
+      // so concurrent requests cannot both take the last send.
+      const [row] = await db.execute<{ count: number }>(sql`
+        insert into auth_rate_limits (id, key, count, last_request)
+        values (${randomUUID()}, ${key}, 1, ${at})
+        on conflict (key) do update set
+          count = case when auth_rate_limits.last_request <= ${windowStart}
+            then 1 else auth_rate_limits.count + 1 end,
+          last_request = case when auth_rate_limits.last_request <= ${windowStart}
+            then ${at} else auth_rate_limits.last_request end
+        returning count
+      `);
+      if (!row) throw new Error("auth email allowance update failed");
+      return Number(row.count) <= AUTH_EMAIL_LIMIT;
     },
 
     async clearPasswordGuard(candidateEmail) {
