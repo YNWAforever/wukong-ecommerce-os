@@ -13,7 +13,9 @@ pnpm 11.7 + Turborepo monorepo · Node 24 · TypeScript 7 (5.9 in `apps/web`), s
 - **Worker**: Cloudflare Workers (wrangler) — Queues, Hyperdrive, R2
 - **DB**: Postgres (Neon) via Drizzle ORM + `postgres` driver; raw SQL migrations
 - **Auth**: better-auth (email/password + magic link), argon2, nodemailer
-- **AI**: `openai` SDK in `packages/ai` — OpenAI and explicitly selected OpenRouter listing adapters
+- **AI**: `openai` SDK in `packages/ai` — listing adapters for OpenAI, OpenRouter and OpenCode Go
+  (frozen per operation from the workspace `listingAi` policy); wine stages on OpenCode Go; Tavily
+  research; TypeSafe Jev verification advisory; Photoroom product shots
 - **Validation**: zod v4 everywhere · **Tests**: Vitest + Playwright · **Format**: Prettier
 
 ## Build & Run
@@ -23,10 +25,14 @@ pnpm dev                    # turbo dev, all packages
 pnpm lint                   # NOTE: this is `tsc --noEmit`, not ESLint
 pnpm typecheck
 pnpm test                   # node --test root suites + turbo test (unit only)
-pnpm test:integration       # needs Postgres + MinIO from docker-compose
+pnpm test:integration       # needs Postgres + MinIO; wine suites require a DB named wukong_wine_sdd
 pnpm test:e2e               # Playwright; PLAYWRIGHT_E2E=1 for the real-stack fixture
+pnpm eval:live              # gated live Opak eval; reports blocked (0 requests) without the opt-in
 pnpm --filter @wukong/db db:migrate
 ```
+
+On Windows the full web unit suite can time out at Vitest's 5 s default under full parallelism;
+rerun with `--maxWorkers=4` before treating a timeout as a regression.
 
 Local deps: `docker compose up -d postgres minio minio-tls mailpit`.
 Full setup incl. the `wukong_app` role and env vars: `docs/runbooks/local-development.md`.
@@ -38,7 +44,8 @@ apps/web        Next.js UI + API routes (Vercel)
 apps/worker     Cloudflare Worker: HMAC ingress + Queue consumers
 packages/core   Domain: listing schema, workflow state machine, compliance, review, audit ports
 packages/db     Drizzle schema, raw SQL migrations, workspace-scoped repositories, audit:verify CLI
-packages/ai     ListingAIProvider contract, OpenAI + OpenRouter + fake implementations, prompts, evals
+packages/ai     ListingAIProvider contract, OpenAI/OpenRouter/OpenCode Go/fake adapters, wine,
+                Tavily, TypeSafe and Photoroom providers, prompts, evals
 packages/shopline  SHOPLINE connector, projection, CSV fallback, token vault
 packages/assets S3/R2 asset store, presigning, key canonicalization
 packages/jobs   Queue message contracts (zod)
@@ -62,6 +69,11 @@ docs/superpowers/{specs,plans}  Dated design docs — read before changing a sub
   release gate and must report `0` missing actions and `0` accessible foreign records.
 - **Queue work is idempotent.** Pipeline steps claim leases keyed by
   `listing:<workspace>:<draft>:<sequence>` and cache step output; re-delivery must be a no-op.
+- **Model input is untrusted data.** Notes, label/photo text, workbook cells and web pages go in
+  the user turn as JSON; system instructions say to ignore instructions inside them. Any prompt
+  text change bumps `packages/core/src/listing-prompt-versions.ts`. Accepted operations pinned to
+  another version then refuse. The web app pins versions and the Worker checks them, so deploy
+  web and Worker together with the listing queue drained.
 
 ## Conventions
 
@@ -73,8 +85,10 @@ docs/superpowers/{specs,plans}  Dated design docs — read before changing a sub
 - **Logs**: single-line `console.info(JSON.stringify({ event, ... }))`. No credentials, signed
   URLs, prompts, model output, or customer content — this is enforced by the readiness gate.
 - **Commits**: lowercase conventional prefixes — `feat:`, `fix:`, `docs:`, `test:`, `refactor:`,
-  `ops:`. Short imperative subject, usually no body. Work happens on `codex/<topic>` branches
-  merged into `main` via PR merge commits.
+  `ops:`. Short imperative subject, usually no body. Work happens on `codex/<topic>` or
+  `claude/<topic>` branches merged into `main` via PR merge commits.
+- **Security headers**: set in `apps/web/next.config.mjs` `headers()` and pinned by
+  `tests/next-config.test.mjs`. Adding an iframe, camera or payment feature means changing them.
 - **Secrets**: `.env.example` lists names only. Never commit a value, a customer document, or a
   real SHOPLINE/OpenAI credential — not even in fixtures.
 
