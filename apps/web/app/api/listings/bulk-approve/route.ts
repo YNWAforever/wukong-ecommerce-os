@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import type { approveListing as domainApprove } from "@wukong/core";
 import { z } from "zod";
 
@@ -54,7 +55,7 @@ export type BulkApproveRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   approve?: typeof domainApprove;

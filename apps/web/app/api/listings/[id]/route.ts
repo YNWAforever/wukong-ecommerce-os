@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { z } from "zod";
 import { readWineProgress } from "../../../../lib/wine-progress";
 import { emptyWorkingListing, workingBaselineForReview } from "@wukong/core";
@@ -24,7 +25,7 @@ type ListingRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   getAssetStore: () => Pick<AssetStore, "createReadUrl">;

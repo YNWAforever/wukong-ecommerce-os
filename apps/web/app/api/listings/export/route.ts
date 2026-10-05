@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import type { ExportAttempt } from "@wukong/db";
 import { createHash } from "node:crypto";
 
@@ -19,7 +20,6 @@ import {
   createBulkExportDeps,
   recheckBulkExport,
   BulkUpdateEligibilityConflict,
-  type ExportManifestEntry,
 } from "../../../../lib/bulk-export-service";
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
@@ -83,7 +83,7 @@ export type ExportListingsRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   getAssetStore: () => Pick<AssetStore, "readObject" | "writeObjectIfAbsent">;
@@ -212,17 +212,11 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                   exportAttemptId: ensured.id,
                   rowDigestMismatchCount,
                   includedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome === "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
+                    .filter((entry) => entry.outcome === "included")
+                    .map((entry) => entry.listingId),
                   excludedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome !== "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
+                    .filter((entry) => entry.outcome !== "included")
+                    .map((entry) => entry.listingId),
                 },
               });
 
@@ -258,7 +252,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
             {
               workspaceId: session.workspaceId,
               id: attempt.id,
-              artifactSha256: attempt.artifactSha256,
+              artifactSha256,
               body: exported.body,
             },
             deps.getAssetStore(),

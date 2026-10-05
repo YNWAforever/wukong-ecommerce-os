@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import {
   approveListing as domainApprove,
   assertApprovalFreshness,
@@ -35,7 +36,7 @@ type ApprovalRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   assetStore?: ApproveOneAssetStore;

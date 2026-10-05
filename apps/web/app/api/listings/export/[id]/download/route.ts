@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { z } from "zod";
 import { artifactHash } from "../../../../../../lib/export-artifact";
 import type { AssetStore } from "@wukong/assets";
@@ -43,7 +44,7 @@ export type DownloadExportRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   getAssetStore: () => Pick<AssetStore, "readObject">;
