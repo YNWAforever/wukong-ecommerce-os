@@ -112,10 +112,13 @@ describe("the final delivery of a product shot message", () => {
     ).toEqual({ retryAfterSeconds: 30 });
 
     expect(finishUndispatched).toHaveBeenCalledOnce();
-    expect(log).toHaveBeenCalledWith("product_shot_consumer_unreconciled", {
-      attemptId: job.attemptId,
-      outcome: "skipped",
-    });
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "product_shot_consumer_unreconciled",
+        attemptId: job.attemptId,
+        outcome: "skipped",
+      }),
+    );
   });
 
   it("keeps the message when the terminal write itself fails", async () => {
@@ -127,10 +130,13 @@ describe("the final delivery of a product shot message", () => {
       await consumeProductShotMessage(job, {} as never, lastDelivery),
     ).toEqual({ retryAfterSeconds: 30 });
 
-    expect(log).toHaveBeenCalledWith("product_shot_consumer_unreconciled", {
-      attemptId: job.attemptId,
-      outcome: "write_failed",
-    });
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "product_shot_consumer_unreconciled",
+        attemptId: job.attemptId,
+        outcome: "write_failed",
+      }),
+    );
   });
 
   it("cannot record anything when the runtime itself failed to open", async () => {
