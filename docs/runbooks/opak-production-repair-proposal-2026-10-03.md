@@ -1,41 +1,51 @@
 # Opak production repair proposal — 2026-10-03
 
-This is the concrete bounded production operation. The user explicitly authorized only the existing hash-pinned0046 on the exact production target and disabling cache on the exact Hyperdrive, and named Codex as the migration operator. That approval is recorded; do not request it again. Execution remains blocked by the missing backup/restore owner, confirmed recoverable point and controlled runtime/migration preflight. No later migration, role/secret change, deployment, merge or SHOPLINE write is included.
+The user authorized the existing hash-pinned0046 on the exact production target and disabling cache on the exact Hyperdrive, and named Codex as migration operator. The cache-only change was completed separately on2026-10-05; additive0046 remains blocked by the missing human backup/restore owner, confirmed recoverable point and controlled runtime/migration preflight. Do not request the recorded scope/operator authorization again. Later migrations, role/secret changes, deployment, main merge and SHOPLINE writing remain separate release decisions.
 
-## Verified target and failures
+## Verified target and remaining failures
 
-The read-only refresh identifies Neon project `weathered-lake-51694428`, branch `br-twilight-meadow-at9qky4q`, database `neondb`. Both existing0046 source-binding columns and the workspace/source foreign key are absent. There are54 public regular tables,44 with RLS, all44 FORCE RLS. `wukong_app` is non-superuser/non-bypass; `neondb_owner` has BYPASSRLS.
+The retained production catalog read identifies Neon project `weathered-lake-51694428`, branch `br-twilight-meadow-at9qky4q`, database `neondb`. At that checkpoint the two0046 source-binding columns and workspace/source foreign key were absent;54public tables/44RLS/all44FORCE were recorded. `wukong_app` was non-superuser/non-bypass and `neondb_owner` had BYPASSRLS. Revalidate this catalog before executing the authorized migration.
 
-Production Hyperdrive `eef464f2d3c0480b94d22eaca060b209` / `wukong-neon-production` still uses `neondb_owner` and reports `caching.disabled=false`. Production Web remains `dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d`, main `dde9e178d9e1f9ca8880618c63104f41fe2fa3be`. These failed gates are configuration/schema observations; authenticated original500 reproduction and the effective Web database connection remain unresolved.
+At2026-10-05T02:15:31.222Z production Hyperdrive `eef464f2d3c0480b94d22eaca060b209` / `wukong-neon-production` reads back `caching.disabled=true`. Its exposed origin role remains `neondb_owner`; safe runtime-role readiness still fails. Worker version/build and100%traffic remain unchanged. Production Web metadata remains `dpl_7qVNQ191tqXME3uT7rWmZ4ssA92d` / main `dde9e178d9e1f9ca8880618c63104f41fe2fa3be`. Authenticated original500 reproduction and the effective Web database connection remain unresolved.
 
-Neon reports the exact default `main` branch ready and a21600-second history retention window. This six-hour retention setting is metadata, not a successful restore drill or a named recovery owner.
+Normal Neon metadata records a ready default branch and21600-second retention. The existing September5 snapshot and retention setting are not a confirmed current recovery point or restore drill.
 
-## Authorized first scope: additive schema repair and disabled cache
+## Completed independently: authorized cache-only mitigation
 
-1. Record the operator and backup/restore owner, current recovery point, controlled migration credential custody, active deployment pair, Queue/DLQ backlog and accepted/unknown operations. Missing ownership, a changed target or an unavailable recovery point stops the operation before any change. Do not retrieve production credentials from browser state or publish connection strings.
-2. Run the existing `db:listing-read-preflight` with the actual runtime connection. A provider-admin catalog query does not establish the effective Web identity. Validate the existing source-import unique reference key, target column types/defaults and conflicting foreign keys. The repository runner loads `DATABASE_MIGRATIONS_DIR` and executes each SQL file in its own transaction; it has no migration-journal write. Use a controlled directory containing only the hash-verified existing0046 file, with bounded timeout settings supplied by the controlled migration job. Do not point it at the complete drizzle directory.
-3. Apply only the existing [0046 SQL](../../packages/db/drizzle/0046_listing_version_source_binding.sql) with authorized migration credentials and bounded transaction/lock timeouts. Reviewed SHA256: `b41a241ffcdff9c871fb09c2a4093e18ca3c879af906ec543ddb6f7fb90ebb29`. Preserve aggregate version/source counts and content digests; old version bindings stay null. Do not run the all-pending-migrations command or manufacture bindings.
-4. Disable caching on the exact existing production Hyperdrive through normal authenticated Wrangler. Read back `caching.disabled=true`; preserve its other configuration and secret. Revalidate metadata and runtime preflight. No Worker or Web deployment is included in this first scope.
-5. Perform operator/reviewer authenticated detail/queue reads through approved sessions. Preserve safe request/stage failure evidence, fail overall on DB/permission faults, and do not claim every original500 fixed merely because0046 is present.
+Ruling: the reversible, explicitly authorized cache flag can be separated from additive0046. [The runtime runbook](./production-ai-runtime.md) requires cache-disabled reads for tenant RLS, leases and read-after-write. This targeted configuration change enables no new runtime or admission; [production readiness](./production-readiness.md) continues to block production enablement and the missing recovery decisions continue to block0046. Origin database load can increase after disabling caching; retain normal monitoring.
 
-Expected configuration/schema change: two nullable columns, one index, one validated workspace/source foreign key from0046, and the one Hyperdrive cache flag. No new app env name, role grant, paid AI call, SHOPLINE write, merge or production deployment is included.
+Five normal read-only CLI commands exit0 and all11 account/resource/Neon branch/Worker binding/build/version checks pass. Installed Wrangler4.112.0 and [official flags](https://developers.cloudflare.com/hyperdrive/reference/wrangler-commands/) agree on the operation. A fresh unchanged-configuration guard precedes the one update attempt.
 
-Installed Wrangler4.112.0 confirms the boolean flag below. Execute it only after the recorded ownership/recovery requirements and exact account/resource preflight; no credential value belongs in these arguments.
+Executed command, using the pinned account configuration:
 
 ```powershell
 wrangler hyperdrive update eef464f2d3c0480b94d22eaca060b209 --caching-disabled
 ```
 
+The update and three surrounding reads exit0. All5 readback checks pass: exact ID/name, cache disabled, exposed other configuration unchanged, Worker version/traffic unchanged. Outside-Git `cache-update.safe.json` SHA256: `47e21180d3ac07cc6e154cb986cf81ca3ecc73a02a131f88df203c8986b08bee`. No origin credential was supplied or changed through command arguments; exposed metadata comparison is not a secret-value readback. No migration, new app env, role grant, deployment, main merge, paid AI or SHOPLINE call occurred.
+
+The separate bounded Vercel receipt records8GET500 on another same-SHA production deployment:5detail/3list, all with generic internal-error diagnostics and no stage/database code. This historical evidence does not establish a unique cause or a current authenticated pass.
+
+## Remaining authorized scope: additive0046
+
+1. Record the migration and human backup/restore owners, confirmed current recovery point, controlled credential custody, active deployment pair, Queue/DLQ backlog and accepted/unknown operations. Missing ownership, a changed target or unavailable recovery point stops the migration before any change. Never retrieve credentials from browser state or publish connection values.
+2. Run existing `db:listing-read-preflight` with the actual runtime connection. A provider-admin catalog query does not establish the effective Web identity. Validate the source-import unique reference key, target types/defaults and conflicting foreign keys. The runner loads `DATABASE_MIGRATIONS_DIR` and executes each SQL file in its own transaction without a migration-journal write. Supply a controlled directory containing only the hash-verified existing0046 and bounded timeouts; never the complete drizzle directory.
+3. Apply only [existing0046](../../packages/db/drizzle/0046_listing_version_source_binding.sql) through the controlled migration job. SHA256: `b41a241ffcdff9c871fb09c2a4093e18ca3c879af906ec543ddb6f7fb90ebb29`. Preserve aggregate version/source counts and content digests; old bindings stay null. Do not run all pending migrations or manufacture bindings.
+4. Revalidate exact Hyperdrive identity and `caching.disabled=true`; the completed flag operation needs no repeat. Revalidate metadata and actual runtime preflight. No Web/Worker deployment is included.
+5. Perform approved operator/reviewer detail/queue reads. Preserve safe request/stage evidence, fail overall on DB/permission faults and never claim every original500 fixed merely because0046 is present.
+
+Expected remaining schema change: two nullable columns, one index and one validated workspace/source foreign key. No new app env, role grant, paid AI, SHOPLINE write, main merge or production deployment is included.
+
 ## Separate compatible-runtime cutover
 
-Replacing the Hyperdrive owner credential with `wukong_app` remains a required release gate. First verify controlled app-credential custody and the exact accepted Worker artifact's workspace/RLS compatibility, grants and FORCE RLS behavior. The current production Worker has a different build from Web; do not assume it is compatible or silently cut over its credential. An approved compatible Web/Worker pair, later required migrations0049–0053, bounded backfill and the human release gates need their own reviewed release decision.
+Changing the Hyperdrive owner credential to `wukong_app` remains a release gate. Verify controlled app-credential custody, accepted Worker workspace/RLS compatibility, grants and FORCE RLS first. Web and Worker have different builds; no credential cutover was performed. A compatible Web/Worker pair, later required migrations0049–0053, bounded backfill and human release sign-off need their own reviewed release decision.
 
-Keep production SHOPLINE disabled and publishing false. First real SHOPLINE writing retains its separate confirmation; merchant pilot5→20→100 cannot expand before reconciliation.
+Keep SHOPLINE disabled and publishing false. First real writing needs separate confirmation; reconcile5before20before100.
 
 ## Failure and rollback
 
-Before execution, name who can stop new admission and restore a compatible artifact. On a failed preflight or bounded DDL failure, stop and retain the receipt; the transaction rolls back without deleting historical records. After a committed additive change, retain the columns/index/FK and old null bindings. Do not down-migrate or backfill invented values.
+Keep query caching disabled. Do not use cache re-enablement or the old BYPASSRLS credential as routine rollback. Unexpected configuration/readback differences require reconciliation before further operations.
 
-Keep query caching disabled. Do not use the old BYPASSRLS credential as the routine rollback after a safe-role cutover. Under the separately approved controls, stop new admission, preserve accepted/unknown operations, reservations, sources, versions, audits, artifacts, primary Queues and DLQs, and use the approved compatible artifact with the safe runtime role. A backup/restore event needs its own reviewed scope.
+Before0046, name who can stop admission and restore a compatible artifact. Failed preflight or bounded DDL failure stops the operation; retain its receipt. After a committed additive change, retain columns/index/FK and null old bindings; do not down-migrate or invent bindings.
 
-Authorization boundary: [production-ai-runtime.md](./production-ai-runtime.md) says “Obtain explicit approval before creating paid or production resources, changing secrets, or deploying.” [production-readiness.md](./production-readiness.md) also requires human ownership, recovery and release sign-off. The exact first-scope approval and operator are recorded above. Those decisions do not fill the missing recovery/ownership gates or authorize any separate runtime cutover.
+Under separately approved release controls, preserve accepted/unknown operations, reservations, sources, versions, audits, artifacts, primary Queues and DLQs. A backup/restore event needs its own reviewed scope. Recorded0046/cache authorization does not fill missing recovery/ownership gates or authorize runtime cutover.
