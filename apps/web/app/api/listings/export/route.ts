@@ -23,7 +23,6 @@ import {
   BulkExportPreviewConflict,
   requireBulkExportPreview,
   assertBulkRepairTargets,
-  type ExportManifestEntry,
 } from "../../../../lib/bulk-export-service";
 import { getAssetStore, getDatabase } from "../../../../lib/intake-runtime";
 import {
