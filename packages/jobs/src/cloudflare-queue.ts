@@ -31,8 +31,9 @@ export const listingJobSchema = z
      * Optional, and absent means 0, so a message produced before this field
      * existed still parses and still derives exactly the key it derived before.
      * A NEW producer must not run against an OLD Worker, though: the schema is
-     * strict, so an unrecognized key makes safeParse fail and the consumer acks
-     * the message away. Deploy the Worker first.
+     * strict, so an unrecognized key makes safeParse fail; the listing consumer
+     * retries until the message is quarantined in the DLQ, where it waits for a
+     * reviewed replay. Deploy the Worker first.
      */
     runAttempt: z.number().int().min(0).max(999).optional(),
     schemaVersion: z.literal(2).optional(),
