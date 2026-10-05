@@ -1112,7 +1112,7 @@ function Metric({
     <>
       <span className={styles.metricValue} id={valueId}>
         {value === undefined ? "—" : formatNumber(value, locale)}
-      </span>
+      </span>{" "}
       <span className={styles.metricLabel} id={labelId}>
         {label}
       </span>
