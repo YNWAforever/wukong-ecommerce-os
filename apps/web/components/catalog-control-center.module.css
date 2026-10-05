@@ -22,7 +22,8 @@
 
 .metricValue {
   color: var(--navy);
-  font-family: Georgia, "Times New Roman", serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
   font-size: 22px;
   line-height: 1;
 }

@@ -2522,3 +2522,19 @@ html {
 #listing-approval-actions {
   scroll-margin-top: 96px;
 }
+
+/* Figures: Georgia's zero reads as the letter O; counts use tabular sans. */
+.metric-value {
+  font-family: inherit;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+/* Work Queue: the title block fills the row so selectable and plain rows align. */
+.queue-item > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Locale toggle: "繁中" must not break across lines at 390px. */
+.locale-toggle button {
+  white-space: nowrap;
+}
