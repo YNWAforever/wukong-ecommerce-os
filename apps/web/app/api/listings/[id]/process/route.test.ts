@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { describe, expect, it, vi } from "vitest";
 
 import { createProcessListingHandler } from "./route.js";
@@ -113,10 +114,10 @@ function harness(
     getDatabase: () => ({
       async forWorkspace<T>(
         workspaceId: string,
-        work: (repos: typeof repositories) => Promise<T>,
+        work: (repos: WorkspaceRepositories) => Promise<T>,
       ) {
         expect(workspaceId).toBe("ws_opak");
-        return work(repositories);
+        return work(repositories as unknown as WorkspaceRepositories);
       },
     }),
     publisher: { enqueue },

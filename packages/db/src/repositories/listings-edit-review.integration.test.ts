@@ -347,6 +347,63 @@ describe("listing review edits guard in-flight states", () => {
     expect(after?.activeVersionId).toBe(version.id);
   });
 
+  it.each([
+    ["approved", "reopen", "reopened"],
+    ["published", "reopen", "reopened"],
+    ["publish_failed", "reopen", "reopened"],
+    ["needs_info", "submit_manual", "in_review"],
+  ])(
+    "records the %s edit through the workflow state machine",
+    async (fromStatus, action, toStatus) => {
+      const { listingId, versionId } = await seedListing(fromStatus);
+      await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.editReview(
+          listingId,
+          versionId,
+          editedContent,
+          ["title"],
+          contextFor(listingId),
+          repos.audit,
+        ),
+      );
+      const transitions = (await invalidationEvents(listingId)).filter(
+        (row) => row.action === "listing.transition",
+      );
+      expect(transitions).toEqual([
+        {
+          action: "listing.transition",
+          metadata: { fromStatus, action, toStatus },
+        },
+      ]);
+    },
+  );
+
+  it.each(["in_review", "reopened"])(
+    "keeps %s without inventing a transition",
+    async (status) => {
+      const { listingId, versionId } = await seedListing(status);
+      await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.editReview(
+          listingId,
+          versionId,
+          editedContent,
+          ["title"],
+          contextFor(listingId),
+          repos.audit,
+        ),
+      );
+      const after = await forWorkspace(database, workspaceId, (repos) =>
+        repos.listings.getById(listingId),
+      );
+      expect(after?.status).toBe(status);
+      expect(
+        (await invalidationEvents(listingId)).filter(
+          (row) => row.action === "listing.transition",
+        ),
+      ).toEqual([]);
+    },
+  );
+
   it("reopens rather than re-reviews after a failed publish", async () => {
     const { listingId, versionId } = await seedListing("publish_failed");
 

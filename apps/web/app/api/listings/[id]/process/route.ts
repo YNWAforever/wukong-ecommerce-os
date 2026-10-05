@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { sectionKeySchema } from "@wukong/core";
 import { prepareWineAdmission } from "../../../../../lib/wine-enrichment-service";
 import { preflightWineCapability } from "../../../../../lib/wine-capability-client";
@@ -40,7 +41,7 @@ type ProcessListingRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   publisher: ListingPublisher;

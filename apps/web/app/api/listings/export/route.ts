@@ -1,5 +1,6 @@
 import { exportGenerationSchema } from "../../../../lib/bulk-export-contract";
 import { ImportResultConflict } from "@wukong/db";
+import type { WorkspaceRepositories } from "@wukong/db";
 import type { ExportAttempt } from "@wukong/db";
 import { createHash } from "node:crypto";
 
@@ -11,6 +12,9 @@ import {
 } from "../../../../lib/export-artifact";
 import { ShoplineBulkFormError } from "@wukong/shopline";
 
+// Strict: refuses values JSON cannot represent instead of hashing them as text,
+// so attempt identity always matches the provenance that is stored.
+import { canonicalJson } from "../../../../lib/export-evidence-packet";
 import {
   createBulkExport,
   createBulkExportDeps,
@@ -47,23 +51,12 @@ function assertReviewer(role: string): void {
   }
 }
 
-/** Canonical JSON makes object property insertion order irrelevant to request identity. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.entries(value)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
-}
-
 export type ExportListingsRouteDeps = {
   sessionContext: SessionContextPort;
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   getAssetStore: () => Pick<AssetStore, "readObject" | "writeObjectIfAbsent">;
@@ -236,17 +229,11 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
                   exportAttemptId: ensured.id,
                   rowDigestMismatchCount,
                   includedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome === "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
+                    .filter((entry) => entry.outcome === "included")
+                    .map((entry) => entry.listingId),
                   excludedListingIds: ensured.manifest
-                    .filter(
-                      (entry: ExportManifestEntry) =>
-                        entry.outcome !== "included",
-                    )
-                    .map((entry: ExportManifestEntry) => entry.listingId),
+                    .filter((entry) => entry.outcome !== "included")
+                    .map((entry) => entry.listingId),
                 },
               });
 
@@ -282,7 +269,7 @@ export function createExportListingsHandler(deps: ExportListingsRouteDeps) {
             {
               workspaceId: session.workspaceId,
               id: attempt.id,
-              artifactSha256: attempt.artifactSha256,
+              artifactSha256,
               body: exported.body,
             },
             deps.getAssetStore(),

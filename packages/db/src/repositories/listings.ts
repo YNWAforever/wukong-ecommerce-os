@@ -936,17 +936,20 @@ export function createListingRepository(
       // listing was `publishing` -- an edge the workflow state machine forbids,
       // and one that orphans an in-flight SHOPLINE delivery because the
       // optimistic guard below binds to the status we just read.
-      const nextStatusByStatus = {
-        in_review: "in_review",
-        needs_info: "in_review",
-        reopened: "reopened",
-        approved: "reopened",
-        published: "reopened",
-        publish_failed: "reopened",
-      } as const satisfies Partial<Record<ListingStatus, ListingStatus>>;
-      const nextStatus: ListingStatus | undefined =
-        nextStatusByStatus[listing.status as keyof typeof nextStatusByStatus];
-      if (!nextStatus) throw new Error(`listing is ${listing.status}`);
+      // The state machine owns the resulting status and its audit event; null
+      // means the edit stays in a review state and is no transition at all.
+      const actionByStatus = {
+        in_review: null,
+        reopened: null,
+        needs_info: "submit_manual",
+        approved: "reopen",
+        published: "reopen",
+        publish_failed: "reopen",
+      } as const satisfies Partial<Record<ListingStatus, ListingAction | null>>;
+      if (!(listing.status in actionByStatus))
+        throw new Error(`listing is ${listing.status}`);
+      const action =
+        actionByStatus[listing.status as keyof typeof actionByStatus];
       const base = await this.getReviewSnapshot(id);
       if (base?.activeVersion?.id !== baseVersionId)
         throw new Error("stale review version");
@@ -998,6 +1001,11 @@ export function createListingRepository(
           );
         }
       }
+      // Inside this transaction: a lost optimistic race below rolls the
+      // transition audit back with it.
+      const nextStatus = action
+        ? await transitionListing(listing.status, action, context, audit)
+        : listing.status;
       const updated = await transaction
         .update(listingDrafts)
         .set({

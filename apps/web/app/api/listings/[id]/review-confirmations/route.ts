@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import { z } from "zod";
 
 import { getDatabase } from "../../../../../lib/intake-runtime";
@@ -17,7 +18,7 @@ type ReviewConfirmationsRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
 };

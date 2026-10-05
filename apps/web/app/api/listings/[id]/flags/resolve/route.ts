@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import {
   resolveFlag as domainResolveFlag,
   type AuditContext,
@@ -21,7 +22,7 @@ type ResolveComplianceFlagRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   resolveFlag?: typeof domainResolveFlag;

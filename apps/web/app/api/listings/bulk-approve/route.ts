@@ -1,3 +1,4 @@
+import type { WorkspaceRepositories } from "@wukong/db";
 import type { approveListing as domainApprove } from "@wukong/core";
 import { z } from "zod";
 
@@ -7,6 +8,7 @@ import { getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
   jsonResponse,
+  reportUnexpectedError,
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
@@ -53,7 +55,7 @@ export type BulkApproveRouteDeps = {
   getDatabase: () => {
     forWorkspace<T>(
       workspaceId: string,
-      work: (repositories: any) => Promise<T>,
+      work: (repositories: WorkspaceRepositories) => Promise<T>,
     ): Promise<T>;
   };
   approve?: typeof domainApprove;
@@ -118,6 +120,7 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
               message: error.message,
             });
           } else {
+            reportUnexpectedError(error, { listingId: id });
             results.push({
               listingId: id,
               ok: false,

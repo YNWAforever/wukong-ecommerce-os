@@ -179,7 +179,7 @@ The controlled command runs `packages/db/src/seed-shopline-connection.ts`. The S
 
 The seed is idempotent for the same address, but re-running it with a different `OPAK_OPERATOR_EMAIL` **renames the existing operator rather than adding one**. `upsertUser` conflicts on the fixed `OPAK_OPERATOR_ID` and overwrites the email, and `users.email` is `UNIQUE`. The previous address then fails the eligibility check, its `workspace_invites` row is left behind, and the existing credential and verified state stay attached to the renamed user. Treat a change of operator address as a replacement, not an addition.
 
-Every rejection along these flows is deliberately generic, so an address that was never seeded is indistinguishable on the wire from one that succeeded. When sign-in appears to do nothing, read `auth_audit_events` before suspecting mail or configuration: `magic_link_rejected` and `password_enrollment_rejected` mean the address is not eligible, and the flow stopped before mail was ever attempted.
+Every rejection along these flows is deliberately generic, so an address that was never seeded is indistinguishable on the wire from one that succeeded. When sign-in appears to do nothing, read `auth_audit_events` before suspecting mail or configuration: `magic_link_rejected` and `password_enrollment_rejected` mean the address is not eligible, and the flow stopped before mail was ever attempted. `auth_email_throttled` means the address already received three sign-in, reset or enrollment emails in the last 15 minutes; the public response is unchanged and no mail is sent until that window ends.
 
 ## Preview and production sequence
 

@@ -73,11 +73,11 @@ it.each(["runtime_initialization_failed", "processing_failed"])(
       retryAfterSeconds: 30,
     });
     expect(log).toHaveBeenCalledExactlyOnceWith(
-      "product_shot_consumer_failure",
-      {
+      JSON.stringify({
+        event: "product_shot_consumer_failure",
         category,
         attemptId: job.attemptId,
-      },
+      }),
     );
     if (category === "processing_failed") expect(close).toHaveBeenCalledOnce();
   },
