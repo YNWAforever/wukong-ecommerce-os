@@ -87,6 +87,22 @@ function throwSite(error: unknown): string {
   return "unknown";
 }
 
+/**
+ * Logs an error no handler classified. Name and throw site only, never the
+ * message: an unexpected error can carry a connection string or a signed URL,
+ * and the readiness gate scans runtime logs. `detail` must hold IDs only.
+ */
+export function reportUnexpectedError(
+  error: unknown,
+  detail: Record<string, string> = {},
+): void {
+  report("internal_error", {
+    ...detail,
+    errorName: error instanceof Error ? error.name : "UnknownError",
+    errorSite: throwSite(error),
+  });
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -179,12 +195,7 @@ export async function withRouteErrors(
       });
     }
 
-    // Name only, never the message: an unexpected error can carry a connection
-    // string or a signed URL, and the readiness gate scans runtime logs.
-    report("internal_error", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-      errorSite: throwSite(error),
-    });
+    reportUnexpectedError(error);
     return jsonResponse(500, {
       code: "internal_error",
       message: "The request could not be completed.",

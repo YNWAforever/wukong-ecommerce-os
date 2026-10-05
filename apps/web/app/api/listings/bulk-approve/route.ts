@@ -7,6 +7,7 @@ import { getDatabase } from "../../../../lib/intake-runtime";
 import {
   ApiError,
   jsonResponse,
+  reportUnexpectedError,
   requireSessionContext,
   withRouteErrors,
 } from "../../../../lib/route-support";
@@ -118,6 +119,7 @@ export function createBulkApproveHandler(deps: BulkApproveRouteDeps) {
               message: error.message,
             });
           } else {
+            reportUnexpectedError(error, { listingId: id });
             results.push({
               listingId: id,
               ok: false,
