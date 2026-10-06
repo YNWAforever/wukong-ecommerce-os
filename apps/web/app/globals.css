@@ -1495,6 +1495,8 @@ button:disabled {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 1fr;
+  /* Stacked: the brand bar keeps its height and the card takes the rest. */
+  grid-template-rows: auto 1fr;
 }
 .auth-shell-brand {
   display: flex;
@@ -1593,6 +1595,7 @@ button:disabled {
 @media (min-width: 1024px) {
   .auth-shell {
     grid-template-columns: minmax(320px, 420px) 1fr;
+    grid-template-rows: 1fr;
   }
   .auth-shell-brand-body {
     display: block;
