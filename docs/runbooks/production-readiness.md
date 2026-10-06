@@ -57,6 +57,7 @@ in `docs/audit/2026-10-05-*.md`.
   listing queue, merge, deploy the Worker immediately, then resume. Operations pinned during the
   gap refuse with "Accepted prompt versions are unavailable" and need a new retry.
 - Every web route now sends baseline security headers (`frame-ancestors 'none'`,
-  `X-Frame-Options: DENY`, HSTS without `includeSubDomains`). Check that nothing embeds the app.
+  `X-Frame-Options: DENY`). HSTS is left to Vercel, which sends
+  `max-age=63072000; includeSubDomains; preload`. Check that nothing embeds the app.
 - Auth emails are capped at 3 per address per 15 minutes. Expect `auth_email_throttled` audit
   events during support sessions where someone retries repeatedly.
