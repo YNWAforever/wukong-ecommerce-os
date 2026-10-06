@@ -31,5 +31,7 @@ test("Next sends baseline security headers on every route", async () => {
   assert.equal(sent["x-content-type-options"], "nosniff");
   assert.equal(sent["referrer-policy"], "strict-origin-when-cross-origin");
   assert.match(sent["permissions-policy"] ?? "", /camera=\(\)/);
-  assert.match(sent["strict-transport-security"] ?? "", /max-age=\d+/);
+  // HSTS is left to the platform: Vercel sends max-age=63072000 with
+  // includeSubDomains and preload, and an app value would replace it.
+  assert.equal(sent["strict-transport-security"], undefined);
 });
