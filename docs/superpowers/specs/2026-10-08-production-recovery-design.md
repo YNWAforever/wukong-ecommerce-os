@@ -92,7 +92,7 @@ The cause is a production database behind the deployed code:
 
 ## Section 2: Inventory and rehearsal
 
-1. **Production inventory (checkpoint 1, read-only).** Run `scripts/production-schema-inventory.sql` (read-only; checked against a local database on 2026-10-08), which reports
+1. **Production inventory (checkpoint 1, read-only).** Run `pnpm --filter @wukong/db db:schema-inventory` (read-only), which reports
    one row per migration `0041`–`0053` by marker object. Also:
    - the `wukong_app` role exists
    - the role the runtime URL connects as
