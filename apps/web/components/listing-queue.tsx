@@ -33,9 +33,6 @@ export function ListingQueue({
     <section className="queue" aria-labelledby="queue-heading">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">
-            {localized(locale, "工作佇列", "Work queue")}
-          </p>
           <h2 id="queue-heading">
             {localized(locale, "下一步工作", "Next actions")}
           </h2>
@@ -56,6 +53,7 @@ export function ListingQueue({
           return (
             <section
               className="queue-group"
+              data-empty={groupItems.length === 0 ? "" : undefined}
               key={group.status}
               aria-labelledby={`queue-${group.status}`}
             >
@@ -76,6 +74,7 @@ export function ListingQueue({
                 ) : null}
                 <span
                   className="count-badge"
+                  data-zero={groupItems.length === 0 ? "" : undefined}
                   aria-label={localized(
                     locale,
                     `${groupItems.length} 個項目`,

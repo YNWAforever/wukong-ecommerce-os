@@ -104,7 +104,7 @@ export function BatchList() {
     };
   }, [includeArchived]);
   const archiveFilter = (
-    <label>
+    <label className="batch-archive-toggle">
       <input
         type="checkbox"
         checked={includeArchived}
@@ -142,9 +142,18 @@ export function BatchList() {
     return (
       <>
         {archiveFilter}
-        <p className="intake-message">
-          {localized(locale, "尚無批次紀錄。", "No batches yet.")}
-        </p>
+        <div className="empty-panel">
+          <p className="empty-panel-title">
+            {localized(locale, "尚無批次紀錄", "No batches yet")}
+          </p>
+          <p>
+            {localized(
+              locale,
+              "以上方表格選擇內容缺口並預覽，即可建立第一個批次。",
+              "Pick a content gap above and preview it to create the first batch.",
+            )}
+          </p>
+        </div>
       </>
     );
   }

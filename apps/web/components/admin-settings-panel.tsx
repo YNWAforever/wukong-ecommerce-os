@@ -2,6 +2,8 @@
 import { WorkspacePolicyPanel } from "./workspace-policy-panel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 import {
   publishSettingsFence,
   useSettingsFence,
@@ -17,6 +19,8 @@ async function read(response: Response): Promise<Settings> {
   return body;
 }
 export function AdminSettingsPanel() {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
   const [baseline, setBaseline] = useState<Settings | null>(null);
   const [brandBackgroundColor, setColor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,10 +73,14 @@ export function AdminSettingsPanel() {
       setColor(next.brandBackgroundColor);
       setConflict(false);
       setComparison(null);
-      setMessage("設定已儲存 Settings saved");
+      setMessage(t("設定已儲存", "Settings saved"));
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to save settings.");
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("未能儲存設定。", "Unable to save settings."),
+      );
       setConflict(Boolean((e as { conflict?: boolean }).conflict));
       return false;
     } finally {
@@ -109,8 +117,10 @@ export function AdminSettingsPanel() {
         {conflict && (
           <div>
             <p>
-              另一位管理員已更新。請比較或重新載入；不會覆寫。 Another
-              administrator updated settings. Compare or reload before saving.
+              {t(
+                "另一位管理員已更新。請比較或重新載入；不會覆寫。",
+                "Another administrator updated settings. Compare or reload before saving.",
+              )}
             </p>
             <button
               type="button"
@@ -125,7 +135,7 @@ export function AdminSettingsPanel() {
                 }
               }}
             >
-              比較最新設定 Compare latest settings
+              {t("比較最新設定", "Compare latest settings")}
             </button>
             <button
               type="button"
@@ -134,13 +144,14 @@ export function AdminSettingsPanel() {
                 load().catch((e) => setError((e as Error).message))
               }
             >
-              重新載入並捨棄我的修改 Reload and discard my edits
+              {t("重新載入並捨棄我的修改", "Reload and discard my edits")}
             </button>
             {comparison && (
               <p>
-                我的背景色 My color: {brandBackgroundColor ?? "Default"} ·
-                最新背景色 Latest color:{" "}
-                {comparison.brandBackgroundColor ?? "Default"}
+                {t("我的背景色", "My color")}:{" "}
+                {brandBackgroundColor ?? t("預設", "Default")} ·{" "}
+                {t("最新背景色", "Latest color")}:{" "}
+                {comparison.brandBackgroundColor ?? t("預設", "Default")}
               </p>
             )}
           </div>
@@ -148,7 +159,7 @@ export function AdminSettingsPanel() {
         {baseline && (
           <>
             <label>
-              品牌背景色 Brand background color
+              {t("品牌背景色", "Brand background color")}
               <input
                 type="color"
                 value={brandBackgroundColor ?? "#ffffff"}
@@ -162,7 +173,7 @@ export function AdminSettingsPanel() {
               disabled={busy}
               onClick={() => void save()}
             >
-              儲存 Save
+              {t("儲存", "Save")}
             </button>
           </>
         )}

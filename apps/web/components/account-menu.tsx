@@ -62,8 +62,31 @@ export function AccountMenu({
   }
   return (
     <details className={styles.account} data-testid="account-menu">
-      <summary>
-        {localized(locale, "帳戶", "Account")} · {user.name || user.email}
+      <summary
+        aria-label={`${localized(locale, "帳戶", "Account")} · ${user.name || user.email}`}
+      >
+        <span className={styles.avatar} aria-hidden="true">
+          {(user.name || user.email).trim().charAt(0).toUpperCase()}
+        </span>
+        <span className={styles.identity} aria-hidden="true">
+          {user.name || user.email}
+        </span>
+        <svg
+          className={styles.chevron}
+          aria-hidden="true"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+        >
+          <path
+            d="M4 6l4 4 4-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </summary>
       <div className={styles.panel}>
         <strong>{user.name || user.email}</strong>

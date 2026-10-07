@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { contentFieldLabel } from "../../apps/web/lib/content-field-labels.js";
 import { captureDeliveryLocaleMatrix } from "./catalog-usability-checks.js";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -279,8 +280,14 @@ test("reviewer completes attended Bulk Update and reconciles mixed operator repo
     "seoDescriptionEn",
     "seoDescriptionZh",
     "seoKeywords",
-  ])
-    await page.getByRole("checkbox", { name: field, exact: true }).check();
+  ] as const)
+    await page
+      .getByRole("group", { name: "Content fields to change" })
+      .getByRole("checkbox", {
+        name: contentFieldLabel(field, "en"),
+        exact: true,
+      })
+      .check();
   const previewed = page.waitForResponse(
     (r) =>
       new URL(r.url()).pathname === "/api/enrichment-batches/preview" &&

@@ -13,7 +13,6 @@ export default async function QueuePage() {
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">{copy.eyebrow}</p>
           <h1>{copy.title}</h1>
           <p className="lede">{copy.description}</p>
         </div>

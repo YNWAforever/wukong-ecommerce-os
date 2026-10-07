@@ -127,7 +127,12 @@ export function QualitySummaryClient() {
           )}
         </p>
       ) : null}
-      <button type="button" onClick={reload} disabled={loading}>
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={reload}
+        disabled={loading}
+      >
         {localized(locale, "更新統計", "Refresh counts")}
       </button>
       <section aria-label={localized(locale, "文案缺口", "Copy gaps")}>

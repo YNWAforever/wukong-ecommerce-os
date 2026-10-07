@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAdminDirtyGuard } from "../lib/admin-dirty-context";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
+import { roleLabel } from "../lib/role-labels";
+import { StatusPill } from "./status-pill";
 
 type Member = {
   userId: string;
@@ -31,6 +35,9 @@ async function responseError(response: Response): Promise<Error> {
 }
 
 export function AdminMembersPanel() {
+  const locale = useLocale();
+  const t = (zh: string, en: string) => localized(locale, zh, en);
+  const roleName = (role: string) => roleLabel(role, locale);
   const submitting = useRef(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -56,7 +63,7 @@ export function AdminMembersPanel() {
       setError(
         loadError instanceof Error
           ? loadError.message
-          : "Unable to load members.",
+          : t("未能載入成員。", "Unable to load members."),
       ),
     );
   }, [load]);
@@ -80,7 +87,7 @@ export function AdminMembersPanel() {
         setError(
           runError instanceof Error
             ? runError.message
-            : "Unable to complete request.",
+            : t("未能完成要求。", "Unable to complete request."),
         );
         return false;
       } finally {
@@ -93,27 +100,33 @@ export function AdminMembersPanel() {
 
   const invite = async () => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim())) {
-      setError("請填寫有效電郵 Enter a valid email address.");
+      setError(t("請填寫有效電郵。", "Enter a valid email address."));
       return false;
     }
-    return run(async () => {
-      const response = await fetch("/api/workspace/members/invite", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-      });
-      if (!response.ok) throw await responseError(response);
-      setInviteEmail("");
-      setInviteRole("viewer");
-      const body = (await response.json().catch(() => null)) as {
-        emailDelivery?: string;
-      } | null;
-      // "requested" cannot confirm delivery: the auth flow answers every
-      // request the same way so it never reveals whether an address is
-      // eligible. Send failures and throttling show only in the auth audit.
-      if (body?.emailDelivery === "failed")
-        return "邀請已建立，但未能要求寄出電郵；請檢查電郵設定後再次邀請 The invite was saved, but its email could not be requested. Check the auth email settings, then invite the same address again.";
-    }, "邀請已建立，已要求寄出電郵 Invite saved; email requested");
+    return run(
+      async () => {
+        const response = await fetch("/api/workspace/members/invite", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+        });
+        if (!response.ok) throw await responseError(response);
+        setInviteEmail("");
+        setInviteRole("viewer");
+        const body = (await response.json().catch(() => null)) as {
+          emailDelivery?: string;
+        } | null;
+        // "requested" cannot confirm delivery: the auth flow answers every
+        // request the same way so it never reveals whether an address is
+        // eligible. Send failures and throttling show only in the auth audit.
+        if (body?.emailDelivery === "failed")
+          return t(
+            "邀請已建立，但未能要求寄出電郵；請檢查電郵設定後再次邀請。",
+            "The invite was saved, but its email could not be requested. Check the auth email settings, then invite the same address again.",
+          );
+      },
+      t("邀請已建立，已要求寄出電郵", "Invite saved; email requested"),
+    );
   };
   useAdminDirtyGuard("members-invite", {
     dirty: Boolean(inviteEmail || inviteRole !== "viewer" || busy),
@@ -126,30 +139,39 @@ export function AdminMembersPanel() {
   });
 
   const changeRole = (userId: string, role: AssignableRole) =>
-    run(async () => {
-      const response = await fetch(`/api/workspace/members/${userId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-      if (!response.ok) throw await responseError(response);
-    }, "角色已更新 Role updated");
+    run(
+      async () => {
+        const response = await fetch(`/api/workspace/members/${userId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ role }),
+        });
+        if (!response.ok) throw await responseError(response);
+      },
+      t("角色已更新", "Role updated"),
+    );
 
   const removeMember = (userId: string) =>
-    run(async () => {
-      const response = await fetch(`/api/workspace/members/${userId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw await responseError(response);
-    }, "成員已移除 Member removed");
+    run(
+      async () => {
+        const response = await fetch(`/api/workspace/members/${userId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) throw await responseError(response);
+      },
+      t("成員已移除", "Member removed"),
+    );
 
   const revokeInvite = (inviteId: string) =>
-    run(async () => {
-      const response = await fetch(`/api/workspace/invites/${inviteId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw await responseError(response);
-    }, "邀請已撤銷 Invite revoked");
+    run(
+      async () => {
+        const response = await fetch(`/api/workspace/invites/${inviteId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) throw await responseError(response);
+      },
+      t("邀請已撤銷", "Invite revoked"),
+    );
 
   return (
     <section className="members-panel" aria-busy={busy}>
@@ -167,11 +189,11 @@ export function AdminMembersPanel() {
       <table className="members-table">
         <thead>
           <tr>
-            <th>電郵 Email</th>
-            <th>角色 Role</th>
-            <th>狀態 Status</th>
-            <th>
-              <span className="visually-hidden">操作 Actions</span>
+            <th scope="col">{t("電郵", "Email")}</th>
+            <th scope="col">{t("角色", "Role")}</th>
+            <th scope="col">{t("狀態", "Status")}</th>
+            <th scope="col">
+              <span className="visually-hidden">{t("操作", "Actions")}</span>
             </th>
           </tr>
         </thead>
@@ -181,12 +203,15 @@ export function AdminMembersPanel() {
               <td>{member.email}</td>
               <td>
                 {member.role === "owner" ? (
-                  member.role
+                  roleName(member.role)
                 ) : (
                   <select
                     value={member.role}
                     disabled={busy}
-                    aria-label={`變更 ${member.email} 的角色 Change role for ${member.email}`}
+                    aria-label={t(
+                      `變更 ${member.email} 的角色`,
+                      `Change role for ${member.email}`,
+                    )}
                     onChange={(event) =>
                       changeRole(
                         member.userId,
@@ -196,13 +221,15 @@ export function AdminMembersPanel() {
                   >
                     {ROLE_OPTIONS.map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {roleName(role)}
                       </option>
                     ))}
                   </select>
                 )}
               </td>
-              <td>啟用中 Active</td>
+              <td>
+                <StatusPill tone="success">{t("啟用中", "Active")}</StatusPill>
+              </td>
               <td>
                 {member.role === "owner" ? null : (
                   <button
@@ -211,7 +238,7 @@ export function AdminMembersPanel() {
                     disabled={busy}
                     onClick={() => removeMember(member.userId)}
                   >
-                    移除 Remove
+                    {t("移除", "Remove")}
                   </button>
                 )}
               </td>
@@ -220,8 +247,10 @@ export function AdminMembersPanel() {
           {invites.map((pendingInvite) => (
             <tr key={pendingInvite.id}>
               <td>{pendingInvite.email}</td>
-              <td>{pendingInvite.role}</td>
-              <td>待接受 Pending</td>
+              <td>{roleName(pendingInvite.role)}</td>
+              <td>
+                <StatusPill tone="warning">{t("待接受", "Pending")}</StatusPill>
+              </td>
               <td>
                 <button
                   type="button"
@@ -229,7 +258,7 @@ export function AdminMembersPanel() {
                   disabled={busy}
                   onClick={() => revokeInvite(pendingInvite.id)}
                 >
-                  撤銷 Revoke
+                  {t("撤銷", "Revoke")}
                 </button>
               </td>
             </tr>
@@ -248,7 +277,7 @@ export function AdminMembersPanel() {
           type="email"
           required
           placeholder="email@example.com"
-          aria-label="邀請成員的電子郵件 Invite email address"
+          aria-label={t("邀請成員的電子郵件", "Invite email address")}
           value={inviteEmail}
           disabled={busy}
           onChange={(event) => setInviteEmail(event.target.value)}
@@ -256,14 +285,14 @@ export function AdminMembersPanel() {
         <select
           value={inviteRole}
           disabled={busy}
-          aria-label="新成員的角色 Role for new member"
+          aria-label={t("新成員的角色", "Role for new member")}
           onChange={(event) =>
             setInviteRole(event.target.value as AssignableRole)
           }
         >
           {ROLE_OPTIONS.map((role) => (
             <option key={role} value={role}>
-              {role}
+              {roleName(role)}
             </option>
           ))}
         </select>
@@ -272,7 +301,7 @@ export function AdminMembersPanel() {
           className="primary-button"
           disabled={busy || !inviteEmail}
         >
-          邀請成員 Invite member
+          {t("邀請成員", "Invite member")}
         </button>
       </form>
     </section>
