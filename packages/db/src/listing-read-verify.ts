@@ -2,10 +2,17 @@ import type { WineStage } from "@wukong/core";
 
 import { forWorkspace, type Database } from "./client.js";
 
+type ReadIssue = { listingId: string; call: string; code: string };
+
 export type ListingReadReport = {
   checked: number;
-  failures: { listingId: string; call: string; code: string }[];
+  failures: ReadIssue[];
+  // Invalid stored content: the detail route shows these as a blocked read,
+  // not a 500, so they are reported but never fail the check.
+  isolated: ReadIssue[];
 };
+
+const ISOLATED_CODES = new Set(["ListingDataError"]);
 
 const WINE_STAGES: WineStage[] = [
   "extraction",
@@ -40,7 +47,8 @@ export async function verifyListingReads(
   database: Database,
   listings: { workspaceId: string; listingId: string }[],
 ): Promise<ListingReadReport> {
-  const failures: ListingReadReport["failures"] = [];
+  const failures: ReadIssue[] = [];
+  const isolated: ReadIssue[] = [];
   for (const { workspaceId, listingId } of listings) {
     const read = async <T>(
       call: string,
@@ -49,7 +57,12 @@ export async function verifyListingReads(
       try {
         return await forWorkspace(database, workspaceId, work);
       } catch (error) {
-        failures.push({ listingId, call, code: errorCode(error) });
+        const code = errorCode(error);
+        (ISOLATED_CODES.has(code) ? isolated : failures).push({
+          listingId,
+          call,
+          code,
+        });
         return undefined;
       }
     };
@@ -76,5 +89,5 @@ export async function verifyListingReads(
         );
     }
   }
-  return { checked: listings.length, failures };
+  return { checked: listings.length, failures, isolated };
 }

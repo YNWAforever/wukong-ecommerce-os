@@ -109,14 +109,29 @@ describe.skipIf(!enabled)("listing read verifier (disposable Postgres)", () => {
     const listingId = await seedListing(true);
     await expect(
       verifyListingReads(database, [{ workspaceId, listingId }]),
-    ).resolves.toEqual({ checked: 1, failures: [] });
+    ).resolves.toEqual({ checked: 1, failures: [], isolated: [] });
   });
 
   it("treats a listing with no version and no run as healthy", async () => {
     const listingId = await seedListing(false);
     await expect(
       verifyListingReads(database, [{ workspaceId, listingId }]),
-    ).resolves.toEqual({ checked: 1, failures: [] });
+    ).resolves.toEqual({ checked: 1, failures: [], isolated: [] });
+  });
+
+  it("reports invalid stored content as isolated, not as a failure", async () => {
+    const listingId = await seedListing(true);
+    // The detail route shows ListingDataError as a blocked read, not a 500.
+    await admin`update listing_versions set content = '{}'::jsonb where workspace_id = ${workspaceId} and listing_id = ${listingId}`;
+    const report = await verifyListingReads(database, [
+      { workspaceId, listingId },
+    ]);
+    expect(report.failures).toEqual([]);
+    expect(report.isolated).toContainEqual({
+      listingId,
+      call: "getReviewSnapshot",
+      code: "ListingDataError",
+    });
   });
 
   it("changes no rows while it reads", async () => {
