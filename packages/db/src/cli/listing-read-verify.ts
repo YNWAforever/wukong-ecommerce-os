@@ -29,14 +29,18 @@ if (!adminUrl || !runtimeUrl) fail("database_not_configured");
 else if (!Number.isInteger(sample) || sample < 0 || sample > 200)
   fail("invalid_sample");
 else {
-  const admin = postgres(adminUrl, {
-    connect_timeout: 10,
-    max: 1,
-    onnotice: () => undefined,
-    prepare: false,
-  });
-  const database = createDatabase(runtimeUrl);
+  // Built inside `try`: a malformed URL throws while parsing, and an uncaught
+  // URL parse error prints the whole connection string.
+  let admin: postgres.Sql | undefined;
+  let database: ReturnType<typeof createDatabase> | undefined;
   try {
+    admin = postgres(adminUrl, {
+      connect_timeout: 10,
+      max: 1,
+      onnotice: () => undefined,
+      prepare: false,
+    });
+    database = createDatabase(runtimeUrl);
     const ids = values.listing ?? [];
     const targets = await readOnly(admin, async (transaction) => {
       const named = ids.length
@@ -67,7 +71,7 @@ else {
           : "UnknownError",
     );
   } finally {
-    await database.close();
-    await admin.end({ timeout: 5 });
+    await database?.close().catch(() => undefined);
+    await admin?.end({ timeout: 5 }).catch(() => undefined);
   }
 }

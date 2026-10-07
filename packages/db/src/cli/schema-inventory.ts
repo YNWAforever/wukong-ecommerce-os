@@ -16,14 +16,16 @@ if (!url) {
   process.exit(1);
 }
 
-const client = postgres(url, {
-  connect_timeout: 10,
-  max: 1,
-  onnotice: () => undefined,
-  prepare: false,
-});
-
+// Built inside `try`: a malformed URL throws while parsing, and an uncaught
+// URL parse error prints the whole connection string.
+let client: postgres.Sql | undefined;
 try {
+  client = postgres(url, {
+    connect_timeout: 10,
+    max: 1,
+    onnotice: () => undefined,
+    prepare: false,
+  });
   const report = await readOnly(client, (transaction) =>
     inspectSchemaInventory((sql) => transaction.unsafe(sql)),
   );
@@ -41,5 +43,5 @@ try {
   );
   process.exitCode = 1;
 } finally {
-  await client.end({ timeout: 5 });
+  await client?.end({ timeout: 5 }).catch(() => undefined);
 }
