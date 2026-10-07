@@ -41,6 +41,10 @@ The cause is a production database behind the deployed code:
 - **Restore point:** a Neon branch of production, taken before any migration. The user is the
   restore owner.
 - **Target:** migrate all the way to `0053` in one controlled run, not just `0046`.
+- **Amendment (2026-10-08, during planning):** production runs a controlled, hash-verified
+  migration set: only the files the inventory shows missing or drifted. It never runs the full
+  directory. This follows the existing rule in `opak-production-repair-proposal-2026-10-03.md`
+  ("never the complete drizzle directory").
 - **Approach A:** rehearse on a Neon branch, then migrate production in place. Rejected:
   cutting over to a migrated branch (configuration changes on two platforms, lost writes) and
   migrating production with no rehearsal.
@@ -52,9 +56,12 @@ The cause is a production database behind the deployed code:
 - Unchanged throughout: provider settings, Vercel environment variables, Hyperdrive cache, database
   roles. Claude never creates or alters roles.
 - No down-migrations and no purges. Queues, DLQs, R2 objects, ledgers and audits are kept.
-- `db:migrate` re-runs every file `0000`–`0053` each time (no ledger). Several files take table
-  locks (`0053` locks `workspaces`, `listing_drafts`, `listing_input_revisions`,
-  `listing_versions`, `platform_products` and `ai_runs`) and backfill. Many grant to `wukong_app`.
+- `db:migrate` keeps no record of applied files. By default it re-runs every file in `drizzle/`,
+  but it reads `DATABASE_MIGRATIONS_DIR` when set. Production and the rehearsal use a temporary
+  directory holding only the controlled set, each file's SHA256 matching `main`. The runner applies
+  lock and statement timeouts per file and logs each file name. Several files take table locks
+  (`0053` locks `workspaces`, `listing_drafts`, `listing_input_revisions`, `listing_versions`,
+  `platform_products` and `ai_runs`) and backfill. Many grant to `wukong_app`.
 
 ## Section 1: Access and safety rails
 
@@ -90,8 +97,15 @@ The cause is a production database behind the deployed code:
    - the `wukong_app` role exists
    - the role the runtime URL connects as
    - a baseline of row counts for `listing_drafts`, `listing_versions` and `listing_pipeline_runs`
-2. **Rehearsal migration.** Run `pnpm --filter @wukong/db db:migrate` from `main` against the
-   rehearsal branch. Record the total time, any failing file, and the `0053` lock duration.
+   - the existing `schema-compatibility` report (`0023`–`0027`, including drifted function bodies)
+     and `pnpm --filter @wukong/db db:listing-read-preflight` with the runtime URL
+
+   The controlled set is every file these checks report missing or drifted, in numeric order.
+
+2. **Rehearsal migration.** Build the controlled set with its SHA256 manifest. Run
+   `pnpm --filter @wukong/db db:migrate` from `main` with `DATABASE_MIGRATIONS_DIR` pointing at the
+   set, against the rehearsal branch. Record each file's time, any failing file, and the `0053`
+   lock duration.
 3. **Rehearsal verification (read-only):**
    - The inventory shows `0041`–`0053` all present.
    - Row counts are unchanged, and the `0053` quality backfill created rows.
@@ -116,8 +130,8 @@ The cause is a production database behind the deployed code:
    - Opak operators pause for the rehearsal time plus a margin.
    - `wrangler queues pause-delivery wukong-listing-production`. Messages are held, not lost.
    - Confirm the restore branch was taken just before.
-2. **Migrate.** The same `db:migrate` command from `main`, against the production URLs. Output is
-   filtered.
+2. **Migrate.** The same `db:migrate` command with the same controlled set; the manifest SHA256s
+   must match the rehearsal's. Run against the production URLs. Output is filtered.
 3. **Verify the database.** The same checks as the rehearsal: inventory, row counts, grants, and
    the listing detail read script.
 4. **Verify the app.**
