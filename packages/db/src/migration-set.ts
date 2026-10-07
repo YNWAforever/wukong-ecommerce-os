@@ -8,11 +8,15 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 
+import { MIGRATION_FILE_PATTERN } from "./migrations.js";
+
 export type MigrationSetManifest = {
   files: { name: string; sha256: string }[];
 };
 
-const MIGRATION_FILE = /^\d{4}_.+\.sql$/u;
+// Same rule as the runner's loader, so the set check sees every file
+// `db:migrate` would execute.
+const MIGRATION_FILE = MIGRATION_FILE_PATTERN;
 
 async function sha256(path: string): Promise<string> {
   return createHash("sha256")
@@ -61,12 +65,17 @@ export async function buildMigrationSet(input: {
   return manifest;
 }
 
-/** Fails on any missing, extra or changed migration in the set. */
+/**
+ * Fails on any missing, changed or extra entry in the set. Every entry except
+ * `manifest.json` must be a manifest file, whether or not it looks like SQL.
+ */
 export async function verifyMigrationSet(
   outDir: string,
   expected: MigrationSetManifest,
 ): Promise<void> {
-  const present = (await listMigrations(outDir)).sort();
+  const present = (await readdir(outDir))
+    .filter((name) => name !== "manifest.json")
+    .sort();
   const wanted = new Map(
     expected.files.map((file) => [file.name, file.sha256]),
   );

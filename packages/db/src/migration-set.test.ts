@@ -109,6 +109,17 @@ describe("verifyMigrationSet", () => {
     );
   });
 
+  it.each(["10001_extra.sql", "7_extra.sql", "notes.txt"])(
+    "rejects %s, which the runner's loader would see or a reviewer would miss",
+    async (name) => {
+      const { outDir, manifest } = await built();
+      await writeFile(join(outDir, name), "SELECT 1;\n");
+      await expect(verifyMigrationSet(outDir, manifest)).rejects.toThrow(
+        `mismatch ${name}`,
+      );
+    },
+  );
+
   it("rejects an extra migration dropped into the set", async () => {
     const { outDir, manifest } = await built();
     await writeFile(join(outDir, "0050_extra.sql"), "SELECT 50;\n");
