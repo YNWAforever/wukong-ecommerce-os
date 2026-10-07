@@ -24,7 +24,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:schema-inventory": "tsx src/cli/schema-inventory.ts",
     "db:schema-compatibility": "tsx src/cli/schema-compatibility.ts",
-    "db:migration-set": "tsx src/cli/migration-set.ts"
+    "db:migration-set": "tsx src/cli/migration-set.ts",
+    "db:listing-read-verify": "tsx src/cli/listing-read-verify.ts"
   },
   "dependencies": {
     "@wukong/core": "workspace:*",
