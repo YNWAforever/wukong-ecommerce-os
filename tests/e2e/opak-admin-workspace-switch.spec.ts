@@ -218,8 +218,7 @@ test("accepted delayed workspace POST holds native Back, links, tabs and second 
   await test.step("Admin content is ready after Jobs → Admin SPA return", async () => {
     await expect(
       page.getByRole("heading", {
-        name: "工作區管理 Workspace administration",
-        exact: true,
+        name: /^(工作區管理|Workspace administration)$/,
       }),
       "Admin heading must render after the SPA return",
     ).toBeVisible({ timeout: 10000 });

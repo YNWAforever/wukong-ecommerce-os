@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { contentFieldLabel } from "../../apps/web/lib/content-field-labels.js";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -157,7 +158,11 @@ test("operator selects 5 across pages, previews without calls and fake Queue pre
     await page.getByLabel("Budget (USD)", { exact: true }).fill("1");
     await page.getByLabel("Wave size (1-5)", { exact: true }).fill("5");
     await page
-      .getByRole("checkbox", { name: "seoTitleZh", exact: true })
+      .getByRole("group", { name: "Content fields to change" })
+      .getByRole("checkbox", {
+        name: contentFieldLabel("seoTitleZh", "en"),
+        exact: true,
+      })
       .check();
     const previewed = page.waitForResponse(
       (response) =>
