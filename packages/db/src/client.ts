@@ -143,6 +143,7 @@ import {
   type ImportResultRepository,
 } from "./repositories/import-results.js";
 import { loadSqlMigrations } from "./migrations.js";
+import { migrationTimeouts } from "./migration-timeouts.js";
 import * as schema from "./schema.js";
 
 type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
@@ -551,6 +552,7 @@ export function createDatabase(
       if (!options.migrationUrl) {
         throw new Error("migrationUrl is required for migrations");
       }
+      const timeouts = migrationTimeouts(process.env);
       const admin = postgres(options.migrationUrl, {
         connect_timeout: 10,
         max: 1,
@@ -569,9 +571,49 @@ export function createDatabase(
           ),
         );
         for (const migration of migrations) {
-          await admin.begin(async (transaction) => {
-            await transaction.unsafe(migration.sql);
-          });
+          // File name, duration and SQLSTATE only: never SQL text or messages.
+          console.info(
+            JSON.stringify({
+              event: "migration_started",
+              name: migration.name,
+            }),
+          );
+          const started = Date.now();
+          try {
+            await admin.begin(async (transaction) => {
+              if (timeouts.lockTimeoutMs !== null)
+                await transaction.unsafe(
+                  `SET LOCAL lock_timeout = '${timeouts.lockTimeoutMs}ms'`,
+                );
+              if (timeouts.statementTimeoutMs !== null)
+                await transaction.unsafe(
+                  `SET LOCAL statement_timeout = '${timeouts.statementTimeoutMs}ms'`,
+                );
+              await transaction.unsafe(migration.sql);
+            });
+          } catch (error) {
+            const code =
+              typeof (error as { code?: unknown })?.code === "string"
+                ? (error as { code: string }).code
+                : error instanceof Error
+                  ? error.name
+                  : "UnknownError";
+            console.error(
+              JSON.stringify({
+                event: "migration_failed",
+                name: migration.name,
+                code,
+              }),
+            );
+            throw error;
+          }
+          console.info(
+            JSON.stringify({
+              event: "migration_applied",
+              name: migration.name,
+              ms: Date.now() - started,
+            }),
+          );
         }
       } finally {
         await admin.end();
