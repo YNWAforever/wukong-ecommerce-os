@@ -35,9 +35,13 @@ export async function buildMigrationSet(input: {
   outDir: string;
 }): Promise<MigrationSetManifest> {
   const available = await listMigrations(input.sourceDir);
-  const names = [...new Set(input.include)].map((prefix) => {
-    const matches = available.filter((name) => name.startsWith(`${prefix}_`));
-    if (matches.length !== 1) throw new Error(`unknown migration ${prefix}`);
+  // An entry is an exact file name, or a 4-digit prefix naming exactly one
+  // file (the repo has two 0008_* and two 0015_* files).
+  const names = [...new Set(input.include)].map((entry) => {
+    if (available.includes(entry)) return entry;
+    const matches = available.filter((name) => name.startsWith(`${entry}_`));
+    if (matches.length > 1) throw new Error(`ambiguous migration ${entry}`);
+    if (matches.length === 0) throw new Error(`unknown migration ${entry}`);
     return matches[0]!;
   });
   await mkdir(input.outDir, { recursive: true });

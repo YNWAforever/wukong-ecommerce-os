@@ -55,6 +55,23 @@ describe("buildMigrationSet", () => {
     ).rejects.toThrow(/unknown migration 0047/);
   });
 
+  it("refuses a prefix shared by two migrations and accepts exact names", async () => {
+    const sourceDir = await fixture();
+    await writeFile(join(sourceDir, "0046_twin.sql"), "SELECT 460;\n");
+    await expect(
+      buildMigrationSet({ sourceDir, include: ["0046"], outDir: await out() }),
+    ).rejects.toThrow(/ambiguous migration 0046/);
+    const manifest = await buildMigrationSet({
+      sourceDir,
+      include: ["0046_b.sql", "0046_twin.sql"],
+      outDir: await out(),
+    });
+    expect(manifest.files.map(({ name }) => name)).toEqual([
+      "0046_b.sql",
+      "0046_twin.sql",
+    ]);
+  });
+
   it("refuses an output directory that already holds files", async () => {
     const outDir = await out();
     await writeFile(join(outDir, "stray.sql"), "SELECT 1;\n");
