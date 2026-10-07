@@ -16,16 +16,7 @@ export default async function SystemMapPage() {
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            {localized(locale, "系統能力", "System map")}
-          </p>
-          <h1>
-            {localized(
-              locale,
-              "系統實作能力現況。",
-              "Source implementation capabilities.",
-            )}
-          </h1>
+          <h1>{localized(locale, "系統地圖", "System map")}</h1>
           <p className="lede">
             {localized(
               locale,

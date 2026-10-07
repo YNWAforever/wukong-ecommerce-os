@@ -1,5 +1,3 @@
-import type { ListingStatus } from "@wukong/core";
-
 export type CatalogFilter =
   | "workbook"
   | "website"
@@ -30,18 +28,3 @@ export const CATALOG_FILTERS: ReadonlyArray<{
   },
   { value: "published", labelZh: "已發佈", labelEn: "Published" },
 ];
-
-export function catalogStatusTone(
-  status: ListingStatus | null,
-): "neutral" | "warning" | "success" | "danger" {
-  if (status === "published") return "success";
-  if (status === "failed" || status === "publish_failed") return "danger";
-  if (
-    status === "needs_info" ||
-    status === "in_review" ||
-    status === "reopened"
-  ) {
-    return "warning";
-  }
-  return "neutral";
-}

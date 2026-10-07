@@ -9,6 +9,9 @@ vi.mock("../../../lib/session-context", () => ({
 vi.mock("../../../components/admin-tabs", () => ({
   AdminTabs: () => <div>Admin settings only</div>,
 }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => ({ value: "en" }) }),
+}));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw Error("redirect:" + url);

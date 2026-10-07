@@ -62,8 +62,12 @@ export function WorkbenchClient() {
           <Link className="primary-button" href="/listings/import">
             ＋ {copy.import}
           </Link>
+        ) : matching ? (
+          <p className="workbench-readonly">{copy.readonly}</p>
         ) : (
-          matching && <p className="workbench-readonly">{copy.readonly}</p>
+          // Holds the action's height until capabilities load, so the
+          // summary below does not jump when the button appears.
+          <span className="workbench-action-slot" aria-hidden="true" />
         )}
       </header>
       <WorkbenchSummary
@@ -127,6 +131,23 @@ export function WorkbenchClient() {
               {copy.states.unclassified}:{" "}
               {matching.counts.unclassified.toLocaleString(locale)}
             </Link>
+          )}
+          {!matching && busy && (
+            // Skeleton rows reserve the list's space on first load so the
+            // pagination and guidance below do not jump when data arrives.
+            <ul
+              className="workbench-list workbench-skeleton"
+              aria-hidden="true"
+            >
+              {[0, 1, 2, 3, 4].map((row) => (
+                <li key={row} className="workbench-row">
+                  <div className="workbench-row-content">
+                    <span className="skeleton-line" data-width="wide" />
+                    <span className="skeleton-line" data-width="narrow" />
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
           {matching &&
             (matching.items.length ? (

@@ -48,7 +48,7 @@ export function AuthShell({ initialLocale, children }: AuthShellProps) {
       >
         <div className="auth-shell-brand-header">
           <div className="auth-shell-logo" aria-hidden="true">
-            WK
+            W
           </div>
           <div>
             <p className="auth-shell-wordmark">Wukong</p>

@@ -338,7 +338,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
             · JPG, PNG, WebP · PDF
           </span>
           <span className="secondary-button upload-button">
-            選擇檔案 <span>Select files</span>
+            {t("選擇檔案", "Select files")}
           </span>
         </label>
         <input
@@ -412,7 +412,7 @@ export function ListingIntakeForm({ onCreate }: ListingIntakeFormProps) {
       <div className="notes-field">
         <label htmlFor="listing-note">
           <span>{t("補充備註", "Operator notes")}</span>
-          <small>Operator notes · Optional</small>
+          <small>{t("選填", "Optional")}</small>
         </label>
         <textarea
           id="listing-note"

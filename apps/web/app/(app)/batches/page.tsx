@@ -13,16 +13,7 @@ export default async function BatchesPage() {
     <div className="page-wrap">
       <div className="page-header">
         <div>
-          <p className="eyebrow">
-            {localized(locale, "隨行批次", "Attended batches")}
-          </p>
-          <h1>
-            {localized(
-              locale,
-              "批次進度與新批次建立",
-              "Batch progress and new batches",
-            )}
-          </h1>
+          <h1>{localized(locale, "批次", "Batches")}</h1>
           <p className="lede">
             {localized(
               locale,

@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { BatchList } from "./batch-list";
 import { CreateBatchForm } from "./create-batch-form";
+import { useLocale } from "../lib/locale-context";
+import { localized } from "../lib/ui-copy";
 
 /**
  * Wires CreateBatchForm's success callback to BatchList's fetch. BatchList
@@ -16,12 +18,26 @@ import { CreateBatchForm } from "./create-batch-form";
  * presentational components (see listing-intake-client.tsx).
  */
 export function BatchesClient() {
+  const locale = useLocale();
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
-    <>
-      <CreateBatchForm onCreated={() => setRefreshKey((key) => key + 1)} />
-      <BatchList key={refreshKey} />
-    </>
+    <div className="batches-layout">
+      <section className="batches-section" aria-labelledby="new-batch-heading">
+        <h2 id="new-batch-heading">
+          {localized(locale, "建立新批次", "New batch")}
+        </h2>
+        <CreateBatchForm onCreated={() => setRefreshKey((key) => key + 1)} />
+      </section>
+      <section
+        className="batches-section"
+        aria-labelledby="existing-batches-heading"
+      >
+        <h2 id="existing-batches-heading">
+          {localized(locale, "現有批次", "Existing batches")}
+        </h2>
+        <BatchList key={refreshKey} />
+      </section>
+    </div>
   );
 }
