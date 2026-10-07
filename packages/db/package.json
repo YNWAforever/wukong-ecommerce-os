@@ -23,7 +23,8 @@
     "test:integration": "vitest run src/repositories/listings.integration.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:schema-inventory": "tsx src/cli/schema-inventory.ts",
-    "db:schema-compatibility": "tsx src/cli/schema-compatibility.ts"
+    "db:schema-compatibility": "tsx src/cli/schema-compatibility.ts",
+    "db:migration-set": "tsx src/cli/migration-set.ts"
   },
   "dependencies": {
     "@wukong/core": "workspace:*",
