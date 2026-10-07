@@ -17,7 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
     "spike:product-shot": "tsx scripts/product-shot-spike.ts",
     "eval:verification": "tsx scripts/eval-listing-verification.ts",
-    "eval:opak-maintenance": "tsx scripts/eval-opak-maintenance.ts"
+    "eval:opak-maintenance": "tsx scripts/eval-opak-maintenance.ts",
+    "eval:live": "tsx scripts/eval-opak-maintenance.ts --mode=live"
   },
   "dependencies": {
     "@wukong/core": "workspace:*",
