@@ -36,11 +36,22 @@ corepack pnpm --filter @wukong/db exec tsx src/seed-opak.ts
 
 ## Run the web app and Wrangler
 
-Normal application development can run the web app independently:
+Normal application development can run the web app independently. Build its workspace
+dependencies first; both development and production resolve their compiled JavaScript:
 
 ```powershell
+corepack pnpm --filter '@wukong/web^...' build
 corepack pnpm --filter @wukong/web dev
 ```
+
+After editing a shared package, rerun the dependency build and restart the web dev
+server. The shared packages do not have a watch build. Starting `dev` directly (or
+through `pnpm dev`) does not build missing or stale `dist` files automatically.
+Keep `.js` relative imports in shared TypeScript packages: they target emitted ESM.
+When changing package export maps, a persisted Next development cache can still
+resolve an old entry. If restarting still reports a `packages/*/src` module-not-found
+error, stop the dev server, remove only the generated `apps/web/.next/dev` directory,
+then restart it after the dependency build.
 
 For the complete Queue boundary, use the Playwright real-stack fixture. It starts a production-built Next server and `wrangler dev` on loopback, renders non-production Queue names, and sets `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` only for the local Wrangler process. Wrangler supplies the local Queue simulation; external AI and SHOPLINE adapters remain fake/mock.
 
