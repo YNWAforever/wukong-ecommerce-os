@@ -102,20 +102,53 @@ describe("Cloudflare Worker ingress", () => {
     expect(bindings.LISTING_QUEUE.send).not.toHaveBeenCalled();
   });
 
-  it("accepts exactly 4 KiB of signed JSON including whitespace", async () => {
-    const bindings = env();
-    const body = JSON.stringify(listing).padEnd(4096, " ");
-    const response = await handleIngress(
-      await signedRequest(LISTING_INGRESS_PATH, listing, { body }),
-      bindings,
-      undefined,
-      { nowSeconds: () => nowSeconds },
-    );
-    expect(response.status).toBe(202);
-    expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(
-      listing,
-    );
-  });
+  it.each([
+    [4096, 202],
+    [4097, 413],
+  ])(
+    "enforces the byte limit for %i streamed UTF-8 bytes (HTTP %i)",
+    async (byteLength, status) => {
+      const bindings = env();
+      const payload = { ...listing, workspaceId: "ws_酒" };
+      const json = JSON.stringify(payload);
+      const body =
+        json +
+        " ".repeat(byteLength - new TextEncoder().encode(json).byteLength);
+      const bytes = new TextEncoder().encode(body);
+      expect(bytes.byteLength).toBe(byteLength);
+      // Split the three-byte character across three chunks: each chunk alone
+      // would be invalid UTF-8, while the concatenated signed body is valid.
+      const split = bytes.indexOf(0xe9) + 1;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes.slice(0, split));
+          controller.enqueue(bytes.slice(split, split + 1));
+          controller.enqueue(bytes.slice(split + 1));
+          controller.close();
+        },
+      });
+      const signed = await signedRequest(LISTING_INGRESS_PATH, payload, {
+        body,
+      });
+      signed.headers.set("content-length", "1");
+      const request = new Request(signed, {
+        body: stream,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" });
+      const response = await handleIngress(request, bindings, undefined, {
+        nowSeconds: () => nowSeconds,
+      });
+      expect(response.status).toBe(status);
+      if (status === 202) {
+        expect(bindings.LISTING_QUEUE.send).toHaveBeenCalledExactlyOnceWith(
+          payload,
+        );
+      } else {
+        expect(bindings.LISTING_QUEUE.send).not.toHaveBeenCalled();
+      }
+      expect(bindings.SHOPLINE_QUEUE.send).not.toHaveBeenCalled();
+    },
+  );
 
   it("counts streamed UTF-8 bytes and cancels an oversized body with no declared length", async () => {
     const bindings = env();
@@ -187,6 +220,45 @@ describe("Cloudflare Worker ingress", () => {
       expect(response.status).toBe(503);
       expect(sendListing).not.toHaveBeenCalled();
       expect(sendShopline).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [LISTING_INGRESS_PATH, listing, "LISTING_QUEUE"],
+    [SHOPLINE_INGRESS_PATH, shopline, "SHOPLINE_QUEUE"],
+  ] as const)(
+    "waits for queue acceptance before acknowledging %s",
+    async (path, payload, binding) => {
+      const bindings = env();
+      const acceptance = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
+      const send = vi.fn(() => {
+        started.resolve();
+        return acceptance.promise;
+      });
+      bindings[binding] = { send } as never;
+      let settled = false;
+      const response = handleIngress(
+        await signedRequest(path, payload),
+        bindings,
+        undefined,
+        { nowSeconds: () => nowSeconds },
+      ).then((result) => {
+        settled = true;
+        return result;
+      });
+      try {
+        await started.promise;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+        expect(send).toHaveBeenCalledExactlyOnceWith(payload);
+        const other =
+          binding === "LISTING_QUEUE" ? "SHOPLINE_QUEUE" : "LISTING_QUEUE";
+        expect(bindings[other].send).not.toHaveBeenCalled();
+      } finally {
+        acceptance.resolve();
+      }
+      expect((await response).status).toBe(202);
     },
   );
 

@@ -18,8 +18,15 @@ pnpm release-gate:check
 and packages, with shared dependency builds. `*.integration.test.ts` files are
 excluded. Turbo may reuse unchanged results; use `pnpm test --force` only when
 you need to invalidate Turbo's test cache (or run a focused Vitest command below).
-`lint` is also `tsc --noEmit`. The format gate checks changed runtime/docs files
-against the selected Git base; it is not a whole-history formatting rewrite.
+On constrained machines, `pnpm test --force --concurrency=1` serializes Turbo's
+package tasks. Each package still runs its full unit suite with its existing
+Vitest file parallelism and timeouts.
+`lint` is also `tsc --noEmit`. The format gate selects **committed** runtime/docs
+files changed since the merge base with `RELEASE_BASE_SHA` (falling back to
+`origin/main`, then `HEAD^`). It reads their current working-tree contents, but
+does not select a newly edited file absent from that committed diff. Before
+committing, also run `pnpm exec prettier --check <edited-files>` on the files you
+changed.
 `release-gate:check` validates repository configuration, not a deployment.
 
 After building shared dependencies, run focused regressions directly:
@@ -31,11 +38,15 @@ pnpm --filter @wukong/worker exec vitest run src/ingress.test.ts src/publish-pro
 ```
 
 The workflow matrix covers every status/action pair, including approval
-invalidation by input edits, manual recovery, forbidden edits during publishing,
-and audit failure. Ingress tests cover exact signed bytes/path, UTF-8 validation,
-the inclusive 4 KiB boundary, oversized stream cancellation and Queue acceptance
-failure. Publish tests inject connector/storage failures and check reconciliation
-and idempotency. These prove contracts with fakes, not live provider behavior.
+invalidation by input edits, manual recovery and forbidden edits during publishing.
+Every legal transition must wait for its audit write and propagate audit failure.
+Ingress tests cover exact signed bytes/path, UTF-8 characters split across chunks,
+the inclusive 4 KiB byte boundary despite an underreported `Content-Length`,
+oversized stream cancellation and delayed/failed Queue acceptance on both listing
+and SHOPLINE routes. `202` means the Queue accepted the message; it does not prove
+consumer execution or a persisted listing. Publish tests inject connector/storage
+failures and check reconciliation and idempotency. These prove contracts with
+fakes, not live provider behavior.
 
 ## Database integration tests
 

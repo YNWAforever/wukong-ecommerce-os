@@ -100,10 +100,27 @@ describe("transitionListing", () => {
     "permits and audits %s -> %s -> %s",
     async (status, action, expected) => {
       const { events, writer } = createAuditWriter();
+      const audit = Promise.withResolvers<void>();
+      let settled = false;
+      const transition = transitionListing(status, action, auditContext, {
+        async write(event) {
+          await writer.write(event);
+          await audit.promise;
+        },
+      }).then((next) => {
+        settled = true;
+        return next;
+      });
 
-      await expect(
-        transitionListing(status, action, auditContext, writer),
-      ).resolves.toBe(expected);
+      try {
+        // Drain microtasks without relying on a wall-clock delay.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(settled).toBe(false);
+      } finally {
+        audit.resolve();
+      }
+
+      await expect(transition).resolves.toBe(expected);
       expect(events).toEqual([
         {
           ...auditContext,
@@ -130,23 +147,19 @@ describe("transitionListing", () => {
     }
   });
 
-  it.each([
-    ["in_review", "approve"],
-    ["approved", "save_inputs"],
-    ["needs_info", "submit_manual"],
-    ["processing", "abandon_processing"],
-  ] as const)(
+  it.each(legalTransitions)(
     "refuses %s -> %s when the audit write fails",
     async (status, action) => {
+      const failure = new Error("audit unavailable");
       const writer = {
         async write() {
-          throw new Error("audit unavailable");
+          throw failure;
         },
       };
 
       await expect(
         transitionListing(status, action, auditContext, writer),
-      ).rejects.toThrow("audit unavailable");
+      ).rejects.toBe(failure);
     },
   );
 });
