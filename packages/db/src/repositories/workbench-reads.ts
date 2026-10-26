@@ -46,6 +46,7 @@ export function createWorkbenchReadRepository(
               when 'received' then 'processing' when 'processing' then 'processing' when 'publishing' then 'processing'
               when 'published' then 'published' else 'unknown' end reason,
             coalesce(v.content->'title'->>'zh-Hant', v.content->'title'->>'en') title,
+            jsonb_build_object('zh-Hant',v.content->'title'->>'zh-Hant','en',v.content->'title'->>'en') titles,
             null::text "sourceLabel", 1::int "productCount", d.updated_at "occurredAt", 'updated'::text "timestampKind"
           from listing_drafts d
           left join listing_versions v on v.id=d.active_version_id and v.workspace_id=${workspaceId} and v.listing_id=d.id
@@ -55,14 +56,14 @@ export function createWorkbenchReadRepository(
             case s.state when 'failed' then 'failed'
               when 'queued' then 'processing' when 'running' then 'processing'
               when 'ready' then 'preview_ready' when 'partial' then 'preview_partial' else 'unknown' end reason,
-            s.requested_url title, s.requested_url "sourceLabel",
+            s.requested_url title, null::jsonb titles, s.requested_url "sourceLabel",
             case when jsonb_typeof(s.checkpoint->'preview'->'products')='array'
               then jsonb_array_length(s.checkpoint->'preview'->'products') else null end "productCount",
             s.updated_at "occurredAt", 'updated'::text "timestampKind"
           from website_scans s where s.workspace_id=${workspaceId}
         ), workbook_items as (
           select w.id, 'workbook_import'::text kind, 'imported'::text reason,
-            w.filename title, w.filename "sourceLabel", w.eligible_products "productCount",
+            w.filename title, null::jsonb titles, w.filename "sourceLabel", w.eligible_products "productCount",
             w.created_at "occurredAt", 'recorded'::text "timestampKind"
           from workbook_imports w where w.workspace_id=${workspaceId}
         ), export_members as materialized (
@@ -90,7 +91,7 @@ export function createWorkbenchReadRepository(
               when e.artifact_status='ready' and m.included>0 then
                 case when m.rejected=0 and m.unreported=0 then 'result_reported' else 'result_needed' end
               else 'unknown' end reason,
-            null::text title, null::text "sourceLabel", coalesce(m.included,0) "productCount",
+            null::text title, null::jsonb titles, null::text "sourceLabel", coalesce(m.included,0) "productCount",
             greatest(e.created_at,e.artifact_ready_at,m.receipt_at) "occurredAt",
             case when e.artifact_ready_at is not null or m.receipt_at is not null then 'updated' else 'recorded' end "timestampKind"
           from export_attempts e left join export_members m on m.id=e.id

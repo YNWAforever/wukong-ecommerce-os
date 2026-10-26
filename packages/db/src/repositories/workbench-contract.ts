@@ -32,6 +32,8 @@ export type WorkbenchItem = {
   state: WorkbenchState;
   reason: WorkbenchReason;
   title: string | null;
+  /** Optional for compatibility with cached/older dashboard responses. */
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sourceLabel: string | null;
   productCount: number | null;
   occurredAt: string;

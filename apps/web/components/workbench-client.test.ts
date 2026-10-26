@@ -75,6 +75,77 @@ function button(label: string) {
     b.textContent?.includes(label),
   )!;
 }
+it.each([
+  {
+    locale: "en",
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+    title: "中文酒款",
+    want: "English wine",
+  },
+  {
+    locale: "zh-Hant",
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+    title: "中文酒款",
+    want: "中文酒款",
+  },
+  {
+    locale: "en",
+    titles: { en: "  ", "zh-Hant": "中文酒款" },
+    title: "旧名稱",
+    want: "中文酒款",
+  },
+  {
+    locale: "zh-Hant",
+    titles: { en: "English wine", "zh-Hant": null },
+    title: "旧名稱",
+    want: "English wine",
+  },
+  {
+    locale: "en",
+    titles: { en: "", "zh-Hant": "\t" },
+    title: "SKU-123",
+    want: "SKU-123",
+  },
+  {
+    locale: "en",
+    titles: null,
+    title: "https://synthetic.test/",
+    want: "https://synthetic.test/",
+  },
+] as const)(
+  "displays the available product name in $locale ($want)",
+  async ({ locale, titles, title, want }) => {
+    navigation.locale = locale;
+    const body = page(title);
+    Object.assign(body.items[0]!, { titles });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(body)));
+    await mount();
+    await settle();
+    expect(container.querySelector("li h3")?.textContent).toBe(want);
+  },
+);
+it("switches retained Workbench titles immediately without another read or query change", async () => {
+  navigation.search = "state=attention&kind=listing&page=2";
+  const body = page("中文酒款");
+  Object.assign(body.items[0]!, {
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+  });
+  const fetcher = vi.fn().mockResolvedValue(response(body));
+  vi.stubGlobal("fetch", fetcher);
+  await mount();
+  await settle();
+  expect(container.querySelector("li h3")?.textContent).toBe("English wine");
+  const href = container
+    .querySelector('a[href^="/listings/1"]')
+    ?.getAttribute("href");
+  navigation.locale = "zh-Hant";
+  await render();
+  expect(container.querySelector("li h3")?.textContent).toBe("中文酒款");
+  expect(
+    container.querySelector('a[href^="/listings/1"]')?.getAttribute("href"),
+  ).toBe(href);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   document.body.innerHTML = "";

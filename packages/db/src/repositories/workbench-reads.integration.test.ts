@@ -226,7 +226,13 @@ describe("workspace workbench snapshot", () => {
       });
     expect(items.filter((x) => x.kind === "listing")).toHaveLength(31);
     expect(items.find((x) => x.id === listings[0]!.id)?.title).toBe("合成商品");
+    expect(items.find((x) => x.id === listings[0]!.id)).toMatchObject({
+      titles: { "zh-Hant": "合成商品", en: "Synthetic" },
+    });
     expect(items.find((x) => x.id === listings[1]!.id)?.title).toBeNull();
+    expect(items.find((x) => x.id === listings[1]!.id)).toMatchObject({
+      titles: { "zh-Hant": null, en: null },
+    });
     for (const item of items) {
       expect(Object.keys(item).sort()).toEqual(
         [
@@ -236,6 +242,7 @@ describe("workspace workbench snapshot", () => {
           "state",
           "reason",
           "title",
+          "titles",
           "sourceLabel",
           "productCount",
           "occurredAt",

@@ -16,6 +16,7 @@ export type PlatformCatalogItem = {
   listingId: string | null;
   specVersion: string | null;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   listingStatus: ListingStatus | null;
   openBlockingFlagCount: number | null;
   needsReview: boolean;
@@ -29,6 +30,7 @@ export type WebsiteCatalogItem = {
   sourceType: "website";
   id: string;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sourceUrl: string;
   capturedAt: string;
   createdAt: string;
@@ -39,6 +41,7 @@ export type WorkbookCatalogItem = {
   sourceType: "workbook";
   id: string;
   title: string;
+  titles?: Partial<Record<"en" | "zh-Hant", string | null>> | null;
   sku: string;
   sourceProductId: string;
   createdAt: string;

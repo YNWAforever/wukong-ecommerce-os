@@ -4,6 +4,7 @@ import type { Locale } from "../lib/locale";
 import { formatHkDate, formatNumber } from "../lib/ui-copy";
 import { workbenchCopy } from "../lib/workbench-copy";
 import { workbenchDestination } from "../lib/workbench-actions";
+import { productTitle } from "../lib/product-title";
 import { StatusPill, type StatusTone } from "./status-pill";
 
 const reasonTone: Record<WorkbenchReason, StatusTone> = {
@@ -44,7 +45,7 @@ export function WorkbenchList({
           <div className="workbench-row-content">
             <div className="workbench-row-title">
               <h3>
-                {item.title ||
+                {productTitle(item, locale) ||
                   (item.kind === "export"
                     ? `${copy.exportAttempt} ${item.id.slice(0, 8)}`
                     : copy.untitled)}
