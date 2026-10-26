@@ -112,6 +112,12 @@ it.each([
     title: "https://synthetic.test/",
     want: "https://synthetic.test/",
   },
+  {
+    locale: "en",
+    titles: null,
+    title: " \t\n",
+    want: "Untitled listing",
+  },
 ] as const)(
   "displays the available product name in $locale ($want)",
   async ({ locale, titles, title, want }) => {
@@ -124,7 +130,7 @@ it.each([
     expect(container.querySelector("li h3")?.textContent).toBe(want);
   },
 );
-it("switches retained Workbench titles immediately without another read or query change", async () => {
+it("switches retained Workbench titles through pending and failed refreshes without another read or query change", async () => {
   navigation.search = "state=attention&kind=listing&page=2";
   const body = page("中文酒款");
   Object.assign(body.items[0]!, {
@@ -145,6 +151,55 @@ it("switches retained Workbench titles immediately without another read or query
     container.querySelector('a[href^="/listings/1"]')?.getAttribute("href"),
   ).toBe(href);
   expect(fetcher).toHaveBeenCalledTimes(1);
+
+  let rejectRefresh!: (cause: Error) => void;
+  fetcher.mockImplementationOnce(
+    () =>
+      new Promise<Response>((_, reject) => {
+        rejectRefresh = reject;
+      }),
+  );
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  const signal = fetcher.mock.calls[1]![1].signal as AbortSignal;
+  navigation.locale = "en";
+  await render();
+  expect(container.querySelector("li h3")?.textContent).toBe("English wine");
+  expect(container.textContent).toContain("Stale");
+  expect(signal.aborted).toBe(false);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+
+  await act(async () => rejectRefresh(new Error("offline")));
+  navigation.locale = "zh-Hant";
+  await render();
+  expect(container.querySelector("li h3")?.textContent).toBe("中文酒款");
+  expect(button("重試")).toBeTruthy();
+  expect(
+    container.querySelector('a[href^="/listings/1"]')?.getAttribute("href"),
+  ).toBe(href);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("finishes the initial read in the current locale without aborting on a language switch", async () => {
+  let resolveRead!: (value: Response) => void;
+  const fetcher = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  await mount();
+  const signal = vi.mocked(fetch).mock.calls[0]![1]!.signal!;
+  navigation.locale = "zh-Hant";
+  await render();
+  expect(signal.aborted).toBe(false);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const body = page("Legacy wine");
+  Object.assign(body.items[0]!, {
+    titles: { en: "English wine", "zh-Hant": "中文酒款" },
+  });
+  await act(async () => resolveRead(response(body)));
+  expect(container.querySelector("li h3")?.textContent).toBe("中文酒款");
 });
 afterEach(async () => {
   if (root) await act(async () => root.unmount());

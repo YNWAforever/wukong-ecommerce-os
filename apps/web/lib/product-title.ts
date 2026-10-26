@@ -9,8 +9,9 @@ export function productTitle(
   locale: Locale,
 ): string | null {
   const preferred = item.titles?.[locale];
-  if (preferred?.trim()) return preferred;
   const alternate = item.titles?.[locale === "en" ? "zh-Hant" : "en"];
-  if (alternate?.trim()) return alternate;
-  return item.title;
+  for (const title of [preferred, alternate, item.title]) {
+    if (typeof title === "string" && title.trim()) return title;
+  }
+  return null;
 }

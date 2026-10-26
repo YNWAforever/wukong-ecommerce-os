@@ -226,7 +226,7 @@ function pageResponse(
   };
 }
 
-it("switches all bilingual Catalog row titles without refetching or clearing selection and page context", async () => {
+it("switches all bilingual Catalog row titles through pending and failed refreshes without clearing selection and page context", async () => {
   localeState.locale = "en";
   const listingId = "00000000-0000-4000-8000-000000000001";
   const at = "2026-01-01T00:00:00.000Z";
@@ -330,6 +330,59 @@ it("switches all bilingual Catalog row titles without refetching or clearing sel
         .value,
     ).toBe("wine");
     expect(fetcher.mock.calls).toHaveLength(reads);
+
+    let rejectRefresh!: (cause: Error) => void;
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>((_, reject) => {
+          rejectRefresh = reject;
+        }),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    localeState.locale = "en";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={initialSearch} />),
+    );
+    expect(names()).toEqual([
+      "Bound wine",
+      "Draft wine",
+      "Workbook wine",
+      "Original website name",
+    ]);
+    expect(container.querySelector("section")?.getAttribute("aria-busy")).toBe(
+      "true",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
+    expect(fetcher.mock.calls).toHaveLength(reads + 1);
+
+    await act(async () => rejectRefresh(new Error("offline")));
+    localeState.locale = "zh-Hant";
+    await act(async () =>
+      root.render(<CatalogControlCenter initialSearch={initialSearch} />),
+    );
+    expect(names()).toEqual([
+      "綁定酒款",
+      "草稿酒款",
+      "參考酒款",
+      "Original website name",
+    ]);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "重試",
+    );
+    expect(
+      container.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')
+        ?.checked,
+    ).toBe(true);
+    expect(window.location.search).toBe(query);
+    expect(container.textContent).toContain("第 2 頁");
+    expect(
+      (container.querySelector('input[type="search"]') as HTMLInputElement)
+        .value,
+    ).toBe("wine");
+    expect(fetcher.mock.calls).toHaveLength(reads + 1);
   } finally {
     await unmount(root);
   }
