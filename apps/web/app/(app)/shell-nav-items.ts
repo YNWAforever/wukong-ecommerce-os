@@ -3,6 +3,7 @@ import {
   requireWorkspaceRole,
   type WorkspaceRole,
 } from "../../lib/session-context";
+import { STUDIO_COPY } from "../../lib/studio-copy";
 
 export const SHELL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", labelZh: "工作台", labelEn: "Workbench" },
@@ -47,6 +48,44 @@ export const SHELL_NAV_ITEMS: NavItem[] = [
     group: "tools",
   },
 ];
+
+/**
+ * The Studio primary item.
+ *
+ * A separate export rather than a member of `SHELL_NAV_ITEMS`: the item is
+ * conditional on a server-only flag and must never appear in the static
+ * destination list that `/admin`, tests and any future consumer read as "the
+ * app's destinations". It carries no `role` because a viewer legitimately
+ * reads Studio; hides nothing that a route does not already refuse.
+ */
+export const STUDIO_NAV_ITEM: NavItem = {
+  href: "/studio",
+  labelZh: STUDIO_COPY["studio.nav.label"][0],
+  labelEn: STUDIO_COPY["studio.nav.label"][1],
+  group: "primary",
+};
+
+/**
+ * Prepend the Studio item ahead of Workbench exactly when Studio is enabled.
+ *
+ * The caller passes the result of `isStudioEnabled(env, settings)`; this helper
+ * does not read flags itself, so the layout remains the single place that
+ * decides (and fails closed) and the nav cannot drift from the route gate.
+ * Applying it twice is a no-op so a future caller stacking shell transforms
+ * cannot render a duplicate link.
+ */
+export function withStudioNavItem(
+  items: NavItem[],
+  studioEnabled: boolean,
+): NavItem[] {
+  if (
+    !studioEnabled ||
+    items.some((item) => item.href === STUDIO_NAV_ITEM.href)
+  ) {
+    return items;
+  }
+  return [STUDIO_NAV_ITEM, ...items];
+}
 
 export { ROLE_LABELS } from "../../lib/role-labels";
 

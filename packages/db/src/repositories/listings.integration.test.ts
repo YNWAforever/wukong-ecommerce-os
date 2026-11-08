@@ -748,6 +748,22 @@ describe("workspace isolation", () => {
         ["workspace_id", "listing_id"],
         "listing_drafts",
       ],
+      ["studio_budget_reservations", ["workspace_id", "run_id"], "studio_runs"],
+      ["studio_messages", ["workspace_id", "thread_id"], "studio_threads"],
+      [
+        "studio_output_versions",
+        ["workspace_id", "output_id"],
+        "studio_outputs",
+      ],
+      ["studio_outputs", ["workspace_id", "run_id"], "studio_runs"],
+      ["studio_outputs", ["workspace_id", "thread_id"], "studio_threads"],
+      ["studio_run_events", ["workspace_id", "run_id"], "studio_runs"],
+      ["studio_runs", ["workspace_id", "thread_id"], "studio_threads"],
+      [
+        "studio_runs",
+        ["workspace_id", "trigger_message_id"],
+        "studio_messages",
+      ],
       ["website_products", ["workspace_id", "source_scan_id"], "website_scans"],
       ["website_scan_steps", ["workspace_id", "scan_id"], "website_scans"],
       [

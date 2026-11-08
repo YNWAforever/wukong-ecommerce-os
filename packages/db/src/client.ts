@@ -32,6 +32,10 @@ import {
   type AiBudgetReservationRepository,
 } from "./repositories/ai-budget-reservations.js";
 import {
+  createStudioRepository,
+  type StudioRepository,
+} from "./repositories/studio.js";
+import {
   createListingInputRepository,
   type ListingInputRepository,
 } from "./repositories/listing-inputs.js";
@@ -191,6 +195,7 @@ export type WorkspaceRepositories = {
   aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
   memberships: MembershipRepository;
+  studio: StudioRepository;
   audit: WorkspaceAuditWriter;
 };
 
@@ -237,6 +242,21 @@ export type Database = {
     storageKey: string;
     digest: string;
     size: number;
+  } | null>;
+  /**
+   * Cross-workspace token *resolution* for the hosted MCP endpoint (migration
+   * 0055). The caller has no workspace session, so this goes through a
+   * SECURITY DEFINER function instead of `forWorkspace`; it returns identity
+   * fields only, never the hash or plaintext. A revoked row still resolves —
+   * the HTTP layer rejects it — so the answer cannot race a second read.
+   */
+  lookupStudioApiToken(tokenHash: string): Promise<{
+    workspaceId: string;
+    tokenId: string;
+    createdBy: string;
+    scopes: string[];
+    revokedAt: Date | null;
+    prefix: string;
   } | null>;
   migrate(): Promise<void>;
   ping(): Promise<void>;
@@ -470,6 +490,7 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        studio: createStudioRepository(transaction, workspaceId, scope),
         audit: createAuditWriter(transaction, workspaceId, scope),
       };
       try {
@@ -547,6 +568,26 @@ export function createDatabase(
             size: Number(row.size),
           }
         : null;
+    },
+    async lookupStudioApiToken(tokenHash) {
+      if (!/^[a-f0-9]{64}$/.test(tokenHash)) return null;
+      // The function validates the digest format again; the early return keeps
+      // an obviously malformed caller value out of SQL altogether.
+      const rows = await client.unsafe(
+        "select * from public.studio_resolve_api_token($1)",
+        [tokenHash],
+      );
+      const [row] = rows;
+      if (!row) return null;
+      return {
+        workspaceId: String(row.workspace_id),
+        tokenId: String(row.token_id),
+        createdBy: String(row.created_by),
+        scopes: Array.isArray(row.scopes) ? row.scopes.map(String) : [],
+        revokedAt:
+          row.revoked_at == null ? null : new Date(String(row.revoked_at)),
+        prefix: String(row.prefix),
+      };
     },
     async migrate() {
       if (!options.migrationUrl) {

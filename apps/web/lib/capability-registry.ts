@@ -80,6 +80,61 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     descriptionZh: "以分頁檢視工作區完整作業歷史；指標另有明確時間範圍。",
     state: "pilot",
   },
+  // Conversation Studio entries. Added with the P1 foundation shell, before
+  // any deterministic answer, model turn or MCP transport exists, so every
+  // state below describes the source tree as it actually is today. The design
+  // spec's later phases each move one entry to "pilot"/"implemented" in the
+  // same change that delivers it.
+  {
+    id: "conversation-studio",
+    label: "Conversation Studio",
+    labelZh: "對話工作室",
+    description:
+      "Pilot, verified locally: flagged Studio shell, deterministic records answers with evidence and execution traces, durable threads, copy proposals, confirmed listing-draft dispatch and merchant audit reports. Live model analysis is separate and off by default; a conversation never writes canonical data, approves or publishes.",
+    descriptionZh:
+      "試行並已於本機驗證：受功能旗標控制的工作室外殼、附證據及執行步驟的記錄回答、持久對話、文案建議、經確認的上架草稿派送及商戶審核報告。即時模型分析另行控制且預設關閉；對話不會寫入正式資料、批准或發佈。",
+    state: "pilot",
+  },
+  {
+    id: "conversation-studio-ai",
+    label: "Studio live analysis",
+    labelZh: "工作室即時分析",
+    description:
+      "Not activated. The typed proposer/analysis ports, untrusted-input prompts, claim grounding and reviewed budget admission exist and are tested with fakes, but no live provider run has been recorded. Live analysis requires a reviewed workspace model and budget plus the AI flag, and it never gains write authority.",
+    descriptionZh:
+      "尚未啟用。已具備並以測試替身驗證：具型別的建議／分析介面、不受信任輸入提示、主張依據檢查及已審核預算准入；但未記錄任何正式供應商執行。即時分析需要另行設定的工作區模型及預算，並受 AI 旗標控制，且不會取得寫入權限。",
+    state: "planned",
+  },
+  {
+    id: "wukong-mcp-server",
+    label: "Wukong-hosted MCP server",
+    labelZh: "Wukong 託管 MCP 伺服器",
+    description:
+      "Verified locally: a stateless JSON-RPC MCP endpoint serves reviewed read/propose tools to a scoped workspace token, gated by the feature flags and the creator's current role. Dispatch and every write path are never exposed, and external MCP connections stay blocked.",
+    descriptionZh:
+      "已於本機驗證：無狀態 JSON-RPC MCP 端點以工作區範圍權杖提供已審核的讀取／建議工具，受功能旗標及建立者現行角色限制。不提供派送或任何寫入路徑，外部 MCP 連線仍維持封鎖。",
+    state: "pilot",
+  },
+  {
+    id: "external-mcp-connections",
+    label: "External MCP connections",
+    labelZh: "外部 MCP 連線",
+    description:
+      "Disabled by default. No user-supplied endpoint or credential is accepted, and every connection stays blocked until an allowlist and credential-ownership decision exists.",
+    descriptionZh:
+      "預設停用。不接受使用者提供的端點或憑證；在完成允許清單及憑證擁有權決定前，所有連線維持封鎖。",
+    state: "blocked",
+  },
+  {
+    id: "studio-output-signoff",
+    label: "Studio output sign-off",
+    labelZh: "工作室輸出簽核",
+    description:
+      "Pilot, verified locally: versioned copy-proposal and merchant-audit artifacts can be saved by an operator and signed off by a reviewer, with audit and canonical JSON export that re-checks the preview digest. Sign-off is an artifact state only, never a listing approval or a publish action.",
+    descriptionZh:
+      "試行並已於本機驗證：具版本的文案建議及商戶審核成果可由操作員儲存、由審核員簽核，並附稽核及會重新核對預覽摘要的標準 JSON 匯出。簽核僅屬成果狀態，並非商品批准或發佈。",
+    state: "pilot",
+  },
 ];
 
 // A runtime backstop alongside the type-level `readonly` above --

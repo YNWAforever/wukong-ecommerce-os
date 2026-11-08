@@ -1,22 +1,6 @@
-import { sectionKeySchema } from "@wukong/core";
-import {
-  prepareWineAdmission,
-  recoverableWineAdmission,
-  type WineAdmissionContext,
-} from "../../../lib/wine-enrichment-service";
-import { preflightWineCapability } from "../../../lib/wine-capability-client";
-import { requireListingRecovery } from "../../../lib/listing-recovery-readiness";
-import { createHash } from "node:crypto";
-import { acceptListingOperation } from "../../../lib/listing-operation-service";
-import { dispatchListingOperation } from "../../../lib/dispatch-listing-operation";
 import { loadSourceReadinessBatch } from "../../../lib/source-readiness";
 import { decodeReadCursor, encodeReadCursor } from "../../../lib/read-cursor";
 import { z } from "zod";
-import {
-  isImageMimeType,
-  MAX_LISTING_IMAGES,
-  MAX_LISTING_PDFS,
-} from "@wukong/assets";
 import type { WorkspaceRepositories } from "@wukong/db";
 
 import type { ListingReviewContext } from "../../../lib/dashboard-queue-shared";
@@ -29,6 +13,10 @@ import {
 import { getAssetStore, getDatabase } from "../../../lib/intake-runtime";
 import type { IntakeRouteDeps } from "../../../lib/intake-route-deps";
 import { listingPublisher } from "../../../lib/listing-queue-runtime";
+import {
+  createListingIntake,
+  listingIntakeBodySchema,
+} from "../../../lib/listing-intake-service";
 import {
   acceptSourceWithoutDecoding,
   requestProductShotFromProcess,
@@ -49,70 +37,28 @@ import {
   requireWorkspaceRole,
 } from "../../../lib/session-context";
 
-const listingSchema = z
-  .object({
-    sourceAssetIds: z
-      .array(
-        z
-          .string()
-          .uuid()
-          .transform((value) => value.toLowerCase()),
-      )
-      .max(11)
-      .refine(
-        (ids) => new Set(ids).size === ids.length,
-        "Asset IDs must be unique",
-      ),
-    note: z.string().max(5_000).optional().default(""),
-    processingMode: z.enum(["ai", "manual"]).default("ai"),
-    wineMode: z.enum(["full", "research", "copy", "section"]).optional(),
-    wineSection: sectionKeySchema.optional(),
-  })
-  .strict()
-  .refine(
-    (body) => body.sourceAssetIds.length > 0 || body.note.trim().length > 0,
-    "Add a source or a note.",
-  );
+const listingSchema = listingIntakeBodySchema;
 
 type CreateListingDeps = IntakeRouteDeps<true> & {
-  preflightWineCapability?: typeof preflightWineCapability;
+  preflightWineCapability?: typeof import("../../../lib/wine-capability-client").preflightWineCapability;
   /**
    * Optional so tests can leave image work out. Production wires the same
-   * requester the process route uses -- see the dispatch below for why creating
-   * a listing has to start image work at all.
+   * requester the process route uses -- creating a listing starts image work
+   * for AI-mode creates.
    */
   requestProductShot?: (
     input: ProductShotRequestInput,
   ) => Promise<ProductShotRequestResult>;
 };
 
-const recoverableAdmission = new Set([
-  "ai_configuration_required",
-  "provider_capability",
-  "budget_blocked",
-]);
-async function acceptOrSave(
-  repositories: WorkspaceRepositories,
-  input: Parameters<typeof acceptListingOperation>[1],
-  admission: WineAdmissionContext,
-) {
-  try {
-    return {
-      accepted: await acceptListingOperation(repositories, input, admission),
-      blocked: null,
-    };
-  } catch (error) {
-    if (
-      recoverableWineAdmission(error) ||
-      (error instanceof ApiError && recoverableAdmission.has(error.code))
-    )
-      return {
-        accepted: null,
-        blocked: { code: error.code, message: error.message },
-      };
-    throw error;
-  }
-}
+/**
+ * `POST /api/listings` -- create a listing draft from uploaded sources.
+ *
+ * The domain flow lives in `createListingIntake` (plan Task 10) so the Studio
+ * dispatch route can reuse it without importing this module. This handler keeps
+ * the HTTP contract exactly: operator floor, strict body schema, idempotency
+ * header rules, 201 response shape.
+ */
 export function createListingHandler(deps: CreateListingDeps) {
   return async function createListing(request: Request): Promise<Response> {
     return withRouteErrors(async () => {
@@ -136,227 +82,34 @@ export function createListingHandler(deps: CreateListingDeps) {
           "idempotency_key_required",
           "A request key is required for a note-only draft.",
         );
-      await requireListingRecovery(deps.getDatabase());
-      const wineAdmission =
-        body.processingMode === "ai"
-          ? await prepareWineAdmission(
-              deps.getDatabase(),
-              context.workspaceId,
-              body.wineMode,
-              deps.preflightWineCapability,
-            )
-          : {};
-      const createDigest = createHash("sha256")
-        .update(JSON.stringify(body))
-        .digest("hex");
-      const acceptedCreate = await deps
-        .getDatabase()
-        .forWorkspace(context.workspaceId, async (repositories) => {
-          await repositories.pipelineRuns.lockCreateRequests(
-            requestKey,
-            body.sourceAssetIds,
-          );
-          if (requestKey) {
-            const prior =
-              await repositories.pipelineRuns.findCreateRequest(requestKey);
-            if (prior) {
-              if (prior.digest !== createDigest)
-                throw new ApiError(
-                  409,
-                  "idempotency_conflict",
-                  "This request key has different inputs.",
-                );
-              return { ...prior.response, replayed: true } as any;
-            }
-          }
-          const finish = async (value: any) => {
-            if (requestKey)
-              await repositories.pipelineRuns.recordCreateRequest(
-                requestKey,
-                createDigest,
-                value.listing.id,
-                value,
-              );
-            return value;
-          };
-          const assets = await repositories.sourceAssets.getByIds(
-            body.sourceAssetIds,
-          );
-          const foundIds = new Set(assets.map(({ id }) => id));
-          if (
-            assets.length !== body.sourceAssetIds.length ||
-            body.sourceAssetIds.some((id) => !foundIds.has(id))
-          ) {
-            throw new ApiError(
-              404,
-              "source_assets_not_found",
-              "One or more source assets were not found.",
-            );
-          }
-          // A create whose response was lost is the common case here, not an
-          // exotic one: the operator sees nothing happen and clicks again.
-          // Assets are single-use, so the previous attempt had already claimed
-          // them and the retry was answered with 409 -- leaving the listing
-          // stranded, reachable only by someone who knew to go looking for it.
-          //
-          // The asset set is itself the natural idempotency key. If EVERY
-          // requested asset is already attached to one and the same listing,
-          // this is that listing being created again, so return it. Anything
-          // else -- a partial overlap, assets split across listings -- is a
-          // genuine conflict and still refuses.
-          const attached = assets.filter(({ listingId }) => listingId !== null);
-          if (attached.length > 0) {
-            const owners = new Set(attached.map(({ listingId }) => listingId));
-            const owner = owners.size === 1 ? [...owners][0] : null;
-            const existing =
-              owner != null && attached.length === assets.length
-                ? await repositories.listings.getById(owner)
-                : null;
-            if (!existing) {
-              throw new ApiError(
-                409,
-                "source_asset_already_used",
-                "One or more source assets are already associated.",
-              );
-            }
-            // Same assets but different words is a different request wearing
-            // the same key. Returning the old listing would silently discard
-            // what the operator just typed, so say so instead.
-            if (existing.note !== (body.note.trim() || null)) {
-              throw new ApiError(
-                409,
-                "source_asset_already_used",
-                "These files already belong to another listing.",
-              );
-            }
-            const snapshot = await repositories.listingInputs.initialize(
-              { listingId: existing.id, actorId: context.actorId },
-              { ...context, entityId: existing.id },
-              repositories.audit,
-            );
-            const admission =
-              body.processingMode === "manual"
-                ? { accepted: null, blocked: null }
-                : await acceptOrSave(
-                    repositories,
-                    {
-                      ...context,
-                      listingId: existing.id,
-                      expectedInputRevision: snapshot.revision,
-                      baseVersionId: snapshot.baseVersionId,
-                      operationKey: `create:${existing.id}`,
-                      wineMode: body.wineMode,
-                      wineSection: body.wineSection,
-                    },
-                    wineAdmission,
-                  );
-            return finish({ listing: existing, ...admission, snapshot });
-          }
 
-          const imageCount = assets.filter(({ kind }) =>
-            isImageMimeType(kind),
-          ).length;
-          const pdfCount = assets.filter(
-            ({ kind }) => kind === "application/pdf",
-          ).length;
-          if (
-            imageCount > MAX_LISTING_IMAGES ||
-            pdfCount > MAX_LISTING_PDFS ||
-            imageCount + pdfCount !== assets.length
-          ) {
-            throw new ApiError(
-              400,
-              "invalid_asset_composition",
-              "Listings support up to 10 images and 1 PDF.",
-            );
-          }
-
-          const created = await repositories.listings.create({
-            target: "shopline",
-            note: body.note.trim() || null,
-          });
-          await repositories.sourceAssets.attachToListing(
-            created.id,
-            body.sourceAssetIds,
-          );
-          await repositories.audit.write({
-            workspaceId: context.workspaceId,
-            actorId: context.actorId,
-            entityId: created.id,
-            action: "listing.created",
-            metadata: {
-              assetCount: body.sourceAssetIds.length,
-              hasNote: body.note.trim().length > 0,
-            },
-          });
-          const snapshot = await repositories.listingInputs.initialize(
-            { listingId: created.id, actorId: context.actorId },
-            { ...context, entityId: created.id },
-            repositories.audit,
-          );
-          const admission =
-            body.processingMode === "manual"
-              ? { accepted: null, blocked: null }
-              : await acceptOrSave(
-                  repositories,
-                  {
-                    ...context,
-                    listingId: created.id,
-                    expectedInputRevision: snapshot.revision,
-                    baseVersionId: null,
-                    operationKey: `create:${created.id}`,
-                    wineMode: body.wineMode,
-                    wineSection: body.wineSection,
-                  },
-                  wineAdmission,
-                );
-          return finish({ listing: created, ...admission, snapshot });
-        });
-
-      const { listing, accepted, snapshot, blocked } = acceptedCreate;
-      if (accepted && !acceptedCreate.replayed)
-        await dispatchListingOperation(
-          deps.getDatabase(),
-          context.workspaceId,
-          accepted,
-          deps.publisher,
-        );
-      const processing = accepted?.processing ?? null;
-      let productShot: ProductShotRequestResult | undefined;
-      if (
-        accepted &&
-        accepted.flowVersion !== "wine-enrichment-v1" &&
-        !acceptedCreate.replayed &&
-        body.processingMode === "ai" &&
-        deps.requestProductShot
-      ) {
-        try {
-          productShot = await deps.requestProductShot({
-            workspaceId: context.workspaceId,
-            listingId: listing.id,
-            actorId: context.actorId,
-          });
-        } catch {
-          productShot = { state: "request_failed" };
-        }
-      }
+      const result = await createListingIntake(
+        {
+          getDatabase: deps.getDatabase,
+          publisher: deps.publisher,
+          ...(deps.preflightWineCapability
+            ? { preflightWineCapability: deps.preflightWineCapability }
+            : {}),
+          ...(deps.requestProductShot
+            ? { requestProductShot: deps.requestProductShot }
+            : {}),
+        },
+        { context, body, requestKey },
+      );
 
       return jsonResponse(201, {
-        listing: {
-          id: listing.id,
-          status: listing.status,
-          target: listing.target,
-        },
-        inputRevision: snapshot.revision,
-        activeVersionId: snapshot.baseVersionId,
-        processing,
-        ...(blocked ? { processingBlocked: blocked } : {}),
-        ...(productShot ? { productShot } : {}),
+        listing: result.listing,
+        inputRevision: result.inputRevision,
+        activeVersionId: result.activeVersionId,
+        processing: result.processing,
+        ...(result.processingBlocked
+          ? { processingBlocked: result.processingBlocked }
+          : {}),
+        ...(result.productShot ? { productShot: result.productShot } : {}),
       });
     });
   };
 }
-
 type ListListingsDeps = {
   sessionContext: IntakeRouteDeps["sessionContext"];
   getDatabase: IntakeRouteDeps["getDatabase"];

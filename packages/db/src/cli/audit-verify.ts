@@ -96,6 +96,17 @@ export const TENANT_TABLES = [
   "audit_events",
   "listing_pipeline_runs",
   "listing_pipeline_steps",
+  "studio_threads",
+  "studio_messages",
+  "studio_runs",
+  "studio_run_events",
+  "studio_outputs",
+  "studio_output_versions",
+  "studio_budget_reservations",
+  "studio_workspace_settings",
+  "studio_mcp_connections",
+  "studio_mcp_calls",
+  "studio_api_tokens",
 ] as const;
 
 export type AuditVerificationResult = {

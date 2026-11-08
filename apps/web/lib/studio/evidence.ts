@@ -1,0 +1,973 @@
+import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
+
+import type { StudioTurnLimits } from "./turn-limits";
+import {
+  runStudioTool,
+  type ListingCopySnapshot,
+  type StudioReadDeps,
+  type ToolRun,
+} from "./tools";
+import {
+  coverageMap,
+  coverageRecord,
+  translatedLine,
+  type EvidenceCheck,
+  type EvidenceCoverage,
+  type EvidencePack,
+  type EvidenceSource,
+  type NeedsInput,
+  type StudioTraceStep,
+} from "./types";
+import {
+  merchantAuditPayloadSchema,
+  type MerchantAuditPayload,
+} from "./report-payload";
+
+/**
+ * Deterministic evidence assembly (plan Task 5, spec section 3.3).
+ *
+ * The pack is built from canonical records only. A tool that cannot answer
+ * marks the source `missing`/`unsupported` with a limitation; nothing here
+ * guesses, interpolates or turns unknown into zero.
+ */
+
+export type BuildEvidenceInput = {
+  skill: SkillDefinition;
+  deps: StudioReadDeps;
+  role: StudioRole;
+  now: Date;
+  query: string | null;
+  listingIds?: readonly string[];
+  listingId?: string | null;
+  /** Source asset ids the operator attached to the turn (plan Task 10). */
+  attachmentAssetIds?: readonly string[];
+  /** Optional hard budgets for this turn (plan Task 14). */
+  limits?: StudioTurnLimits;
+  limit?: number;
+};
+
+export type BuildEvidenceResult =
+  { status: "complete"; pack: EvidencePack } | NeedsInput;
+
+const MAX_LISTINGS = 20;
+const FOCUS_LISTINGS = 3;
+
+function asOf(now: Date): string {
+  return now.toISOString();
+}
+
+function markCoverage(
+  pack: EvidencePack,
+  kind: SourceKind,
+  coverage: EvidenceCoverage,
+): void {
+  pack.coverage.set(kind, coverage);
+}
+
+function pushSource(
+  pack: EvidencePack,
+  source: Omit<EvidenceSource, "asOf" | "restricted">,
+  now: Date,
+): void {
+  pack.sources.push({ ...source, asOf: asOf(now), restricted: false });
+}
+
+function pushCheck(
+  pack: EvidencePack,
+  check: Omit<EvidenceCheck, "values"> & {
+    values?: EvidenceCheck["values"];
+  },
+): void {
+  pack.checks.push({ ...check, values: check.values ?? {} });
+}
+
+function pushLimitation(
+  pack: EvidencePack,
+  key: string,
+  values: Record<string, string | number | boolean> = {},
+): void {
+  pack.limitations.push(translatedLine(key, values));
+}
+
+async function callTool(
+  pack: EvidencePack,
+  input: {
+    toolId: string;
+    rawInput: unknown;
+    deps: StudioReadDeps;
+    role: StudioRole;
+    limits?: StudioTurnLimits;
+  },
+): Promise<ToolRun> {
+  input.limits?.beginTool(input.toolId);
+  const run = await runStudioTool({
+    toolId: input.toolId,
+    rawInput: input.rawInput,
+    role: input.role,
+    deps: input.deps,
+  });
+  input.limits?.assertActive();
+  const step: StudioTraceStep = {
+    kind: "tool",
+    toolId: input.toolId,
+    state: run.state,
+    durationMs: null,
+    detail: run.detail,
+  };
+  pack.trace.push(step);
+  return run;
+}
+
+function catalogSource(now: Date, listingId: string, title: string) {
+  return {
+    ref: `catalog:${listingId}`,
+    kind: "catalog" as const,
+    label: title.slice(0, 300),
+    refId: listingId,
+    version: null,
+    coverage: "present" as const,
+    deepLink: `/listings/${listingId}`,
+    ...{ asOf: asOf(now), restricted: false },
+  } satisfies EvidenceSource;
+}
+
+async function buildCatalogFind(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const query = input.query?.trim() ?? "";
+  if (!query) throw new Error("query required before build");
+  const limit = Math.min(Math.max(input.limit ?? 10, 1), 20);
+  const search = await callTool(pack, {
+    toolId: "catalog.search",
+    rawInput: { query, limit },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (search.state !== "done") {
+    pushLimitation(pack, "studio.limit.catalog_unavailable");
+    return;
+  }
+  const hits = search.output as {
+    items: Array<{ listingId: string; title: string; status: string }>;
+    truncated: boolean;
+  };
+  markCoverage(pack, "catalog", "present");
+  pushCheck(pack, {
+    key: "studio.check.catalog_matches",
+    values: { count: hits.items.length, truncated: hits.truncated },
+    state: "ok",
+  });
+  for (const hit of hits.items) {
+    const source = catalogSource(input.now, hit.listingId, hit.title);
+    pack.sources.push(source);
+  }
+  if (hits.items.length === 0) {
+    // A real counted zero, not a missing source: there is no listing to read.
+    markCoverage(pack, "listing", "unsupported");
+  }
+
+  const focus = hits.items.slice(0, FOCUS_LISTINGS);
+  for (const hit of focus) {
+    const detail = await callTool(pack, {
+      toolId: "catalog.get",
+      rawInput: { listingId: hit.listingId },
+      deps: input.deps,
+      role: input.role,
+      limits: input.limits,
+    });
+    if (detail.state !== "done") {
+      pushLimitation(pack, "studio.limit.listing_unavailable", {
+        listingId: hit.listingId,
+      });
+      continue;
+    }
+    const listing = detail.output as {
+      listingId: string;
+      status: string;
+      title: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.listing_status",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: "ok",
+    });
+  }
+
+  // Per-listing content gaps stay in the reviewed tool plane.
+  if (focus.length > 0) {
+    const gaps = await callTool(pack, {
+      toolId: "quality.get_gaps",
+      rawInput: { listingIds: focus.map((hit) => hit.listingId) },
+      deps: input.deps,
+      role: input.role,
+      limits: input.limits,
+    });
+    if (gaps.state !== "done")
+      pushLimitation(pack, "studio.limit.quality_unavailable");
+    else markCoverage(pack, "quality", "present");
+  }
+
+  // The workspace quality aggregate is a deterministic summary read; it is
+  // evidence, never a tool-requestable action.
+  try {
+    const quality = await input.deps.getQuality();
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${quality.assessmentVersion}`,
+        kind: "quality",
+        label: quality.assessmentVersion,
+        refId: quality.assessmentVersion,
+        version: quality.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.quality_summary",
+      values: {
+        totalListings: quality.totalListings,
+        totalAssessed: quality.totalAssessed,
+        cleanCount: quality.cleanCount,
+        hasGapsCount: quality.hasGapsCount,
+        projectionState: quality.projectionState,
+      },
+      state:
+        quality.projectionState === "ready"
+          ? "ok"
+          : quality.projectionState === "pending"
+            ? "gap"
+            : "missing",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  const jobs = await callTool(pack, {
+    toolId: "jobs.list",
+    rawInput: { limit: 5 },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (jobs.state === "done") {
+    const listed = jobs.output as { items: Array<{ jobId: string }> };
+    markCoverage(pack, "job", "present");
+    pushCheck(pack, {
+      key: "studio.check.recent_jobs",
+      values: { count: listed.items.length },
+      state: "ok",
+    });
+  } else pushLimitation(pack, "studio.limit.jobs_unavailable");
+
+  if (hits.truncated) pushLimitation(pack, "studio.limit.results_truncated");
+}
+
+async function buildGapReview(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const requested = [...new Set(input.listingIds ?? [])].slice(0, MAX_LISTINGS);
+  let targets = requested;
+  // With an explicit selection this turn does not query the catalog at all, so
+  // the source is not applicable rather than missing.
+  if (requested.length > 0) markCoverage(pack, "catalog", "unsupported");
+  if (targets.length === 0) {
+    const search = await callTool(pack, {
+      toolId: "catalog.search",
+      rawInput: { query: "", limit: MAX_LISTINGS },
+      deps: input.deps,
+      role: input.role,
+      limits: input.limits,
+    });
+    if (search.state !== "done") {
+      pushLimitation(pack, "studio.limit.catalog_unavailable");
+      return;
+    }
+    const hits = search.output as {
+      items: Array<{ listingId: string; title: string }>;
+      truncated: boolean;
+    };
+    markCoverage(pack, "catalog", "present");
+    for (const hit of hits.items)
+      pack.sources.push(catalogSource(input.now, hit.listingId, hit.title));
+    targets = hits.items.map((hit) => hit.listingId);
+    if (hits.truncated) pushLimitation(pack, "studio.limit.results_truncated");
+  }
+
+  for (const listingId of targets) {
+    const detail = await callTool(pack, {
+      toolId: "catalog.get",
+      rawInput: { listingId },
+      deps: input.deps,
+      role: input.role,
+      limits: input.limits,
+    });
+    if (detail.state !== "done") {
+      pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
+      continue;
+    }
+    const listing = detail.output as {
+      listingId: string;
+      status: string;
+      title: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.listing_status",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state:
+        listing.status === "approved" || listing.status === "published"
+          ? "ok"
+          : "gap",
+    });
+  }
+
+  if (targets.length > 0) {
+    const gaps = await callTool(pack, {
+      toolId: "quality.get_gaps",
+      rawInput: { listingIds: targets.slice(0, 50) },
+      deps: input.deps,
+      role: input.role,
+      limits: input.limits,
+    });
+    if (gaps.state !== "done") {
+      pushLimitation(pack, "studio.limit.quality_unavailable");
+    } else {
+      const output = gaps.output as {
+        gaps: Array<{ listingId: string; code: string; blocking: boolean }>;
+      };
+      markCoverage(pack, "quality", "present");
+      for (const gap of output.gaps)
+        pushCheck(pack, {
+          key: "studio.check.content_gap",
+          values: {
+            listingId: gap.listingId,
+            code: gap.code,
+            blocking: gap.blocking,
+          },
+          state: gap.blocking ? "missing" : "gap",
+        });
+    }
+  }
+
+  try {
+    const quality = await input.deps.getQuality();
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${quality.assessmentVersion}`,
+        kind: "quality",
+        label: quality.assessmentVersion,
+        refId: quality.assessmentVersion,
+        version: quality.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.quality_summary",
+      values: {
+        totalListings: quality.totalListings,
+        totalAssessed: quality.totalAssessed,
+        cleanCount: quality.cleanCount,
+        hasGapsCount: quality.hasGapsCount,
+        noActiveVersion: quality.noActiveVersion,
+        projectionState: quality.projectionState,
+      },
+      state: quality.projectionState === "ready" ? "ok" : "missing",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  const jobs = await callTool(pack, {
+    toolId: "jobs.list",
+    rawInput: { limit: 10 },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (jobs.state === "done") {
+    const listed = jobs.output as { items: Array<{ jobId: string }> };
+    markCoverage(pack, "job", "present");
+    pushCheck(pack, {
+      key: "studio.check.recent_jobs",
+      values: { count: listed.items.length },
+      state: "ok",
+    });
+  } else pushLimitation(pack, "studio.limit.jobs_unavailable");
+
+  // The export ledger is not read by this v1 skill; say so instead of implying
+  // there are no export attempts.
+  pushLimitation(pack, "studio.limit.exports_not_read");
+}
+
+function pushFollowUps(pack: EvidencePack, skillKey: string): void {
+  if (skillKey === "catalog.find") {
+    pack.followUps.push(translatedLine("studio.followup.explain_status"));
+    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+  } else if (skillKey === "listing.copy_proposal") {
+    pack.followUps.push(translatedLine("studio.followup.open_listing"));
+    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+  } else if (skillKey === "listing.draft_from_sources") {
+    pack.followUps.push(translatedLine("studio.followup.confirm_dispatch"));
+    pack.followUps.push(translatedLine("studio.followup.open_jobs"));
+  } else if (skillKey === "merchant.audit") {
+    pack.followUps.push(translatedLine("studio.followup.review_gaps"));
+    pack.followUps.push(translatedLine("studio.followup.open_jobs"));
+  } else {
+    pack.followUps.push(translatedLine("studio.followup.list_attention"));
+    pack.followUps.push(translatedLine("studio.followup.open_listing"));
+  }
+}
+
+/** A UUID token, used to read asset ids pinned in the operator's message. */
+const UUID_TOKEN =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+const UUID_EXACT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Source asset ids for a draft turn (plan Task 10).
+ *
+ * The composer attachment flow supplies `attachmentAssetIds`; until that UI
+ * ships, an operator can also pin asset ids in the message text. Both are
+ * bounded to the reviewed eight, de-duplicated, and never read from anywhere
+ * else. Returns an empty list when the turn names none.
+ */
+export function draftAssetIds(input: {
+  attachmentAssetIds?: readonly string[];
+  query: string | null;
+}): string[] {
+  const explicit = (input.attachmentAssetIds ?? []).filter((id) =>
+    UUID_EXACT.test(id),
+  );
+  if (explicit.length > 0)
+    return [...new Set(explicit.map((id) => id.toLowerCase()))].slice(0, 8);
+  UUID_TOKEN.lastIndex = 0;
+  const matches = (input.query ?? "").match(UUID_TOKEN) ?? [];
+  UUID_TOKEN.lastIndex = 0;
+  return [...new Set(matches.map((id) => id.toLowerCase()))].slice(0, 8);
+}
+
+/**
+ * Draft-from-sources evidence (plan Task 10).
+ *
+ * Reads the operator's source assets inside the workspace and records exactly
+ * what an explicit dispatch would send. It performs no writes and starts no
+ * pipeline: the turn only prepares a dispatch-ready reference, and the reviewed
+ * dispatch route creates the canonical listing after the operator confirms.
+ */
+async function buildDraftFromSources(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+  assetIds: readonly string[],
+): Promise<void> {
+  const resolved = await input.deps.getSourceAssets(assetIds);
+  for (const asset of resolved.items) {
+    markCoverage(pack, "source_import", "present");
+    pushSource(
+      pack,
+      {
+        ref: `asset:${asset.assetId}`,
+        kind: "source_import",
+        label: asset.contentType,
+        refId: asset.assetId,
+        version: null,
+        coverage: "present",
+        // Assets have no operator-facing record screen; never invent a link.
+        deepLink: null,
+      },
+      input.now,
+    );
+  }
+  if (resolved.items.length === 0)
+    pushLimitation(pack, "studio.limit.draft_assets_missing", {
+      count: resolved.missingAssetIds.length,
+    });
+  else if (resolved.missingAssetIds.length > 0)
+    pushLimitation(pack, "studio.limit.draft_assets_missing", {
+      count: resolved.missingAssetIds.length,
+    });
+
+  const attached = resolved.items.filter(
+    (asset) => asset.listingId !== null,
+  ).length;
+  pushCheck(pack, {
+    key: "studio.check.draft_assets",
+    values: {
+      count: resolved.items.length,
+      missing: resolved.missingAssetIds.length,
+      attached,
+    },
+    state:
+      resolved.missingAssetIds.length > 0 || attached > 0
+        ? "gap"
+        : resolved.items.length > 0
+          ? "ok"
+          : "missing",
+  });
+
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: "done",
+    durationMs: null,
+    detail: translatedLine("studio.trace.assets_read", {
+      count: resolved.items.length,
+    }),
+  });
+
+  const dispatchAssetIds = resolved.items.map((asset) => asset.assetId);
+  pack.context.draftDispatch =
+    dispatchAssetIds.length > 0
+      ? {
+          kind: "listing_draft",
+          assetIds: dispatchAssetIds,
+          note: input.query?.trim() ? input.query.trim().slice(0, 2000) : null,
+          ready: resolved.missingAssetIds.length === 0 && attached === 0,
+        }
+      : null;
+}
+
+/** Editable copy fields and where each current value lives in the snapshot. */
+const COPY_FIELDS: ReadonlyArray<{
+  field: string;
+  value: (copy: ListingCopySnapshot) => string;
+}> = [
+  { field: "title.en", value: (copy) => copy.title.en },
+  { field: "title.zh-Hant", value: (copy) => copy.title["zh-Hant"] },
+  { field: "description.en", value: (copy) => copy.description.en },
+  {
+    field: "description.zh-Hant",
+    value: (copy) => copy.description["zh-Hant"],
+  },
+  { field: "seo.title.en", value: (copy) => copy.seo.title.en },
+  {
+    field: "seo.title.zh-Hant",
+    value: (copy) => copy.seo.title["zh-Hant"],
+  },
+  {
+    field: "seo.description.en",
+    value: (copy) => copy.seo.description.en,
+  },
+  {
+    field: "seo.description.zh-Hant",
+    value: (copy) => copy.seo.description["zh-Hant"],
+  },
+];
+
+/**
+ * Copy-proposal evidence (plan Task 9).
+ *
+ * The reviewed listing version and its current copy are read deterministically
+ * and recorded as the immutable proposal target. The model may only propose
+ * fields against this snapshot; the turn service persists the result as a
+ * versioned artifact and never writes canonical listing data.
+ */
+async function buildCopyProposal(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  const listingId = input.listingId;
+  if (!listingId) return;
+  const detail = await callTool(pack, {
+    toolId: "catalog.get",
+    rawInput: { listingId },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (detail.state !== "done") {
+    pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
+  } else {
+    const listing = detail.output as {
+      listingId: string;
+      status: string;
+      title: string;
+      activeVersion: { versionId: string; sequence: number } | null;
+    };
+    markCoverage(pack, "listing", "present");
+    pushSource(
+      pack,
+      {
+        ref: `listing:${listing.listingId}:${
+          listing.activeVersion ? `v${listing.activeVersion.sequence}` : "none"
+        }`,
+        kind: "listing",
+        label: listing.title.slice(0, 300),
+        refId: listing.listingId,
+        version: listing.activeVersion
+          ? String(listing.activeVersion.sequence)
+          : null,
+        coverage: "present",
+        deepLink: `/listings/${listing.listingId}`,
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.listing_status",
+      values: {
+        listingId: listing.listingId,
+        status: listing.status,
+        activeVersion: listing.activeVersion ? "present" : "none",
+      },
+      state: listing.activeVersion ? "ok" : "gap",
+    });
+  }
+
+  let copy: ListingCopySnapshot | null = null;
+  try {
+    copy = await input.deps.getListingCopy(listingId);
+  } catch {
+    copy = null;
+  }
+  if (!copy) {
+    pushLimitation(pack, "studio.limit.copy_unavailable");
+    return;
+  }
+  markCoverage(pack, "listing", "present");
+  pushSource(
+    pack,
+    {
+      ref: `listing-copy:${copy.listingId}:v${copy.activeVersionSequence}`,
+      kind: "listing",
+      label: copy.title.en || copy.title["zh-Hant"],
+      refId: copy.listingId,
+      version: String(copy.activeVersionSequence),
+      coverage: "present",
+      deepLink: `/listings/${copy.listingId}`,
+    },
+    input.now,
+  );
+  for (const entry of COPY_FIELDS) {
+    const value = entry.value(copy).trim();
+    pushCheck(pack, {
+      key: "studio.check.copy_current",
+      values: { field: entry.field, present: value.length > 0 },
+      state: value.length > 0 ? "ok" : "gap",
+    });
+  }
+
+  const gaps = await callTool(pack, {
+    toolId: "quality.get_gaps",
+    rawInput: { listingIds: [listingId] },
+    deps: input.deps,
+    role: input.role,
+    limits: input.limits,
+  });
+  if (gaps.state === "done") {
+    markCoverage(pack, "quality", "present");
+    const output = gaps.output as {
+      gaps: Array<{ listingId: string; code: string; blocking: boolean }>;
+    };
+    for (const gap of output.gaps)
+      pushCheck(pack, {
+        key: "studio.check.copy_gap",
+        values: {
+          listingId: gap.listingId,
+          code: gap.code,
+          blocking: gap.blocking,
+        },
+        state: gap.blocking ? "missing" : "gap",
+      });
+  } else pushLimitation(pack, "studio.limit.quality_unavailable");
+
+  try {
+    const quality = await input.deps.getQuality();
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${quality.assessmentVersion}`,
+        kind: "quality",
+        label: quality.assessmentVersion,
+        refId: quality.assessmentVersion,
+        version: quality.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  // Immutable proposal target for the turn service; never model-authored.
+  pack.context = {
+    copyProposal: {
+      listingId: copy.listingId,
+      activeVersionId: copy.activeVersionId,
+      activeVersionSequence: copy.activeVersionSequence,
+      currentCopy: copy,
+      allowedFields: COPY_FIELDS.map((entry) => entry.field),
+    },
+  };
+}
+
+/**
+ * Merchant/SEO audit report evidence (plan Task 11).
+ *
+ * Composes the deterministic report payload from canonical reads only: listing
+ * counts by status, the quality projection and recent export attempts. It never
+ * calls a model and never estimates. A source that cannot be read is `missing`
+ * in coverage and `null` in the payload — never an empty table or a zero count
+ * that reads as "there are none".
+ */
+async function buildMerchantAudit(
+  input: BuildEvidenceInput,
+  pack: EvidencePack,
+): Promise<void> {
+  let listings: MerchantAuditPayload["listings"] = null;
+  try {
+    const counts = await input.deps.getListingCounts();
+    listings = Object.entries(counts)
+      .map(([status, count]) => ({ status, count }))
+      .sort((left, right) => left.status.localeCompare(right.status));
+    markCoverage(pack, "catalog", "present");
+    pushSource(
+      pack,
+      {
+        ref: "catalog:counts",
+        kind: "catalog",
+        label: "workspace listing counts",
+        refId: "listing-counts",
+        version: null,
+        coverage: "present",
+        deepLink: "/dashboard",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.audit_listing_counts",
+      values: {
+        total: listings.reduce((sum, row) => sum + row.count, 0),
+      },
+      state: "ok",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.catalog_unavailable");
+  }
+
+  let quality: MerchantAuditPayload["quality"] = null;
+  try {
+    const summary = await input.deps.getQuality();
+    quality = {
+      assessmentVersion: summary.assessmentVersion,
+      totalListings: summary.totalListings,
+      totalAssessed: summary.totalAssessed,
+      cleanCount: summary.cleanCount,
+      hasGapsCount: summary.hasGapsCount,
+      projectionState: summary.projectionState,
+      asOf: summary.asOf,
+    };
+    markCoverage(pack, "quality", "present");
+    pushSource(
+      pack,
+      {
+        ref: `quality:${summary.assessmentVersion}`,
+        kind: "quality",
+        label: summary.assessmentVersion,
+        refId: summary.assessmentVersion,
+        version: summary.assessmentVersion,
+        coverage: "present",
+        deepLink: "/quality",
+      },
+      input.now,
+    );
+    pushCheck(pack, {
+      key: "studio.check.audit_quality",
+      values: {
+        totalListings: summary.totalListings,
+        cleanCount: summary.cleanCount,
+        hasGapsCount: summary.hasGapsCount,
+      },
+      state: summary.projectionState === "ready" ? "ok" : "gap",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.quality_unavailable");
+  }
+
+  let exports: MerchantAuditPayload["exports"] = null;
+  try {
+    const attempts = await input.deps.getExportAttempts(5);
+    exports = attempts.map((attempt) => ({
+      attemptId: attempt.attemptId,
+      state: attempt.state,
+      rowCount: attempt.rowCount,
+      createdAt: attempt.createdAt,
+    }));
+    markCoverage(pack, "export_attempt", "present");
+    for (const attempt of exports)
+      pushSource(
+        pack,
+        {
+          ref: `export:${attempt.attemptId}`,
+          kind: "export_attempt",
+          label: attempt.state,
+          refId: attempt.attemptId,
+          version: null,
+          coverage: "present",
+          deepLink: "/jobs?kind=export",
+        },
+        input.now,
+      );
+    pushCheck(pack, {
+      key: "studio.check.audit_exports",
+      values: {
+        count: exports.length,
+        ready: exports.filter((row) => row.state === "ready").length,
+        failed: exports.filter((row) => row.state === "failed").length,
+      },
+      state: "ok",
+    });
+  } catch {
+    pushLimitation(pack, "studio.limit.audit_exports_unavailable");
+  }
+
+  // The report's own period is not specified by this v1 UI; state that rather
+  // than implying the counts cover a chosen window.
+  pushLimitation(pack, "studio.limit.audit_period_unset");
+
+  pack.trace.push({
+    kind: "evidence",
+    toolId: null,
+    state: "done",
+    durationMs: null,
+    detail: translatedLine("studio.trace.audit_read", {
+      datasets:
+        (listings === null ? 0 : 1) +
+        (quality === null ? 0 : 1) +
+        (exports === null ? 0 : 1),
+    }),
+  });
+
+  const payload = merchantAuditPayloadSchema.parse({
+    schemaVersion: "wukong-merchant-audit/v1",
+    generatedAt: input.now.toISOString(),
+    asOf: input.now.toISOString(),
+    period: { from: null, to: null },
+    scope: { workspaceScoped: true },
+    listings,
+    quality,
+    exports,
+    checks: pack.checks,
+    coverage: coverageRecord(pack.coverage),
+    limitations: pack.limitations,
+  });
+  pack.context.merchantAudit = payload;
+}
+
+export async function buildEvidencePack(
+  input: BuildEvidenceInput,
+): Promise<BuildEvidenceResult> {
+  const pack: EvidencePack = {
+    sources: [],
+    checks: [],
+    coverage: coverageMap(input.skill.evidence.requiredSources),
+    sections: [],
+    limitations: [],
+    followUps: [],
+    trace: [],
+    context: {},
+  };
+  const requiredQuery = input.skill.inputs.some(
+    (field) => field.name === "query",
+  );
+  if (requiredQuery && !(input.query?.trim().length ?? 0))
+    return {
+      status: "needs_input",
+      skill: input.skill,
+      question: translatedLine("studio.needs_input.catalog_query"),
+    };
+  const requiresListing = input.skill.inputs.some(
+    (field) => field.name === "listingId",
+  );
+  if (requiresListing && !input.listingId)
+    return {
+      status: "needs_input",
+      skill: input.skill,
+      question: translatedLine("studio.needs_input.copy_listing"),
+    };
+  const draftAssets = draftAssetIds({
+    ...(input.attachmentAssetIds
+      ? { attachmentAssetIds: input.attachmentAssetIds }
+      : {}),
+    query: input.query,
+  });
+  if (
+    input.skill.key === "listing.draft_from_sources" &&
+    draftAssets.length === 0
+  )
+    return {
+      status: "needs_input",
+      skill: input.skill,
+      question: translatedLine("studio.needs_input.draft_assets"),
+    };
+
+  if (input.skill.key === "catalog.find") await buildCatalogFind(input, pack);
+  else if (input.skill.key === "catalog.gap_review")
+    await buildGapReview(input, pack);
+  else if (input.skill.key === "listing.copy_proposal")
+    await buildCopyProposal(input, pack);
+  else if (input.skill.key === "listing.draft_from_sources")
+    await buildDraftFromSources(input, pack, draftAssets);
+  else if (input.skill.key === "merchant.audit")
+    await buildMerchantAudit(input, pack);
+  else throw new Error(`unsupported pilot skill ${input.skill.key}`);
+
+  pushFollowUps(pack, input.skill.key);
+  return { status: "complete", pack };
+}

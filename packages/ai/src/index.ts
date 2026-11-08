@@ -181,3 +181,69 @@ export {
   validateWineGenerationRequest,
   wineCandidateIssues,
 } from "./wine-enrichment-content-validation.js";
+export {
+  createStudioModel,
+  FakeStudioModel,
+  fakeStudioUsage,
+  studioAnalysisSchema,
+  studioPlanSchema,
+  studioToolRequestSchema,
+} from "./studio-model.js";
+export type {
+  StudioAnalysis,
+  StudioComposeInput,
+  StudioModel,
+  StudioModelConfig,
+  StudioPlan,
+  StudioPlanInput,
+  StudioToolRequest,
+} from "./studio-model.js";
+export {
+  STUDIO_HONESTY_RULE,
+  STUDIO_NO_WRITE_RULE,
+  STUDIO_UNTRUSTED_RULE,
+  studioComposerMessages,
+  studioPlannerMessages,
+} from "./studio-prompts.js";
+export type {
+  StudioComposerPromptInput,
+  StudioPlannerPromptInput,
+  StudioPromptTool,
+  StudioSkillPromptSummary,
+} from "./studio-prompts.js";
+export {
+  STUDIO_COPY_PROPOSAL_FIELDS,
+  studioProposerMessages,
+} from "./studio-prompts.js";
+export type {
+  StudioCopyProposalField,
+  StudioListingCopySnapshot,
+  StudioProposerPromptInput,
+} from "./studio-prompts.js";
+export {
+  studioCopyProposalSchema,
+  studioProposalFieldSchema,
+} from "./studio-model.js";
+export type {
+  StudioCopyProposal,
+  StudioProposalField,
+  StudioProposeInput,
+} from "./studio-model.js";
+
+export {
+  approvedEndpoint,
+  canonicalJson,
+  createMcpClient,
+  MCP_CLIENT_DEADLINE_MS,
+  MCP_CLIENT_MAX_RESPONSE_BYTES,
+  MCP_CLIENT_PROTOCOL_VERSION,
+  schemaHash,
+} from "./mcp-client.js";
+export type {
+  ExternalMcpTool,
+  McpClient,
+  McpClientDeps,
+  McpClientStatus,
+  McpToolCallResult,
+  McpToolListResult,
+} from "./mcp-client.js";

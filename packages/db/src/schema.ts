@@ -2704,3 +2704,562 @@ export const listingQualityAssessments = pgTable(
     ),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Conversation Studio (migration 0054).
+// Design: docs/superpowers/specs/2026-11-08-conversation-studio-design.md
+// Raw SQL is the authority for RLS, grants and immutability triggers; these
+// declarations give the repositories typed access and keep the audit parity
+// test meaningful.
+// ---------------------------------------------------------------------------
+
+export const studioWorkspaceSettings = pgTable(
+  "studio_workspace_settings",
+  {
+    workspaceId: text("workspace_id")
+      .primaryKey()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").default(false).notNull(),
+    allowedSkills: text("allowed_skills")
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    monthlyBudgetUsd: numeric("monthly_budget_usd", {
+      precision: 14,
+      scale: 6,
+    }),
+    runCeilingUsd: numeric("run_ceiling_usd", { precision: 14, scale: 6 }),
+    retentionDays: integer("retention_days"),
+    defaultHome: boolean("default_home").default(false).notNull(),
+    aiProvider: text("ai_provider"),
+    aiModel: text("ai_model"),
+    pricingVersion: text("pricing_version"),
+    maxInputTokens: integer("max_input_tokens"),
+    inputUsdPerMillion: numeric("input_usd_per_million", {
+      precision: 10,
+      scale: 4,
+    }),
+    outputUsdPerMillion: numeric("output_usd_per_million", {
+      precision: 10,
+      scale: 4,
+    }),
+    maxOutputTokens: integer("max_output_tokens"),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    check(
+      "studio_workspace_settings_ai_all_or_none",
+      sql`(
+        ${table.aiProvider} IS NULL
+        AND ${table.aiModel} IS NULL
+        AND ${table.pricingVersion} IS NULL
+        AND ${table.maxInputTokens} IS NULL
+        AND ${table.inputUsdPerMillion} IS NULL
+        AND ${table.outputUsdPerMillion} IS NULL
+        AND ${table.maxOutputTokens} IS NULL
+      ) OR (
+        ${table.aiProvider} IS NOT NULL
+        AND ${table.aiModel} IS NOT NULL
+        AND ${table.pricingVersion} IS NOT NULL
+        AND ${table.maxInputTokens} IS NOT NULL
+        AND ${table.inputUsdPerMillion} IS NOT NULL
+        AND ${table.outputUsdPerMillion} IS NOT NULL
+        AND ${table.maxOutputTokens} IS NOT NULL
+      )`,
+    ),
+  ],
+);
+
+export const studioThreads = pgTable(
+  "studio_threads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    createdBy: text("created_by").notNull(),
+    title: text("title").notNull(),
+    skillKey: text("skill_key"),
+    visibility: text("visibility").default("workspace").notNull(),
+    status: text("status").default("open").notNull(),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_threads_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("studio_threads_recent_idx").on(
+      table.workspaceId,
+      table.lastMessageAt,
+      table.createdAt,
+    ),
+    check(
+      "studio_threads_title_check",
+      sql`char_length(${table.title})>=1 AND char_length(${table.title})<=200`,
+    ),
+    check(
+      "studio_threads_visibility_check",
+      sql`${table.visibility} IN ('workspace','private')`,
+    ),
+    check(
+      "studio_threads_status_check",
+      sql`${table.status} IN ('open','archived')`,
+    ),
+  ],
+);
+
+export const studioMessages = pgTable(
+  "studio_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    threadId: uuid("thread_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    role: text("role").notNull(),
+    content: jsonb("content").notNull(),
+    clientMessageId: text("client_message_id"),
+    runId: uuid("run_id"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("studio_messages_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_messages_sequence_uq").on(
+      table.workspaceId,
+      table.threadId,
+      table.sequence,
+    ),
+    uniqueIndex("studio_messages_client_id_uq")
+      .on(table.workspaceId, table.threadId, table.clientMessageId)
+      .where(sql`${table.clientMessageId} IS NOT NULL`),
+    index("studio_messages_thread_idx").on(
+      table.workspaceId,
+      table.threadId,
+      table.sequence,
+    ),
+    foreignKey({
+      name: "studio_messages_thread_fkey",
+      columns: [table.workspaceId, table.threadId],
+      foreignColumns: [studioThreads.workspaceId, studioThreads.id],
+    }).onDelete("cascade"),
+    check("studio_messages_sequence_check", sql`${table.sequence}>0`),
+    check(
+      "studio_messages_role_check",
+      sql`${table.role} IN ('operator','assistant','system','tool')`,
+    ),
+    check(
+      "studio_messages_content_check",
+      sql`jsonb_typeof(${table.content})='object' AND octet_length(${table.content}::text)<=65536`,
+    ),
+  ],
+);
+
+export const studioRuns = pgTable(
+  "studio_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    threadId: uuid("thread_id").notNull(),
+    triggerMessageId: uuid("trigger_message_id").notNull(),
+    status: text("status").default("queued").notNull(),
+    skillKey: text("skill_key").notNull(),
+    skillVersion: text("skill_version").notNull(),
+    provider: text("provider"),
+    model: text("model"),
+    promptVersions: jsonb("prompt_versions")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    contextDigest: text("context_digest"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    estimatedCostUsd: numeric("estimated_cost_usd", {
+      precision: 14,
+      scale: 6,
+    }),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }),
+    settledUsd: numeric("settled_usd", { precision: 14, scale: 6 }),
+    errorCode: text("error_code"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_runs_workspace_id_uq").on(table.workspaceId, table.id),
+    uniqueIndex("studio_runs_idempotency_uq").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+    index("studio_runs_thread_idx").on(
+      table.workspaceId,
+      table.threadId,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: "studio_runs_thread_fkey",
+      columns: [table.workspaceId, table.threadId],
+      foreignColumns: [studioThreads.workspaceId, studioThreads.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "studio_runs_trigger_message_fkey",
+      columns: [table.workspaceId, table.triggerMessageId],
+      foreignColumns: [studioMessages.workspaceId, studioMessages.id],
+    }).onDelete("cascade"),
+    check(
+      "studio_runs_status_check",
+      sql`${table.status} IN ('queued','running','succeeded','failed','cancelled','outcome_unknown')`,
+    ),
+    check(
+      "studio_runs_skill_version_check",
+      sql`${table.skillVersion} ~ '^[0-9]+\\.[0-9]+\\.[0-9]+$'`,
+    ),
+    check(
+      "studio_runs_prompt_versions_check",
+      sql`jsonb_typeof(${table.promptVersions})='object' AND octet_length(${table.promptVersions}::text)<=8192`,
+    ),
+    check(
+      "studio_runs_context_digest_check",
+      sql`${table.contextDigest} IS NULL OR ${table.contextDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+  ],
+);
+
+export const studioRunEvents = pgTable(
+  "studio_run_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    runId: uuid("run_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    kind: text("kind").notNull(),
+    toolId: text("tool_id"),
+    state: text("state").notNull(),
+    payload: jsonb("payload")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("studio_run_events_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_run_events_sequence_uq").on(
+      table.workspaceId,
+      table.runId,
+      table.sequence,
+    ),
+    index("studio_run_events_run_idx").on(table.workspaceId, table.runId),
+    foreignKey({
+      name: "studio_run_events_run_fkey",
+      columns: [table.workspaceId, table.runId],
+      foreignColumns: [studioRuns.workspaceId, studioRuns.id],
+    }).onDelete("cascade"),
+    check("studio_run_events_sequence_check", sql`${table.sequence}>0`),
+    check(
+      "studio_run_events_kind_check",
+      sql`${table.kind} IN ('tool','model','evidence','notice','error','dispatch')`,
+    ),
+    check(
+      "studio_run_events_state_check",
+      sql`${table.state} IN ('started','done','failed','unavailable','blocked','info')`,
+    ),
+    check(
+      "studio_run_events_payload_check",
+      sql`jsonb_typeof(${table.payload})='object' AND octet_length(${table.payload}::text)<=32768`,
+    ),
+  ],
+);
+
+export const studioOutputs = pgTable(
+  "studio_outputs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    threadId: uuid("thread_id"),
+    runId: uuid("run_id"),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    status: text("status").default("draft").notNull(),
+    currentVersion: integer("current_version").default(0).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_outputs_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("studio_outputs_thread_idx").on(
+      table.workspaceId,
+      table.threadId,
+      table.createdAt,
+    ),
+    index("studio_outputs_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: "studio_outputs_thread_fkey",
+      columns: [table.workspaceId, table.threadId],
+      foreignColumns: [studioThreads.workspaceId, studioThreads.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "studio_outputs_run_fkey",
+      columns: [table.workspaceId, table.runId],
+      foreignColumns: [studioRuns.workspaceId, studioRuns.id],
+    }).onDelete("set null"),
+    check(
+      "studio_outputs_kind_check",
+      sql`${table.kind} IN ('copy_proposal','gap_report','merchant_audit','finding')`,
+    ),
+    check(
+      "studio_outputs_status_check",
+      sql`${table.status} IN ('draft','saved','signed_off','discarded')`,
+    ),
+    check(
+      "studio_outputs_current_version_check",
+      sql`${table.currentVersion}>=0`,
+    ),
+  ],
+);
+
+export const studioOutputVersions = pgTable(
+  "studio_output_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    outputId: uuid("output_id").notNull(),
+    revision: integer("revision").notNull(),
+    payload: jsonb("payload").notNull(),
+    contentDigest: text("content_digest").notNull(),
+    asOf: timestamp("as_of", { withTimezone: true }).notNull(),
+    scope: jsonb("scope")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("studio_output_versions_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_output_versions_revision_uq").on(
+      table.workspaceId,
+      table.outputId,
+      table.revision,
+    ),
+    foreignKey({
+      name: "studio_output_versions_output_fkey",
+      columns: [table.workspaceId, table.outputId],
+      foreignColumns: [studioOutputs.workspaceId, studioOutputs.id],
+    }).onDelete("cascade"),
+    check("studio_output_versions_revision_check", sql`${table.revision}>0`),
+    check(
+      "studio_output_versions_payload_check",
+      sql`jsonb_typeof(${table.payload})='object' AND octet_length(${table.payload}::text)<=262144`,
+    ),
+    check(
+      "studio_output_versions_digest_check",
+      sql`${table.contentDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "studio_output_versions_scope_check",
+      sql`jsonb_typeof(${table.scope})='object' AND octet_length(${table.scope}::text)<=8192`,
+    ),
+  ],
+);
+
+export const studioBudgetReservations = pgTable(
+  "studio_budget_reservations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "restrict" })
+      .notNull(),
+    runId: uuid("run_id").notNull(),
+    pricingVersion: text("pricing_version").notNull(),
+    reservedUsd: numeric("reserved_usd", { precision: 14, scale: 6 }).notNull(),
+    settledUsd: numeric("settled_usd", { precision: 14, scale: 6 }),
+    state: text("state").default("reserved").notNull(),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_budget_reservations_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_budget_reservations_run_uq").on(
+      table.workspaceId,
+      table.runId,
+    ),
+    foreignKey({
+      name: "studio_budget_reservations_run_fkey",
+      columns: [table.workspaceId, table.runId],
+      foreignColumns: [studioRuns.workspaceId, studioRuns.id],
+    }).onDelete("restrict"),
+    check(
+      "studio_budget_reservations_state_check",
+      sql`${table.state} IN ('reserved','settled','released','uncertain')`,
+    ),
+    check(
+      "studio_budget_reservations_reserved_check",
+      sql`${table.reservedUsd}>=0`,
+    ),
+  ],
+);
+
+export const studioMcpConnections = pgTable(
+  "studio_mcp_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    label: text("label").notNull(),
+    endpointUrl: text("endpoint_url").notNull(),
+    transport: text("transport").default("http").notNull(),
+    status: text("status").default("draft").notNull(),
+    generation: integer("generation").default(1).notNull(),
+    toolAllowlist: jsonb("tool_allowlist")
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    schemaHashes: jsonb("schema_hashes")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
+    credentialEnvelope: text("credential_envelope"),
+    createdBy: text("created_by").notNull(),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_mcp_connections_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_mcp_connections_label_uq").on(
+      table.workspaceId,
+      table.label,
+    ),
+    check(
+      "studio_mcp_connections_endpoint_check",
+      sql`${table.endpointUrl} ~ '^https://'`,
+    ),
+    check(
+      "studio_mcp_connections_transport_check",
+      sql`${table.transport} IN ('http','sse')`,
+    ),
+    check(
+      "studio_mcp_connections_status_check",
+      sql`${table.status} IN ('draft','approved','disabled')`,
+    ),
+  ],
+);
+
+export const studioMcpCalls = pgTable(
+  "studio_mcp_calls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    runId: uuid("run_id"),
+    connectionId: uuid("connection_id"),
+    toolName: text("tool_name").notNull(),
+    requestDigest: text("request_digest").notNull(),
+    responseDigest: text("response_digest"),
+    status: text("status").notNull(),
+    errorCode: text("error_code"),
+    latencyMs: integer("latency_ms"),
+    caller: text("caller").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (table) => [
+    uniqueIndex("studio_mcp_calls_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    index("studio_mcp_calls_recent_idx").on(table.workspaceId, table.createdAt),
+    index("studio_mcp_calls_connection_idx").on(
+      table.workspaceId,
+      table.connectionId,
+      table.createdAt,
+    ),
+    check(
+      "studio_mcp_calls_status_check",
+      sql`${table.status} IN ('ok','unavailable','schema_drift','denied','error')`,
+    ),
+    check(
+      "studio_mcp_calls_caller_check",
+      sql`${table.caller} IN ('agent','external_mcp')`,
+    ),
+    check(
+      "studio_mcp_calls_request_digest_check",
+      sql`${table.requestDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+  ],
+);
+
+export const studioApiTokens = pgTable(
+  "studio_api_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: text("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    label: text("label").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    prefix: text("prefix").notNull(),
+    scopes: text("scopes")
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    createdBy: text("created_by").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+    updatedAt: timestamps.updatedAt,
+  },
+  (table) => [
+    uniqueIndex("studio_api_tokens_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
+    uniqueIndex("studio_api_tokens_hash_uq").on(table.tokenHash),
+    index("studio_api_tokens_workspace_idx").on(
+      table.workspaceId,
+      table.revokedAt,
+      table.createdAt,
+    ),
+    check(
+      "studio_api_tokens_hash_check",
+      sql`${table.tokenHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+  ],
+);
