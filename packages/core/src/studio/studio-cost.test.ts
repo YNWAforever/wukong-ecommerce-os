@@ -50,10 +50,11 @@ describe("studioTurnReservation", () => {
     ).toThrow(/budget_cap_too_small/);
   });
 
-  it("pins planner and composer prompt versions", () => {
+  it("pins planner, composer and proposer prompt versions", () => {
     expect(STUDIO_PROMPT_VERSIONS).toEqual({
       planner: "1.0.0",
       composer: "1.0.0",
+      proposer: "1.0.0",
     });
   });
 });

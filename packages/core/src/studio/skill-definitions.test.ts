@@ -12,7 +12,7 @@ import { TOOL_DEFINITIONS, TOOL_IDS } from "./tool-definitions.js";
 const EXPECTED_STATUS = {
   "catalog.find": "pilot",
   "catalog.gap_review": "pilot",
-  "listing.copy_proposal": "planned",
+  "listing.copy_proposal": "pilot",
   "listing.draft_from_sources": "planned",
   "merchant.audit": "planned",
   "product_shot.prepare": "planned",
@@ -22,7 +22,11 @@ const EXPECTED_STATUS = {
   "logistics.followup": "blocked",
 } as const;
 
-const EXECUTABLE_KEYS = ["catalog.find", "catalog.gap_review"];
+const EXECUTABLE_KEYS = [
+  "catalog.find",
+  "catalog.gap_review",
+  "listing.copy_proposal",
+];
 
 function parseDefinition(value: unknown): boolean {
   return skillDefinitionSchema.safeParse(value).success;

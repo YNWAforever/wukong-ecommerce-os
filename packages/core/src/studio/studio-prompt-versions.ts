@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Studio prompt versions (plan Task 8).
  *
  * Any prompt text change bumps the affected version. An accepted turn pins the
@@ -8,6 +8,7 @@
 export const STUDIO_PROMPT_VERSIONS = {
   planner: "1.0.0",
   composer: "1.0.0",
+  proposer: "1.0.0",
 } as const;
 
 export type StudioPromptKey = keyof typeof STUDIO_PROMPT_VERSIONS;

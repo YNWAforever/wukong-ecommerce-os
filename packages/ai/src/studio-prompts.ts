@@ -107,3 +107,80 @@ export function studioComposerMessages(
     },
   ];
 }
+
+/**
+ * Copy-proposal prompt (plan Task 9).
+ *
+ * The model may only propose edited copy for the reviewed field list, must
+ * keep commercial facts unchanged, and must cite at least one evidence ref per
+ * proposed field from the supplied pack. The server revalidates identity,
+ * field names and refs before anything is persisted.
+ */
+
+export const STUDIO_COPY_PROPOSAL_FIELDS = [
+  "title.en",
+  "title.zh-Hant",
+  "description.en",
+  "description.zh-Hant",
+  "seo.title.en",
+  "seo.title.zh-Hant",
+  "seo.description.en",
+  "seo.description.zh-Hant",
+] as const;
+export type StudioCopyProposalField =
+  (typeof STUDIO_COPY_PROPOSAL_FIELDS)[number];
+
+export type StudioListingCopySnapshot = {
+  listingId: string;
+  activeVersionId: string;
+  activeVersionSequence: number;
+  title: { en: string; "zh-Hant": string };
+  description: { en: string; "zh-Hant": string };
+  seo: {
+    title: { en: string; "zh-Hant": string };
+    description: { en: string; "zh-Hant": string };
+  };
+};
+
+export type StudioProposerPromptInput = {
+  locale: "zh-Hant" | "en";
+  question: string;
+  skill: StudioSkillPromptSummary;
+  listing: StudioListingCopySnapshot;
+  gaps: Array<{ code: string; blocking: boolean }>;
+  allowedFields: readonly StudioCopyProposalField[];
+  evidenceRefs: readonly string[];
+};
+
+export function studioProposerMessages(
+  input: StudioProposerPromptInput,
+): ChatCompletionMessageParam[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You are the Wukong Conversation Studio copy proposer.",
+        STUDIO_UNTRUSTED_RULE,
+        STUDIO_NO_WRITE_RULE,
+        STUDIO_HONESTY_RULE,
+        "Propose improved copy only for fields in allowedFields. Keep every commercial fact (price, SKU, volume, ABV, origin, producer, vintage) exactly as recorded; never invent facts, certifications or claims.",
+        "Each proposed field must cite at least one evidenceRef from the supplied list (the current listing version or a quality/evidence source). If a safe proposal cannot be supported for a field, omit it and explain why in limitations.",
+        "Keep the requested locale's language variant faithful to the source language variant; do not translate facts into a different claim.",
+        "This is a proposal only: no approval, no write, no publish.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        task: "propose_copy",
+        locale: input.locale,
+        question: input.question,
+        skill: input.skill,
+        listing: input.listing,
+        gaps: input.gaps,
+        allowedFields: input.allowedFields,
+        evidenceRefs: input.evidenceRefs,
+      }),
+    },
+  ];
+}

@@ -4,6 +4,7 @@ import {
   createStudioModel,
   FakeStudioModel,
   studioAnalysisSchema,
+  studioCopyProposalSchema,
   studioPlanSchema,
 } from "./studio-model.js";
 import {
@@ -11,6 +12,7 @@ import {
   STUDIO_UNTRUSTED_RULE,
   studioComposerMessages,
   studioPlannerMessages,
+  studioProposerMessages,
   type StudioPlannerPromptInput,
 } from "./studio-prompts.js";
 
@@ -168,5 +170,106 @@ describe("studio model adapters", () => {
       "catalog:listing-a",
     ]);
     expect(composed.usage.estimatedCostUsd).toBeGreaterThan(0);
+  });
+});
+
+describe("studio copy proposal model", () => {
+  const listing = {
+    listingId: "listing-a",
+    activeVersionId: "version-a",
+    activeVersionSequence: 2,
+    title: { en: "Margaux 2019", "zh-Hant": "Margaux 2019" },
+    description: { en: "Old copy.", "zh-Hant": "Old copy." },
+    seo: {
+      title: { en: "Margaux", "zh-Hant": "Margaux" },
+      description: { en: "Old seo.", "zh-Hant": "Old seo." },
+    },
+  };
+  const proposeInput = {
+    locale: "en" as const,
+    question: "propose better copy for listing-a",
+    skill,
+    listing,
+    gaps: [{ code: "untranslated_name", blocking: false }],
+    allowedFields: [
+      "title.en",
+      "description.en",
+      "seo.description.en",
+    ] as const,
+    evidenceRefs: ["listing:listing-a:v2"],
+  };
+
+  it("accepts a grounded proposal for the exact reviewed target", async () => {
+    const fake = new FakeStudioModel({
+      proposals: [
+        {
+          listingId: "listing-a",
+          activeVersionId: "version-a",
+          activeVersionSequence: 2,
+          fields: [
+            {
+              field: "description.en",
+              current: "Old copy.",
+              proposed: "Bright red fruit with a long finish.",
+              evidenceRefs: ["listing:listing-a:v2"],
+            },
+          ],
+          limitations: [],
+        },
+      ],
+    });
+    const result = await fake.propose(proposeInput);
+    expect(result.proposal.fields[0]?.field).toBe("description.en");
+    expect(result.proposal.activeVersionId).toBe("version-a");
+  });
+
+  it("rejects retargeted identity and ungrounded fields", async () => {
+    const base = {
+      listingId: "listing-a",
+      activeVersionId: "version-a",
+      activeVersionSequence: 2,
+      fields: [
+        {
+          field: "title.en" as const,
+          current: "Margaux 2019",
+          proposed: "Margaux 2019 Magnum",
+          evidenceRefs: ["listing:listing-a:v2"],
+        },
+      ],
+      limitations: [],
+    };
+    await expect(
+      new FakeStudioModel({
+        proposals: [{ ...base, activeVersionId: "version-b" }],
+      }).propose(proposeInput),
+    ).rejects.toThrow(/wrong_version/);
+    await expect(
+      new FakeStudioModel({
+        proposals: [
+          {
+            ...base,
+            fields: [{ ...base.fields[0]!, evidenceRefs: [] }],
+          },
+        ],
+      }).propose(proposeInput),
+    ).rejects.toThrow();
+    expect(
+      studioCopyProposalSchema.safeParse({ ...base, listingId: "listing-b" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("prompts the proposer with no-write and grounding rules", () => {
+    const messages = studioProposerMessages(proposeInput);
+    const system = String(messages[0]?.content);
+    expect(system).toContain(STUDIO_NO_WRITE_RULE);
+    expect(system).toContain(STUDIO_UNTRUSTED_RULE);
+    expect(system).toContain("evidenceRef");
+    const user = JSON.parse(String(messages[1]?.content)) as {
+      task: string;
+      listing: { listingId: string };
+    };
+    expect(user.task).toBe("propose_copy");
+    expect(user.listing.listingId).toBe("listing-a");
   });
 });

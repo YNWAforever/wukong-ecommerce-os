@@ -211,3 +211,21 @@ export type {
   StudioPromptTool,
   StudioSkillPromptSummary,
 } from "./studio-prompts.js";
+export {
+  STUDIO_COPY_PROPOSAL_FIELDS,
+  studioProposerMessages,
+} from "./studio-prompts.js";
+export type {
+  StudioCopyProposalField,
+  StudioListingCopySnapshot,
+  StudioProposerPromptInput,
+} from "./studio-prompts.js";
+export {
+  studioCopyProposalSchema,
+  studioProposalFieldSchema,
+} from "./studio-model.js";
+export type {
+  StudioCopyProposal,
+  StudioProposalField,
+  StudioProposeInput,
+} from "./studio-model.js";

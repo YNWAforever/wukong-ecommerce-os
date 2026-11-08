@@ -112,8 +112,8 @@ const SKILL_ENTRIES: readonly SkillDefinition[] = [
   },
   {
     key: "listing.copy_proposal",
-    version: "1.0.0",
-    status: "planned",
+    version: "1.1.0",
+    status: "pilot",
     title: {
       "zh-Hant": "產生文案建議",
       en: "Propose listing copy",
