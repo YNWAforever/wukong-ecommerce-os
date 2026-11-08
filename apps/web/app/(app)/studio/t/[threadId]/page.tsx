@@ -17,6 +17,10 @@ import { studioAiEnabled, studioService } from "../../studio-service";
  * thread-visibility rules as the API, so a foreign, private or malformed id
  * throws the shared 404 `ApiError` and this page calls `notFound()` — ids
  * reveal nothing and a 403 would confirm that a thread exists elsewhere.
+ *
+ * The action capabilities (`canSend`, `canSignOff`) are resolved from the server
+ * session here and passed as props: the thread view never infers a role, and the
+ * API re-checks the same floors before any write.
  */
 export default async function StudioThreadPage({
   params,
@@ -40,6 +44,9 @@ export default async function StudioThreadPage({
   const canSend = session
     ? requireWorkspaceRole("operator", session.role)
     : false;
+  const canSignOff = session
+    ? requireWorkspaceRole("reviewer", session.role)
+    : false;
   const aiEnabled = await studioAiEnabled();
 
   return (
@@ -49,6 +56,7 @@ export default async function StudioThreadPage({
       messages={result.messages}
       aiEnabled={aiEnabled}
       canSend={canSend}
+      canSignOff={canSignOff}
     />
   );
 }

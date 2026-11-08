@@ -212,6 +212,18 @@ describe("StudioTurn", () => {
     expect(html).toContain("no write authority");
   });
 
+  it("renders an output card for each artifact the reply produced", () => {
+    const html = renderAssistant(
+      reply({ outputs: [{ outputId: "output-1", revision: 3 }] }),
+    );
+
+    expect(html).toContain("Outputs");
+    expect(html).toContain('data-output-id="output-1"');
+    // The card fetches its detail client-side; static rendering shows the
+    // loading state rather than invented content.
+    expect(html).toContain("Loading artifact…");
+  });
+
   it("renders nothing for a system/tool message rather than inventing a turn", () => {
     const html = renderToStaticMarkup(
       <StudioTurn

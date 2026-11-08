@@ -481,6 +481,14 @@ export const STUDIO_COPY = {
     "工作區品質：共 {totalListings} 個商品，無缺口 {cleanCount} 個，有缺口 {hasGapsCount} 個，沒有生效版本 {noActiveVersion} 個。",
     "Workspace quality: {totalListings} listings, {cleanCount} clean, {hasGapsCount} with gaps, {noActiveVersion} without an active version.",
   ],
+  "studio.answer.copy_current": [
+    "目前文案：{fields} 個欄位，{present} 個已有內容，{gaps} 個缺口；建議狀態：{proposal}。",
+    "Current copy: {fields} field(s), {present} present, {gaps} gap(s); proposal: {proposal}.",
+  ],
+  "studio.answer.copy_proposal": [
+    "文案建議：{fields} 個欄位；已略過 {dropped} 個沒有依據的建議。",
+    "Copy proposal: {fields} field(s); {dropped} ungrounded suggestion(s) dropped.",
+  ],
 
   // -- evidence checks ------------------------------------------------------
   "studio.check.catalog_matches": [
@@ -497,6 +505,14 @@ export const STUDIO_COPY = {
   ],
   "studio.check.recent_jobs": ["近期作業：{count} 筆。", "Recent jobs: {count}."],
   "studio.check.content_gap": [
+    "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
+    "Listing {listingId}: gap {code}; blocking: {blocking}.",
+  ],
+  "studio.check.copy_current": [
+    "建議欄位 {field}：目前有內容：{present}。",
+    "Proposal field {field}: current content present: {present}.",
+  ],
+  "studio.check.copy_gap": [
     "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
     "Listing {listingId}: gap {code}; blocking: {blocking}.",
   ],
@@ -526,11 +542,27 @@ export const STUDIO_COPY = {
     "此技能不會讀取匯出紀錄；未知不等於沒有匯出。",
     "This skill does not read export records; unknown is not the same as no export.",
   ],
+  "studio.limit.copy_model_required": [
+    "未設定即時分析，因此未產生文案建議；只顯示記錄答案。",
+    "Live analysis is not configured, so no copy proposal was produced; only the records answer is shown.",
+  ],
+  "studio.limit.copy_unavailable": [
+    "未能讀取目前文案；未提出任何建議。",
+    "The current copy could not be read, so no proposal was made.",
+  ],
+  "studio.limit.copy_fields_dropped": [
+    "已略過 {count} 個沒有依據的建議欄位。",
+    "{count} proposed field(s) were dropped because their evidence did not resolve.",
+  ],
 
   // -- needs input and follow-ups ------------------------------------------
   "studio.needs_input.catalog_query": [
     "請提供要查詢的商品、SKU 或關鍵字。",
     "Provide the listing, SKU or keyword to look up.",
+  ],
+  "studio.needs_input.copy_listing": [
+    "請提供要提出文案建議的商品。",
+    "Provide the listing to propose copy for.",
   ],
   "studio.followup.explain_status": [
     "解釋商品目前的狀態",
@@ -642,6 +674,119 @@ export const STUDIO_COPY = {
   "studio.signoff.saved": ["已儲存", "Saved"],
   "studio.signoff.signedOff": ["已簽核", "Signed off"],
   "studio.signoff.discarded": ["已丟棄", "Discarded"],
+
+  // -- output cards (plan Task 9) -------------------------------------------
+  "studio.outputs.kind.copy_proposal": ["文案建議", "Copy proposal"],
+  "studio.outputs.kind.gap_report": ["缺口報告", "Gap report"],
+  "studio.outputs.kind.merchant_audit": ["商家稽核", "Merchant audit"],
+  "studio.outputs.kind.finding": ["發現", "Finding"],
+  "studio.outputs.kind.unknown": ["其他成品", "Other artifact"],
+  "studio.outputs.artifact": ["成品", "Artifact"],
+  "studio.outputs.currentVersion": [
+    "目前版本 {version}",
+    "Current version {version}",
+  ],
+  "studio.outputs.revision": ["版本 {revision}", "Revision {revision}"],
+  "studio.outputs.digest": ["內容摘要 {digest}", "Content digest {digest}"],
+  "studio.outputs.loading": ["正在載入成品…", "Loading artifact…"],
+  "studio.outputs.loadError": [
+    "未能載入成品；未顯示推算內容。",
+    "The artifact could not be loaded; nothing is estimated.",
+  ],
+  "studio.outputs.invalidPayload": [
+    "此成品的內容無法顯示；沒有捏造內容。",
+    "This artifact's content could not be displayed; nothing is invented.",
+  ],
+  "studio.outputs.save": ["儲存成品", "Save artifact"],
+  "studio.outputs.saving": ["正在儲存…", "Saving…"],
+  "studio.outputs.signOff": ["簽核", "Sign off"],
+  "studio.outputs.signingOff": ["正在簽核…", "Signing off…"],
+  "studio.outputs.saveSucceeded": [
+    "已儲存；伺服器重新讀取後確認。",
+    "Saved; confirmed by the server readback.",
+  ],
+  "studio.outputs.signOffSucceeded": [
+    "已簽核；伺服器重新讀取後確認。",
+    "Signed off; confirmed by the server readback.",
+  ],
+  "studio.outputs.saveFailed": [
+    "未能儲存成品，請重試。",
+    "The artifact could not be saved. Try again.",
+  ],
+  "studio.outputs.signOffFailed": [
+    "未能簽核，請重試。",
+    "The artifact could not be signed off. Try again.",
+  ],
+  "studio.outputs.signOffRole": [
+    "需要審核員或以上權限才能簽核。",
+    "A reviewer or higher role is required to sign off.",
+  ],
+  "studio.outputs.signOffNeedsSaved": [
+    "需要先儲存成品才能簽核。",
+    "Save the artifact before signing off.",
+  ],
+  "studio.outputs.openThread": ["開啟原始對話", "Open the source conversation"],
+  "studio.outputs.viewArtifact": ["檢視成品", "View artifact"],
+  "studio.outputs.previewUnavailable": [
+    "此成品類型尚未提供內嵌預覽。",
+    "Inline preview is not available for this artifact kind.",
+  ],
+  "studio.outputs.expandHint": [
+    "展開以載入成品的版本內容。",
+    "Expand to load the artifact's version content.",
+  ],
+  "studio.outputs.truncated": [
+    "只顯示最近的成品。",
+    "Only the most recent artifacts are shown.",
+  ],
+  "studio.outputs.listError": [
+    "未能讀取成品清單；沒有顯示推算內容。",
+    "The artifact list could not be loaded; nothing is estimated.",
+  ],
+  "studio.outputs.emptyHint": [
+    "技能儲存成品後會顯示在這裡。",
+    "Artifacts appear here after a skill saves one.",
+  ],
+  "studio.outputs.savedReadback": [
+    "狀態以伺服器回應為準；重新載入可核實儲存版本。",
+    "The server response is authoritative; reload to verify the saved version.",
+  ],
+
+  // -- review card (plan Task 9) --------------------------------------------
+  "studio.review.title": [
+    "建議內容 · 須人工審核",
+    "Proposed content · human approval required",
+  ],
+  "studio.review.listing": ["商品 {listingId}", "Listing {listingId}"],
+  "studio.review.activeVersion": [
+    "生效版本 {version}",
+    "Active version {version}",
+  ],
+  "studio.review.asOf": ["資料截至 {asOf}", "As of {asOf}"],
+  "studio.review.table.field": ["欄位", "Field"],
+  "studio.review.table.current": ["目前", "Current"],
+  "studio.review.table.proposed": ["建議", "Proposed"],
+  "studio.review.table.evidence": ["依據", "Evidence"],
+  "studio.review.evidenceNone": ["沒有依據", "No evidence"],
+  "studio.review.notAvailable": ["未提供", "Not provided"],
+  "studio.review.noFields": ["沒有建議欄位。", "No proposed fields."],
+  "studio.review.limitations": ["限制", "Limitations"],
+  "studio.review.approvalGate": [
+    "須由人員審核；工作室不會批准或發佈。",
+    "Requires human review; Studio never approves or publishes.",
+  ],
+  "studio.review.noCanonicalWrite": [
+    "建議內容不會寫入正式商品資料。",
+    "The proposal never writes canonical listing data.",
+  ],
+  "studio.review.openReview": [
+    "在審核畫面開啟",
+    "Open in the review workspace",
+  ],
+  "studio.review.invalidPayload": [
+    "此建議的內容無法顯示；沒有捏造內容。",
+    "This proposal could not be displayed; nothing is invented.",
+  ],
 
   // -- tools and connections ------------------------------------------------
   "studio.connections.title": ["工具與連線", "Tools and connections"],

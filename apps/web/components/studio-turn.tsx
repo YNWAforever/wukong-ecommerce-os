@@ -9,6 +9,7 @@ import {
 } from "../lib/studio/types";
 import { formatHkDate } from "../lib/ui-copy";
 import { StudioEvidence } from "./studio-evidence";
+import { StudioOutputCard } from "./studio-output-card";
 import { StudioTrace } from "./studio-trace";
 import styles from "./studio.module.css";
 
@@ -86,6 +87,8 @@ export type StudioTurnProps = {
   readonly message: StudioTurnMessage;
   /** Whether the workspace has live analysis configured for this request. */
   readonly aiEnabled?: boolean;
+  /** Reviewer-or-higher; gates the artifact sign-off action, never inferred. */
+  readonly canSignOff?: boolean;
   /** Persisted trace steps for this turn, or `null` until loaded. */
   readonly trace?: StudioTraceStep[] | null;
   readonly traceLoading?: boolean;
@@ -246,12 +249,18 @@ function AssistantTurn({
   traceLoading,
   traceError,
   onLoadTrace,
+  canSignOff = false,
 }: {
   locale: Locale;
   message: StudioTurnMessage;
 } & Pick<
   StudioTurnProps,
-  "aiEnabled" | "trace" | "traceLoading" | "traceError" | "onLoadTrace"
+  | "aiEnabled"
+  | "canSignOff"
+  | "trace"
+  | "traceLoading"
+  | "traceError"
+  | "onLoadTrace"
 >) {
   const reply = parseStudioAssistantContent(message.content);
   if (reply === null) {
@@ -365,6 +374,29 @@ function AssistantTurn({
           <p className={styles["studio-model-note"]}>
             {studioCopy(locale, "studio.model.notConfigured")}
           </p>
+        </section>
+      ) : null}
+
+      {reply.outputs.length > 0 ? (
+        <section
+          className={styles["studio-turn-outputs"]}
+          aria-label={studioCopy(locale, "studio.outputs.title")}
+        >
+          <h4 className={styles["studio-evidence-subtitle"]}>
+            {studioCopy(locale, "studio.outputs.title")}
+          </h4>
+          <ul className={styles["studio-output-list"]}>
+            {reply.outputs.map((output) => (
+              <li key={output.outputId}>
+                <StudioOutputCard
+                  locale={locale}
+                  outputId={output.outputId}
+                  revision={output.revision}
+                  canSignOff={canSignOff}
+                />
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
     </article>

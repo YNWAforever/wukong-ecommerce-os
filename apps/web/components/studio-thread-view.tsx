@@ -62,6 +62,8 @@ export type StudioThreadViewProps = {
   readonly aiEnabled: boolean;
   /** False for a viewer: sending needs operator+, and the UI says why. */
   readonly canSend: boolean;
+  /** Reviewer-or-higher: gates artifact sign-off inside output cards. */
+  readonly canSignOff: boolean;
 };
 
 function nextSequence(messages: readonly StudioMessageResponse[]): number {
@@ -84,6 +86,7 @@ export function StudioThreadView({
   messages,
   aiEnabled,
   canSend,
+  canSignOff,
 }: StudioThreadViewProps) {
   const session = useStudioSession();
   const [serverMessages, setServerMessages] =
@@ -331,6 +334,7 @@ export function StudioThreadView({
                         locale={locale}
                         message={toTurnMessage(message)}
                         aiEnabled={aiEnabled}
+                        canSignOff={canSignOff}
                         trace={traceState?.steps ?? null}
                         traceLoading={traceState?.loading ?? false}
                         traceError={traceState?.error ?? false}

@@ -111,6 +111,7 @@ async function mount(props: Partial<Parameters<typeof StudioThreadView>[0]> = {}
         messages={[]}
         aiEnabled={false}
         canSend
+        canSignOff={false}
         {...props}
       />,
     );
@@ -367,6 +368,77 @@ describe("StudioThreadView", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0]?.[0])).toContain("/runs/run-1");
     expect(container.textContent).toContain("Read catalog.search (5 ms).");
+  });
+
+  it("renders an output card for a reply that produced an artifact", async () => {
+    const outputReply = {
+      ...reply,
+      outputs: [{ outputId: "output-1", revision: 1 }],
+    };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/studio/outputs/output-1") {
+        return Response.json({
+          output: {
+            outputId: "output-1",
+            kind: "copy_proposal",
+            title: "Synthetic proposal artifact",
+            status: "draft",
+            currentVersion: 1,
+            threadId: "thread-1",
+            createdAt: "2026-11-08T00:00:00.000Z",
+            updatedAt: "2026-11-08T00:00:00.000Z",
+          },
+          versions: [
+            {
+              revision: 1,
+              payload: {
+                listingId: "listing-1",
+                activeVersionId: "version-1",
+                activeVersionSequence: 7,
+                fields: [
+                  {
+                    field: "title.en",
+                    current: "Synthetic old title",
+                    proposed: "Synthetic proposed title",
+                    evidenceRefs: ["listing:listing-1:v7"],
+                  },
+                ],
+                limitations: [],
+                asOf: "2026-11-08T00:00:00.000Z",
+              },
+              contentDigest: "a".repeat(64),
+              asOf: "2026-11-08T00:00:00.000Z",
+              scope: {},
+              createdBy: "studio",
+              createdAt: "2026-11-08T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount({
+      messages: [
+        {
+          ...assistantMessage,
+          content: outputReply as unknown as Record<string, unknown>,
+        },
+      ],
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Synthetic proposal artifact");
+    expect(container.textContent).toContain("Synthetic proposed title");
+    expect(
+      container.querySelector('[data-output-id="output-1"]'),
+    ).not.toBeNull();
   });
 
   it("keeps Send disabled for a viewer with the stated reason", async () => {
