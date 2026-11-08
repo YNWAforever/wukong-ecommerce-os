@@ -120,8 +120,10 @@ Wrapping existing direct adapters (Tavily, Photoroom, SHOPLINE) in MCP is not au
   never starts a second run. A failed/unknown run is shown explicitly; nothing auto-retries.
 - **Threads** are workspace-visible by default; `private` threads are readable by their creator and
   admins/owners only. Ids from another workspace answer 404.
-- **Limits today**: turns are synchronous and bounded by request time (the explicit 45 s deadline
-  and step cap are a P6 hardening item); no token streaming; no retention enforcement yet
+- **Limits today**: turns are synchronous and bounded by a 45 s wall-clock deadline, six first-class
+  tool steps, a bounded 20 read per-listing detail fan-out and at most two model calls; exceeding a
+  limit persists a failed run with a distinct error code (`studio_turn_timeout` /
+  `studio_step_budget_exceeded`). No token streaming; no retention enforcement yet
   (`retention_days` is stored only); no MCP token rate-limit ledger yet; no workspace-settings
   admin API (SQL above).
 

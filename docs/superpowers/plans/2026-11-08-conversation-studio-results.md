@@ -1,8 +1,11 @@
-# Conversation Studio implementation results (in progress)
+# Conversation Studio implementation results
 
-Status: **in progress — P1 complete, P2 complete, P5 Task 12 complete; P3, P4, P5 Task 13 and P6
-remain.** No merge, push, deployment, production migration or live provider/MCP activation. Last
-updated 2026-11-08 (Asia/Singapore), round 3.
+Status: **implementation complete locally; awaiting explicit user review and approval before any
+merge, push, deployment, production migration, live provider call or external MCP activation.**
+All plan tasks are implemented and locally verified (unit, route, component and disposable-Postgres
+integration suites). Browser-level flags-on acceptance and the frozen-lockfile install remain
+BLOCKED in this environment, with exact prerequisites recorded below. Last updated 2026-11-08
+(Asia/Singapore), round 4.
 
 - Branch: `claude/conversation-studio`, base `a12ad1c5` (the `claude/production-recovery-spec`
   checkout, 11 commits ahead of `main`).
@@ -148,3 +151,64 @@ Round 4 deviations / open decisions:
 - Two commits by `studio-ui-builder` were reported as "pushed" in its closing note but no `git push` was performed by any session; the branch is local-only.
 
 Remaining plan work: P6 Task 14 only (explicit deadline/step bounds, flags-on browser acceptance or recorded BLOCKED, capability-registry state updates, final results record, pre-merge checks: frozen-lockfile validation, `CREATEROLE`/role review for migration 0055, Postgres-backed integration rerun, and user-visible review).
+
+## Round 5 (P6 Task 14): hardening, capability states and final acceptance
+
+| Item | Commit | Delivered |
+| --- | --- | --- |
+| P6 turn budgets | `7c14506a` (+ test-fixture fix `2cbaa722`) | `apps/web/lib/studio/turn-limits.ts`: 45 s wall-clock deadline, six first-class tool steps, a separate bounded per-listing detail fan-out (20) and two model calls; every tool/model call asserts the deadline; exceeded turns are persisted as failed runs with `studio_turn_timeout`/`studio_step_budget_exceeded` and surfaced as 503/422, never an unlabelled partial success. Wall clock is injectable for tests. |
+| Capability states | `9f198366` | `conversation-studio` → pilot (deterministic answers, threads, copy proposals, confirmed dispatch, merchant audit verified locally); `studio-output-signoff` → pilot (save/sign-off/export verified locally); `conversation-studio-ai` stays planned because no live provider run has been recorded; `wukong-mcp-server` pilot; `external-mcp-connections` blocked. Descriptions state exactly what was and was not verified. |
+| Runbook | `b8e1e453` | `docs/runbooks/conversation-studio.md` (enablement, model configuration, token lifecycle, external MCP, deploy/rollback order, verification commands, known limits). |
+
+### Final acceptance record (local; PASS / FAIL / BLOCKED / NOT_RUN)
+
+| Check | Result | Evidence / reason |
+| --- | --- | --- |
+| Feature off: nav absent, `/studio` 404, every existing route unchanged | PASS | flags/layout/nav unit tests; full web suite regression |
+| Deterministic answer with no model, coverage/evidence, honest "model not configured" | PASS | evidence/composer/turn-service/route tests |
+| Model on: every claim resolves to evidence, ungrounded claims dropped, provider failure keeps records answer | PASS with scripted provider fakes; live provider call **BLOCKED** (no live call authorised/no credentials used) | turn-service tests, ai model tests |
+| Thread/message/trace/output persistence; duplicate send idempotent; no double reservation | PASS for repository/persisted readback and service replay tests; full browser reload **BLOCKED** (no authenticated flags-on fixture) | repository integration + turn-service tests |
+| Foreign thread/output/token 404/403; cross-workspace reads fail; RLS exercised through `wukong_app` | PASS | migration/repository integration (wrong-workspace insert rejected, foreign rows invisible) + route tests |
+| `audit:verify` reports 0 missing actions / 0 accessible foreign records including new tables | PARTIAL / NOT_RUN as a CLI gate: `TENANT_TABLES` parity test PASS (every `studio_*` table registered); the full CLI run needs a seeded pilot workspace and an admin URL, which is out of this local-only task | unit parity test; integration RLS probe |
+| Hosted MCP: initialize/list/call, scoped token negatives, ledger + audit | PASS (protocol/route tests); live external client **BLOCKED** (disabled, no live MCP call) | 32 MCP/token tests + resolver integration |
+| External MCP disabled by default; admin approval audit; schema drift/timeout/oversize fail closed; zero fetch when disabled | PASS (unit/route/component tests); live external transport **BLOCKED** (feature disabled) | Task 13 suite |
+| Budget: atomic reserve under concurrency, settle once, unknown keeps hold, monthly cap, pricing drift fails closed | PASS | repository integration + turn/service tests |
+| zh-Hant/en copy parity, banned-claim scan, no literal-CJK permit slip | PASS | copy/parity/localisation-ratchet tests |
+| 390 px layout, keyboard focus, reduced motion | PASS for static CSS + unit-rendered states; real-browser a11y **BLOCKED** (no flags-on authenticated browser fixture) | CSS/static review; Playwright spec skips |
+| Preservation matrix: existing routes and roles unchanged with Studio off/on | PASS | full web unit suite (279 files / 2737 tests) |
+| No prompts/model output/customer content/credentials in logs | PASS by design review and unit tests (content-free logs, digests only); local readiness-gate scan **NOT_RUN** | readyness gate requires deployment env |
+| Full `apps/web` unit suite | PASS 279 files / 2737 tests | run at `2cbaa722` |
+| `packages/core` / `packages/ai` / `packages/db` units | PASS 326 / 444 / 196 | run in this round |
+| Typecheck web/core/ai/db/shopline/assets/jobs/worker | PASS (all exit 0) | run in this round |
+| Studio integration (disposable Postgres) | PASS 20/20 | migration replay, repository contracts, MCP token resolver |
+| Playwright `tests/e2e/studio.spec.ts` | BLOCKED: 2 skipped | flags-off test needs `PLAYWRIGHT_E2E=1`; flags-on flow needs `STUDIO_E2E=1`, `CONVERSATION_STUDIO_ENABLED=true`, an enabled workspace settings row, seeded auth session and a running app |
+| Sharp-bundling guard | PASS 0 failures (3 skipped without `.next` build) | `node --test tests/sharp-native-bundling.test.mjs` |
+
+### Pre-merge checklist
+
+| Check | Result |
+| --- | --- |
+| Branch/worktree clean, all work committed | PASS: `claude/conversation-studio`, 26 commits, clean tree |
+| No push, deployment or production migration performed | PASS: branch is local-only |
+| Secret-pattern scan over changed files | PASS: no API-key/credential literals found |
+| Migration replay safety (`0054`, `0055`) | PASS: full-set replay in integration tests |
+| `0055` creates `wukong_mcp_token_lookup`; migration role needs `CREATEROLE` | Documented in the runbook; production role permission review remains an operator step |
+| Frozen-lockfile install (`pnpm install --frozen-lockfile`) | BLOCKED: pnpm/corepack are unavailable in this environment; `@wukong/ai`'s web dependency + lockfile importer entry were added by hand. Must run on a machine with working pnpm before merge. |
+| Browser flags-on acceptance | BLOCKED (prerequisites above) |
+| User review of this branch and the open decisions in the spec/results | PENDING: required before any merge/deploy |
+
+### Open decisions for the user
+
+1. Live model activation: which reviewed provider/model + workspace budget, and whether to enable `CONVERSATION_STUDIO_AI_ENABLED` — no live provider call has ever been made.
+2. Browser acceptance: provide/enable a flags-on authenticated fixture (or accept the recorded BLOCKED) before merge.
+3. Frozen-lockfile validation on a working pnpm environment.
+4. Attachment upload UI (currently asset ids/pinned UUIDs only) and whether to add it in a follow-up.
+5. External MCP first provider + credential ownership (feature stays disabled until decided).
+6. Merge/push/deploy/production migration require explicit approval; all flags remain default-off.
+
+### Final state
+
+Implementation and local verification of every plan task are complete. Nothing was pushed, deployed,
+migrated in production or activated against a live provider/MCP/SHOPLINE. The next gate is the
+user's review and explicit approval; until then the branch stays local with all feature flags
+default-off.
