@@ -314,3 +314,41 @@ pass in the integration suite.
 
 Post-format re-verification: `pnpm typecheck` 14/14, `pnpm lint` 14/14, Studio scoped suite 31 files
 / 252 tests, `core`+`ai` 770, `db` (unit) 196 — all pass.
+
+## Round 10 (CI, merge, production deployment) — 2026-11-09
+
+**Pull request:** [#143](https://github.com/YNWAforever/wukong-ecommerce-os/pull/143), merged with merge
+commit `87459d83` after CI run `42506384584` passed in 25m19s.
+
+CI verified on Node 24 with a real frozen install, including: format/forbidden-runtime gates, build,
+migrations, lint, typecheck, **`pnpm test`** (the exact root unit command), all Opak integration
+regressions, **production build**, real-stack Playwright (including the Studio flags-off nav/404
+acceptance), **`audit:verify` against the synthetic Opak draft**, and the wine/Queue acceptance.
+Two real defects surfaced only in CI and were fixed in the branch before merge:
+
+- `9645fbee` — the existing foreign-key inventory test pinned the full FK list and requires every
+  composite tenant FK to be indexed; Studio added eight FKs without two covering indexes. Migration
+  `0056_studio_fk_indexes.sql` adds `studio_outputs(workspace_id, run_id)` and
+  `studio_runs(workspace_id, trigger_message_id)` indexes, and the pinned inventory was extended.
+- `cfe87d2b` — the flags-off browser test lazily imported the real-stack fixture; under CI Node's
+  strip-only TypeScript loader the dynamic import failed on the fixture's parameter properties.
+  It now imports the fixture statically like every other real-stack spec.
+
+**Production deployment:** Vercel production deployment
+`https://wukong-ecommerce-fsoeyw4vp-ynwaforevers-projects.vercel.app` (Ready, 1m build), serving on the
+project alias `https://wukong-ecommerce-os.vercel.app`. Smoke checks on the alias:
+`/signin` 200, `/` → `/signin?callbackUrl=%2F`, `/studio` → `/signin?callbackUrl=%2Fstudio`
+(flags still off), Studio APIs 401 unauthenticated, `POST /api/mcp` 404 (hosted MCP flag off).
+Deployment-specific log scan: 50 recent production log lines fetched with `vercel logs`; 0 matches
+for OpenAI-style keys, bearer tokens, Postgres URLs, AWS signatures, password/API-key fields,
+SHOPLINE token prefixes or prompt-injection markers. The human sign-off item still stands: this is an
+automated scan of recent logs, not a person's complete review.
+
+**Live activation remains intentionally not performed.** Production env names contain no
+`OPENCODE_GO_API_KEY`/`OPENAI_API_KEY`/`OPENROUTER_API_KEY` and no Studio feature flags; enabling the
+(deterministic) Studio would additionally require applying migrations `0054`–`0056` to the production
+database, inserting/updating the pilot workspace's `studio_workspace_settings` row, setting
+`CONVERSATION_STUDIO_ENABLED=true` and redeploying, plus an authenticated production acceptance run
+(no production user credentials are available here). Live model activation is impossible without a
+provider credential. All flags remain off; the release gate's first-real-write confirmation was not
+touched.
