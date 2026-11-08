@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   fakeStudioUsage,
@@ -35,6 +35,10 @@ const NOW = new Date("2026-11-08T10:00:00.000Z");
 const WORKSPACE = "ws_test";
 const LISTING_ID = "listing-1";
 const MISSING_THREAD_ID = "00000000-0000-4000-8000-000000000000";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const STUDIO_ENV = {
   CONVERSATION_STUDIO_ENABLED: "true",
@@ -1067,5 +1071,105 @@ describe("studio turn budgets", () => {
     expect(fake.state.audits.map((event) => event.action)).toContain(
       "studio.run.failed",
     );
+  });
+});
+
+describe("studio turn metrics and budget alerts", () => {
+  function parseEvents(
+    calls: ReadonlyArray<readonly unknown[]>,
+  ): Array<Record<string, unknown>> {
+    return calls
+      .map((call) => {
+        try {
+          return JSON.parse(String(call[0])) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((event): event is Record<string, unknown> => event !== null);
+  }
+
+  it("emits one content-free metrics line for a successful deterministic turn", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { service } = harness({ options: populatedOptions() });
+    const threadId = await openThread(service);
+    await service.sendMessage(
+      threadId,
+      body({ clientMessageId: "metrics-1", text: "margaux" }),
+    );
+    const metrics = parseEvents(info.mock.calls).filter(
+      (event) => event.event === "studio.turn.metrics",
+    );
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]).toMatchObject({
+      status: "answered",
+      settledUsd: null,
+    });
+    expect(Number(metrics[0]?.durationMs)).toBeGreaterThanOrEqual(0);
+    expect(Number(metrics[0]?.traceSteps)).toBeGreaterThan(0);
+    expect(JSON.stringify(metrics[0])).not.toContain("margaux");
+  });
+
+  it("emits failed metrics with the deadline error code", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let ticks = 0;
+    const { service } = harness({
+      options: populatedOptions(),
+      monotonicNow: () => {
+        ticks += 1;
+        return ticks * 60_000;
+      },
+    });
+    const threadId = await openThread(service);
+    await expect(
+      service.sendMessage(
+        threadId,
+        body({ clientMessageId: "metrics-2", text: "margaux" }),
+      ),
+    ).rejects.toMatchObject({ status: 503 });
+    const metrics = parseEvents(info.mock.calls).filter(
+      (event) => event.event === "studio.turn.metrics",
+    );
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]).toMatchObject({
+      status: "failed",
+      errorCode: "studio_turn_timeout",
+      settledUsd: null,
+    });
+  });
+
+  it("alerts when committed spend crosses the workspace budget warning threshold", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { service } = harness({
+      options: {
+        ...populatedOptions(),
+        budgets: [
+          {
+            runId: "00000000-0000-4000-8000-000000000001",
+            pricingVersion: "go-2026-11",
+            reservedUsd: "0.000000",
+            settledUsd: "8.200000",
+            state: "settled",
+          },
+        ],
+      },
+      settings: AI_SETTINGS,
+      env: STUDIO_ENV,
+    });
+    const threadId = await openThread(service);
+    await service.sendMessage(
+      threadId,
+      body({ clientMessageId: "metrics-3", text: "margaux" }),
+    );
+    const alerts = parseEvents(info.mock.calls).filter(
+      (event) => event.event === "studio.budget.alert",
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({
+      level: "warning",
+      scope: "workspace",
+      utilizationPercent: 82,
+    });
+    expect(JSON.stringify(alerts[0])).not.toContain("ws_test");
   });
 });
