@@ -212,3 +212,29 @@ Implementation and local verification of every plan task are complete. Nothing w
 migrated in production or activated against a live provider/MCP/SHOPLINE. The next gate is the
 user's review and explicit approval; until then the branch stays local with all feature flags
 default-off.
+
+## Round 6 (merge-readiness hardening with a real pnpm install)
+
+| Commit | Change |
+| --- | --- |
+| `6d4b92e9` | `fix(web): use extensionless relative imports so turbopack builds` — 14 build-graph files under `apps/web/lib/studio` (plus two pre-existing web files with the same pattern) used NodeNext-style `.js` relative specifiers that Turbopack cannot resolve. Unit tests and `tsc` resolve them, so this only surfaced in `next build`. |
+
+A local pnpm 11.7.0 was bootstrapped from the registry tarball and used against the committed
+`.pnpm-store`:
+
+- `pnpm install --frozen-lockfile --offline --ignore-scripts`: PASS (203 packages; 401-entry
+  supply-chain check).
+- `pnpm typecheck` and `pnpm lint`: PASS 14/14 each.
+- `pnpm --filter @wukong/web build` (Turbopack): **FAILED before the fix, PASS after** — all routes,
+  including every `/studio` page and `/api/studio/*` + `/api/mcp`, now compile.
+- Re-verified after the fix: full web suite 279 files / 2737 tests; Studio scoped suite 31 files /
+  252 tests; typecheck/lint/build clean; Studio integration 20/20 on disposable Postgres.
+- `pnpm test` root script remains BLOCKED on this machine: Node 26 fails the pre-existing
+  `node --test` root scripts (`ERR_INVALID_ARG_VALUE` in `scripts/benchmark-opak-maintenance.mjs`)
+  before Studio code runs; CI uses the pinned Node 24. Per-package direct vitest results: web 2737,
+  core+ai 770, db 196, assets 82, shopline 287, jobs 53; worker 419 tests pass in 33 files with 11
+  environment-dependent collection failures (wrangler/workerd runtime not present under plain
+  Node 26 vitest).
+
+The earlier per-round acceptance matrix still stands; this round only sharpened the merge evidence
+and fixed the production-build defect. Nothing was pushed, merged into `main`, deployed or activated.
