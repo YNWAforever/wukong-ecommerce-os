@@ -121,12 +121,28 @@ describe.skipIf(!enabled)("conversation studio migration 0054", () => {
       from pg_policies
       where schemaname = 'public' and tablename = any(${[...STUDIO_TABLES]})
     `;
-    expect(policies).toHaveLength(STUDIO_TABLES.length);
-    for (const policy of policies) {
+    // One workspace policy per table. Migration 0055 deliberately adds exactly
+    // one extra SELECT policy on studio_api_tokens for the dedicated
+    // cross-workspace token-resolver role; nothing else may widen access.
+    const workspacePolicies = policies.filter((policy) =>
+      policy.policyname.endsWith("_workspace_policy"),
+    );
+    expect(workspacePolicies).toHaveLength(STUDIO_TABLES.length);
+    for (const policy of workspacePolicies) {
       expect(policy.cmd, policy.tablename).toBe("ALL");
       expect(policy.roles, policy.tablename).toContain("wukong_app");
       expect(policy.policyname).toBe(`${policy.tablename}_workspace_policy`);
     }
+    const extraPolicies = policies.filter(
+      (policy) => !policy.policyname.endsWith("_workspace_policy"),
+    );
+    expect(extraPolicies).toHaveLength(1);
+    expect(extraPolicies[0]).toMatchObject({
+      tablename: "studio_api_tokens",
+      policyname: "studio_api_tokens_mcp_lookup",
+      cmd: "SELECT",
+    });
+    expect(extraPolicies[0]!.roles).toContain("wukong_mcp_token_lookup");
   });
 
   it("grants runtime privileges without weakening append-only tables", async () => {
