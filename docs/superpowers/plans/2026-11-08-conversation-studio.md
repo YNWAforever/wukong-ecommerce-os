@@ -711,3 +711,18 @@ existing Worker/queue untouched.
 - If a task's discovered reality contradicts the spec (e.g. a reused factory is not exported), stop,
   record the discrepancy in the results doc, and amend the design before continuing — do not
   improvise a second write path.
+
+## Verification environment (recorded 2026-11-08)
+
+- In this sandbox Vitest must run with `--pool=threads --no-file-parallelism`; the `.cmd` wrapper
+  breaks on `(app)` path segments, so run `node <repo>/node_modules/vitest/vitest.mjs ...` directly.
+- The worktree has no `node_modules`; verification used a gitignored junction farm mirroring the
+  parent checkout's package dependencies plus locally rebuilt `dist/` for changed packages.
+- Integration suites need the local docker Postgres (`54329`), the runbook's `wukong_app` role and a
+  disposable `wukong_studio_test` database. Exact env vars are recorded in
+  `docs/superpowers/plans/2026-11-08-conversation-studio-results.md`.
+- `pnpm` is unusable here; the `@wukong/ai` web dependency's `pnpm-lock.yaml` importer entry was
+  added by hand. Run a frozen-lockfile install on a machine with working pnpm before merge.
+- The results doc also records the deliberate deviations from spec §3.2 (no transaction spans the
+  model call; the explicit 45 s deadline and 6-step cap are deferred to P6 hardening with a bounded
+  workspace-wide gap-review scan).
