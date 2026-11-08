@@ -1,19 +1,53 @@
-import postgres from "postgres";
-import { hash } from "@node-rs/argon2";
+import { createRequire } from "node:module";
 
 /**
- * Local-only seed for the flags-on Conversation Studio browser acceptance.
- * Not imported by the app; run once against the disposable local `wukong`
- * database, then delete. Prints ids only (never the password or its hash).
+ * Resolve the two fixture dependencies through `apps/web`, which already
+ * depends on both (`postgres` and `@node-rs/argon2`). The repository root has
+ * neither as a direct dependency, so a plain `node tests/e2e/...` run from the
+ * root (as both the runbook and CI do) cannot resolve them from the script's
+ * own directory. Going through the owning package keeps the committed
+ * dependency graph unchanged while making the seed runnable as written.
  */
+const requireFromWeb = createRequire(
+  new URL("../../apps/web/package.json", import.meta.url),
+);
+const postgresModule = requireFromWeb("postgres");
+const postgres = postgresModule.default ?? postgresModule;
+const { hash } = requireFromWeb("@node-rs/argon2");
+
+/**
+ * Idempotent seed for the flags-on Conversation Studio browser acceptance.
+ *
+ * Not imported by the app; run once against a disposable local (or the CI
+ * job's migrated) `wukong` database, then throw it away. Repeating it is safe:
+ * the workspace, user, membership and Studio-settings rows are upserted, and
+ * only the invite-eligibility and credential rows are replaced. It never
+ * deletes the workspace, because the Studio message/run tables are append-only
+ * by trigger and a delete cascade from a previous run would raise. Prints ids
+ * only (never the password or its hash).
+ *
+ * Connection precedence: `BROWSER_E2E_DATABASE_ADMIN_URL` (local convention),
+ * then `DATABASE_ADMIN_URL` (the CI job already sets this), then the disposable
+ * local default. Only ever point it at a disposable database.
+ */
+
+export const STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID = "ws_studio_browser_e2e";
+export const STUDIO_BROWSER_ACCEPTANCE_USER_ID = "user_studio_browser_e2e";
+export const STUDIO_BROWSER_ACCEPTANCE_EMAIL =
+  "studio-browser-e2e@local.invalid";
+/** Local-only fixture password; matches the committed Playwright spec. */
+export const STUDIO_BROWSER_ACCEPTANCE_PASSWORD =
+  "Local-only studio browser password 1!";
+
+const WORKSPACE_ID = STUDIO_BROWSER_ACCEPTANCE_WORKSPACE_ID;
+const USER_ID = STUDIO_BROWSER_ACCEPTANCE_USER_ID;
+const EMAIL = STUDIO_BROWSER_ACCEPTANCE_EMAIL;
+const PASSWORD = STUDIO_BROWSER_ACCEPTANCE_PASSWORD;
 
 const DATABASE_URL =
   process.env.BROWSER_E2E_DATABASE_ADMIN_URL ??
+  process.env.DATABASE_ADMIN_URL ??
   "postgres://wukong:wukong@127.0.0.1:54329/wukong";
-const WORKSPACE_ID = "ws_studio_browser_e2e";
-const USER_ID = "user_studio_browser_e2e";
-const EMAIL = "studio-browser-e2e@local.invalid";
-const PASSWORD = "Local-only studio browser password 1!";
 
 const ARGON2_OPTIONS = {
   algorithm: 2,
@@ -28,18 +62,37 @@ const sql = postgres(DATABASE_URL, { max: 1 });
 try {
   const passwordHash = await hash(PASSWORD, ARGON2_OPTIONS);
   await sql.begin(async (tx) => {
-    await tx`DELETE FROM studio_workspace_settings WHERE workspace_id = ${WORKSPACE_ID}`;
+    // Upsert rather than delete-and-recreate: the Studio message/run tables
+    // are append-only by trigger, so deleting this workspace after a previous
+    // acceptance run would raise and the seed would stop being idempotent.
+    // Only rows that are safe to replace (invite eligibility and the
+    // credential account) are deleted.
+    await tx`
+      INSERT INTO workspaces (id, name, profile)
+      VALUES (${WORKSPACE_ID}, 'Studio Browser E2E', ${sql.json({ name: "Studio Browser E2E" })})
+      ON CONFLICT (id) DO UPDATE SET name = excluded.name, profile = excluded.profile
+    `;
+    await tx`
+      INSERT INTO users (id, email, name, auth_email_verified)
+      VALUES (${USER_ID}, ${EMAIL}, 'Studio Browser E2E', true)
+      ON CONFLICT (id) DO UPDATE SET
+        email = excluded.email, name = excluded.name, auth_email_verified = true
+    `;
     await tx`DELETE FROM workspace_invites WHERE workspace_id = ${WORKSPACE_ID}`;
-    await tx`DELETE FROM auth_accounts WHERE user_id = ${USER_ID} OR account_id = ${USER_ID}`;
-    await tx`DELETE FROM memberships WHERE user_id = ${USER_ID}`;
-    await tx`DELETE FROM users WHERE id = ${USER_ID}`;
-    await tx`DELETE FROM workspaces WHERE id = ${WORKSPACE_ID}`;
-    await tx`INSERT INTO workspaces (id, name, profile) VALUES (${WORKSPACE_ID}, 'Studio Browser E2E', ${sql.json({ name: "Studio Browser E2E" })})`;
-    await tx`INSERT INTO users (id, email, name, auth_email_verified) VALUES (${USER_ID}, ${EMAIL}, 'Studio Browser E2E', true)`;
     await tx`INSERT INTO workspace_invites (workspace_id, email, role, status) VALUES (${WORKSPACE_ID}, ${EMAIL}, 'admin', 'accepted')`;
-    await tx`INSERT INTO memberships (workspace_id, user_id, role) VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner')`;
+    await tx`
+      INSERT INTO memberships (workspace_id, user_id, role)
+      VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner')
+      ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = excluded.role
+    `;
+    await tx`DELETE FROM auth_accounts WHERE user_id = ${USER_ID} OR account_id = ${USER_ID}`;
     await tx`INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password) VALUES ('acct_studio_browser_e2e', ${USER_ID}, ${USER_ID}, 'credential', ${passwordHash})`;
-    await tx`INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by) VALUES (${WORKSPACE_ID}, true, ${USER_ID})`;
+    await tx`
+      INSERT INTO studio_workspace_settings (workspace_id, enabled, updated_by)
+      VALUES (${WORKSPACE_ID}, true, ${USER_ID})
+      ON CONFLICT (workspace_id) DO UPDATE SET
+        enabled = true, updated_by = excluded.updated_by, updated_at = now()
+    `;
   });
   console.log(
     JSON.stringify({
