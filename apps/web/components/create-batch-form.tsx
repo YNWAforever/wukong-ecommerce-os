@@ -5,7 +5,9 @@ import { contentFields, type ContentField } from "@wukong/core";
 import type { BatchPreviewResult } from "../lib/batch-selection";
 
 import { useLocale } from "../lib/locale-context";
+import { contentFieldLabel } from "../lib/content-field-labels";
 import {
+  formatHkDate,
   localized,
   sharedMessages,
   type BilingualMessage,
@@ -254,7 +256,7 @@ export function CreateBatchForm({
   }
 
   return (
-    <form className="intake-form" onSubmit={handleSubmit}>
+    <form className="intake-form batch-form" onSubmit={handleSubmit}>
       <label>
         {localized(locale, "名稱", "Label")}
         <input
@@ -314,7 +316,7 @@ export function CreateBatchForm({
           required
         />
       </label>
-      <fieldset disabled={busy}>
+      <fieldset className="batch-field-options" disabled={busy}>
         <legend>
           {localized(locale, "允許修改的內容欄位", "Content fields to change")}
         </legend>
@@ -331,23 +333,15 @@ export function CreateBatchForm({
                 )
               }
             />
-            {locale === "en"
-              ? field
-              : {
-                  nameZh: "中文商品名",
-                  summaryEn: "英文摘要",
-                  summaryZh: "中文摘要",
-                  seoTitleEn: "英文 SEO 標題",
-                  seoTitleZh: "中文 SEO 標題",
-                  seoDescriptionEn: "英文 SEO 描述",
-                  seoDescriptionZh: "中文 SEO 描述",
-                  seoKeywords: "SEO 關鍵字",
-                }[field]}
+            {contentFieldLabel(field, locale)}
           </label>
         ))}
       </fieldset>
       {preview ? (
-        <section aria-label={localized(locale, "批次預覽", "Batch preview")}>
+        <section
+          className="batch-preview"
+          aria-label={localized(locale, "批次預覽", "Batch preview")}
+        >
           <p>
             {localized(
               locale,
@@ -357,7 +351,9 @@ export function CreateBatchForm({
           </p>
           <p>
             {localized(locale, "修改欄位", "Fields")}:{" "}
-            {preview.fields.join(", ")}
+            {preview.fields
+              .map((field) => contentFieldLabel(field, locale))
+              .join(locale === "en" ? ", " : "、")}
           </p>
           <p>
             {localized(locale, "最高預計成本", "Maximum estimated cost")}:{" "}
@@ -424,7 +420,7 @@ export function CreateBatchForm({
           ) : null}
           <p>
             {localized(locale, "預覽到期時間", "Preview expires")}:{" "}
-            {preview.expiresAt}
+            {formatHkDate(preview.expiresAt, locale)}
           </p>
           <p>
             {localized(

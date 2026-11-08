@@ -1061,11 +1061,10 @@ export function ListingReviewClient({
     <div className="page-wrap review-page" aria-busy={mutationBusy}>
       {sectionNotices}
       <div className="breadcrumb">
-        <Link href="/dashboard">{t("工作台", "Dashboard")}</Link>
+        <Link href="/dashboard">{t("工作台", "Workbench")}</Link>
         <span aria-hidden="true">/</span>
         <span>{model.title}</span>
       </div>
-      <SourceReadinessSummary readiness={snapshot.sourceReadiness} />
       <div className="review-header">
         <div>
           <p className="eyebrow">
@@ -1084,6 +1083,7 @@ export function ListingReviewClient({
           {stateLabel(model.status, locale)}
         </span>
       </div>
+      <SourceReadinessSummary readiness={snapshot.sourceReadiness} banner />
       {error ? (
         <p className="inline-warning" role="alert" id="listing-action-error">
           {actionErrorText}

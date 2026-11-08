@@ -41,21 +41,11 @@ import { useLatestRequest } from "../lib/use-latest-request";
 import { safeResponseError } from "../lib/support-request-id";
 import { SourceReadinessSummary } from "./source-readiness-summary";
 import { SupportRequestId } from "./support-request-id";
-import {
-  CATALOG_FILTERS,
-  type CatalogFilter,
-  catalogStatusTone,
-} from "./catalog-view-models";
+import { CATALOG_FILTERS, type CatalogFilter } from "./catalog-view-models";
+import { StatusPill, listingStatusTone } from "./status-pill";
 import styles from "./catalog-control-center.module.css";
 import { BulkExportPanel, NO_CONTENT_DIGEST } from "./bulk-export-panel";
 import { CreateBatchForm } from "./create-batch-form";
-
-const STATUS_TONE_CLASSES = {
-  neutral: styles.statusNeutral,
-  warning: styles.statusWarning,
-  success: styles.statusSuccess,
-  danger: styles.statusDanger,
-} as const;
 
 const PAGE_SIZE = 25;
 
@@ -891,7 +881,13 @@ export function CatalogControlCenter({
                         <td>
                           {localized(locale, "獨立草稿", "Standalone draft")}
                         </td>
-                        <td>{stateLabel(item.listingStatus, locale)}</td>
+                        <td>
+                          <StatusPill
+                            tone={listingStatusTone(item.listingStatus)}
+                          >
+                            {stateLabel(item.listingStatus, locale)}
+                          </StatusPill>
+                        </td>
                         <td>
                           {item.readState === "blocked" ? (
                             <SupportRequestId value={item.supportRequestId} />
@@ -902,9 +898,24 @@ export function CatalogControlCenter({
                             />
                           )}
                         </td>
-                        <td>{item.openBlockingFlagCount}</td>
                         <td>
+                          {item.openBlockingFlagCount > 0 ? (
+                            <span className={styles.blockerCount}>
+                              {localized(
+                                locale,
+                                `${item.openBlockingFlagCount} 個阻塞`,
+                                `${item.openBlockingFlagCount} blocking`,
+                              )}
+                            </span>
+                          ) : (
+                            <span className={styles.clearValue}>
+                              {localized(locale, "0 無阻塞", "0 clear")}
+                            </span>
+                          )}
+                        </td>
+                        <td className={styles.actionCell}>
                           <Link
+                            className={styles.actionLink}
                             onClick={rememberPosition}
                             href={withWorkbenchReturn(
                               `/listings/${item.listingId}`,
@@ -919,7 +930,6 @@ export function CatalogControlCenter({
                         </td>
                       </tr>
                     );
-                  const tone = catalogStatusTone(item.listingStatus);
                   return (
                     <tr key={`platform:${item.id}`}>
                       <td>
@@ -985,11 +995,11 @@ export function CatalogControlCenter({
                         </span>
                       </td>
                       <td>
-                        <span
-                          className={`${styles.statusBadge} ${STATUS_TONE_CLASSES[tone]}`}
+                        <StatusPill
+                          tone={listingStatusTone(item.listingStatus ?? "")}
                         >
                           {stateLabel(item.listingStatus, locale)}
-                        </span>
+                        </StatusPill>
                       </td>
                       <td>
                         {item.readState === "blocked" ? (

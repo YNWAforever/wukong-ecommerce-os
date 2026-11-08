@@ -6,12 +6,12 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "development": "./src/index.ts",
+      "development": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./bulk-form-xlsx": {
       "types": "./src/bulk-form-xlsx.ts",
-      "development": "./src/bulk-form-xlsx.ts",
+      "development": "./dist/bulk-form-xlsx.js",
       "default": "./dist/bulk-form-xlsx.js"
     }
   },

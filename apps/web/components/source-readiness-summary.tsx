@@ -10,9 +10,12 @@ import {
 export function SourceReadinessSummary({
   readiness,
   compact = false,
+  banner = false,
 }: {
   readiness?: SourceReadiness | null;
   compact?: boolean;
+  /** Page-level callout under a listing's header rather than a table cell. */
+  banner?: boolean;
 }) {
   const locale = useLocale();
   const c = commonCopy[locale];
@@ -37,9 +40,7 @@ export function SourceReadinessSummary({
     );
   if (readiness.currentVersionId === null)
     return (
-      <div
-        className={compact ? "source-readiness compact" : "source-readiness"}
-      >
+      <div className={banner ? "source-readiness banner" : "source-readiness"}>
         <p className="helper-copy">
           {localized(
             locale,
@@ -63,7 +64,10 @@ export function SourceReadinessSummary({
     );
   const reviewed = readiness.reviewedBinding;
   return (
-    <div className={compact ? "source-readiness compact" : "source-readiness"}>
+    <div
+      className={banner ? "source-readiness banner" : "source-readiness"}
+      data-ready={readiness.eligibleAfterAttestation ? "" : undefined}
+    >
       <strong>
         {readiness.eligibleAfterAttestation
           ? localized(

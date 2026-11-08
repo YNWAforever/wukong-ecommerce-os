@@ -5,6 +5,7 @@ import {
   type Locator,
   type TestInfo,
 } from "@playwright/test";
+import { contentFieldLabel } from "../../apps/web/lib/content-field-labels.js";
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { createDatabase } from "../../packages/db/src/client.js";
@@ -478,11 +479,28 @@ test("20 merchant XLSX products preserve human facts and title through four real
       .fill("Synthetic F13 twenty maintained products");
     await page.getByLabel("Budget (USD)", { exact: true }).fill("1");
     await page.getByLabel("Wave size (1-5)", { exact: true }).fill("5");
-    await page.getByRole("checkbox", { name: "nameZh", exact: true }).uncheck();
+    await page
+      .getByRole("group", { name: "Content fields to change" })
+      .getByRole("checkbox", {
+        name: contentFieldLabel("nameZh", "en"),
+        exact: true,
+      })
+      .uncheck();
     for (const field of generatedFields)
-      await page.getByRole("checkbox", { name: field, exact: true }).check();
+      await page
+        .getByRole("group", { name: "Content fields to change" })
+        .getByRole("checkbox", {
+          name: contentFieldLabel(field, "en"),
+          exact: true,
+        })
+        .check();
     await expect(
-      page.getByRole("checkbox", { name: "nameZh", exact: true }),
+      page
+        .getByRole("group", { name: "Content fields to change" })
+        .getByRole("checkbox", {
+          name: contentFieldLabel("nameZh", "en"),
+          exact: true,
+        }),
     ).not.toBeChecked();
     const previewed = postResponse(page, "/api/enrichment-batches/preview");
     await page
@@ -1325,10 +1343,21 @@ test("100 independently imported products keep all cross-page UI selections in a
       .fill("Synthetic UC22 one hundred selected products");
     await page.getByLabel("Budget (USD)", { exact: true }).fill("1");
     await page.getByLabel("Wave size (1-5)", { exact: true }).fill("5");
-    await page.getByRole("checkbox", { name: "nameZh", exact: true }).check();
+    await page
+      .getByRole("group", { name: "Content fields to change" })
+      .getByRole("checkbox", {
+        name: contentFieldLabel("nameZh", "en"),
+        exact: true,
+      })
+      .check();
     for (const field of generatedFields)
       await expect(
-        page.getByRole("checkbox", { name: field, exact: true }),
+        page
+          .getByRole("group", { name: "Content fields to change" })
+          .getByRole("checkbox", {
+            name: contentFieldLabel(field, "en"),
+            exact: true,
+          }),
       ).not.toBeChecked();
     const before = await admissionCounts();
     const [noPreview] =

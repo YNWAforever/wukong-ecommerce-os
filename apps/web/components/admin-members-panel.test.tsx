@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdminMembersPanel } from "./admin-members-panel";
 
+const locale = vi.hoisted(() => ({ current: "en" as "en" | "zh-Hant" }));
+vi.mock("../lib/locale-context", () => ({ useLocale: () => locale.current }));
+
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -92,10 +95,33 @@ describe("AdminMembersPanel", () => {
 
     expect(fetcher).toHaveBeenCalledWith("/api/workspace/members");
     expect(container.textContent).toContain("admin@opak.test");
-    expect(container.textContent).toContain("啟用中 Active");
+    expect(container.textContent).toContain("Active");
     expect(container.textContent).toContain("new@opak.test");
-    expect(container.textContent).toContain("operator");
-    expect(container.textContent).toContain("待接受 Pending");
+    expect(container.textContent).toContain("Operator");
+    expect(container.textContent).toContain("Pending");
+  });
+
+  it("speaks one language at a time", async () => {
+    stubFetch({
+      members: [
+        {
+          userId: "u1",
+          email: "admin@opak.test",
+          role: "admin",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      invites: [],
+    });
+    locale.current = "zh-Hant";
+    try {
+      const { container } = await mountPanel();
+      expect(container.textContent).toContain("啟用中");
+      expect(container.textContent).toContain("管理員");
+      expect(container.textContent).not.toMatch(/Active|Remove|Invite member/);
+    } finally {
+      locale.current = "en";
+    }
   });
 
   it("names every column header, including the actions column", async () => {
@@ -140,14 +166,10 @@ describe("AdminMembersPanel", () => {
       ),
     ).not.toBeNull();
     expect(
-      container.querySelector(
-        'input[aria-label="邀請成員的電子郵件 Invite email address"]',
-      ),
+      container.querySelector('input[aria-label="Invite email address"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector(
-        'select[aria-label="新成員的角色 Role for new member"]',
-      ),
+      container.querySelector('select[aria-label="Role for new member"]'),
     ).not.toBeNull();
   });
 
@@ -174,7 +196,7 @@ describe("AdminMembersPanel", () => {
       );
       const { container } = await mountPanel();
       const input = container.querySelector(
-        'input[aria-label="邀請成員的電子郵件 Invite email address"]',
+        'input[aria-label="Invite email address"]',
       ) as HTMLInputElement;
       await act(async () => {
         Object.getOwnPropertyDescriptor(

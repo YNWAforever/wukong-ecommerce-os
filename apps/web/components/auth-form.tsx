@@ -286,6 +286,10 @@ export function AuthForm({
 
   return (
     <>
+      <div className="auth-heading">
+        <h1 id="auth-title">{copy.heading}</h1>
+        <p>{copy.intro}</p>
+      </div>
       {mode === "password-signin" || mode === "magic-link" ? (
         <div className="auth-tabs" aria-label="Sign-in method">
           <button
@@ -304,10 +308,6 @@ export function AuthForm({
           </button>
         </div>
       ) : null}
-      <div className="auth-heading">
-        <h1 id="auth-title">{copy.heading}</h1>
-        <p>{copy.intro}</p>
-      </div>
       <form
         className="auth-form"
         method="post"

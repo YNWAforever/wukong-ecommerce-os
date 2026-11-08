@@ -30,7 +30,6 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
       className="auth-card"
       aria-label={isZh ? "Wukong 登入" : "Wukong sign in"}
     >
-      <p className="auth-card-eyebrow">{isZh ? "歡迎回來" : "Welcome back"}</p>
       <AuthForm
         mode="password-signin"
         locale={locale}

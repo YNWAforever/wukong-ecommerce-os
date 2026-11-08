@@ -30,12 +30,12 @@ export const readPageCopy = {
   queue: {
     "zh-Hant": {
       eyebrow: "工作佇列",
-      title: "依狀態排序的完整工作佇列",
+      title: "工作佇列",
       description: "檢視所有進行中商品，並批量批准已符合條件的項目。",
     },
     en: {
       eyebrow: "Work queue",
-      title: "Your complete work queue, grouped by status",
+      title: "Work Queue",
       description:
         "Review workspace listings and approve eligible items in batches.",
     },
@@ -43,13 +43,13 @@ export const readPageCopy = {
   jobs: {
     "zh-Hant": {
       eyebrow: "作業記錄",
-      title: "批次、發佈、AI 流程與匯出，一頁掌握所有內部作業。",
+      title: "所有作業",
       description:
         "查看批次任務、發佈工作、AI 處理流程與匯出紀錄的最新狀態，快速找出卡住或失敗的作業。",
     },
     en: {
       eyebrow: "Jobs ledger",
-      title: "Track batches, delivery, AI processing and exports.",
+      title: "All jobs",
       description:
         "Review internal job status and identify stalled or failed work.",
     },
@@ -57,13 +57,13 @@ export const readPageCopy = {
   quality: {
     "zh-Hant": {
       eyebrow: "內容品質",
-      title: "內容品質總覽，誠實反映目前內容。",
+      title: "內容品質",
       description:
         "查看目前文案缺口、事實證據、人工核實與交付條件，並核對保留的 AI 成本。未完成更新的統計會清楚標示。",
     },
     en: {
       eyebrow: "Quality",
-      title: "Content quality based on current evidence.",
+      title: "Content quality",
       description:
         "Inspect current copy gaps, fact evidence, human verification and delivery readiness alongside retained AI costs. Incomplete counts remain explicit.",
     },

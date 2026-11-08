@@ -87,13 +87,7 @@ export function withStudioNavItem(
   return [STUDIO_NAV_ITEM, ...items];
 }
 
-export const ROLE_LABELS: Record<WorkspaceRole, { zh: string; en: string }> = {
-  viewer: { zh: "檢視者", en: "Viewer" },
-  operator: { zh: "操作員", en: "Operator" },
-  reviewer: { zh: "審核員", en: "Reviewer" },
-  admin: { zh: "管理員", en: "Admin" },
-  owner: { zh: "擁有者", en: "Owner" },
-};
+export { ROLE_LABELS } from "../../lib/role-labels";
 
 /**
  * The destinations a reader at this role can actually use.

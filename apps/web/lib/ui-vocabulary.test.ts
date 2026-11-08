@@ -115,9 +115,6 @@ describe("interface vocabulary", () => {
  * be struck off, which is what makes the remaining work countable.
  */
 const UNLOCALISED_SURFACES = [
-  "app/(app)/admin/page.tsx",
-  "components/admin-members-panel.tsx",
-  "components/admin-settings-panel.tsx",
   "components/listing-view-models.ts",
   "lib/listing-approval.ts",
 ];

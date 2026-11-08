@@ -39,7 +39,7 @@ export default async function ListingImportPage({
       ) : null}
       <div className="breadcrumb">
         <Link href="/dashboard">
-          {localized(locale, "工作台", "Dashboard")}
+          {localized(locale, "工作台", "Workbench")}
         </Link>
         <span aria-hidden="true">/</span>
         <span>{title}</span>

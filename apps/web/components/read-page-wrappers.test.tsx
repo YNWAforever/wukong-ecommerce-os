@@ -13,6 +13,11 @@ const workspaceRead = vi.hoisted(() => vi.fn());
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: current.locale }) }),
 }));
+// next/font is a build-time transform; outside Next it is a plain stub.
+vi.mock("next/font/google", () => ({
+  Inter: () => ({ className: "font-inter", variable: "font-inter" }),
+  Source_Serif_4: () => ({ className: "font-serif", variable: "font-serif" }),
+}));
 vi.mock("next/navigation", () => ({
   redirect: (href: string) => {
     throw new Error(`redirect:${href}`);

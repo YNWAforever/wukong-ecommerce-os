@@ -19,7 +19,39 @@
   --radius: 12px;
   --radius-card: 16px;
   --nav-active-bg: #edf3f7;
-  --shadow: 0 10px 28px rgb(24 36 50 / 7%);
+  --shadow: 0 1px 2px rgb(24 36 50 / 5%), 0 6px 16px rgb(24 36 50 / 4%);
+  --shadow-sm: 0 1px 2px rgb(24 36 50 / 6%);
+  --font-sans:
+    var(--font-inter, Inter), "PingFang TC", "Microsoft JhengHei",
+    "Noto Sans TC", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-display:
+    var(--font-serif, "Source Serif 4"), "Noto Serif TC", "PingFang TC",
+    "Microsoft JhengHei", Georgia, serif;
+  /* Status tones. Each text colour clears 4.5:1 on its own background. */
+  --tone-neutral-bg: #eef0f1;
+  --tone-neutral-fg: #46525d;
+  --tone-info-bg: #e7f0f8;
+  --tone-info-fg: #1f4f7a;
+  --tone-warning-bg: #fdf0dc;
+  --tone-warning-fg: #7f4510;
+  --tone-danger-bg: #fbe9e7;
+  --tone-danger-fg: #8f2f27;
+  --tone-success-bg: #e5f2ec;
+  --tone-success-fg: #24584a;
+  /* Aliases and spacing steps that older rules referenced but nothing ever
+     defined, so the browser was silently dropping those declarations. */
+  --border: var(--line);
+  --color-text: var(--ink);
+  --color-text-muted: var(--muted);
+  --color-danger: var(--danger);
+  --radius-md: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
 }
 
 * {
@@ -32,16 +64,11 @@ body {
   margin: 0;
   background: var(--stone);
   color: var(--ink);
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+  font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 a {
   color: inherit;
@@ -64,6 +91,36 @@ button:disabled {
 :focus-visible {
   outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
+}
+/* Disclosures: a drawn chevron instead of each browser's default triangle.
+   The account menu draws its own. */
+summary {
+  cursor: pointer;
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+details:not([data-testid="account-menu"]) > summary::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 10px 2px 2px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+  vertical-align: middle;
+  opacity: 0.7;
+}
+details[open]:not([data-testid="account-menu"]) > summary::before {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  details > summary::before {
+    transition: none;
+  }
 }
 
 .app-shell {
@@ -108,7 +165,7 @@ button:disabled {
   border-radius: 9px;
   background: var(--navy);
   color: white;
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
   text-decoration: none;
@@ -116,7 +173,7 @@ button:disabled {
 .brand-name {
   display: block;
   color: var(--navy);
-  font-family: Georgia, serif;
+  font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
   text-decoration: none;
@@ -189,6 +246,9 @@ button:disabled {
 }
 .app-main {
   flex: 1;
+  /* Content streams in after the shell; starting the footer below the fold
+     keeps it from jumping out of view (CLS). */
+  min-height: calc(100dvh - 76px);
   /* Clears the fixed sidebar at >=lg; the <lg media query below swaps this
      for bottom padding that clears the fixed bottom-nav instead. */
   padding-left: 240px;
@@ -467,12 +527,17 @@ button:disabled {
 }
 
 .catalog-page .page-header {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   align-items: center;
 }
 .catalog-page .page-header h1 {
-  font-size: 30px;
   margin: 0;
+}
+@media (max-width: 1023.98px) {
+  /* Stacked headers stay left-aligned like every other page. */
+  .catalog-page .page-header {
+    align-items: flex-start;
+  }
 }
 .page-wrap {
   width: min(1200px, calc(100% - 40px));
@@ -490,22 +555,27 @@ button:disabled {
   gap: 32px;
   margin-bottom: 36px;
 }
+/* One page-title style everywhere: the brand serif, sized for a work tool
+   rather than a landing page. Everything below the H1 is sans. */
 .page-header h1,
-.review-header h1 {
+.review-header h1,
+.workbench-header h1 {
   max-width: 760px;
-  margin: 8px 0 10px;
+  margin: 6px 0 8px;
   color: var(--navy);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(30px, 4vw, 46px);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 2.6vw, 36px);
   font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.12;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
 }
 .lede {
   max-width: 650px;
   margin: 0;
   color: var(--ink-soft);
-  font-size: 17px;
+  font-size: 16px;
+  text-wrap: pretty;
 }
 .eyebrow {
   margin: 0;
@@ -590,16 +660,17 @@ button:disabled {
 }
 .metric-strip > div {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 12px;
+  gap: 4px 12px;
   padding: 22px 24px;
   background: var(--surface);
 }
 .metric-value {
   color: var(--navy);
-  font-family: Georgia, serif;
   font-size: 32px;
   line-height: 1;
+  white-space: nowrap;
 }
 .metric-label {
   color: var(--ink-soft);
@@ -632,14 +703,20 @@ button:disabled {
 .form-heading h2 {
   margin: 5px 0 0;
   color: var(--navy);
-  font-family: Georgia, serif;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 .queue-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 16px;
+}
+.queue-summary-line {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 14px;
 }
 .queue-group {
   padding: 22px;
@@ -649,14 +726,35 @@ button:disabled {
 }
 .queue-group-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.queue-group-heading > div {
+  flex: 1 1 auto;
 }
 .queue-group-heading h3 {
   margin: 0;
   color: var(--navy);
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 650;
+}
+/* Populated buckets take the full row; empty ones pair up beneath. */
+.queue-group:not([data-empty]) {
+  grid-column: 1 / -1;
+}
+/* Empty buckets collapse to their heading so populated ones lead the eye. */
+.queue-group[data-empty] {
+  padding-block: 16px;
+  background: transparent;
+  box-shadow: none;
+}
+.queue-group[data-empty] .queue-group-heading {
+  margin-bottom: 2px;
+}
+.queue-group[data-empty] h3 {
+  color: var(--ink-soft);
 }
 .queue-group-heading p,
 .queue-item p,
@@ -679,6 +777,11 @@ button:disabled {
   border-radius: 999px;
   font-size: 13px;
   font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.count-badge[data-zero] {
+  color: var(--muted);
+  background: var(--tone-neutral-bg);
 }
 .queue-list,
 .file-list,
@@ -938,12 +1041,17 @@ button:disabled {
   background: var(--amber-soft);
   border-color: #edcfaa;
 }
-.status-in_review,
+/* Same tones as .status-pill (components/status-pill.tsx). */
+.status-in_review {
+  color: var(--tone-info-fg);
+  background: var(--tone-info-bg);
+  border-color: transparent;
+}
 .status-reopened,
 .status-needs_info {
-  color: var(--amber-dark);
-  background: var(--amber-soft);
-  border-color: #edcfaa;
+  color: var(--tone-warning-fg);
+  background: var(--tone-warning-bg);
+  border-color: transparent;
 }
 .status-tag {
   color: var(--amber-dark);
@@ -951,19 +1059,21 @@ button:disabled {
 }
 .status-approved,
 .status-published {
-  color: var(--success);
-  background: #eff8f3;
-  border-color: #cfe0d8;
+  color: var(--tone-success-fg);
+  background: var(--tone-success-bg);
+  border-color: transparent;
 }
 .status-received,
 .status-processing {
-  color: var(--muted);
-  background: #f7f8f7;
+  color: var(--tone-neutral-fg);
+  background: var(--tone-neutral-bg);
+  border-color: transparent;
 }
-.status-failed {
-  color: var(--danger);
-  background: #fff1ef;
-  border-color: #ebcbc6;
+.status-failed,
+.status-publish_failed {
+  color: var(--tone-danger-fg);
+  background: var(--tone-danger-bg);
+  border-color: transparent;
 }
 .review-layout {
   display: grid;
@@ -1321,8 +1431,9 @@ button:disabled {
     padding-top: 28px;
   }
   .page-header h1,
-  .review-header h1 {
-    font-size: 32px;
+  .review-header h1,
+  .workbench-header h1 {
+    font-size: 28px;
   }
   .metric-strip {
     grid-template-columns: 1fr;
@@ -1390,6 +1501,11 @@ button:disabled {
 }
 .auth-heading h1 {
   margin-bottom: 8px;
+  color: var(--navy);
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .auth-heading p {
   margin: 0 0 24px;
@@ -1519,6 +1635,8 @@ button:disabled {
   place-items: center;
   background: rgb(255 255 255 / 12%);
   border-radius: 10px;
+  font-family: var(--font-display);
+  font-size: 24px;
   font-weight: 700;
 }
 .auth-shell-wordmark {
@@ -1543,10 +1661,12 @@ button:disabled {
   border-radius: 999px;
   font-size: 12px;
 }
-.auth-shell-tagline {
+.auth-shell-brand-body > .auth-shell-tagline {
   margin: 0 0 16px;
-  font-family: Georgia, serif;
+  color: white;
+  font-family: var(--font-display);
   font-size: 28px;
+  text-wrap: balance;
   font-weight: 700;
   line-height: 1.25;
 }
@@ -1607,23 +1727,35 @@ button:disabled {
   min-width: 0;
   gap: 20px;
 }
+/* Segmented control: a visible track that hugs its options. */
 .admin-tab-list {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 20px;
   padding: 4px;
-  background: var(--stone);
+  background: var(--stone-deep);
   border-radius: var(--radius);
 }
 .admin-tab {
-  min-height: 44px;
+  min-height: 40px;
   padding: 8px 16px;
   color: var(--ink-soft);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.admin-tab:hover:not(.active) {
+  color: var(--navy);
+  background: rgb(255 255 255 / 55%);
 }
 .admin-tab.active {
   color: var(--navy);
@@ -1762,6 +1894,31 @@ button:disabled {
 .source-readiness.compact {
   max-width: 18rem;
 }
+.source-readiness.banner {
+  margin: -16px 0 28px;
+  padding: 14px 18px;
+  background: var(--tone-warning-bg);
+  border: 1px solid #efd6b3;
+  border-left: 4px solid var(--amber);
+  border-radius: 10px;
+}
+.source-readiness.banner[data-ready] {
+  background: var(--tone-success-bg);
+  border-color: #c9e1d6;
+  border-left-color: var(--success);
+}
+.source-readiness.banner strong {
+  color: var(--navy);
+  font-size: 15px;
+}
+.source-readiness.banner small {
+  margin-top: 4px;
+}
+.eyebrow code {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
 .pagination-controls {
   display: flex;
   align-items: center;
@@ -1783,7 +1940,7 @@ button:disabled {
   min-width: 0;
 }
 .app-main:focus {
-  outline: 2px solid var(--accent, #8a4b25);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
 }
 @media (max-width: 600px) {
@@ -1996,6 +2153,178 @@ button:disabled {
   outline-offset: 3px;
 }
 
+.batches-layout {
+  display: grid;
+  gap: 32px;
+}
+.batches-section > h2 {
+  margin: 0 0 14px;
+  color: var(--navy);
+  font-size: 18px;
+  font-weight: 650;
+}
+.batches-section > .batch-form {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.batch-archive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+.empty-panel {
+  padding: 32px 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+.empty-panel p {
+  margin: 0;
+}
+.empty-panel .empty-panel-title {
+  margin-bottom: 4px;
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+/* Enrichment batch form: labelled fields on a grid, field choices as chips. */
+.batch-form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) minmax(
+      0,
+      1fr
+    );
+  gap: 16px;
+  align-items: end;
+}
+.batch-form > label {
+  display: grid;
+  gap: 6px;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 650;
+}
+.batch-form > label :is(input, select) {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-input);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+}
+.batch-form > :is(fieldset, section, button, p) {
+  grid-column: 1 / -1;
+}
+.batch-form > button {
+  justify-self: start;
+}
+.batch-field-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.batch-field-options legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 650;
+}
+.batch-field-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 14px;
+  cursor: pointer;
+}
+.batch-field-options label:has(input:checked) {
+  border-color: var(--navy);
+  background: var(--nav-active-bg);
+}
+.batch-preview {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--stone);
+  font-size: 14px;
+}
+.batch-preview p {
+  margin: 4px 0;
+}
+@media (max-width: 900px) {
+  .batch-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .batch-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Shared status pill: tone comes from data-tone, see components/status-pill.tsx */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 8px;
+  border-radius: 999px;
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral-fg);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.status-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.status-pill[data-tone="info"] {
+  background: var(--tone-info-bg);
+  color: var(--tone-info-fg);
+}
+.status-pill[data-tone="warning"] {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+.status-pill[data-tone="danger"] {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+.status-pill[data-tone="success"] {
+  background: var(--tone-success-bg);
+  color: var(--tone-success-fg);
+}
+@media (max-width: 600px) {
+  .status-pill {
+    white-space: normal;
+  }
+}
+
 /* Operations workbench */
 .workbench {
   color: var(--navy);
@@ -2008,15 +2337,14 @@ button:disabled {
   gap: 24px;
   margin-bottom: 26px;
 }
-.workbench-header h1 {
-  font-family: inherit;
-  font-size: clamp(26px, 3vw, 34px);
-  letter-spacing: -0.03em;
-  margin: 0 0 8px;
-}
+
 .workbench-header p {
   margin: 0;
   color: var(--muted);
+}
+.workbench-action-slot {
+  display: block;
+  min-height: 46px;
 }
 .workbench-readonly {
   max-width: 290px;
@@ -2048,6 +2376,48 @@ button:disabled {
 }
 .workbench-summary small {
   color: var(--muted);
+}
+.workbench-summary strong,
+.workbench-count-pending {
+  line-height: 1.15;
+}
+.workbench-skeleton .workbench-row {
+  min-height: 70px;
+}
+.skeleton-line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--stone-deep) 0%,
+    var(--stone) 50%,
+    var(--stone-deep) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-line + .skeleton-line {
+  margin-top: 10px;
+}
+.skeleton-line[data-width="wide"] {
+  width: min(320px, 70vw);
+}
+.skeleton-line[data-width="narrow"] {
+  width: min(200px, 45vw);
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
 }
 .workbench-status {
   font-size: 13px;
@@ -2102,6 +2472,7 @@ button:disabled {
 .workbench-pagination button,
 .workbench-controls select,
 .workbench-action {
+  font-size: 14px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
@@ -2129,23 +2500,31 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 22px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--line);
+  transition: background-color 120ms ease;
+}
+.workbench-row:hover {
+  background: #fbfaf7;
 }
 .workbench-row-content {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.workbench-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
 .workbench-kind {
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 .workbench-row h3 {
   font-family: inherit;
-  font-size: 16px;
-  margin: 5px 0;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
 }
 .workbench-row p {
   font-size: 14px;
@@ -2154,7 +2533,7 @@ button:disabled {
 .workbench-meta {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 9px;
+  margin-top: 4px;
 }
 .workbench-action {
   flex-shrink: 0;
@@ -2163,11 +2542,22 @@ button:disabled {
   text-decoration: none;
   font-size: 13px;
 }
+/* A side door to rows whose status could not be read, not a primary list. */
 .workbench-unclassified {
   display: flex;
   align-items: center;
-  padding: 10px 20px;
-  color: var(--navy);
+  gap: 6px;
+  margin: 12px 20px 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.workbench-unclassified:hover {
+  text-decoration: underline;
 }
 .workbench-empty {
   padding: 30px 22px;
@@ -2219,7 +2609,8 @@ button:disabled {
     padding: 12px 8px;
     font-size: 13px;
   }
-  .workbench-summary strong {
+  .workbench-summary strong,
+  .workbench-count-pending {
     font-size: 26px;
   }
   .workbench-summary small {
@@ -2245,9 +2636,6 @@ button:disabled {
 /* Facts the extraction step recorded, shown while a listing still needs
    information. Deliberately plain: this is read, not edited, and the editable
    form lives on the review screen once a version exists. */
-/* A literal gap, not var(--space-2): no --space-* token is defined anywhere in
-   this stylesheet, so the five existing var(--space-N) declarations resolve to
-   an invalid value and are dropped. Worth fixing, but not from here. */
 .extracted-facts {
   display: grid;
   gap: 0.75rem;
@@ -2526,11 +2914,13 @@ html {
   scroll-margin-top: 96px;
 }
 
-/* Figures: Georgia's zero reads as the letter O; counts use tabular sans. */
-.metric-value {
+/* Figures: counts use tabular sans so columns of numbers line up. */
+.metric-value,
+.workbench-summary strong {
   font-family: inherit;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 /* Work Queue: the title block fills the row so selectable and plain rows align. */
 .queue-item > div {

@@ -270,7 +270,7 @@ export function QueueClient() {
           )}
         </p>
       ) : null}
-      <p>
+      <p className="queue-summary-line">
         {localized(
           locale,
           `工作區商品：符合 ${data?.totalMatching ?? c.unavailable} 個 · 顯示第 ${data?.page ?? page} 頁`,

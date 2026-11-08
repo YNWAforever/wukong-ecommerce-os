@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../lib/locale-context", () => ({ useLocale: () => "en" }));
 vi.mock("./workspace-policy-panel", () => ({
   WorkspacePolicyPanel: () => null,
 }));
@@ -111,7 +112,7 @@ describe("AdminSettingsPanel", () => {
     });
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.includes("儲存 Save"),
+      (button) => button.textContent?.trim() === "Save",
     );
     expect(saveButton).not.toBeUndefined();
 
@@ -166,7 +167,7 @@ describe("AdminSettingsPanel", () => {
       Array.from(container.querySelectorAll("button")).find((b) =>
         b.textContent?.includes(text),
       )!;
-    await act(async () => button("儲存 Save").click());
+    await act(async () => button("Save").click());
     expect(input.value).toBe("#abcdef");
     await act(async () => button("Compare latest settings").click());
     expect(input.value).toBe("#abcdef");
