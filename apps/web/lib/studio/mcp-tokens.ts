@@ -4,7 +4,7 @@ import type { StudioApiToken } from "@wukong/db";
 import { z } from "zod";
 
 import { ApiError } from "../route-support";
-import { requireStudioSession, type StudioSessionDeps } from "./session.js";
+import { requireStudioSession, type StudioSessionDeps } from "./session";
 
 /**
  * Workspace-scoped hosted-MCP tokens (plan Task 12, spec §3.7).

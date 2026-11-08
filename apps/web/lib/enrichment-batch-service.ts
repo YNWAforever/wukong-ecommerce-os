@@ -13,7 +13,7 @@ import { listingRunKey } from "@wukong/jobs";
 import type { BulkFormContentGaps } from "@wukong/shopline";
 import { computeCurrentContentGaps } from "./current-content-gaps";
 
-import type { ListingPublisher } from "./listing-queue-runtime.js";
+import type { ListingPublisher } from "./listing-queue-runtime";
 import { ApiError } from "./route-support";
 import { acceptListingOperation } from "./listing-operation-service";
 import { MAX_ENRICHMENT_WAVE_SIZE } from "./enrichment-wave-limit";

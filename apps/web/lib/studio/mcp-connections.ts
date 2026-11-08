@@ -6,12 +6,12 @@ import { ApiError } from "../route-support";
 import {
   hasStudioMcpEncryptionKey,
   STUDIO_MCP_ENCRYPTION_KEY_ENV,
-} from "./mcp-credentials.js";
+} from "./mcp-credentials";
 import {
   requireStudioSession,
   studioNotFound,
   type StudioSessionDeps,
-} from "./session.js";
+} from "./session";
 
 /**
  * External MCP connection registry (plan Task 13, spec §3.8).

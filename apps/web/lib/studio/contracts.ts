@@ -3,7 +3,7 @@ import { z } from "zod";
 import type {
   StudioTraceStep,
   StudioTurnReply,
-} from "./types.js";
+} from "./types";
 
 /**
  * Strict HTTP request bodies and response types for the Studio conversation

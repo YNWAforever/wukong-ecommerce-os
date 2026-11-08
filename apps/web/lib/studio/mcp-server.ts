@@ -18,9 +18,9 @@ import {
 import {
   hashMcpTokenSecret,
   MCP_TOKEN_PLAINTEXT_PREFIX,
-} from "./mcp-tokens.js";
-import { buildStudioReadDeps } from "./read-deps.js";
-import { runStudioTool, type ToolRun } from "./tools.js";
+} from "./mcp-tokens";
+import { buildStudioReadDeps } from "./read-deps";
+import { runStudioTool, type ToolRun } from "./tools";
 
 /**
  * Wukong-hosted MCP server (plan Task 12, spec §3.7).

@@ -10,8 +10,8 @@ import {
 import {
   translatedLine,
   type TranslatedLine,
-} from "./types.js";
-import { readListingRunStatus } from "./tools/listing-run-status.js";
+} from "./types";
+import { readListingRunStatus } from "./tools/listing-run-status";
 
 /**
  * Typed internal tool plane for the deterministic Studio (plan Task 5).

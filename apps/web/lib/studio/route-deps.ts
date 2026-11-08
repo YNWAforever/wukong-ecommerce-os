@@ -3,8 +3,8 @@ import type { StudioSettings } from "@wukong/db";
 
 import type { SessionContextPort } from "../session-context-port";
 import { isStudioAiEnabled, isStudioEnabled } from "../studio-flags";
-import type { StudioDatabase } from "./session.js";
-import type { StudioServiceDeps } from "./turn-service.js";
+import type { StudioDatabase } from "./session";
+import type { StudioServiceDeps } from "./turn-service";
 
 /**
  * Route-handler dependency shape (plan Task 6).

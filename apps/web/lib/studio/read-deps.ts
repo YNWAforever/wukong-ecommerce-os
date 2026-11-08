@@ -12,7 +12,7 @@ import type {
   QualityEvidence,
   SourceAssetEvidence,
   StudioReadDeps,
-} from "./tools.js";
+} from "./tools";
 
 /**
  * Bind the deterministic Studio read surface to workspace-scoped repositories

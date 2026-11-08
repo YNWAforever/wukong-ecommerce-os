@@ -4,7 +4,7 @@ import {
   evidenceCheckSchema,
   evidenceCoverageSchema,
   translatedLineSchema,
-} from "./types.js";
+} from "./types";
 
 /**
  * Canonical payload of a merchant/SEO audit report artifact (plan Task 11).

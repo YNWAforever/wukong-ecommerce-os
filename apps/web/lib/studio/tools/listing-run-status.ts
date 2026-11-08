@@ -1,4 +1,4 @@
-import type { StudioReadDeps } from "../tools.js";
+import type { StudioReadDeps } from "../tools";
 
 /**
  * `listing.get_run_status` execution (plan Task 10).

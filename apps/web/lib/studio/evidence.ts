@@ -1,12 +1,12 @@
 import type { SkillDefinition, StudioRole, SourceKind } from "@wukong/core";
 
-import type { StudioTurnLimits } from "./turn-limits.js";
+import type { StudioTurnLimits } from "./turn-limits";
 import {
   runStudioTool,
   type ListingCopySnapshot,
   type StudioReadDeps,
   type ToolRun,
-} from "./tools.js";
+} from "./tools";
 import {
   coverageMap,
   coverageRecord,
@@ -17,11 +17,11 @@ import {
   type EvidenceSource,
   type NeedsInput,
   type StudioTraceStep,
-} from "./types.js";
+} from "./types";
 import {
   merchantAuditPayloadSchema,
   type MerchantAuditPayload,
-} from "./report-payload.js";
+} from "./report-payload";
 
 /**
  * Deterministic evidence assembly (plan Task 5, spec section 3.3).

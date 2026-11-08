@@ -45,33 +45,33 @@ import type {
   StudioRunResponse,
   StudioSendResult,
   StudioThreadResponse,
-} from "./contracts.js";
-import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts.js";
+} from "./contracts";
+import { STUDIO_DEFAULT_THREAD_TITLE } from "./contracts";
 import {
   composeDeterministicReply,
   composeNeedsInputReply,
-} from "./compose-deterministic.js";
-import { buildEvidencePack } from "./evidence.js";
+} from "./compose-deterministic";
+import { buildEvidencePack } from "./evidence";
 import {
   createCopyProposalOutput,
   createReportOutput,
   type CopyProposalPayload,
-} from "./output-service.js";
-import { buildStudioReadDeps } from "./read-deps.js";
-import { merchantAuditPayloadSchema } from "./report-payload.js";
-import type { ListingCopySnapshot } from "./tools.js";
+} from "./output-service";
+import { buildStudioReadDeps } from "./read-deps";
+import { merchantAuditPayloadSchema } from "./report-payload";
+import type { ListingCopySnapshot } from "./tools";
 import {
   createStudioTurnLimits,
   StudioTurnDeadlineError,
   StudioTurnStepBudgetError,
   type StudioTurnLimits,
-} from "./turn-limits.js";
+} from "./turn-limits";
 import {
   requireStudioSession,
   studioNotFound,
   type StudioDatabase,
   type StudioSessionDeps,
-} from "./session.js";
+} from "./session";
 import {
   translatedLine,
   turnReplySchema,
@@ -81,7 +81,7 @@ import {
   type StudioTurnReply,
   type TranslatedLine,
   type TranslatedValues,
-} from "./types.js";
+} from "./types";
 
 /**
  * The deterministic conversation turn service (plan Task 6 + Task 8 model

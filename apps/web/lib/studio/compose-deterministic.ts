@@ -9,7 +9,7 @@ import {
   type NeedsInput,
   type StudioTurnReply,
   type TranslatedValues,
-} from "./types.js";
+} from "./types";
 
 /**
  * Deterministic composer for the two pilot skills (plan Task 5).
