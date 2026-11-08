@@ -3,6 +3,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  CAPABILITY_REGISTRY,
+  type CapabilityState,
+} from "./capability-registry.js";
+
 // Reads the raw source of both files rather than importing/rendering them,
 // so this test's guarantee doesn't depend on any bundler/JSX-transform
 // detail: if either surface is ever changed to use a different or forked
@@ -31,5 +36,67 @@ describe("capability registry consistency", () => {
     expect(adminTabsSource).toMatch(RENDERS_PANEL);
     expect(systemMapSource).toMatch(IMPORTS_PANEL);
     expect(systemMapSource).toMatch(RENDERS_PANEL);
+  });
+});
+
+/**
+ * The five Conversation Studio entries, with the state the P1 foundation
+ * actually earns. `conversation-studio`, `conversation-studio-ai` and
+ * `wukong-mcp-server` are planned until their phases land; external MCP stays
+ * blocked (no allowlist/credential decision); report sign-off is planned.
+ */
+const STUDIO_CAPABILITIES = [
+  ["conversation-studio", "planned"],
+  ["conversation-studio-ai", "planned"],
+  ["wukong-mcp-server", "planned"],
+  ["external-mcp-connections", "blocked"],
+  ["studio-output-signoff", "planned"],
+] as const satisfies ReadonlyArray<readonly [string, CapabilityState]>;
+
+describe("conversation studio capability entries", () => {
+  it("registers every studio capability with its approved honest state", () => {
+    for (const [id, state] of STUDIO_CAPABILITIES) {
+      const entry = CAPABILITY_REGISTRY.find(
+        (candidate) => candidate.id === id,
+      );
+      expect(entry, `missing capability entry: ${id}`).toBeDefined();
+      expect(entry?.state, id).toBe(state);
+    }
+  });
+
+  it("gives every studio capability a bilingual label and description", () => {
+    for (const [id] of STUDIO_CAPABILITIES) {
+      const entry = CAPABILITY_REGISTRY.find(
+        (candidate) => candidate.id === id,
+      );
+      expect(entry?.label.trim().length, `${id} label`).toBeGreaterThan(0);
+      expect(entry?.labelZh.trim().length, `${id} labelZh`).toBeGreaterThan(0);
+      expect(
+        entry?.description.trim().length,
+        `${id} description`,
+      ).toBeGreaterThan(0);
+      expect(
+        entry?.descriptionZh.trim().length,
+        `${id} descriptionZh`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the appended studio entries frozen like the rest of the registry", () => {
+    for (const [id] of STUDIO_CAPABILITIES) {
+      const entry = CAPABILITY_REGISTRY.find(
+        (candidate) => candidate.id === id,
+      );
+      expect(Object.isFrozen(entry), id).toBe(true);
+    }
+  });
+
+  it("does not claim any studio capability is implemented yet", () => {
+    for (const [id] of STUDIO_CAPABILITIES) {
+      const entry = CAPABILITY_REGISTRY.find(
+        (candidate) => candidate.id === id,
+      );
+      expect(entry?.state).not.toBe("implemented");
+    }
   });
 });

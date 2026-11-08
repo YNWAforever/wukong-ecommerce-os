@@ -10,9 +10,45 @@ import {
   authSessionContext,
   requireWorkspaceRole,
 } from "../../lib/session-context";
+import { isStudioEnabled, isStudioFeatureFlagOn } from "../../lib/studio-flags";
 import { listUserWorkspaces } from "../../lib/workspace-selection";
-import { visibleNavItems } from "./shell-nav-items";
+import { visibleNavItems, withStudioNavItem } from "./shell-nav-items";
 import { resolveWorkspaceChrome } from "./workspace-chrome";
+
+/**
+ * Whether this workspace should see the Studio nav item.
+ *
+ * Two conditions, both server-only: the deployment flag AND the workspace
+ * `studio_workspace_settings` row (a missing row means disabled defaults).
+ * The read happens once per shell render, here rather than in the nav client
+ * component, so no flag value reaches the browser.
+ *
+ * A failure -- cold database, pool exhaustion, migration not applied -- fails
+ * closed to disabled: Studio must never break the app shell that every other
+ * route depends on. Only the error name is logged, matching
+ * `workspace-chrome.ts`, because a raw message can carry a connection string.
+ */
+async function readStudioEnabled(workspaceId: string): Promise<boolean> {
+  // Default-off shortcut: while the deployment flag is off (the shipped
+  // state), the shell must not open a workspace transaction just to learn
+  // that Studio is disabled. Exactly the env half of `isStudioEnabled`.
+  if (!isStudioFeatureFlagOn(process.env)) return false;
+  try {
+    const settings = await getDatabase().forWorkspace(workspaceId, (repos) =>
+      repos.studio.settings.get(),
+    );
+    return isStudioEnabled(process.env, settings);
+  } catch (error) {
+    console.info(
+      JSON.stringify({
+        event: "app_shell_studio_flag_read_fallback",
+        outcome: "failure",
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      }),
+    );
+    return false;
+  }
+}
 
 export default async function AppLayout({
   children,
@@ -24,6 +60,7 @@ export default async function AppLayout({
     (repos) => readWorkspaceAccount(repos, session),
   );
   const isAdmin = requireWorkspaceRole("admin", account.role);
+  const studioEnabled = await readStudioEnabled(session.workspaceId);
   const cookieStore = await cookies();
   const locale = resolveLocale(cookieStore.get(LOCALE_COOKIE_NAME)?.value);
   const { workspaceName, roleLabel } = await resolveWorkspaceChrome({
@@ -41,7 +78,10 @@ export default async function AppLayout({
       </a>
       <header className="topbar">
         <AppShellNav
-          navItems={visibleNavItems(account.role)}
+          navItems={withStudioNavItem(
+            visibleNavItems(account.role),
+            studioEnabled,
+          )}
           isAdmin={isAdmin}
           workspaceName={workspaceName}
           activeWorkspaceId={session?.workspaceId}

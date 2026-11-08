@@ -80,6 +80,61 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     descriptionZh: "以分頁檢視工作區完整作業歷史；指標另有明確時間範圍。",
     state: "pilot",
   },
+  // Conversation Studio entries. Added with the P1 foundation shell, before
+  // any deterministic answer, model turn or MCP transport exists, so every
+  // state below describes the source tree as it actually is today. The design
+  // spec's later phases each move one entry to "pilot"/"implemented" in the
+  // same change that delivers it.
+  {
+    id: "conversation-studio",
+    label: "Conversation Studio",
+    labelZh: "對話工作室",
+    description:
+      "The flagged Studio shell, navigation and copy exist. Records answers, execution traces, threads and the home overview are not implemented yet.",
+    descriptionZh:
+      "已建立受功能旗標控制的工作室外殼、導覽及文案；記錄回答、執行步驟、對話及概況尚未實作。",
+    state: "planned",
+  },
+  {
+    id: "conversation-studio-ai",
+    label: "Studio live analysis",
+    labelZh: "工作室即時分析",
+    description:
+      "AI suggestion cards are not available. Live analysis needs a workspace model and budget configured separately, and it never gains write authority.",
+    descriptionZh:
+      "AI 建議卡尚未提供；即時分析需要另行設定的工作區模型及預算，且不會取得寫入權限。",
+    state: "planned",
+  },
+  {
+    id: "wukong-mcp-server",
+    label: "Wukong-hosted MCP server",
+    labelZh: "Wukong 託管 MCP 伺服器",
+    description:
+      "Hosted MCP tokens and tool exposure are not implemented. No external caller can reach workspace records yet.",
+    descriptionZh:
+      "託管 MCP 權杖及工具曝光尚未實作；外部呼叫者目前無法存取工作區記錄。",
+    state: "planned",
+  },
+  {
+    id: "external-mcp-connections",
+    label: "External MCP connections",
+    labelZh: "外部 MCP 連線",
+    description:
+      "Disabled by default. No user-supplied endpoint or credential is accepted, and every connection stays blocked until an allowlist and credential-ownership decision exists.",
+    descriptionZh:
+      "預設停用。不接受使用者提供的端點或憑證；在完成允許清單及憑證擁有權決定前，所有連線維持封鎖。",
+    state: "blocked",
+  },
+  {
+    id: "studio-output-signoff",
+    label: "Studio output sign-off",
+    labelZh: "工作室輸出簽核",
+    description:
+      "Report sign-off is not implemented. Studio never approves or publishes inside a conversation; any such action deep-links to the existing signed-off screens.",
+    descriptionZh:
+      "報告簽核尚未實作。工作室不會在對話中批准或發佈；相關動作只會連到現有簽核畫面。",
+    state: "planned",
+  },
 ];
 
 // A runtime backstop alongside the type-level `readonly` above --
