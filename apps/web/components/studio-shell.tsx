@@ -17,10 +17,9 @@ import styles from "./studio.module.css";
  * The Conversation Studio shell: a rail plus the page content slot.
  *
  * The rail carries the workspace name, a real "New conversation" action, the
- * four destinations this build implements, and the recent-thread list the
- * layout reads server-side. Settings is not a link because `/studio/settings`
- * does not exist yet: it renders as an explicitly unavailable item rather than
- * a destination that 404s.
+ * destinations this build implements, and the recent-thread list the layout
+ * reads server-side. Settings links to `/studio/settings`, which itself gates
+ * on administrator access and answers 404 to everyone else.
  *
  * Creating a conversation is a client action because it is the one thing on the
  * rail that mutates the server. It goes through the shared session hook, so the
@@ -136,20 +135,15 @@ export function StudioShell({
               </li>
             ))}
             <li>
-              <span
+              <Link
+                href="/studio/settings"
                 className={styles["studio-rail-link"]}
-                aria-disabled="true"
-                data-unavailable="true"
-                title={studioCopy(locale, "studio.rail.settingsUnavailable")}
               >
                 {studioCopy(locale, "studio.rail.settings")}
-              </span>
+              </Link>
             </li>
           </ul>
         </nav>
-        <p className={styles["studio-rail-note"]}>
-          {studioCopy(locale, "studio.rail.settingsUnavailable")}
-        </p>
 
         <section
           className={styles["studio-rail-recent"]}

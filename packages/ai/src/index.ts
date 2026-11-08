@@ -229,3 +229,21 @@ export type {
   StudioProposalField,
   StudioProposeInput,
 } from "./studio-model.js";
+
+export {
+  approvedEndpoint,
+  canonicalJson,
+  createMcpClient,
+  MCP_CLIENT_DEADLINE_MS,
+  MCP_CLIENT_MAX_RESPONSE_BYTES,
+  MCP_CLIENT_PROTOCOL_VERSION,
+  schemaHash,
+} from "./mcp-client.js";
+export type {
+  ExternalMcpTool,
+  McpClient,
+  McpClientDeps,
+  McpClientStatus,
+  McpToolCallResult,
+  McpToolListResult,
+} from "./mcp-client.js";

@@ -74,7 +74,7 @@ afterEach(async () => {
 });
 
 describe("StudioShell", () => {
-  it("renders the workspace name, the four implemented destinations and the page slot", () => {
+  it("renders the workspace name, the implemented destinations, the settings destination and the page slot", () => {
     const html = render();
 
     expect(html).toContain("Opak Cellar");
@@ -84,14 +84,13 @@ describe("StudioShell", () => {
       "/studio/threads",
       "/studio/outputs",
       "/studio/connections",
+      "/studio/settings",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }
-    // Settings is not a destination in this build: it renders as unavailable
-    // text, never as a link that 404s.
+    // Settings is a real destination now; the page itself gates on admin.
     expect(html).toContain("Settings");
-    expect(html).not.toContain('href="/studio/settings"');
-    expect(html).toContain("Settings are not available yet.");
+    expect(html).not.toContain("Settings are not available yet.");
   });
 
   it("renders recent conversations from props with thread links", () => {
