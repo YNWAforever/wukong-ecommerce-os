@@ -133,3 +133,5 @@ export * from "./wine-evidence-grounding.js";
 export * from "./wine-copy-snapshot.js";
 
 export * from "./wine-identity-selection.js";
+
+export * from "./studio/index.js";
