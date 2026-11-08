@@ -9,7 +9,10 @@ import {
   studioServiceDeps,
   type StudioRouteDeps,
 } from "../../../../lib/studio/route-deps";
-import { createMcpTokenBodySchema, createMcpTokenService } from "../../../../lib/studio/mcp-tokens";
+import {
+  createMcpTokenBodySchema,
+  createMcpTokenService,
+} from "../../../../lib/studio/mcp-tokens";
 
 /**
  * Workspace MCP token administration (plan Task 12).

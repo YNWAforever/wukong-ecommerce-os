@@ -23,10 +23,12 @@ const ON_ENV = {
 
 const NOW = new Date("2026-11-08T10:00:00.000Z");
 
-function fixture(input: {
-  options?: FakeStudioOptions;
-  env?: NodeJS.ProcessEnv;
-} = {}) {
+function fixture(
+  input: {
+    options?: FakeStudioOptions;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
   const fake = createFakeStudio({
     ...(input.options ?? {}),
     settings: { workspaceId: "ws_test", enabled: true },
@@ -44,7 +46,8 @@ function requestContext(id: string, runId: string) {
   return { params: Promise.resolve({ id, runId }) };
 }
 
-const request = () => new Request("http://localhost/api/studio/threads/x/runs/y");
+const request = () =>
+  new Request("http://localhost/api/studio/threads/x/runs/y");
 
 describe("GET /api/studio/threads/[id]/runs/[runId]", () => {
   it("returns the run and ordered trace events", async () => {
@@ -90,7 +93,10 @@ describe("GET /api/studio/threads/[id]/runs/[runId]", () => {
         ],
       },
     });
-    const response = await handler(request(), requestContext(thread.id, run.id));
+    const response = await handler(
+      request(),
+      requestContext(thread.id, run.id),
+    );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       runId: string;
@@ -152,7 +158,11 @@ describe("GET /api/studio/threads/[id]/runs/[runId]", () => {
 
   it("returns 401 without a session", async () => {
     const handler = createStudioRunHandler({
-      sessionContext: { async resolve() { return null; } },
+      sessionContext: {
+        async resolve() {
+          return null;
+        },
+      },
       getDatabase: () => {
         throw new Error("must stay lazy");
       },

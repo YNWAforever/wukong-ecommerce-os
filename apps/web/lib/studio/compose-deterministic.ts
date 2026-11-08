@@ -19,10 +19,7 @@ import {
  * values come from the evidence pack only.
  */
 
-function checkValues(
-  pack: EvidencePack,
-  key: string,
-): TranslatedValues | null {
+function checkValues(pack: EvidencePack, key: string): TranslatedValues | null {
   const check = pack.checks.find((entry) => entry.key === key);
   return check?.values ?? null;
 }
@@ -94,8 +91,9 @@ export function composeDeterministicReply(input: {
     const gapChecks = pack.checks.filter(
       (check) => check.key === "studio.check.content_gap",
     );
-    const blocked = gapChecks.filter((check) => check.values.blocking === true)
-      .length;
+    const blocked = gapChecks.filter(
+      (check) => check.values.blocking === true,
+    ).length;
     const quality = checkValues(pack, "studio.check.quality_summary");
     sections.push(
       translatedLine("studio.answer.gap_review", {
@@ -141,7 +139,10 @@ export function composeDeterministicReply(input: {
       }),
     );
   } else if (skill.key === "merchant.audit") {
-    const listingCounts = checkValues(pack, "studio.check.audit_listing_counts");
+    const listingCounts = checkValues(
+      pack,
+      "studio.check.audit_listing_counts",
+    );
     const quality = checkValues(pack, "studio.check.audit_quality");
     const exports = checkValues(pack, "studio.check.audit_exports");
     sections.push(

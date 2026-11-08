@@ -200,9 +200,7 @@ describe("StudioLayout gate", () => {
 
     expect(html).toContain("Synthetic recent conversation");
     expect(html).toContain('href="/studio/t/thread-1"');
-    expect(html).toContain(
-      "只顯示最近更新的對話。",
-    );
+    expect(html).toContain("只顯示最近更新的對話。");
   });
 
   it("fails closed to the empty rail when the threads read throws, logging no content", async () => {
@@ -218,9 +216,7 @@ describe("StudioLayout gate", () => {
     expect(html).not.toContain("connection string");
     const logged = info.mock.calls.map((call) => String(call[0]));
     expect(
-      logged.some((line) =>
-        line.includes("studio_layout_threads_read_failed"),
-      ),
+      logged.some((line) => line.includes("studio_layout_threads_read_failed")),
     ).toBe(true);
     for (const line of logged) {
       expect(line).not.toContain("connection string");

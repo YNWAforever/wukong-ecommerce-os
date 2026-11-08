@@ -151,9 +151,7 @@ export type McpConnectionServiceDeps = StudioSessionDeps & {
   now?: () => Date;
 };
 
-export function createMcpConnectionService(
-  deps: McpConnectionServiceDeps,
-) {
+export function createMcpConnectionService(deps: McpConnectionServiceDeps) {
   const environment = (): NodeJS.ProcessEnv => deps.env ?? process.env;
   const database = () => deps.getDatabase();
 
@@ -193,9 +191,8 @@ export function createMcpConnectionService(
   return {
     async listConnections(): Promise<McpConnectionsSnapshot> {
       const { session, settings } = await requireStudioSession(deps, "admin");
-      const rows = await database().forWorkspace(
-        session.workspaceId,
-        (repos) => repos.studio.mcpConnections.list(),
+      const rows = await database().forWorkspace(session.workspaceId, (repos) =>
+        repos.studio.mcpConnections.list(),
       );
       return snapshotFor(rows.map(connectionView), settings, environment());
     },
@@ -203,9 +200,8 @@ export function createMcpConnectionService(
     async getConnection(connectionId: string): Promise<McpConnectionView> {
       const { session } = await requireStudioSession(deps, "admin");
       if (!UUID.safeParse(connectionId).success) throw studioNotFound();
-      const row = await database().forWorkspace(
-        session.workspaceId,
-        (repos) => repos.studio.mcpConnections.get(connectionId),
+      const row = await database().forWorkspace(session.workspaceId, (repos) =>
+        repos.studio.mcpConnections.get(connectionId),
       );
       if (!row) throw studioNotFound();
       return connectionView(row);
@@ -256,9 +252,7 @@ export function createMcpConnectionService(
      * global flag, the workspace row or the encryption key is missing, and
      * refuses a connection without a pinned schema hash for every tool.
      */
-    async approveConnection(
-      connectionId: string,
-    ): Promise<McpConnectionView> {
+    async approveConnection(connectionId: string): Promise<McpConnectionView> {
       const { session, settings } = await requireStudioSession(deps, "admin");
       if (!UUID.safeParse(connectionId).success) throw studioNotFound();
       const env = environment();
@@ -316,9 +310,7 @@ export function createMcpConnectionService(
       return connectionView(approved);
     },
 
-    async disableConnection(
-      connectionId: string,
-    ): Promise<McpConnectionView> {
+    async disableConnection(connectionId: string): Promise<McpConnectionView> {
       const { session } = await requireStudioSession(deps, "admin");
       if (!UUID.safeParse(connectionId).success) throw studioNotFound();
       const disabled = await database().forWorkspace(

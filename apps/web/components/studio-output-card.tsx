@@ -70,9 +70,7 @@ const studioOutputVersionSchema = z.object({
   createdBy: z.string().max(200),
   createdAt: z.string().max(64),
 });
-export type StudioOutputVersionView = z.infer<
-  typeof studioOutputVersionSchema
->;
+export type StudioOutputVersionView = z.infer<typeof studioOutputVersionSchema>;
 
 export const studioOutputDetailSchema = z.object({
   output: studioOutputViewSchema,
@@ -277,7 +275,9 @@ export function StudioOutputCard({
           action,
         );
         if (result.status !== 200) {
-          setActionError(outputActionErrorKey({ action, status: result.status }));
+          setActionError(
+            outputActionErrorKey({ action, status: result.status }),
+          );
           return;
         }
         const parsed = studioOutputActionResultSchema.safeParse(result.body);
@@ -437,11 +437,7 @@ export function StudioOutputCard({
               type="button"
               className={styles["studio-output-action"]}
               onClick={() => void runAction("sign_off")}
-              disabled={
-                busy ||
-                !canSignOff ||
-                detail.output.status !== "saved"
-              }
+              disabled={busy || !canSignOff || detail.output.status !== "saved"}
               title={
                 !canSignOff
                   ? studioCopy(locale, "studio.outputs.signOffRole")

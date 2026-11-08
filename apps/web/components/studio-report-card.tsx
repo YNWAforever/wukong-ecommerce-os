@@ -109,14 +109,20 @@ export function StudioReportCard({
             <table className={styles["studio-report-table"]}>
               <thead>
                 <tr>
-                  <th scope="col">{studioCopy(locale, "studio.report.status")}</th>
-                  <th scope="col">{studioCopy(locale, "studio.report.count")}</th>
+                  <th scope="col">
+                    {studioCopy(locale, "studio.report.status")}
+                  </th>
+                  <th scope="col">
+                    {studioCopy(locale, "studio.report.count")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {countRows(report.listings).map((row) => (
                   <tr key={row.status} data-listing-status={row.status}>
-                    <td>{STATUS_LIKE.test(row.status) ? row.status : "unknown"}</td>
+                    <td>
+                      {STATUS_LIKE.test(row.status) ? row.status : "unknown"}
+                    </td>
                     <td>{row.count}</td>
                   </tr>
                 ))}
@@ -166,9 +172,15 @@ export function StudioReportCard({
             <table className={styles["studio-report-table"]}>
               <thead>
                 <tr>
-                  <th scope="col">{studioCopy(locale, "studio.report.attempt")}</th>
-                  <th scope="col">{studioCopy(locale, "studio.report.status")}</th>
-                  <th scope="col">{studioCopy(locale, "studio.report.rows")}</th>
+                  <th scope="col">
+                    {studioCopy(locale, "studio.report.attempt")}
+                  </th>
+                  <th scope="col">
+                    {studioCopy(locale, "studio.report.status")}
+                  </th>
+                  <th scope="col">
+                    {studioCopy(locale, "studio.report.rows")}
+                  </th>
                   <th scope="col">
                     {studioCopy(locale, "studio.report.createdAt")}
                   </th>

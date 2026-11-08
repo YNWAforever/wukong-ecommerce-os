@@ -122,7 +122,11 @@ describe("GET /api/studio/threads/[id]", () => {
 
   it("returns 401 without a session", async () => {
     const handler = createStudioThreadHandler({
-      sessionContext: { async resolve() { return null; } },
+      sessionContext: {
+        async resolve() {
+          return null;
+        },
+      },
       getDatabase: () => {
         throw new Error("must stay lazy");
       },

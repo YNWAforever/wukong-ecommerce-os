@@ -79,7 +79,8 @@ export function StudioComposer({
 
   let reasonKey: StudioCopyKey | null = null;
   if (disabled) reasonKey = disabledReason ?? "studio.error.forbidden";
-  else if (sendDisabled) reasonKey = sendDisabledReason ?? "studio.error.forbidden";
+  else if (sendDisabled)
+    reasonKey = sendDisabledReason ?? "studio.error.forbidden";
   else if (sending) reasonKey = "studio.composer.working";
   else if (trimmed.length === 0) reasonKey = "studio.composer.empty";
   else if (tooLong) reasonKey = "studio.composer.tooLong";

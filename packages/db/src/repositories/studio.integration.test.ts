@@ -60,7 +60,9 @@ async function reset(): Promise<void> {
 
 function studioRepositories<T>(
   workspaceId: string,
-  work: (repos: Parameters<Parameters<Database["forWorkspace"]>[1]>[0]) => Promise<T>,
+  work: (
+    repos: Parameters<Parameters<Database["forWorkspace"]>[1]>[0],
+  ) => Promise<T>,
 ): Promise<T> {
   return db!.forWorkspace(workspaceId, work);
 }
@@ -126,10 +128,7 @@ describe.skipIf(!enabled)("studio repositories", () => {
       ),
     );
     expect(saved.enabled).toBe(true);
-    expect(saved.allowedSkills).toEqual([
-      "catalog.find",
-      "catalog.gap_review",
-    ]);
+    expect(saved.allowedSkills).toEqual(["catalog.find", "catalog.gap_review"]);
     expect(saved.ai?.provider).toBe("opencode-go");
     expect(saved.updatedBy).toBe("admin-a");
   });
@@ -176,28 +175,31 @@ describe.skipIf(!enabled)("studio repositories", () => {
   });
 
   it("serialises concurrent run events into one ordered trace", async () => {
-    const { run, traced } = await db!.forWorkspace(WORKSPACE_A, async (repos) => {
-      const thread = await repos.studio.threads.create({
-        createdBy: "actor-a",
-        title: "Trace thread",
-      });
-      const message = await repos.studio.messages.append({
-        threadId: thread.id,
-        role: "operator",
-        content: { text: "start" },
-        clientMessageId: "trace-1",
-        createdBy: "actor-a",
-      });
-      const run = await repos.studio.runs.create({
-        threadId: thread.id,
-        triggerMessageId: message.message.id,
-        skillKey: "catalog.find",
-        skillVersion: "1.0.0",
-        idempotencyKey: "run-trace-1",
-        promptVersions: { planner: "1.0.0" },
-      });
-      return { run: run.run, traced: true };
-    });
+    const { run, traced } = await db!.forWorkspace(
+      WORKSPACE_A,
+      async (repos) => {
+        const thread = await repos.studio.threads.create({
+          createdBy: "actor-a",
+          title: "Trace thread",
+        });
+        const message = await repos.studio.messages.append({
+          threadId: thread.id,
+          role: "operator",
+          content: { text: "start" },
+          clientMessageId: "trace-1",
+          createdBy: "actor-a",
+        });
+        const run = await repos.studio.runs.create({
+          threadId: thread.id,
+          triggerMessageId: message.message.id,
+          skillKey: "catalog.find",
+          skillVersion: "1.0.0",
+          idempotencyKey: "run-trace-1",
+          promptVersions: { planner: "1.0.0" },
+        });
+        return { run: run.run, traced: true };
+      },
+    );
 
     const appendEvent = (state: string) =>
       db!.forWorkspace(WORKSPACE_A, (repos) =>

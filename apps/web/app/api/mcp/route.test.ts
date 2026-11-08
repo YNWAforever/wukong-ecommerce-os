@@ -32,9 +32,7 @@ function fixture(env: NodeJS.ProcessEnv = ON_ENV) {
     apiTokens: [token],
   });
   const handlers = createMcpHandlers({
-    getDatabase: fakeGetDatabase(fake.repos, [], [
-      { hash: TOKEN_HASH, token },
-    ]),
+    getDatabase: fakeGetDatabase(fake.repos, [], [{ hash: TOKEN_HASH, token }]),
     isMcpServerEnabled: isStudioMcpServerEnabled,
     env,
   });
@@ -84,7 +82,9 @@ describe("POST /api/mcp", () => {
 
   it("rejects GET with 405", async () => {
     const { handlers } = fixture();
-    const response = await handlers.GET(rpcRequest(undefined, { method: "GET" }));
+    const response = await handlers.GET(
+      rpcRequest(undefined, { method: "GET" }),
+    );
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("POST");
   });

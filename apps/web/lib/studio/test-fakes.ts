@@ -26,9 +26,7 @@ import type {
  */
 
 export type ReviewSnapshot = NonNullable<
-  Awaited<
-    ReturnType<WorkspaceRepositories["listings"]["getReviewSnapshot"]>
-  >
+  Awaited<ReturnType<WorkspaceRepositories["listings"]["getReviewSnapshot"]>>
 >;
 export type CatalogPage = Awaited<
   ReturnType<WorkspaceRepositories["reads"]["catalogPage"]>
@@ -157,7 +155,8 @@ export function reviewSnapshot(input: {
     listing: {
       id: input.listingId,
       workspaceId,
-      status: (input.status ?? "in_review") as ReviewSnapshot["listing"]["status"],
+      status: (input.status ??
+        "in_review") as ReviewSnapshot["listing"]["status"],
       target: "shopline",
       note: null,
       activeVersionId: activeVersion?.id ?? null,
@@ -253,10 +252,7 @@ export type FakeStudioOptions = {
     listingId: string | null;
   }>;
   /** Listing-pipeline operations keyed by run id, for run-status reads. */
-  operations?: Record<
-    string,
-    { listingId: string; executionState: string }
-  >;
+  operations?: Record<string, { listingId: string; executionState: string }>;
   /** Recent export attempts for the merchant audit report (plan Task 11). */
   exportAttempts?: Array<{
     id: string;
@@ -424,9 +420,7 @@ export function fakeApiToken(
  * are implemented; everything else stays absent because the service may not
  * touch it.
  */
-export function createFakeStudio(
-  options: FakeStudioOptions = {},
-): FakeStudio {
+export function createFakeStudio(options: FakeStudioOptions = {}): FakeStudio {
   const settings: StudioSettings = {
     ...DEFAULT_SETTINGS,
     ...options.settings,
@@ -438,7 +432,9 @@ export function createFakeStudio(
     runs: [...(options.runs ?? [])],
     runEvents: [...(options.runEvents ?? [])],
     budgets: [],
-    memberships: [...(options.memberships ?? [{ userId: "actor_ops", role: "admin" }])],
+    memberships: [
+      ...(options.memberships ?? [{ userId: "actor_ops", role: "admin" }]),
+    ],
     apiTokens: [...(options.apiTokens ?? [])],
     mcpCalls: [...(options.mcpCalls ?? [])],
     mcpConnections: [...(options.mcpConnections ?? [])],
@@ -546,8 +542,7 @@ export function createFakeStudio(
           const sequence =
             state.messages
               .filter((message) => message.threadId === input.threadId)
-              .reduce((max, message) => Math.max(max, message.sequence), 0) +
-            1;
+              .reduce((max, message) => Math.max(max, message.sequence), 0) + 1;
           const message = fakeMessage({
             threadId: input.threadId,
             role: input.role,
@@ -769,7 +764,10 @@ export function createFakeStudio(
           state.writes.push("outputs.list");
           const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
           return [...state.outputs]
-            .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+            .sort(
+              (left, right) =>
+                right.createdAt.getTime() - left.createdAt.getTime(),
+            )
             .slice(0, limit);
         },
         versions: async (outputId: string) => {
@@ -801,8 +799,7 @@ export function createFakeStudio(
           const existing = state.budgets.find(
             (budget) => budget.runId === input.runId,
           );
-          if (existing)
-            return { accepted: true, state: existing.state };
+          if (existing) return { accepted: true, state: existing.state };
           const committed = state.budgets
             .filter((budget) =>
               ["reserved", "settled", "uncertain"].includes(budget.state),
@@ -812,7 +809,10 @@ export function createFakeStudio(
                 sum + Number(budget.settledUsd ?? budget.reservedUsd),
               0,
             );
-          if (committed + Number(input.reservedUsd) > Number(input.workspaceCapUsd)) {
+          if (
+            committed + Number(input.reservedUsd) >
+            Number(input.workspaceCapUsd)
+          ) {
             return { accepted: false, state: "blocked" as const };
           }
           state.budgets.push({
@@ -904,7 +904,8 @@ export function createFakeStudio(
         touch: async (id: string) => {
           state.writes.push("apiTokens.touch");
           const token = state.apiTokens.find((entry) => entry.id === id);
-          if (token) token.lastUsedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          if (token)
+            token.lastUsedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
         },
         list: async (input: { limit?: number } = {}) => {
           state.writes.push("apiTokens.list");
@@ -1005,7 +1006,9 @@ export function createFakeStudio(
               FIXED_NOW.getTime() + sequenceCounter,
             );
           }
-          connection.updatedAt = new Date(FIXED_NOW.getTime() + sequenceCounter);
+          connection.updatedAt = new Date(
+            FIXED_NOW.getTime() + sequenceCounter,
+          );
           return connection;
         },
       },

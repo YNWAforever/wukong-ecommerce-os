@@ -14,8 +14,9 @@ vi.mock("next/navigation", () => ({
 
 import { StudioShell } from "./studio-shell";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const threads = [
   {
@@ -46,7 +47,9 @@ function render(overrides: Partial<Parameters<typeof StudioShell>[0]> = {}) {
 
 const roots: ReturnType<typeof createRoot>[] = [];
 
-async function mount(overrides: Partial<Parameters<typeof StudioShell>[0]> = {}) {
+async function mount(
+  overrides: Partial<Parameters<typeof StudioShell>[0]> = {},
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -100,7 +103,9 @@ describe("StudioShell", () => {
     expect(html).toContain("Synthetic second conversation");
     expect(html).toContain('href="/studio/t/thread-1"');
     expect(html).toContain('href="/studio/t/thread-2"');
-    expect(html).toContain("Only the most recently updated conversations are shown.");
+    expect(html).toContain(
+      "Only the most recently updated conversations are shown.",
+    );
     expect(html).toContain("View all conversations");
   });
 
@@ -123,9 +128,11 @@ describe("StudioShell", () => {
   });
 
   it("creates a conversation and navigates to it from the rail action", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(
-      async () => Response.json({ threadId: "thread-new" }, { status: 201 }),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json({ threadId: "thread-new" }, { status: 201 }),
+      );
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount({ canCreateThread: true });
@@ -148,7 +155,11 @@ describe("StudioShell", () => {
 
   it("renders zh-Hant rail copy for the zh-Hant locale", () => {
     const html = renderToStaticMarkup(
-      <StudioShell locale="zh-Hant" workspaceName="Opak Cellar" recentThreads={[]}>
+      <StudioShell
+        locale="zh-Hant"
+        workspaceName="Opak Cellar"
+        recentThreads={[]}
+      >
         <p>page content</p>
       </StudioShell>,
     );

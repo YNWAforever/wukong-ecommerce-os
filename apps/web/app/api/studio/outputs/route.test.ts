@@ -84,7 +84,9 @@ describe("GET /api/studio/outputs", () => {
 
   it("returns an honest empty list and 404 when Studio is disabled", async () => {
     const empty = fixture({});
-    const body = (await (await empty.handlers(new Request("http://x"))).json()) as {
+    const body = (await (
+      await empty.handlers(new Request("http://x"))
+    ).json()) as {
       items: unknown[];
     };
     expect(body.items).toEqual([]);

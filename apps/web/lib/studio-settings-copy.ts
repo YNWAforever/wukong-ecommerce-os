@@ -197,7 +197,10 @@ export const STUDIO_SETTINGS_COPY = {
   ],
 
   // -- tool catalogue -------------------------------------------------------
-  "studio.settings.tools.title": ["工具目錄（唯讀）", "Tool catalogue (read-only)"],
+  "studio.settings.tools.title": [
+    "工具目錄（唯讀）",
+    "Tool catalogue (read-only)",
+  ],
   "studio.settings.tools.lede": [
     "已審核的內部工具清單；派送工具不會透過 MCP 暴露。",
     "The reviewed internal tool list; dispatch tools are not exposed over MCP.",

@@ -59,7 +59,9 @@ function catalogPageFake(input: {
   };
 }
 
-function item(overrides: Record<string, unknown>): CatalogPage["items"][number] {
+function item(
+  overrides: Record<string, unknown>,
+): CatalogPage["items"][number] {
   return {
     sourceType: "platform",
     id: "product-1",
@@ -240,16 +242,17 @@ describe("studio read deps: quality and jobs", () => {
   it("maps pipeline runs to ISO job evidence", async () => {
     const repos = {
       pipelineRuns: {
-        listForWorkspace: async (limit: number) => [
-          {
-            id: "job-1",
-            listingId: "listing-1",
-            versionId: null,
-            status: "failed" as const,
-            errorCode: "provider_error",
-            createdAt: NOW,
-          },
-        ].slice(0, limit),
+        listForWorkspace: async (limit: number) =>
+          [
+            {
+              id: "job-1",
+              listingId: "listing-1",
+              versionId: null,
+              status: "failed" as const,
+              errorCode: "provider_error",
+              createdAt: NOW,
+            },
+          ].slice(0, limit),
       },
     } as unknown as WorkspaceRepositories;
     const result = await buildStudioReadDeps(repos).listJobs(5);
@@ -309,9 +312,7 @@ describe("studio read deps: listing gaps", () => {
       tags: ["Margaux 2019"],
     });
     const result = await buildStudioReadDeps(
-      gapsRepos(
-        reviewSnapshot({ listingId: "listing-1", content, flags: [] }),
-      ),
+      gapsRepos(reviewSnapshot({ listingId: "listing-1", content, flags: [] })),
     ).getListingGaps("listing-1");
     expect(result?.gaps.map((gap) => gap.code)).toEqual([
       "content.untranslated_name",
@@ -373,6 +374,8 @@ describe("copy snapshot mapping", () => {
         })),
       },
     } as unknown as WorkspaceRepositories;
-    expect(await buildStudioReadDeps(repos).getListingCopy(listingId)).toBeNull();
+    expect(
+      await buildStudioReadDeps(repos).getListingCopy(listingId),
+    ).toBeNull();
   });
 });

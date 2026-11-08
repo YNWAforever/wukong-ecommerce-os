@@ -35,9 +35,7 @@ const PAYLOAD_DIGEST = createHash("sha256")
   .update(canonicalJson(REPORT_PAYLOAD))
   .digest("hex");
 
-function outputRow(
-  overrides: Partial<StudioOutput> = {},
-): StudioOutput {
+function outputRow(overrides: Partial<StudioOutput> = {}): StudioOutput {
   return {
     id: OUTPUT_ID,
     workspaceId: WORKSPACE,
@@ -72,10 +70,12 @@ function versionRow(
   };
 }
 
-function fixture(input: {
-  options?: FakeStudioOptions;
-  env?: NodeJS.ProcessEnv;
-} = {}) {
+function fixture(
+  input: {
+    options?: FakeStudioOptions;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
   const fake = createFakeStudio({
     settings: { workspaceId: WORKSPACE, enabled: true },
     outputs: [outputRow()],
@@ -135,11 +135,15 @@ describe("GET /api/studio/outputs/[id]/export", () => {
     const { handler } = fixture({
       options: { outputs: [outputRow({ status: "signed_off" })] },
     });
-    expect((await handler(request(PAYLOAD_DIGEST), context())).status).toBe(200);
+    expect((await handler(request(PAYLOAD_DIGEST), context())).status).toBe(
+      200,
+    );
   });
 
   it("requires the artifact to be saved or signed off", async () => {
-    const draft = fixture({ options: { outputs: [outputRow({ status: "draft" })] } });
+    const draft = fixture({
+      options: { outputs: [outputRow({ status: "draft" })] },
+    });
     const response = await draft.handler(request(PAYLOAD_DIGEST), context());
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: "output_not_saved" });

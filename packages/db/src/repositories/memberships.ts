@@ -140,7 +140,10 @@ export function createMembershipRepository(
   return {
     async findActiveByUserId(userId, requestedWorkspaceId) {
       scope.assertOpen();
-      if (requestedWorkspaceId !== undefined && requestedWorkspaceId !== workspaceId)
+      if (
+        requestedWorkspaceId !== undefined &&
+        requestedWorkspaceId !== workspaceId
+      )
         return null;
       const [row] = await transaction
         .select({ userId: memberships.userId, role: memberships.role })

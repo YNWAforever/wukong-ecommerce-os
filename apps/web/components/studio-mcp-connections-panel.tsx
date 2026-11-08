@@ -29,22 +29,22 @@ export type StudioMcpConnectionsPanelProps = {
   snapshot: McpConnectionsSnapshot;
 };
 
-const STATUS_COPY: Record<
-  McpConnectionView["status"],
-  StudioSettingsCopyKey
-> = {
-  draft: "studio.settings.external.status.draft",
-  approved: "studio.settings.external.status.approved",
-  disabled: "studio.settings.external.status.disabled",
-};
+const STATUS_COPY: Record<McpConnectionView["status"], StudioSettingsCopyKey> =
+  {
+    draft: "studio.settings.external.status.draft",
+    approved: "studio.settings.external.status.approved",
+    disabled: "studio.settings.external.status.disabled",
+  };
 
 function parseAllowlist(value: string): string[] {
-  return [...new Set(
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0),
-  )];
+  return [
+    ...new Set(
+      value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    ),
+  ];
 }
 
 function parseSchemaHashes(
@@ -311,7 +311,10 @@ export function StudioMcpConnectionsPanel({
       ) : (
         <ul className={styles["studio-connection-list"]}>
           {items.map((item) => (
-            <li key={item.connectionId} className={styles["studio-connection-card"]}>
+            <li
+              key={item.connectionId}
+              className={styles["studio-connection-card"]}
+            >
               <div className={styles["studio-section-header"]}>
                 <h3>{item.label}</h3>
                 <span className={styles["studio-badge"]}>

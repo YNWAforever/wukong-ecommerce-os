@@ -40,7 +40,11 @@ function payload(overrides: Record<string, unknown> = {}) {
         state: "ok",
       },
     ],
-    coverage: { catalog: "present", quality: "present", export_attempt: "present" },
+    coverage: {
+      catalog: "present",
+      quality: "present",
+      export_attempt: "present",
+    },
     limitations: [{ key: "studio.limit.audit_period_unset", values: {} }],
     ...overrides,
   };
@@ -93,7 +97,9 @@ describe("StudioReportCard", () => {
     const html = render("en", {
       payload: payload({ listings: null, quality: null, exports: null }),
     });
-    expect((html.match(/This section could not be read/g) ?? []).length).toBe(3);
+    expect((html.match(/This section could not be read/g) ?? []).length).toBe(
+      3,
+    );
     expect(html).not.toContain("0 listings");
   });
 

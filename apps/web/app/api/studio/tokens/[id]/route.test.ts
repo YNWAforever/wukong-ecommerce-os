@@ -20,10 +20,12 @@ const ON_ENV = {
   STUDIO_MCP_SERVER_ENABLED: "true",
 } as unknown as NodeJS.ProcessEnv;
 
-function fixture(input: {
-  role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
-  apiTokens?: ReturnType<typeof fakeApiToken>[];
-} = {}) {
+function fixture(
+  input: {
+    role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
+    apiTokens?: ReturnType<typeof fakeApiToken>[];
+  } = {},
+) {
   const fake = createFakeStudio({
     settings: { workspaceId: WORKSPACE, enabled: true },
     apiTokens: input.apiTokens ?? [],
@@ -42,7 +44,9 @@ function fixture(input: {
   };
 }
 
-function request(tokenId: string): [Request, { params: Promise<{ id: string }> }] {
+function request(
+  tokenId: string,
+): [Request, { params: Promise<{ id: string }> }] {
   return [
     new Request(`http://localhost/api/studio/tokens/${tokenId}`, {
       method: "DELETE",

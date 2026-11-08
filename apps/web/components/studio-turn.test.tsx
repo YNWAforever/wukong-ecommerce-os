@@ -1,10 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import {
-  turnReplySchema,
-  type StudioTurnReply,
-} from "../lib/studio/types";
+import { turnReplySchema, type StudioTurnReply } from "../lib/studio/types";
 import {
   parseStudioAssistantContent,
   parseStudioOperatorContent,
@@ -90,7 +87,11 @@ describe("parseStudioOperatorContent", () => {
         locale: "zh-Hant",
         skillKey: "catalog.find",
       }),
-    ).toEqual({ text: "  hello  ", locale: "zh-Hant", skillKey: "catalog.find" });
+    ).toEqual({
+      text: "  hello  ",
+      locale: "zh-Hant",
+      skillKey: "catalog.find",
+    });
     expect(parseStudioOperatorContent({ text: "" })).toBeNull();
     expect(parseStudioOperatorContent({ text: 3 })).toBeNull();
   });
@@ -151,7 +152,9 @@ describe("StudioTurn", () => {
   it("renders an invalid-content notice for unparseable assistant content without crashing", () => {
     const html = renderAssistant({ status: "answered", raw: "<script>" });
 
-    expect(html).toContain("This reply could not be displayed; nothing is invented.");
+    expect(html).toContain(
+      "This reply could not be displayed; nothing is invented.",
+    );
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("studio.answer");
   });

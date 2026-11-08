@@ -315,9 +315,7 @@ function assertThreadVisible(
   if (!isThreadVisible(thread, actorId, role)) throw studioNotFound();
 }
 
-function skillPromptSummary(
-  skill: SkillDefinition,
-): StudioSkillPromptSummary {
+function skillPromptSummary(skill: SkillDefinition): StudioSkillPromptSummary {
   return {
     key: skill.key,
     version: skill.version,
@@ -634,261 +632,261 @@ export function createStudioService(deps: StudioServiceDeps) {
     }
   }
 
-const LISTING_ID_PATTERN =
-  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const LISTING_ID_PATTERN =
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** The first listing UUID mentioned in the message, if any. */
-function parseListingId(text: string): string | null {
-  return LISTING_ID_PATTERN.exec(text)?.[0] ?? null;
-}
+  /** The first listing UUID mentioned in the message, if any. */
+  function parseListingId(text: string): string | null {
+    return LISTING_ID_PATTERN.exec(text)?.[0] ?? null;
+  }
 
-const COPY_FIELD_VALUE: Record<
-  string,
-  (copy: ListingCopySnapshot) => string
-> = {
-  "title.en": (copy) => copy.title.en,
-  "title.zh-Hant": (copy) => copy.title["zh-Hant"],
-  "description.en": (copy) => copy.description.en,
-  "description.zh-Hant": (copy) => copy.description["zh-Hant"],
-  "seo.title.en": (copy) => copy.seo.title.en,
-  "seo.title.zh-Hant": (copy) => copy.seo.title["zh-Hant"],
-  "seo.description.en": (copy) => copy.seo.description.en,
-  "seo.description.zh-Hant": (copy) => copy.seo.description["zh-Hant"],
-};
-
-type CopyProposalContext = {
-  listingId: string;
-  activeVersionId: string;
-  activeVersionSequence: number;
-  currentCopy: ListingCopySnapshot;
-  allowedFields: string[];
-};
-
-type CopyProposalOutcome = {
-  output: { outputId: string; revision: number } | null;
-  fieldCount: number;
-  droppedCount: number;
-  usage: AIUsage | null;
-  settledUsd: string | null;
-  trace: StudioTraceStep | null;
-  limitations: TranslatedLine[];
-};
-
-/**
- * Optional copy-proposal model call (plan Task 9).
- *
- * Admission mirrors the analysis path: fail-closed flags/settings/budget, one
- * reviewed reservation, no retry. Only fields whose refs resolve to this
- * turn's evidence and whose names are in the reviewed field list survive; the
- * artifact is versioned and read back before the reply claims success.
- */
-async function proposeCopyTurn(input: {
-  session: SessionContext;
-  settings: StudioSettings;
-  workspaceId: string;
-  threadId: string;
-  run: StudioRun;
-  skill: SkillDefinition;
-  pack: EvidencePack;
-  body: SendMessageBody;
-  now: Date;
-  limits: StudioTurnLimits;
-}): Promise<CopyProposalOutcome> {
-  const none: CopyProposalOutcome = {
-    output: null,
-    fieldCount: 0,
-    droppedCount: 0,
-    usage: null,
-    settledUsd: null,
-    trace: null,
-    limitations: [translatedLine("studio.limit.copy_model_required")],
+  const COPY_FIELD_VALUE: Record<
+    string,
+    (copy: ListingCopySnapshot) => string
+  > = {
+    "title.en": (copy) => copy.title.en,
+    "title.zh-Hant": (copy) => copy.title["zh-Hant"],
+    "description.en": (copy) => copy.description.en,
+    "description.zh-Hant": (copy) => copy.description["zh-Hant"],
+    "seo.title.en": (copy) => copy.seo.title.en,
+    "seo.title.zh-Hant": (copy) => copy.seo.title["zh-Hant"],
+    "seo.description.en": (copy) => copy.seo.description.en,
+    "seo.description.zh-Hant": (copy) => copy.seo.description["zh-Hant"],
   };
-  const ai = input.settings.ai;
-  if (!ai) return none;
-  if (!deps.isStudioAiEnabled(environment(), input.settings)) return none;
-  const monthlyBudgetUsd = input.settings.monthlyBudgetUsd;
-  if (!monthlyBudgetUsd) return none;
 
-  let reservedUsd: string;
-  try {
-    const policy: StudioAiPolicy = {
-      provider: ai.provider,
-      model: ai.model,
-      pricingVersion: ai.pricingVersion,
-      runCeilingUsd: input.settings.runCeilingUsd ?? "",
-      budgetCapUsd: monthlyBudgetUsd,
-      maxInputTokens: ai.maxInputTokens,
-      inputUsdPerMillion: Number(ai.inputUsdPerMillion),
-      outputUsdPerMillion: Number(ai.outputUsdPerMillion),
-      maxOutputTokens: ai.maxOutputTokens,
+  type CopyProposalContext = {
+    listingId: string;
+    activeVersionId: string;
+    activeVersionSequence: number;
+    currentCopy: ListingCopySnapshot;
+    allowedFields: string[];
+  };
+
+  type CopyProposalOutcome = {
+    output: { outputId: string; revision: number } | null;
+    fieldCount: number;
+    droppedCount: number;
+    usage: AIUsage | null;
+    settledUsd: string | null;
+    trace: StudioTraceStep | null;
+    limitations: TranslatedLine[];
+  };
+
+  /**
+   * Optional copy-proposal model call (plan Task 9).
+   *
+   * Admission mirrors the analysis path: fail-closed flags/settings/budget, one
+   * reviewed reservation, no retry. Only fields whose refs resolve to this
+   * turn's evidence and whose names are in the reviewed field list survive; the
+   * artifact is versioned and read back before the reply claims success.
+   */
+  async function proposeCopyTurn(input: {
+    session: SessionContext;
+    settings: StudioSettings;
+    workspaceId: string;
+    threadId: string;
+    run: StudioRun;
+    skill: SkillDefinition;
+    pack: EvidencePack;
+    body: SendMessageBody;
+    now: Date;
+    limits: StudioTurnLimits;
+  }): Promise<CopyProposalOutcome> {
+    const none: CopyProposalOutcome = {
+      output: null,
+      fieldCount: 0,
+      droppedCount: 0,
+      usage: null,
+      settledUsd: null,
+      trace: null,
+      limitations: [translatedLine("studio.limit.copy_model_required")],
     };
-    reservedUsd = studioTurnReservation(policy);
-  } catch (error) {
-    return {
-      ...none,
-      trace: modelTrace("blocked", "studio.trace.model.not_admitted", {
-        reason: budgetAdmissionReason(error),
-      }),
-    };
-  }
+    const ai = input.settings.ai;
+    if (!ai) return none;
+    if (!deps.isStudioAiEnabled(environment(), input.settings)) return none;
+    const monthlyBudgetUsd = input.settings.monthlyBudgetUsd;
+    if (!monthlyBudgetUsd) return none;
 
-  let model: StudioModel | null;
-  try {
-    model = deps.createModel
-      ? deps.createModel(input.settings)
-      : createDefaultModel(input.settings, environment());
-  } catch {
-    model = null;
-  }
-  if (!model) return none;
-
-  const reservation = await database().forWorkspace(
-    input.workspaceId,
-    (repos) =>
-      repos.studio.budget.reserve({
-        runId: input.run.id,
+    let reservedUsd: string;
+    try {
+      const policy: StudioAiPolicy = {
+        provider: ai.provider,
+        model: ai.model,
         pricingVersion: ai.pricingVersion,
-        reservedUsd,
-        workspaceCapUsd: monthlyBudgetUsd,
-      }),
-  );
-  if (!reservation.accepted) {
-    return {
-      ...none,
-      trace: modelTrace("blocked", "studio.trace.model.budget_blocked"),
-    };
-  }
+        runCeilingUsd: input.settings.runCeilingUsd ?? "",
+        budgetCapUsd: monthlyBudgetUsd,
+        maxInputTokens: ai.maxInputTokens,
+        inputUsdPerMillion: Number(ai.inputUsdPerMillion),
+        outputUsdPerMillion: Number(ai.outputUsdPerMillion),
+        maxOutputTokens: ai.maxOutputTokens,
+      };
+      reservedUsd = studioTurnReservation(policy);
+    } catch (error) {
+      return {
+        ...none,
+        trace: modelTrace("blocked", "studio.trace.model.not_admitted", {
+          reason: budgetAdmissionReason(error),
+        }),
+      };
+    }
 
-  try {
-    const context = input.pack.context.copyProposal as
-      | CopyProposalContext
-      | undefined;
-    if (!context) throw new Error("studio_proposal_context_missing");
-    const gaps = input.pack.checks
-      .filter((check) => check.key === "studio.check.copy_gap")
-      .map((check) => ({
-        code: String(check.values.code ?? ""),
-        blocking: check.values.blocking === true,
-      }));
-    const evidenceRefs = input.pack.sources.map((source) => source.ref);
-    const proposeInput: StudioProposeInput = {
-      locale: input.body.locale,
-      question: input.body.text,
-      skill: skillPromptSummary(input.skill),
-      listing: context.currentCopy,
-      gaps,
-      allowedFields: context.allowedFields as StudioProposeInput["allowedFields"],
-      evidenceRefs,
-    };
-    input.limits.beginModel();
-    const { proposal, usage } = await model.propose(proposeInput);
-    const resolved = new Set(evidenceRefs);
-    const allowed = new Set(context.allowedFields);
-    const fields = proposal.fields
-      .filter(
-        (field) =>
-          allowed.has(field.field) &&
-          field.evidenceRefs.every((ref) => resolved.has(ref)),
-      )
-      .map((field) => ({
-        field: field.field,
-        current: COPY_FIELD_VALUE[field.field]
-          ? COPY_FIELD_VALUE[field.field]!(context.currentCopy)
-          : null,
-        proposed: field.proposed,
-        evidenceRefs: field.evidenceRefs,
-      }));
-    const droppedCount = proposal.fields.length - fields.length;
-    const settledUsd = formatUsd(usage.estimatedCostUsd);
-    if (settledUsd) {
-      const settled = await database().forWorkspace(
-        input.workspaceId,
-        (repos) => repos.studio.budget.settle(input.run.id, settledUsd),
-      );
-      if (!settled)
+    let model: StudioModel | null;
+    try {
+      model = deps.createModel
+        ? deps.createModel(input.settings)
+        : createDefaultModel(input.settings, environment());
+    } catch {
+      model = null;
+    }
+    if (!model) return none;
+
+    const reservation = await database().forWorkspace(
+      input.workspaceId,
+      (repos) =>
+        repos.studio.budget.reserve({
+          runId: input.run.id,
+          pricingVersion: ai.pricingVersion,
+          reservedUsd,
+          workspaceCapUsd: monthlyBudgetUsd,
+        }),
+    );
+    if (!reservation.accepted) {
+      return {
+        ...none,
+        trace: modelTrace("blocked", "studio.trace.model.budget_blocked"),
+      };
+    }
+
+    try {
+      const context = input.pack.context.copyProposal as
+        CopyProposalContext | undefined;
+      if (!context) throw new Error("studio_proposal_context_missing");
+      const gaps = input.pack.checks
+        .filter((check) => check.key === "studio.check.copy_gap")
+        .map((check) => ({
+          code: String(check.values.code ?? ""),
+          blocking: check.values.blocking === true,
+        }));
+      const evidenceRefs = input.pack.sources.map((source) => source.ref);
+      const proposeInput: StudioProposeInput = {
+        locale: input.body.locale,
+        question: input.body.text,
+        skill: skillPromptSummary(input.skill),
+        listing: context.currentCopy,
+        gaps,
+        allowedFields:
+          context.allowedFields as StudioProposeInput["allowedFields"],
+        evidenceRefs,
+      };
+      input.limits.beginModel();
+      const { proposal, usage } = await model.propose(proposeInput);
+      const resolved = new Set(evidenceRefs);
+      const allowed = new Set(context.allowedFields);
+      const fields = proposal.fields
+        .filter(
+          (field) =>
+            allowed.has(field.field) &&
+            field.evidenceRefs.every((ref) => resolved.has(ref)),
+        )
+        .map((field) => ({
+          field: field.field,
+          current: COPY_FIELD_VALUE[field.field]
+            ? COPY_FIELD_VALUE[field.field]!(context.currentCopy)
+            : null,
+          proposed: field.proposed,
+          evidenceRefs: field.evidenceRefs,
+        }));
+      const droppedCount = proposal.fields.length - fields.length;
+      const settledUsd = formatUsd(usage.estimatedCostUsd);
+      if (settledUsd) {
+        const settled = await database().forWorkspace(
+          input.workspaceId,
+          (repos) => repos.studio.budget.settle(input.run.id, settledUsd),
+        );
+        if (!settled)
+          await database().forWorkspace(input.workspaceId, (repos) =>
+            repos.studio.budget.markUncertain(input.run.id),
+          );
+      } else {
         await database().forWorkspace(input.workspaceId, (repos) =>
           repos.studio.budget.markUncertain(input.run.id),
         );
-    } else {
-      await database().forWorkspace(input.workspaceId, (repos) =>
-        repos.studio.budget.markUncertain(input.run.id),
+      }
+      const trace = modelTrace("done", "studio.trace.model.done", {
+        model: usage.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        droppedClaims: droppedCount,
+      });
+      if (fields.length === 0)
+        return {
+          output: null,
+          fieldCount: 0,
+          droppedCount,
+          usage,
+          settledUsd,
+          trace,
+          limitations: [
+            translatedLine("studio.limit.copy_fields_dropped", {
+              count: droppedCount,
+            }),
+          ],
+        };
+      const payload: CopyProposalPayload = {
+        listingId: context.listingId,
+        activeVersionId: context.activeVersionId,
+        activeVersionSequence: context.activeVersionSequence,
+        fields,
+        limitations: proposal.limitations.slice(0, 10),
+        asOf: input.now.toISOString(),
+      };
+      const created = await createCopyProposalOutput(
+        { getDatabase: () => deps.getDatabase() },
+        {
+          workspaceId: input.workspaceId,
+          actorId: input.session.actorId,
+          threadId: input.threadId,
+          runId: input.run.id,
+          title: `Copy proposal · ${context.currentCopy.title.en || context.currentCopy.title["zh-Hant"]}`,
+          payload,
+          asOf: input.now,
+        },
       );
-    }
-    const trace = modelTrace("done", "studio.trace.model.done", {
-      model: usage.model,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      droppedClaims: droppedCount,
-    });
-    if (fields.length === 0)
       return {
-        output: null,
-        fieldCount: 0,
+        output: { outputId: created.outputId, revision: created.revision },
+        fieldCount: fields.length,
         droppedCount,
         usage,
         settledUsd,
         trace,
-        limitations: [
-          translatedLine("studio.limit.copy_fields_dropped", {
-            count: droppedCount,
-          }),
-        ],
+        limitations:
+          droppedCount > 0
+            ? [
+                translatedLine("studio.limit.copy_fields_dropped", {
+                  count: droppedCount,
+                }),
+              ]
+            : [],
       };
-    const payload: CopyProposalPayload = {
-      listingId: context.listingId,
-      activeVersionId: context.activeVersionId,
-      activeVersionSequence: context.activeVersionSequence,
-      fields,
-      limitations: proposal.limitations.slice(0, 10),
-      asOf: input.now.toISOString(),
-    };
-    const created = await createCopyProposalOutput(
-      { getDatabase: () => deps.getDatabase() },
-      {
-        workspaceId: input.workspaceId,
-        actorId: input.session.actorId,
-        threadId: input.threadId,
-        runId: input.run.id,
-        title: `Copy proposal · ${context.currentCopy.title.en || context.currentCopy.title["zh-Hant"]}`,
-        payload,
-        asOf: input.now,
-      },
-    );
-    return {
-      output: { outputId: created.outputId, revision: created.revision },
-      fieldCount: fields.length,
-      droppedCount,
-      usage,
-      settledUsd,
-      trace,
-      limitations:
-        droppedCount > 0
-          ? [
-              translatedLine("studio.limit.copy_fields_dropped", {
-                count: droppedCount,
-              }),
-            ]
-          : [],
-    };
-  } catch (error) {
-    try {
-      await database().forWorkspace(input.workspaceId, (repos) =>
-        repos.studio.budget.markUncertain(input.run.id),
-      );
-    } catch {
-      // The hold stays uncertain by omission; the deterministic answer stands.
+    } catch (error) {
+      try {
+        await database().forWorkspace(input.workspaceId, (repos) =>
+          repos.studio.budget.markUncertain(input.run.id),
+        );
+      } catch {
+        // The hold stays uncertain by omission; the deterministic answer stands.
+      }
+      return {
+        ...none,
+        limitations: [translatedLine("studio.limit.copy_model_required")],
+        trace: modelTrace("failed", "studio.trace.model.failed", {
+          category: modelFailureCategory(error),
+        }),
+      };
     }
-    return {
-      ...none,
-      limitations: [translatedLine("studio.limit.copy_model_required")],
-      trace: modelTrace("failed", "studio.trace.model.failed", {
-        category: modelFailureCategory(error),
-      }),
-    };
   }
-}
 
-/** Persist and return one completed deterministic (+ optional model) turn. */
+  /** Persist and return one completed deterministic (+ optional model) turn. */
   async function completeTurn(input: {
     session: SessionContext;
     settings: StudioSettings;
@@ -992,7 +990,10 @@ async function proposeCopyTurn(input: {
           packResult.pack.context.merchantAudit,
         );
         if (!auditPayload.success) {
-          reply = turnReplySchema.parse({ ...deterministic, status: "partial" });
+          reply = turnReplySchema.parse({
+            ...deterministic,
+            status: "partial",
+          });
         } else {
           const created = await createReportOutput(
             { getDatabase: () => deps.getDatabase() },
@@ -1002,7 +1003,10 @@ async function proposeCopyTurn(input: {
               threadId: input.threadId,
               runId: input.run.id,
               kind: "merchant_audit",
-              title: `Merchant audit · ${input.now.toISOString()}`.slice(0, 200),
+              title: `Merchant audit · ${input.now.toISOString()}`.slice(
+                0,
+                200,
+              ),
               payload: auditPayload.data as unknown as Record<string, unknown>,
               asOf: input.now,
             },
@@ -1090,8 +1094,7 @@ async function proposeCopyTurn(input: {
       let skillKey: string | null = null;
       if (body.skillKey) {
         const skill = getSkill(body.skillKey);
-        if (!skill)
-          throw new ApiError(400, "unknown_skill", "Unknown skill.");
+        if (!skill) throw new ApiError(400, "unknown_skill", "Unknown skill.");
         skillKey = skill.key;
       }
       const title = (body.title?.trim() || STUDIO_DEFAULT_THREAD_TITLE).slice(
@@ -1127,9 +1130,7 @@ async function proposeCopyTurn(input: {
       );
       return {
         items: listed.items
-          .filter((thread) =>
-            isThreadVisible(thread, session.actorId, role),
-          )
+          .filter((thread) => isThreadVisible(thread, session.actorId, role))
           .map(threadView),
         truncated: listed.truncated,
       };
@@ -1202,18 +1203,13 @@ async function proposeCopyTurn(input: {
               "This skill is not enabled for the workspace.",
             );
           if (!skillsForRole(role).some((entry) => entry.key === skill.key))
-            throw new ApiError(
-              403,
-              "insufficient_role",
-              "Insufficient role.",
-            );
+            throw new ApiError(403, "insufficient_role", "Insufficient role.");
 
           const content: Record<string, unknown> = {
             text: body.text,
             locale: body.locale,
             ...(body.skillKey ? { skillKey: body.skillKey } : {}),
-            ...(body.attachmentAssetIds &&
-            body.attachmentAssetIds.length > 0
+            ...(body.attachmentAssetIds && body.attachmentAssetIds.length > 0
               ? { attachmentAssetIds: body.attachmentAssetIds }
               : {}),
           };
@@ -1257,9 +1253,7 @@ async function proposeCopyTurn(input: {
               },
             });
           }
-          const running = await repos.studio.runs.markRunning(
-            created.run.id,
-          );
+          const running = await repos.studio.runs.markRunning(created.run.id);
           if (!running) throw new Error("studio run could not be started");
           return {
             replayed: false as const,
@@ -1341,15 +1335,9 @@ async function proposeCopyTurn(input: {
       }
     },
 
-    async getRun(
-      threadId: string,
-      runId: string,
-    ): Promise<StudioRunResponse> {
+    async getRun(threadId: string, runId: string): Promise<StudioRunResponse> {
       const { session, role } = await requireStudioSession(deps, "viewer");
-      if (
-        !UUID.safeParse(threadId).success ||
-        !UUID.safeParse(runId).success
-      )
+      if (!UUID.safeParse(threadId).success || !UUID.safeParse(runId).success)
         throw studioNotFound();
       const result = await database().forWorkspace(
         session.workspaceId,
@@ -1399,8 +1387,7 @@ async function proposeCopyTurn(input: {
           cleanCount: data.quality.cleanCount,
           hasGapsCount: data.quality.hasGapsCount,
           noActiveVersion: data.quality.noActiveVersion,
-          unassessableActiveVersion:
-            data.quality.unassessableActiveVersion,
+          unassessableActiveVersion: data.quality.unassessableActiveVersion,
           projectionState: data.quality.projection.state,
           asOf: data.quality.projection.asOf,
           deepLink: "/quality",

@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StudioOutputCard } from "./studio-output-card";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const proposalPayload = {
   listingId: "listing-1",
@@ -99,9 +100,9 @@ afterEach(async () => {
 
 describe("StudioOutputCard", () => {
   it("reads the artifact and renders kind, title, status, version, digest and the review card", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json(detailBody("draft")),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(detailBody("draft")));
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount();
@@ -126,13 +127,19 @@ describe("StudioOutputCard", () => {
   });
 
   it("saves through the action endpoint and trusts only the server readback", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (url === "/api/studio/outputs/output-1" && init?.method === "POST") {
-        return Response.json({ outputId: "output-1", status: "saved", version: 2 });
-      }
-      return Response.json(detailBody("draft"));
-    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url === "/api/studio/outputs/output-1" && init?.method === "POST") {
+          return Response.json({
+            outputId: "output-1",
+            status: "saved",
+            version: 2,
+          });
+        }
+        return Response.json(detailBody("draft"));
+      });
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount();
@@ -200,9 +207,9 @@ describe("StudioOutputCard", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json(invalid),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => Response.json(invalid)),
     );
 
     const container = await mount();
@@ -213,9 +220,9 @@ describe("StudioOutputCard", () => {
   });
 
   it("does not fetch an expandable row until it is opened", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json(detailBody("draft")),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(detailBody("draft")));
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount({
@@ -249,9 +256,9 @@ describe("StudioOutputCard", () => {
   it("disables sign-off for a non-reviewer and states the required role", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json(detailBody("saved")),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => Response.json(detailBody("saved"))),
     );
 
     const container = await mount({ canSignOff: false });
@@ -266,9 +273,9 @@ describe("StudioOutputCard", () => {
   it("requires a saved artifact before sign-off", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json(detailBody("draft")),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => Response.json(detailBody("draft"))),
     );
 
     const container = await mount({ canSignOff: true });
@@ -278,17 +285,19 @@ describe("StudioOutputCard", () => {
   });
 
   it("signs off a saved artifact and shows the readback state", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (init?.method === "POST") {
-        return Response.json({
-          outputId: "output-1",
-          status: "signed_off",
-          version: 2,
-        });
-      }
-      return Response.json(detailBody("saved"));
-    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (init?.method === "POST") {
+          return Response.json({
+            outputId: "output-1",
+            status: "signed_off",
+            version: 2,
+          });
+        }
+        return Response.json(detailBody("saved"));
+      });
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount({ canSignOff: true });
@@ -317,13 +326,15 @@ describe("StudioOutputCard", () => {
   });
 
   it("reports a 403 sign-off honestly with the required role copy", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
-      if (init?.method === "POST") {
-        return Response.json({ code: "insufficient_role" }, { status: 403 });
-      }
-      void input;
-      return Response.json(detailBody("saved"));
-    });
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        if (init?.method === "POST") {
+          return Response.json({ code: "insufficient_role" }, { status: 403 });
+        }
+        void input;
+        return Response.json(detailBody("saved"));
+      });
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount({ canSignOff: true });
@@ -347,9 +358,9 @@ describe("StudioOutputCard", () => {
   it("renders zh-Hant copy for the zh-Hant locale", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json(detailBody("draft")),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () => Response.json(detailBody("draft"))),
     );
 
     const container = await mount({ locale: "zh-Hant" });

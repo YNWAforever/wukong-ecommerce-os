@@ -33,8 +33,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({
-    get: (name: string) =>
-      name === "locale" ? { value: "en" } : undefined,
+    get: (name: string) => (name === "locale" ? { value: "en" } : undefined),
   }),
 }));
 
@@ -146,7 +145,11 @@ describe("/studio/settings content", () => {
   });
 
   it("renders token metadata and connection registry rows for an owner", async () => {
-    state.session = { workspaceId: "workspace", actorId: "actor", role: "owner" };
+    state.session = {
+      workspaceId: "workspace",
+      actorId: "actor",
+      role: "owner",
+    };
     state.tokens = [
       {
         id: "22222222-2222-4222-8222-222222222222",
@@ -188,4 +191,3 @@ describe("/studio/settings content", () => {
     expect(html).not.toContain("v1.iv.ciphertext");
   });
 });
-

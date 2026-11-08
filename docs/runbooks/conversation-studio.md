@@ -8,17 +8,17 @@ Design: `docs/superpowers/specs/2026-11-08-conversation-studio-design.md`. Plan 
 
 ## Surfaces
 
-| Route | Access | Purpose |
-| --- | --- | --- |
-| `/studio` | any member, when enabled | conversation home, deterministic records overview, templates |
-| `/studio/t/[threadId]` | any member (private threads: creator/admin/owner) | thread, trace, evidence, review/output cards |
-| `/studio/threads` | any member | thread list/search |
-| `/studio/outputs` | any member | versioned artifacts, review and sign-off |
-| `/studio/connections` | any member | honest tool/MCP availability catalogue |
-| `/studio/settings` | admin/owner | tokens, external MCP registry, read-only workspace state |
-| `/api/mcp` | workspace bearer token | hosted MCP server (read/propose tools only) |
-| `/api/studio/tokens` | admin | hosted MCP token lifecycle |
-| `/api/studio/mcp-connections` | admin | external MCP registry (disabled by default) |
+| Route                         | Access                                            | Purpose                                                      |
+| ----------------------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| `/studio`                     | any member, when enabled                          | conversation home, deterministic records overview, templates |
+| `/studio/t/[threadId]`        | any member (private threads: creator/admin/owner) | thread, trace, evidence, review/output cards                 |
+| `/studio/threads`             | any member                                        | thread list/search                                           |
+| `/studio/outputs`             | any member                                        | versioned artifacts, review and sign-off                     |
+| `/studio/connections`         | any member                                        | honest tool/MCP availability catalogue                       |
+| `/studio/settings`            | admin/owner                                       | tokens, external MCP registry, read-only workspace state     |
+| `/api/mcp`                    | workspace bearer token                            | hosted MCP server (read/propose tools only)                  |
+| `/api/studio/tokens`          | admin                                             | hosted MCP token lifecycle                                   |
+| `/api/studio/mcp-connections` | admin                                             | external MCP registry (disabled by default)                  |
 
 A disabled workspace or deployment flag answers 404 on every Studio route; middleware is not the
 boundary.
@@ -56,7 +56,7 @@ missing workspace rows fail closed (disabled).
 ## Live model configuration (optional)
 
 Without a model the Studio is fully deterministic: records answers, gap reviews, dispatches,
-merchant audit and copy-proposal *targets* work; live analysis and copy proposals stay off with an
+merchant audit and copy-proposal _targets_ work; live analysis and copy proposals stay off with an
 honest "model required/not configured" notice.
 
 To enable live turns, an authorised operator sets the workspace AI columns (same strict

@@ -92,9 +92,7 @@ describe("POST /api/studio/tokens", () => {
     expect(invalid.fake.state.apiTokens).toEqual([]);
 
     for (const role of ["viewer", "operator", "reviewer"] as const) {
-      const response = await fixture({ role }).handlers.POST(
-        post(createBody),
-      );
+      const response = await fixture({ role }).handlers.POST(post(createBody));
       expect(response.status).toBe(403);
     }
 

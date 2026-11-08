@@ -45,8 +45,7 @@ function post(body: unknown, raw = false): Request {
   });
 }
 
-const list = () =>
-  new Request("http://localhost/api/studio/threads");
+const list = () => new Request("http://localhost/api/studio/threads");
 
 describe("POST /api/studio/threads", () => {
   it("creates a thread with its audit event and returns the id", async () => {
@@ -84,9 +83,7 @@ describe("POST /api/studio/threads", () => {
 
   it("returns 403 for a viewer and 404 when Studio is disabled", async () => {
     const viewer = fixture({ role: "viewer" });
-    expect(
-      (await viewer.handlers.POST(post({ title: "x" }))).status,
-    ).toBe(403);
+    expect((await viewer.handlers.POST(post({ title: "x" }))).status).toBe(403);
     expect(viewer.fake.state.writes).not.toContain("threads.create");
 
     const disabled = fixture({ env: {} as NodeJS.ProcessEnv });
@@ -117,7 +114,11 @@ describe("GET /api/studio/threads", () => {
 
   it("returns 401 without a session and 404 when disabled", async () => {
     const anonymous = createStudioThreadsHandlers({
-      sessionContext: { async resolve() { return null; } },
+      sessionContext: {
+        async resolve() {
+          return null;
+        },
+      },
       getDatabase: () => {
         throw new Error("must stay lazy");
       },

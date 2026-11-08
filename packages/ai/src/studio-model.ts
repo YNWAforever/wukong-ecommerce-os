@@ -56,10 +56,7 @@ export const studioAnalysisSchema = z.strictObject({
     .array(
       z.strictObject({
         text: z.string().trim().min(1).max(2000),
-        evidenceRefs: z
-          .array(z.string().trim().min(1).max(200))
-          .min(1)
-          .max(10),
+        evidenceRefs: z.array(z.string().trim().min(1).max(200)).min(1).max(10),
       }),
     )
     .max(30),
@@ -77,10 +74,7 @@ export const studioProposalFieldSchema = z.strictObject({
   field: z.enum(STUDIO_COPY_PROPOSAL_FIELDS),
   current: z.string().max(4000).nullable(),
   proposed: z.string().trim().min(1).max(4000),
-  evidenceRefs: z
-    .array(z.string().trim().min(1).max(200))
-    .min(1)
-    .max(10),
+  evidenceRefs: z.array(z.string().trim().min(1).max(200)).min(1).max(10),
 });
 export type StudioProposalField = z.infer<typeof studioProposalFieldSchema>;
 
@@ -111,9 +105,7 @@ const PROPOSAL_SCHEMA_NAME = "studio_copy_proposal";
 
 function validatePlan(input: StudioPlanInput) {
   return (plan: StudioPlan): void => {
-    const toolIds = new Set(
-      input.availableTools.map((tool) => tool.id),
-    );
+    const toolIds = new Set(input.availableTools.map((tool) => tool.id));
     for (const request of plan.toolRequests)
       if (!toolIds.has(request.toolId))
         throw new Error("studio_plan_out_of_allowlist_tool");
@@ -138,10 +130,7 @@ function validateProposal(input: StudioProposeInput) {
       throw new Error("studio_proposal_wrong_listing");
     if (proposal.activeVersionId !== input.listing.activeVersionId)
       throw new Error("studio_proposal_wrong_version");
-    if (
-      proposal.activeVersionSequence !==
-      input.listing.activeVersionSequence
-    )
+    if (proposal.activeVersionSequence !== input.listing.activeVersionSequence)
       throw new Error("studio_proposal_wrong_sequence");
     const allowed = new Set<string>(input.allowedFields);
     const seen = new Set<string>();
@@ -213,11 +202,13 @@ export class FakeStudioModel implements StudioModel {
   private readonly analyses: StudioAnalysis[];
   private readonly proposals: StudioCopyProposal[];
 
-  constructor(script: {
-    plans?: StudioPlan[];
-    analyses?: StudioAnalysis[];
-    proposals?: StudioCopyProposal[];
-  } = {}) {
+  constructor(
+    script: {
+      plans?: StudioPlan[];
+      analyses?: StudioAnalysis[];
+      proposals?: StudioCopyProposal[];
+    } = {},
+  ) {
     this.plans = [...(script.plans ?? [])];
     this.analyses = [...(script.analyses ?? [])];
     this.proposals = [...(script.proposals ?? [])];

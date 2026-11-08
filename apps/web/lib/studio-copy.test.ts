@@ -92,7 +92,7 @@ const SERVICE_KEY_PATTERN: readonly StudioCopyKey[] = [
   "studio.trace.assets_read",
   "studio.trace.dispatch.done",
   "studio.followup.confirm_dispatch",
-  "studio.followup.open_jobs",  // merchant-audit skill (plan Task 11)
+  "studio.followup.open_jobs", // merchant-audit skill (plan Task 11)
   "studio.answer.audit_report",
   "studio.check.audit_listing_counts",
   "studio.check.audit_quality",
@@ -224,7 +224,8 @@ describe("STUDIO_COPY", () => {
       "studio.dispatch.confirm",
       "studio.dispatch.warning",
       "studio.dispatch.queueUnavailable",
-      "studio.dispatch.runState.running",      "studio.report.title",
+      "studio.dispatch.runState.running",
+      "studio.report.title",
       "studio.report.export",
       "studio.report.exportNeedsSave",
       "studio.report.qualityLine",

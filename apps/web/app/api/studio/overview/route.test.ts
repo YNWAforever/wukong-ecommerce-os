@@ -20,11 +20,13 @@ const ON_ENV = {
 
 const NOW = new Date("2026-11-08T10:00:00.000Z");
 
-function fixture(input: {
-  options?: FakeStudioOptions;
-  env?: NodeJS.ProcessEnv;
-  session?: "viewer" | "operator";
-} = {}) {
+function fixture(
+  input: {
+    options?: FakeStudioOptions;
+    env?: NodeJS.ProcessEnv;
+    session?: "viewer" | "operator";
+  } = {},
+) {
   const fake = createFakeStudio({
     ...(input.options ?? {}),
     settings: {
@@ -78,7 +80,11 @@ describe("GET /api/studio/overview", () => {
         total: number;
         deepLink: string;
       };
-      quality: { totalListings: number; projectionState: string; deepLink: string };
+      quality: {
+        totalListings: number;
+        projectionState: string;
+        deepLink: string;
+      };
       recentJobs: {
         items: Array<{ jobId: string; state: string; deepLink: string }>;
         deepLink: string;
@@ -109,7 +115,11 @@ describe("GET /api/studio/overview", () => {
     expect(await response.json()).toMatchObject({ code: "not_found" });
 
     const anonymous = createStudioOverviewHandler({
-      sessionContext: { async resolve() { return null; } },
+      sessionContext: {
+        async resolve() {
+          return null;
+        },
+      },
       getDatabase: () => {
         throw new Error("must stay lazy");
       },
@@ -118,4 +128,3 @@ describe("GET /api/studio/overview", () => {
     expect((await anonymous(request())).status).toBe(401);
   });
 });
-

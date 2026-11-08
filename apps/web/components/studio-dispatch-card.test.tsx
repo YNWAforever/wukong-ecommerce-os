@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DraftDispatch } from "../lib/studio/types";
 import { StudioDispatchCard } from "./studio-dispatch-card";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const ASSET_A = "11111111-1111-4111-8111-111111111111";
 const ASSET_B = "22222222-2222-4222-8222-222222222222";
@@ -144,9 +145,7 @@ describe("StudioDispatchCard", () => {
       await Promise.resolve();
     });
 
-    const post = fetcher.mock.calls.find(
-      ([, init]) => init?.method === "POST",
-    );
+    const post = fetcher.mock.calls.find(([, init]) => init?.method === "POST");
     expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({
       threadId: THREAD_ID,
       runId: RUN_ID,
@@ -172,7 +171,9 @@ describe("StudioDispatchCard", () => {
       vi.fn<typeof fetch>().mockImplementation(async (input) => {
         const url = String(input);
         if (url === "/api/studio/dispatch/listing-draft")
-          return Response.json(okDispatch({ runId: null, queueState: "queue_unavailable" }));
+          return Response.json(
+            okDispatch({ runId: null, queueState: "queue_unavailable" }),
+          );
         throw new Error(`unexpected fetch ${url}`);
       }),
     );
@@ -298,9 +299,11 @@ describe("StudioDispatchCard", () => {
   it("shows an honest role error when the server refuses the dispatch", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json({ code: "insufficient_role" }, { status: 403 }),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () =>
+          Response.json({ code: "insufficient_role" }, { status: 403 }),
+        ),
     );
 
     const container = await mount();

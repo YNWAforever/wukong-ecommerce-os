@@ -164,7 +164,9 @@ describe.skipIf(!enabled)("conversation studio migration 0054", () => {
       const appendOnly = APPEND_ONLY_TABLES.includes(
         grant.table_name as (typeof APPEND_ONLY_TABLES)[number],
       );
-      expect(grant.can_update, grant.table_name).toBe(appendOnly ? false : true);
+      expect(grant.can_update, grant.table_name).toBe(
+        appendOnly ? false : true,
+      );
     }
   });
 

@@ -32,12 +32,14 @@ const ON_ENV = {
 
 type Role = "viewer" | "operator" | "reviewer" | "admin" | "owner";
 
-function fixture(input: {
-  role?: Role;
-  options?: FakeStudioOptions;
-  env?: NodeJS.ProcessEnv;
-  now?: Date;
-} = {}) {
+function fixture(
+  input: {
+    role?: Role;
+    options?: FakeStudioOptions;
+    env?: NodeJS.ProcessEnv;
+    now?: Date;
+  } = {},
+) {
   const options = input.options ?? {};
   const fake = createFakeStudio({
     ...options,
@@ -57,8 +59,7 @@ function fixture(input: {
     env: input.env ?? ON_ENV,
     now: () => input.now ?? new Date("2026-11-08T10:30:00.000Z"),
     // Deterministic entropy: 9 bytes of 0x01 then 32 bytes of 0x02.
-    randomBytes: (size) =>
-      Buffer.alloc(size, size === 9 ? 0x01 : 0x02),
+    randomBytes: (size) => Buffer.alloc(size, size === 9 ? 0x01 : 0x02),
   };
   return { service: createMcpTokenService(deps), fake };
 }
@@ -95,9 +96,7 @@ describe("createMcpTokenService", () => {
     const { service, fake } = fixture();
     const created = await service.createToken(createBody);
 
-    expect(created.token).toMatch(
-      /^wuk_[A-Za-z0-9_-]{12}\.[A-Za-z0-9_-]{43}$/,
-    );
+    expect(created.token).toMatch(/^wuk_[A-Za-z0-9_-]{12}\.[A-Za-z0-9_-]{43}$/);
     const [secret] = created.token.split(".").slice(1);
     expect(created.token).toBe(`wuk_${created.prefix}.${secret}`);
     expect(created.scopes).toEqual(["read"]);
@@ -118,7 +117,10 @@ describe("createMcpTokenService", () => {
 
   it("deduplicates scopes and keeps the token hash out of every response", async () => {
     const { service, fake } = fixture();
-    const created = await service.createToken({ label: "x", scopes: ["read", "read"] });
+    const created = await service.createToken({
+      label: "x",
+      scopes: ["read", "read"],
+    });
     expect(created.scopes).toEqual(["read"]);
     expect(created).not.toHaveProperty("tokenHash");
     expect(created).not.toHaveProperty("hash");

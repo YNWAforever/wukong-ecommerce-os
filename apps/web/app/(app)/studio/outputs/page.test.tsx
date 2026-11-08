@@ -80,7 +80,12 @@ describe("StudioOutputsPage", () => {
   it("renders saved artifacts from the service as collapsed output cards", async () => {
     state.items = [
       listItem(),
-      listItem({ outputId: "output-2", title: "Synthetic gap report", kind: "gap_report", status: "draft" }),
+      listItem({
+        outputId: "output-2",
+        title: "Synthetic gap report",
+        kind: "gap_report",
+        status: "draft",
+      }),
     ];
 
     const html = await render();

@@ -2789,7 +2789,10 @@ export const studioThreads = pgTable(
     updatedAt: timestamps.updatedAt,
   },
   (table) => [
-    uniqueIndex("studio_threads_workspace_id_uq").on(table.workspaceId, table.id),
+    uniqueIndex("studio_threads_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("studio_threads_recent_idx").on(
       table.workspaceId,
       table.lastMessageAt,
@@ -2827,7 +2830,10 @@ export const studioMessages = pgTable(
     createdAt: timestamps.createdAt,
   },
   (table) => [
-    uniqueIndex("studio_messages_workspace_id_uq").on(table.workspaceId, table.id),
+    uniqueIndex("studio_messages_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
     uniqueIndex("studio_messages_sequence_uq").on(
       table.workspaceId,
       table.threadId,
@@ -2846,10 +2852,7 @@ export const studioMessages = pgTable(
       columns: [table.workspaceId, table.threadId],
       foreignColumns: [studioThreads.workspaceId, studioThreads.id],
     }).onDelete("cascade"),
-    check(
-      "studio_messages_sequence_check",
-      sql`${table.sequence}>0`,
-    ),
+    check("studio_messages_sequence_check", sql`${table.sequence}>0`),
     check(
       "studio_messages_role_check",
       sql`${table.role} IN ('operator','assistant','system','tool')`,
@@ -2946,7 +2949,9 @@ export const studioRunEvents = pgTable(
     kind: text("kind").notNull(),
     toolId: text("tool_id"),
     state: text("state").notNull(),
-    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    payload: jsonb("payload")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     durationMs: integer("duration_ms"),
     createdAt: timestamps.createdAt,
   },
@@ -2966,10 +2971,7 @@ export const studioRunEvents = pgTable(
       columns: [table.workspaceId, table.runId],
       foreignColumns: [studioRuns.workspaceId, studioRuns.id],
     }).onDelete("cascade"),
-    check(
-      "studio_run_events_sequence_check",
-      sql`${table.sequence}>0`,
-    ),
+    check("studio_run_events_sequence_check", sql`${table.sequence}>0`),
     check(
       "studio_run_events_kind_check",
       sql`${table.kind} IN ('tool','model','evidence','notice','error','dispatch')`,
@@ -3003,7 +3005,10 @@ export const studioOutputs = pgTable(
     updatedAt: timestamps.updatedAt,
   },
   (table) => [
-    uniqueIndex("studio_outputs_workspace_id_uq").on(table.workspaceId, table.id),
+    uniqueIndex("studio_outputs_workspace_id_uq").on(
+      table.workspaceId,
+      table.id,
+    ),
     index("studio_outputs_thread_idx").on(
       table.workspaceId,
       table.threadId,
@@ -3051,7 +3056,9 @@ export const studioOutputVersions = pgTable(
     payload: jsonb("payload").notNull(),
     contentDigest: text("content_digest").notNull(),
     asOf: timestamp("as_of", { withTimezone: true }).notNull(),
-    scope: jsonb("scope").default(sql`'{}'::jsonb`).notNull(),
+    scope: jsonb("scope")
+      .default(sql`'{}'::jsonb`)
+      .notNull(),
     createdBy: text("created_by").notNull(),
     createdAt: timestamps.createdAt,
   },
@@ -3070,10 +3077,7 @@ export const studioOutputVersions = pgTable(
       columns: [table.workspaceId, table.outputId],
       foreignColumns: [studioOutputs.workspaceId, studioOutputs.id],
     }).onDelete("cascade"),
-    check(
-      "studio_output_versions_revision_check",
-      sql`${table.revision}>0`,
-    ),
+    check("studio_output_versions_revision_check", sql`${table.revision}>0`),
     check(
       "studio_output_versions_payload_check",
       sql`jsonb_typeof(${table.payload})='object' AND octet_length(${table.payload}::text)<=262144`,
@@ -3201,10 +3205,7 @@ export const studioMcpCalls = pgTable(
       table.workspaceId,
       table.id,
     ),
-    index("studio_mcp_calls_recent_idx").on(
-      table.workspaceId,
-      table.createdAt,
-    ),
+    index("studio_mcp_calls_recent_idx").on(table.workspaceId, table.createdAt),
     index("studio_mcp_calls_connection_idx").on(
       table.workspaceId,
       table.connectionId,

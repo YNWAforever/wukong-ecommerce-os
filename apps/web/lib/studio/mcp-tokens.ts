@@ -28,10 +28,7 @@ export const MCP_TOKEN_SECRET_BYTES = 32;
 
 export const createMcpTokenBodySchema = z.strictObject({
   label: z.string().trim().min(1).max(100),
-  scopes: z
-    .array(z.enum(MCP_TOKEN_SCOPES))
-    .min(1)
-    .max(MCP_TOKEN_SCOPES.length),
+  scopes: z.array(z.enum(MCP_TOKEN_SCOPES)).min(1).max(MCP_TOKEN_SCOPES.length),
 });
 export type CreateMcpTokenBody = z.infer<typeof createMcpTokenBodySchema>;
 
@@ -85,9 +82,8 @@ export function createMcpTokenService(deps: McpTokenServiceDeps) {
     /** Admin-only list. Never returns a hash or plaintext. */
     async listTokens(): Promise<{ items: McpTokenView[] }> {
       const { session } = await requireStudioSession(deps, "admin");
-      const rows = await database().forWorkspace(
-        session.workspaceId,
-        (repos) => repos.studio.apiTokens.list({ limit: 100 }),
+      const rows = await database().forWorkspace(session.workspaceId, (repos) =>
+        repos.studio.apiTokens.list({ limit: 100 }),
       );
       return { items: rows.map(tokenView) };
     },

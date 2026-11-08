@@ -177,7 +177,10 @@ export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
                         )}
                       >
                         {field.evidenceRefs.map((ref) => (
-                          <li key={ref} className={styles["studio-review-chip"]}>
+                          <li
+                            key={ref}
+                            className={styles["studio-review-chip"]}
+                          >
                             {ref}
                           </li>
                         ))}

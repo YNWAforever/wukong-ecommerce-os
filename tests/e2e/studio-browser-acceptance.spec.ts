@@ -16,12 +16,15 @@ const enabled = process.env.STUDIO_BROWSER_ACCEPTANCE === "1";
 const EMAIL = "studio-browser-e2e@local.invalid";
 const PASSWORD = "Local-only studio browser password 1!";
 
-test.skip(!enabled, "Set STUDIO_BROWSER_ACCEPTANCE=1 against a seeded local app.");
+test.skip(
+  !enabled,
+  "Set STUDIO_BROWSER_ACCEPTANCE=1 against a seeded local app.",
+);
 
 async function signIn(page: Page, baseURL: string) {
-  await page.context().addCookies([
-    { name: "locale", value: "en", url: baseURL },
-  ]);
+  await page
+    .context()
+    .addCookies([{ name: "locale", value: "en", url: baseURL }]);
   await page.goto("/signin");
   await page.getByLabel("Email address").fill(EMAIL);
   await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
@@ -62,7 +65,9 @@ test("flags-on studio: sign in, deterministic answer, trace, reload persistence,
   // explicit limitations block when a source is missing).
   await expect(
     page
-      .getByText(/Follow-up questions|Known limitations|More information needed/)
+      .getByText(
+        /Follow-up questions|Known limitations|More information needed/,
+      )
       .first(),
   ).toBeVisible({ timeout: 30_000 });
 

@@ -70,7 +70,12 @@ const ASSET_A = "11111111-1111-4111-8111-111111111111";
 const ASSET_B = "22222222-2222-4222-8222-222222222222";
 
 type FakeState = {
-  listings: Array<{ id: string; status: string; target: string; note: string | null }>;
+  listings: Array<{
+    id: string;
+    status: string;
+    target: string;
+    note: string | null;
+  }>;
   assets: Map<string, { id: string; kind: string; listingId: string | null }>;
   audits: Array<{ action: string; metadata?: Record<string, unknown> }>;
   dispatched: string[][];
@@ -78,11 +83,16 @@ type FakeState = {
   recorded: unknown[];
 };
 
-function fixture(input: {
-  role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
-  assets?: Map<string, { id: string; kind: string; listingId: string | null }>;
-  failGetDatabase?: boolean;
-} = {}) {
+function fixture(
+  input: {
+    role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
+    assets?: Map<
+      string,
+      { id: string; kind: string; listingId: string | null }
+    >;
+    failGetDatabase?: boolean;
+  } = {},
+) {
   const fake: FakeState = {
     listings: [],
     assets:
@@ -135,7 +145,10 @@ function fixture(input: {
       initialize: async () => ({ revision: 1, baseVersionId: null }),
     },
     audit: {
-      write: async (event: { action: string; metadata?: Record<string, unknown> }) => {
+      write: async (event: {
+        action: string;
+        metadata?: Record<string, unknown>;
+      }) => {
         fake.audits.push(event);
       },
     },
@@ -150,8 +163,7 @@ function fixture(input: {
   };
   const deps: ListingIntakeDeps = {
     getDatabase: () => {
-      if (input.failGetDatabase)
-        throw new Error("database must not be read");
+      if (input.failGetDatabase) throw new Error("database must not be read");
       return {
         forWorkspace: async (
           _workspaceId: string,
@@ -216,7 +228,9 @@ describe("createListingIntake", () => {
     expect(fake.listings).toHaveLength(1);
     expect(fake.assets.get(ASSET_A)?.listingId).toBe("listing-created");
     expect(fake.dispatched).toEqual([["out-1"]]);
-    expect(fake.audits.map((audit) => audit.action)).toContain("listing.created");
+    expect(fake.audits.map((audit) => audit.action)).toContain(
+      "listing.created",
+    );
   });
 
   it("keeps the persisted listing and reports queue_unavailable when enqueue fails", async () => {

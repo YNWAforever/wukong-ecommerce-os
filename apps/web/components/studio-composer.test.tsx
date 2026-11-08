@@ -5,8 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StudioComposer } from "./studio-composer";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 type HarnessProps = {
   initial?: string;
@@ -62,9 +63,7 @@ function textarea(container: HTMLElement): HTMLTextAreaElement {
 }
 
 function sendButton(container: HTMLElement): HTMLButtonElement {
-  return container.querySelector(
-    "button",
-  ) as HTMLButtonElement;
+  return container.querySelector("button") as HTMLButtonElement;
 }
 
 async function type(container: HTMLElement, value: string) {

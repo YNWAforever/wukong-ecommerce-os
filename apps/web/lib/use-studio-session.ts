@@ -290,7 +290,8 @@ function traceFromRunEvent(event: StudioRunEventResponse): StudioTraceStep {
   const kind = (
     ["tool", "evidence", "model", "notice", "error", "dispatch"] as const
   ).includes(
-    event.kind as "tool" | "evidence" | "model" | "notice" | "error" | "dispatch",
+    event.kind as
+      "tool" | "evidence" | "model" | "notice" | "error" | "dispatch",
   )
     ? (event.kind as StudioTraceStep["kind"])
     : "notice";
@@ -298,12 +299,7 @@ function traceFromRunEvent(event: StudioRunEventResponse): StudioTraceStep {
     ["started", "done", "failed", "unavailable", "blocked", "info"] as const
   ).includes(
     event.state as
-      | "started"
-      | "done"
-      | "failed"
-      | "unavailable"
-      | "blocked"
-      | "info",
+      "started" | "done" | "failed" | "unavailable" | "blocked" | "info",
   )
     ? (event.state as StudioTraceStep["state"])
     : "info";
@@ -420,16 +416,19 @@ export function useStudioSession(): StudioSessionState {
         setStatus("sending");
         let response: HttpResult;
         try {
-          response = await postJson(`/api/studio/threads/${threadId}/messages`, {
-            clientMessageId: input.clientMessageId,
-            text: input.text.slice(0, 2000),
-            locale: input.locale,
-            ...(input.skillKey ? { skillKey: input.skillKey } : {}),
-            ...(input.attachmentAssetIds &&
-            input.attachmentAssetIds.length > 0
-              ? { attachmentAssetIds: [...input.attachmentAssetIds] }
-              : {}),
-          });
+          response = await postJson(
+            `/api/studio/threads/${threadId}/messages`,
+            {
+              clientMessageId: input.clientMessageId,
+              text: input.text.slice(0, 2000),
+              locale: input.locale,
+              ...(input.skillKey ? { skillKey: input.skillKey } : {}),
+              ...(input.attachmentAssetIds &&
+              input.attachmentAssetIds.length > 0
+                ? { attachmentAssetIds: [...input.attachmentAssetIds] }
+                : {}),
+            },
+          );
         } catch {
           throw new StudioRequestError(null, null);
         }
@@ -469,7 +468,9 @@ export function useStudioSession(): StudioSessionState {
             errorCode(await readJson(response)),
           );
         }
-        const parsed = getThreadResultSchema.safeParse(await readJson(response));
+        const parsed = getThreadResultSchema.safeParse(
+          await readJson(response),
+        );
         if (!parsed.success) throw new StudioRequestError(500, null);
         return {
           ok: true,
@@ -581,10 +582,5 @@ export function operatorMessageFromSend(input: {
 /** Thread list entry the shell/tin roster renders; re-exported for props. */
 export type StudioThreadListItem = Pick<
   StudioThreadResponse,
-  | "threadId"
-  | "title"
-  | "skillKey"
-  | "lastMessageAt"
-  | "updatedAt"
-  | "status"
+  "threadId" | "title" | "skillKey" | "lastMessageAt" | "updatedAt" | "status"
 >;

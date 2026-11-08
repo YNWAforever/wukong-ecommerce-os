@@ -92,7 +92,11 @@ export function StudioConnectionsView({ locale }: StudioConnectionsViewProps) {
             </thead>
             <tbody>
               {TOOL_DEFINITIONS.map((tool) => (
-                <tr key={tool.id} data-tool-id={tool.id} data-tool-kind={tool.kind}>
+                <tr
+                  key={tool.id}
+                  data-tool-id={tool.id}
+                  data-tool-kind={tool.kind}
+                >
                   <td>
                     <span className={styles["studio-tool-name"]}>
                       {tool.label[locale]}
@@ -177,7 +181,10 @@ export function StudioConnectionsView({ locale }: StudioConnectionsViewProps) {
             "studio.connections.logistics",
           ].map((key) => (
             <li key={key} className={styles["studio-connection-blocked"]}>
-              <span className={styles["studio-badge"]} data-availability="unavailable">
+              <span
+                className={styles["studio-badge"]}
+                data-availability="unavailable"
+              >
                 {studioCopy(locale, "studio.connections.disabled")}
               </span>
               <span>{studioCopy(locale, key as StudioCopyKey)}</span>

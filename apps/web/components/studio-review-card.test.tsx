@@ -71,9 +71,7 @@ describe("StudioReviewCard", () => {
     expect(html).toContain(
       "Requires human review; Studio never approves or publishes.",
     );
-    expect(html).toContain(
-      "The proposal never writes canonical listing data.",
-    );
+    expect(html).toContain("The proposal never writes canonical listing data.");
     expect(html).not.toContain("Approve");
     expect(html).not.toContain("Apply");
   });

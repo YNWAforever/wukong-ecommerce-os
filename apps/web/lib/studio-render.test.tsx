@@ -41,9 +41,7 @@ describe("renderStudioLine", () => {
     const spy = spyConsole();
     expect(
       renderStudioLine("en", { key: "studio.trace.needs_input", values: {} }),
-    ).toBe(
-      "More information is needed before querying; nothing was read.",
-    );
+    ).toBe("More information is needed before querying; nothing was read.");
     expect(spy).not.toHaveBeenCalled();
   });
 

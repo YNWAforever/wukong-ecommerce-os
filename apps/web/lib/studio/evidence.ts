@@ -47,8 +47,7 @@ export type BuildEvidenceInput = {
 };
 
 export type BuildEvidenceResult =
-  | { status: "complete"; pack: EvidencePack }
-  | NeedsInput;
+  { status: "complete"; pack: EvidencePack } | NeedsInput;
 
 const MAX_LISTINGS = 20;
 const FOCUS_LISTINGS = 3;
@@ -176,7 +175,7 @@ async function buildCatalogFind(
       rawInput: { listingId: hit.listingId },
       deps: input.deps,
       role: input.role,
-    limits: input.limits,
+      limits: input.limits,
     });
     if (detail.state !== "done") {
       pushLimitation(pack, "studio.limit.listing_unavailable", {
@@ -226,7 +225,7 @@ async function buildCatalogFind(
       rawInput: { listingIds: focus.map((hit) => hit.listingId) },
       deps: input.deps,
       role: input.role,
-    limits: input.limits,
+      limits: input.limits,
     });
     if (gaps.state !== "done")
       pushLimitation(pack, "studio.limit.quality_unavailable");
@@ -306,7 +305,7 @@ async function buildGapReview(
       rawInput: { query: "", limit: MAX_LISTINGS },
       deps: input.deps,
       role: input.role,
-    limits: input.limits,
+      limits: input.limits,
     });
     if (search.state !== "done") {
       pushLimitation(pack, "studio.limit.catalog_unavailable");
@@ -329,7 +328,7 @@ async function buildGapReview(
       rawInput: { listingId },
       deps: input.deps,
       role: input.role,
-    limits: input.limits,
+      limits: input.limits,
     });
     if (detail.state !== "done") {
       pushLimitation(pack, "studio.limit.listing_unavailable", { listingId });
@@ -379,7 +378,7 @@ async function buildGapReview(
       rawInput: { listingIds: targets.slice(0, 50) },
       deps: input.deps,
       role: input.role,
-    limits: input.limits,
+      limits: input.limits,
     });
     if (gaps.state !== "done") {
       pushLimitation(pack, "studio.limit.quality_unavailable");
@@ -578,8 +577,7 @@ async function buildDraftFromSources(
           kind: "listing_draft",
           assetIds: dispatchAssetIds,
           note: input.query?.trim() ? input.query.trim().slice(0, 2000) : null,
-          ready:
-            resolved.missingAssetIds.length === 0 && attached === 0,
+          ready: resolved.missingAssetIds.length === 0 && attached === 0,
         }
       : null;
 }
@@ -949,15 +947,17 @@ export async function buildEvidencePack(
       : {}),
     query: input.query,
   });
-  if (input.skill.key === "listing.draft_from_sources" && draftAssets.length === 0)
+  if (
+    input.skill.key === "listing.draft_from_sources" &&
+    draftAssets.length === 0
+  )
     return {
       status: "needs_input",
       skill: input.skill,
       question: translatedLine("studio.needs_input.draft_assets"),
     };
 
-  if (input.skill.key === "catalog.find")
-    await buildCatalogFind(input, pack);
+  if (input.skill.key === "catalog.find") await buildCatalogFind(input, pack);
   else if (input.skill.key === "catalog.gap_review")
     await buildGapReview(input, pack);
   else if (input.skill.key === "listing.copy_proposal")

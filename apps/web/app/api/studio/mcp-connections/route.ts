@@ -23,8 +23,7 @@ import {
  * flag, the workspace row and the encryption key.
  */
 export function createMcpConnectionHandlers(deps: StudioRouteDeps) {
-  const service = () =>
-    createMcpConnectionService(studioServiceDeps(deps));
+  const service = () => createMcpConnectionService(studioServiceDeps(deps));
   return {
     GET: async (_request: Request) =>
       withRouteErrors(async () => {

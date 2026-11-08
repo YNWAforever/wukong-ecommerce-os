@@ -26,9 +26,7 @@ const PINNED = schemaHash(SCHEMA);
 type RecordedCall = { url: string; init: RequestInit };
 
 function fakeTransport(
-  responses: Array<
-    () => Response | Promise<Response> | never
-  >,
+  responses: Array<() => Response | Promise<Response> | never>,
 ): { fetch: typeof fetch; calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];
   const queue = [...responses];
@@ -42,10 +40,10 @@ function fakeTransport(
 }
 
 function jsonRpc(result: unknown): Response {
-  return new Response(
-    JSON.stringify({ jsonrpc: "2.0", id: 1, result }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function client(
@@ -103,9 +101,9 @@ describe("external MCP client gating", () => {
     await expect(mcp.callTool("sql.query", {})).resolves.toEqual({
       status: "denied",
     });
-    await expect(
-      mcp.callTool("not.allowlisted", {}),
-    ).resolves.toEqual({ status: "denied" });
+    await expect(mcp.callTool("not.allowlisted", {})).resolves.toEqual({
+      status: "denied",
+    });
     expect(transport.calls).toHaveLength(0);
 
     const noPin = client(fakeTransport([]), { schemaHashes: {} });
@@ -155,7 +153,8 @@ describe("external MCP client operations", () => {
   it("calls an allowlisted tool with a matching pinned schema and projects the output", async () => {
     const transport = fakeTransport([
       () => jsonRpc({ protocolVersion: "2026-07-28", capabilities: {} }),
-      () => jsonRpc({ tools: [{ name: "catalog.search", inputSchema: SCHEMA }] }),
+      () =>
+        jsonRpc({ tools: [{ name: "catalog.search", inputSchema: SCHEMA }] }),
       () =>
         jsonRpc({
           content: [
@@ -190,7 +189,8 @@ describe("external MCP client operations", () => {
     const drifted = { ...SCHEMA, required: ["query", "locale"] };
     const transport = fakeTransport([
       () => jsonRpc({ protocolVersion: "2026-07-28", capabilities: {} }),
-      () => jsonRpc({ tools: [{ name: "catalog.search", inputSchema: drifted }] }),
+      () =>
+        jsonRpc({ tools: [{ name: "catalog.search", inputSchema: drifted }] }),
     ]);
     const mcp = client(transport);
     await expect(mcp.callTool("catalog.search", {})).resolves.toEqual({
@@ -242,7 +242,8 @@ describe("external MCP client operations", () => {
   it("maps an isError tool result to unavailable without returning output", async () => {
     const transport = fakeTransport([
       () => jsonRpc({ protocolVersion: "2026-07-28", capabilities: {} }),
-      () => jsonRpc({ tools: [{ name: "catalog.search", inputSchema: SCHEMA }] }),
+      () =>
+        jsonRpc({ tools: [{ name: "catalog.search", inputSchema: SCHEMA }] }),
       () =>
         jsonRpc({
           content: [{ type: "text", text: '{"error":"invalid_arguments"}' }],
@@ -266,9 +267,7 @@ describe("external MCP client operations", () => {
       client(aborted, { deadlineMs: 50 }).listTools(),
     ).resolves.toEqual({ status: "timeout" });
 
-    const hanging = fakeTransport([
-      () => new Promise<never>(() => undefined),
-    ]);
+    const hanging = fakeTransport([() => new Promise<never>(() => undefined)]);
     await expect(
       client(hanging, { deadlineMs: 5 }).listTools(),
     ).resolves.toEqual({ status: "timeout" });

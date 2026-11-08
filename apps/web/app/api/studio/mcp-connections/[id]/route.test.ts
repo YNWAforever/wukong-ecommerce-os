@@ -89,7 +89,10 @@ describe("PATCH /api/studio/mcp-connections/[id]", () => {
     const { patch, fake } = fixture();
     const response = await patch({ status: "approved" });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { status: string; approvedBy: string };
+    const body = (await response.json()) as {
+      status: string;
+      approvedBy: string;
+    };
     expect(body.status).toBe("approved");
     expect(body.approvedBy).toBe("actor_ops");
     expect(fake.state.audits.map((event) => event.action)).toEqual([
@@ -129,7 +132,11 @@ describe("PATCH /api/studio/mcp-connections/[id]", () => {
 
   it("rejects invalid bodies, non-admins and unknown ids", async () => {
     const { patch } = fixture();
-    for (const body of [{}, { status: "draft" }, { status: "approved", extra: 1 }]) {
+    for (const body of [
+      {},
+      { status: "draft" },
+      { status: "approved", extra: 1 },
+    ]) {
       expect((await patch(body)).status).toBe(400);
     }
 
@@ -152,7 +159,9 @@ describe("PATCH /api/studio/mcp-connections/[id]", () => {
         method: "PATCH",
         body: JSON.stringify({ status: "approved" }),
       }),
-      { params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000000" }) },
+      {
+        params: Promise.resolve({ id: "00000000-0000-4000-8000-000000000000" }),
+      },
     );
     expect(missing.status).toBe(404);
   });

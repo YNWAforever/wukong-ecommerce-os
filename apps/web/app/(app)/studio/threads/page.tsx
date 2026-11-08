@@ -120,7 +120,10 @@ export default async function StudioThreadsPage({
       ) : (
         <ul className={styles["studio-thread-index"]}>
           {items.map((thread) => (
-            <li key={thread.threadId} className={styles["studio-thread-index-item"]}>
+            <li
+              key={thread.threadId}
+              className={styles["studio-thread-index-item"]}
+            >
               <Link
                 className={styles["studio-thread-index-link"]}
                 href={`/studio/t/${thread.threadId}`}
@@ -130,17 +133,21 @@ export default async function StudioThreadsPage({
                 </span>
                 <span className={styles["studio-thread-index-meta"]}>
                   {studioCopy(locale, "studio.threads.updated")}:{" "}
-                  <time
-                    dateTime={thread.lastMessageAt ?? thread.updatedAt}
-                  >
-                    {formatHkDate(thread.lastMessageAt ?? thread.updatedAt, locale)}
+                  <time dateTime={thread.lastMessageAt ?? thread.updatedAt}>
+                    {formatHkDate(
+                      thread.lastMessageAt ?? thread.updatedAt,
+                      locale,
+                    )}
                   </time>
                   {thread.skillKey
                     ? ` · ${studioCopy(locale, "studio.thread.skill")}: ${thread.skillKey}`
                     : ""}
                 </span>
               </Link>
-              <span className={styles["studio-badge"]} data-status={thread.status}>
+              <span
+                className={styles["studio-badge"]}
+                data-status={thread.status}
+              >
                 {studioCopy(
                   locale,
                   thread.status === "archived"

@@ -5,10 +5,7 @@ import type { SourceKind } from "@wukong/core";
 import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
-import type {
-  EvidenceCheck,
-  EvidenceSource,
-} from "../lib/studio/types";
+import type { EvidenceCheck, EvidenceSource } from "../lib/studio/types";
 import { formatHkDate } from "../lib/ui-copy";
 import styles from "./studio.module.css";
 
@@ -132,7 +129,9 @@ function SourceLink({
 export type StudioEvidenceProps = {
   readonly locale: Locale;
   readonly checks: readonly EvidenceCheck[];
-  readonly coverage: Readonly<Record<string, "present" | "missing" | "unsupported">>;
+  readonly coverage: Readonly<
+    Record<string, "present" | "missing" | "unsupported">
+  >;
   readonly sources?: readonly EvidenceSource[];
   readonly headingLevel?: "h3" | "h4" | "h5";
 };
@@ -203,7 +202,9 @@ export function StudioEvidence({
               <th scope="col">
                 {studioCopy(locale, "studio.evidence.result")}
               </th>
-              <th scope="col">{studioCopy(locale, "studio.evidence.sources")}</th>
+              <th scope="col">
+                {studioCopy(locale, "studio.evidence.sources")}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -224,7 +225,9 @@ export function StudioEvidence({
                       {studioCopy(locale, CHECK_STATE_KEYS[check.state])}
                     </span>
                   </td>
-                  <td>{link ? <SourceLink locale={locale} link={link} /> : null}</td>
+                  <td>
+                    {link ? <SourceLink locale={locale} link={link} /> : null}
+                  </td>
                 </tr>
               );
             })}

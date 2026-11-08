@@ -10,8 +10,9 @@ import type {
 import type { StudioTurnReply } from "../lib/studio/types";
 import { StudioThreadView } from "./studio-thread-view";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const thread: StudioThreadResponse = {
   threadId: "thread-1",
@@ -99,7 +100,9 @@ const runEvents = {
 
 const roots: ReturnType<typeof createRoot>[] = [];
 
-async function mount(props: Partial<Parameters<typeof StudioThreadView>[0]> = {}) {
+async function mount(
+  props: Partial<Parameters<typeof StudioThreadView>[0]> = {},
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -184,14 +187,21 @@ describe("StudioThreadView", () => {
     expect(container.textContent).toContain("Synthetic conversation");
     expect(container.textContent).toContain("Find listing listing-1");
     expect(container.textContent).toContain("From your records");
-    expect(container.textContent).toContain("Listing listing-1: status approved");
-    expect(container.querySelectorAll('article[data-role="assistant"]')).toHaveLength(1);
+    expect(container.textContent).toContain(
+      "Listing listing-1: status approved",
+    );
+    expect(
+      container.querySelectorAll('article[data-role="assistant"]'),
+    ).toHaveLength(1);
   });
 
   it("tolerates invalid persisted assistant content with an honest notice", async () => {
     const container = await mount({
       messages: [
-        { ...assistantMessage, content: { status: "answered", raw: "<b>x</b>" } },
+        {
+          ...assistantMessage,
+          content: { status: "answered", raw: "<b>x</b>" },
+        },
       ],
     });
 
@@ -236,9 +246,9 @@ describe("StudioThreadView", () => {
     expect(
       container.querySelectorAll('article[data-role="assistant"]'),
     ).toHaveLength(1);
-    expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
-      "",
-    );
+    expect(
+      (container.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("");
     expect(container.textContent).toContain("catalog.search");
   });
 
@@ -295,9 +305,9 @@ describe("StudioThreadView", () => {
 
     const alert = container.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("temporarily unavailable");
-    expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
-      "retry this exact draft",
-    );
+    expect(
+      (container.querySelector("textarea") as HTMLTextAreaElement).value,
+    ).toBe("retry this exact draft");
 
     const firstClientId = JSON.parse(
       String(fetcher.mock.calls[0]?.[1]?.body ?? "{}"),
@@ -326,9 +336,11 @@ describe("StudioThreadView", () => {
   it("shows the replay notice when the server replayed a previous turn", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn<typeof fetch>().mockImplementation(async () =>
-        Response.json(sendSuccess({ replayed: true })),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () =>
+          Response.json(sendSuccess({ replayed: true })),
+        ),
     );
 
     const container = await mount();

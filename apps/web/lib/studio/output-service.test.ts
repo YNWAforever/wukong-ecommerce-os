@@ -53,18 +53,15 @@ describe("canonicalJson and copyProposalDigest", () => {
 describe("createCopyProposalOutput", () => {
   it("persists an immutable version, reads it back and audits the proposal", async () => {
     const { fake, deps } = fixture();
-    const created = await createCopyProposalOutput(
-      deps,
-      {
-        workspaceId: WORKSPACE,
-        actorId: "actor_ops",
-        threadId: "33333333-3333-4333-8333-333333333333",
-        runId: "44444444-4444-4444-8444-444444444444",
-        title: "Copy proposal test",
-        payload,
-        asOf: NOW,
-      },
-    );
+    const created = await createCopyProposalOutput(deps, {
+      workspaceId: WORKSPACE,
+      actorId: "actor_ops",
+      threadId: "33333333-3333-4333-8333-333333333333",
+      runId: "44444444-4444-4444-8444-444444444444",
+      title: "Copy proposal test",
+      payload,
+      asOf: NOW,
+    });
     expect(created.revision).toBe(1);
     expect(created.contentDigest).toBe(copyProposalDigest(payload));
     expect(fake.state.outputs).toHaveLength(1);

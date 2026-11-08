@@ -53,7 +53,10 @@ describe("readListingRunStatus", () => {
       },
     };
     expect(
-      await readListingRunStatus(deps, { listingId: "listing-1", runId: "run-1" }),
+      await readListingRunStatus(deps, {
+        listingId: "listing-1",
+        runId: "run-1",
+      }),
     ).toBeNull();
   });
 });

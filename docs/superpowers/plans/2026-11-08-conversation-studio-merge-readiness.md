@@ -35,19 +35,22 @@ runs in this session used the machine's Node 26.
 
 ## Node 24 verification summary (final evidence)
 
-| Check | Result |
-| --- | --- |
-| `pnpm install --frozen-lockfile --offline --ignore-scripts` (Node 24) | PASS (203 packages; 401-entry supply-chain check) |
-| `pnpm typecheck` / `pnpm lint` | PASS 14/14, 14/14 |
-| `pnpm --filter @wukong/web build` (Turbopack) | PASS |
-| Root `node --test` suites (9 files, exact root-script list) | **145 tests PASS** |
-| `apps/web` unit suite (direct vitest, threads pool) | **2763 passed, 11 skipped, 0 failed** |
-| `packages/core` / `packages/ai` / `packages/db` (unit) | 326 / 444 / 196 PASS |
-| `packages/assets` / `packages/shopline` / `packages/jobs` / `apps/worker` | 82(+1 skip) / 287 / 53 / 419 PASS |
-| Studio integration on disposable Postgres (Node 24) | **20/20 PASS** (migration replay, repositories, MCP resolver) |
-| Direct import-fix regression checks | web typecheck clean; Studio scoped 31 files / 252 tests PASS |
+| Check                                                                                                         | Result                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile --offline --ignore-scripts` (Node 24)                                         | PASS (203 packages; 401-entry supply-chain check)                                                                                                                                                                                                   |
+| `pnpm typecheck` / `pnpm lint`                                                                                | PASS 14/14, 14/14                                                                                                                                                                                                                                   |
+| `pnpm --filter @wukong/web build` (Turbopack)                                                                 | PASS                                                                                                                                                                                                                                                |
+| Root `node --test` suites (9 files, exact root-script list)                                                   | **145 tests PASS**                                                                                                                                                                                                                                  |
+| `apps/web` unit suite (direct vitest, threads pool)                                                           | **2763 passed, 11 skipped, 0 failed**                                                                                                                                                                                                               |
+| `packages/core` / `packages/ai` / `packages/db` (unit)                                                        | 326 / 444 / 196 PASS                                                                                                                                                                                                                                |
+| `packages/assets` / `packages/shopline` / `packages/jobs` / `apps/worker`                                     | 82(+1 skip) / 287 / 53 / 419 PASS                                                                                                                                                                                                                   |
+| Studio integration on disposable Postgres (Node 24)                                                           | **20/20 PASS** (migration replay, repositories, MCP resolver)                                                                                                                                                                                       |
+| Direct import-fix regression checks                                                                           | web typecheck clean; Studio scoped 31 files / 252 tests PASS                                                                                                                                                                                        |
 | Flags-on Studio browser acceptance (real Chromium, production build, seeded local Postgres, AI/MCP flags off) | **PASS** — sign-in, Studio home, deterministic answer, checks, follow-ups, trace, `Answered`, reload persistence, 390 px no overflow, thread list; evidence in the results round-8 record and `assets/2026-11-08-studio-browser-acceptance-390.png` |
-| Original `tests/e2e/studio.spec.ts` (flags-off browser case is still skipped without `PLAYWRIGHT_E2E=1`) | BLOCKED: 2 clean skips in the default environment; the new gated spec above covers the flags-on path |
+| Original `tests/e2e/studio.spec.ts` (flags-off browser case is still skipped without `PLAYWRIGHT_E2E=1`)      | BLOCKED: 2 clean skips in the default environment; the new gated spec above covers the flags-on path                                                                                                                                                |
+| Root `release-gate:check` automated half                                                                      | **PASS** — 6 automated checks (Node 24/pnpm pin, role separation, production-built Playwright, synthetic Opak audit wiring, mock preview adapter, disabled production acceptance); 14 human-sign-off items remain by design                         |
+| `runtime:forbidden:check`                                                                                     | **PASS** — 9 manifests / 602 source files, 0 forbidden runtime deps/imports/files/services                                                                                                                                                          |
+| `format:runtime:check`                                                                                        | **PASS** after formatting 94 Studio-era sources/docs (the gate had been failing on them)                                                                                                                                                            |
 
 **The exact `pnpm test` root command is blocked by this sandbox** (not by the code): its
 `turbo run test` step launches Vitest's default forked workers/temp dirs and fails with
@@ -57,11 +60,11 @@ A normal CI runner on Node 24 should be expected to pass; that run is the outsta
 
 ## Topology
 
-| Group | Commits | Files changed | Notes |
-| --- | --- | --- | --- |
-| Production recovery (`main..a12ad1c5`) | 11 | 20 | DB migration tooling/inventory/verifier + docs; not previously merged |
-| Conversation Studio (`a12ad1c5..HEAD`) | 31 incl. docs | 159 | Studio feature + records; base intentionally includes the recovery worktree state |
-| Combined merge (`main..HEAD`) | 42 | 178 (≈ +39.9k / −0.3k) | One overlapping file between groups: `packages/db/src/client.ts`; git auto-merges it |
+| Group                                  | Commits       | Files changed          | Notes                                                                                |
+| -------------------------------------- | ------------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| Production recovery (`main..a12ad1c5`) | 11            | 20                     | DB migration tooling/inventory/verifier + docs; not previously merged                |
+| Conversation Studio (`a12ad1c5..HEAD`) | 31 incl. docs | 159                    | Studio feature + records; base intentionally includes the recovery worktree state    |
+| Combined merge (`main..HEAD`)          | 42            | 178 (≈ +39.9k / −0.3k) | One overlapping file between groups: `packages/db/src/client.ts`; git auto-merges it |
 
 ## Dry-run results
 
@@ -70,10 +73,10 @@ never switched, merged, reset or otherwise modified. The rehearsals ran before t
 (`6d4b92e9`), which only changes relative import specifiers in web source and cannot introduce a
 merge conflict; merge cleanliness was re-checked afterwards.
 
-| Strategy | Result |
-| --- | --- |
-| **A. Merge the whole branch** into `main` (`git merge --no-ff claude/conversation-studio`) | **Clean — no conflicts** ("Automatic merge went well"). A verification merge candidate was created only on a temporary branch (green at that revision), then removed. |
-| **B. Studio-only**: cherry-pick the Studio commits (`a12ad1c5..claude/conversation-studio`) onto `main` | **Clean — no conflicts** at the time of the rehearsal; not fully re-verified separately. |
+| Strategy                                                                                                | Result                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Merge the whole branch** into `main` (`git merge --no-ff claude/conversation-studio`)              | **Clean — no conflicts** ("Automatic merge went well"). A verification merge candidate was created only on a temporary branch (green at that revision), then removed. |
+| **B. Studio-only**: cherry-pick the Studio commits (`a12ad1c5..claude/conversation-studio`) onto `main` | **Clean — no conflicts** at the time of the rehearsal; not fully re-verified separately.                                                                              |
 
 **Recommendation: strategy A**, because the recovery commits are the user's own pending work on the
 same line, the combined merge is clean, and the branch content (which already contains `main`) was
@@ -129,7 +132,11 @@ anywhere by this work.
 
 - Exact `pnpm test` turbo invocation in this sandbox (worker-spawn EPERM); run on a normal Node 24
   CI runner.
-- `audit:verify` CLI gate / readiness-gate log scan (need a seeded pilot workspace/deployment env).
+- `audit:verify` CLI gate **NOT_RUN locally**: it requires the exact synthetic Opak lifecycle draft
+  created by the real-stack fixture; the local database used for the browser acceptance contains
+  Studio activity only, and fabricating audit events would invalidate the gate. Run it against a
+  seeded pilot workspace or the real-stack fixture before sign-off. The CLI and its unit tests are
+  part of the suite. Readiness-gate log scan needs a deployed environment.
 - Live provider, hosted-MCP client calls and external MCP transport (deliberately never activated).
 
 Flags-on authenticated browser acceptance is no longer blocked: it passed locally on 2026-11-09 with

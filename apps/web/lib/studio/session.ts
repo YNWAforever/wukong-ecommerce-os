@@ -66,10 +66,9 @@ export async function requireStudioSession(
   minimumRole: WorkspaceRole = "viewer",
 ): Promise<StudioSession> {
   const session = await requireSessionContext(deps.sessionContext);
-  const settings = await deps.getDatabase().forWorkspace(
-    session.workspaceId,
-    (repos) => repos.studio.settings.get(),
-  );
+  const settings = await deps
+    .getDatabase()
+    .forWorkspace(session.workspaceId, (repos) => repos.studio.settings.get());
   const env = deps.env ?? process.env;
   if (!deps.isStudioEnabled(env, settings)) {
     throw studioNotFound();

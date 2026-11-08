@@ -10,8 +10,9 @@ import type {
 } from "../lib/studio/mcp-connections";
 import { StudioMcpConnectionsPanel } from "./studio-mcp-connections-panel";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
  * External-MCP registry panel tests (plan Task 13): the disabled-by-default
@@ -134,9 +135,13 @@ describe("StudioMcpConnectionsPanel", () => {
   });
 
   it("approves only after the explicit click and shows the honest notice", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json(connection({ status: "approved", approvedBy: "actor_ops" })),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json(
+          connection({ status: "approved", approvedBy: "actor_ops" }),
+        ),
+      );
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount(
@@ -172,9 +177,11 @@ describe("StudioMcpConnectionsPanel", () => {
   });
 
   it("creates a draft with the parsed allowlist and schema hashes", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json(connection({ label: "New server" }), { status: 201 }),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () =>
+        Response.json(connection({ label: "New server" }), { status: 201 }),
+      );
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount(snapshot());
@@ -249,4 +256,3 @@ describe("StudioMcpConnectionsPanel", () => {
     );
   });
 });
-

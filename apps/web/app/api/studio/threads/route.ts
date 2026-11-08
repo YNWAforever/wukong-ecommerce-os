@@ -34,19 +34,11 @@ export function createStudioThreadsHandlers(deps: StudioRouteDeps) {
         try {
           json = await request.json();
         } catch {
-          throw new ApiError(
-            400,
-            "invalid_body",
-            "Request body is invalid.",
-          );
+          throw new ApiError(400, "invalid_body", "Request body is invalid.");
         }
         const parsed = createThreadBodySchema.safeParse(json);
         if (!parsed.success) {
-          throw new ApiError(
-            400,
-            "invalid_body",
-            "Request body is invalid.",
-          );
+          throw new ApiError(400, "invalid_body", "Request body is invalid.");
         }
         const created = await service().createThread(parsed.data);
         return jsonResponse(201, { ...created });

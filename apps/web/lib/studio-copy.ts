@@ -67,10 +67,7 @@ export const STUDIO_COPY = {
     "Studio never approves or publishes inside a conversation; those actions open the existing screens.",
   ],
   "studio.home.recentTitle": ["最近的對話", "Recent conversations"],
-  "studio.home.recentEmpty": [
-    "還沒有對話。",
-    "No conversations yet.",
-  ],
+  "studio.home.recentEmpty": ["還沒有對話。", "No conversations yet."],
   "studio.home.composerTitle": ["開始對話", "Start a conversation"],
   "studio.home.templatesTitle": ["角色範本", "Role templates"],
 
@@ -344,10 +341,7 @@ export const STUDIO_COPY = {
     "Only the 50 most recently updated conversations are shown.",
   ],
   "studio.threads.searchLabel": ["搜尋對話", "Search conversations"],
-  "studio.threads.searchPlaceholder": [
-    "標題或技能",
-    "Title or skill",
-  ],
+  "studio.threads.searchPlaceholder": ["標題或技能", "Title or skill"],
   "studio.threads.searchAction": ["搜尋", "Search"],
   "studio.threads.searchEmpty": [
     "沒有符合搜尋的對話。",
@@ -398,7 +392,8 @@ export const STUDIO_COPY = {
   "studio.trace.audit_read": [
     "已讀取 {datasets} 個稽核資料集。",
     "Read {datasets} audit dataset(s).",
-  ],  "studio.trace.dispatch.done": [
+  ],
+  "studio.trace.dispatch.done": [
     "已建立商品草稿 {listingId}；佇列狀態：{queueState}。",
     "Created listing draft {listingId}; queue state: {queueState}.",
   ],
@@ -461,10 +456,7 @@ export const STUDIO_COPY = {
     "Get listing run status",
   ],
   "studio.tool.listing.create_draft": ["建立商品草稿", "Create listing draft"],
-  "studio.tool.listing.propose_copy": [
-    "建立文案建議",
-    "Propose listing copy",
-  ],
+  "studio.tool.listing.propose_copy": ["建立文案建議", "Propose listing copy"],
 
   // -- records answer -------------------------------------------------------
   "studio.answer.heading": [
@@ -483,7 +475,10 @@ export const STUDIO_COPY = {
     "品質概況：共 {totalListings} 個商品，已評估 {totalAssessed} 個，無缺口 {cleanCount} 個，有缺口 {hasGapsCount} 個（彙總狀態：{projectionState}）。",
     "Quality summary: {totalListings} listings, {totalAssessed} assessed, {cleanCount} clean, {hasGapsCount} with gaps (projection: {projectionState}).",
   ],
-  "studio.answer.recent_jobs": ["最近的作業記錄：{count} 筆。", "Recent jobs: {count}."],
+  "studio.answer.recent_jobs": [
+    "最近的作業記錄：{count} 筆。",
+    "Recent jobs: {count}.",
+  ],
   "studio.answer.gap_review": [
     "內容缺口：{contentGaps} 個，其中阻塞 {blockingGaps} 個。",
     "Content gaps: {contentGaps}, of which {blockingGaps} blocking.",
@@ -503,7 +498,8 @@ export const STUDIO_COPY = {
   "studio.answer.audit_report": [
     "稽核報告：商品 {listings} 個，無缺口 {clean} 個，有缺口 {gaps} 個，最近匯出 {exports} 筆。",
     "Audit report: {listings} listings, {clean} clean, {gaps} with gaps, {exports} recent export attempt(s).",
-  ],  "studio.answer.draft_ready": [
+  ],
+  "studio.answer.draft_ready": [
     "已準備 {assets} 個來源素材；缺少 {missing} 個。確認後才會建立草稿。",
     "Prepared {assets} source asset(s); {missing} missing. The draft is only created after explicit confirmation.",
   ],
@@ -521,7 +517,10 @@ export const STUDIO_COPY = {
     "商品 {totalListings} 個；已評估 {totalAssessed} 個；無缺口 {cleanCount} 個；有缺口 {hasGapsCount} 個；彙總狀態 {projectionState}。",
     "Listings {totalListings}; assessed {totalAssessed}; clean {cleanCount}; with gaps {hasGapsCount}; projection {projectionState}.",
   ],
-  "studio.check.recent_jobs": ["近期作業：{count} 筆。", "Recent jobs: {count}."],
+  "studio.check.recent_jobs": [
+    "近期作業：{count} 筆。",
+    "Recent jobs: {count}.",
+  ],
   "studio.check.content_gap": [
     "商品 {listingId}：缺口 {code}；阻塞核准：{blocking}。",
     "Listing {listingId}: gap {code}; blocking: {blocking}.",
@@ -545,7 +544,8 @@ export const STUDIO_COPY = {
   "studio.check.audit_exports": [
     "最近匯出：{count} 筆；就緒 {ready} 筆；失敗 {failed} 筆。",
     "Recent exports: {count}; ready {ready}; failed {failed}.",
-  ],  "studio.check.draft_assets": [
+  ],
+  "studio.check.draft_assets": [
     "來源素材：{count} 個可用；缺少 {missing} 個；已附在其他商品 {attached} 個。",
     "Source assets: {count} usable; {missing} missing; {attached} already attached to another listing.",
   ],
@@ -590,7 +590,8 @@ export const STUDIO_COPY = {
   "studio.limit.audit_exports_unavailable": [
     "未能讀取匯出紀錄；不以零代替。",
     "Export records could not be read; no zero is substituted.",
-  ],  "studio.limit.draft_assets_missing": [
+  ],
+  "studio.limit.draft_assets_missing": [
     "缺少 {count} 個來源素材；未準備任何派送動作。",
     "{count} source asset(s) are missing; no dispatch was prepared.",
   ],
@@ -667,10 +668,7 @@ export const STUDIO_COPY = {
   "studio.evidence.sourceKind.catalog": ["商品目錄", "Catalog"],
   "studio.evidence.sourceKind.quality": ["品質", "Quality"],
   "studio.evidence.sourceKind.source_import": ["來源匯入", "Source import"],
-  "studio.evidence.sourceKind.export_attempt": [
-    "匯出紀錄",
-    "Export record",
-  ],
+  "studio.evidence.sourceKind.export_attempt": ["匯出紀錄", "Export record"],
   "studio.evidence.sourceKind.job": ["作業", "Job"],
   "studio.evidence.sourceKind.audit": ["稽核", "Audit"],
   "studio.evidence.sourceKind.website": ["網站", "Website"],
@@ -871,7 +869,10 @@ export const STUDIO_COPY = {
   "studio.connections.kind.read": ["讀取", "Read"],
   "studio.connections.kind.propose": ["建議", "Propose"],
   "studio.connections.kind.dispatch": ["派送", "Dispatch"],
-  "studio.connections.planned": ["規劃中；尚未實作。", "Planned; not implemented yet."],
+  "studio.connections.planned": [
+    "規劃中；尚未實作。",
+    "Planned; not implemented yet.",
+  ],
   "studio.role.viewer": ["檢視者", "Viewer"],
   "studio.role.operator": ["操作員", "Operator"],
   "studio.role.reviewer": ["審核員", "Reviewer"],
@@ -994,10 +995,7 @@ export const STUDIO_COPY = {
     "你沒有權限建立草稿。",
     "You do not have permission to create a draft.",
   ],
-  "studio.dispatch.processing": [
-    "處理狀態",
-    "Processing status",
-  ],
+  "studio.dispatch.processing": ["處理狀態", "Processing status"],
   "studio.dispatch.readingStatus": [
     "正在讀取處理狀態…",
     "Reading processing status…",
@@ -1012,10 +1010,7 @@ export const STUDIO_COPY = {
   "studio.dispatch.runState.succeeded": ["成功", "Succeeded"],
   "studio.dispatch.runState.failed": ["失敗", "Failed"],
   "studio.dispatch.runState.cancelled": ["已取消", "Cancelled"],
-  "studio.dispatch.runState.outcome_unknown": [
-    "結果未知",
-    "Outcome unknown",
-  ],
+  "studio.dispatch.runState.outcome_unknown": ["結果未知", "Outcome unknown"],
   "studio.dispatch.runState.unavailable": ["未能提供", "Unavailable"],
 
   // -- merchant audit report card (plan Task 11) ---------------------------
@@ -1066,7 +1061,10 @@ export const STUDIO_COPY = {
   "studio.render.no": ["否", "No"],
 
   // -- client error surface ------------------------------------------------
-  "studio.error.generic": ["發生錯誤，請重試。", "Something went wrong. Try again."],
+  "studio.error.generic": [
+    "發生錯誤，請重試。",
+    "Something went wrong. Try again.",
+  ],
   "studio.error.network": [
     "無法連線至伺服器，請重試。",
     "Could not reach the server. Try again.",
@@ -1079,8 +1077,14 @@ export const STUDIO_COPY = {
     "你沒有權限執行此操作。",
     "You do not have permission to perform this action.",
   ],
-  "studio.error.notFound": ["找不到此對話。", "This conversation could not be found."],
-  "studio.error.invalidBody": ["訊息格式不正確。", "The message was not valid."],
+  "studio.error.notFound": [
+    "找不到此對話。",
+    "This conversation could not be found.",
+  ],
+  "studio.error.invalidBody": [
+    "訊息格式不正確。",
+    "The message was not valid.",
+  ],
   "studio.error.skillUnavailable": [
     "此技能尚未提供。",
     "This skill is not available.",

@@ -26,7 +26,10 @@ import {
   studioServiceDeps,
   type StudioRouteDeps,
 } from "../../../../../lib/studio/route-deps";
-import { requireStudioSession, studioNotFound } from "../../../../../lib/studio/session";
+import {
+  requireStudioSession,
+  studioNotFound,
+} from "../../../../../lib/studio/session";
 import { translatedLine } from "../../../../../lib/studio/types";
 import type { preflightWineCapability } from "../../../../../lib/wine-capability-client";
 
@@ -47,23 +50,22 @@ import type { preflightWineCapability } from "../../../../../lib/wine-capability
 
 const UUID = z.string().uuid();
 
-export const studioDispatchBodySchema = z
-  .strictObject({
-    threadId: UUID,
-    /** The assistant turn that prepared this dispatch, for the trace event. */
-    runId: UUID.optional(),
-    assetIds: z
-      .array(UUID)
-      .min(1)
-      .max(8)
-      .refine(
-        (ids) => new Set(ids).size === ids.length,
-        "Asset ids must be unique.",
-      ),
-    note: z.string().max(2000).optional(),
-    skillKey: z.literal("listing.draft_from_sources").optional(),
-    confirmed: z.literal(true),
-  });
+export const studioDispatchBodySchema = z.strictObject({
+  threadId: UUID,
+  /** The assistant turn that prepared this dispatch, for the trace event. */
+  runId: UUID.optional(),
+  assetIds: z
+    .array(UUID)
+    .min(1)
+    .max(8)
+    .refine(
+      (ids) => new Set(ids).size === ids.length,
+      "Asset ids must be unique.",
+    ),
+  note: z.string().max(2000).optional(),
+  skillKey: z.literal("listing.draft_from_sources").optional(),
+  confirmed: z.literal(true),
+});
 export type StudioDispatchBody = z.infer<typeof studioDispatchBodySchema>;
 
 export type StudioDispatchRouteDeps = StudioRouteDeps & {
@@ -129,13 +131,13 @@ export function createStudioDispatchHandler(deps: StudioDispatchRouteDeps) {
       if (!skillsForRole(role).some((entry) => entry.key === skill.key))
         throw new ApiError(403, "insufficient_role", "Insufficient role.");
 
-      const bundle = await deps.getDatabase().forWorkspace(
-        session.workspaceId,
-        (repos) =>
+      const bundle = await deps
+        .getDatabase()
+        .forWorkspace(session.workspaceId, (repos) =>
           repos.studio.threads.getWithMessages(body.threadId, {
             messageLimit: 1,
           }),
-      );
+        );
       if (!bundle) throw studioNotFound();
       if (
         bundle.thread.visibility === "private" &&
@@ -172,36 +174,38 @@ export function createStudioDispatchHandler(deps: StudioDispatchRouteDeps) {
         result.replayed === true || result.reusedExisting === true;
 
       if (!replayed) {
-        await deps.getDatabase().forWorkspace(session.workspaceId, async (repos) => {
-          await repos.audit.write({
-            workspaceId: session.workspaceId,
-            actorId: session.actorId,
-            entityId: result.listing.id,
-            action: "studio.dispatch.listing_draft",
-            metadata: {
-              threadId: body.threadId,
-              listingId: result.listing.id,
-              runId: result.processing?.runId ?? null,
-              queueState: result.queueState,
-              assetCount: body.assetIds.length,
-              skillKey: skill.key,
-            },
-          });
-          if (runId) {
-            await repos.studio.runEvents.appendMany(runId, [
-              {
-                kind: "dispatch",
-                state: "done",
-                toolId: null,
-                payload: translatedLine("studio.trace.dispatch.done", {
-                  listingId: result.listing.id,
-                  queueState: result.queueState,
-                }),
-                durationMs: null,
+        await deps
+          .getDatabase()
+          .forWorkspace(session.workspaceId, async (repos) => {
+            await repos.audit.write({
+              workspaceId: session.workspaceId,
+              actorId: session.actorId,
+              entityId: result.listing.id,
+              action: "studio.dispatch.listing_draft",
+              metadata: {
+                threadId: body.threadId,
+                listingId: result.listing.id,
+                runId: result.processing?.runId ?? null,
+                queueState: result.queueState,
+                assetCount: body.assetIds.length,
+                skillKey: skill.key,
               },
-            ]);
-          }
-        });
+            });
+            if (runId) {
+              await repos.studio.runEvents.appendMany(runId, [
+                {
+                  kind: "dispatch",
+                  state: "done",
+                  toolId: null,
+                  payload: translatedLine("studio.trace.dispatch.done", {
+                    listingId: result.listing.id,
+                    queueState: result.queueState,
+                  }),
+                  durationMs: null,
+                },
+              ]);
+            }
+          });
       }
 
       return jsonResponse(200, {

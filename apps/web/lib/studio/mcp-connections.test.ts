@@ -63,11 +63,13 @@ function fakeConnection(
   };
 }
 
-function fixture(input: {
-  role?: Role;
-  env?: NodeJS.ProcessEnv;
-  options?: FakeStudioOptions;
-} = {}) {
+function fixture(
+  input: {
+    role?: Role;
+    env?: NodeJS.ProcessEnv;
+    options?: FakeStudioOptions;
+  } = {},
+) {
   const options = input.options ?? {};
   const fake = createFakeStudio({
     ...options,
@@ -120,8 +122,12 @@ describe("external MCP request schemas", () => {
         extra: true,
       }).success,
     ).toBe(false);
-    expect(updateMcpConnectionBodySchema.safeParse({ status: "approved" }).success).toBe(true);
-    expect(updateMcpConnectionBodySchema.safeParse({ status: "draft" }).success).toBe(false);
+    expect(
+      updateMcpConnectionBodySchema.safeParse({ status: "approved" }).success,
+    ).toBe(true);
+    expect(
+      updateMcpConnectionBodySchema.safeParse({ status: "draft" }).success,
+    ).toBe(false);
   });
 
   it("keeps the deployment gates fail-closed", () => {
@@ -137,30 +143,41 @@ describe("external MCP request schemas", () => {
     expect(externalMcpEnabled(enabled, { enabled: false })).toBe(false);
     expect(
       externalMcpEnabled(
-        { ...enabled, STUDIO_EXTERNAL_MCP_ENABLED: "TRUE" } as NodeJS.ProcessEnv,
+        {
+          ...enabled,
+          STUDIO_EXTERNAL_MCP_ENABLED: "TRUE",
+        } as NodeJS.ProcessEnv,
         { enabled: true },
       ),
     ).toBe(false);
-    expect(externalMcpTransportAllowed({
-      env: enabled,
-      settings: { enabled: true },
-      status: "approved",
-    })).toBe(true);
-    expect(externalMcpTransportAllowed({
-      env: enabled,
-      settings: { enabled: true },
-      status: "draft",
-    })).toBe(false);
-    expect(externalMcpTransportAllowed({
-      env: enabled,
-      settings: { enabled: true },
-      status: "disabled",
-    })).toBe(false);
-    expect(externalMcpTransportAllowed({
-      env: { ...enabled, STUDIO_MCP_ENCRYPTION_KEY: "" } as NodeJS.ProcessEnv,
-      settings: { enabled: true },
-      status: "approved",
-    })).toBe(false);
+    expect(
+      externalMcpTransportAllowed({
+        env: enabled,
+        settings: { enabled: true },
+        status: "approved",
+      }),
+    ).toBe(true);
+    expect(
+      externalMcpTransportAllowed({
+        env: enabled,
+        settings: { enabled: true },
+        status: "draft",
+      }),
+    ).toBe(false);
+    expect(
+      externalMcpTransportAllowed({
+        env: enabled,
+        settings: { enabled: true },
+        status: "disabled",
+      }),
+    ).toBe(false);
+    expect(
+      externalMcpTransportAllowed({
+        env: { ...enabled, STUDIO_MCP_ENCRYPTION_KEY: "" } as NodeJS.ProcessEnv,
+        settings: { enabled: true },
+        status: "approved",
+      }),
+    ).toBe(false);
   });
 });
 
@@ -234,18 +251,22 @@ describe("external MCP connection service", () => {
 
     const flagOff = fixture({
       env: { ...ON_ENV, STUDIO_EXTERNAL_MCP_ENABLED: "" } as NodeJS.ProcessEnv,
-      options: { mcpConnections: [fakeConnection({ id: "22222222-2222-4222-8222-222222222222" })] },
+      options: {
+        mcpConnections: [
+          fakeConnection({ id: "22222222-2222-4222-8222-222222222222" }),
+        ],
+      },
     });
     await expect(
-      flagOff.service.approveConnection(
-        "22222222-2222-4222-8222-222222222222",
-      ),
+      flagOff.service.approveConnection("22222222-2222-4222-8222-222222222222"),
     ).rejects.toMatchObject({ status: 409, code: "external_mcp_disabled" });
 
     const workspaceOff = fixture({
       options: {
         settings: { enabled: false },
-        mcpConnections: [fakeConnection({ id: "33333333-3333-4333-8333-333333333333" })],
+        mcpConnections: [
+          fakeConnection({ id: "33333333-3333-4333-8333-333333333333" }),
+        ],
       },
     });
     // A disabled Studio workspace never reaches the approve path at all: the
@@ -258,7 +279,11 @@ describe("external MCP connection service", () => {
 
     const noKey = fixture({
       env: { ...ON_ENV, STUDIO_MCP_ENCRYPTION_KEY: "" } as NodeJS.ProcessEnv,
-      options: { mcpConnections: [fakeConnection({ id: "44444444-4444-4444-8444-444444444444" })] },
+      options: {
+        mcpConnections: [
+          fakeConnection({ id: "44444444-4444-4444-8444-444444444444" }),
+        ],
+      },
     });
     await expect(
       noKey.service.approveConnection("44444444-4444-4444-8444-444444444444"),

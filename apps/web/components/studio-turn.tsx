@@ -317,7 +317,9 @@ function AssistantTurn({
         {reply.records.sections.length > 0 ? (
           <ul className={styles["studio-answer-sections"]}>
             {reply.records.sections.map((line, index) => (
-              <li key={`${index}-${line.key}`}>{renderStudioLine(locale, line)}</li>
+              <li key={`${index}-${line.key}`}>
+                {renderStudioLine(locale, line)}
+              </li>
             ))}
           </ul>
         ) : null}
@@ -351,7 +353,10 @@ function AssistantTurn({
             </h4>
             <ul className={styles["studio-followups"]}>
               {reply.followUps.map((line, index) => (
-                <li key={`${index}-${line.key}`} className={styles["studio-followup"]}>
+                <li
+                  key={`${index}-${line.key}`}
+                  className={styles["studio-followup"]}
+                >
                   {renderStudioLine(locale, line)}
                 </li>
               ))}

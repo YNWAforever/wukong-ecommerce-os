@@ -26,9 +26,7 @@ const OUTPUT_ID = "55555555-5555-4555-8555-555555555555";
 const THREAD_ID = "66666666-6666-4666-8666-666666666666";
 const CREATED_AT = new Date("2026-11-08T10:00:00.000Z");
 
-function outputRow(
-  overrides: Partial<StudioOutput> = {},
-): StudioOutput {
+function outputRow(overrides: Partial<StudioOutput> = {}): StudioOutput {
   return {
     id: OUTPUT_ID,
     workspaceId: WORKSPACE,
@@ -137,7 +135,10 @@ describe("GET /api/studio/outputs/[id]", () => {
 describe("POST /api/studio/outputs/[id]", () => {
   it("saves as operator and signs off as reviewer with audits", async () => {
     const save = fixture({ role: "operator" });
-    const saved = await save.handlers.POST(request({ action: "save" }), context);
+    const saved = await save.handlers.POST(
+      request({ action: "save" }),
+      context,
+    );
     expect(saved.status).toBe(200);
     expect(await saved.json()).toMatchObject({
       outputId: OUTPUT_ID,
@@ -145,9 +146,9 @@ describe("POST /api/studio/outputs/[id]", () => {
       version: 1,
     });
     expect(save.fake.state.outputs[0]?.status).toBe("saved");
-    expect(
-      save.fake.state.audits.map((event) => event.action),
-    ).toContain("studio.output.saved");
+    expect(save.fake.state.audits.map((event) => event.action)).toContain(
+      "studio.output.saved",
+    );
 
     const sign = fixture({ role: "reviewer" });
     const signed = await sign.handlers.POST(
@@ -156,9 +157,9 @@ describe("POST /api/studio/outputs/[id]", () => {
     );
     expect(signed.status).toBe(200);
     expect(await signed.json()).toMatchObject({ status: "signed_off" });
-    expect(
-      sign.fake.state.audits.map((event) => event.action),
-    ).toContain("studio.output.signed_off");
+    expect(sign.fake.state.audits.map((event) => event.action)).toContain(
+      "studio.output.signed_off",
+    );
   });
 
   it("rejects a viewer sign-off, an invalid body and a disabled Studio", async () => {

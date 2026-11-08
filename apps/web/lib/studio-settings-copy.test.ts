@@ -88,10 +88,7 @@ describe("studio settings copy", () => {
       studioSettingsCopy("en", "studio.settings.external.disabledBanner"),
     ).toContain("disabled by default");
     expect(
-      studioSettingsCopy(
-        "zh-Hant",
-        "studio.settings.external.disabledBanner",
-      ),
+      studioSettingsCopy("zh-Hant", "studio.settings.external.disabledBanner"),
     ).toContain("預設停用");
     expect(
       studioSettingsCopy("en", "studio.settings.noLiveConnection"),
@@ -102,9 +99,10 @@ describe("studio settings copy", () => {
     for (const key of KEYS) {
       const [zh, en] = STUDIO_SETTINGS_COPY[key];
       for (const [label, pattern] of BANNED_CLAIMS) {
-        expect(pattern.test(zh), `${key} (zh-Hant) must not contain ${label}`).toBe(
-          false,
-        );
+        expect(
+          pattern.test(zh),
+          `${key} (zh-Hant) must not contain ${label}`,
+        ).toBe(false);
         expect(pattern.test(en), `${key} (en) must not contain ${label}`).toBe(
           false,
         );

@@ -75,9 +75,7 @@ function fixture(
     isMcpServerEnabled: isStudioMcpServerEnabled,
     env: input.env ?? ON_ENV,
     now: input.now ?? (() => NOW_MS),
-    ...(input.deadlineMs !== undefined
-      ? { deadlineMs: input.deadlineMs }
-      : {}),
+    ...(input.deadlineMs !== undefined ? { deadlineMs: input.deadlineMs } : {}),
   };
   return { server: createMcpServer(deps), fake, token };
 }
@@ -124,7 +122,8 @@ async function call(
   const text = await response.text();
   return {
     response,
-    body: text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : null,
+    body:
+      text.length > 0 ? (JSON.parse(text) as Record<string, unknown>) : null,
   };
 }
 
@@ -195,9 +194,11 @@ describe("MCP transport gates", () => {
       apiTokens: [token],
     });
     const server = createMcpServer({
-      getDatabase: fakeGetDatabase(fake.repos, [], [
-        { hash: TOKEN_HASH, token },
-      ]),
+      getDatabase: fakeGetDatabase(
+        fake.repos,
+        [],
+        [{ hash: TOKEN_HASH, token }],
+      ),
       isMcpServerEnabled: isStudioMcpServerEnabled,
       env: ON_ENV,
     });
@@ -242,11 +243,9 @@ describe("MCP transport gates", () => {
       isMcpServerEnabled: isStudioMcpServerEnabled,
       env: ON_ENV,
     });
-    const { response, body } = await call(
-      server,
-      rpc(9, "ping"),
-      { token: TOKEN },
-    );
+    const { response, body } = await call(server, rpc(9, "ping"), {
+      token: TOKEN,
+    });
     expect(response.status).toBe(500);
     expect(errorCode(body)).toBe(-32603);
   });
@@ -300,9 +299,15 @@ describe("MCP methods", () => {
   it("lists only read/propose tools within the token scopes and role floor", async () => {
     const both = fixture();
     const listed = await call(both.server, rpc(1, "tools/list"));
-    const tools = (listed.body?.result as {
-      tools: Array<{ name: string; description: string; inputSchema: unknown }>;
-    }).tools;
+    const tools = (
+      listed.body?.result as {
+        tools: Array<{
+          name: string;
+          description: string;
+          inputSchema: unknown;
+        }>;
+      }
+    ).tools;
     const names = tools.map((tool) => tool.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -334,9 +339,9 @@ describe("MCP methods", () => {
 
     const viewer = fixture({ role: "viewer" });
     const viewerListed = await call(viewer.server, rpc(1, "tools/list"));
-    expect(
-      (viewerListed.body?.result as { tools: unknown[] }).tools,
-    ).toEqual([]);
+    expect((viewerListed.body?.result as { tools: unknown[] }).tools).toEqual(
+      [],
+    );
   });
 
   it("executes an allowed read tool, records the ledger and audit, and touches the token", async () => {

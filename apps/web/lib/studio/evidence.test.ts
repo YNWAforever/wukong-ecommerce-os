@@ -83,8 +83,7 @@ function baseDeps(overrides: Partial<StudioReadDeps> = {}): StudioReadDeps {
     },
     async getListingCopy(listingId) {
       if (listingId !== LISTING_A && listingId !== LISTING_B) return null;
-      const title =
-        listingId === LISTING_A ? "Margaux 2019" : "Rioja 2021";
+      const title = listingId === LISTING_A ? "Margaux 2019" : "Rioja 2021";
       return {
         listingId,
         activeVersionId: `version-${listingId}`,
@@ -271,9 +270,11 @@ describe("deterministic studio evidence and composition", () => {
     );
     const reply = composeDeterministicReply({ skill: catalogFind, pack });
     expect(reply.status).toBe("partial");
-    expect(reply.records.checks.some((check) => check.key === "studio.check.listing_status")).toBe(
-      false,
-    );
+    expect(
+      reply.records.checks.some(
+        (check) => check.key === "studio.check.listing_status",
+      ),
+    ).toBe(false);
   });
 
   it("reports content gaps, blocked gaps and the unread export ledger honestly", async () => {
@@ -449,9 +450,9 @@ describe("copy-proposal evidence", () => {
       listingId: LISTING_A,
     });
     if (result.status !== "complete") throw new Error("expected complete");
-    expect(
-      result.pack.limitations.map((line) => line.key),
-    ).toContain("studio.limit.copy_unavailable");
+    expect(result.pack.limitations.map((line) => line.key)).toContain(
+      "studio.limit.copy_unavailable",
+    );
     expect(result.pack.context.copyProposal).toBeUndefined();
   });
 });
@@ -588,9 +589,9 @@ describe("studio draft-from-sources evidence (plan Task 10)", () => {
     });
     expect(reply.dispatch?.ready).toBe(false);
     expect(reply.status).toBe("partial");
-    expect(
-      result.pack.limitations.map((line) => line.key),
-    ).toContain("studio.limit.draft_assets_missing");
+    expect(result.pack.limitations.map((line) => line.key)).toContain(
+      "studio.limit.draft_assets_missing",
+    );
   });
 
   it("offers no dispatch at all when no asset resolved", async () => {
@@ -714,9 +715,7 @@ describe("studio merchant-audit evidence (plan Task 11)", () => {
     };
     expect(payload.listings).toBeNull();
     expect(payload.exports).toBeNull();
-    expect(
-      result.pack.limitations.map((line) => line.key),
-    ).toEqual(
+    expect(result.pack.limitations.map((line) => line.key)).toEqual(
       expect.arrayContaining([
         "studio.limit.catalog_unavailable",
         "studio.limit.audit_exports_unavailable",

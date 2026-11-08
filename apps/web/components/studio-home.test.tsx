@@ -15,8 +15,9 @@ import type { StudioTurnReply } from "../lib/studio/types";
 import { STUDIO_COPY } from "../lib/studio-copy";
 import { STUDIO_TEMPLATES, StudioHome } from "./studio-home";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const overview: StudioOverviewResult = {
   listingCounts: {
@@ -87,15 +88,15 @@ function render(
 
 const roots: ReturnType<typeof createRoot>[] = [];
 
-async function mount(
-  props: Partial<Parameters<typeof StudioHome>[0]> = {},
-) {
+async function mount(props: Partial<Parameters<typeof StudioHome>[0]> = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
   await act(async () => {
-    root.render(<StudioHome locale="en" overview={overview} canCreateThread {...props} />);
+    root.render(
+      <StudioHome locale="en" overview={overview} canCreateThread {...props} />,
+    );
   });
   return container;
 }
@@ -212,9 +213,7 @@ describe("StudioHome", () => {
     const fill = buttonByText(container, "Fill the composer");
     await act(async () => fill?.click());
 
-    expect(textarea(container).value).toBe(
-      "Find and explain these listings: ",
-    );
+    expect(textarea(container).value).toBe("Find and explain these listings: ");
     expect(container.textContent).toContain("Selected skill");
     expect(container.textContent).toContain("catalog.find");
     expect(document.activeElement).toBe(textarea(container));
@@ -249,7 +248,10 @@ describe("StudioHome", () => {
     const body = JSON.parse(
       String(fetcher.mock.calls[1]?.[1]?.body ?? "{}"),
     ) as Record<string, unknown>;
-    expect(body).toMatchObject({ text: "Find the Opak listings", locale: "en" });
+    expect(body).toMatchObject({
+      text: "Find the Opak listings",
+      locale: "en",
+    });
     expect(navigation.push).toHaveBeenCalledWith("/studio/t/thread-new");
   });
 

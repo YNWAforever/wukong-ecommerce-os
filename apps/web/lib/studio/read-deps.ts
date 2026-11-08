@@ -83,9 +83,7 @@ export function buildStudioReadDeps(
         items,
         truncated: page.totalMatching > page.items.length,
         unlinkedSkipped:
-          page.summary.unlinked +
-          page.summary.website +
-          page.summary.workbook,
+          page.summary.unlinked + page.summary.website + page.summary.workbook,
       };
     },
 
@@ -93,9 +91,7 @@ export function buildStudioReadDeps(
       const snapshot = await repos.listings.getReviewSnapshot(listingId);
       if (!snapshot) return null;
       const content = snapshot.activeVersion?.content ?? null;
-      const title = content
-        ? content.title["zh-Hant"] || content.title.en
-        : "";
+      const title = content ? content.title["zh-Hant"] || content.title.en : "";
       return {
         listingId: snapshot.listing.id,
         status: snapshot.listing.status,
@@ -160,9 +156,7 @@ export function buildStudioReadDeps(
       }));
     },
 
-    async getListingGaps(
-      listingId,
-    ): Promise<{ gaps: ListingGap[] } | null> {
+    async getListingGaps(listingId): Promise<{ gaps: ListingGap[] } | null> {
       const snapshot = await repos.listings.getReviewSnapshot(listingId);
       if (!snapshot) return null;
       // A missing active version is the strongest blocker: content checks
@@ -189,8 +183,7 @@ export function buildStudioReadDeps(
       items: SourceAssetEvidence[];
       missingAssetIds: string[];
     }> {
-      if (assetIds.length === 0)
-        return { items: [], missingAssetIds: [] };
+      if (assetIds.length === 0) return { items: [], missingAssetIds: [] };
       // Workspace-scoped repository: a foreign asset id cannot resolve here, so
       // it is reported as missing exactly like a deleted one.
       const rows = await repos.sourceAssets.getByIds([...assetIds]);

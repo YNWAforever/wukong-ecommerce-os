@@ -64,7 +64,11 @@ function fixture(input: {
   else
     state.intake.mockResolvedValue(
       input.intakeResult ?? {
-        listing: { id: "listing-created", status: "received", target: "shopline" },
+        listing: {
+          id: "listing-created",
+          status: "received",
+          target: "shopline",
+        },
         inputRevision: 1,
         activeVersionId: null,
         processing: {
@@ -93,14 +97,11 @@ function fixture(input: {
 }
 
 function request(body: unknown): Request {
-  return new Request(
-    "http://localhost/api/studio/dispatch/listing-draft",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
+  return new Request("http://localhost/api/studio/dispatch/listing-draft", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function validBody(threadId: string, runId?: string) {
@@ -142,16 +143,20 @@ describe("POST /api/studio/dispatch/listing-draft", () => {
   it("refuses a viewer and a disabled Studio before the intake", async () => {
     const viewer = fixture({ role: "viewer" });
     expect(
-      (await createStudioDispatchHandler(viewer.deps)(
-        request(validBody(viewer.thread.id)),
-      )).status,
+      (
+        await createStudioDispatchHandler(viewer.deps)(
+          request(validBody(viewer.thread.id)),
+        )
+      ).status,
     ).toBe(403);
 
     const disabled = fixture({ env: {} as NodeJS.ProcessEnv });
     expect(
-      (await createStudioDispatchHandler(disabled.deps)(
-        request(validBody(disabled.thread.id)),
-      )).status,
+      (
+        await createStudioDispatchHandler(disabled.deps)(
+          request(validBody(disabled.thread.id)),
+        )
+      ).status,
     ).toBe(404);
     expect(state.intake).not.toHaveBeenCalled();
   });
@@ -199,7 +204,11 @@ describe("POST /api/studio/dispatch/listing-draft", () => {
       unknown,
       {
         context: { workspaceId: string };
-        body: { sourceAssetIds: string[]; note: string; processingMode: string };
+        body: {
+          sourceAssetIds: string[];
+          note: string;
+          processingMode: string;
+        };
         requestKey: string | null;
       },
     ];
@@ -236,7 +245,11 @@ describe("POST /api/studio/dispatch/listing-draft", () => {
   it("reports queue_unavailable without claiming processing", async () => {
     const { deps, thread } = fixture({
       intakeResult: {
-        listing: { id: "listing-created", status: "received", target: "shopline" },
+        listing: {
+          id: "listing-created",
+          status: "received",
+          target: "shopline",
+        },
         inputRevision: 1,
         activeVersionId: null,
         processing: null,
@@ -260,7 +273,11 @@ describe("POST /api/studio/dispatch/listing-draft", () => {
   it("does not audit or duplicate a replayed dispatch", async () => {
     const { deps, fake, thread } = fixture({
       intakeResult: {
-        listing: { id: "listing-created", status: "received", target: "shopline" },
+        listing: {
+          id: "listing-created",
+          status: "received",
+          target: "shopline",
+        },
         inputRevision: 1,
         activeVersionId: null,
         processing: null,
@@ -287,22 +304,28 @@ describe("POST /api/studio/dispatch/listing-draft", () => {
       intakeThrows: new ApiError(404, "source_assets_not_found", "missing"),
     });
     expect(
-      (await createStudioDispatchHandler(notFoundFixture.deps)(
-        request(validBody(notFoundFixture.thread.id)),
-      )).status,
+      (
+        await createStudioDispatchHandler(notFoundFixture.deps)(
+          request(validBody(notFoundFixture.thread.id)),
+        )
+      ).status,
     ).toBe(404);
 
     const broken = fixture({ intakeThrows: new Error("boom") });
     expect(
-      (await createStudioDispatchHandler(broken.deps)(
-        request(validBody(broken.thread.id)),
-      )).status,
+      (
+        await createStudioDispatchHandler(broken.deps)(
+          request(validBody(broken.thread.id)),
+        )
+      ).status,
     ).toBe(500);
   });
 
   it("refuses a skill the workspace has not allowed", async () => {
     const { deps, thread } = fixture({
-      options: { settings: { workspaceId: WORKSPACE, allowedSkills: ["catalog.find"] } },
+      options: {
+        settings: { workspaceId: WORKSPACE, allowedSkills: ["catalog.find"] },
+      },
     });
     const response = await createStudioDispatchHandler(deps)(
       request(validBody(thread.id)),

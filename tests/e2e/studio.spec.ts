@@ -34,9 +34,8 @@ const realStack = process.env.PLAYWRIGHT_E2E === "1";
 const studioStack = process.env.STUDIO_E2E === "1";
 
 async function signIn(page: Page) {
-  const { prepareBulkImportFixture, signInBulkImportOperator } = await import(
-    "./real-stack-fixture.js"
-  );
+  const { prepareBulkImportFixture, signInBulkImportOperator } =
+    await import("./real-stack-fixture.js");
   const fixture = await prepareBulkImportFixture();
   await signInBulkImportOperator(page, fixture, false);
   return fixture;
@@ -92,7 +91,9 @@ test.describe("studio enabled for a workspace", () => {
     const composer = page.getByLabel("Message", { exact: true });
     await expect(composer).toBeFocused();
     await expect(composer).toHaveValue("Find and explain these listings: ");
-    await expect(page.getByText("Your message", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Your message", { exact: true })).toHaveCount(
+      0,
+    );
 
     // First send creates the thread and one persisted turn.
     await composer.fill("Find synthetic listings in this workspace");
@@ -101,9 +102,7 @@ test.describe("studio enabled for a workspace", () => {
     await expect(
       page.getByText("From your records", { exact: true }).first(),
     ).toBeVisible();
-    await expect(
-      page.getByText(/Execution trace · \d+ steps/),
-    ).toBeVisible();
+    await expect(page.getByText(/Execution trace · \d+ steps/)).toBeVisible();
 
     // The trace loads its persisted steps when expanded.
     await page.getByText(/Execution trace · \d+ steps/).click();

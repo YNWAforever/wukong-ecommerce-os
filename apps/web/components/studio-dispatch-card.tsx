@@ -349,7 +349,9 @@ export function StudioDispatchCard({
             className={styles["studio-output-action"]}
             onClick={() => setConfirming(true)}
             disabled={disabledReason !== null || sending || result !== null}
-            title={disabledReason ? studioCopy(locale, disabledReason) : undefined}
+            title={
+              disabledReason ? studioCopy(locale, disabledReason) : undefined
+            }
           >
             {studioCopy(locale, "studio.dispatch.review")}
           </button>

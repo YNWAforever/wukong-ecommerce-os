@@ -130,7 +130,8 @@ export async function decryptStudioMcpCredential(
     if (parts.length !== 3 || parts[0] !== "v1") throw unavailable();
     const iv = decodeBase64Url(parts[1] ?? "");
     const ciphertext = decodeBase64Url(parts[2] ?? "");
-    if (iv.byteLength !== 12 || ciphertext.byteLength <= 16) throw unavailable();
+    if (iv.byteLength !== 12 || ciphertext.byteLength <= 16)
+      throw unavailable();
     const key = await importKey(base64Key, "decrypt");
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv },

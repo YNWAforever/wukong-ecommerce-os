@@ -30,11 +30,7 @@ const MAX_PROJECTED_BYTES = 32 * 1024;
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 export type McpClientStatus =
-  | "ok"
-  | "unavailable"
-  | "schema_drift"
-  | "denied"
-  | "timeout";
+  "ok" | "unavailable" | "schema_drift" | "denied" | "timeout";
 
 export type ExternalMcpTool = {
   name: string;
@@ -162,7 +158,8 @@ function parseAdvertisedTools(result: unknown): ExternalMcpTool[] | null {
 export function createMcpClient(deps: McpClientDeps) {
   const fetchImpl = deps.fetch ?? fetch;
   const deadlineMs = deps.deadlineMs ?? MCP_CLIENT_DEADLINE_MS;
-  const maxResponseBytes = deps.maxResponseBytes ?? MCP_CLIENT_MAX_RESPONSE_BYTES;
+  const maxResponseBytes =
+    deps.maxResponseBytes ?? MCP_CLIENT_MAX_RESPONSE_BYTES;
   const pinnedHashes = deps.schemaHashes ?? {};
   let nextId = 1;
 
@@ -326,8 +323,7 @@ export function createMcpClient(deps: McpClientDeps) {
         if (!advertised) return { status: "denied" };
         // Activation-time pin: required-field drift fails closed and no tool
         // call is sent.
-        if (advertised.schemaHash !== pinned)
-          return { status: "schema_drift" };
+        if (advertised.schemaHash !== pinned) return { status: "schema_drift" };
 
         const called = await postRpc(
           endpoint,

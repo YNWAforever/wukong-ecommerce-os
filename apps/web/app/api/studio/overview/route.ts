@@ -30,4 +30,3 @@ const handlers = createStudioOverviewHandler({
 });
 
 export const GET = handlers;
-

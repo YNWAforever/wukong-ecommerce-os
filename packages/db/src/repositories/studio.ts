@@ -12,7 +12,10 @@ import type { WorkspaceScope, WorkspaceTransaction } from "../client.js";
 const MONEY = /^(?:0|[1-9]\d{0,7})(?:\.\d{1,6})?$/;
 
 function money(value: string, name: string, allowZero = false): string {
-  if (!MONEY.test(value) || (allowZero ? Number(value) < 0 : Number(value) <= 0))
+  if (
+    !MONEY.test(value) ||
+    (allowZero ? Number(value) < 0 : Number(value) <= 0)
+  )
     throw new Error(`${name} must be a non-negative decimal string`);
   return value;
 }
@@ -59,33 +62,17 @@ export type StudioRunStatus =
   | "cancelled"
   | "outcome_unknown";
 export type StudioRunEventKind =
-  | "tool"
-  | "model"
-  | "evidence"
-  | "notice"
-  | "error"
-  | "dispatch";
+  "tool" | "model" | "evidence" | "notice" | "error" | "dispatch";
 export type StudioRunEventState =
-  | "started"
-  | "done"
-  | "failed"
-  | "unavailable"
-  | "blocked"
-  | "info";
+  "started" | "done" | "failed" | "unavailable" | "blocked" | "info";
 export type StudioOutputKind =
-  | "copy_proposal"
-  | "gap_report"
-  | "merchant_audit"
-  | "finding";
+  "copy_proposal" | "gap_report" | "merchant_audit" | "finding";
 export type StudioOutputStatus = "draft" | "saved" | "signed_off" | "discarded";
-export type StudioBudgetState = "reserved" | "settled" | "released" | "uncertain";
+export type StudioBudgetState =
+  "reserved" | "settled" | "released" | "uncertain";
 export type StudioMcpConnectionStatus = "draft" | "approved" | "disabled";
 export type StudioMcpCallStatus =
-  | "ok"
-  | "unavailable"
-  | "schema_drift"
-  | "denied"
-  | "error";
+  "ok" | "unavailable" | "schema_drift" | "denied" | "error";
 
 export type StudioAiSettings = {
   provider: "openrouter" | "opencode-go";
@@ -272,7 +259,10 @@ export type StudioSettingsInput = {
 export type StudioRepository = {
   settings: {
     get(): Promise<StudioSettings>;
-    upsert(input: StudioSettingsInput, actorId: string): Promise<StudioSettings>;
+    upsert(
+      input: StudioSettingsInput,
+      actorId: string,
+    ): Promise<StudioSettings>;
   };
   threads: {
     create(input: {
@@ -301,7 +291,10 @@ export type StudioRepository = {
       runId?: string | null;
       createdBy: string;
     }): Promise<{ message: StudioMessage; replayed: boolean }>;
-    list(threadId: string, input?: { limit?: number }): Promise<StudioMessage[]>;
+    list(
+      threadId: string,
+      input?: { limit?: number },
+    ): Promise<StudioMessage[]>;
   };
   runs: {
     create(input: {
@@ -417,7 +410,10 @@ export type StudioRepository = {
       latencyMs?: number | null;
       caller: "agent" | "external_mcp";
     }): Promise<StudioMcpCall>;
-    list(input?: { limit?: number; connectionId?: string }): Promise<StudioMcpCall[]>;
+    list(input?: {
+      limit?: number;
+      connectionId?: string;
+    }): Promise<StudioMcpCall[]>;
   };
   apiTokens: {
     create(input: {
@@ -753,7 +749,9 @@ export function createStudioRepository(
           order by coalesce(last_message_at,created_at) desc, created_at desc, id desc
           limit ${limit}
         `);
-        const items = rows.map((row) => readThread(row as Record<string, unknown>));
+        const items = rows.map((row) =>
+          readThread(row as Record<string, unknown>),
+        );
         return { items, truncated: items.length === limit };
       },
       async getWithMessages(id, input = {}) {
@@ -963,7 +961,8 @@ export function createStudioRepository(
       async appendMany(runId, events) {
         scope.assertOpen();
         if (events.length === 0) return [];
-        if (events.length > 64) throw new Error("at most 64 run events per call");
+        if (events.length > 64)
+          throw new Error("at most 64 run events per call");
         const runs = await transaction.execute(sql`
           select id from studio_runs where workspace_id=${workspaceId} and id=${runId}::uuid
           for update

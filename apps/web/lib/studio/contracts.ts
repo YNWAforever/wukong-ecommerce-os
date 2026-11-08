@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-import type {
-  StudioTraceStep,
-  StudioTurnReply,
-} from "./types";
+import type { StudioTraceStep, StudioTurnReply } from "./types";
 
 /**
  * Strict HTTP request bodies and response types for the Studio conversation
@@ -29,10 +26,7 @@ export const sendMessageBodySchema = z.strictObject({
   clientMessageId: z.string().min(1).max(128),
   text: z.string().min(1).max(2000),
   skillKey: z.string().trim().min(1).max(120).optional(),
-  attachmentAssetIds: z
-    .array(z.string().min(1).max(200))
-    .max(8)
-    .optional(),
+  attachmentAssetIds: z.array(z.string().min(1).max(200)).max(8).optional(),
   locale: z.enum(["zh-Hant", "en"]),
 });
 export type SendMessageBody = z.infer<typeof sendMessageBodySchema>;

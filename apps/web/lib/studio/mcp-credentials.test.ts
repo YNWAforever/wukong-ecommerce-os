@@ -38,7 +38,9 @@ describe("studio mcp encryption key", () => {
     expect(readStudioMcpEncryptionKey(envWith(""))).toBeNull();
     expect(readStudioMcpEncryptionKey(envWith("   "))).toBeNull();
     expect(
-      readStudioMcpEncryptionKey(envWith(Buffer.alloc(16, 1).toString("base64"))),
+      readStudioMcpEncryptionKey(
+        envWith(Buffer.alloc(16, 1).toString("base64")),
+      ),
     ).toBeNull();
     expect(readStudioMcpEncryptionKey(envWith("not-a-key"))).toBeNull();
     expect(hasStudioMcpEncryptionKey(envWith("not-a-key"))).toBe(false);
@@ -73,9 +75,9 @@ describe("studio mcp credential envelope", () => {
       `v1.${envelope.split(".")[1] ?? ""}`,
       `${envelope.slice(0, -4)}AAAA`,
     ]) {
-      await expect(
-        decryptStudioMcpCredential(corrupted, KEY),
-      ).rejects.toThrow(STUDIO_MCP_CREDENTIAL_UNAVAILABLE);
+      await expect(decryptStudioMcpCredential(corrupted, KEY)).rejects.toThrow(
+        STUDIO_MCP_CREDENTIAL_UNAVAILABLE,
+      );
     }
     await expect(
       decryptStudioMcpCredential(envelope, "not-a-key"),

@@ -67,7 +67,9 @@ export type StudioThreadViewProps = {
 };
 
 function nextSequence(messages: readonly StudioMessageResponse[]): number {
-  return messages.reduce((max, message) => Math.max(max, message.sequence), 0) + 1;
+  return (
+    messages.reduce((max, message) => Math.max(max, message.sequence), 0) + 1
+  );
 }
 
 function toTurnMessage(message: StudioMessageResponse): StudioTurnMessage {
@@ -99,8 +101,9 @@ export function StudioThreadView({
   const [pendingClientMessageId, setPendingClientMessageId] = useState<
     string | null
   >(null);
-  const [pendingAttempt, setPendingAttempt] =
-    useState<PendingAttempt | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(
+    null,
+  );
   const [traces, setTraces] = useState<Record<string, TraceState>>({});
   const [replayed, setReplayed] = useState(false);
   const [reloadError, setReloadError] = useState<StudioCopyKey | null>(null);
@@ -272,7 +275,10 @@ export function StudioThreadView({
                 : "studio.thread.status.open",
             )}
           </li>
-          <li className={styles["studio-badge"]} data-visibility={thread.visibility}>
+          <li
+            className={styles["studio-badge"]}
+            data-visibility={thread.visibility}
+          >
             {studioCopy(
               locale,
               thread.visibility === "private"

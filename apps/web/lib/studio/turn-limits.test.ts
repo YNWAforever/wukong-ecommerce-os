@@ -12,7 +12,10 @@ import {
 
 describe("studio turn limits", () => {
   it("counts first-class tool steps separately from per-listing detail reads", () => {
-    const limits = createStudioTurnLimits({ maxToolSteps: 2, maxDetailReads: 2 });
+    const limits = createStudioTurnLimits({
+      maxToolSteps: 2,
+      maxDetailReads: 2,
+    });
     limits.beginTool("catalog.search");
     limits.beginTool("quality.get_gaps");
     expect(limits.toolSteps).toBe(2);
@@ -51,9 +54,11 @@ describe("studio turn limits", () => {
 
   it("rejects invalid budgets", () => {
     expect(() => createStudioTurnLimits({ deadlineMs: 0 })).toThrow(TypeError);
-    expect(() => createStudioTurnLimits({ maxToolSteps: 0 })).toThrow(TypeError);
-    expect(() =>
-      createStudioTurnLimits({ maxModelCalls: 1.5 }),
-    ).toThrow(TypeError);
+    expect(() => createStudioTurnLimits({ maxToolSteps: 0 })).toThrow(
+      TypeError,
+    );
+    expect(() => createStudioTurnLimits({ maxModelCalls: 1.5 })).toThrow(
+      TypeError,
+    );
   });
 });

@@ -35,15 +35,15 @@ a second runtime and not a bypass.
 
 ## Evidence baseline (checked 2026-11-08, Asia/Singapore)
 
-| Reference | What was observed | Confidence |
-| --- | --- | --- |
-| `https://github.com/YNWAforever/wukong-ecommerce-os` | HTTP 404 anonymously. The local checkout's `origin` is the same URL, so the repository is private or renamed; public state cannot be established. | Observed 404; repo visibility unverified |
-| `https://wukong-ecommerce-os.vercel.app/signin?callbackUrl=%2F` | Live sign-in. Public copy: "CATALOG OPERATIONS OS", 71 SHOPLINE template columns, 8 editable content fields, 0 direct SHOPLINE writes, invite-only workspace membership, approval gates, production direct writes disabled. | Observed |
-| `https://wukong-commerce-orchestration.lovable.app/` | Static marketing landing (Vite bundle, 140 KB HTML): "悟空電商 AI Operating System", 8 pain × 8 agents, five-step workflow layer, data/knowledge platform, HK$299/799/1999 tiers, scripted draft-workspace demo. No runtime, API or authentication observed. | Marketing-only; not product evidence |
-| `https://ads-copilot-alpha.vercel.app` | `/` and `/admin` redirect to `/login`; `/login` is a Google-workspace sign-in page. Every other probed route returns 404. Post-login behaviour was **not** observed from this environment. | Auth-gated; unverified after login |
-| Four operator-supplied screenshots (`Desktop\ad copilot.png` … `ad copilot3.png`) | Left rail (new conversation, overview, conversations, reports, settings, recents), space switcher, composer with attachments, per-step execution trace ("17 個工具" with scope sub-lines), conclusion-first answers, evidence table (`檢查`/`結果`), explicit nulls, weekly report artifact with `待簽` → `標記為可發佈`. | UI reference only; not interacted with |
-| Wukong source baseline | Branch `claude/production-recovery-spec`, HEAD `a12ad1c5`. 56 SQL files in `packages/db/drizzle/`, numbers `0000`–`0053` (duplicate `0008`/`0015` prefixes); latest number is `0053`. No chat/thread/MCP/skill/streaming code. | Observed |
-| Sibling implementations | Aiso ships a Conversation Studio (two tables, deterministic saved reply plus a separately labelled live card, one-shot 20 s live call, durable weekly quota, honest coverage); BuyerOS has an approved design for versioned skill playbooks plus a hosted MCP provider; Adfocate/KOCmax and KinnsoOS have conversation-studio designs. None contains a Wukong-hosted MCP server or a versioned skill implementation. | Reference, not dependency |
+| Reference                                                                         | What was observed                                                                                                                                                                                                                                                                                                                                                                                                    | Confidence                               |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `https://github.com/YNWAforever/wukong-ecommerce-os`                              | HTTP 404 anonymously. The local checkout's `origin` is the same URL, so the repository is private or renamed; public state cannot be established.                                                                                                                                                                                                                                                                    | Observed 404; repo visibility unverified |
+| `https://wukong-ecommerce-os.vercel.app/signin?callbackUrl=%2F`                   | Live sign-in. Public copy: "CATALOG OPERATIONS OS", 71 SHOPLINE template columns, 8 editable content fields, 0 direct SHOPLINE writes, invite-only workspace membership, approval gates, production direct writes disabled.                                                                                                                                                                                          | Observed                                 |
+| `https://wukong-commerce-orchestration.lovable.app/`                              | Static marketing landing (Vite bundle, 140 KB HTML): "悟空電商 AI Operating System", 8 pain × 8 agents, five-step workflow layer, data/knowledge platform, HK$299/799/1999 tiers, scripted draft-workspace demo. No runtime, API or authentication observed.                                                                                                                                                         | Marketing-only; not product evidence     |
+| `https://ads-copilot-alpha.vercel.app`                                            | `/` and `/admin` redirect to `/login`; `/login` is a Google-workspace sign-in page. Every other probed route returns 404. Post-login behaviour was **not** observed from this environment.                                                                                                                                                                                                                           | Auth-gated; unverified after login       |
+| Four operator-supplied screenshots (`Desktop\ad copilot.png` … `ad copilot3.png`) | Left rail (new conversation, overview, conversations, reports, settings, recents), space switcher, composer with attachments, per-step execution trace ("17 個工具" with scope sub-lines), conclusion-first answers, evidence table (`檢查`/`結果`), explicit nulls, weekly report artifact with `待簽` → `標記為可發佈`.                                                                                            | UI reference only; not interacted with   |
+| Wukong source baseline                                                            | Branch `claude/production-recovery-spec`, HEAD `a12ad1c5`. 56 SQL files in `packages/db/drizzle/`, numbers `0000`–`0053` (duplicate `0008`/`0015` prefixes); latest number is `0053`. No chat/thread/MCP/skill/streaming code.                                                                                                                                                                                       | Observed                                 |
+| Sibling implementations                                                           | Aiso ships a Conversation Studio (two tables, deterministic saved reply plus a separately labelled live card, one-shot 20 s live call, durable weekly quota, honest coverage); BuyerOS has an approved design for versioned skill playbooks plus a hosted MCP provider; Adfocate/KOCmax and KinnsoOS have conversation-studio designs. None contains a Wukong-hosted MCP server or a versioned skill implementation. | Reference, not dependency                |
 
 Research notes with file:line evidence are retained locally (gitignored) at
 `.superpowers/brainstorm/20261108-wukong-conversation-studio/research/{aiso-studio,skills-mcp,wukong-audit}.md`.
@@ -155,16 +155,16 @@ or publishing; it reads them and links to them.
 The eight agents are a product vision (marketing page), not shipped capability. The mapping below is
 a proposal; "v1" is what the first implementation phase delivers.
 
-| Lovable agent | Wukong skill (proposed id) | Tools over existing surfaces | Output / destination | v1 status |
-| --- | --- | --- | --- | --- |
-| 悟空上架 Agent | `listing.draft_from_sources` | `catalog.search`, `assets.list`, `listing.create_draft` (dispatch), `listing.get_run_status` | dispatch to existing `/api/listings` + queue; operator reviews in the existing screen | **pilot** |
-| 圖片處理 Agent | `product_shot.prepare` | `assets.list`, `product_shot.dispatch` (existing gated flow) | derived image assets; review in existing product-shot screen | planned |
-| 內容生成 Agent | `listing.copy_proposal` | `catalog.get_listing`, `quality.get_gaps`; output proposal only | versioned copy proposal artifact with evidence; operator opens the existing editor | planned (phase 3/4) |
-| 分類映射 Agent | `category.map_proposal` | `catalog.search`, platform taxonomy data (new read model) | mapping proposal with confidence; applied in existing catalog flow | planned |
-| 供應商情報 Agent | `supplier.intel_proposal` | `workbook_imports.list`, `website_products.list` | field-level supplier proposal; reviewed save | planned |
-| 客服自動化 Agent | `customer.reply_draft` | none (no inbox data source in Wukong) | must render as `blocked`; no fake inbox | **blocked** |
-| SEO / Merchant Agent | `merchant.audit` | `catalog.list`, `quality.get_gaps`, `shopline.projection_preview` | report artifact with evidence table, as-of time, sign-off state | **pilot** |
-| 物流營運 Agent | `logistics.followup` | none (no order/shipment data source) | must render as `blocked` | **blocked** |
+| Lovable agent        | Wukong skill (proposed id)   | Tools over existing surfaces                                                                 | Output / destination                                                                  | v1 status           |
+| -------------------- | ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------- |
+| 悟空上架 Agent       | `listing.draft_from_sources` | `catalog.search`, `assets.list`, `listing.create_draft` (dispatch), `listing.get_run_status` | dispatch to existing `/api/listings` + queue; operator reviews in the existing screen | **pilot**           |
+| 圖片處理 Agent       | `product_shot.prepare`       | `assets.list`, `product_shot.dispatch` (existing gated flow)                                 | derived image assets; review in existing product-shot screen                          | planned             |
+| 內容生成 Agent       | `listing.copy_proposal`      | `catalog.get_listing`, `quality.get_gaps`; output proposal only                              | versioned copy proposal artifact with evidence; operator opens the existing editor    | planned (phase 3/4) |
+| 分類映射 Agent       | `category.map_proposal`      | `catalog.search`, platform taxonomy data (new read model)                                    | mapping proposal with confidence; applied in existing catalog flow                    | planned             |
+| 供應商情報 Agent     | `supplier.intel_proposal`    | `workbook_imports.list`, `website_products.list`                                             | field-level supplier proposal; reviewed save                                          | planned             |
+| 客服自動化 Agent     | `customer.reply_draft`       | none (no inbox data source in Wukong)                                                        | must render as `blocked`; no fake inbox                                               | **blocked**         |
+| SEO / Merchant Agent | `merchant.audit`             | `catalog.list`, `quality.get_gaps`, `shopline.projection_preview`                            | report artifact with evidence table, as-of time, sign-off state                       | **pilot**           |
+| 物流營運 Agent       | `logistics.followup`         | none (no order/shipment data source)                                                         | must render as `blocked`                                                              | **blocked**         |
 
 Two additional read skills round out v1: `catalog.find` (find/explain listings, quality and jobs from
 records) and `catalog.gap_review` (which listings block approval/export and why). These are the
@@ -186,14 +186,14 @@ all delivered in v1.
 
 ### 2.1 Surfaces and navigation
 
-| Route | Purpose |
-| --- | --- |
-| `/studio` | Conversation home: deterministic overview, composer, template cards, recent threads |
-| `/studio/t/[threadId]` | One thread: question, trace, record answer, model card, evidence, outputs |
-| `/studio/threads` | All conversations, searchable, grouped by recency |
-| `/studio/outputs` | Saved proposals and reports with version, as-of and sign-off state |
-| `/studio/connections` | Tools and MCP: hosted token status, external connections, availability labels |
-| `/studio/settings` | Admin/owner: workspace Studio enablement, budgets, skills, tokens |
+| Route                  | Purpose                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `/studio`              | Conversation home: deterministic overview, composer, template cards, recent threads |
+| `/studio/t/[threadId]` | One thread: question, trace, record answer, model card, evidence, outputs           |
+| `/studio/threads`      | All conversations, searchable, grouped by recency                                   |
+| `/studio/outputs`      | Saved proposals and reports with version, as-of and sign-off state                  |
+| `/studio/connections`  | Tools and MCP: hosted token status, external connections, availability labels       |
+| `/studio/settings`     | Admin/owner: workspace Studio enablement, budgets, skills, tokens                   |
 
 A "Studio" primary nav item is added ahead of Workbench when the feature is enabled for the
 workspace; every existing item stays. Making Studio the post-sign-in home is a **separate flag**
@@ -243,17 +243,17 @@ nav, and recent threads, plus the thread pane. The evidence/output inspector is 
 
 ### 2.4 Honest states
 
-| State | UI |
-| --- | --- |
-| Workspace Studio disabled | "Studio is not enabled for this workspace." + where an admin enables it |
-| Sky-level flag off | Nav item absent; direct route 404 |
-| Model not configured | Records answer shown; AI card replaced by "Live analysis is not configured" |
-| Evidence missing | Coverage chip `missing` + next action ("open import", "run quality review") |
-| Run failed | Error category + retry affordance; no fabricated answer |
-| Run outcome unknown | Explicit "we do not know whether the provider charged or completed"; no auto-retry |
-| Quota/budget exhausted | Remaining count + reset time; paid actions disabled |
-| Skill `planned` / `blocked` | Card non-interactive with reason (no data source, disabled capability) |
-| Foreign thread id | 404, never 403 (ids reveal nothing) |
+| State                       | UI                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| Workspace Studio disabled   | "Studio is not enabled for this workspace." + where an admin enables it            |
+| Sky-level flag off          | Nav item absent; direct route 404                                                  |
+| Model not configured        | Records answer shown; AI card replaced by "Live analysis is not configured"        |
+| Evidence missing            | Coverage chip `missing` + next action ("open import", "run quality review")        |
+| Run failed                  | Error category + retry affordance; no fabricated answer                            |
+| Run outcome unknown         | Explicit "we do not know whether the provider charged or completed"; no auto-retry |
+| Quota/budget exhausted      | Remaining count + reset time; paid actions disabled                                |
+| Skill `planned` / `blocked` | Card non-interactive with reason (no data source, disabled capability)             |
+| Foreign thread id           | 404, never 403 (ids reveal nothing)                                                |
 
 ### 2.5 Bilingual and accessibility
 
@@ -344,7 +344,7 @@ lost/ambiguous provider response is `outcome_unknown` and keeps its budget hold.
 
 - `sources[]`: `{ kind, refId, version|digest, label, asOf, coverage, excerpt?, deepLink }` where
   `kind ∈ listing | catalog | quality | source_import | export_attempt | job | audit | website |
-  workbook | shopline_projection`. Excerpts are bounded and never contain credentials or signed URLs.
+workbook | shopline_projection`. Excerpts are bounded and never contain credentials or signed URLs.
 - `coverage`: per expected-source-kind `present | missing | unsupported`.
 - `checks[]`: deterministic `check → result` rows used by the evidence table.
 - Revocation: every read re-resolves the source through the workspace repository; a source that was
@@ -385,18 +385,18 @@ validated JSON arguments.
 
 v1 tools (all workspace-scoped through `forWorkspace`):
 
-| Tool | Kind | Wraps |
-| --- | --- | --- |
-| `catalog.search` | read | catalog repository search/page |
-| `catalog.get` | read | listing detail + active version summary |
-| `quality.get_gaps` | read | quality projection / gap computation |
-| `imports.list` | read | workbook imports and source imports |
-| `exports.get` | read | export attempts + reconciliation state |
-| `jobs.list` | read | jobs ledger read route logic |
-| `assets.list` | read | source assets for a listing |
-| `listing.get_run_status` | read | existing listing pipeline run read |
-| `listing.create_draft` | dispatch | existing `POST /api/listings` service path, only after explicit UI confirmation |
-| `listing.propose_copy` | propose | creates a studio output artifact; no canonical write |
+| Tool                     | Kind     | Wraps                                                                           |
+| ------------------------ | -------- | ------------------------------------------------------------------------------- |
+| `catalog.search`         | read     | catalog repository search/page                                                  |
+| `catalog.get`            | read     | listing detail + active version summary                                         |
+| `quality.get_gaps`       | read     | quality projection / gap computation                                            |
+| `imports.list`           | read     | workbook imports and source imports                                             |
+| `exports.get`            | read     | export attempts + reconciliation state                                          |
+| `jobs.list`              | read     | jobs ledger read route logic                                                    |
+| `assets.list`            | read     | source assets for a listing                                                     |
+| `listing.get_run_status` | read     | existing listing pipeline run read                                              |
+| `listing.create_draft`   | dispatch | existing `POST /api/listings` service path, only after explicit UI confirmation |
+| `listing.propose_copy`   | propose  | creates a studio output artifact; no canonical write                            |
 
 No tool exposes raw SQL, arbitrary URL fetch, credentials, signed URLs or unbounded pagination.
 
@@ -471,19 +471,19 @@ repositories. Every table: `workspace_id text NOT NULL REFERENCES workspaces(id)
 `(workspace_id, id)` unique index, `ENABLE` + `FORCE` RLS with the standard workspace policy, and
 grants to `wukong_app` limited to the operations the feature needs.
 
-| Table | Purpose and key invariants |
-| --- | --- |
-| `studio_threads` | `id`, `workspace_id`, `visibility ('workspace'|'private')`, `created_by`, `title`, `skill_key`, `status ('open'|'archived')`, `last_message_at`, timestamps. Index `(workspace_id, last_message_at desc)`; 200 threads per workspace cap enforced in SQL/service |
-| `studio_messages` | append-only; `thread_id`, `sequence > 0`, `role ('operator'|'assistant'|'system'|'tool')`, `content jsonb` bounded ≤ 64 KiB, `client_message_id` unique per thread (idempotent send), `run_id?`, `created_by`, `created_at`; unique `(workspace_id, thread_id, sequence)` |
-| `studio_runs` | one per assistant turn execution: `trigger_message_id`, `status ('queued'|'running'|'succeeded'|'failed'|'cancelled'|'outcome_unknown')`, `skill_key`, `skill_version`, `provider`, `model`, `prompt_versions jsonb`, `context_digest`, `idempotency_key`, `input_tokens/output_tokens`, `estimated_cost_usd numeric(14,6)`, `reserved_usd/settled_usd`, `error_code`, `started_at/finished_at`; unique `(workspace_id, idempotency_key)` |
-| `studio_run_events` | append-only ordered trace: `run_id`, `sequence > 0`, `kind ('tool'|'model'|'evidence'|'notice'|'error')`, `tool_id?`, `state`, `payload jsonb` bounded, `duration_ms`, `created_at`; unique `(workspace_id, run_id, sequence)`; update/delete revoked |
-| `studio_outputs` | artifact identity: `kind ('copy_proposal'|'gap_report'|'merchant_audit'|'finding')`, `title`, `status ('draft'|'saved'|'signed_off'|'discarded')`, `current_version int`, `run_id?`, `thread_id?`, timestamps |
-| `studio_output_versions` | immutable versions: `output_id`, `revision > 0`, `payload jsonb` bounded, `content_digest ^[a-f0-9]{64}$`, `as_of`, `scope jsonb`, `created_by`, `created_at`; unique `(workspace_id, output_id, revision)`; update/delete revoked |
-| `studio_budget_reservations` | `run_id` unique, `pricing_version`, `reserved_usd`, `settled_usd`, `state ('reserved'|'settled'|'released'|'uncertain')`; FK to run with `ON DELETE RESTRICT` |
-| `studio_workspace_settings` | one row per workspace (PK `workspace_id`): `enabled bool default false`, `allowed_skills text[]`, `monthly_budget_usd numeric`, `run_ceiling_usd numeric`, `retention_days int`, `default_home bool default false`, `ai_provider text`, `ai_model text`, `pricing_version text`, `max_input_tokens int`, `input_usd_per_million numeric`, `output_usd_per_million numeric`, `max_output_tokens int`, `updated_by`, timestamps. The `ai_*` columns are NULL when no live model is configured; the model admission path fails closed in that case |
-| `studio_mcp_connections` | external connections (§3.8) |
-| `studio_mcp_calls` | append-only call ledger: `run_id?`, `connection_id?`, `tool_name`, `request_digest`, `response_digest`, `status`, `error_code`, `latency_ms`, `caller ('agent'|'external_mcp')`, `created_at` |
-| `studio_api_tokens` | hosted-MCP tokens: `workspace_id`, `label`, `token_hash` unique, `prefix`, `scopes text[]`, `created_by`, `revoked_at?`, `last_used_at?`, timestamps. No plaintext token column |
+| Table                        | Purpose and key invariants                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `studio_threads`             | `id`, `workspace_id`, `visibility ('workspace'                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 'private')`, `created_by`, `title`, `skill_key`, `status ('open' | 'archived')`, `last_message_at`, timestamps. Index `(workspace_id, last_message_at desc)`; 200 threads per workspace cap enforced in SQL/service |
+| `studio_messages`            | append-only; `thread_id`, `sequence > 0`, `role ('operator'                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 'assistant'                                                      | 'system'                                                                                                                                         | 'tool')`, `content jsonb`bounded ≤ 64 KiB,`client_message_id`unique per thread (idempotent send),`run_id?`, `created_by`, `created_at`; unique `(workspace_id, thread_id, sequence)` |
+| `studio_runs`                | one per assistant turn execution: `trigger_message_id`, `status ('queued'                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 'running'                                                        | 'succeeded'                                                                                                                                      | 'failed'                                                                                                                                                                             | 'cancelled'                                                                                                                                          | 'outcome_unknown')`, `skill_key`, `skill_version`, `provider`, `model`, `prompt_versions jsonb`, `context_digest`, `idempotency_key`, `input_tokens/output_tokens`, `estimated_cost_usd numeric(14,6)`, `reserved_usd/settled_usd`, `error_code`, `started_at/finished_at`; unique `(workspace_id, idempotency_key)` |
+| `studio_run_events`          | append-only ordered trace: `run_id`, `sequence > 0`, `kind ('tool'                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 'model'                                                          | 'evidence'                                                                                                                                       | 'notice'                                                                                                                                                                             | 'error')`, `tool_id?`, `state`, `payload jsonb`bounded,`duration_ms`, `created_at`; unique `(workspace_id, run_id, sequence)`; update/delete revoked |
+| `studio_outputs`             | artifact identity: `kind ('copy_proposal'                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 'gap_report'                                                     | 'merchant_audit'                                                                                                                                 | 'finding')`, `title`, `status ('draft'                                                                                                                                               | 'saved'                                                                                                                                              | 'signed_off'                                                                                                                                                                                                                                                                                                         | 'discarded')`, `current_version int`, `run_id?`, `thread_id?`, timestamps |
+| `studio_output_versions`     | immutable versions: `output_id`, `revision > 0`, `payload jsonb` bounded, `content_digest ^[a-f0-9]{64}$`, `as_of`, `scope jsonb`, `created_by`, `created_at`; unique `(workspace_id, output_id, revision)`; update/delete revoked                                                                                                                                                                                                                                                                                                              |
+| `studio_budget_reservations` | `run_id` unique, `pricing_version`, `reserved_usd`, `settled_usd`, `state ('reserved'                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 'settled'                                                        | 'released'                                                                                                                                       | 'uncertain')`; FK to run with `ON DELETE RESTRICT`                                                                                                                                   |
+| `studio_workspace_settings`  | one row per workspace (PK `workspace_id`): `enabled bool default false`, `allowed_skills text[]`, `monthly_budget_usd numeric`, `run_ceiling_usd numeric`, `retention_days int`, `default_home bool default false`, `ai_provider text`, `ai_model text`, `pricing_version text`, `max_input_tokens int`, `input_usd_per_million numeric`, `output_usd_per_million numeric`, `max_output_tokens int`, `updated_by`, timestamps. The `ai_*` columns are NULL when no live model is configured; the model admission path fails closed in that case |
+| `studio_mcp_connections`     | external connections (§3.8)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `studio_mcp_calls`           | append-only call ledger: `run_id?`, `connection_id?`, `tool_name`, `request_digest`, `response_digest`, `status`, `error_code`, `latency_ms`, `caller ('agent'                                                                                                                                                                                                                                                                                                                                                                                  | 'external_mcp')`, `created_at`                                   |
+| `studio_api_tokens`          | hosted-MCP tokens: `workspace_id`, `label`, `token_hash` unique, `prefix`, `scopes text[]`, `created_by`, `revoked_at?`, `last_used_at?`, timestamps. No plaintext token column                                                                                                                                                                                                                                                                                                                                                                 |
 
 Audit actions added (examples): `studio.thread.created`, `studio.message.received`,
 `studio.run.started`, `studio.run.completed`, `studio.run.failed`, `studio.output.saved`,
@@ -522,13 +522,13 @@ is approved. No content is copied into logs.
 
 ## Section 4: Roles and permissions
 
-| Role | Studio |
-| --- | --- |
-| `viewer` | Read workspace threads and saved outputs. Cannot send turns, create threads, or use tools |
-| `operator` | Create threads, send turns, run read skills; paid model use subject to workspace budget |
-| `reviewer` | Operator abilities; may sign off report artifacts (`signed_off`) |
-| `admin` | Reviewer abilities; enable/disable Studio for the workspace, set budgets, manage skills activation, manage MCP connections and tokens |
-| `owner` | Admin abilities; cannot be locked out of Studio settings; token creation audited |
+| Role       | Studio                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `viewer`   | Read workspace threads and saved outputs. Cannot send turns, create threads, or use tools                                             |
+| `operator` | Create threads, send turns, run read skills; paid model use subject to workspace budget                                               |
+| `reviewer` | Operator abilities; may sign off report artifacts (`signed_off`)                                                                      |
+| `admin`    | Reviewer abilities; enable/disable Studio for the workspace, set budgets, manage skills activation, manage MCP connections and tokens |
+| `owner`    | Admin abilities; cannot be locked out of Studio settings; token creation audited                                                      |
 
 Server-side only: role is resolved from the membership record; hiding a nav item is UX, never a
 security boundary. Foreign or invisible thread ids return 404. MCP tokens never grant a role above
@@ -553,29 +553,29 @@ their creator's current role.
 
 ## Section 6: Failure and recovery states
 
-| State | Meaning | Behaviour |
-| --- | --- | --- |
-| `needs_input` | Skill needs a required input | One clarifying question with branches; no provider call |
-| `queued` / `running` | Turn in progress | Trace shows steps; navigation allowed; no second send for the same client message id |
-| `succeeded` | Reply + outputs persisted | Readback available after reload |
-| `partial` | Some sources `missing`/`unsupported` | Answer states coverage; next action offered |
-| `failed` | Deterministic failure (validation, provider refusal) | Error category + retry; nothing invented |
-| `cancelled` | Request aborted before completion | No partial assistant message persisted |
-| `outcome_unknown` | Provider/tool response lost | Hold retained, no re-dispatch, operator reconciliation |
-| `quota_exhausted` | Workspace/monthly cap reached | Paid actions disabled with reset time; reads still work |
-| `unavailable` | Model/connection/skill not configured | Explicit notice; deterministic answer where possible |
+| State                | Meaning                                              | Behaviour                                                                            |
+| -------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `needs_input`        | Skill needs a required input                         | One clarifying question with branches; no provider call                              |
+| `queued` / `running` | Turn in progress                                     | Trace shows steps; navigation allowed; no second send for the same client message id |
+| `succeeded`          | Reply + outputs persisted                            | Readback available after reload                                                      |
+| `partial`            | Some sources `missing`/`unsupported`                 | Answer states coverage; next action offered                                          |
+| `failed`             | Deterministic failure (validation, provider refusal) | Error category + retry; nothing invented                                             |
+| `cancelled`          | Request aborted before completion                    | No partial assistant message persisted                                               |
+| `outcome_unknown`    | Provider/tool response lost                          | Hold retained, no re-dispatch, operator reconciliation                               |
+| `quota_exhausted`    | Workspace/monthly cap reached                        | Paid actions disabled with reset time; reads still work                              |
+| `unavailable`        | Model/connection/skill not configured                | Explicit notice; deterministic answer where possible                                 |
 
 ## Section 7: Rollout phases and acceptance
 
-| Phase | Delivers | Gate |
-| --- | --- | --- |
-| P0 (this document) | Spec + implementation plan + visual concept | User review and approval |
-| P1 Foundation | Migration 0054, schema, repositories, audit entries, flags, `/studio` shell with empty states, nav item | Local typecheck/tests; migration replayed on disposable Postgres |
-| P2 Deterministic studio | Evidence engine, tool registry (read), `catalog.find` + `catalog.gap_review`, thread persistence, home overview, trace | Unit + integration + Playwright with model disabled |
-| P3 Model turns | `StudioModel` port + fake adapter + composer/planner prompts, `listing.copy_proposal` output + review cards; honest model-off behaviour | Deterministic provider fixtures; no live provider call in CI |
-| P4 Dispatch + merchant audit | `listing.create_draft` dispatch with confirmation, `listing.get_run_status` polling, `merchant.audit` report artifact and sign-off | Existing pipeline run read; no canonical write from model |
-| P5 MCP | Hosted MCP server + tokens + tool exposure; external MCP registry/client (disabled) | MCP protocol conformance tests; token scoping negatives |
-| P6 Hardening/release | Budget/quotas, retention decision, a11y matrix, e2e, runbook, capability registry updates | Release checklist; production activation separately authorised |
+| Phase                        | Delivers                                                                                                                                | Gate                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| P0 (this document)           | Spec + implementation plan + visual concept                                                                                             | User review and approval                                         |
+| P1 Foundation                | Migration 0054, schema, repositories, audit entries, flags, `/studio` shell with empty states, nav item                                 | Local typecheck/tests; migration replayed on disposable Postgres |
+| P2 Deterministic studio      | Evidence engine, tool registry (read), `catalog.find` + `catalog.gap_review`, thread persistence, home overview, trace                  | Unit + integration + Playwright with model disabled              |
+| P3 Model turns               | `StudioModel` port + fake adapter + composer/planner prompts, `listing.copy_proposal` output + review cards; honest model-off behaviour | Deterministic provider fixtures; no live provider call in CI     |
+| P4 Dispatch + merchant audit | `listing.create_draft` dispatch with confirmation, `listing.get_run_status` polling, `merchant.audit` report artifact and sign-off      | Existing pipeline run read; no canonical write from model        |
+| P5 MCP                       | Hosted MCP server + tokens + tool exposure; external MCP registry/client (disabled)                                                     | MCP protocol conformance tests; token scoping negatives          |
+| P6 Hardening/release         | Budget/quotas, retention decision, a11y matrix, e2e, runbook, capability registry updates                                               | Release checklist; production activation separately authorised   |
 
 Acceptance checks (each recorded `PASS`/`FAIL`/`BLOCKED`/`NOT_RUN` with revision and environment):
 
@@ -617,20 +617,20 @@ output, operator correction rate.
 
 ## Risks
 
-| Risk | Mitigation |
-| --- | --- |
-| Chat becomes a second write path that bypasses approval | No write tools; dispatch only through existing routes with explicit confirmation; deep links for approve/publish; audit on every mutation |
-| Model invents facts or numbers | Deterministic records answer is the primary output; model card is separate and citation-grounded; ungrounded claims dropped; copy guardrail tests |
-| Cross-workspace leakage via model/MCP arguments | Workspace from session/token only; tool schemas reject tenant fields; every query through `forWorkspace` + RLS; negative tests |
-| Paid-call leakage through "free" UI | Deterministic home and reads never reserve; explicit send only; fixed budget classes; fail closed on unknown pricing |
-| Duplicate dispatch from retries/tabs | `client_message_id` + run idempotency keys; reservation unique per run; no automatic retry; unknown outcome held |
-| Prompt drift with the listing pipeline | Separate `STUDIO_PROMPT_VERSIONS`; no listing prompt changes in this phase; pinned per run |
-| New tables weaken the audit gate | Add to `TENANT_TABLES` and audit actions in the same change; gate runs in CI/release |
-| Secret custody for MCP credentials | New dedicated key, envelope format copied from the SHOPLINE vault, admin-owned binding, server-side decryption only; encryption tests |
-| MCP endpoint abused | Token hashing/scopes/revocation, per-token quotas, no write tools, audit ledger, disabled by default |
-| Scope creep from the 8-agent marketing vision | Explicit `pilot`/`planned`/`blocked` catalogue; acceptance checks that unimplemented agents render honestly |
-| Thread privacy expectations differ between operators | `visibility` column and a review question; default proposal is workspace-visible read, creator-private archive |
-| JSONB content becomes a shadow record store | Bounded payloads, evidence refs to canonical rows, no canonical state stored only in Studio |
+| Risk                                                    | Mitigation                                                                                                                                        |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chat becomes a second write path that bypasses approval | No write tools; dispatch only through existing routes with explicit confirmation; deep links for approve/publish; audit on every mutation         |
+| Model invents facts or numbers                          | Deterministic records answer is the primary output; model card is separate and citation-grounded; ungrounded claims dropped; copy guardrail tests |
+| Cross-workspace leakage via model/MCP arguments         | Workspace from session/token only; tool schemas reject tenant fields; every query through `forWorkspace` + RLS; negative tests                    |
+| Paid-call leakage through "free" UI                     | Deterministic home and reads never reserve; explicit send only; fixed budget classes; fail closed on unknown pricing                              |
+| Duplicate dispatch from retries/tabs                    | `client_message_id` + run idempotency keys; reservation unique per run; no automatic retry; unknown outcome held                                  |
+| Prompt drift with the listing pipeline                  | Separate `STUDIO_PROMPT_VERSIONS`; no listing prompt changes in this phase; pinned per run                                                        |
+| New tables weaken the audit gate                        | Add to `TENANT_TABLES` and audit actions in the same change; gate runs in CI/release                                                              |
+| Secret custody for MCP credentials                      | New dedicated key, envelope format copied from the SHOPLINE vault, admin-owned binding, server-side decryption only; encryption tests             |
+| MCP endpoint abused                                     | Token hashing/scopes/revocation, per-token quotas, no write tools, audit ledger, disabled by default                                              |
+| Scope creep from the 8-agent marketing vision           | Explicit `pilot`/`planned`/`blocked` catalogue; acceptance checks that unimplemented agents render honestly                                       |
+| Thread privacy expectations differ between operators    | `visibility` column and a review question; default proposal is workspace-visible read, creator-private archive                                    |
+| JSONB content becomes a shadow record store             | Bounded payloads, evidence refs to canonical rows, no canonical state stored only in Studio                                                       |
 
 ## Open questions for review
 

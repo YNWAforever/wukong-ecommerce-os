@@ -1,15 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type {
-  EvidenceCheck,
-  EvidenceSource,
-} from "../lib/studio/types";
+import type { EvidenceCheck, EvidenceSource } from "../lib/studio/types";
 import { safeStudioDeepLink, StudioEvidence } from "./studio-evidence";
 
 const listingCheck: EvidenceCheck = {
   key: "studio.check.listing_status",
-  values: { listingId: "listing-1", status: "approved", activeVersion: "present" },
+  values: {
+    listingId: "listing-1",
+    status: "approved",
+    activeVersion: "present",
+  },
   state: "ok",
 };
 
@@ -92,7 +93,11 @@ describe("StudioEvidence", () => {
       <StudioEvidence
         locale="en"
         checks={[]}
-        coverage={{ catalog: "present", listing: "missing", quality: "unsupported" }}
+        coverage={{
+          catalog: "present",
+          listing: "missing",
+          quality: "unsupported",
+        }}
       />,
     );
     expect(html).toContain("Present");

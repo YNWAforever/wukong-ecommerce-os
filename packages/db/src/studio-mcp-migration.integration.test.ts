@@ -154,7 +154,8 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
   });
 
   it("resolves the owning workspace across tenants without exposing others", async () => {
-    const rows = await app!`select * from public.studio_resolve_api_token(${HASH_A})`;
+    const rows =
+      await app!`select * from public.studio_resolve_api_token(${HASH_A})`;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       workspace_id: "mcp-ws-a",
@@ -165,7 +166,8 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
     expect(rows[0]!.scopes).toEqual(["read"]);
     expect(rows[0]!.token_id).toEqual(expect.any(String));
 
-    const other = await app!`select * from public.studio_resolve_api_token(${HASH_B})`;
+    const other =
+      await app!`select * from public.studio_resolve_api_token(${HASH_B})`;
     expect(other).toHaveLength(1);
     expect(other[0]!.workspace_id).toBe("mcp-ws-b");
     expect(other[0]!.scopes).toEqual(["read", "propose"]);
@@ -183,28 +185,35 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
   });
 
   it("keeps the token table itself invisible to the runtime role", async () => {
-    const [direct] = await app!`select count(*)::int as count from studio_api_tokens`;
+    const [direct] =
+      await app!`select count(*)::int as count from studio_api_tokens`;
     expect(direct!.count).toBe(0);
 
     await expect(
       app!.begin(async (tx) => {
         await tx`select set_config('app.workspace_id', 'mcp-ws-a', true)`;
         const rows = await tx`select workspace_id from studio_api_tokens`;
-        expect(rows.map((row) => row.workspace_id)).toEqual(["mcp-ws-a", "mcp-ws-a"]);
+        expect(rows.map((row) => row.workspace_id)).toEqual([
+          "mcp-ws-a",
+          "mcp-ws-a",
+        ]);
       }),
     ).resolves.toBeUndefined();
   });
 
   it("resolves revoked tokens so the caller can reject them, and empty for unknown hashes", async () => {
-    const revoked = await app!`select * from public.studio_resolve_api_token(${HASH_REVOKED})`;
+    const revoked =
+      await app!`select * from public.studio_resolve_api_token(${HASH_REVOKED})`;
     expect(revoked).toHaveLength(1);
     expect(revoked[0]!.workspace_id).toBe("mcp-ws-a");
     expect(revoked[0]!.revoked_at).not.toBeNull();
 
-    const absent = await app!`select * from public.studio_resolve_api_token(${HASH_ABSENT})`;
+    const absent =
+      await app!`select * from public.studio_resolve_api_token(${HASH_ABSENT})`;
     expect(absent).toHaveLength(0);
 
-    const malformed = await app!`select * from public.studio_resolve_api_token('not-a-digest')`;
+    const malformed =
+      await app!`select * from public.studio_resolve_api_token('not-a-digest')`;
     expect(malformed).toHaveLength(0);
   });
 
@@ -232,7 +241,8 @@ describe.skipIf(!enabled)("studio MCP token resolver migration 0055", () => {
     const role = await resolutionRoleAttributes();
     expect(role?.rolbypassrls).toBe(false);
 
-    const rows = await app!`select * from public.studio_resolve_api_token(${HASH_A})`;
+    const rows =
+      await app!`select * from public.studio_resolve_api_token(${HASH_A})`;
     expect(rows).toHaveLength(1);
     expect(rows[0]!.workspace_id).toBe("mcp-ws-a");
 

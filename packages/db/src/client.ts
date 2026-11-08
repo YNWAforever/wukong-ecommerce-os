@@ -584,7 +584,8 @@ export function createDatabase(
         tokenId: String(row.token_id),
         createdBy: String(row.created_by),
         scopes: Array.isArray(row.scopes) ? row.scopes.map(String) : [],
-        revokedAt: row.revoked_at == null ? null : new Date(String(row.revoked_at)),
+        revokedAt:
+          row.revoked_at == null ? null : new Date(String(row.revoked_at)),
         prefix: String(row.prefix),
       };
     },

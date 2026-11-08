@@ -15,10 +15,7 @@ import {
   isStudioMcpServerEnabled,
   type StudioFlagSettings,
 } from "../studio-flags";
-import {
-  hashMcpTokenSecret,
-  MCP_TOKEN_PLAINTEXT_PREFIX,
-} from "./mcp-tokens";
+import { hashMcpTokenSecret, MCP_TOKEN_PLAINTEXT_PREFIX } from "./mcp-tokens";
 import { buildStudioReadDeps } from "./read-deps";
 import { runStudioTool, type ToolRun } from "./tools";
 
@@ -68,11 +65,7 @@ const ENABLED_PROBE: StudioFlagSettings = {
 };
 
 type StudioMcpCallStatus =
-  | "ok"
-  | "unavailable"
-  | "schema_drift"
-  | "denied"
-  | "error";
+  "ok" | "unavailable" | "schema_drift" | "denied" | "error";
 
 /** The unscoped database surface the MCP transport may use. */
 export type McpDatabase = Pick<
@@ -203,13 +196,28 @@ function parseEnvelope(value: unknown): Envelope | null {
   }
   const id = record.id;
   if (typeof id === "string" && id.length <= 200) {
-    return { kind: "request", id, method: record.method, params: record.params };
+    return {
+      kind: "request",
+      id,
+      method: record.method,
+      params: record.params,
+    };
   }
   if (typeof id === "number" && Number.isFinite(id)) {
-    return { kind: "request", id, method: record.method, params: record.params };
+    return {
+      kind: "request",
+      id,
+      method: record.method,
+      params: record.params,
+    };
   }
   if (id === null) {
-    return { kind: "request", id, method: record.method, params: record.params };
+    return {
+      kind: "request",
+      id,
+      method: record.method,
+      params: record.params,
+    };
   }
   return null;
 }
@@ -330,9 +338,7 @@ export function createMcpServer(deps: McpServerDeps) {
     } catch {
       // The JSON-RPC answer must not depend on a best-effort ledger write.
       // Event name only: never args, output or token material.
-      console.error(
-        JSON.stringify({ event: "studio_mcp_call_record_failed" }),
-      );
+      console.error(JSON.stringify({ event: "studio_mcp_call_record_failed" }));
     }
   }
 
@@ -344,12 +350,12 @@ export function createMcpServer(deps: McpServerDeps) {
     if (method === "initialize") {
       const params = paramsObject(envelope.params);
       if (!params)
-        return jsonResponse(200, rpcError(id, RPC_INVALID_PARAMS, "Invalid params."));
+        return jsonResponse(
+          200,
+          rpcError(id, RPC_INVALID_PARAMS, "Invalid params."),
+        );
       const requested = params.protocolVersion;
-      if (
-        requested !== undefined &&
-        requested !== MCP_PROTOCOL_VERSION
-      ) {
+      if (requested !== undefined && requested !== MCP_PROTOCOL_VERSION) {
         // A client may only use the revision this server implements.
         return jsonResponse(
           200,
@@ -450,7 +456,10 @@ export function createMcpServer(deps: McpServerDeps) {
         200,
         rpcResult(envelope.id, {
           content: [
-            { type: "text", text: JSON.stringify({ error: "invalid_arguments" }) },
+            {
+              type: "text",
+              text: JSON.stringify({ error: "invalid_arguments" }),
+            },
           ],
           isError: true,
         }),
@@ -485,8 +494,7 @@ export function createMcpServer(deps: McpServerDeps) {
                 ? sha256Hex(stableStringify(run.output))
                 : null,
             status,
-            errorCode:
-              run.state === "done" ? null : `tool_${run.state}`,
+            errorCode: run.state === "done" ? null : `tool_${run.state}`,
             latencyMs,
             caller: "external_mcp",
           });
@@ -590,7 +598,10 @@ export function createMcpServer(deps: McpServerDeps) {
     }
 
     const declaredLength = Number(request.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > MCP_MAX_REQUEST_BYTES) {
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > MCP_MAX_REQUEST_BYTES
+    ) {
       return jsonResponse(
         413,
         rpcError(null, RPC_INVALID_REQUEST, "Request body is too large."),

@@ -7,10 +7,7 @@ import {
   type ToolId,
 } from "@wukong/core";
 
-import {
-  translatedLine,
-  type TranslatedLine,
-} from "./types";
+import { translatedLine, type TranslatedLine } from "./types";
 import { readListingRunStatus } from "./tools/listing-run-status";
 
 /**
@@ -66,12 +63,7 @@ export type SourceAssetEvidence = {
 /** One listing-pipeline operation's persisted state, read for the UI. */
 export type ListingRunStatus = {
   state:
-    | "queued"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "cancelled"
-    | "superseded";
+    "queued" | "running" | "succeeded" | "failed" | "cancelled" | "superseded";
 };
 
 /** One recent export attempt, reduced to audit-safe fields (plan Task 11). */
@@ -108,9 +100,7 @@ export type StudioReadDeps = {
   getListing(listingId: string): Promise<ListingEvidence | null>;
   getQuality(): Promise<QualityEvidence>;
   listJobs(limit: number): Promise<JobEvidence[]>;
-  getListingGaps(
-    listingId: string,
-  ): Promise<{ gaps: ListingGap[] } | null>;
+  getListingGaps(listingId: string): Promise<{ gaps: ListingGap[] } | null>;
   /**
    * Current copy snapshot for the reviewed version. Used by the copy-proposal
    * skill as the immutable target/context; it is not a tool-requestable action.

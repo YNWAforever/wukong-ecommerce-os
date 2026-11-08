@@ -90,7 +90,9 @@ const createBody = {
 
 describe("GET /api/studio/mcp-connections", () => {
   it("returns connection metadata and the honest disabled gate state", async () => {
-    const { handlers } = fixture({ options: { mcpConnections: [connection()] } });
+    const { handlers } = fixture({
+      options: { mcpConnections: [connection()] },
+    });
     const response = await handlers.GET(
       new Request("http://localhost/api/studio/mcp-connections"),
     );

@@ -22,10 +22,7 @@ import {
   type FakeStudio,
   type FakeStudioOptions,
 } from "./test-fakes.js";
-import {
-  createStudioService,
-  type StudioServiceDeps,
-} from "./turn-service.js";
+import { createStudioService, type StudioServiceDeps } from "./turn-service.js";
 
 /**
  * Turn-service contract tests (plan Task 6 + Task 8 integration).
@@ -214,9 +211,10 @@ describe("studio turn service gate order", () => {
       env: {} as NodeJS.ProcessEnv,
       options: populatedOptions(),
     });
-    await expect(
-      service.createThread({ title: "x" }),
-    ).rejects.toMatchObject({ status: 404, code: "not_found" });
+    await expect(service.createThread({ title: "x" })).rejects.toMatchObject({
+      status: 404,
+      code: "not_found",
+    });
     await expect(service.listThreads()).rejects.toMatchObject({
       status: 404,
       code: "not_found",
@@ -420,9 +418,9 @@ describe("studio thread and message reads", () => {
     expect(result.events.map((event) => event.sequence)).toEqual([1]);
     expect(result.events[0]?.payload.key).toBe("studio.trace.tool.done");
 
-    await expect(service.getRun(thread.id, MISSING_THREAD_ID)).rejects.toMatchObject(
-      { status: 404, code: "not_found" },
-    );
+    await expect(
+      service.getRun(thread.id, MISSING_THREAD_ID),
+    ).rejects.toMatchObject({ status: 404, code: "not_found" });
   });
 });
 
@@ -430,10 +428,7 @@ describe("studio deterministic turns", () => {
   it("persists a needs_input turn honestly and completes its run", async () => {
     const { service, fake } = harness({ options: populatedOptions() });
     const threadId = await openThread(service);
-    const result = await service.sendMessage(
-      threadId,
-      body({ text: "   " }),
-    );
+    const result = await service.sendMessage(threadId, body({ text: "   " }));
 
     expect(result.reply.status).toBe("needs_input");
     expect(result.reply.analysis).toBeNull();
@@ -555,7 +550,9 @@ describe("studio deterministic turns", () => {
       currentVersion: 1,
       threadId,
     });
-    expect(fake.state.outputVersions[0]?.contentDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(fake.state.outputVersions[0]?.contentDigest).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
     expect(fake.state.outputVersions[0]?.payload).toMatchObject({
       schemaVersion: "wukong-merchant-audit/v1",
       listings: expect.arrayContaining([
@@ -569,7 +566,8 @@ describe("studio deterministic turns", () => {
     expect(fake.state.runs[0]?.status).toBe("succeeded");
   });
 
-  it("answers from records, persists the turn and records ordered tool events", async () => {    const { service, fake } = harness({ options: populatedOptions() });
+  it("answers from records, persists the turn and records ordered tool events", async () => {
+    const { service, fake } = harness({ options: populatedOptions() });
     const threadId = await openThread(service);
     const result = await service.sendMessage(threadId, body());
 
@@ -615,9 +613,7 @@ describe("studio deterministic turns", () => {
     expect(second.reply).toEqual(first.reply);
     expect(fake.state.runs).toHaveLength(1);
     expect(
-      fake.state.messages.filter(
-        (message) => message.threadId === threadId,
-      ),
+      fake.state.messages.filter((message) => message.threadId === threadId),
     ).toHaveLength(2);
   });
 
@@ -642,9 +638,10 @@ describe("studio deterministic turns", () => {
     const { service } = harness({
       options: { threads: [thread], messages: [message], runs: [run] },
     });
-    await expect(
-      service.sendMessage(thread.id, body()),
-    ).rejects.toMatchObject({ status: 409, code: "run_in_progress" });
+    await expect(service.sendMessage(thread.id, body())).rejects.toMatchObject({
+      status: 409,
+      code: "run_in_progress",
+    });
   });
 
   it("marks the run failed and rethrows when persistence fails mid-turn", async () => {
@@ -1067,8 +1064,8 @@ describe("studio turn budgets", () => {
     ).rejects.toMatchObject({ status: 503, code: "studio_turn_timeout" });
     expect(fake.state.runs[0]?.status).toBe("failed");
     expect(fake.state.runs[0]?.errorCode).toBe("studio_turn_timeout");
-    expect(
-      fake.state.audits.map((event) => event.action),
-    ).toContain("studio.run.failed");
+    expect(fake.state.audits.map((event) => event.action)).toContain(
+      "studio.run.failed",
+    );
   });
 });

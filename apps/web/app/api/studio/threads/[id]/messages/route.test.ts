@@ -27,12 +27,14 @@ const THREAD = fakeStudioThread({
   title: "Conversation",
 });
 
-function fixture(input: {
-  role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
-  options?: FakeStudioOptions;
-  env?: NodeJS.ProcessEnv;
-  threadId?: string;
-} = {}) {
+function fixture(
+  input: {
+    role?: "viewer" | "operator" | "reviewer" | "admin" | "owner";
+    options?: FakeStudioOptions;
+    env?: NodeJS.ProcessEnv;
+    threadId?: string;
+  } = {},
+) {
   const fake = createFakeStudio({
     ...answeredTurnOptions(),
     ...(input.options ?? {}),
@@ -137,7 +139,10 @@ describe("POST /api/studio/threads/[id]/messages", () => {
         clientMessageId: "client-1",
         text: "hi",
         locale: "en",
-        attachmentAssetIds: Array.from({ length: 9 }, (_, index) => `a-${index}`),
+        attachmentAssetIds: Array.from(
+          { length: 9 },
+          (_, index) => `a-${index}`,
+        ),
       },
       { ...validBody, workspaceId: "foreign" },
     ];

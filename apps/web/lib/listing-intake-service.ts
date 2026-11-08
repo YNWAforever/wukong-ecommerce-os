@@ -256,7 +256,10 @@ export async function createListingIntake(
               "idempotency_conflict",
               "This request key has different inputs.",
             );
-          return { ...prior.response, replayed: true } as unknown as AcceptedCreate & {
+          return {
+            ...prior.response,
+            replayed: true,
+          } as unknown as AcceptedCreate & {
             replayed: true;
           };
         }

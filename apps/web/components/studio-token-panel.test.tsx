@@ -7,8 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { McpTokenView } from "../lib/studio/mcp-tokens";
 import { StudioTokenPanel } from "./studio-token-panel";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 /**
  * API-token panel tests (plan Task 13 settings surface): the list never shows
@@ -106,9 +107,9 @@ describe("StudioTokenPanel", () => {
       label: "CI token",
       token: "wuk_abcdefghijkl.secretvalue",
     };
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
-      Response.json(created, { status: 201 }),
-    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(created, { status: 201 }));
     vi.stubGlobal("fetch", fetcher);
 
     const container = await mount();
@@ -116,7 +117,9 @@ describe("StudioTokenPanel", () => {
 
     await act(async () => {
       setInput(
-        container.querySelector('input[name="token-label"]') as HTMLInputElement,
+        container.querySelector(
+          'input[name="token-label"]',
+        ) as HTMLInputElement,
         "CI token",
       );
     });
@@ -177,4 +180,3 @@ describe("StudioTokenPanel", () => {
     expect(container.textContent).toContain("Enter a token label.");
   });
 });
-
