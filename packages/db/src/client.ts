@@ -32,6 +32,10 @@ import {
   type AiBudgetReservationRepository,
 } from "./repositories/ai-budget-reservations.js";
 import {
+  createStudioRepository,
+  type StudioRepository,
+} from "./repositories/studio.js";
+import {
   createListingInputRepository,
   type ListingInputRepository,
 } from "./repositories/listing-inputs.js";
@@ -191,6 +195,7 @@ export type WorkspaceRepositories = {
   aiBudgetReservations: AiBudgetReservationRepository;
   workspaces: WorkspaceRepository;
   memberships: MembershipRepository;
+  studio: StudioRepository;
   audit: WorkspaceAuditWriter;
 };
 
@@ -470,6 +475,7 @@ export function createDatabase(
           workspaceId,
           scope,
         ),
+        studio: createStudioRepository(transaction, workspaceId, scope),
         audit: createAuditWriter(transaction, workspaceId, scope),
       };
       try {
