@@ -321,6 +321,177 @@ describe("StudioHome", () => {
     expect(html).toContain("The workspace overview could not be read");
   });
 
+  function fileInput(container: HTMLElement): HTMLInputElement {
+    const input = container.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) throw new Error("no file input");
+    return input;
+  }
+
+  async function chooseFiles(container: HTMLElement, files: File[]) {
+    const input = fileInput(container);
+    Object.defineProperty(input, "files", { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  async function settle() {
+    for (let index = 0; index < 30; index += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  }
+
+  function assetTransport(sendResponse?: () => Response) {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url === "/api/assets/presign")
+          return Response.json(
+            {
+              key: "ws/ws_test/sources/k/photo.png",
+              uploadUrl: "https://storage.example.test/put",
+              expiresAt: "2026-11-09T04:40:00.000Z",
+            },
+            { status: 201 },
+          );
+        if (url === "https://storage.example.test/put")
+          return new Response(null, { status: 200 });
+        if (url === "/api/assets/finalize")
+          return Response.json({ assetId: "asset_1" }, { status: 201 });
+        if (url === "/api/studio/threads")
+          return Response.json({ threadId: "thread-new" }, { status: 201 });
+        if (url.endsWith("/messages"))
+          return sendResponse
+            ? sendResponse()
+            : Response.json(sendResultBody());
+        throw new Error(
+          `unexpected fetch ${url} (${String(init?.method ?? "GET")})`,
+        );
+      });
+    return fetcher;
+  }
+
+  it("uploads an attachment, sends its finalized asset id and clears it", async () => {
+    const fetcher = assetTransport();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+
+    await chooseFiles(container, [
+      new File([new Uint8Array(5)], "photo.png", { type: "image/png" }),
+    ]);
+    await settle();
+    expect(container.textContent).toContain("Uploaded");
+
+    await type(container, "Find the Opak listings");
+    await act(async () => {
+      buttonByText(container, "Send")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const presignCall = fetcher.mock.calls.find(
+      ([url]) => String(url) === "/api/assets/presign",
+    );
+    expect(JSON.parse(String(presignCall?.[1]?.body))).toEqual({
+      fileName: "photo.png",
+      mimeType: "image/png",
+      size: 5,
+    });
+    const sendCall = fetcher.mock.calls.find(([url]) =>
+      String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(sendCall?.[1]?.body))).toMatchObject({
+      attachmentAssetIds: ["asset_1"],
+    });
+    expect(container.textContent).not.toContain("Uploaded");
+    expect(navigation.push).toHaveBeenCalledWith("/studio/t/thread-new");
+  });
+
+  it("keeps uploaded ids and the draft after a failed send and reuses them on retry", async () => {
+    let attempts = 0;
+    const fetcher = assetTransport(() => {
+      attempts += 1;
+      if (attempts === 1) return Response.json({}, { status: 503 });
+      return Response.json(sendResultBody());
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+
+    await chooseFiles(container, [
+      new File([new Uint8Array(5)], "photo.png", { type: "image/png" }),
+    ]);
+    await settle();
+    await type(container, "keep this draft");
+    await act(async () => {
+      buttonByText(container, "Send")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(textarea(container).value).toBe("keep this draft");
+    expect(container.textContent).toContain("Uploaded");
+
+    await act(async () => {
+      buttonByText(container, "Retry send")?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const sendBodies = fetcher.mock.calls
+      .filter(([url]) => String(url).endsWith("/messages"))
+      .map(
+        ([, init]) =>
+          JSON.parse(String(init?.body)) as {
+            attachmentAssetIds?: string[];
+          },
+      );
+    expect(sendBodies).toHaveLength(2);
+    expect(sendBodies[0]?.attachmentAssetIds).toEqual(["asset_1"]);
+    expect(sendBodies[1]?.attachmentAssetIds).toEqual(["asset_1"]);
+    expect(
+      fetcher.mock.calls.filter(
+        ([url]) => String(url) === "/api/assets/presign",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("caps a selection at eight attachments and says so", async () => {
+    const fetcher = assetTransport();
+    vi.stubGlobal("fetch", fetcher);
+    const container = await mount();
+    await chooseFiles(
+      container,
+      Array.from(
+        { length: 9 },
+        (_, index) =>
+          new File([new Uint8Array(2)], `photo-${index}.png`, {
+            type: "image/png",
+          }),
+      ),
+    );
+    await settle();
+
+    expect(container.textContent).toContain("Up to 8 files can be attached.");
+    expect(container.querySelectorAll('[data-state="uploaded"]').length).toBe(
+      8,
+    );
+    expect(container.textContent).not.toContain("photo-8.png");
+    expect(
+      fetcher.mock.calls.filter(
+        ([url]) => String(url) === "/api/assets/presign",
+      ),
+    ).toHaveLength(8);
+  });
+
   it("renders zh-Hant copy for the zh-Hant locale", () => {
     const html = render("zh-Hant");
 

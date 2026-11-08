@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Locale } from "../lib/locale";
-import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
 import type {
   StudioMessageResponse,
   StudioThreadResponse,
 } from "../lib/studio/contracts";
+import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioTraceStep } from "../lib/studio/types";
 import {
   assistantMessageFromSend,
@@ -52,6 +53,8 @@ type PendingAttempt = {
   skillKey: string | null;
   clientMessageId: string;
   threadId: string;
+  /** Finalized attachment ids captured when the send was first attempted. */
+  attachmentAssetIds: readonly string[];
 };
 
 export type StudioThreadViewProps = {
@@ -91,6 +94,7 @@ export function StudioThreadView({
   canSignOff,
 }: StudioThreadViewProps) {
   const session = useStudioSession();
+  const attachments = useStudioAttachments();
   const [serverMessages, setServerMessages] =
     useState<readonly StudioMessageResponse[]>(messages);
   const [localMessages, setLocalMessages] = useState<
@@ -172,6 +176,7 @@ export function StudioThreadView({
         skillKey: attempt.skillKey,
         locale,
         clientMessageId: attempt.clientMessageId,
+        attachmentAssetIds: attempt.attachmentAssetIds,
       });
       // `null` = a turn was already in flight; the hook's error state (if any)
       // is rendered by the composer, and the attempt stays pending for Retry.
@@ -204,13 +209,15 @@ export function StudioThreadView({
       setPendingClientMessageId(null);
       setPendingAttempt(null);
       setReplayed(result.replayed);
+      attachments.clearAttachments();
     },
-    [locale, session, visibleMessages],
+    [attachments, locale, session, visibleMessages],
   );
 
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (text.length === 0 || !canSend || session.inFlight) return;
+    if (attachments.uploading) return;
     const clientMessageId =
       pendingClientMessageId ?? createStudioClientMessageId();
     setPendingClientMessageId(clientMessageId);
@@ -219,10 +226,12 @@ export function StudioThreadView({
       skillKey,
       clientMessageId,
       threadId: thread.threadId,
+      attachmentAssetIds: [...attachments.uploadedAssetIds],
     };
     setPendingAttempt(attempt);
     void runSend(attempt);
   }, [
+    attachments,
     canSend,
     draft,
     pendingClientMessageId,
@@ -378,6 +387,11 @@ export function StudioThreadView({
               sendDisabledReason="studio.composer.viewerNote"
               skillKey={skillKey}
               onClearSkill={() => setSkillKey(null)}
+              attachments={attachments.items}
+              onAttachFiles={attachments.addFiles}
+              onRemoveAttachment={attachments.removeAttachment}
+              onRetryAttachment={attachments.retryAttachment}
+              attachmentNotice={attachments.notice}
             />
           </div>
         </div>

@@ -23,6 +23,12 @@ Design: `docs/superpowers/specs/2026-11-08-conversation-studio-design.md`. Plan 
 A disabled workspace or deployment flag answers 404 on every Studio route; middleware is not the
 boundary.
 
+The composer accepts up to eight attachments per message (JPG, PNG, WebP or PDF, 20 MB each) through
+the existing `/api/assets/presign` → direct bucket `PUT` → `/api/assets/finalize` flow. Only ids
+returned by finalize are sent in `attachmentAssetIds`, an upload in progress blocks Send with a
+stated reason, and a failed send keeps both the draft and the finalized ids for the retry. No new
+flag, env var or provider call is involved.
+
 ## Enablement (both halves are required)
 
 1. Deployment flags (Vercel env; do not set values in git):

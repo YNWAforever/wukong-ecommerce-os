@@ -291,6 +291,69 @@
   overflow-wrap: anywhere;
 }
 
+/* -- composer attachment chips (B1) --------------------------------------- */
+
+.studio-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-composer-attachment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+  padding: 6px 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.studio-composer-attachment[data-state="uploading"] {
+  border-style: dashed;
+}
+
+.studio-composer-attachment[data-state="uploaded"] {
+  border-color: var(--success);
+}
+
+.studio-composer-attachment[data-state="failed"],
+.studio-composer-attachment[data-state="cancelled"],
+.studio-composer-attachment[data-state="unsupported_type"],
+.studio-composer-attachment[data-state="empty_file"],
+.studio-composer-attachment[data-state="too_large"] {
+  border-color: var(--danger);
+}
+
+.studio-composer-attachment-name {
+  max-width: 220px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-composer-attachment-state {
+  color: var(--muted);
+}
+
+.studio-composer-attachment-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.studio-composer-attachment-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
 .studio-disclaimer {
   margin: 0;
   color: var(--ink-soft);

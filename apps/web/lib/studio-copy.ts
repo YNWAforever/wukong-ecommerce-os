@@ -101,8 +101,46 @@ export const STUDIO_COPY = {
   ],
   "studio.composer.attach": ["附加檔案", "Attach files"],
   "studio.composer.attachUnavailable": [
-    "此版本尚未提供附加檔案功能。",
-    "Attachments are not available in this build.",
+    "此介面未接上檔案上傳。",
+    "This surface has no file-upload wiring.",
+  ],
+  "studio.composer.attachment.listLabel": ["附加檔案", "Attached files"],
+  "studio.composer.attachment.hint": [
+    "支援 JPG、PNG、WebP 或 PDF，最多 8 個檔案，每個上限 20 MB。",
+    "JPG, PNG, WebP or PDF; up to 8 files, 20 MB each.",
+  ],
+  "studio.composer.attachment.uploading": ["正在上傳…", "Uploading…"],
+  "studio.composer.attachment.uploaded": ["已上傳", "Uploaded"],
+  "studio.composer.attachment.failed": [
+    "無法上傳此檔案，請重試。",
+    "This file could not be uploaded. Try again.",
+  ],
+  "studio.composer.attachment.cancelled": ["上傳已取消。", "Upload cancelled."],
+  "studio.composer.attachment.unsupported": [
+    "不支援的檔案類型。只接受 JPG、PNG、WebP 或 PDF。",
+    "Unsupported file type. Use JPG, PNG, WebP or PDF.",
+  ],
+  "studio.composer.attachment.empty": [
+    "檔案是空的，請重新選取。",
+    "The file is empty. Choose it again.",
+  ],
+  "studio.composer.attachment.tooLarge": [
+    "檔案超過 20 MB 上限。",
+    "The file is larger than the 20 MB limit.",
+  ],
+  "studio.composer.attachment.limit": [
+    "最多可附加 8 個檔案。",
+    "Up to 8 files can be attached.",
+  ],
+  "studio.composer.attachment.waitForUploads": [
+    "請等待上傳完成，或移除仍在處理的檔案。",
+    "Wait for uploads to finish, or remove the files still in progress.",
+  ],
+  "studio.composer.attachment.retry": ["重試上傳", "Retry upload"],
+  "studio.composer.attachment.remove": ["移除", "Remove"],
+  "studio.composer.attachment.viewerNote": [
+    "附加檔案需要操作員或以上權限。",
+    "Attaching files requires operator or higher.",
   ],
   "studio.composer.draftKept": [
     "訊息未能傳送時，草稿會保留。",

@@ -3,6 +3,7 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { StudioComposerAttachment } from "../lib/studio/attachments";
 import { StudioComposer } from "./studio-composer";
 
 (
@@ -22,6 +23,11 @@ type HarnessProps = {
   onRetry?: () => void;
   onClearSkill?: () => void;
   disabled?: boolean;
+  attachments?: readonly StudioComposerAttachment[];
+  onAttachFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
+  onRetryAttachment?: (id: string) => void;
+  attachmentNotice?: Parameters<typeof StudioComposer>[0]["attachmentNotice"];
 };
 
 function Harness(props: HarnessProps) {
@@ -41,6 +47,15 @@ function Harness(props: HarnessProps) {
       sendDisabledReason={props.sendDisabledReason ?? null}
       skillKey={props.skillKey ?? null}
       onClearSkill={props.onClearSkill}
+      attachments={props.attachments ?? []}
+      {...(props.onAttachFiles ? { onAttachFiles: props.onAttachFiles } : {})}
+      {...(props.onRemoveAttachment
+        ? { onRemoveAttachment: props.onRemoveAttachment }
+        : {})}
+      {...(props.onRetryAttachment
+        ? { onRetryAttachment: props.onRetryAttachment }
+        : {})}
+      attachmentNotice={props.attachmentNotice ?? null}
     />
   );
 }
@@ -207,5 +222,181 @@ describe("StudioComposer", () => {
     expect(retry?.textContent).toBe("Retry send");
     await act(async () => (retry as HTMLButtonElement).click());
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("StudioComposer attachments", () => {
+  function fileInput(container: HTMLElement): HTMLInputElement {
+    const input = container.querySelector('input[type="file"]');
+    if (!(input instanceof HTMLInputElement)) throw new Error("no file input");
+    return input;
+  }
+
+  function attachButton(container: HTMLElement): HTMLButtonElement {
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Attach files",
+    );
+    if (!(button instanceof HTMLButtonElement)) throw new Error("no attach");
+    return button;
+  }
+
+  async function choose(container: HTMLElement, files: File[]) {
+    const input = fileInput(container);
+    Object.defineProperty(input, "files", {
+      value: files,
+      configurable: true,
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  it("enables Attach only when an upload handler is wired, with the reviewed accept list", async () => {
+    const withoutHandler = await mount();
+    expect(attachButton(withoutHandler).disabled).toBe(true);
+
+    const onAttachFiles = vi.fn();
+    const container = await mount({ onAttachFiles });
+    expect(attachButton(container).disabled).toBe(false);
+    const input = fileInput(container);
+    expect(input.multiple).toBe(true);
+    expect(input.accept).toBe(
+      "image/jpeg,image/png,image/webp,application/pdf",
+    );
+
+    const files = [
+      new File(["a"], "photo.png", { type: "image/png" }),
+      new File(["b"], "sheet.pdf", { type: "application/pdf" }),
+    ];
+    await choose(container, files);
+    expect(onAttachFiles).toHaveBeenCalledTimes(1);
+    expect(
+      (onAttachFiles.mock.calls[0]?.[0] as File[]).map((entry) => entry.name),
+    ).toEqual(["photo.png", "sheet.pdf"]);
+  });
+
+  it("renders every attachment state with remove and retry where useful", async () => {
+    const onRemoveAttachment = vi.fn();
+    const onRetryAttachment = vi.fn();
+    const attachments: StudioComposerAttachment[] = [
+      {
+        id: "a1",
+        fileName: "uploading.png",
+        state: "uploading",
+        errorKey: null,
+        assetId: null,
+      },
+      {
+        id: "a2",
+        fileName: "done.png",
+        state: "uploaded",
+        errorKey: null,
+        assetId: "asset_1",
+      },
+      {
+        id: "a3",
+        fileName: "bad.png",
+        state: "failed",
+        errorKey: "studio.composer.attachment.failed",
+        assetId: null,
+      },
+      {
+        id: "a4",
+        fileName: "stopped.png",
+        state: "cancelled",
+        errorKey: "studio.composer.attachment.cancelled",
+        assetId: null,
+      },
+      {
+        id: "a5",
+        fileName: "notes.txt",
+        state: "unsupported_type",
+        errorKey: "studio.composer.attachment.unsupported",
+        assetId: null,
+      },
+      {
+        id: "a6",
+        fileName: "huge.png",
+        state: "too_large",
+        errorKey: "studio.composer.attachment.tooLarge",
+        assetId: null,
+      },
+    ];
+    const container = await mount({
+      initial: "hello",
+      attachments,
+      onRemoveAttachment,
+      onRetryAttachment,
+    });
+
+    expect(container.textContent).toContain("Uploading…");
+    expect(container.textContent).toContain("Uploaded");
+    expect(container.textContent).toContain(
+      "This file could not be uploaded. Try again.",
+    );
+    expect(container.textContent).toContain("Upload cancelled.");
+    expect(container.textContent).toContain(
+      "Unsupported file type. Use JPG, PNG, WebP or PDF.",
+    );
+    expect(container.textContent).toContain(
+      "The file is larger than the 20 MB limit.",
+    );
+
+    const retryButtons = Array.from(
+      container.querySelectorAll("button"),
+    ).filter((button) => button.textContent === "Retry upload");
+    expect(retryButtons).toHaveLength(2);
+    await act(async () => (retryButtons[0] as HTMLButtonElement).click());
+    expect(onRetryAttachment).toHaveBeenCalledWith("a3");
+
+    const removeButtons = Array.from(
+      container.querySelectorAll("button"),
+    ).filter((button) => button.textContent === "Remove");
+    expect(removeButtons).toHaveLength(6);
+    await act(async () => (removeButtons[1] as HTMLButtonElement).click());
+    expect(onRemoveAttachment).toHaveBeenCalledWith("a2");
+  });
+
+  it("blocks Send while a file is still uploading and explains why", async () => {
+    const container = await mount({
+      initial: "hello",
+      attachments: [
+        {
+          id: "a1",
+          fileName: "photo.png",
+          state: "uploading",
+          errorKey: null,
+          assetId: null,
+        },
+      ],
+    });
+
+    expect(sendButton(container).disabled).toBe(true);
+    expect(container.textContent).toContain(
+      "Wait for uploads to finish, or remove the files still in progress.",
+    );
+  });
+
+  it("disables Attach while sending and states the read-only reason", async () => {
+    const sending = await mount({ sending: true, onAttachFiles: vi.fn() });
+    expect(attachButton(sending).disabled).toBe(true);
+
+    const readOnly = await mount({
+      sendDisabled: true,
+      onAttachFiles: vi.fn(),
+    });
+    const button = attachButton(readOnly);
+    expect(button.disabled).toBe(true);
+    expect(button.title).toContain(
+      "Attaching files requires operator or higher.",
+    );
+  });
+
+  it("shows the attachment limit notice", async () => {
+    const container = await mount({
+      onAttachFiles: vi.fn(),
+      attachmentNotice: "studio.composer.attachment.limit",
+    });
+    expect(container.textContent).toContain("Up to 8 files can be attached.");
   });
 });

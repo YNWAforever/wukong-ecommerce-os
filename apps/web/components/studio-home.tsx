@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 
 import type { Locale } from "../lib/locale";
 import { studioCopy, type StudioCopyKey } from "../lib/studio-copy";
+import { useStudioAttachments } from "../lib/studio/attachments";
 import type { StudioOverviewResult } from "../lib/studio/contracts";
 import {
   createStudioClientMessageId,
@@ -135,6 +136,8 @@ type PendingHomeAttempt = {
   skillKey: string | null;
   clientMessageId: string;
   threadId: string | null;
+  /** Finalized attachment ids captured when the send was first attempted. */
+  attachmentAssetIds: readonly string[];
 };
 
 export type StudioHomeProps = {
@@ -151,6 +154,7 @@ export function StudioHome({
 }: StudioHomeProps) {
   const router = useRouter();
   const session = useStudioSession();
+  const attachments = useStudioAttachments();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [draft, setDraft] = useState("");
   const [skillKey, setSkillKey] = useState<string | null>(null);
@@ -182,6 +186,7 @@ export function StudioHome({
         skillKey: attempt.skillKey,
         locale,
         clientMessageId: attempt.clientMessageId,
+        attachmentAssetIds: attempt.attachmentAssetIds,
       });
       if (outcome === null) return;
       if (!outcome.ok) {
@@ -198,13 +203,15 @@ export function StudioHome({
       setSkillKey(null);
       setPendingClientMessageId(null);
       setPendingAttempt(null);
+      attachments.clearAttachments();
       router.push(`/studio/t/${result.threadId}`);
     },
-    [locale, router, session],
+    [attachments, locale, router, session],
   );
 
   const handleSend = useCallback(() => {
     if (!canCreateThread || session.inFlight) return;
+    if (attachments.uploading) return;
     const text = draft.trim();
     if (text.length === 0) return;
     const clientMessageId =
@@ -215,10 +222,12 @@ export function StudioHome({
       skillKey,
       clientMessageId,
       threadId: pendingAttempt?.threadId ?? null,
+      attachmentAssetIds: [...attachments.uploadedAssetIds],
     };
     setPendingAttempt(attempt);
     void runSend(attempt);
   }, [
+    attachments,
     canCreateThread,
     draft,
     pendingAttempt,
@@ -273,6 +282,11 @@ export function StudioHome({
           sendDisabledReason="studio.composer.viewerNote"
           skillKey={skillKey}
           onClearSkill={() => setSkillKey(null)}
+          attachments={attachments.items}
+          onAttachFiles={attachments.addFiles}
+          onRemoveAttachment={attachments.removeAttachment}
+          onRetryAttachment={attachments.retryAttachment}
+          attachmentNotice={attachments.notice}
           showNewThreadHint
           textareaRef={textareaRef}
         />

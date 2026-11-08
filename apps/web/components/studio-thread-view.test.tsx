@@ -252,6 +252,67 @@ describe("StudioThreadView", () => {
     expect(container.textContent).toContain("catalog.search");
   });
 
+  it("uploads an attachment and includes its finalized id in the send body", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/assets/presign")
+        return Response.json(
+          {
+            key: "ws/ws_test/sources/k/photo.png",
+            uploadUrl: "https://storage.example.test/put",
+            expiresAt: "2026-11-09T04:40:00.000Z",
+          },
+          { status: 201 },
+        );
+      if (url === "https://storage.example.test/put")
+        return new Response(null, { status: 200 });
+      if (url === "/api/assets/finalize")
+        return Response.json({ assetId: "asset-1" }, { status: 201 });
+      if (url.endsWith("/messages")) return Response.json(sendSuccess());
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount();
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      value: [
+        new File([new Uint8Array(4)], "photo.png", { type: "image/png" }),
+      ],
+      configurable: true,
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    for (let index = 0; index < 30; index += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    expect(container.textContent).toContain("Uploaded");
+
+    await type(container, "Find the Opak listings");
+    await act(async () => {
+      sendButton(container).click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const sendCall = fetcher.mock.calls.find(([url]) =>
+      String(url).endsWith("/messages"),
+    );
+    expect(JSON.parse(String(sendCall?.[1]?.body))).toMatchObject({
+      attachmentAssetIds: ["asset-1"],
+    });
+    expect(container.textContent).not.toContain("Uploaded");
+  });
+
   it("prevents a duplicate send while the first turn is in flight", async () => {
     let resolveSend: (value: Response) => void = () => undefined;
     const pending = new Promise<Response>((resolve) => {
