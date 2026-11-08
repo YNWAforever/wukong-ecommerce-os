@@ -90,19 +90,19 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     label: "Conversation Studio",
     labelZh: "對話工作室",
     description:
-      "The flagged Studio shell, navigation and copy exist. Records answers, execution traces, threads and the home overview are not implemented yet.",
+      "Pilot, verified locally: flagged Studio shell, deterministic records answers with evidence and execution traces, durable threads, copy proposals, confirmed listing-draft dispatch and merchant audit reports. Live model analysis is separate and off by default; a conversation never writes canonical data, approves or publishes.",
     descriptionZh:
-      "已建立受功能旗標控制的工作室外殼、導覽及文案；記錄回答、執行步驟、對話及概況尚未實作。",
-    state: "planned",
+      "試行並已於本機驗證：受功能旗標控制的工作室外殼、附證據及執行步驟的記錄回答、持久對話、文案建議、經確認的上架草稿派送及商戶審核報告。即時模型分析另行控制且預設關閉；對話不會寫入正式資料、批准或發佈。",
+    state: "pilot",
   },
   {
     id: "conversation-studio-ai",
     label: "Studio live analysis",
     labelZh: "工作室即時分析",
     description:
-      "AI suggestion cards are not available. Live analysis needs a workspace model and budget configured separately, and it never gains write authority.",
+      "Not activated. The typed proposer/analysis ports, untrusted-input prompts, claim grounding and reviewed budget admission exist and are tested with fakes, but no live provider run has been recorded. Live analysis requires a reviewed workspace model and budget plus the AI flag, and it never gains write authority.",
     descriptionZh:
-      "AI 建議卡尚未提供；即時分析需要另行設定的工作區模型及預算，且不會取得寫入權限。",
+      "尚未啟用。已具備並以測試替身驗證：具型別的建議／分析介面、不受信任輸入提示、主張依據檢查及已審核預算准入；但未記錄任何正式供應商執行。即時分析需要另行設定的工作區模型及預算，並受 AI 旗標控制，且不會取得寫入權限。",
     state: "planned",
   },
   {
@@ -130,10 +130,10 @@ const CAPABILITY_ENTRIES: readonly CapabilityEntry[] = [
     label: "Studio output sign-off",
     labelZh: "工作室輸出簽核",
     description:
-      "Report sign-off is not implemented. Studio never approves or publishes inside a conversation; any such action deep-links to the existing signed-off screens.",
+      "Pilot, verified locally: versioned copy-proposal and merchant-audit artifacts can be saved by an operator and signed off by a reviewer, with audit and canonical JSON export that re-checks the preview digest. Sign-off is an artifact state only, never a listing approval or a publish action.",
     descriptionZh:
-      "報告簽核尚未實作。工作室不會在對話中批准或發佈；相關動作只會連到現有簽核畫面。",
-    state: "planned",
+      "試行並已於本機驗證：具版本的文案建議及商戶審核成果可由操作員儲存、由審核員簽核，並附稽核及會重新核對預覽摘要的標準 JSON 匯出。簽核僅屬成果狀態，並非商品批准或發佈。",
+    state: "pilot",
   },
 ];
 

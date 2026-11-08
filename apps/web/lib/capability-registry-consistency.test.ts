@@ -41,17 +41,19 @@ describe("capability registry consistency", () => {
 
 /**
  * The five Conversation Studio entries, with the state the shipped tree
- * actually earns. `conversation-studio` and `conversation-studio-ai` are
- * planned until their phases land; the hosted MCP server moved to pilot after
- * its local protocol/token/migration verification; external MCP stays blocked
- * (no allowlist/credential decision); report sign-off is planned.
+ * actually earns. `conversation-studio` is pilot after the P1-P4 local
+ * implementation and verification; `conversation-studio-ai` stays planned
+ * because no live provider run has been recorded; the hosted MCP server moved
+ * to pilot after its local protocol/token/migration verification; external MCP
+ * stays blocked (no allowlist/credential decision); report sign-off is pilot
+ * after its local versioning/signing/export verification.
  */
 const STUDIO_CAPABILITIES = [
-  ["conversation-studio", "planned"],
+  ["conversation-studio", "pilot"],
   ["conversation-studio-ai", "planned"],
   ["wukong-mcp-server", "pilot"],
   ["external-mcp-connections", "blocked"],
-  ["studio-output-signoff", "planned"],
+  ["studio-output-signoff", "pilot"],
 ] as const satisfies ReadonlyArray<readonly [string, CapabilityState]>;
 
 describe("conversation studio capability entries", () => {
