@@ -119,11 +119,38 @@ describe("StudioOutputCard", () => {
     expect(container.textContent).toContain("Synthetic proposed title");
     expect(container.textContent).toContain("Requires human review");
     expect(
-      container.querySelector('a[href="/listings/listing-1"]'),
+      container.querySelector(
+        'a[href="/listings/listing-1?studioOutput=output-1"]',
+      ),
     ).not.toBeNull();
     expect(
       container.querySelector('a[href="/studio/t/thread-1"]'),
     ).not.toBeNull();
+    // A draft has no export link yet; the controls say to save first.
+    expect(container.textContent).toContain("Download JSON");
+    expect(container.textContent).toContain("Save before exporting.");
+    expect(container.querySelector('a[href*="/export?digest="]')).toBeNull();
+  });
+
+  it("enables JSON and PDF export links with the latest digest once saved", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(detailBody("saved")));
+    vi.stubGlobal("fetch", fetcher);
+
+    const container = await mount();
+    const digest = "a".repeat(64);
+    const json = container.querySelector(
+      `a[href="/api/studio/outputs/output-1/export?digest=${digest}&format=json"]`,
+    );
+    const pdf = container.querySelector(
+      `a[href="/api/studio/outputs/output-1/export?digest=${digest}&format=pdf"]`,
+    );
+    expect(json?.textContent).toBe("Download JSON");
+    expect(pdf?.textContent).toBe("Download PDF");
+    expect(container.textContent).toContain(
+      "Only a saved or signed-off artifact can be exported.",
+    );
   });
 
   it("saves through the action endpoint and trusts only the server readback", async () => {

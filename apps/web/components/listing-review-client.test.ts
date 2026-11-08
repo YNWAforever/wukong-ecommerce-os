@@ -11,6 +11,7 @@ import {
   resolveListingViewState,
   type ListingViewResponse,
 } from "./listing-review-client.js";
+import type { ListingStudioHandoff } from "../lib/studio/listing-handoff";
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
@@ -284,7 +285,10 @@ async function settleEffects() {
   });
 }
 
-async function mountReview(initialProcessing?: "queued" | "retry_required") {
+async function mountReview(
+  initialProcessing?: "queued" | "retry_required",
+  studioHandoff?: ListingStudioHandoff,
+) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -294,6 +298,7 @@ async function mountReview(initialProcessing?: "queued" | "retry_required") {
       createElement(ListingReviewClient, {
         listingId: response.listingId,
         initialProcessing,
+        ...(studioHandoff ? { studioHandoff } : {}),
       }),
     );
     await Promise.resolve();
@@ -913,4 +918,143 @@ it("disables legacy editing for the entire deferred wine adoption and refresh", 
     await unmountReview(root);
     vi.unstubAllGlobals();
   }
+});
+
+describe("ListingReviewClient Studio handoff banner", () => {
+  let writeText: ReturnType<typeof vi.fn>;
+
+  const handoff: ListingStudioHandoff = {
+    outputId: "55555555-5555-4555-8555-555555555555",
+    title: "Synthetic copy proposal",
+    revision: 3,
+    asOf: "2026-11-08T10:00:00.000Z",
+    fields: [
+      {
+        field: "title.en",
+        current: "Synthetic old title",
+        proposed: "Synthetic proposed title",
+      },
+      {
+        field: "description.zh-Hant",
+        current: null,
+        proposed: "合成建議描述",
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(Response.json(response)),
+    );
+  });
+
+  afterEach(async () => {
+    for (const root of mountedRoots.splice(0)) {
+      await act(async () => root.unmount());
+    }
+    document.body.innerHTML = "";
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("renders a read-only banner with raw field ids, current and proposed values", async () => {
+    const { container, root } = await mountReview(undefined, handoff);
+    try {
+      const banner = container.querySelector("[data-studio-handoff]");
+      expect(banner).not.toBeNull();
+      expect(banner?.textContent).toContain("Studio proposal");
+      expect(banner?.textContent).toContain(
+        "requires human review. Nothing here is applied automatically.",
+      );
+      expect(banner?.textContent).toContain("Not applied; you can only copy");
+      expect(banner?.textContent).toContain("title.en");
+      expect(banner?.textContent).toContain("Synthetic old title");
+      expect(banner?.textContent).toContain("Synthetic proposed title");
+      expect(banner?.textContent).toContain("合成建議描述");
+      expect(
+        banner?.querySelector(`a[href="/listings/${response.listingId}"]`),
+      ).not.toBeNull();
+    } finally {
+      await unmountReview(root);
+    }
+  });
+
+  it("copies one proposed field and all proposed values", async () => {
+    const { container, root } = await mountReview(undefined, handoff);
+    try {
+      const banner = container.querySelector(
+        "[data-studio-handoff]",
+      ) as HTMLElement;
+      const copyButtons = Array.from(banner.querySelectorAll("button")).filter(
+        (button) => button.textContent === "Copy proposed",
+      );
+      expect(copyButtons).toHaveLength(2);
+      await act(async () => copyButtons[0]?.click());
+      expect(writeText).toHaveBeenLastCalledWith("Synthetic proposed title");
+      expect(banner.textContent).toContain("Copied");
+
+      const copyAll = Array.from(banner.querySelectorAll("button")).find(
+        (button) => button.textContent === "Copy all proposed values",
+      );
+      await act(async () => copyAll?.click());
+      expect(writeText).toHaveBeenLastCalledWith(
+        [
+          "title.en: Synthetic proposed title",
+          "description.zh-Hant: 合成建議描述",
+        ].join("\n"),
+      );
+    } finally {
+      await unmountReview(root);
+    }
+  });
+
+  it("reports a clipboard refusal honestly", async () => {
+    writeText.mockRejectedValue(new Error("denied"));
+    const { container, root } = await mountReview(undefined, handoff);
+    try {
+      const banner = container.querySelector(
+        "[data-studio-handoff]",
+      ) as HTMLElement;
+      await act(async () =>
+        Array.from(banner.querySelectorAll("button"))
+          .find((button) => button.textContent === "Copy proposed")
+          ?.click(),
+      );
+      expect(banner.textContent).toContain("Could not copy to the clipboard.");
+      expect(banner.textContent).not.toContain("Copied");
+    } finally {
+      await unmountReview(root);
+    }
+  });
+
+  it("does not render a handoff banner without a handoff", async () => {
+    const { container, root } = await mountReview();
+    try {
+      expect(container.querySelector("[data-studio-handoff]")).toBeNull();
+    } finally {
+      await unmountReview(root);
+    }
+  });
+
+  it("never seeds the review form from the handoff", async () => {
+    const { container, root } = await mountReview(undefined, handoff);
+    try {
+      expect(container.querySelector("[data-studio-handoff]")).not.toBeNull();
+      // The proposal is display-only: no form input received the proposed
+      // values. The form keeps rendering the server's active version.
+      const values = Array.from(container.querySelectorAll("input")).map(
+        (input) => input.value,
+      );
+      expect(values).not.toContain("Synthetic proposed title");
+      expect(values).not.toContain("合成建議描述");
+    } finally {
+      await unmountReview(root);
+    }
+  });
 });

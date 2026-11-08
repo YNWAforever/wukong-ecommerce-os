@@ -1,10 +1,18 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   copyProposalPayloadSchema,
   StudioReviewCard,
+  type StudioReviewExport,
 } from "./studio-review-card";
+
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
@@ -31,9 +39,17 @@ function payload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function render(locale: "zh-Hant" | "en", value: unknown = payload()) {
+function render(
+  locale: "zh-Hant" | "en",
+  value: unknown = payload(),
+  exportInfo: StudioReviewExport | null = null,
+) {
   return renderToStaticMarkup(
-    <StudioReviewCard locale={locale} payload={value} />,
+    <StudioReviewCard
+      locale={locale}
+      payload={value}
+      exportInfo={exportInfo}
+    />,
   );
 }
 
@@ -158,5 +174,126 @@ describe("StudioReviewCard", () => {
     expect(html).toContain("須由人員審核；工作室不會批准或發佈。");
     expect(html).toContain("建議內容不會寫入正式商品資料。");
     expect(html).toContain("在審核畫面開啟");
+  });
+
+  it("states the not-applied state and disables exports without a saved artifact", () => {
+    const html = render("en");
+
+    expect(html).toContain("Not applied — apply only in the review screen.");
+    expect(html).toContain("Download JSON");
+    expect(html).toContain("Download PDF");
+    expect(html).toContain("Save before exporting.");
+    // No export anchor exists until the artifact is saved/signed off.
+    expect(html).not.toContain("/export?digest=");
+    expect(html).not.toContain("Only a saved or signed-off artifact");
+  });
+
+  it("enables JSON and PDF exports with the latest digest for saved/signed-off artifacts", () => {
+    const digest = "b".repeat(64);
+    const saved = render("en", payload(), {
+      outputId: "output-1",
+      status: "saved",
+      digest,
+    });
+    expect(saved).toContain(
+      `/api/studio/outputs/output-1/export?digest=${digest}&amp;format=json`,
+    );
+    expect(saved).toContain(
+      `/api/studio/outputs/output-1/export?digest=${digest}&amp;format=pdf`,
+    );
+    expect(saved).toContain(
+      "Only a saved or signed-off artifact can be exported.",
+    );
+    // The review link now carries the handoff parameter.
+    expect(saved).toContain('href="/listings/listing-1?studioOutput=output-1"');
+
+    const signedOff = render("en", payload(), {
+      outputId: "output-1",
+      status: "signed_off",
+      digest,
+    });
+    expect(signedOff).toContain(`&amp;format=pdf`);
+
+    const draft = render("en", payload(), {
+      outputId: "output-1",
+      status: "draft",
+      digest,
+    });
+    expect(draft).not.toContain("/export?digest=");
+    expect(draft).toContain("Save before exporting.");
+  });
+
+  const roots: ReturnType<typeof createRoot>[] = [];
+
+  async function mountClipboardCard(
+    exportInfo: StudioReviewExport | null = null,
+  ) {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        <StudioReviewCard
+          locale="en"
+          payload={payload()}
+          exportInfo={exportInfo}
+        />,
+      );
+    });
+    return container;
+  }
+
+  function buttons(container: HTMLElement, text: string) {
+    return Array.from(container.querySelectorAll("button")).filter(
+      (button) => button.textContent === text,
+    ) as HTMLButtonElement[];
+  }
+
+  function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+  }
+
+  it("copies one proposed field and all proposed values as printable text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+    const container = await mountClipboardCard();
+
+    const fieldButtons = buttons(container, "Copy proposed");
+    expect(fieldButtons.length).toBe(2);
+    await act(async () => fieldButtons[0]?.click());
+    expect(writeText).toHaveBeenLastCalledWith("Synthetic proposed title");
+    expect(container.textContent).toContain("Copied");
+
+    await act(async () =>
+      buttons(container, "Copy all proposed values")[0]?.click(),
+    );
+    expect(writeText).toHaveBeenLastCalledWith(
+      [
+        "title.en: Synthetic proposed title",
+        "description.zh-Hant: 合成建議描述",
+      ].join("\n"),
+    );
+  });
+
+  it("reports a clipboard refusal honestly instead of claiming success", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    stubClipboard(writeText);
+    const container = await mountClipboardCard();
+
+    await act(async () => buttons(container, "Copy proposed")[0]?.click());
+    expect(container.textContent).toContain("Could not copy to the clipboard.");
+    expect(container.textContent).not.toContain("Copied");
+  });
+
+  afterEach(async () => {
+    for (const root of roots.splice(0)) {
+      await act(async () => root.unmount());
+    }
+    document.body.innerHTML = "";
+    vi.restoreAllMocks();
   });
 });

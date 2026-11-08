@@ -1,57 +1,71 @@
+"use client";
+
 import Link from "next/link";
-import { z } from "zod";
+import { useCallback, useState } from "react";
 
 import type { Locale } from "../lib/locale";
 import { renderStudioLine } from "../lib/studio-render";
+import {
+  copyProposalPayloadSchema,
+  type CopyProposalField,
+  formatProposedValues,
+} from "../lib/studio/copy-proposal";
+import { copyTextToClipboard } from "../lib/studio/clipboard";
 import { studioCopy } from "../lib/studio-copy";
 import { formatHkDate } from "../lib/ui-copy";
 import styles from "./studio.module.css";
 
+export { copyProposalPayloadSchema };
+export type { CopyProposalField };
+
 /**
- * The copy-proposal review card (plan Task 9, design spec §2.3 step 5).
+ * The copy-proposal review card (plan Task 9, design spec §2.3 step 5 + B2).
  *
  * It renders a persisted proposal exactly as stored: a `check → proposed`
  * table, the evidence refs each proposed value cites, the proposal's own
- * limitations, and an explicit "requires human approval" gate. Three rules it
- * exists to keep:
+ * limitations, and an explicit "requires human approval" gate. The rules it
+ * keeps:
  *
  *  - **proposal only, no write authority.** There is no approve/apply control;
- *    the only action is a link to the existing listing review screen where a
- *    person can act. The copy says the proposal never writes canonical data.
+ *    copying puts text on the clipboard and the link opens the existing
+ *    listing review screen where a person can act. The card says explicitly
+ *    that the proposal is not applied and never writes canonical data.
+ *  - **copy is honest.** Per-field and all-field copy report the clipboard
+ *    write's actual result; a refusal shows an error instead of "copied".
+ *  - **exports are gated.** JSON and PDF links exist only for a saved or
+ *    signed-off artifact, carry the latest published digest the caller
+ *    previewed, and otherwise show a disabled control plus "save before
+ *    exporting" — there is no optimistic export claim.
  *  - **no invented labels.** A field is rendered by its stored id (`sku`,
- *    `title.en`) in monospace. Prettifying "title.en" into "English title"
- *    would be a translation decision this card has no basis to make.
+ *    `title.en`) in monospace.
  *  - **evidence refs are refs, not links.** They identify rows in the evidence
- *    pack; they are not URLs and are rendered as non-interactive chips so they
- *    cannot look clickable or be used as navigation.
+ *    pack; they are not URLs and are rendered as non-interactive chips.
  *
  * The payload is parsed defensively: a version written by a newer deployment
- * renders an honest unavailable state instead of crashing the thread.
+ * renders an honest unavailable state instead of crashing the card.
  */
 
-const proposalFieldSchema = z.object({
-  field: z.string().min(1).max(200),
-  /** The persisted current value for the field; null means genuinely absent. */
-  current: z.string().max(4000).nullable(),
-  proposed: z.string().min(1).max(4000),
-  evidenceRefs: z.array(z.string().min(1).max(200)).max(20),
-});
-
-export const copyProposalPayloadSchema = z.object({
-  listingId: z.string().min(1).max(200),
-  activeVersionId: z.string().min(1).max(200),
-  activeVersionSequence: z.number().int().min(0),
-  fields: z.array(proposalFieldSchema).max(60),
-  limitations: z.array(z.string().max(500)).max(20).default([]),
-  asOf: z.string().min(1).max(64),
-});
-export type CopyProposalPayload = z.infer<typeof copyProposalPayloadSchema>;
+export type StudioReviewExport = {
+  readonly outputId: string;
+  readonly status: "draft" | "saved" | "signed_off" | "discarded";
+  /** The version's `contentDigest`, i.e. the latest published digest. */
+  readonly digest: string;
+};
 
 export type StudioReviewCardProps = {
   readonly locale: Locale;
   /** A persisted tool version payload; parsed here, never trusted as typed. */
   readonly payload: unknown;
+  /**
+   * Export context from the owning output card. Absent when the card is
+   * rendered without a persisted artifact identity.
+   */
+  readonly exportInfo?: StudioReviewExport | null;
 };
+
+function exportable(status: StudioReviewExport["status"] | undefined): boolean {
+  return status === "saved" || status === "signed_off";
+}
 
 function valueOrUnavailable(locale: Locale, value: string | null | undefined) {
   if (typeof value !== "string" || value.length === 0) {
@@ -64,7 +78,20 @@ function valueOrUnavailable(locale: Locale, value: string | null | undefined) {
   return value;
 }
 
-export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
+export function StudioReviewCard({
+  locale,
+  payload,
+  exportInfo = null,
+}: StudioReviewCardProps) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
+
+  const copy = useCallback(async (text: string, marker: string) => {
+    const ok = await copyTextToClipboard(text);
+    setCopied(ok ? marker : null);
+    setCopyFailed(!ok);
+  }, []);
+
   const parsed = copyProposalPayloadSchema.safeParse(payload);
 
   if (!parsed.success) {
@@ -82,7 +109,13 @@ export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
   }
 
   const proposal = parsed.data;
-  const listingHref = `/listings/${encodeURIComponent(proposal.listingId)}`;
+  const canExport = exportable(exportInfo?.status);
+  const exportBase = exportInfo
+    ? `/api/studio/outputs/${encodeURIComponent(exportInfo.outputId)}/export?digest=${encodeURIComponent(exportInfo.digest)}`
+    : null;
+  const listingHref = `/listings/${encodeURIComponent(proposal.listingId)}${
+    exportInfo ? `?studioOutput=${encodeURIComponent(exportInfo.outputId)}` : ""
+  }`;
 
   return (
     <section
@@ -161,7 +194,15 @@ export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
                   <td
                     className={`${styles["studio-review-value"]} ${styles["studio-review-proposed"]}`}
                   >
-                    {valueOrUnavailable(locale, field.proposed)}
+                    <span>{valueOrUnavailable(locale, field.proposed)}</span>
+                    <button
+                      type="button"
+                      className={styles["studio-review-copy"]}
+                      aria-label={`${studioCopy(locale, "studio.review.copyProposed")}: ${field.field}`}
+                      onClick={() => void copy(field.proposed, field.field)}
+                    >
+                      {studioCopy(locale, "studio.review.copyProposed")}
+                    </button>
                   </td>
                   <td>
                     {field.evidenceRefs.length === 0 ? (
@@ -194,6 +235,30 @@ export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
         )}
       </div>
 
+      {proposal.fields.length > 0 ? (
+        <div className={styles["studio-review-actions"]}>
+          <button
+            type="button"
+            className={styles["studio-review-copy-all"]}
+            onClick={() =>
+              void copy(
+                formatProposedValues(proposal.fields),
+                "all-proposed-values",
+              )
+            }
+          >
+            {studioCopy(locale, "studio.review.copyAll")}
+          </button>
+          <p className={styles["studio-review-copy-status"]} role="status">
+            {copyFailed
+              ? studioCopy(locale, "studio.review.copyFailed")
+              : copied !== null
+                ? studioCopy(locale, "studio.review.copied")
+                : ""}
+          </p>
+        </div>
+      ) : null}
+
       {proposal.limitations.length > 0 ? (
         <div className={styles["studio-review-limitations"]}>
           <h5 className={styles["studio-evidence-subtitle"]}>
@@ -207,9 +272,63 @@ export function StudioReviewCard({ locale, payload }: StudioReviewCardProps) {
         </div>
       ) : null}
 
+      <p className={styles["studio-review-not-applied"]}>
+        {studioCopy(locale, "studio.review.notApplied")}
+      </p>
       <p className={styles["studio-review-note"]}>
         {studioCopy(locale, "studio.review.noCanonicalWrite")}
       </p>
+
+      <div className={styles["studio-review-export"]}>
+        <h5 className={styles["studio-evidence-subtitle"]}>
+          {studioCopy(locale, "studio.review.exportTitle")}
+        </h5>
+        {canExport && exportBase && exportInfo ? (
+          <>
+            <div className={styles["studio-review-export-links"]}>
+              <a
+                className={styles["studio-review-export-link"]}
+                href={`${exportBase}&format=json`}
+                download
+              >
+                {studioCopy(locale, "studio.review.exportJson")}
+              </a>
+              <a
+                className={styles["studio-review-export-link"]}
+                href={`${exportBase}&format=pdf`}
+                download
+              >
+                {studioCopy(locale, "studio.review.exportPdf")}
+              </a>
+            </div>
+            <p className={styles["studio-review-export-note"]}>
+              {studioCopy(locale, "studio.review.exportSavedOnly")}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className={styles["studio-review-export-links"]}>
+              <button
+                type="button"
+                className={styles["studio-review-export-link"]}
+                disabled
+              >
+                {studioCopy(locale, "studio.review.exportJson")}
+              </button>
+              <button
+                type="button"
+                className={styles["studio-review-export-link"]}
+                disabled
+              >
+                {studioCopy(locale, "studio.review.exportPdf")}
+              </button>
+            </div>
+            <p className={styles["studio-review-export-note"]}>
+              {studioCopy(locale, "studio.review.saveBeforeExport")}
+            </p>
+          </>
+        )}
+      </div>
 
       <Link className={styles["studio-evidence-link"]} href={listingHref}>
         {studioCopy(locale, "studio.review.openReview")}

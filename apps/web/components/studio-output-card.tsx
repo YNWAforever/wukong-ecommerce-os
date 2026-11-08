@@ -393,7 +393,15 @@ export function StudioOutputCard({
           </p>
 
           {detail.output.kind === "copy_proposal" ? (
-            <StudioReviewCard locale={locale} payload={version.payload} />
+            <StudioReviewCard
+              locale={locale}
+              payload={version.payload}
+              exportInfo={{
+                outputId: detail.output.outputId,
+                status: detail.output.status,
+                digest: version.contentDigest,
+              }}
+            />
           ) : detail.output.kind === "merchant_audit" ? (
             <StudioReportCard
               locale={locale}
